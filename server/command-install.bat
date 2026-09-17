@@ -2,7 +2,7 @@
 setlocal
 cd /d "%~dp0"
 
-REM 用法：install.bat
+REM 用法：command-install.bat
 REM 安装 workspace 依赖（pnpm workspace：apps/* + packages/* 共 8 个包）。
 REM 需要 Node 22+ 与 pnpm；受限网络下可先设置代理再运行，例如：
 REM     set HTTP_PROXY=http://127.0.0.1:10808
@@ -39,5 +39,5 @@ if errorlevel 1 (
 )
 
 echo.
-echo [install] 依赖安装完成。下一步：build.bat 构建编辑器，或 start.bat 直接启动。
+echo [install] 依赖安装完成。下一步：command-build.bat 构建编辑器，或 command-start.bat 直接启动。
 pause

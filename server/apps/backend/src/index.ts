@@ -2,6 +2,7 @@ import type { Server } from "node:http";
 import { pathToFileURL } from "node:url";
 import { describeConfig, loadConfig, resolveServerAddress, type LoadedConfig } from "./config";
 import { createHttpServer } from "./http/server";
+import { listLanAddresses } from "./net";
 import { FsResourceProvider } from "./resources/fs-provider";
 import { RuntimeHub, type LogLevel } from "./ws/hub";
 
@@ -45,6 +46,19 @@ export async function startServer(): Promise<RunningServer> {
   log("info", `DiceTaleStudio 服务端已启动: ${url}`);
   log("info", describeConfig(config));
   log("info", `WebSocket: ${url.replace("http", "ws")}/client（前端）、/editor（编辑器）`);
+
+  // 监听 0.0.0.0 时同一 WiFi 下的设备可直接访问，把可用的局域网地址列出来
+  if (host === "0.0.0.0" || host === "::") {
+    const lanAddresses = listLanAddresses();
+    if (lanAddresses.length > 0) {
+      log("info", "局域网访问（手机 / 平板填下面地址；连不上先运行 command-open-port.bat 放行防火墙）:");
+      for (const item of lanAddresses) {
+        log("info", `  http://${item.address}:${port}/    [${item.name}]`);
+      }
+    } else {
+      log("warn", "未找到可用的局域网 IPv4 地址，手机 / 平板可能无法访问");
+    }
+  }
 
   return {
     server,
