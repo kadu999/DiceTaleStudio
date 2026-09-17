@@ -1,0 +1,20 @@
+{
+  "name": "@dts/actions",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "动作类型注册表、条件求值与动作校验（对齐前端 BackendChangeAction 体系）",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@dts/document": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.1"
+  }
+}

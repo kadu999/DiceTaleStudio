@@ -1,0 +1,92 @@
+@import "tailwindcss";
+
+/* ------------------------------------------------------------------
+   Unity 风格的暗色编辑器主题：高密度、低干扰、明确的分区边界。
+   尺寸与配色集中在这里，组件里只用语义类名。
+   ------------------------------------------------------------------ */
+
+@theme {
+  --color-editor-bg: #14161a;
+  --color-editor-panel: #1b1e24;
+  --color-editor-panel-alt: #20242b;
+  --color-editor-border: #2c313a;
+  --color-editor-text: #dfe3ea;
+  --color-editor-text-dim: #8d95a3;
+  --color-editor-accent: #4f9cf9;
+  --color-editor-accent-dim: #2f6bb0;
+  --color-editor-danger: #e05555;
+  --color-editor-ok: #3fbf6f;
+  --color-editor-warn: #e0a13c;
+
+  --font-sans: "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font-mono: "Cascadia Mono", "Consolas", monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--color-editor-bg);
+  color: var(--color-editor-text);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* 编辑器里禁用文本选择与长按呼出菜单（画布与面板都用 Pointer Events 交互） */
+#root {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+@utility panel {
+  background: var(--color-editor-panel);
+  border-color: var(--color-editor-border);
+}
+
+@utility panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0 0.5rem;
+  height: 26px;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--color-editor-text-dim);
+  background: var(--color-editor-panel-alt);
+  border-bottom: 1px solid var(--color-editor-border);
+  flex: none;
+}
+
+@utility toolbar-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  height: 22px;
+  padding: 0 0.5rem;
+  border-radius: 3px;
+  color: var(--color-editor-text);
+  background: transparent;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+@utility toolbar-button-hover {
+  background: var(--color-editor-panel-alt);
+  border-color: var(--color-editor-border);
+}
+
+/* 触控设备上放大命中区（平板可用性硬要求） */
+@media (pointer: coarse) {
+  button,
+  [role="button"] {
+    min-height: 32px;
+  }
+}

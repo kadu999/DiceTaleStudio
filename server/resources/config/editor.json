@@ -1,0 +1,19 @@
+{
+  "theme": "dark",
+  "viewport": {
+    "background": "#14161a",
+    "gridColor": "rgba(255,255,255,0.12)",
+    "maxDevicePixelRatio": 2
+  },
+  "grid": {
+    "defaultWidth": 64,
+    "defaultHeight": 36,
+    "defaultCellSize": 1
+  },
+  "brush": {
+    "defaultSize": 1,
+    "defaultMask": 1
+  },
+  "snapToGrid": true,
+  "autosaveMs": 1500
+}

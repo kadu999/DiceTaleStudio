@@ -1,0 +1,20 @@
+{
+  "name": "@dts/protocol",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "编辑器 / 服务端 / 前端 之间的 WebSocket 消息契约（zod 校验，三端共用）",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.1"
+  }
+}

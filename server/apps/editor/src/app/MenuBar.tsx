@@ -1,0 +1,192 @@
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { useEditorStore } from "../state/editor-store";
+
+/**
+ * 顶部菜单栏。
+ *
+ * 平板没有键盘快捷键，因此**所有命令都必须能从菜单触发**——这里不做「只有快捷键」的命令。
+ */
+
+interface MenuBarProps {
+  readonly compact: boolean;
+}
+
+export function MenuBar({ compact }: MenuBarProps): React.JSX.Element {
+  const ui = useEditorStore((state) => state.ui);
+  const setUi = useEditorStore((state) => state.setUi);
+  const mode = useEditorStore((state) => state.mode);
+  const setMode = useEditorStore((state) => state.setMode);
+  const canUndo = useEditorStore((state) => state.canUndo);
+  const canRedo = useEditorStore((state) => state.canRedo);
+  const undoLabel = useEditorStore((state) => state.undoLabel);
+  const redoLabel = useEditorStore((state) => state.redoLabel);
+  const undo = useEditorStore((state) => state.undo);
+  const redo = useEditorStore((state) => state.redo);
+  const fitToViewport = useEditorStore((state) => state.fitToViewport);
+
+  return (
+    <header className="flex h-9 flex-none items-center gap-1 border-b border-[var(--color-editor-border)] bg-[var(--color-editor-panel-alt)] px-2">
+      <span className="mr-2 text-[12px] font-semibold tracking-wide text-[var(--color-editor-text)]">
+        DiceTale<span className="text-[var(--color-editor-accent)]">Studio</span>
+      </span>
+
+      <Menu label="编辑">
+        <MenuItem label={canUndo ? `撤销 ${undoLabel}` : "撤销"} disabled={!canUndo} onSelect={undo} />
+        <MenuItem label={canRedo ? `重做 ${redoLabel}` : "重做"} disabled={!canRedo} onSelect={redo} />
+      </Menu>
+
+      <Menu label="视图">
+        <MenuItem
+          label={ui.leftOpen ? "隐藏对象容器" : "显示对象容器"}
+          onSelect={() => setUi({ leftOpen: !ui.leftOpen })}
+        />
+        <MenuItem
+          label={ui.rightOpen ? "隐藏属性面板" : "显示属性面板"}
+          onSelect={() => setUi({ rightOpen: !ui.rightOpen })}
+        />
+        <MenuItem
+          label={ui.runtimeOpen ? "隐藏运行态面板" : "显示运行态面板"}
+          onSelect={() => setUi({ runtimeOpen: !ui.runtimeOpen })}
+        />
+        <MenuSeparator />
+        <MenuItem label="适配视口" onSelect={fitToViewport} />
+      </Menu>
+
+      <Menu label="运行">
+        <MenuItem
+          label={mode === "edit" ? "进入运行状态" : "退出运行状态"}
+          onSelect={() => setMode(mode === "edit" ? "run" : "edit")}
+        />
+      </Menu>
+
+      <div className="ml-auto flex items-center gap-2">
+        {compact ? (
+          <>
+            <ToolbarToggle active={ui.leftOpen} onClick={() => setUi({ leftOpen: !ui.leftOpen })}>
+              对象
+            </ToolbarToggle>
+            <ToolbarToggle active={ui.rightOpen} onClick={() => setUi({ rightOpen: !ui.rightOpen })}>
+              属性
+            </ToolbarToggle>
+            <ToolbarToggle
+              active={ui.runtimeOpen}
+              onClick={() => setUi({ runtimeOpen: !ui.runtimeOpen })}
+            >
+              运行态
+            </ToolbarToggle>
+          </>
+        ) : null}
+
+        <ModeSwitch mode={mode} onChange={setMode} />
+      </div>
+    </header>
+  );
+}
+
+function Menu({
+  label,
+  children,
+}: {
+  readonly label: string;
+  readonly children: React.ReactNode;
+}): React.JSX.Element {
+  return (
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger asChild>
+        <button type="button" className="toolbar-button hover:toolbar-button-hover">
+          {label}
+        </button>
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content
+          align="start"
+          sideOffset={4}
+          className="z-50 min-w-[200px] rounded border border-[var(--color-editor-border)] bg-[var(--color-editor-panel)] p-1 shadow-xl"
+        >
+          {children}
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
+  );
+}
+
+function MenuItem({
+  label,
+  onSelect,
+  disabled = false,
+}: {
+  readonly label: string;
+  readonly onSelect: () => void;
+  readonly disabled?: boolean;
+}): React.JSX.Element {
+  return (
+    <DropdownMenu.Item
+      disabled={disabled}
+      onSelect={onSelect}
+      className="cursor-default rounded px-2 py-1 text-[12px] text-[var(--color-editor-text)] outline-none data-[disabled]:opacity-40 data-[highlighted]:bg-[var(--color-editor-accent-dim)]"
+    >
+      {label}
+    </DropdownMenu.Item>
+  );
+}
+
+function MenuSeparator(): React.JSX.Element {
+  return <DropdownMenu.Separator className="my-1 h-px bg-[var(--color-editor-border)]" />;
+}
+
+function ToolbarToggle({
+  active,
+  onClick,
+  children,
+}: {
+  readonly active: boolean;
+  readonly onClick: () => void;
+  readonly children: React.ReactNode;
+}): React.JSX.Element {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`toolbar-button ${active ? "!bg-[var(--color-editor-accent-dim)]" : "hover:toolbar-button-hover"}`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function ModeSwitch({
+  mode,
+  onChange,
+}: {
+  readonly mode: "edit" | "run";
+  readonly onChange: (mode: "edit" | "run") => void;
+}): React.JSX.Element {
+  return (
+    <div className="flex items-center overflow-hidden rounded border border-[var(--color-editor-border)]">
+      <button
+        type="button"
+        data-testid="mode-edit"
+        onClick={() => onChange("edit")}
+        className={`px-2 py-0.5 text-[11px] ${
+          mode === "edit"
+            ? "bg-[var(--color-editor-accent)] text-black"
+            : "text-[var(--color-editor-text-dim)]"
+        }`}
+      >
+        编辑
+      </button>
+      <button
+        type="button"
+        data-testid="mode-run"
+        onClick={() => onChange("run")}
+        className={`px-2 py-0.5 text-[11px] ${
+          mode === "run"
+            ? "bg-[var(--color-editor-ok)] text-black"
+            : "text-[var(--color-editor-text-dim)]"
+        }`}
+      >
+        运行
+      </button>
+    </div>
+  );
+}

@@ -1,0 +1,18 @@
+{
+  "name": "@dts/grid",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "网格位掩码、坐标转换、RLE 与 DiceTale .bytes 编解码（纯函数，无宿主依赖）",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.3",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.1"
+  }
+}

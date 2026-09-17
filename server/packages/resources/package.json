@@ -1,0 +1,20 @@
+{
+  "name": "@dts/resources",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "资源抽象：逻辑 ID 规则、清单类型、ResourceProvider 接口与内存实现",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.1"
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "name": "@dts/backend",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "DiceTaleStudio 服务端：静态托管、资源 REST、运行态 WebSocket 中枢、Mock 前端",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "mock": "tsx src/mock-client/index.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@dts/protocol": "workspace:*",
+    "@dts/resources": "workspace:*",
+    "ws": "^8.21.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.3",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.23.13",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.1"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "resourceRoot": "resources",
+  "dirs": {
+    "config": "config",
+    "map": "maps",
+    "image": "images",
+    "audio": "audio",
+    "video": "video",
+    "item-lib": "items",
+    "project": "projects"
+  },
+  "server": {
+    "host": "0.0.0.0",
+    "port": 1420
+  },
+  "defaultCellPixels": 30
+}

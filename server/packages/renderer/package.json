@@ -1,0 +1,20 @@
+{
+  "name": "@dts/renderer",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Canvas 2D 场景渲染器与视口变换（不依赖 React）",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@dts/grid": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.1"
+  }
+}

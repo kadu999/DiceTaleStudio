@@ -1,0 +1,32 @@
+# 依赖与构建产物
+node_modules/
+dist/
+dist-ssr/
+*.tsbuildinfo
+.vite/
+coverage/
+.pnpm-store/
+
+# 测试产物
+playwright-report/
+test-results/
+blob-report/
+.playwright/
+
+# 日志
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# 编辑器 / 系统
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# 大体积二进制资源：默认不入库，需要时显式 git add -f（详见 server/README.md）
+server/resources/video/
+server/resources/audio/
+server/resources/images/maps/*.png
+server/resources/images/textures/*.png

@@ -1,0 +1,9 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+# 允许执行安装脚本的依赖（其余不执行脚本，供应链更安全）
+# esbuild 需要安装脚本获取平台二进制（vite / tsx 依赖）
+allowBuilds:
+  esbuild: true
+minimumReleaseAgeExclude:
+  - jsdom@30.1.0

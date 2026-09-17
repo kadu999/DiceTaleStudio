@@ -1,0 +1,23 @@
+{
+  "description": "导出目标映射；directory 为空表示只导出到浏览器下载 / 编辑器项目目录，不写入外部检出目录",
+  "gridBytes": {
+    "enabled": true,
+    "directory": "",
+    "fileNamePattern": "{map}.bytes"
+  },
+  "mapImage": {
+    "enabled": true,
+    "directory": "",
+    "fileNamePattern": "{map}.png"
+  },
+  "placement": {
+    "enabled": true,
+    "directory": "",
+    "fileNamePattern": "{map}.placement.json"
+  },
+  "items": {
+    "enabled": true,
+    "directory": "",
+    "fileNamePattern": "items.json"
+  }
+}

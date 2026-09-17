@@ -1,0 +1,22 @@
+{
+  "name": "@dts/document",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "编辑器文档模型：项目/地图/对象/组件/动作 + zod 校验 + 组件注册表 + 补丁式撤销重做",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@dts/grid": "workspace:*",
+    "immer": "^11.1.18",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.1"
+  }
+}
