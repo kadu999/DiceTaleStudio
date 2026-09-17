@@ -1,4 +1,5 @@
 import { dirname, isAbsolute, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   DEFAULT_RESOURCE_DIRS,
   configId,
@@ -16,7 +17,17 @@ import { readFile } from "node:fs/promises";
  * 其余代码一律通过 `ResourceProvider` + 逻辑 ID 访问资源，不碰路径。
  */
 
-const DEFAULT_RESOURCE_ROOT = "resources";
+/**
+ * 默认资源根：**基于模块位置解析**，而不是当前工作目录。
+ *
+ * 原因：pnpm 执行 workspace 脚本时会把 cwd 设为包目录（`apps/backend`），
+ * 若按 cwd 解析会去找不存在的 `apps/backend/resources`，
+ * 于是配置静默退回内置默认值、资源接口指向错误目录。
+ * 模块位置永远不变，因此这里用 `apps/backend/src/` → `server/resources`。
+ */
+export function defaultResourceRoot(moduleUrl: string = import.meta.url): string {
+  return fileURLToPath(new URL("../../../resources", moduleUrl));
+}
 
 export interface LoadedConfig {
   readonly app: AppConfig;
@@ -28,8 +39,9 @@ export interface LoadedConfig {
 
 function resolveResourceRoot(explicit?: string): string {
   const fromEnv = process.env.DTS_RESOURCES_DIR;
-  const value = explicit ?? (fromEnv !== undefined && fromEnv.length > 0 ? fromEnv : DEFAULT_RESOURCE_ROOT);
-  // 相对路径基于当前工作目录（应为 server/）解析
+  const value =
+    explicit ?? (fromEnv !== undefined && fromEnv.length > 0 ? fromEnv : defaultResourceRoot());
+  // 默认值已是绝对路径；显式传入的相对路径仍按当前工作目录解析
   return isAbsolute(value) ? value : resolve(process.cwd(), value);
 }
 
