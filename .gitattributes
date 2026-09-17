@@ -1,5 +1,10 @@
-# 统一换行符：仓库内一律 LF，避免 Windows 上反复出现 CRLF 改动
+# 统一换行符：仓库内默认 LF，避免 Windows 上反复出现 CRLF 改动
 * text=auto eol=lf
+
+# Windows 批处理必须保持 CRLF：cmd.exe 对 LF 结尾的 .bat/.cmd 支持不可靠
+# （多行括号块、goto/label 等会出问题），因此这两类文件单独指定
+*.bat text eol=crlf
+*.cmd text eol=crlf
 
 # 二进制资源不做换行符转换（地图贴图、Unity 网格数据、音视频）
 *.png binary
