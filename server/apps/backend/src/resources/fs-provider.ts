@@ -52,12 +52,25 @@ export class FsResourceProvider implements ResourceProvider {
           continue;
         }
 
-        if (!info.isFile()) {
+        const path = name.split(sep).join("/");
+        if (path.endsWith(".gitkeep")) {
           continue;
         }
 
-        const path = name.split(sep).join("/");
-        if (path.endsWith(".gitkeep")) {
+        // 目录也要列（编辑器里刚建的空目录必须可见）
+        if (info.isDirectory()) {
+          entries.push({
+            id: formatResourceId(current, path),
+            kind: current,
+            path,
+            type: "folder",
+            size: 0,
+            modifiedAt: info.mtime.toISOString(),
+          });
+          continue;
+        }
+
+        if (!info.isFile()) {
           continue;
         }
 
@@ -65,6 +78,7 @@ export class FsResourceProvider implements ResourceProvider {
           id: formatResourceId(current, path),
           kind: current,
           path,
+          type: "file",
           size: info.size,
           modifiedAt: info.mtime.toISOString(),
         });
@@ -104,8 +118,12 @@ export class FsResourceProvider implements ResourceProvider {
     await writeFile(path, Buffer.from(data));
   }
 
+  async ensureFolder(id: string): Promise<void> {
+    await mkdir(this.pathFor(id), { recursive: true });
+  }
+
   async remove(id: string): Promise<void> {
-    await rm(this.pathFor(id), { force: true });
+    await rm(this.pathFor(id), { force: true, recursive: true });
   }
 
   private baseFor(kind: ResourceKind): string {

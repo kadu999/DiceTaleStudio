@@ -12,8 +12,11 @@ import { RESOURCE_KINDS } from "./ids";
 export interface ResourceEntry {
   readonly id: string;
   readonly kind: ResourceKind;
-  /** 类别目录内的相对路径。 */
+  /** 类别目录内的相对路径（跑团资源即 `<跑团名>/...`）。 */
   readonly path: string;
+  /** 目录条目也要列出来——否则编辑器里刚建的空目录会「看不见」。 */
+  readonly type: "file" | "folder";
+  /** 文件字节数；目录为 0。 */
   readonly size: number;
   /** ISO 时间字符串；内存实现可能不提供。 */
   readonly modifiedAt?: string;
@@ -27,21 +30,18 @@ export interface ResourceProvider {
   readBinary(id: string): Promise<ArrayBuffer>;
   writeText(id: string, text: string): Promise<void>;
   writeBinary(id: string, data: ArrayBuffer): Promise<void>;
+  /** 确保目录存在（新建跑团时建立标准子目录；已存在则不报错）。 */
+  ensureFolder(id: string): Promise<void>;
   remove(id: string): Promise<void>;
 }
 
-/** 把各类别目录名映射成资源根下的实际目录。 */
+/** 各类别目录名 → 资源根下的实际目录。 */
 export type ResourceDirs = { readonly [kind in ResourceKind]: string };
 
 /** 默认目录名（与 resources/ 下的实际结构一致）。 */
 export const DEFAULT_RESOURCE_DIRS: ResourceDirs = {
   config: "config",
-  map: "maps",
-  image: "images",
-  audio: "audio",
-  video: "video",
-  "item-lib": "items",
-  project: "projects",
+  campaign: "campaigns",
 };
 
 /** 校验 ResourceDirs 覆盖了全部类别。 */

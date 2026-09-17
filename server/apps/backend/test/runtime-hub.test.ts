@@ -343,10 +343,14 @@ describe("后端 HTTP 接口", () => {
 
   it("/api/config 使用资源目录配置（代码不硬编码目录）", async () => {
     const response = await fetch(`${baseUrl}/api/config`);
-    const body = (await response.json()) as { resourceRoot: string; dirs: Record<string, string> };
+    const body = (await response.json()) as {
+      resourceRoot: string;
+      dirs: Record<string, string>;
+      campaignFolders: string[];
+    };
     expect(body.resourceRoot).toContain("resources");
-    expect(body.dirs.map).toBe("maps");
-    expect(body.dirs.image).toBe("images");
+    expect(body.dirs.campaign).toBe("campaigns");
+    expect(body.campaignFolders).toContain("maps");
   });
 
   it("/api/resources/index 列出资源并可按类别过滤", async () => {
@@ -368,7 +372,7 @@ describe("后端 HTTP 接口", () => {
     expect(ok.status).toBe(200);
     expect(await ok.text()).toContain("resourceRoot");
 
-    const missing = await fetch(`${baseUrl}/api/resources/raw?id=${encodeURIComponent("map:Nope.json")}`);
+    const missing = await fetch(`${baseUrl}/api/resources/raw?id=${encodeURIComponent("campaign:Nope/Nope.dtproj.json")}`);
     expect(missing.status).toBe(404);
   });
 

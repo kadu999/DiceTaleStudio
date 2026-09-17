@@ -6,6 +6,7 @@ import type { ResourceEntry, ResourceProvider } from "./provider";
  */
 export class MemoryResourceProvider implements ResourceProvider {
   private readonly files = new Map<string, Uint8Array>();
+  private readonly folders = new Set<string>();
 
   constructor(seed: Record<string, string | Uint8Array | ArrayBuffer> = {}) {
     for (const [id, value] of Object.entries(seed)) {
@@ -19,15 +20,40 @@ export class MemoryResourceProvider implements ResourceProvider {
     this.files.set(id, toBytes(value));
   }
 
+  /** 已登记的目录（测试断言用）。 */
+  listFolders(): string[] {
+    return [...this.folders].sort();
+  }
+
   async list(kind?: ResourceKind): Promise<ResourceEntry[]> {
     const entries: ResourceEntry[] = [];
+
     for (const [id, bytes] of this.files) {
       const parsed = parseResourceId(id);
       if (kind !== undefined && parsed.kind !== kind) {
         continue;
       }
 
-      entries.push({ id, kind: parsed.kind, path: parsed.path, size: bytes.byteLength });
+      entries.push({
+        id,
+        kind: parsed.kind,
+        path: parsed.path,
+        type: "file",
+        size: bytes.byteLength,
+      });
+    }
+
+    for (const id of this.folders) {
+      if (this.files.has(id)) {
+        continue;
+      }
+
+      const parsed = parseResourceId(id);
+      if (kind !== undefined && parsed.kind !== kind) {
+        continue;
+      }
+
+      entries.push({ id, kind: parsed.kind, path: parsed.path, type: "folder", size: 0 });
     }
 
     return entries.sort((a, b) => a.id.localeCompare(b.id));
@@ -57,9 +83,32 @@ export class MemoryResourceProvider implements ResourceProvider {
     this.files.set(id, new Uint8Array(data.slice(0)));
   }
 
+  async ensureFolder(id: string): Promise<void> {
+    parseResourceId(id);
+    this.folders.add(id);
+  }
+
+  /**
+   * 删除资源。对目录 ID 做**递归删除**，与文件系统实现（`rm -rf`）语义一致，
+   * 这样「删掉整个跑团目录」在两处行为相同。
+   */
   async remove(id: string): Promise<void> {
     parseResourceId(id);
     this.files.delete(id);
+    this.folders.delete(id);
+
+    const prefix = `${id}/`;
+    for (const key of [...this.files.keys()]) {
+      if (key.startsWith(prefix)) {
+        this.files.delete(key);
+      }
+    }
+
+    for (const key of [...this.folders]) {
+      if (key.startsWith(prefix)) {
+        this.folders.delete(key);
+      }
+    }
   }
 
   private require(id: string): Uint8Array {

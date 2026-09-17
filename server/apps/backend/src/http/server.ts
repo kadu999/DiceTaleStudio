@@ -2,7 +2,18 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { readFile, stat } from "node:fs/promises";
 import { extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseResourceId, type ResourceProvider } from "@dts/resources";
+import { createEmptyProject } from "@dts/document";
+import {
+  buildResourceTree,
+  campaignFolderId,
+  createCampaign,
+  deleteCampaign,
+  listCampaigns,
+  parseResourceId,
+  readCampaignEntries,
+  validateCampaignRelativePath,
+  type ResourceProvider,
+} from "@dts/resources";
 import type { LogLevel } from "../ws/hub";
 import type { RuntimeHub } from "../ws/hub";
 import type { LoadedConfig } from "../config";
@@ -51,6 +62,23 @@ async function readBody(request: IncomingMessage): Promise<Buffer> {
   }
 
   return Buffer.concat(chunks);
+}
+
+/** 读取并解析 JSON 请求体；空体视为 `{}`，非法 JSON 抛错（由外层转成 500，调用方一般自行校验）。 */
+async function readJsonBody(request: IncomingMessage): Promise<Record<string, unknown>> {
+  const raw = (await readBody(request)).toString("utf8").trim();
+  if (raw.length === 0) {
+    return {};
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return typeof parsed === "object" && parsed !== null
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    throw new Error("请求体不是合法 JSON");
+  }
 }
 
 function sendJson(response: ServerResponse, status: number, payload: unknown): void {
@@ -106,10 +134,98 @@ export function createHttpServer(options: HttpServerOptions): Server {
         sendJson(response, 200, {
           resourceRoot: config.resourceRoot,
           dirs: config.dirs,
+          campaignFolders: config.app.campaignFolders,
           defaultCellPixels: config.app.defaultCellPixels,
           usingDefaults: config.usingDefaults,
         });
         return;
+
+      // ---------------------------------------------------------- 跑团工程
+      case "/api/campaigns": {
+        if (request.method === "GET") {
+          sendJson(response, 200, { campaigns: await listCampaigns(provider) });
+          return;
+        }
+
+        if (request.method === "POST") {
+          const body = await readJsonBody(request);
+          const name = typeof body.name === "string" ? body.name.trim() : "";
+          try {
+            await createCampaign(provider, name, {
+              folders: config.app.campaignFolders,
+              project: createEmptyProject(name),
+            });
+          } catch (error) {
+            sendJson(response, 400, {
+              error: error instanceof Error ? error.message : String(error),
+            });
+            return;
+          }
+
+          log("info", `已创建跑团: ${name}`);
+          sendJson(response, 201, { ok: true, name });
+          return;
+        }
+
+        if (request.method === "DELETE") {
+          const name = url.searchParams.get("name") ?? "";
+          try {
+            const result = await deleteCampaign(provider, name);
+            log("info", `已删除跑团: ${name}（清理 ${result.removed} 个文件）`);
+            sendJson(response, 200, { ok: true, name, removed: result.removed });
+          } catch (error) {
+            sendJson(response, 400, {
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+
+          return;
+        }
+
+        sendJson(response, 405, { error: `不支持的方法: ${request.method}` });
+        return;
+      }
+
+      case "/api/campaigns/tree": {
+        const name = url.searchParams.get("name") ?? "";
+        if (name.length === 0) {
+          sendJson(response, 400, { error: "缺少 name 参数" });
+          return;
+        }
+
+        const entries = await readCampaignEntries(provider, name);
+        // 不存在的跑团返回空树：否则会把「标准子目录」凭空画出来，让人以为工程还在
+        sendJson(response, 200, {
+          name,
+          exists: entries.length > 0,
+          tree: entries.length === 0 ? [] : buildResourceTree(name, entries, config.app.campaignFolders),
+        });
+        return;
+      }
+
+      case "/api/campaigns/folder": {
+        if (request.method !== "POST") {
+          sendJson(response, 405, { error: `不支持的方法: ${request.method}` });
+          return;
+        }
+
+        const body = await readJsonBody(request);
+        const campaign = typeof body.campaign === "string" ? body.campaign : "";
+        const folderPath = typeof body.path === "string" ? body.path : "";
+        const reason = validateCampaignRelativePath(folderPath);
+        if (campaign.length === 0 || reason !== undefined) {
+          sendJson(response, 400, { error: reason ?? "缺少 campaign 参数" });
+          return;
+        }
+
+        const id = campaignFolderId(campaign, folderPath);
+        await provider.ensureFolder(id);
+        log("info", `已创建目录: ${id}`);
+        sendJson(response, 201, { ok: true, id });
+        return;
+      }
+
+      // ---------------------------------------------------------- 通用资源
 
       case "/api/resources/index": {
         const kind = url.searchParams.get("kind") ?? undefined;
@@ -134,6 +250,13 @@ export function createHttpServer(options: HttpServerOptions): Server {
           await provider.writeBinary(id, payload);
           log("info", `资源已写入: ${id}（${body.byteLength} 字节）`);
           sendJson(response, 200, { ok: true, id, size: body.byteLength });
+          return;
+        }
+
+        if (request.method === "DELETE") {
+          await provider.remove(id);
+          log("info", `资源已删除: ${id}`);
+          sendJson(response, 200, { ok: true, id });
           return;
         }
 

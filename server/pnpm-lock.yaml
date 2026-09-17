@@ -35,6 +35,9 @@ importers:
 
   apps/backend:
     dependencies:
+      '@dts/document':
+        specifier: workspace:*
+        version: link:../../packages/document
       '@dts/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol

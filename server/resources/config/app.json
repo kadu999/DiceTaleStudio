@@ -2,13 +2,17 @@
   "resourceRoot": "resources",
   "dirs": {
     "config": "config",
-    "map": "maps",
-    "image": "images",
-    "audio": "audio",
-    "video": "video",
-    "item-lib": "items",
-    "project": "projects"
+    "campaign": "campaigns"
   },
+  "campaignFolders": [
+    "config",
+    "maps",
+    "images",
+    "images/maps",
+    "audio",
+    "video",
+    "items"
+  ],
   "server": {
     "host": "0.0.0.0",
     "port": 1420
