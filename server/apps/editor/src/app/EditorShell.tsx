@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { useCompactLayout } from "../hooks/useMediaQuery";
 import { useEditorStore } from "../state/editor-store";
-import { HierarchyPanel } from "../panels/hierarchy/HierarchyPanel";
+import { LeftPanel } from "../panels/LeftPanel";
 import { InspectorPanel } from "../panels/inspector/InspectorPanel";
 import { RuntimePanel } from "../panels/runtime/RuntimePanel";
 import { ScenePanel } from "../panels/scene/ScenePanel";
@@ -46,8 +46,8 @@ export function EditorShell(): React.JSX.Element {
             </div>
 
             {ui.leftOpen ? (
-              <Drawer side="left" title="对象容器" onClose={() => setUi({ leftOpen: false })}>
-                <HierarchyPanel />
+              <Drawer side="left" title="项目" onClose={() => setUi({ leftOpen: false })}>
+                <LeftPanel />
               </Drawer>
             ) : null}
 
@@ -66,7 +66,7 @@ export function EditorShell(): React.JSX.Element {
         ) : (
           <Group orientation="horizontal" className="flex min-h-0 flex-1">
             <Panel defaultSize="18" minSize="12" className="min-h-0">
-              <HierarchyPanel />
+              <LeftPanel />
             </Panel>
 
             <Separator className="w-px bg-[var(--color-editor-border)] hover:bg-[var(--color-editor-accent-dim)] active:bg-[var(--color-editor-accent)]" />

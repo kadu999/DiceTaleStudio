@@ -1,4 +1,6 @@
+import { useState } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { ProjectDialog, type ProjectDialogMode } from "./ProjectDialog";
 import { useEditorStore } from "../state/editor-store";
 
 /**
@@ -12,6 +14,9 @@ interface MenuBarProps {
 }
 
 export function MenuBar({ compact }: MenuBarProps): React.JSX.Element {
+  const [dialog, setDialog] = useState<ProjectDialogMode>(null);
+  const currentCampaign = useEditorStore((state) => state.campaign.current);
+  const closeProject = useEditorStore((state) => state.closeProject);
   const ui = useEditorStore((state) => state.ui);
   const setUi = useEditorStore((state) => state.setUi);
   const mode = useEditorStore((state) => state.mode);
@@ -29,6 +34,17 @@ export function MenuBar({ compact }: MenuBarProps): React.JSX.Element {
       <span className="mr-2 text-[12px] font-semibold tracking-wide text-[var(--color-editor-text)]">
         DiceTale<span className="text-[var(--color-editor-accent)]">Studio</span>
       </span>
+
+      <Menu label="工程">
+        <MenuItem label="新建项目…" onSelect={() => setDialog("create")} />
+        <MenuItem label="打开项目…" onSelect={() => setDialog("open")} />
+        <MenuSeparator />
+        <MenuItem
+          label={currentCampaign === null ? "关闭当前项目" : `关闭项目（${currentCampaign}）`}
+          disabled={currentCampaign === null}
+          onSelect={closeProject}
+        />
+      </Menu>
 
       <Menu label="编辑">
         <MenuItem label={canUndo ? `撤销 ${undoLabel}` : "撤销"} disabled={!canUndo} onSelect={undo} />
@@ -63,7 +79,7 @@ export function MenuBar({ compact }: MenuBarProps): React.JSX.Element {
         {compact ? (
           <>
             <ToolbarToggle active={ui.leftOpen} onClick={() => setUi({ leftOpen: !ui.leftOpen })}>
-              对象
+              项目
             </ToolbarToggle>
             <ToolbarToggle active={ui.rightOpen} onClick={() => setUi({ rightOpen: !ui.rightOpen })}>
               属性
@@ -79,6 +95,8 @@ export function MenuBar({ compact }: MenuBarProps): React.JSX.Element {
 
         <ModeSwitch mode={mode} onChange={setMode} />
       </div>
+
+      <ProjectDialog mode={dialog} onClose={() => setDialog(null)} />
     </header>
   );
 }

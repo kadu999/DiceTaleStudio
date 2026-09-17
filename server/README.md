@@ -37,6 +37,15 @@ pnpm --filter @dts/backend mock   # 另开一个终端：启动 Mock 前端
 | `pnpm lint` | ESLint |
 | `pnpm e2e` | Playwright（桌面 + 两个平板档位） |
 
+Windows 下也可以直接双击批处理（`server/` 目录内，GBK + CRLF，中文提示）：
+
+| 批处理 | 说明 |
+|---|---|
+| `command-install.bat` | 检查 node/pnpm 后安装依赖；失败时提示设置代理 |
+| `command-build.bat` | 全包类型检查 + 构建编辑器产物 |
+| `command-start.bat` | 单端口启动服务端并托管编辑器；默认不弹浏览器（`--open` 可开）；默认监听 `0.0.0.0` 供同一 WiFi 的手机/平板访问；带端口占用预检 |
+| `command-open-port.bat` | 放行 Windows 防火墙入站端口（自动 UAC 提权；`--print` 只看命令不改系统） |
+
 ---
 
 ## 目录结构
@@ -80,26 +89,38 @@ protocol, resources, grid → （无）
 
 ---
 
-## 资源：统一资源根
+## 资源：一个跑团 = 一个工程 = 一个文件夹
 
-所有资源集中在 `resources/`，**代码不硬编码任何路径**：
+**每个跑团是唯一的文件夹，里面放这个跑团的配置和资源**，以及一个单独存在的工程文件
+（形态类似 UE 的 `MyGame.uproject` 放在 `MyGame/` 根下）：
 
 ```
 resources/
-├─ config/     app.json（端口、资源目录名）/ editor.json（编辑器默认值）/ export.json（导出目标）
-├─ maps/       地图数据：<名字>.json（网格 RLE + 出生点 + 对象 + 动作）、<名字>.bytes（Unity 兼容二进制）
-├─ images/     images/maps/<名字>.png（地图贴图）、icons/、textures/
-├─ audio/      音频
-├─ video/      视频
-├─ items/      items.json（道具库，形状与 DiceTale 一致）
-└─ projects/   *.dtproj.json（编辑项目）
+├─ config/                            编辑器全局配置（不属于任何跑团）
+│  ├─ app.json                        端口、资源目录名、跑团标准子目录
+│  ├─ editor.json                     编辑器默认值
+│  └─ export.json                     导出目标
+└─ campaigns/                         ★ 所有跑团工程
+   └─ 我的跑团/                        ★ 一个跑团一个唯一文件夹
+      ├─ 我的跑团.dtproj.json          ★ 工程文件（单独的文件；打开/保存的就是它）
+      ├─ config/                       该跑团自己的配置
+      ├─ maps/                         地图数据：<地图>.json、<地图>.bytes（Unity 兼容）
+      ├─ images/maps/                  地图贴图：<地图>.png（与地图数据同名）
+      ├─ audio/
+      ├─ video/
+      └─ items/                        道具库 items.json
 ```
 
-- 资源用**逻辑 ID** 寻址：`map:Map001.json`、`image:maps/Map001.png`、`config:app.json`、`project:demo.dtproj.json`。
-- 目录名由 `config/app.json` 的 `dirs` 声明，改目录只改配置。
+编辑器里：「工程 → 新建项目」起个名字即创建出上述结构；「工程 → 打开项目」列出所有跑团。
+左栏「项目资源」页签就是这套目录的浏览器（类似 Unity 的 Project 窗口），可**新建文件夹 / 导入资源 / 删除资源**。
+
+- 资源用**逻辑 ID** 寻址，只有两个类别：`config:`（编辑器全局）与 `campaign:`（跑团内容）。
+  例如 `campaign:我的跑团/我的跑团.dtproj.json`、`campaign:我的跑团/images/maps/Map001.png`。
+- 跑团文件夹名、标准子目录名集中在 `packages/resources/src/ids.ts`（`CAMPAIGN_FOLDERS`）；
+  资源根与 `campaigns` 目录名由 `config/app.json` 的 `dirs` 声明。
 - 逻辑 ID → 真实路径的解析只发生在 `ResourceProvider` 实现里（后端 `FsResourceProvider`、编辑器 `HTTP`、测试 `Memory`）。
-- 地图数据与贴图靠**同名约定**关联，该约定集中在 `packages/resources/src/ids.ts`。
-- `images/`、`audio/`、`video/` 下的大体积二进制默认不入库（见仓库根 `.gitignore`），需要时 `git add -f` 或启用 Git LFS。
+- 跑团名会直接成为文件夹名，因此会挡掉路径分隔符、Windows 非法字符与 `CON`/`NUL` 等保留名。
+- 大体积二进制（地图贴图、音视频）默认不入库，需要时 `git add -f` 或启用 Git LFS。
 
 ---
 

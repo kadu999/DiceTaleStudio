@@ -2,9 +2,11 @@ import { create } from "zustand";
 import {
   DocumentHistory,
   createEmptyProject,
+  parseProjectDoc,
   type ProjectDoc,
   type ProjectDraft,
 } from "@dts/document";
+import { campaignFileId, campaignProjectId } from "@dts/resources";
 import { createViewport, fitViewport, panBy, zoomAt, type Viewport } from "@dts/renderer";
 import type { GameStateSnapshot } from "@dts/protocol";
 import {
@@ -12,6 +14,12 @@ import {
   type RuntimeLogEntry,
   type RuntimeStatus,
 } from "../services/runtime-client";
+import {
+  campaignApi,
+  contentTypeFor,
+  type CampaignSummary,
+  type ResourceTreeNode,
+} from "../services/campaign-api";
 
 /**
  * 编辑器状态。
@@ -39,6 +47,16 @@ export interface RuntimeUiState {
   readonly lastError: string;
 }
 
+/** 跑团工程（一个跑团 = 一个文件夹 + 一个工程文件）相关状态。 */
+export interface CampaignUiState {
+  readonly list: readonly CampaignSummary[];
+  /** 当前已打开的跑团；null 表示尚未打开工程 */
+  readonly current: string | null;
+  readonly tree: readonly ResourceTreeNode[];
+  readonly busy: boolean;
+  readonly error: string;
+}
+
 export interface EditorStoreState {
   readonly mode: EditorMode;
   readonly doc: ProjectDoc;
@@ -52,6 +70,7 @@ export interface EditorStoreState {
   readonly viewportSize: { width: number; height: number };
   readonly ui: EditorUiState;
   readonly runtime: RuntimeUiState;
+  readonly campaign: CampaignUiState;
 
   applyDoc(
     label: string,
@@ -74,6 +93,15 @@ export interface EditorStoreState {
   disconnectRuntime(): void;
   invokeAction(objectId: string, actionId: string): string | undefined;
   clearRuntimeLogs(): void;
+
+  refreshCampaigns(): Promise<void>;
+  createProject(name: string): Promise<boolean>;
+  openProject(name: string): Promise<boolean>;
+  closeProject(): void;
+  refreshTree(): Promise<void>;
+  createFolder(path: string): Promise<boolean>;
+  uploadFiles(dirPath: string, files: readonly File[]): Promise<void>;
+  deleteResource(id: string, label: string): Promise<boolean>;
 }
 
 const EMPTY_GAME_STATE: GameStateSnapshot = {
@@ -183,6 +211,7 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
     viewport: createViewport(),
     viewportSize: { width: 0, height: 0 },
     ui: initialUi(),
+    campaign: { list: [], current: null, tree: [], busy: false, error: "" },
     runtime: {
       status: "idle",
       statusDetail: "",
@@ -311,6 +340,135 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
 
     clearRuntimeLogs() {
       set((state) => ({ runtime: { ...state.runtime, logs: [] } }));
+    },
+
+    // ---------------------------------------------------------------- 跑团工程
+
+    async refreshCampaigns() {
+      set((state) => ({ campaign: { ...state.campaign, busy: true, error: "" } }));
+      try {
+        const list = await campaignApi.list();
+        set((state) => ({ campaign: { ...state.campaign, list, busy: false } }));
+      } catch (error) {
+        set((state) => ({
+          campaign: {
+            ...state.campaign,
+            busy: false,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        }));
+      }
+    },
+
+    async createProject(name) {
+      set((state) => ({ campaign: { ...state.campaign, busy: true, error: "" } }));
+      try {
+        await campaignApi.create(name);
+        await get().refreshCampaigns();
+        return await get().openProject(name);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        set((state) => ({ campaign: { ...state.campaign, busy: false, error: message } }));
+        pushLog(makeLog("error", `新建跑团失败：${message}`));
+        return false;
+      }
+    },
+
+    async openProject(name) {
+      set((state) => ({ campaign: { ...state.campaign, busy: true, error: "" } }));
+      try {
+        const text = await campaignApi.readText(campaignProjectId(name));
+        const doc = parseProjectDoc(JSON.parse(text) as unknown);
+        get().resetDoc(doc);
+
+        const tree = await campaignApi.tree(name);
+        set((state) => ({ campaign: { ...state.campaign, current: name, tree, busy: false } }));
+        pushLog(makeLog("info", `已打开跑团：${name}`));
+        return true;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        set((state) => ({ campaign: { ...state.campaign, busy: false, error: message } }));
+        pushLog(makeLog("error", `打开跑团失败：${message}`));
+        return false;
+      }
+    },
+
+    closeProject() {
+      set((state) => ({ campaign: { ...state.campaign, current: null, tree: [], error: "" } }));
+      get().resetDoc(createEmptyProject());
+    },
+
+    async refreshTree() {
+      const campaign = get().campaign.current;
+      if (campaign === null) {
+        return;
+      }
+
+      try {
+        const tree = await campaignApi.tree(campaign);
+        set((state) => ({ campaign: { ...state.campaign, tree, error: "" } }));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        set((state) => ({ campaign: { ...state.campaign, error: message } }));
+      }
+    },
+
+    async createFolder(path) {
+      const campaign = get().campaign.current;
+      if (campaign === null) {
+        return false;
+      }
+
+      try {
+        await campaignApi.createFolder(campaign, path);
+        await get().refreshTree();
+        pushLog(makeLog("info", `已创建目录：${path}`));
+        return true;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        set((state) => ({ campaign: { ...state.campaign, error: message } }));
+        pushLog(makeLog("error", `创建目录失败：${message}`));
+        return false;
+      }
+    },
+
+    async uploadFiles(dirPath, files) {
+      const campaign = get().campaign.current;
+      if (campaign === null || files.length === 0) {
+        return;
+      }
+
+      try {
+        for (const file of files) {
+          const relative = dirPath.length > 0 ? `${dirPath}/${file.name}` : file.name;
+          await campaignApi.uploadBinary(
+            campaignFileId(campaign, relative),
+            await file.arrayBuffer(),
+            contentTypeFor(file.name),
+          );
+        }
+
+        await get().refreshTree();
+        pushLog(makeLog("info", `已导入 ${files.length} 个资源`));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        set((state) => ({ campaign: { ...state.campaign, error: message } }));
+        pushLog(makeLog("error", `导入资源失败：${message}`));
+      }
+    },
+
+    async deleteResource(id, label) {
+      try {
+        await campaignApi.deleteResource(id);
+        await get().refreshTree();
+        pushLog(makeLog("info", `已删除：${label}`));
+        return true;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        set((state) => ({ campaign: { ...state.campaign, error: message } }));
+        pushLog(makeLog("error", `删除失败：${message}`));
+        return false;
+      }
     },
   };
 });
