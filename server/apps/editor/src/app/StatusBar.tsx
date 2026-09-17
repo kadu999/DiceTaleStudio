@@ -8,7 +8,7 @@ export function StatusBar(): React.JSX.Element {
   const status = useEditorStore((state) => state.runtime.status);
   const clientConnected = useEditorStore((state) => state.runtime.clientConnected);
 
-  const activeMap = doc.maps.find((map) => map.id === activeMapId);
+  const activeScene = doc.scenes.find((scene) => scene.id === activeMapId);
 
   const runtimeLabel =
     mode === "edit"
@@ -22,8 +22,8 @@ export function StatusBar(): React.JSX.Element {
   return (
     <footer className="flex h-6 flex-none items-center gap-4 border-t border-[var(--color-editor-border)] bg-[var(--color-editor-panel-alt)] px-2 text-[11px] text-[var(--color-editor-text-dim)]">
       <span data-testid="status-doc">{doc.name}</span>
-      <span data-testid="status-maps">地图 {doc.maps.length}</span>
-      <span data-testid="status-active-map">当前地图 {activeMap?.name ?? "—"}</span>
+      <span data-testid="status-scenes">场景 {doc.scenes.length}</span>
+      <span data-testid="status-active-scene">当前场景 {activeScene?.name ?? "—"}</span>
       <span data-testid="status-selection">已选 {selection.length}</span>
       <span data-testid="status-mode" data-mode={mode} className="ml-auto flex items-center gap-1">
         <span

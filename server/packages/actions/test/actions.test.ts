@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { createEmptyProject, createMapDoc, type ComponentDoc, type ProjectDoc } from "@dts/document";
+import {
+  createEmptyProject,
+  createSceneDoc,
+  type ComponentDoc,
+  type ProjectDoc,
+  type SceneDoc,
+} from "@dts/document";
 import {
   actualValueFor,
   compareCondition,
@@ -117,17 +123,16 @@ describe("条件求值（与前端 ComponentCondition 语义一致）", () => {
 });
 
 describe("动作图校验", () => {
-  function projectWith(action: { id: string; type: string; params: Record<string, unknown> }): ProjectDoc {
-    const base = createEmptyProject("t");
-    const map = createMapDoc({
-      name: "Map001",
-      image: { id: "image:maps/Map001.png", width: 1920, height: 1080 },
-      grid: { width: 64, height: 36, cellSize: 1 },
-      id: "m1",
-    });
+  /** 场景里放一个对象，对象上挂一个组件，组件上挂一个动作。 */
+  function sceneWithAction(action: {
+    id: string;
+    type: string;
+    params: Record<string, unknown>;
+  }): SceneDoc {
+    const scene = createSceneDoc({ name: "Map001", id: "m1" });
 
-    const withObject = {
-      ...map,
+    return {
+      ...scene,
       objects: [
         {
           id: "door",
@@ -147,16 +152,16 @@ describe("动作图校验", () => {
       ],
     };
 
-    return { ...base, maps: [withObject, secondMap()] };
   }
 
-  function secondMap() {
-    return createMapDoc({
-      name: "Map002",
-      image: { id: "image:maps/Map002.png", width: 1920, height: 1080 },
-      grid: { width: 64, height: 36, cellSize: 1 },
-      id: "m2",
-    });
+  function projectWith(action: {
+    id: string;
+    type: string;
+    params: Record<string, unknown>;
+  }): ProjectDoc {
+    const base = createEmptyProject("t");
+    const second = createSceneDoc({ name: "Map002", id: "m2" });
+    return { ...base, scenes: [sceneWithAction(action), second] };
   }
 
   it("合法动作图没有问题", () => {
@@ -186,15 +191,15 @@ describe("动作图校验", () => {
     expect(issues.filter((issue) => /缺少必填参数/.test(issue.message)).length).toBe(2);
   });
 
-  it("目标地图或标记点不存在时报错（否则运行态会静默失败）", () => {
-    const badMap = validateActionGraph(
+  it("目标场景或标记点不存在时报错（否则运行态会静默失败）", () => {
+    const badScene = validateActionGraph(
       projectWith({
         id: "a1",
         type: "Teleport",
         params: { range: 1, teleportAllPlayers: true, targetMapName: "Map999", targetMarkerId: "Default" },
       }),
     );
-    expect(badMap.some((issue) => /目标地图不存在/.test(issue.message))).toBe(true);
+    expect(badScene.some((issue) => /目标场景不存在/.test(issue.message))).toBe(true);
 
     const badMarker = validateActionGraph(
       projectWith({
@@ -217,12 +222,12 @@ describe("动作图校验", () => {
     const project = projectWith({ id: "a1", type: "ShowHide", params: { targetObjectId: "" } });
     const broken: ProjectDoc = {
       ...project,
-      maps: project.maps.map((map, index) =>
+      scenes: project.scenes.map((scene, index) =>
         index !== 0
-          ? map
+          ? scene
           : {
-              ...map,
-              objects: map.objects.map((object) => ({
+              ...scene,
+              objects: scene.objects.map((object) => ({
                 ...object,
                 components: object.components.map((component) => ({
                   ...component,

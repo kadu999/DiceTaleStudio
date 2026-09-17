@@ -3,20 +3,33 @@ import type { RleRun } from "@dts/grid";
 /**
  * 编辑器文档模型。
  *
- * 设计要点：
- * - 坐标一律是**归一化图片坐标 `[0,1]`，y 向下**（与后端协议、前端上报完全一致）；
+ * 层级关系（**场景是容器，地图只是场景里的一个对象**）：
+ *
+ * ```
+ * 项目（一个跑团 = 一个工程文件）
+ * └─ 场景 SceneDoc                 ← 所有对象都在场景上
+ *    ├─ 对象 SceneObjectDoc[]      ← 地图、门、宝箱、玩家、事件…都只是这里的普通对象
+ *    │  ├─ 地图对象（kind = "Map"）← 携带贴图 + 网格数据
+ *    │  └─ 其它对象                 ← 携带若干能力组件与动作
+ *    └─ 出生点 SpawnPointDoc[]
+ * ```
+ *
+ * 关键约定：**对象挂在场景上，不挂在地图上**——所以没有地图也能建对象；
+ * 地图只是众多对象之一，且可以有多个（例如分层地图）或一个都没有。
+ *
+ * 其它约定：
+ * - 坐标一律是**归一化图片坐标 `[0,1]`，y 向下**（与后端协议、前端上报一致）；
  * - 网格格子以 RLE 存储，`rowOrder: 'bottom-up'` 显式声明「第 0 行 = 图片最下面一行」；
- * - 对象结构对齐前端：对象（主体）+ 组件 + 组件上的动作列表；
  * - 图片/音频/视频用**资源逻辑 ID**引用，不存路径。
  */
 
-export const DOCUMENT_FORMAT_VERSION = 1;
+export const DOCUMENT_FORMAT_VERSION = 2;
 
 /** 网格行序：`bottom-up` 表示 cells 第 0 行是图片最下面一行（与 Unity GridMap 一致）。 */
 export type RowOrder = "bottom-up";
 
 export interface ImageRef {
-  /** 资源逻辑 ID，例如 `image:maps/Map001.png`。 */
+  /** 资源逻辑 ID，例如 `campaign:我的跑团/images/maps/Map001.png`。 */
   readonly id: string;
   readonly width: number;
   readonly height: number;
@@ -70,8 +83,21 @@ export interface ComponentDoc {
   readonly actions: ActionInstanceDoc[];
 }
 
-/** 对象类型（对齐前端 `BackendObjectKind`）。 */
-export type ObjectKind = "SceneObject" | "Player" | "Item" | "Event";
+/**
+ * 对象类型。
+ *
+ * 前四种对齐前端 `BackendObjectKind`；`Map` 是**编辑器侧新增的地图对象类型**——
+ * 地图就是场景里的一个对象，携带贴图与网格数据。
+ */
+export type ObjectKind = "Map" | "SceneObject" | "Player" | "Item" | "Event";
+
+/** 地图对象携带的数据（贴图 + 网格）。 */
+export interface MapDataDoc {
+  readonly image: ImageRef;
+  readonly grid: GridSpec;
+  readonly rowOrder: RowOrder;
+  readonly cells: CellRuns;
+}
 
 export interface SceneObjectDoc {
   readonly id: string;
@@ -81,17 +107,17 @@ export interface SceneObjectDoc {
   readonly position: NormPosition | null;
   readonly rotation: number;
   readonly components: ComponentDoc[];
+  /** 仅 `kind === "Map"` 的地图对象携带；其它对象没有。 */
+  readonly map?: MapDataDoc;
 }
 
-export interface MapDoc {
+/** 场景：对象容器（地图也只是它的一个对象）。 */
+export interface SceneDoc {
   readonly id: string;
   readonly name: string;
-  readonly image: ImageRef;
-  readonly grid: GridSpec;
-  readonly rowOrder: RowOrder;
-  readonly cells: CellRuns;
-  readonly spawnPoints: SpawnPointDoc[];
+  /** ★ 所有对象都在场景上 */
   readonly objects: SceneObjectDoc[];
+  readonly spawnPoints: SpawnPointDoc[];
 }
 
 export interface ItemDef {
@@ -115,6 +141,6 @@ export interface ItemLibraryDoc {
 export interface ProjectDoc {
   readonly formatVersion: number;
   readonly name: string;
-  readonly maps: MapDoc[];
+  readonly scenes: SceneDoc[];
   readonly items: ItemLibraryDoc;
 }

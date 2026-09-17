@@ -5,7 +5,7 @@ import { DOCUMENT_FORMAT_VERSION, type ProjectDoc } from "./types";
  * 文档 zod 校验。
  *
  * 加载任何项目文件都必须先过这里：不合法就报错，**不静默丢字段**。
- * 未来 `formatVersion` 升级时在 `migrateProjectDoc` 里逐级迁移。
+ * 旧版本（v1：地图即场景）由 `upgradeRawDocument` 先升级结构，再走本 schema。
  */
 
 export const normPositionSchema = z.object({
@@ -27,9 +27,14 @@ export const gridSpecSchema = z.object({
 
 export const cellRunsSchema = z.object({
   encoding: z.literal("rle"),
-  runs: z.array(
-    z.tuple([z.number().int().min(0).max(255), z.number().int().nonnegative()]),
-  ),
+  runs: z.array(z.tuple([z.number().int().min(0).max(255), z.number().int().nonnegative()])),
+});
+
+export const mapDataSchema = z.object({
+  image: imageRefSchema,
+  grid: gridSpecSchema,
+  rowOrder: z.literal("bottom-up"),
+  cells: cellRunsSchema,
 });
 
 export const spawnPointSchema = z.object({
@@ -63,21 +68,18 @@ export const componentSchema = z.object({
 export const sceneObjectSchema = z.object({
   id: z.string().min(1),
   name: z.string(),
-  kind: z.enum(["SceneObject", "Player", "Item", "Event"]),
+  kind: z.enum(["Map", "SceneObject", "Player", "Item", "Event"]),
   position: normPositionSchema.nullable(),
   rotation: z.number(),
   components: z.array(componentSchema),
+  map: mapDataSchema.optional(),
 });
 
-export const mapDocSchema = z.object({
+export const sceneSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
-  image: imageRefSchema,
-  grid: gridSpecSchema,
-  rowOrder: z.literal("bottom-up"),
-  cells: cellRunsSchema,
-  spawnPoints: z.array(spawnPointSchema),
   objects: z.array(sceneObjectSchema),
+  spawnPoints: z.array(spawnPointSchema),
 });
 
 export const itemDefSchema = z.object({
@@ -98,13 +100,74 @@ export const itemLibrarySchema = z.object({
 export const projectDocSchema = z.object({
   formatVersion: z.number().int().positive(),
   name: z.string().min(1),
-  maps: z.array(mapDocSchema),
+  scenes: z.array(sceneSchema),
   items: itemLibrarySchema,
 });
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * v1 → v2 结构升级。
+ *
+ * v1 把地图当成场景本身（`map.image/grid/cells/objects`）；v2 里场景是容器，
+ * 地图降级为场景里的一个普通对象（`kind: "Map"`，数据挂在 `object.map` 上）。
+ * 升级时把原来的地图数据原样搬到一个新建的地图对象上，其余对象保持不动。
+ */
+function upgradeV1Document(raw: Record<string, unknown>): Record<string, unknown> {
+  const maps = Array.isArray(raw.maps) ? raw.maps : [];
+
+  const scenes = maps.filter(isRecord).map((map) => {
+    const id = typeof map.id === "string" ? map.id : `scene_${Math.random().toString(36).slice(2, 8)}`;
+    const name = typeof map.name === "string" ? map.name : id;
+    const objects = Array.isArray(map.objects) ? map.objects.filter(isRecord) : [];
+
+    const mapObject = {
+      id: `${id}__map`,
+      name: `${name} 地图`,
+      kind: "Map",
+      position: null,
+      rotation: 0,
+      components: [],
+      map: {
+        image: map.image,
+        grid: map.grid,
+        rowOrder: map.rowOrder,
+        cells: map.cells,
+      },
+    };
+
+    return {
+      id,
+      name,
+      objects: [mapObject, ...objects],
+      spawnPoints: Array.isArray(map.spawnPoints) ? map.spawnPoints : [],
+    };
+  });
+
+  const upgraded: Record<string, unknown> = { ...raw, formatVersion: 2, scenes };
+  delete upgraded.maps;
+  return upgraded;
+}
+
+/** 按 `formatVersion` 把旧结构升级到当前结构（只做结构搬运，不做字段补全）。 */
+export function upgradeRawDocument(raw: unknown): unknown {
+  if (!isRecord(raw)) {
+    return raw;
+  }
+
+  const version = typeof raw.formatVersion === "number" ? raw.formatVersion : 1;
+  if (version <= 1 && Array.isArray(raw.maps)) {
+    return upgradeV1Document(raw);
+  }
+
+  return raw;
+}
+
 /** 校验失败时抛出带字段路径的可读错误。 */
 export function parseProjectDoc(raw: unknown): ProjectDoc {
-  const result = projectDocSchema.safeParse(raw);
+  const result = projectDocSchema.safeParse(upgradeRawDocument(raw));
   if (!result.success) {
     const detail = result.error.issues
       .map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`)
@@ -116,7 +179,8 @@ export function parseProjectDoc(raw: unknown): ProjectDoc {
 }
 
 /**
- * 版本迁移。当前只有 v1；遇到更高版本明确拒绝（避免高版本字段被静默丢弃后回存造成数据损坏）。
+ * 版本迁移。当前最高 v2；遇到更高版本明确拒绝
+ * （避免高版本字段被静默丢弃后回存造成数据损坏）。
  */
 export function migrateProjectDoc(doc: ProjectDoc): ProjectDoc {
   if (doc.formatVersion > DOCUMENT_FORMAT_VERSION) {

@@ -21,14 +21,14 @@ test.describe("编辑器外壳", () => {
     await expect(page.getByTestId("mode-run")).toBeVisible();
   });
 
-  test("空文档时给出「尚未创建地图」提示，而不是空白画布", async ({ page }) => {
+  test("没有地图对象时给出提示，而不是空白画布", async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByText("尚未创建地图")).toBeVisible();
+    await expect(page.getByText("当前场景还没有地图对象")).toBeVisible();
   });
 
   test("底部状态栏显示文档与运行态信息", async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByTestId("status-maps")).toHaveText(/地图 \d+/);
+    await expect(page.getByTestId("status-scenes")).toHaveText(/场景 \d+/);
     await expect(page.getByTestId("status-mode")).toHaveAttribute("data-mode", "edit");
     await expect(page.getByTestId("status-selection")).toHaveText("已选 0");
   });

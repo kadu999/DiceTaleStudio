@@ -21,7 +21,12 @@ export function ScenePanel(): React.JSX.Element {
   const rendererRef = useRef<SceneRenderer | null>(null);
 
   const mode = useEditorStore((state) => state.mode);
-  const hasMap = useEditorStore((state) => state.doc.maps.length > 0);
+  const hasMapObject = useEditorStore(
+    (state) =>
+      state.doc.scenes
+        .find((scene) => scene.id === state.activeMapId)
+        ?.objects.some((object) => object.kind === "Map") ?? false,
+  );
 
   // 渲染器生命周期
   useEffect(() => {
@@ -168,9 +173,11 @@ export function ScenePanel(): React.JSX.Element {
         return;
       }
 
-      const map = doc.maps.find((item) => item.id === activeMapId);
-      const imageSize = map?.image ?? PLACEHOLDER_IMAGE;
-      const grid = map?.grid ?? {
+      // 地图只是场景里的一个对象；没有它也能在场景里放对象
+      const scene = doc.scenes.find((item) => item.id === activeMapId);
+      const mapObject = scene?.objects.find((object) => object.kind === "Map");
+      const imageSize = mapObject?.map?.image ?? PLACEHOLDER_IMAGE;
+      const grid = mapObject?.map?.grid ?? {
         width: gridSizeFromImage(PLACEHOLDER_IMAGE).width,
         height: gridSizeFromImage(PLACEHOLDER_IMAGE).height,
         cellSize: 1,
@@ -211,12 +218,12 @@ export function ScenePanel(): React.JSX.Element {
         {/* biome-ignore lint/a11y/noNoninteractiveTabindex: 画布需要接受指针与触摸手势 */}
         <canvas ref={canvasRef} className="block h-full w-full" />
 
-        {!hasMap ? (
+        {!hasMapObject ? (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
             <div className="rounded border border-[var(--color-editor-border)] bg-black/55 px-4 py-3 text-center">
-              <div className="text-[12px] text-[var(--color-editor-text)]">尚未创建地图</div>
+              <div className="text-[12px] text-[var(--color-editor-text)]">当前场景还没有地图对象</div>
               <div className="mt-1 text-[11px] text-[var(--color-editor-text-dim)]">
-                这里显示的是默认画布区域（1920×1080 / 64×36 格）
+                这里显示的是默认画布区域（1920×1080 / 64×36 格）；对象不依赖地图，可直接添加
               </div>
             </div>
           </div>

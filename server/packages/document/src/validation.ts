@@ -1,7 +1,7 @@
 import { decodeRle } from "@dts/grid";
 import { findComponentType, isKnownComponentType } from "./components";
 import { collectActionIds } from "./commands";
-import type { MapDoc, ProjectDoc, SceneObjectDoc } from "./types";
+import type { ProjectDoc, SceneDoc, SceneObjectDoc } from "./types";
 
 /**
  * 结构性校验（**不依赖动作注册表**，因此放在 document 包内）。
@@ -12,7 +12,7 @@ export type IssueLevel = "error" | "warning";
 
 export interface ValidationIssue {
   readonly level: IssueLevel;
-  /** 定位路径，例如 `maps/Map001/objects/door_01`。 */
+  /** 定位路径，例如 `scenes/Map001/objects/door_01`。 */
   readonly path: string;
   readonly message: string;
 }
@@ -43,6 +43,33 @@ function checkPosition(
 function validateObject(object: SceneObjectDoc, path: string, issues: ValidationIssue[]): void {
   if (object.position !== null) {
     checkPosition(object.position, `${path}/position`, issues);
+  }
+
+  // 地图对象：数据必须完整（没有数据的「地图对象」在场景里就是个空壳）
+  if (object.kind === "Map") {
+    if (object.map === undefined) {
+      issues.push({ level: "error", path, message: "地图对象缺少地图数据（贴图 / 网格）" });
+    } else {
+      try {
+        decodeRle(object.map.cells.runs, object.map.grid.width * object.map.grid.height);
+      } catch (error) {
+        issues.push({
+          level: "error",
+          path: `${path}/map/cells`,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+
+      if (object.map.image.id.trim().length === 0) {
+        issues.push({ level: "warning", path: `${path}/map/image`, message: "地图贴图未指定" });
+      }
+    }
+  } else if (object.map !== undefined) {
+    issues.push({
+      level: "warning",
+      path: `${path}/map`,
+      message: `非地图对象（kind=${object.kind}）不应携带地图数据`,
+    });
   }
 
   const componentIds = new Set<string>();
@@ -102,36 +129,18 @@ function validateObject(object: SceneObjectDoc, path: string, issues: Validation
       }
 
       if (action.condition !== undefined) {
-        if (
-          action.condition.valueType === "Bool" &&
-          typeof action.condition.target !== "boolean"
-        ) {
-          issues.push({
-            level: "error",
-            path: `${componentPath}/actions/${action.id}/condition`,
-            message: "Bool 条件的比较目标应为布尔值",
-          });
-        }
+        const target = action.condition.target;
+        const ok =
+          (action.condition.valueType === "Bool" && typeof target === "boolean") ||
+          (action.condition.valueType === "String" && typeof target === "string") ||
+          ((action.condition.valueType === "Number" || action.condition.valueType === "Integer") &&
+            typeof target === "number");
 
-        if (
-          action.condition.valueType === "String" &&
-          typeof action.condition.target !== "string"
-        ) {
+        if (!ok) {
           issues.push({
             level: "error",
             path: `${componentPath}/actions/${action.id}/condition`,
-            message: "String 条件的比较目标应为字符串",
-          });
-        }
-
-        if (
-          (action.condition.valueType === "Number" || action.condition.valueType === "Integer") &&
-          typeof action.condition.target !== "number"
-        ) {
-          issues.push({
-            level: "error",
-            path: `${componentPath}/actions/${action.id}/condition`,
-            message: `${action.condition.valueType} 条件的比较目标应为数值`,
+            message: `${action.condition.valueType} 条件的比较目标类型不符`,
           });
         }
       }
@@ -139,27 +148,18 @@ function validateObject(object: SceneObjectDoc, path: string, issues: Validation
   }
 }
 
-/** 校验单张地图。 */
-export function validateMap(map: MapDoc): ValidationIssue[] {
+/** 校验单个场景。 */
+export function validateScene(scene: SceneDoc): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
-  const base = `maps/${map.name}`;
+  const base = `scenes/${scene.name}`;
 
-  // 网格数据长度必须与尺寸一致
-  try {
-    decodeRle(map.cells.runs, map.grid.width * map.grid.height);
-  } catch (error) {
-    issues.push({
-      level: "error",
-      path: `${base}/cells`,
-      message: error instanceof Error ? error.message : String(error),
-    });
+  if (scene.name.trim().length === 0) {
+    issues.push({ level: "error", path: base, message: "场景名不能为空" });
   }
-
-  // 每格掩码合法（RLE 里已限定 0..255，这里只查总量已足够）
 
   // 出生点
   const spawnIds = new Set<string>();
-  for (const spawn of map.spawnPoints) {
+  for (const spawn of scene.spawnPoints) {
     const path = `${base}/spawnPoints/${spawn.id}`;
     if (spawnIds.has(spawn.id)) {
       issues.push({ level: "error", path, message: `出生点 id 重复: ${spawn.id}` });
@@ -173,9 +173,9 @@ export function validateMap(map: MapDoc): ValidationIssue[] {
     checkPosition(spawn.position, `${path}/position`, issues);
   }
 
-  // 对象
+  // 对象（地图也只是其中之一）
   const objectIds = new Set<string>();
-  for (const object of map.objects) {
+  for (const object of scene.objects) {
     const path = `${base}/objects/${object.id}`;
     if (objectIds.has(object.id)) {
       issues.push({ level: "error", path, message: `对象 id 重复: ${object.id}` });
@@ -189,8 +189,8 @@ export function validateMap(map: MapDoc): ValidationIssue[] {
     validateObject(object, path, issues);
   }
 
-  // 动作 id 全图唯一（运行态要靠 actionId 寻址，重名会导致触发到错误动作）
-  for (const [actionId, owners] of collectActionIds(map)) {
+  // 动作 id 全场景唯一（运行态靠 actionId 寻址，重名会触发到错误动作）
+  for (const [actionId, owners] of collectActionIds(scene)) {
     if (owners.length > 1) {
       issues.push({
         level: "error",
@@ -206,22 +206,23 @@ export function validateMap(map: MapDoc): ValidationIssue[] {
 /** 校验整个项目。 */
 export function validateProject(doc: ProjectDoc): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
-  const mapIds = new Set<string>();
-  const mapNames = new Set<string>();
+  const sceneIds = new Set<string>();
+  const sceneNames = new Set<string>();
 
-  for (const map of doc.maps) {
-    if (mapIds.has(map.id)) {
-      issues.push({ level: "error", path: `maps/${map.id}`, message: `地图 id 重复: ${map.id}` });
+  for (const scene of doc.scenes) {
+    if (sceneIds.has(scene.id)) {
+      issues.push({ level: "error", path: `scenes/${scene.id}`, message: `场景 id 重复: ${scene.id}` });
     }
 
-    mapIds.add(map.id);
+    sceneIds.add(scene.id);
 
-    if (mapNames.has(map.name)) {
-      issues.push({ level: "warning", path: `maps/${map.name}`, message: `地图名重复: ${map.name}` });
+    const normalized = scene.name.trim().toLowerCase();
+    if (sceneNames.has(normalized)) {
+      issues.push({ level: "warning", path: `scenes/${scene.name}`, message: `场景名重复: ${scene.name}` });
     }
 
-    mapNames.add(map.name);
-    issues.push(...validateMap(map));
+    sceneNames.add(normalized);
+    issues.push(...validateScene(scene));
   }
 
   if (doc.items.count !== doc.items.items.length) {

@@ -96,11 +96,12 @@ describe("跑团工程 API", () => {
     const doc = JSON.parse(await response.text()) as {
       formatVersion: number;
       name: string;
-      maps: unknown[];
+      scenes: unknown[];
     };
-    expect(doc.formatVersion).toBe(1);
+    expect(doc.formatVersion).toBe(2);
     expect(doc.name).toBe(TEST_CAMPAIGN);
-    expect(doc.maps).toEqual([]);
+    // 新工程没有场景；场景由编辑器按需创建（对象挂在场景上）
+    expect(doc.scenes).toEqual([]);
   });
 
   it("重名跑团返回 400（不覆盖已有工程）", async () => {

@@ -1,15 +1,16 @@
 import { useState } from "react";
 import { AssetsPanel } from "./assets/AssetsPanel";
 import { HierarchyPanel } from "./hierarchy/HierarchyPanel";
+import { ScenesPanel } from "./scenes/ScenesPanel";
 
 /**
- * 左栏：项目资源（Assets）+ 对象容器（Hierarchy）两个页签。
+ * 左栏：项目资源（Assets）+ 场景（Scenes）+ 对象容器（Hierarchy）三个页签。
  *
  * 对应 Unity 里 Project 与 Hierarchy 两个窗口；窄屏/平板下这一栏是抽屉，
  * 两个页签共用同一个抽屉，避免再挤出一列。
  */
 export function LeftPanel(): React.JSX.Element {
-  const [tab, setTab] = useState<"assets" | "hierarchy">("assets");
+  const [tab, setTab] = useState<"assets" | "scenes" | "hierarchy">("assets");
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -22,6 +23,13 @@ export function LeftPanel(): React.JSX.Element {
           项目资源
         </TabButton>
         <TabButton
+          active={tab === "scenes"}
+          testId="tab-scenes"
+          onClick={() => setTab("scenes")}
+        >
+          场景
+        </TabButton>
+        <TabButton
           active={tab === "hierarchy"}
           testId="tab-hierarchy"
           onClick={() => setTab("hierarchy")}
@@ -31,7 +39,9 @@ export function LeftPanel(): React.JSX.Element {
       </div>
 
       <div className="min-h-0 flex-1">
-        {tab === "assets" ? <AssetsPanel /> : <HierarchyPanel />}
+        {tab === "assets" ? <AssetsPanel /> : null}
+        {tab === "scenes" ? <ScenesPanel /> : null}
+        {tab === "hierarchy" ? <HierarchyPanel /> : null}
       </div>
     </div>
   );

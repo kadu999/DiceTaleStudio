@@ -6,17 +6,17 @@ export function InspectorPanel(): React.JSX.Element {
   const activeMapId = useEditorStore((state) => state.activeMapId);
   const selection = useEditorStore((state) => state.selectedObjectIds);
 
-  const activeMap = doc.maps.find((map) => map.id === activeMapId);
+  const activeScene = doc.scenes.find((scene) => scene.id === activeMapId);
   const selected =
-    activeMap === undefined
+    activeScene === undefined
       ? undefined
-      : activeMap.objects.find((object) => object.id === selection[0]);
+      : activeScene.objects.find((object) => object.id === selection[0]);
 
   return (
     <div className="flex h-full min-h-0 flex-col panel border-l">
       <div className="panel-header">
         <span>属性</span>
-        <span className="text-[10px]">{selected !== undefined ? "对象" : activeMap !== undefined ? "地图" : "空"}</span>
+        <span className="text-[10px]">{selected !== undefined ? "对象" : activeScene !== undefined ? "场景" : "空"}</span>
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto p-2 text-[12px]">
@@ -35,19 +35,37 @@ export function InspectorPanel(): React.JSX.Element {
               mono
             />
             <Field label="组件" value={String(selected.components.length)} />
+            {selected.map !== undefined ? (
+              <>
+                <Field label="贴图" value={selected.map.image.id} mono />
+                <Field
+                  label="网格"
+                  value={`${selected.map.grid.width} × ${selected.map.grid.height}`}
+                  mono
+                />
+                <Field label="每格尺寸" value={String(selected.map.grid.cellSize)} mono />
+                <Field label="行序" value={selected.map.rowOrder} mono />
+              </>
+            ) : null}
           </FieldGroup>
-        ) : activeMap !== undefined ? (
-          <FieldGroup title="地图">
-            <Field label="名称" value={activeMap.name} />
-            <Field label="网格" value={`${activeMap.grid.width} × ${activeMap.grid.height}`} mono />
-            <Field label="每格尺寸" value={String(activeMap.grid.cellSize)} mono />
-            <Field label="贴图" value={activeMap.image.id} mono />
-            <Field label="行序" value={activeMap.rowOrder} mono />
-            <Field label="对象" value={String(activeMap.objects.length)} />
+        ) : activeScene !== undefined ? (
+          <FieldGroup title="场景">
+            <Field label="名称" value={activeScene.name} />
+            <Field label="ID" value={activeScene.id} mono />
+            <Field label="对象" value={String(activeScene.objects.length)} />
+            <Field label="出生点" value={String(activeScene.spawnPoints.length)} />
+            <Field
+              label="地图对象"
+              value={
+                activeScene.objects.some((object) => object.kind === "Map")
+                  ? `${activeScene.objects.filter((object) => object.kind === "Map").length} 个`
+                  : "无（对象不依赖地图，可直接添加）"
+              }
+            />
           </FieldGroup>
         ) : (
           <div className="px-1 py-3 text-[11px] leading-relaxed text-[var(--color-editor-text-dim)]">
-            未选中任何内容。创建地图并选中对象后，这里会显示可编辑的属性与动作。
+            未选中任何内容。选中场景或对象后，这里会显示可编辑的属性与动作。
           </div>
         )}
       </div>
