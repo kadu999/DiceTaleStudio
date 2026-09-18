@@ -19,6 +19,7 @@ import { formatSize, assetDisplayName } from "../asset-info";
 export function AssetsPanel(): React.JSX.Element {
   const project = useEditorStore((state) => state.project);
   const refreshTree = useEditorStore((state) => state.refreshTree);
+  const openProjectFolder = useEditorStore((state) => state.openProjectFolder);
   const selectedAssetId = useEditorStore((state) => state.selectedAssetId);
   const selectAsset = useEditorStore((state) => state.selectAsset);
   const activeSceneName = useEditorStore((state) => state.activeSceneName);
@@ -93,13 +94,26 @@ export function AssetsPanel(): React.JSX.Element {
     <div className="flex h-full min-h-0 flex-col panel">
       <div className="panel-header">
         <span>资源</span>
-        <button
-          type="button"
-          className="toolbar-button hover:toolbar-button-hover"
-          onClick={() => void refreshTree()}
-        >
-          刷新
-        </button>
+        {/* 两个按钮靠右抱团（标题栏是 space-between，散开摆会变成「中间一个」） */}
+        <div className="ml-auto flex flex-none items-center gap-1">
+          <button
+            type="button"
+            data-testid="open-project-folder"
+            // 打开的是**服务端那台机器**上的目录：浏览器不能替用户开文件夹，这件事只能后端做
+            title="用文件管理器打开项目目录（在运行服务端的那台机器上）"
+            className="toolbar-button hover:toolbar-button-hover"
+            onClick={() => void openProjectFolder()}
+          >
+            打开目录
+          </button>
+          <button
+            type="button"
+            className="toolbar-button hover:toolbar-button-hover"
+            onClick={() => void refreshTree()}
+          >
+            刷新
+          </button>
+        </div>
       </div>
 
       {project.error.length > 0 ? (

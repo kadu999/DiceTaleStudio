@@ -9,11 +9,15 @@ import {
   deleteProject,
   listProjects,
   parseResourceId,
+  projectFileId,
   projectFolderId,
+  projectPath,
   readProjectEntries,
+  validateProjectName,
   validateProjectRelativePath,
   type ResourceProvider,
 } from "@dts/resources";
+import { openFolder as openFolderInFileManager } from "../open-folder";
 import type { LogLevel } from "../ws/hub";
 import type { RuntimeHub } from "../ws/hub";
 import type { LoadedConfig } from "../config";
@@ -49,6 +53,12 @@ export interface HttpServerOptions {
   readonly provider: ResourceProvider;
   readonly hub: RuntimeHub;
   readonly log: (level: LogLevel, message: string) => void;
+  /**
+   * 「在文件管理器里打开目录」的实现（`/api/projects/reveal` 用）。
+   *
+   * 测试注入假的：真的去调系统命令会在跑测试的机器上弹出一堆窗口。
+   */
+  readonly openFolder?: (path: string) => Promise<void>;
 }
 
 function contentTypeFor(path: string): string {
@@ -92,6 +102,7 @@ function sendJson(response: ServerResponse, status: number, payload: unknown): v
 
 export function createHttpServer(options: HttpServerOptions): Server {
   const { config, provider, hub, log } = options;
+  const openFolder = options.openFolder ?? openFolderInFileManager;
 
   return createServer((request, response) => {
     void handle(request, response).catch((error: unknown) => {
@@ -225,8 +236,48 @@ export function createHttpServer(options: HttpServerOptions): Server {
         return;
       }
 
-      // ---------------------------------------------------------- 通用资源
+      /**
+       * 用文件管理器打开项目目录（资源面板的「打开目录」按钮）。
+       *
+       * 打开的是**服务端这台机器**上的目录：浏览器不能替用户开文件夹，所以只能后端做。
+       * 路径由服务端按自己的配置拼出来（`资源根 / projects / 项目名`），项目名先过
+       * `validateProjectName`——客户端**不能**指定任意路径，这是这个接口的安全边界。
+       */
+      case "/api/projects/reveal": {
+        if (request.method !== "POST") {
+          sendJson(response, 405, { error: `不支持的方法: ${request.method}` });
+          return;
+        }
 
+        const body = await readJsonBody(request);
+        const name = typeof body.name === "string" ? body.name.trim() : "";
+        const reason = validateProjectName(name);
+        if (reason !== undefined) {
+          sendJson(response, 400, { error: reason });
+          return;
+        }
+
+        if (!(await provider.exists(projectFileId(name)))) {
+          sendJson(response, 404, { error: `项目「${name}」不存在` });
+          return;
+        }
+
+        const folder = resolve(config.resourceRoot, config.dirs.project, projectPath(name));
+        try {
+          await openFolder(folder);
+        } catch (error) {
+          sendJson(response, 500, {
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return;
+        }
+
+        log("info", `已在文件管理器中打开项目目录: ${folder}`);
+        sendJson(response, 200, { ok: true, path: folder });
+        return;
+      }
+
+      // ---------------------------------------------------------- 通用资源
       case "/api/resources/index": {
         const kind = url.searchParams.get("kind") ?? undefined;
         const entries = await provider.list(kind as never);

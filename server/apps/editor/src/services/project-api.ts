@@ -86,6 +86,21 @@ export const projectApi = {
     });
   },
 
+  /**
+   * 在**运行服务端的那台机器**上用文件管理器打开项目目录，返回打开的真实路径。
+   *
+   * 浏览器不能替用户开文件夹，所以这件事只能后端做；从平板经局域网访问时，
+   * 弹出来的是服务端那台电脑的窗口（不是平板上的文件 App）。
+   */
+  async reveal(name: string): Promise<string> {
+    const body = await request<{ path: string }>("/api/projects/reveal", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    return body.path;
+  },
+
   async listResources(): Promise<ResourceEntry[]> {
     const body = await request<{ entries: ResourceEntry[] }>("/api/resources/index");
     return body.entries;

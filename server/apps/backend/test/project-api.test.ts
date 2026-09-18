@@ -1,9 +1,11 @@
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
+import * as pathApi from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createHttpServer } from "../src/http/server";
 import { createTempResourceRoot } from "./helpers/temp-root";
 import { FsResourceProvider } from "../src/resources/fs-provider";
+import type { LoadedConfig } from "../src/config";
 import { RuntimeHub } from "../src/ws/hub";
 import { PROJECT_FILE_NAME, listProjects, projectFileId, type ResourceTreeNode } from "@dts/resources";
 import { DOCUMENT_FORMAT_VERSION } from "@dts/document";
@@ -22,15 +24,37 @@ describe("项目 API", () => {
   let baseUrl: string;
   let provider: FsResourceProvider;
   let disposeRoot: () => Promise<void>;
+  let config: LoadedConfig;
+  let root: string;
+  /** 被「打开」的目录（真的去调系统命令会弹资源管理器窗口，所以整条链路都注入假的）。 */
+  let openedFolders: string[];
+  let failNextOpen: boolean;
 
   beforeEach(async () => {
     const temp = await createTempResourceRoot();
     disposeRoot = temp.dispose;
-    const { config } = temp;
+    config = temp.config;
+    root = temp.root;
     provider = new FsResourceProvider(config.resourceRoot, config.dirs);
 
+    openedFolders = [];
+    failNextOpen = false;
+
     hub = new RuntimeHub(() => {});
-    server = createHttpServer({ config, provider, hub, log: () => {} });
+    server = createHttpServer({
+      config,
+      provider,
+      hub,
+      log: () => {},
+      openFolder: async (folder) => {
+        if (failNextOpen) {
+          failNextOpen = false;
+          throw new Error("没有可用的文件管理器");
+        }
+
+        openedFolders.push(folder);
+      },
+    });
     hub.attach(server);
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     const address = server.address() as AddressInfo;
@@ -214,5 +238,55 @@ describe("项目 API", () => {
   it("缺少 name 参数时树接口返回 400", async () => {
     const response = await fetch(`${baseUrl}/api/projects/tree`);
     expect(response.status).toBe(400);
+  });
+
+  describe("打开项目目录（/api/projects/reveal）", () => {
+    // 真的去调系统命令会在跑测试的机器上弹出资源管理器，所以注入假的、只记下被打开的路径
+    it("打开已存在的项目：路径由服务端按配置拼出，且落在该项目目录上", async () => {
+      await postJson("/api/projects", { name: TEST_PROJECT });
+
+      const response = await postJson("/api/projects/reveal", { name: TEST_PROJECT });
+      expect(response.status).toBe(200);
+
+      const body = (await response.json()) as { path: string };
+      expect(openedFolders).toEqual([body.path]);
+
+      // 路径必须是「资源根 / projects / 项目名」，而不是客户端说去哪儿就去哪儿
+      const expected = pathApi.join(root, config.dirs.project, TEST_PROJECT);
+      expect(pathApi.resolve(body.path)).toBe(pathApi.resolve(expected));
+    });
+
+    it("项目不存在返回 404，且不会去打开任何目录", async () => {
+      const response = await postJson("/api/projects/reveal", { name: "不存在的项目" });
+      expect(response.status).toBe(404);
+      expect(openedFolders).toEqual([]);
+    });
+
+    it("项目名非法（含路径分隔符 / 穿越）返回 400，绝不越出资源根", async () => {
+      for (const name of ["../escape", "a/b", "a\\b", "", "  "]) {
+        const response = await postJson("/api/projects/reveal", { name });
+        expect(response.status).toBe(400);
+      }
+
+      expect(openedFolders).toEqual([]);
+    });
+
+    it("非 POST 返回 405", async () => {
+      const response = await fetch(`${baseUrl}/api/projects/reveal`);
+      expect(response.status).toBe(405);
+      expect(openedFolders).toEqual([]);
+    });
+
+    it("系统打不开目录时如实报错（不是「点了没反应」）", async () => {
+      await postJson("/api/projects", { name: TEST_PROJECT });
+
+      // 让注入的实现失败一次
+      failNextOpen = true;
+      const response = await postJson("/api/projects/reveal", { name: TEST_PROJECT });
+      expect(response.status).toBe(500);
+      expect((await response.json()) as { error: string }).toMatchObject({
+        error: /没有可用的文件管理器/,
+      });
+    });
   });
 });

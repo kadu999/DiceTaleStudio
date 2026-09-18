@@ -29,6 +29,8 @@ test.describe("项目", () => {
 
       // 未打开项目时给出明确指引，而不是空白面板
       await expect(page.getByText("还没有打开项目")).toBeVisible();
+      // 没有项目就没有可打开的目录
+      await expect(page.getByTestId("open-project-folder")).toHaveCount(0);
 
       await page.getByRole("button", { name: "工程", exact: true }).click();
       await page.getByRole("menuitem", { name: "新建项目…" }).click();
@@ -37,6 +39,10 @@ test.describe("项目", () => {
 
       await openLeftTab(page, "assets");
       await expect(page.getByTestId("status-doc")).toHaveText(name);
+
+      // 「打开目录」按钮：**只断言在**（真的有项目才出现）——点它会去开后端那台机器的
+      // 资源管理器，跑测试时不该弹出窗口。接口行为由后端用例用注入的实现覆盖。
+      await expect(page.getByTestId("open-project-folder")).toBeEnabled();
 
       const treeRows = page.getByTestId("folder-tree-row");
       const contentRows = page.getByTestId("folder-content-row");

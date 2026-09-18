@@ -24,6 +24,7 @@ pnpm --filter @dts/backend mock   # 另开一个终端：启动 Mock 前端
 - 编辑器（开发）：<http://localhost:5173>（`/api` 与 `/editor`、`/client` 由 Vite 代理到后端）
 - 编辑器（生产）：`pnpm build` 后由后端同源托管 <http://localhost:1420>
 - 后端接口：`/api/projects`（列表 / 新建 / 删除）、`/api/projects/tree`、`/api/projects/folder`、
+  `/api/projects/reveal`（在服务端那台机器上用文件管理器打开项目目录）、
   `/api/health`、`/api/config`、`/api/resources/index`、`/api/resources/raw?id=...`、`/api/resources/text?id=...`、
   `/api/resources/rename`（重命名资源：`{from,to}` 逻辑 ID）、`/api/state`
 - WebSocket：`/client`（前端）、`/editor`（编辑器）
@@ -344,6 +345,16 @@ resources/
 所以资源面板目前是**只读**的（没有新建 / 导入 / 删除入口）。例外只有两类，都不碰素材本身：
 场景的三个文件级操作（新建 / 重命名 / 删除），以及**场景对象的编辑**（写的是 `Assets/scenes/`
 下的场景文件，不是 `Assets/` 里的素材）。
+
+**资源面板标题栏的「打开目录」**用文件管理器打开**当前项目目录**（项目根，里面就是
+`project.json` + `Assets/`），方便往里丢素材。三件要说清的事：
+
+- 弹出来的是**运行服务端那台机器**上的窗口——浏览器出于安全不允许替用户开文件夹，
+  所以由后端调系统命令做（Windows `explorer.exe` / macOS `open` / Linux `xdg-open`）；
+  从平板经局域网访问时，开的是那台电脑的目录，不是平板上的文件 App；
+- 路径**由服务端按自己的配置拼**（`资源根 / <projects> / 项目名`），项目名先过 `validateProjectName`，
+  客户端**不能**指定任意路径（`POST /api/projects/reveal`，只收 `{name}`）；
+- 打不开（系统不支持、命令缺失）时如实报在资源面板的红字里，不会「点了没反应」。
 
 **选中资源看属性**：在资源面板里点一个文件即选中它，属性面板显示名称 / 路径 / 类型 / 大小，
 图片还会读出**真实像素尺寸**；图片、视频、音频直接在属性面板里预览。预览走后端的原始字节接口

@@ -237,6 +237,13 @@ export interface EditorStoreState {
   deleteProject(name: string): Promise<boolean>;
   refreshTree(): Promise<void>;
   createFolder(path: string): Promise<boolean>;
+  /**
+   * 在**运行服务端的那台机器**上用文件管理器打开当前项目目录。
+   *
+   * 浏览器不能替用户开文件夹，所以这件事由后端调系统命令完成：从平板经局域网访问时，
+   * 弹出来的是服务端那台电脑的窗口。失败（系统不支持 / 命令缺失）会写进 `project.error`。
+   */
+  openProjectFolder(): Promise<boolean>;
   uploadFiles(dirPath: string, files: readonly File[]): Promise<void>;
   deleteResource(id: string, label: string): Promise<boolean>;
 
@@ -1063,6 +1070,26 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
         const message = error instanceof Error ? error.message : String(error);
         set((state) => ({ project: { ...state.project, error: message } }));
         pushLog(makeLog("error", `创建目录失败：${message}`));
+        return false;
+      }
+    },
+
+    async openProjectFolder() {
+      const project = get().project.current;
+      if (project === null) {
+        return false;
+      }
+
+      try {
+        const path = await projectApi.reveal(project);
+        // 顺手清掉上一次的错误：成功了还挂着红字会让人以为没成功
+        set((state) => ({ project: { ...state.project, error: "" } }));
+        pushLog(makeLog("info", `已打开项目目录：${path}`));
+        return true;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        set((state) => ({ project: { ...state.project, error: message } }));
+        pushLog(makeLog("error", `打开项目目录失败：${message}`));
         return false;
       }
     },
