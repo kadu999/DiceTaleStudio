@@ -620,6 +620,41 @@ test.describe("创建与编辑场景对象", () => {
     }
   });
 
+  test("世界坐标：X / Y 轴标看得见，两个输入框等分并吃满整行宽度", async ({ page, request }) => {
+    const project = await newProject(request);
+    try {
+      await openSceneForEdit(page, request, project, [
+        sceneDoc(SCENE_A, [sceneObjectDoc("木门", "SceneObject", { x: -320, y: 270 })]),
+      ]);
+      await selectObject(page);
+
+      // 轴标（X / Y）看得见，而且就是各自输入框的无障碍名字
+      await expect(page.getByLabel("世界坐标 X")).toHaveValue("-320");
+      await expect(page.getByLabel("世界坐标 Y")).toHaveValue("270");
+      // 单位挂在行标签上，不再占输入框的宽度；标签也不能被挤到换行
+      // （平板抽屉只有 340px）——输入框 → label → 容器 → 行，行里第一个 span 就是行标签
+      const rowLabel = page.getByTestId("inspector-object-x").locator("xpath=../../../span[1]");
+      await expect(rowLabel).toHaveText("世界坐标 (px)");
+      expect((await rowLabel.boundingBox())?.height ?? 0).toBeLessThan(24);
+
+      // 不再是固定 64px；两轴等宽；合起来吃掉这一行的大部分宽度
+      const xBox = await page.getByTestId("inspector-object-x").boundingBox();
+      const yBox = await page.getByTestId("inspector-object-y").boundingBox();
+      // 输入框外面那层（两个轴共用的容器）：输入框 → label → 容器
+      const rowBox = await page.getByTestId("inspector-object-x").locator("xpath=../..").boundingBox();
+
+      const xWidth = xBox?.width ?? 0;
+      const yWidth = yBox?.width ?? 0;
+      const rowWidth = rowBox?.width ?? 0;
+
+      expect(xWidth).toBeGreaterThan(80);
+      expect(Math.abs(xWidth - yWidth)).toBeLessThan(2);
+      expect((xWidth + yWidth) / rowWidth).toBeGreaterThan(0.8);
+    } finally {
+      await dropProject(request, project);
+    }
+  });
+
   test("属性面板与列表不显示内部字段（ID / 组件数量），地图行仍显示网格尺寸", async ({
     page,
     request,

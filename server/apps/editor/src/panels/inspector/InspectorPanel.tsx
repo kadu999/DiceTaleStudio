@@ -227,7 +227,10 @@ function TextureField({ object }: { readonly object: SceneObjectDoc }): React.JS
 }
 
 /**
- * 对象位置：**世界坐标**（场景中心为原点，x 向右、y 向上，单位像素）。
+ * 对象位置：**世界坐标**（x 向右、y 向上，单位像素）。
+ *
+ * 两个轴各占一半宽度、带 X / Y 轴标（对齐 Unity 的 Transform：一眼看出哪个框是哪个轴）；
+ * 输入框跟着面板宽度伸缩，不做固定宽度。
  *
  * 这是**精确**摆放的入口；粗略摆放直接拖画布上的标记点。
  *
@@ -235,7 +238,7 @@ function TextureField({ object }: { readonly object: SceneObjectDoc }): React.JS
  * 1. **各自提交各自的字段**，另一个轴取对象当前值——不能用兄弟输入框的 state，
  *    否则「改完 x 再去改 y」时，x 的失焦提交会带上还没敲完的 y；
  * 2. **正在输入的框不被 store 回灌**，否则提交后触发的同步会把用户刚敲的值冲掉。
- *    留空或非法值按世界原点（场景正中）处理（手写文件里 `position: null` 的对象也能一键落位）。
+ *    留空或非法值按世界原点处理（手写文件里 `position: null` 的对象也能一键落位）。
  */
 function PositionFields({ object }: { readonly object: SceneObjectDoc }): React.JSX.Element {
   const moveObject = useEditorStore((state) => state.moveObject);
@@ -268,43 +271,80 @@ function PositionFields({ object }: { readonly object: SceneObjectDoc }): React.
     });
   };
 
-  const onKeyDown = (commit: () => void) => (event: React.KeyboardEvent<HTMLInputElement>): void => {
-    if (event.key === "Enter") {
-      commit();
-      event.currentTarget.blur();
-    }
-  };
-
   return (
-    <FieldRow label="世界坐标">
-      <input
-        ref={xRef}
-        value={x}
-        data-testid="inspector-object-x"
-        inputMode="decimal"
-        type="number"
-        step="1"
-        placeholder={String(WORLD_ORIGIN_FALLBACK)}
-        className="w-16 rounded border border-[var(--color-editor-border)] bg-black/30 px-1 py-0.5 font-mono text-[11px] outline-none"
-        onChange={(event) => setX(event.target.value)}
-        onBlur={commitX}
-        onKeyDown={onKeyDown(commitX)}
-      />
-      <input
-        ref={yRef}
-        value={y}
-        data-testid="inspector-object-y"
-        inputMode="decimal"
-        type="number"
-        step="1"
-        placeholder={String(WORLD_ORIGIN_FALLBACK)}
-        className="w-16 rounded border border-[var(--color-editor-border)] bg-black/30 px-1 py-0.5 font-mono text-[11px] outline-none"
-        onChange={(event) => setY(event.target.value)}
-        onBlur={commitY}
-        onKeyDown={onKeyDown(commitY)}
-      />
-      <span className="flex-none text-[10px] text-[var(--color-editor-text-dim)]">px</span>
+    <FieldRow label="世界坐标 (px)">
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        <AxisInput
+          axis="X"
+          value={x}
+          testId="inspector-object-x"
+          inputRef={xRef}
+          onChange={setX}
+          onCommit={commitX}
+        />
+        <AxisInput
+          axis="Y"
+          value={y}
+          testId="inspector-object-y"
+          inputRef={yRef}
+          onChange={setY}
+          onCommit={commitY}
+        />
+      </div>
     </FieldRow>
+  );
+}
+
+interface AxisInputProps {
+  /** 轴标（X / Y）：**看得见**，免得两个框分不清哪个是哪个。 */
+  readonly axis: "X" | "Y";
+  readonly value: string;
+  readonly testId: string;
+  readonly inputRef: React.RefObject<HTMLInputElement | null>;
+  readonly onChange: (value: string) => void;
+  readonly onCommit: () => void;
+}
+
+/** 一个轴：轴标 + 输入框。两个轴等分整行剩下的宽度（输入框尽量宽，好读也好改）。 */
+function AxisInput({
+  axis,
+  value,
+  testId,
+  inputRef,
+  onChange,
+  onCommit,
+}: AxisInputProps): React.JSX.Element {
+  return (
+    // 用 label 包住：点轴标也能聚焦到输入框；无障碍名字由 aria-label 给
+    <label className="flex min-w-0 flex-1 items-center gap-1">
+      <span
+        aria-hidden="true"
+        className={`flex-none font-mono text-[10px] ${
+          axis === "X" ? "text-[var(--color-editor-danger)]" : "text-[var(--color-editor-ok)]"
+        }`}
+      >
+        {axis}
+      </span>
+      <input
+        ref={inputRef}
+        value={value}
+        data-testid={testId}
+        aria-label={`世界坐标 ${axis}`}
+        inputMode="decimal"
+        type="number"
+        step="1"
+        placeholder={String(WORLD_ORIGIN_FALLBACK)}
+        className="min-w-0 flex-1 rounded border border-[var(--color-editor-border)] bg-black/30 px-1 py-0.5 font-mono text-[11px] outline-none"
+        onChange={(event) => onChange(event.target.value)}
+        onBlur={onCommit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            onCommit();
+            event.currentTarget.blur();
+          }
+        }}
+      />
+    </label>
   );
 }
 
