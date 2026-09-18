@@ -27,13 +27,14 @@ import { EmptyState } from "../EmptyState";
 const COLLIDER_SIZE = { width: 64, height: 64 } as const;
 
 /**
- * 只有**主键（鼠标左键 / 触摸 / 笔尖）**才拾取与拖动。
+ * 指针按键：只有**主键（鼠标左键 / 触摸 / 笔尖）**拾取与拖动；**中键只平移摄像机**；
+ * 右键 / 侧键一律不参与（右键要留给将来的上下文菜单）。
  *
- * 中键、右键、侧键一律不参与：右键要留给将来的上下文菜单，中键常用来做「按哪儿都不该改
- * 选中」的临时操作——让它们顺手选中 / 拖走对象只会添乱。触摸与笔的 `button` 也是 0，
- * 所以平板手势不受影响（`pointerdown` 才是判断时机：`pointermove` 的 `button` 是 -1）。
+ * 触摸与笔的 `button` 也是 0，所以平板手势不受影响。判断时机只能是 `pointerdown`：
+ * `pointermove` 的 `button` 恒为 -1，分不出按的是哪个键。
  */
 const PRIMARY_BUTTON = 0;
+const MIDDLE_BUTTON = 1;
 
 /**
  * 对象在画布上占据的世界矩形 —— 拾取（碰撞体）、选中框、贴图铺的那块**共用这一个**。
@@ -280,7 +281,18 @@ export function ScenePanel(): React.JSX.Element {
         return;
       }
 
-      // 只认主键：中键 / 右键 / 侧键一律不拾取、不拖动、也不取消选中
+
+
+
+      // 中键 = 只平移摄像机：不拾取、不改选中（手势与绘图工具一致）。
+      // 位置进 `pointers`，于是 onPointerMove 里那条平移分支直接生效
+      if (event.button === MIDDLE_BUTTON) {
+        container.setPointerCapture(event.pointerId);
+        pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        return;
+      }
+
+      // 其余非主键（右键 / 侧键）一律不参与：右键留给将来的上下文菜单
       if (event.button !== PRIMARY_BUTTON) {
         return;
       }
@@ -345,7 +357,9 @@ export function ScenePanel(): React.JSX.Element {
         return;
       }
 
+
       store.panByScreen(event.clientX - previous.x, event.clientY - previous.y);
+
     };
 
     /**

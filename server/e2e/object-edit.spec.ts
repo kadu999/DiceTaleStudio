@@ -570,7 +570,14 @@ test.describe("创建与编辑场景对象", () => {
     }
   });
 
-  test("画布拾取：按对象整块矩形命中；重叠时选 sortingOrder 大的", async ({ page, request }) => {
+  test("画布拾取：按对象整块矩形命中；重叠时选 sortingOrder 大的", async ({
+    page,
+    request,
+    hasTouch,
+  }) => {
+    // 中键是鼠标特有的：触摸档位（平板）没有中键，Playwright 的触摸模拟也不会把
+    // `mouse.down({ button: "middle" })` 送成中键，所以中键那一段只在精确指针下跑
+    const isTouch = hasTouch === true;
     const project = await newProject(request);
     try {
       // 两个 120×120 的纯色矩形，中心都在世界原点：谁盖住谁、点谁，只看 sortingOrder
@@ -657,27 +664,57 @@ test.describe("创建与编辑场景对象", () => {
       await page.mouse.up();
       await expect.poll(selectedNames).toEqual(["小蓝"]);
 
-      // 6) **只有左键**拾取与拖动：中键 / 右键按下-拖动-抬起，既不该改选中，也不该挪动对象
+      // 6) **中键拖动 = 只平移摄像机**：选中不变、对象的世界坐标不变，但画面确实动了。
+      //
+      //    只在**非触摸**档位跑：中键是鼠标特有的，Playwright 的触摸模拟下
+      //    `mouse.down({ button: "middle" })` 不会把它送成中键（平板也没有中键）。
+      //    「画面动了」只断言一件事：整块画布的像素指纹前后不同 —— 这足以区分
+      //    「中键平移了」与「中键被当成左键去点对象」（后者画面基本不变）。
       const center = await worldSamplePoint(page, { x: 0, y: 0 });
       const positionOf = async (name: string): Promise<unknown> =>
         (await readSceneObjects(request, project, SCENE_A)).find((object) => object.name === name)
           ?.position ?? null;
       const before = await positionOf("小蓝");
 
-      for (const button of ["middle", "right"] as const) {
+      if (!isTouch) {
+        const canvasFingerprint = async (): Promise<number> =>
+          page.evaluate(() => {
+            const canvas = document.querySelector("canvas");
+            const ctx = canvas.getContext("2d");
+            const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+            // 粗采样 + 回传一个数字：整块画布在平板 DPR=2 下有几 MB，别往回传
+            let hash = 0;
+            for (let i = 0; i < data.length; i += 512) {
+              hash = (hash * 31 + data[i]) % 2147483647;
+            }
+            return hash;
+          });
+
+        const frameBefore = await canvasFingerprint();
+
         await page.mouse.move(center.x, center.y);
-        await page.mouse.down({ button });
+        await page.mouse.down({ button: "middle" });
         await page.mouse.move(center.x + 90, center.y + 60, { steps: 5 });
-        await page.mouse.up({ button });
+        await page.mouse.up({ button: "middle" });
 
-        // 右键会弹出浏览器上下文菜单，按 Esc 收掉，免得挡住后面的操作
-        if (button === "right") {
-          await page.keyboard.press("Escape");
-        }
-
+        // 选中没被中键碰到，对象的世界坐标也没被改动
         await expect.poll(selectedNames).toEqual(["小蓝"]);
         expect(await positionOf("小蓝")).toEqual(before);
+        // 画面变了 = 摄像机真的动了（中键没被当成左键去点对象）
+        await expect.poll(canvasFingerprint).not.toBe(frameBefore);
+
+        // 复位：相机回 0 点居中，让下一步从一个确定状态开始
+        await page.getByTestId("reset-viewport").click();
       }
+      // 7) **右键**不参与拾取与拖动：选中不变、对象位置也不变
+      await page.mouse.move(center.x, center.y);
+      await page.mouse.down({ button: "right" });
+      await page.mouse.move(center.x + 90, center.y + 60, { steps: 5 });
+      await page.mouse.up({ button: "right" });
+      await page.keyboard.press("Escape"); // 收掉浏览器上下文菜单
+
+      await expect.poll(selectedNames).toEqual(["小蓝"]);
+      expect(await positionOf("小蓝")).toEqual(before);
     } finally {
       await dropProject(request, project);
     }
