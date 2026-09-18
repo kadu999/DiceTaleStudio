@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { isPositionableObject, type SceneObjectDoc } from "@dts/document";
+import type { SceneObjectDoc } from "@dts/document";
 import { useEditorStore } from "../../state/editor-store";
 import { EmptyState } from "../EmptyState";
 import { KIND_LABELS, OBJECT_CATEGORIES, categoryOfKind } from "../object-kinds";
@@ -239,13 +239,11 @@ function ObjectRow({
   onDelete,
 }: ObjectRowProps): React.JSX.Element {
   // 只有地图有值得写在列表里的额外信息（网格尺寸）；其它对象不再显示「0 组件」这类噪声。
-  // 「未放置」是额外的一枚标记（位置为 null，只可能来自手写文件），所以不能顶掉尺寸信息；
-  // 地图**本来就是**没有位置的（它是铺满场景的底图），给它标「未放置」是误导
+  // 「未放置」是额外的一枚标记（位置为 null，只可能来自手写文件），所以不能顶掉尺寸信息
   const hint =
     object.kind === "Map"
       ? `${object.map?.grid.width ?? 0}×${object.map?.grid.height ?? 0}`
       : null;
-  const unplaced = object.position === null && isPositionableObject(object);
 
   return (
     <div
@@ -284,7 +282,7 @@ function ObjectRow({
         >
           <span className="truncate">{object.name}</span>
           <span className="flex flex-none items-center gap-1 text-[10px] text-[var(--color-editor-text-dim)]">
-            {unplaced ? <span>未放置</span> : null}
+            {object.position === null ? <span>未放置</span> : null}
             {hint === null ? null : <span>{hint}</span>}
           </span>
         </button>

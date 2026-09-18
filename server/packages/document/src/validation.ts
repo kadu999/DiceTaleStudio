@@ -41,16 +41,6 @@ function validateObject(object: SceneObjectDoc, path: string, issues: Validation
 
   // 地图对象：数据必须完整（没有数据的「地图对象」在场景里就是个空壳）
   if (object.kind === "Map") {
-    // 地图是场景底图，不参与摆放（位置恒为 null）：手写文件或别处构造的文档里带了位置，
-    // 说明有人以为「地图能摆」，指出来——画布与属性面板都不会理这个坐标
-    if (object.position !== null) {
-      issues.push({
-        level: "warning",
-        path: `${path}/position`,
-        message: "地图对象不参与摆放（贴图铺满整个场景），位置应为 null",
-      });
-    }
-
     if (object.map === undefined) {
       issues.push({ level: "error", path, message: "地图对象缺少地图数据（贴图 / 网格）" });
     } else {

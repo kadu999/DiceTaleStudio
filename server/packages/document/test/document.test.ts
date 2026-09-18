@@ -8,7 +8,6 @@ import {
   collectActionIds,
   findMapObject,
   listMapObjects,
-  isPositionableObject,
   moveAction,
   removeAction,
   removeObject,
@@ -231,16 +230,14 @@ describe("对象命令（都在场景上操作）", () => {
     expect(listMapObjects(scene).map((object) => object.id)).toEqual(["map-1"]);
   });
 
-  it("地图不参与摆放：setObjectPosition 对它不产生变更", () => {
+  it("地图也参与摆放：setObjectPosition 对它生效（贴图中心跟着走）", () => {
     const scene = withMapObject(makeScene());
-    let changed = true;
 
     const next = mutate(scene, (draft) => {
-      changed = setObjectPosition(draft, "map-1", { x: 100, y: 50 });
+      expect(setObjectPosition(draft, "map-1", { x: 100, y: 50 })).toBe(true);
     });
 
-    expect(changed).toBe(false);
-    expect(next.objects[0]?.position).toBeNull();
+    expect(next.objects[0]?.position).toEqual({ x: 100, y: 50 });
   });
 
   it("普通对象照常落位（位置可以清回 null）", () => {
@@ -257,9 +254,13 @@ describe("对象命令（都在场景上操作）", () => {
     expect(cleared.objects[0]?.position).toBeNull();
   });
 
-  it("isPositionableObject：只有地图不占点", () => {
-    const scene = withObject(withMapObject(makeScene()), "door");
-    expect(scene.objects.map((object) => isPositionableObject(object))).toEqual([false, true]);
+  it("新建地图对象带着世界坐标（默认原点）——它就是贴图中心", () => {
+    const map = createMapObject({ name: "地图", image: IMAGE, grid: GRID, position: { x: 30, y: -40 } });
+    expect(map.position).toEqual({ x: 30, y: -40 });
+    expect(createMapObject({ name: "地图", image: IMAGE, grid: GRID }).position).toEqual({
+      x: 0,
+      y: 0,
+    });
   });
 
   it("动作的增删改与排序", () => {
@@ -364,19 +365,6 @@ describe("文档校验", () => {
     const issues = validateScene(scene);
     expect(hasErrors(issues)).toBe(false);
     expect(formatIssues(issues)).toMatch(/不应携带地图数据/);
-  });
-
-  it("地图对象带位置时给警告（画布与属性面板都不理这个坐标）", () => {
-    const scene = mutate(withMapObject(makeScene()), (draft) => {
-      const map = draft.objects[0];
-      if (map !== undefined) {
-        map.position = { x: 0, y: 0 };
-      }
-    });
-
-    const issues = validateScene(scene);
-    expect(hasErrors(issues)).toBe(false);
-    expect(formatIssues(issues)).toMatch(/不参与摆放/);
   });
 
   it("地图网格格数与网格尺寸不符时报错", () => {
@@ -641,7 +629,7 @@ describe("场景文件 schema", () => {
     expect(parsed.file.objects[0]?.position).toEqual({ x: -480, y: 270 });
   });
 
-  it("v4 场景文件：地图的归一化位置**不**换算，直接清成 null", () => {
+  it("v4 场景文件：地图的归一化位置照常换算（地图也是摆在世界里的对象）", () => {
     const raw = {
       formatVersion: 4,
       objects: [
@@ -664,20 +652,32 @@ describe("场景文件 schema", () => {
 
     const parsed = parseSceneFile(raw);
     expect(parsed.needsRewrite).toBe(true);
-    // 换成世界坐标只会留下一个没人读的假坐标（渲染时贴图铺满场景，不看地图位置）
-    expect(parsed.file.objects[0]?.position).toBeNull();
+    // 归一化的 (0.5, 0.5) 就是贴图中心 → 世界原点
+    expect(parsed.file.objects[0]?.position).toEqual({ x: 0, y: 0 });
   });
 
-  it("v5 场景文件：地图上残留的位置被清掉，并要求回写一次", () => {
+  it("v5 场景文件：没有位置的地图补成世界原点，并要求回写一次", () => {
     const scene = withMapObject(createEmptyScene("Map001"));
     const raw = {
       formatVersion: 5,
-      objects: [{ ...scene.objects[0], position: { x: 0, y: 0 } }],
+      objects: [{ ...scene.objects[0], position: null }],
     };
 
     const parsed = parseSceneFile(raw);
     expect(parsed.needsRewrite).toBe(true);
-    expect(parsed.file.objects[0]?.position).toBeNull();
+    expect(parsed.file.objects[0]?.position).toEqual({ x: 0, y: 0 });
+  });
+
+  it("v5 场景文件：地图本来就有位置时不动它（不要求回写）", () => {
+    const scene = withMapObject(createEmptyScene("Map001"));
+    const raw = {
+      formatVersion: 5,
+      objects: [{ ...scene.objects[0], position: { x: 300, y: -200 } }],
+    };
+
+    const parsed = parseSceneFile(raw);
+    expect(parsed.needsRewrite).toBe(false);
+    expect(parsed.file.objects[0]?.position).toEqual({ x: 300, y: -200 });
   });
 
   it("v4 场景文件：调用方给了贴图尺寸就按它换算", () => {

@@ -26,7 +26,12 @@ import {
   type SceneObjectDoc,
   type WorldPosition,
 } from "@dts/document";
-import { gridSizeFromImage, worldExtentOf, type ImageSize } from "@dts/grid";
+import {
+  gridSizeFromImage,
+  worldRectOf,
+  type ImageSize,
+  type WorldRect,
+} from "@dts/grid";
 import {
   PROJECT_FOLDERS,
   PROJECT_SCENE_FILE_EXTENSION,
@@ -265,28 +270,23 @@ export const sceneHistory = new DocumentHistory<readonly SceneDoc[]>([], { limit
 /** 自动落盘的防抖窗口：连续拖动 / 连续输入只写一次盘。 */
 const SCENE_SAVE_DEBOUNCE_MS = 800;
 
-/** 场景里对象位置的默认落点：世界原点（= 场景正中）。 */
+/** 场景里对象位置的默认落点：世界原点。 */
 const SCENE_CENTER: WorldPosition = { x: 0, y: 0 };
 
 /**
  * 新建地图对象时的默认贴图尺寸。
  *
- * 与画布占位尺寸取同一个值（1920×1080 → 64×36 格）：贴图按同名约定放在
- * `Assets/images/<场景名>.png`，网格尺寸由图片算出来，不手写 64×36。
+ * 贴图按同名约定放在 `Assets/images/<场景名>.png`，网格尺寸由图片算出来，不手写 64×36。
  */
 const DEFAULT_MAP_IMAGE = { width: 1920, height: 1080 } as const;
 
-/** 系统尚未创建地图对象时的占位场景尺寸（与 `DEFAULT_MAP_IMAGE` 同值）。 */
-export const PLACEHOLDER_SCENE_SIZE: ImageSize = DEFAULT_MAP_IMAGE;
-
-/**
- * 场景尺寸（世界坐标的半宽半高就由它决定）：有地图对象就用它的贴图尺寸，否则用占位尺寸。
- *
- * **绘制、命中测试、拖动落点必须用同一个尺寸**，否则会出现「点哪儿不在哪儿」。
- */
-export function sceneImageSize(scene: SceneDoc | undefined): ImageSize {
-  const mapObject = scene?.objects.find((object) => object.kind === "Map");
-  return mapObject?.map?.image ?? PLACEHOLDER_SCENE_SIZE;
+/** 场景里的地图在世界里占的矩形（每张地图一块，各自带自己的贴图尺寸）。 */
+export function sceneMapRects(scene: SceneDoc | undefined): WorldRect[] {
+  return (scene?.objects ?? []).flatMap((object) =>
+    object.kind === "Map" && object.map !== undefined && object.position !== null
+      ? [worldRectOf(object.position, object.map.image)]
+      : [],
+  );
 }
 
 /**
@@ -327,15 +327,6 @@ function sceneSizeHint(raw: unknown): ImageSize | undefined {
   }
 
   return undefined;
-}
-
-/** 把世界坐标夹进场景范围内（画布拖动可能拖到场景外）。 */
-export function clampToScene(position: WorldPosition, scene: SceneDoc | undefined): WorldPosition {
-  const extent = worldExtentOf(sceneImageSize(scene));
-  return {
-    x: Math.min(extent.halfWidth, Math.max(-extent.halfWidth, position.x)),
-    y: Math.min(extent.halfHeight, Math.max(-extent.halfHeight, position.y)),
-  };
 }
 
 /** 逻辑 ID 里的文件名（`project:项目/Assets/images/Map001.png` → `Map001.png`）。 */
@@ -381,17 +372,10 @@ function withRenamedSceneImage(
 /** 副本相对原对象的偏移量（世界像素，按第几个副本递增，避免整批叠在一起）。 */
 const COPY_OFFSET = 24;
 
-/** 复制出来的副本落点：偏移一点并夹回场景内。 */
-function offsetPosition(
-  position: WorldPosition | null,
-  step: number,
-  scene: SceneDoc | undefined,
-): WorldPosition {
+/** 复制出来的副本落点：偏移一点（世界无限大，不用夹）。 */
+function offsetPosition(position: WorldPosition | null, step: number): WorldPosition {
   const base = position ?? SCENE_CENTER;
-  return clampToScene(
-    { x: base.x + COPY_OFFSET * step, y: base.y + COPY_OFFSET * step },
-    scene,
-  );
+  return { x: base.x + COPY_OFFSET * step, y: base.y + COPY_OFFSET * step };
 }
 
 /** 在场景列表里按名字找场景（对象编辑都作用于当前场景）。 */
@@ -675,7 +659,8 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       }
 
       viewportAdjusted = true;
-      set({ viewport: fitViewport(sceneImageSize(scene), viewportSize, 24) });
+      // 世界无限大：这里装的是**所有地图**的并集外框（一张地图都没有就退回原点居中）
+      set({ viewport: fitViewport(sceneMapRects(scene), viewportSize, 24) });
     },
 
     setViewportSize(size) {
@@ -1232,27 +1217,22 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
         return "请输入对象名";
       }
 
-      // 落点夹到场景内：画布拖动可能给出越界坐标，夹一次就够（写入端唯一）
-      const at =
-        position === undefined
-          ? { ...SCENE_CENTER }
-          : clampToScene({ x: position.x, y: position.y }, scene);
+      // 世界无限大：落点就是给的那个坐标，不夹取
+      const at = position === undefined ? { ...SCENE_CENTER } : { x: position.x, y: position.y };
       const object: SceneObjectDoc =
         kind === "Map"
-          ? {
-              // 地图对象的贴图按同名约定取 Assets/images/<场景名>.png，网格由贴图尺寸算出来
-              ...createMapObject({
-                name: trimmed,
-                image: {
-                  id: projectSceneImageId(project, sceneName),
-                  width: DEFAULT_MAP_IMAGE.width,
-                  height: DEFAULT_MAP_IMAGE.height,
-                },
-                grid: { ...gridSizeFromImage(DEFAULT_MAP_IMAGE), cellSize: 1 },
-              }),
-              // 地图铺满整个场景，没有「摆在哪个点」这回事：不给位置，画布上就不画标记点
-              position: null,
-            }
+          ? // 地图对象的贴图按同名约定取 Assets/images/<场景名>.png，网格由贴图尺寸算出来；
+            // 它和别的对象一样有世界坐标（贴图中心），画布上能拖、属性面板能改
+            createMapObject({
+              name: trimmed,
+              image: {
+                id: projectSceneImageId(project, sceneName),
+                width: DEFAULT_MAP_IMAGE.width,
+                height: DEFAULT_MAP_IMAGE.height,
+              },
+              grid: { ...gridSizeFromImage(DEFAULT_MAP_IMAGE), cellSize: 1 },
+              position: at,
+            })
           : // 其它实体（例如精灵，kind = "SceneObject"）走普通对象：只有名字、类型与位置
             createSceneObject({ name: trimmed, kind, position: at });
 
@@ -1343,7 +1323,7 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
               id: createId("obj"),
               // 名字与位置都错开，复制出来的东西不会与原对象完全重叠 / 同名
               name: nextObjectName(scene.objects, `${source.name} 副本`),
-              position: offsetPosition(source.position, step, scene),
+              position: offsetPosition(source.position, step),
             };
             step += 1;
             addObject(scene, copy);
@@ -1374,7 +1354,7 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
         (draft) => {
           const scene = draft.find((item) => item.name === sceneName);
           if (scene !== undefined) {
-            setSceneObjectPosition(scene, id, clampToScene(position, scene));
+            setSceneObjectPosition(scene, id, position);
           }
         },
         { coalesceKey: `move:${id}` },

@@ -1,4 +1,13 @@
-import { cellPixelSize, gridCornerToWorld, type GridSize, type ImageSize } from "@dts/grid";
+import {
+  cellPixelSize,
+  gridCornerToWorld,
+  worldRectBottom,
+  worldRectLeft,
+  worldRectTopLeft,
+  type GridSize,
+  type ImageSize,
+  type WorldRect,
+} from "@dts/grid";
 import { visibleWorldRect, worldToScreen, type Viewport } from "./viewport";
 
 /**
@@ -6,18 +15,19 @@ import { visibleWorldRect, worldToScreen, type Viewport } from "./viewport";
  *
  * 只读输入、无副作用：调用方（编辑器）在 rAF 循环里把当前状态传进来即可。
  *
- * 全流程只有**世界坐标**一套：场景中心 `(0, 0)`，x 向右、y 向上，单位像素。
- * - 地图贴图：左上角在世界坐标 `(-w/2, +h/2)`，于是顶边 = 场景的 y 最大处；
- * - 网格：格子 `(x, y)` 与世界 y 同向，`(0, 0)` 在场景**左下角**；
+ * 只有**世界坐标**一套（x 向右、y 向上，单位像素），而且**世界无限大**：
+ * - 地图是摆在世界里的对象，每张一块矩形（`SceneMapLayer.rect` = 中心 + 贴图尺寸），
+ *   贴图铺满它、格子锚在它上面，一张场景里有多少张都各画各的；
+ * - 网格：格子 `(x, y)` 与世界 y 同向，`(0, 0)` 在**那张地图矩形的左下角**；
  * - 标记点：直接用世界坐标，不做任何换算。
  *
- * 渲染顺序：背景 → 地图贴图 → 格子着色 → 网格线 → 原点十字 → 标记 → 选中框。
+ * 渲染顺序：背景 → 每张地图（棋盘格 → 贴图 → 格子着色 → 网格线）→ 原点十字 → 标记。
  */
 
 /** 对象标记（网格地图 / 精灵 / 玩家 / 道具 / 事件）。 */
 export interface SceneMarker {
   readonly id: string;
-  /** 世界坐标（场景中心为原点，y 向上）。 */
+  /** 世界坐标（y 向上）。 */
   readonly position: { x: number; y: number };
   readonly kind: string;
   readonly label?: string;
@@ -26,14 +36,12 @@ export interface SceneMarker {
   readonly color?: string;
 }
 
-export interface SceneRenderInput {
-  readonly viewport: Viewport;
-  readonly cssWidth: number;
-  readonly cssHeight: number;
-  /** 地图贴图（可为空：没有地图时照样画网格与标记）。 */
+/** 一张地图：贴图 + 它在世界里的矩形 + 它自己的网格。 */
+export interface SceneMapLayer {
+  /** 贴图；还没加载好时为 `null`（只画棋盘格与网格）。 */
   readonly image?: CanvasImageSource | null;
-  /** 场景范围（= 贴图像素尺寸）；缺省表示没有场景。 */
-  readonly sceneSize?: ImageSize;
+  /** 这块地图占据的世界矩形（贴图铺满它，网格锚在它上面）。 */
+  readonly rect: WorldRect;
   readonly grid?: GridSize;
   /** 行主序 `y*width+x`，y=0 为图片最下面一行（= 世界 y 最小的一行）。 */
   readonly cells?: Uint8Array;
@@ -41,7 +49,15 @@ export interface SceneRenderInput {
   readonly cellColor?: (mask: number) => string | null;
   readonly showGrid?: boolean;
   readonly gridColor?: string;
-  /** 画在世界原点（场景中心）的十字光标，便于判断 0,0 在哪。 */
+}
+
+export interface SceneRenderInput {
+  readonly viewport: Viewport;
+  readonly cssWidth: number;
+  readonly cssHeight: number;
+  /** 场景里的地图，**按顺序叠加绘制**（没有地图就是空的：照画标记点）。 */
+  readonly maps?: readonly SceneMapLayer[];
+  /** 画在世界原点的十字光标，便于判断 0,0 在哪。 */
   readonly showOrigin?: boolean;
   readonly markers?: readonly SceneMarker[];
   readonly background?: string;
@@ -114,37 +130,25 @@ export function createCanvasSceneRenderer(canvas: HTMLCanvasElement): SceneRende
     },
 
     draw(input: SceneRenderInput): void {
-      const { cssWidth, cssHeight, viewport, sceneSize } = input;
+      const { cssWidth, cssHeight, viewport } = input;
       const dpr = cssWidth > 0 ? canvas.width / cssWidth : 1;
 
       context.setTransform(dpr, 0, 0, dpr, 0, 0);
       context.clearRect(0, 0, cssWidth, cssHeight);
 
       const view: ImageSize = { width: cssWidth, height: cssHeight };
+      const visible = visibleWorldRect(viewport, view);
 
-      drawBackground(context, input, checker);
+      context.fillStyle = input.background ?? DEFAULT_BACKGROUND;
+      context.fillRect(0, 0, cssWidth, cssHeight);
 
-      if (sceneSize !== undefined) {
-        const visible = visibleWorldRect(viewport, view);
-
-        if (input.image != null) {
-          drawImage(context, input.image, sceneSize, viewport);
-        }
-
-        if (input.grid !== undefined) {
-          if (input.cells !== undefined && input.cellColor !== undefined) {
-            drawCells(context, input, sceneSize, viewport, visible);
-          }
-
-          if (input.showGrid === true) {
-            drawGridLines(context, input, sceneSize, viewport, visible, view);
-          }
-        }
+      for (const layer of input.maps ?? []) {
+        drawMapLayer(context, layer, viewport, visible, view, checker);
       }
 
       drawMarkers(context, input, viewport);
 
-      if (input.showOrigin === true && sceneSize !== undefined) {
+      if (input.showOrigin === true) {
         drawOriginCross(context, viewport);
       }
     },
@@ -175,79 +179,96 @@ function createCheckerPattern(context: CanvasRenderingContext2D): CanvasPattern 
   return context.createPattern(tile, "repeat");
 }
 
-function drawBackground(
+/**
+ * 画一张地图：棋盘格（贴图的透明区露出来的底纹）→ 贴图 → 格子着色 → 网格线。
+ *
+ * **全部裁剪在这张地图的矩形里**：世界无限大，一张小地图的网格线不该横穿整个屏幕，
+ * 多张地图之间也不该互相越界。整块都在视口外时直接跳过（地图可以摆在世界任何地方）。
+ */
+function drawMapLayer(
   context: CanvasRenderingContext2D,
-  input: SceneRenderInput,
+  layer: SceneMapLayer,
+  viewport: Viewport,
+  visible: { left: number; top: number; right: number; bottom: number },
+  view: ImageSize,
   checker: CanvasPattern | null,
 ): void {
-  context.fillStyle = input.background ?? DEFAULT_BACKGROUND;
-  context.fillRect(0, 0, input.cssWidth, input.cssHeight);
-
-  // 有场景范围才铺棋盘：没给 sceneSize（例如项目里还没有场景）时不该画出
-  // 一个「看起来像地图」的区域，否则「什么都没有」看起来就像「有个空地图」
-  if (input.sceneSize === undefined || checker === null) {
+  const box = screenBoxOf(layer.rect, viewport);
+  if (box.right < 0 || box.bottom < 0 || box.left > view.width || box.top > view.height) {
     return;
   }
 
-  context.fillStyle = checker;
-  context.fillRect(0, 0, input.cssWidth, input.cssHeight);
+  context.save();
+  context.beginPath();
+  context.rect(box.left, box.top, box.right - box.left, box.bottom - box.top);
+  context.clip();
+
+  if (checker !== null) {
+    context.fillStyle = checker;
+    context.fillRect(0, 0, view.width, view.height);
+  }
+
+  if (layer.image != null) {
+    context.imageSmoothingEnabled = viewport.scale < 4;
+    context.drawImage(layer.image, box.left, box.top, box.right - box.left, box.bottom - box.top);
+  }
+
+  if (layer.grid !== undefined) {
+    if (layer.cells !== undefined && layer.cellColor !== undefined) {
+      drawCells(context, layer, viewport, visible);
+    }
+
+    if (layer.showGrid === true) {
+      drawGridLines(context, layer, viewport, visible, view);
+    }
+  }
+
+  context.restore();
 }
 
-function drawImage(
-  context: CanvasRenderingContext2D,
-  image: CanvasImageSource,
-  sceneSize: ImageSize,
+/** 地图矩形在屏幕上的外框（贴图就画在这个框里）。 */
+function screenBoxOf(
+  rect: WorldRect,
   viewport: Viewport,
-): void {
-  // 贴图左上角的世界坐标；世界 y 向上，所以顶边是 +height/2
-  const topLeft = worldToScreen(viewport, {
-    x: -sceneSize.width / 2,
-    y: sceneSize.height / 2,
-  });
-
-  context.imageSmoothingEnabled = viewport.scale < 4;
-  context.drawImage(
-    image,
-    topLeft.x,
-    topLeft.y,
-    sceneSize.width * viewport.scale,
-    sceneSize.height * viewport.scale,
-  );
+): { left: number; top: number; right: number; bottom: number } {
+  const topLeft = worldToScreen(viewport, worldRectTopLeft(rect));
+  return {
+    left: topLeft.x,
+    top: topLeft.y,
+    right: topLeft.x + rect.size.width * viewport.scale,
+    bottom: topLeft.y + rect.size.height * viewport.scale,
+  };
 }
 
 function drawCells(
   context: CanvasRenderingContext2D,
-  input: SceneRenderInput,
-  sceneSize: ImageSize,
+  layer: SceneMapLayer,
   viewport: Viewport,
   visible: { left: number; top: number; right: number; bottom: number },
 ): void {
-  const grid = input.grid;
-  const cells = input.cells;
-  const cellColor = input.cellColor;
+  const grid = layer.grid;
+  const cells = layer.cells;
+  const cellColor = layer.cellColor;
   if (grid === undefined || cells === undefined || cellColor === undefined) {
     return;
   }
 
-  const cell = cellPixelSize(grid, sceneSize);
+  const rect = layer.rect;
+  const cell = cellPixelSize(grid, rect.size);
+  const left = worldRectLeft(rect);
+  const bottom = worldRectBottom(rect);
 
   // 网格与世界同向：列号随世界 x 递增，行号随世界 y 递增（y=0 在最下面）
-  const firstCol = Math.max(0, Math.floor((visible.left + sceneSize.width / 2) / cell.x));
-  const lastCol = Math.min(
-    grid.width - 1,
-    Math.ceil((visible.right + sceneSize.width / 2) / cell.x) - 1,
-  );
-  const firstRow = Math.max(0, Math.floor((visible.bottom + sceneSize.height / 2) / cell.y));
-  const lastRow = Math.min(
-    grid.height - 1,
-    Math.ceil((visible.top + sceneSize.height / 2) / cell.y) - 1,
-  );
+  const firstCol = Math.max(0, Math.floor((visible.left - left) / cell.x));
+  const lastCol = Math.min(grid.width - 1, Math.ceil((visible.right - left) / cell.x) - 1);
+  const firstRow = Math.max(0, Math.floor((visible.bottom - bottom) / cell.y));
+  const lastRow = Math.min(grid.height - 1, Math.ceil((visible.top - bottom) / cell.y) - 1);
 
   const size = cell.y * viewport.scale + 1;
 
   for (let y = firstRow; y <= lastRow; y += 1) {
     // 格子底边的屏幕 y（画的时候从这里往上画一格）
-    const bottom = worldToScreen(viewport, gridCornerToWorld({ x: 0, y }, grid, sceneSize)).y;
+    const cellBottom = worldToScreen(viewport, gridCornerToWorld({ x: 0, y }, grid, rect)).y;
 
     for (let x = firstCol; x <= lastCol; x += 1) {
       const mask = cells[y * grid.width + x] ?? 0;
@@ -260,61 +281,57 @@ function drawCells(
         continue;
       }
 
-      const left = worldToScreen(viewport, gridCornerToWorld({ x, y: 0 }, grid, sceneSize)).x;
+      const cellLeft = worldToScreen(viewport, gridCornerToWorld({ x, y: 0 }, grid, rect)).x;
       context.fillStyle = color;
-      context.fillRect(left, bottom - size, cell.x * viewport.scale + 1, size);
+      context.fillRect(cellLeft, cellBottom - size, cell.x * viewport.scale + 1, size);
     }
   }
 }
 
 function drawGridLines(
   context: CanvasRenderingContext2D,
-  input: SceneRenderInput,
-  sceneSize: ImageSize,
+  layer: SceneMapLayer,
   viewport: Viewport,
   visible: { left: number; top: number; right: number; bottom: number },
   view: ImageSize,
 ): void {
-  const grid = input.grid;
+  const grid = layer.grid;
   if (grid === undefined) {
     return;
   }
 
-  const cell = cellPixelSize(grid, sceneSize);
+  const rect = layer.rect;
+  const cell = cellPixelSize(grid, rect.size);
+  const left = worldRectLeft(rect);
+  const bottom = worldRectBottom(rect);
   const spacingX = cell.x * viewport.scale;
   const spacingY = cell.y * viewport.scale;
   if (spacingX < MIN_GRID_LINE_SPACING && spacingY < MIN_GRID_LINE_SPACING) {
     return;
   }
 
-  context.strokeStyle = input.gridColor ?? DEFAULT_GRID_COLOR;
+  context.strokeStyle = layer.gridColor ?? DEFAULT_GRID_COLOR;
   context.lineWidth = 1;
   context.beginPath();
 
   if (spacingX >= MIN_GRID_LINE_SPACING) {
     // 只画与可见范围相交的那几列，避免缩小时画出上百万条线
-    const first = Math.max(0, Math.ceil((visible.left + sceneSize.width / 2) / cell.x));
-    const last = Math.min(
-      grid.width,
-      Math.floor((visible.right + sceneSize.width / 2) / cell.x),
-    );
+    const first = Math.max(0, Math.ceil((visible.left - left) / cell.x));
+    const last = Math.min(grid.width, Math.floor((visible.right - left) / cell.x));
     for (let x = first; x <= last && x - first <= MAX_GRID_LINES; x += 1) {
       const screenX =
-        Math.round(worldToScreen(viewport, gridCornerToWorld({ x, y: 0 }, grid, sceneSize)).x) + 0.5;
+        Math.round(worldToScreen(viewport, gridCornerToWorld({ x, y: 0 }, grid, rect)).x) + 0.5;
       context.moveTo(screenX, 0);
       context.lineTo(screenX, view.height);
     }
   }
 
   if (spacingY >= MIN_GRID_LINE_SPACING) {
-    const first = Math.max(0, Math.ceil((visible.bottom + sceneSize.height / 2) / cell.y));
-    const last = Math.min(
-      grid.height,
-      Math.floor((visible.top + sceneSize.height / 2) / cell.y),
-    );
+    const first = Math.max(0, Math.ceil((visible.bottom - bottom) / cell.y));
+    const last = Math.min(grid.height, Math.floor((visible.top - bottom) / cell.y));
     for (let y = first; y <= last && y - first <= MAX_GRID_LINES; y += 1) {
       const screenY =
-        Math.round(worldToScreen(viewport, gridCornerToWorld({ x: 0, y }, grid, sceneSize)).y) + 0.5;
+        Math.round(worldToScreen(viewport, gridCornerToWorld({ x: 0, y }, grid, rect)).y) + 0.5;
       context.moveTo(0, screenY);
       context.lineTo(view.width, screenY);
     }

@@ -1,17 +1,17 @@
-import type { ImageSize } from "@dts/grid";
+import { unionWorldRects, type ImageSize, type WorldRect } from "@dts/grid";
 
 /**
  * 视口变换（纯数学，无 DOM）。
  *
- * 世界坐标只有一套（见 `@dts/grid/coords`）：原点 = 场景中心 `(0, 0)`，x 向右、**y 向上**，
- * 单位像素。这里唯一的另一套是**屏幕坐标**——canvas 的 CSS 像素，原点左上、y 向下，
- * 它是画布自己的像素栅格，不需要也不应该进入文档。
+ * 世界坐标只有一套（见 `@dts/grid/coords`）：x 向右、**y 向上**，单位像素，
+ * 而且**世界无限大**。这里唯一的另一套是**屏幕坐标**——canvas 的 CSS 像素，
+ * 原点左上、y 向下，它是画布自己的像素栅格，不需要也不应该进入文档。
  *
- * 变换（`center` = 视口中心）：
+ * 变换（`tx` / `ty` = 世界原点在屏幕上的位置）：
  *
  * ```
- * screen.x = center.x + world.x * scale
- * screen.y = center.y - world.y * scale
+ * screen.x = tx + world.x * scale
+ * screen.y = ty - world.y * scale
  * ```
  *
  * 也就是说 **`createViewport()`（scale 1、无平移）就是「世界原点正好在视口中心」**，
@@ -97,64 +97,43 @@ export function zoomAt(
 }
 
 /**
- * 让场景铺满视口：内容（贴图的世界范围）居中 + 留边距。
+ * 把若干世界矩形**一起**装进视口：外框居中 + 按需缩放，四周留 `padding` 边距。
  *
- * 世界坐标本来就以场景中心为原点，所以「内容居中」就是**世界原点落在视口中心**，
- * 只有缩放比需要算。
+ * 世界无限大，所以没有「把场景铺满」这回事——这里装的是**所有地图的并集外框**
+ * （地图可能摆在世界任何地方，所以居中要把原点挪到外框中心，不能想当然地放在屏幕正中）；
+ * 一张地图都没有时退回「世界原点居中」。
  */
 export function fitViewport(
-  scene: ImageSize,
+  rects: readonly WorldRect[],
   view: ImageSize,
   padding = 16,
   limits: { min?: number; max?: number } = {},
 ): Viewport {
-  if (scene.width <= 0 || scene.height <= 0 || view.width <= 0 || view.height <= 0) {
+  const bounds = unionWorldRects(rects);
+  if (
+    bounds === undefined ||
+    bounds.size.width <= 0 ||
+    bounds.size.height <= 0 ||
+    view.width <= 0 ||
+    view.height <= 0
+  ) {
     return createCenteredViewport(view);
   }
 
   const usableWidth = Math.max(1, view.width - padding * 2);
   const usableHeight = Math.max(1, view.height - padding * 2);
   const scale = clampScale(
-    Math.min(usableWidth / scene.width, usableHeight / scene.height),
+    Math.min(usableWidth / bounds.size.width, usableHeight / bounds.size.height),
     limits.min ?? MIN_SCALE,
     limits.max ?? MAX_SCALE,
   );
 
-  return createViewport(scale, view.width / 2, view.height / 2);
-}
-
-/**
- * 约束平移：场景比视口小时居中，比视口大时不允许拖出视口外（保留 `margin` 像素余量）。
- *
- * 约束的是**场景边缘**的屏幕位置：`tx - halfWidth * scale >= -margin` 且
- * `tx + halfWidth * scale <= view.width + margin`（y 同理，注意 y 向上的符号）。
- */
-export function clampViewport(
-  viewport: Viewport,
-  scene: ImageSize,
-  view: ImageSize,
-  margin = 48,
-): Viewport {
-  const scaledHalfWidth = (scene.width / 2) * viewport.scale;
-  const scaledHalfHeight = (scene.height / 2) * viewport.scale;
-
+  // 外框中心落在视口正中：世界原点因此在屏幕上偏掉（地图不一定摆在原点）
   return {
-    scale: viewport.scale,
-    tx: clampAxis(viewport.tx, scaledHalfWidth, view.width, margin),
-    ty: clampAxis(viewport.ty, scaledHalfHeight, view.height, margin),
+    scale,
+    tx: view.width / 2 - bounds.center.x * scale,
+    ty: view.height / 2 + bounds.center.y * scale,
   };
-}
-
-function clampAxis(t: number, scaledHalf: number, viewSize: number, margin: number): number {
-  if (scaledHalf <= viewSize / 2) {
-    // 场景比视口小：只能居中，不允许拖走
-    return viewSize / 2;
-  }
-
-  // 场景更大：场景边缘最多露到 margin 处
-  const min = viewSize - scaledHalf - margin;
-  const max = scaledHalf + margin;
-  return Math.min(max, Math.max(min, t));
 }
 
 /** 当前视口在世界坐标里的可见范围（用于裁剪绘制）。 */

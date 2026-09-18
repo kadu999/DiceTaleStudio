@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState } from "react";
-import { isPositionableObject, type SceneDoc, type WorldPosition } from "@dts/document";
+import type { SceneDoc, WorldPosition } from "@dts/document";
 import {
   createCanvasSceneRenderer,
   screenToWorld,
   worldToScreen,
   type SceneRenderer,
 } from "@dts/renderer";
-import { gridSizeFromImage } from "@dts/grid";
+import { worldRectOf } from "@dts/grid";
 import { sceneImage, sceneImageError, subscribeSceneImage } from "../../services/scene-image";
-import { sceneImageSize, useEditorStore } from "../../state/editor-store";
+import { useEditorStore } from "../../state/editor-store";
 import { EmptyState } from "../EmptyState";
 
 /** 标记点的命中半径（屏幕像素）：比渲染半径略大，手指也点得中。 */
@@ -52,13 +52,19 @@ export function ScenePanel(): React.JSX.Element {
   const openObjectDialog = useEditorStore((state) => state.openObjectDialog);
   const resetViewport = useEditorStore((state) => state.resetViewport);
 
-  const mapImageId =
-    scenes
-      .find((scene) => scene.name === activeSceneName)
-      ?.objects.find((object) => object.kind === "Map")?.map?.image.id ?? null;
+  // 当前场景里所有地图的贴图：一张场景可以有任意多张地图，各自带贴图
+  const mapImageIds = (
+    scenes.find((scene) => scene.name === activeSceneName)?.objects ?? []
+  ).flatMap((object) =>
+    object.kind === "Map" && object.map !== undefined ? [object.map.image.id] : [],
+  );
 
-  // 贴图读不到（素材还没提交 / 文件名不匹配）时明确写出来，否则画布上只有棋盘格
-  const imageError = mapImageId === null ? undefined : sceneImageError(mapImageId);
+  // 贴图读不到（素材还没提交 / 文件名不匹配）时明确写出来，否则那块地方只有棋盘格
+  const imageError =
+    mapImageIds
+      .map((id) => sceneImageError(id))
+      .filter((error) => error !== undefined)
+      .join("；") || undefined;
 
   /**
    * 贴图加载完成信号。
@@ -67,14 +73,22 @@ export function ScenePanel(): React.JSX.Element {
    * 所以加载完必须**主动触发一次重渲染**：订阅贴图加载完成的事件即可。
    */
   const [imageReady, setImageReady] = useState(false);
+  const subscribeKey = mapImageIds.join("|");
   useEffect(() => {
-    if (mapImageId === null) {
+    if (subscribeKey.length === 0) {
       setImageReady(false);
       return;
     }
 
-    return subscribeSceneImage(mapImageId, () => setImageReady(true));
-  }, [mapImageId]);
+    const unsubscribe = subscribeKey
+      .split("|")
+      .map((id) => subscribeSceneImage(id, () => setImageReady(true)));
+    return () => {
+      for (const off of unsubscribe) {
+        off();
+      }
+    };
+  }, [subscribeKey]);
 
   // 渲染器生命周期
   useEffect(() => {
@@ -159,8 +173,7 @@ export function ScenePanel(): React.JSX.Element {
 
       const store = useEditorStore.getState();
       for (const object of scene.objects) {
-        // 地图没有可拖的点（它是铺满场景的底图）：就算文件里残留着坐标，也不给它热区
-        if (object.position === null || !isPositionableObject(object)) {
+        if (object.position === null) {
           continue;
         }
 
@@ -295,49 +308,39 @@ export function ScenePanel(): React.JSX.Element {
         return;
       }
 
-      // 地图只是场景里的一个对象；没有它也能在场景里放对象
+      // 地图只是场景里的对象；没有它也能在场景里放对象
       const scene = scenes.find((item) => item.name === activeSceneName);
       if (scene === undefined) {
-        // 没有场景就画空：不要凭空画出一个「看起来像地图」的区域
         renderer.draw({ viewport, cssWidth: viewportSize.width, cssHeight: viewportSize.height });
         return;
       }
 
-      const mapObject = scene.objects.find((object) => object.kind === "Map");
-      const mapImage = mapObject?.map === undefined ? null : sceneImage(mapObject.map.image.id);
-      /**
-       * 场景范围由**贴图引用里声明的尺寸**决定（网格就是按它排的），贴图本身再缩放铺满它。
-       *
-       * 不能拿 `naturalWidth` 当场景范围：素材的实际像素尺寸与引用里写的不一定一致
-       * （手写文件、或素材被换成低分辨率占位图），那样网格坐标与世界坐标就全错位了。
-       */
-      const sceneSize = sceneImageSize(scene);
-      // 网格与世界同向：没有地图时按默认尺寸铺网格，让「一格」这件事始终看得见
-      const grid =
-        mapObject?.map === undefined
-          ? gridSizeFromImage(sceneSize)
-          : {
-              width: mapObject.map.grid.width,
-              height: mapObject.map.grid.height,
-            };
+      // 每张地图各画各的：它自己的矩形（位置 + 贴图尺寸）+ 自己的网格
+      const maps = scene.objects.flatMap((object) => {
+        if (object.kind !== "Map" || object.map === undefined || object.position === null) {
+          return [];
+        }
 
-      // 贴图实际像素与声明尺寸不一致时说一声：画面会被拉伸，但网格仍按声明尺寸对齐
-      if (
-        mapImage !== null &&
-        mapObject?.map !== undefined &&
-        (mapImage.naturalWidth !== sceneSize.width || mapImage.naturalHeight !== sceneSize.height)
-      ) {
-        const id = mapObject.map.image.id;
-        warnImageSizeOnce(
-          id,
-          `贴图实际尺寸 ${mapImage.naturalWidth}×${mapImage.naturalHeight} 与地图数据里声明的 ${sceneSize.width}×${sceneSize.height} 不一致，已按声明尺寸拉伸铺满`,
-        );
-      }
+        const { image, grid } = object.map;
+        const mapImage = sceneImage(image.id);
 
-      // 对象在画布上画成标记点：看得见、能点、能拖，位置就是它的世界坐标
-      // （地图不画：它没有位置，铺满整个场景）
+        // 贴图实际像素与声明尺寸不一致时说一声：画面会被拉伸，但网格仍按声明尺寸对齐
+        if (
+          mapImage !== null &&
+          (mapImage.naturalWidth !== image.width || mapImage.naturalHeight !== image.height)
+        ) {
+          warnImageSizeOnce(
+            image.id,
+            `贴图实际尺寸 ${mapImage.naturalWidth}×${mapImage.naturalHeight} 与地图数据里声明的 ${image.width}×${image.height} 不一致，已按声明尺寸拉伸铺满`,
+          );
+        }
+
+        return [{ image: mapImage, rect: worldRectOf(object.position, image), grid, showGrid: true }];
+      });
+
+      // 每个对象在画布上画成标记点：看得见、能点、能拖，位置就是它的世界坐标
       const markers = scene.objects.flatMap((object) =>
-        object.position === null || !isPositionableObject(object)
+        object.position === null
           ? []
           : [
               {
@@ -354,10 +357,7 @@ export function ScenePanel(): React.JSX.Element {
         viewport,
         cssWidth: viewportSize.width,
         cssHeight: viewportSize.height,
-        image: mapImage,
-        sceneSize,
-        grid,
-        showGrid: true,
+        maps,
         showOrigin: true,
         markers,
       });

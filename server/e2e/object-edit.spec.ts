@@ -92,6 +92,65 @@ async function sceneWorldAt(
 }
 
 /**
+ * 世界坐标 → 画布上的屏幕点，**不**夹取（只用来采样像素，不点它）。
+ *
+ * 采样要看地图真实画在哪，不能像点击那样被夹进「点得到的区域」。
+ */
+async function worldSamplePoint(
+  page: Page,
+  world: { x: number; y: number },
+): Promise<{ x: number; y: number }> {
+  const box = await page.getByTestId("scene-viewport").boundingBox();
+  if (box === null) {
+    throw new Error("拿不到画布尺寸");
+  }
+
+  return { x: box.x + box.width / 2 + world.x, y: box.y + box.height / 2 - world.y };
+}
+
+/**
+ * 取画布上某个屏幕点周围 `radius` 像素的**平均颜色**（按 DPR 换算到后备缓冲像素）。
+ *
+ * 取平均而不是单点：网格线 / 原点十字随时可能正好压在被采样的那个像素上，
+ * 单点会读到它们的颜色。一片纯色贴图的平均值仍然明显偏它自己的颜色。
+ */
+async function canvasAverageColor(
+  page: Page,
+  point: { x: number; y: number },
+  radius = 4,
+): Promise<{ r: number; g: number; b: number }> {
+  return page.evaluate(
+    ({ x, y, radius }) => {
+      const canvas = document.querySelector("canvas");
+      const context = canvas?.getContext("2d") ?? null;
+      if (canvas === null || context === null) {
+        return { r: -1, g: -1, b: -1 };
+      }
+
+      const rect = canvas.getBoundingClientRect();
+      const ratio = canvas.width / Math.max(1, rect.width);
+      const size = Math.max(1, Math.round(radius * ratio));
+      const px = Math.round((x - rect.left) * ratio) - Math.floor(size / 2);
+      const py = Math.round((y - rect.top) * ratio) - Math.floor(size / 2);
+      const data = context.getImageData(px, py, size, size).data;
+
+      let r = 0;
+      let g = 0;
+      let b = 0;
+      const pixels = data.length / 4;
+      for (let i = 0; i < data.length; i += 4) {
+        r += data[i] ?? 0;
+        g += data[i + 1] ?? 0;
+        b += data[i + 2] ?? 0;
+      }
+
+      return { r: r / pixels, g: g / pixels, b: b / pixels };
+    },
+    { x: point.x, y: point.y, radius },
+  );
+}
+
+/**
  * 数一数画布上某个**精确颜色**的像素（采样步长 2px）。
  *
  * 用途：判断某个标记点画没画。标记点是不透明实心圆，圆心附近就是精确色；
@@ -127,8 +186,7 @@ async function countCanvasColor(
   );
 }
 
-/** 标记点颜色（`kindMarkerColor`）：普通对象蓝、地图（未知类型）灰。 */
-const MARKER_BLUE: readonly [number, number, number] = [79, 156, 249];
+/** 标记点颜色（`kindMarkerColor`）：地图等未知类型是灰色那枚。 */
 const MARKER_GRAY: readonly [number, number, number] = [154, 164, 178];
 
 /** 用属性面板把某个对象移到精确的世界坐标（面板在平板下是右抽屉，先唤出来）。 */
@@ -601,18 +659,14 @@ test.describe("创建与编辑场景对象", () => {
     }
   });
 
-  test("地图不参与摆放：没有坐标输入框与标记点，文件里残留的位置会被清掉", async ({
-    page,
-    request,
-  }) => {
+  test("地图是世界里的对象：改世界坐标 / 拖标记点，贴图跟着走", async ({ page, request }) => {
     const project = await newProject(request);
     try {
-      // 地图上带着世界坐标：早期编辑器留下的写法（贴图铺满场景，这个坐标没人读）
+      // 贴图声明成 400×300（比视口小）：这样地图是一块**看得见边界**的小棋盘，
+      // 移动它以后原地会真的空出来（1920×1080 铺满视口，怎么挪都是红的）
       await seedProjectDoc(request, project, [
         sceneDoc(SCENE_A, [
-          sceneObjectDoc("木门"),
-          sceneObjectDoc("无位置的木门"),
-          { ...mapObjectDoc(project, SCENE_A), position: { x: 0, y: 0 } },
+          mapObjectDoc(project, SCENE_A, "网格地图", { width: 400, height: 300 }),
         ]),
       ]);
       // 贴图要在打开项目**之前**提交：编辑器不会盯着素材目录变化
@@ -622,47 +676,61 @@ test.describe("创建与编辑场景对象", () => {
       await openProject(page, project);
       await openLeftTab(page, "hierarchy");
 
-      // 兜底断言：地图的贴图确实画着（别把「地图没画」当成「没有标记点」）
       await expect(page.getByTestId("scene-image-error")).toHaveCount(0);
-      await expect.poll(() => countCanvasColor(page, [255, 0, 0])).toBeGreaterThan(1000);
 
-      // 打开时就修好并回写：磁盘上不再留着那个假坐标
+      // 落点挑在棋盘内、又离网格线足够远的地方（网格 64×36 → 一格 6.25×8.33px）
+      const inside = { x: 60, y: 60 };
+      await expect
+        .poll(async () => (await canvasAverageColor(page, await worldSamplePoint(page, inside))).r)
+        .toBeGreaterThan(180);
+
+      // 地图**有**可拖的标记点（它是世界里的对象，不是背景）
+      await expect.poll(() => countCanvasColor(page, MARKER_GRAY)).toBeGreaterThan(5);
+
+      // 属性面板里改世界坐标：它就是贴图中心
+      await setObjectPositionViaInspector(page, { x: -300, y: 200 });
+
+      // 原地空出来、贴图出现在新位置（-300,200 的棋盘覆盖 x∈[-500,-100]、y∈[50,350]）
+      const moved = { x: -240, y: 260 };
+      await expect
+        .poll(async () => (await canvasAverageColor(page, await worldSamplePoint(page, moved))).r)
+        .toBeGreaterThan(180);
+      await expect
+        .poll(async () => (await canvasAverageColor(page, await worldSamplePoint(page, inside))).r)
+        .toBeLessThan(90);
+
+      // 落盘：位置就是世界坐标（贴图中心）
       await expect
         .poll(async () => {
           const map = (await readSceneObjects(request, project, SCENE_A)).find(
             (object) => object.kind === "Map",
           );
-          // 别用 `??`：这里的期望值就是 null，null 会被它吞掉
-          return map === undefined ? "没有地图对象" : map.position;
+          return map?.position ?? null;
         })
-        .toBeNull();
+        .toEqual({ x: -300, y: 200 });
 
-      // 普通对象挪到三种视口都点得到的落点：它的标记点就是「扫描确实能找到标记点」的对照
+      // 画布上拖它的标记点同样能移动地图（和普通对象一样）。
+      // 落点先探一次：平板竖屏左边有抽屉、桌面也可能被面板压住，
+      // 直接按世界坐标算出的屏幕点不一定点得到（那一下会变成平移画布）
       const probed = await clampedWorldPoint(page, -200, 150);
       await setObjectPositionViaInspector(page, probed.world);
 
-      await expect.poll(() => countCanvasColor(page, MARKER_BLUE)).toBeGreaterThan(5);
-      // 地图没有标记点（灰色那枚），哪怕文件里残留过坐标
-      await expect.poll(() => countCanvasColor(page, MARKER_GRAY)).toBe(0);
+      const from = await scenePoint(page, probed.world.x, probed.world.y);
+      const to = { x: from.x + 120, y: from.y - 60 };
+      await page.mouse.move(from.x, from.y);
+      await page.mouse.down();
+      await page.mouse.move(to.x, to.y, { steps: 8 });
+      await page.mouse.up();
 
-      // 属性面板：地图没有世界坐标输入框，只说明它铺满整个场景
-      await openLeftTab(page, "hierarchy");
-      await page.getByTestId("object-row").filter({ hasText: "地图" }).first().click();
-      if (!(await page.getByTestId("inspector-object-name").isVisible().catch(() => false))) {
-        await page.getByRole("button", { name: "属性", exact: true }).click();
-      }
-
-      await expect(page.getByTestId("object-properties")).toContainText("铺满整个场景");
-      await expect(page.getByTestId("inspector-object-x")).toHaveCount(0);
-      await expect(page.getByTestId("inspector-object-y")).toHaveCount(0);
-
-      // 列表里：地图不标「未放置」（它本来就没有位置），没位置的普通对象照旧要标
-      await expect(
-        page.getByTestId("object-row").filter({ hasText: "地图" }).first(),
-      ).not.toContainText("未放置");
-      await expect(
-        page.getByTestId("object-row").filter({ hasText: "无位置的木门" }).first(),
-      ).toContainText("未放置");
+      const expected = await sceneWorldAt(page, to);
+      await expect
+        .poll(async () => {
+          const position = (await readSceneObjects(request, project, SCENE_A))[0]?.position ?? null;
+          return position === null
+            ? null
+            : Math.hypot(position.x - expected.x, position.y - expected.y) < 2;
+        })
+        .toBe(true);
     } finally {
       await dropProject(request, project);
     }

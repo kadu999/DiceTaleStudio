@@ -131,19 +131,25 @@ export function sceneObjectDoc(
   };
 }
 
-/** 造一个地图对象（地图只是场景里的对象；贴图与场景同名，放 `Assets/images/`）。 */
+/**
+ * 造一个地图对象（地图只是场景里的对象；贴图与场景同名，放 `Assets/images/`）。
+ *
+ * 地图**有世界坐标**（贴图中心，默认世界原点），`size` 是贴图里声明的尺寸——
+ * 声明得比视口小就能在画布上看到这块棋盘的边界。
+ */
 export function mapObjectDoc(
   project: string,
   sceneName: string,
   name = `${sceneName} 地图`,
+  size: { width: number; height: number } = { width: 1920, height: 1080 },
 ): Record<string, unknown> {
   return {
-    ...sceneObjectDoc(name, "Map"),
+    ...sceneObjectDoc(name, "Map", { x: 0, y: 0 }),
     map: {
       image: {
         id: `project:${project}/Assets/images/${sceneName}.png`,
-        width: 1920,
-        height: 1080,
+        width: size.width,
+        height: size.height,
       },
       grid: { width: 64, height: 36, cellSize: 1 },
       rowOrder: "bottom-up",

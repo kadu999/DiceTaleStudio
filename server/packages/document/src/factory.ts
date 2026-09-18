@@ -8,6 +8,7 @@ import {
   type SceneDoc,
   type SceneFileDoc,
   type SceneObjectDoc,
+  type WorldPosition,
 } from "./types";
 
 /**
@@ -40,6 +41,8 @@ export function createMapObject(input: {
   readonly grid: GridSpec;
   readonly id?: string;
   readonly cellSize?: number;
+  /** 地图中心的世界坐标；不传就是世界原点。 */
+  readonly position?: WorldPosition;
 }): SceneObjectDoc {
   const map: MapDataDoc = {
     image: input.image,
@@ -54,7 +57,7 @@ export function createMapObject(input: {
     id: input.id ?? createId("map"),
     name: input.name,
     kind: "Map",
-    position: null,
+    position: input.position ?? { x: 0, y: 0 },
     rotation: 0,
     components: [],
     map,
