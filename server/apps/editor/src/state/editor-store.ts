@@ -15,7 +15,7 @@ import {
   removeObject as removeSceneObject,
   renameObject as renameSceneObject,
   setMapGrid as setSceneMapGrid,
-  setMapImage as setSceneMapImage,
+  setObjectImage as setSceneObjectImage,
   setObjectPosition as setSceneObjectPosition,
   validateSceneName,
   type ImageRef,
@@ -239,8 +239,8 @@ export interface EditorStoreState {
   moveObject(id: string, position: WorldPosition): void;
   /** 一次拖动结束：断开撤销合并，使后续拖动成为独立记录。 */
   endObjectDrag(): void;
-  /** 换地图对象的贴图（宽高由调用方从素材本身读出）。 */
-  setMapImage(mapObjectId: string, image: ImageRef): boolean;
+  /** 换对象显示的图片（地图写进 map.image，精灵写进 image；宽高由调用方从素材本身读出）。 */
+  setObjectImage(objectId: string, image: ImageRef): boolean;
   /** 改地图网格的列数 / 行数（格子按新尺寸重建，重叠部分保留）。 */
   setMapGrid(mapObjectId: string, grid: GridSize): boolean;
 }
@@ -343,10 +343,12 @@ function fileNameOfResourceId(id: string): string {
  * 场景改名时同步**场景名隐式引用**的贴图 ID。
  *
  * 贴图是按「与场景同名」的约定自动指到 `Assets/images/<场景名>.png` 的
- * （见 `projectSceneImageId`）。所以只要某个地图对象的贴图**当前指向旧场景名**，
+ * （见 `projectSceneImageId`）。所以只要某个**地图**的贴图当前指向旧场景名，
  * 就把它改指到新场景名——否则场景一改名，贴图立刻就找不到了。
  *
- * 只动文件名与旧场景名一致的引用：**手工指定的其它贴图不会被动到**。
+ * **只动地图的 `map.image`，不动精灵的 `image`**：地图的引用是**约定**（跟着场景名走），
+ * 精灵的图片是用户**明确挑的**（哪怕它恰好和场景同名，那也还是他挑的那张文件，
+ * 改指到别的文件反而是篡改）。手工指定的其它贴图同理不受影响。
  */
 function withRenamedSceneImage(
   project: string,
@@ -1383,7 +1385,7 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       });
     },
 
-    setMapImage(mapObjectId, image) {
+    setObjectImage(objectId, image) {
       const sceneName = get().activeSceneName;
       if (sceneName === null) {
         return false;
@@ -1392,7 +1394,7 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       const changed = get().applyScenes("更换贴图", (draft) => {
         const scene = draft.find((item) => item.name === sceneName);
         if (scene !== undefined) {
-          setSceneMapImage(scene, mapObjectId, image);
+          setSceneObjectImage(scene, objectId, image);
         }
       });
 
@@ -1403,9 +1405,9 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       return changed;
     },
 
-    openImagePicker(mapObjectId) {
-      set({ imagePicker: mapObjectId !== null, imagePickerTarget: mapObjectId });
-      if (mapObjectId !== null) {
+    openImagePicker(objectId) {
+      set({ imagePicker: objectId !== null, imagePickerTarget: objectId });
+      if (objectId !== null) {
         // 打开「选择贴图」时刷新一次目录：素材由外部提交，不刷新的话刚放进去的图选不到。
         void get().refreshTree();
       }

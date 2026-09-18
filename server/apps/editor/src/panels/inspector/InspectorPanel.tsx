@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { SceneObjectDoc } from "@dts/document";
+import { objectImage, type SceneObjectDoc } from "@dts/document";
 import { cellPixelSize } from "@dts/grid";
 import type { ResourceTreeNode } from "../../services/project-api";
 import { findResourceNode, useEditorStore } from "../../state/editor-store";
@@ -55,9 +55,10 @@ export function InspectorPanel(): React.JSX.Element {
               <NameField object={selected} />
               <Field label="类型" value={selected.kind} />
               <PositionFields object={selected} />
+              {/* 每个对象都能显示一张图片（精灵就是靠它显示图片的） */}
+              <TextureField object={selected} />
               {selected.map !== undefined ? (
                 <>
-                  <TextureField object={selected} />
                   <GridFields object={selected} />
                   <CellSizeField object={selected} />
                   <Field label="行序" value={selected.map.rowOrder} mono />
@@ -177,30 +178,30 @@ function NameField({ object }: { readonly object: SceneObjectDoc }): React.JSX.E
 }
 
 /**
- * 地图对象的贴图：显示**项目内相对路径**（`images/Map001.png`），后面跟一个「选择」按钮。
+ * 对象要显示的图片（**精灵**就靠它显示图片；地图的贴图也是这个字段，只是存在 `map.image` 里）：
+ * 显示**项目内相对路径**（`images/Map001.png`），后面跟一个「选择」按钮。
  *
- * 按钮唤出的是「选择贴图」弹框（对齐 Unity 的 Object Picker）——素材由外部提交到
- * `Assets/images/`，编辑器不导入，所以这里只负责从已有图片里挑。
+ * 按钮唤出的是「选择图片」弹框（对齐 Unity 的 Object Picker）——素材由外部提交到
+ * `Assets/images/`，编辑器不导入，所以这里只负责从已有图片里挑。没有图片的对象
+ * （刚建出来的精灵）只画一个标记点，这里给一行说明 + 同一个「选择」入口。
  */
 function TextureField({ object }: { readonly object: SceneObjectDoc }): React.JSX.Element {
   const tree = useEditorStore((state) => state.project.tree);
   const openImagePicker = useEditorStore((state) => state.openImagePicker);
-  const image = object.map?.image;
-  if (image === undefined) {
-    return (
-      <FieldRow label="贴图">
-        <span className="flex-1 text-[11px] text-[var(--color-editor-text-dim)]">（无贴图数据）</span>
-      </FieldRow>
-    );
-  }
+  const image = objectImage(object);
 
   // 引用的文件不在项目里（素材没提交 / 改名了）：直接把这件事写出来
-  const missing = findAssetById(tree, image.id) === undefined;
+  const missing = image !== undefined && findAssetById(tree, image.id) === undefined;
 
   return (
     <FieldRow label="贴图">
-      <span className="min-w-0 flex-1 truncate font-mono text-[11px]" title={image.id}>
-        {assetDisplayPath(image.id)}
+      <span
+        className={`min-w-0 flex-1 truncate font-mono text-[11px] ${
+          image === undefined ? "text-[var(--color-editor-text-dim)]" : ""
+        }`}
+        title={image?.id}
+      >
+        {image === undefined ? "（无贴图）" : assetDisplayPath(image.id)}
       </span>
       {missing ? (
         <span

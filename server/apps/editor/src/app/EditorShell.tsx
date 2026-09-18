@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { Group, Panel, Separator } from "react-resizable-panels";
+import { objectImage } from "@dts/document";
 import { useCompactLayout } from "../hooks/useMediaQuery";
 import { useEditorStore } from "../state/editor-store";
 import { LeftPanel } from "../panels/LeftPanel";
@@ -32,11 +33,11 @@ export function EditorShell(): React.JSX.Element {
   const imagePicker = useEditorStore((state) => state.imagePicker);
   const imagePickerTarget = useEditorStore((state) => state.imagePickerTarget);
   const openImagePicker = useEditorStore((state) => state.openImagePicker);
-  const setMapImage = useEditorStore((state) => state.setMapImage);
+  const setObjectImage = useEditorStore((state) => state.setObjectImage);
   const scenes = useEditorStore((state) => state.scenes);
   const activeSceneName = useEditorStore((state) => state.activeSceneName);
 
-  /** 弹框要换贴图的那个地图对象（对象可能已被删掉，所以现查一次）。 */
+  /** 弹框要换图片的那个对象（对象可能已被删掉，所以现查一次）。 */
   const pickerTarget =
     imagePickerTarget === null
       ? undefined
@@ -197,14 +198,14 @@ export function EditorShell(): React.JSX.Element {
 
       <StatusBar />
 
-      {/* 选择贴图：从项目已有的图片里挑（编辑器不导入素材） */}
+      {/* 选择图片：从项目已有的图片里挑（编辑器不导入素材） */}
       <ImagePickerDialog
         open={imagePicker && pickerTarget !== undefined}
-        currentId={pickerTarget?.map?.image.id}
+        currentId={pickerTarget === undefined ? undefined : objectImage(pickerTarget)?.id}
         onClose={() => openImagePicker(null)}
         onPick={(image) => {
           if (imagePickerTarget !== null) {
-            setMapImage(imagePickerTarget, image);
+            setObjectImage(imagePickerTarget, image);
           }
 
           openImagePicker(null);

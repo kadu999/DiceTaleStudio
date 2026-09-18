@@ -113,6 +113,13 @@ export interface SceneObjectDoc {
   readonly components: ComponentDoc[];
   /** 仅 `kind === "Map"` 的地图对象携带；其它对象没有。 */
   readonly map?: MapDataDoc;
+  /**
+   * 对象要显示的图片（**精灵**就靠它显示图片；地图的贴图在 `map.image` 里）。
+   *
+   * 声明宽高就是它在世界里的尺寸（1 图片像素 = 1 世界像素，不额外缩放），
+   * 位置是它的中心——和地图贴图同一套规矩。没有图片的对象只画一个标记点。
+   */
+  readonly image?: ImageRef;
 }
 
 /** 项目文件（project.json）：只有项目级数据；场景在 Assets/scenes/ 下各自成文件。 */

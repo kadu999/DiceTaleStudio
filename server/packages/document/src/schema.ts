@@ -73,6 +73,8 @@ export const sceneObjectSchema = z.object({
   rotation: z.number(),
   components: z.array(componentSchema),
   map: mapDataSchema.optional(),
+  // 对象要显示的图片（精灵用；地图的贴图在 map.image 里）
+  image: imageRefSchema.optional(),
 });
 
 /** 场景文件内容：**不含场景名**——名字就是文件名，重复存名字迟早会和磁盘上的名字不一致。 */

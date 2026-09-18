@@ -58,6 +58,15 @@ function validateObject(object: SceneObjectDoc, path: string, issues: Validation
         issues.push({ level: "warning", path: `${path}/map/image`, message: "地图贴图未指定" });
       }
     }
+
+    // 地图的贴图在 map.image 里：再挂一份 object.image 就是同一件事写了两遍（显示到底听谁的？）
+    if (object.image !== undefined) {
+      issues.push({
+        level: "warning",
+        path: `${path}/image`,
+        message: "地图对象的贴图写在 map.image 里，多余的 image 字段会被忽略",
+      });
+    }
   } else if (object.map !== undefined) {
     issues.push({
       level: "warning",

@@ -6,13 +6,16 @@ import {
   addComponent,
   addObject,
   collectActionIds,
+  createSceneObject,
   findMapObject,
   listMapObjects,
+  objectImage,
   moveAction,
   removeAction,
   removeObject,
   setMapCells,
   setMapGrid,
+  setObjectImage,
   setObjectPosition,
   updateAction,
   updateComponentData,
@@ -325,6 +328,39 @@ describe("对象命令（都在场景上操作）", () => {
     expect(cleared.objects[0]?.position).toBeNull();
   });
 
+  it("isPositionableObject 早就不在了；对象图片：地图在 map.image，精灵在 image", () => {
+    const sprite = createSceneObject({
+      name: "精灵",
+      kind: "SceneObject",
+      position: { x: 0, y: 0 },
+    });
+    expect(objectImage(sprite)).toBeUndefined();
+    expect(objectImage(createMapObject({ name: "地图", image: IMAGE, grid: GRID }))).toEqual(IMAGE);
+  });
+
+  it("setObjectImage：地图写进 map.image，精灵写进 image", () => {
+    const next = { id: "project:C/Assets/images/sprite.png", width: 200, height: 150 };
+
+    const withMap = mutate(withMapObject(makeScene()), (draft) => {
+      expect(setObjectImage(draft, "map-1", next)).toBe(true);
+    });
+    expect(withMap.objects[0]?.map?.image).toEqual(next);
+    expect(withMap.objects[0]?.image).toBeUndefined();
+
+    const withSprite = mutate(withObject(makeScene(), "sprite"), (draft) => {
+      expect(setObjectImage(draft, "sprite", next)).toBe(true);
+    });
+    expect(withSprite.objects[0]?.image).toEqual(next);
+    expect(withSprite.objects[0]?.map).toBeUndefined();
+
+    // 同一张图再设一次：没有变更（recipe 不返回值，否则 immer 会拿返回值当新状态）
+    expect(
+      mutate(withSprite, (draft) => {
+        setObjectImage(draft, "sprite", next);
+      }),
+    ).toBe(withSprite);
+  });
+
   it("新建地图对象带着世界坐标（默认原点）——它就是贴图中心", () => {
     const map = createMapObject({ name: "地图", image: IMAGE, grid: GRID, position: { x: 30, y: -40 } });
     expect(map.position).toEqual({ x: 30, y: -40 });
@@ -436,6 +472,19 @@ describe("文档校验", () => {
     const issues = validateScene(scene);
     expect(hasErrors(issues)).toBe(false);
     expect(formatIssues(issues)).toMatch(/不应携带地图数据/);
+  });
+
+  it("地图对象带多余的 object.image 时给警告（贴图只认 map.image）", () => {
+    const scene = mutate(withMapObject(makeScene()), (draft) => {
+      const map = draft.objects[0];
+      if (map !== undefined) {
+        map.image = IMAGE;
+      }
+    });
+
+    const issues = validateScene(scene);
+    expect(hasErrors(issues)).toBe(false);
+    expect(formatIssues(issues)).toMatch(/写在 map.image/);
   });
 
   it("地图网格格数与网格尺寸不符时报错", () => {

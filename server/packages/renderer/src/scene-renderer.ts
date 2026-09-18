@@ -16,12 +16,12 @@ import { visibleWorldRect, worldToScreen, type Viewport } from "./viewport";
  * 只读输入、无副作用：调用方（编辑器）在 rAF 循环里把当前状态传进来即可。
  *
  * 只有**世界坐标**一套（x 向右、y 向上，单位像素），而且**世界无限大**：
- * - 地图是摆在世界里的对象，每张一块矩形（`SceneMapLayer.rect` = 中心 + 贴图尺寸），
- *   贴图铺满它、格子锚在它上面，一张场景里有多少张都各画各的；
+ * - 对象要显示的图片各占一块矩形（`SceneLayer.rect` = 中心 + 图片尺寸）：地图的贴图、
+ *   精灵的图片都走这条路，贴图铺满矩形、格子锚在矩形上，有多少张都各画各的；
  * - 网格：格子 `(x, y)` 与世界 y 同向，`(0, 0)` 在**那张地图矩形的左下角**；
  * - 标记点：直接用世界坐标，不做任何换算。
  *
- * 渲染顺序：背景 → 每张地图（棋盘格 → 贴图 → 格子着色 → 网格线）→ 原点十字 → 标记。
+ * 渲染顺序：背景 → 每层图片（棋盘格 → 贴图 → 格子着色 → 网格线）→ 原点十字 → 标记。
  */
 
 /** 对象标记（网格地图 / 精灵 / 玩家 / 道具 / 事件）。 */
@@ -36,11 +36,16 @@ export interface SceneMarker {
   readonly color?: string;
 }
 
-/** 一张地图：贴图 + 它在世界里的矩形 + 它自己的网格。 */
-export interface SceneMapLayer {
+/**
+ * 世界里的一张图片：铺在一块矩形上，**可选**带网格。
+ *
+ * 地图就是「带网格的图片」，精灵只是「一张图片」——同一套绘制（棋盘格 → 贴图 → 格子
+ * 着色 → 网格线），全部裁剪在这块矩形里，所以一张场景里有多少张都互不干扰。
+ */
+export interface SceneLayer {
   /** 贴图；还没加载好时为 `null`（只画棋盘格与网格）。 */
   readonly image?: CanvasImageSource | null;
-  /** 这块地图占据的世界矩形（贴图铺满它，网格锚在它上面）。 */
+  /** 这张图片占据的世界矩形（贴图铺满它，网格锚在它上面）。 */
   readonly rect: WorldRect;
   readonly grid?: GridSize;
   /** 行主序 `y*width+x`，y=0 为图片最下面一行（= 世界 y 最小的一行）。 */
@@ -55,8 +60,8 @@ export interface SceneRenderInput {
   readonly viewport: Viewport;
   readonly cssWidth: number;
   readonly cssHeight: number;
-  /** 场景里的地图，**按顺序叠加绘制**（没有地图就是空的：照画标记点）。 */
-  readonly maps?: readonly SceneMapLayer[];
+  /** 场景里的图片，**按顺序叠加绘制**（先画的在下面）。 */
+  readonly layers?: readonly SceneLayer[];
   /** 画在世界原点的十字光标，便于判断 0,0 在哪。 */
   readonly showOrigin?: boolean;
   readonly markers?: readonly SceneMarker[];
@@ -142,8 +147,8 @@ export function createCanvasSceneRenderer(canvas: HTMLCanvasElement): SceneRende
       context.fillStyle = input.background ?? DEFAULT_BACKGROUND;
       context.fillRect(0, 0, cssWidth, cssHeight);
 
-      for (const layer of input.maps ?? []) {
-        drawMapLayer(context, layer, viewport, visible, view, checker);
+      for (const layer of input.layers ?? []) {
+        drawLayer(context, layer, viewport, visible, view, checker);
       }
 
       drawMarkers(context, input, viewport);
@@ -180,14 +185,14 @@ function createCheckerPattern(context: CanvasRenderingContext2D): CanvasPattern 
 }
 
 /**
- * 画一张地图：棋盘格（贴图的透明区露出来的底纹）→ 贴图 → 格子着色 → 网格线。
+ * 画一层图片：棋盘格（贴图的透明区露出来的底纹）→ 贴图 → 格子着色 → 网格线。
  *
  * **全部裁剪在这张地图的矩形里**：世界无限大，一张小地图的网格线不该横穿整个屏幕，
  * 多张地图之间也不该互相越界。整块都在视口外时直接跳过（地图可以摆在世界任何地方）。
  */
-function drawMapLayer(
+function drawLayer(
   context: CanvasRenderingContext2D,
-  layer: SceneMapLayer,
+  layer: SceneLayer,
   viewport: Viewport,
   visible: { left: number; top: number; right: number; bottom: number },
   view: ImageSize,
@@ -226,7 +231,7 @@ function drawMapLayer(
   context.restore();
 }
 
-/** 地图矩形在屏幕上的外框（贴图就画在这个框里）。 */
+/** 图片矩形在屏幕上的外框（贴图就画在这个框里）。 */
 function screenBoxOf(
   rect: WorldRect,
   viewport: Viewport,
@@ -242,7 +247,7 @@ function screenBoxOf(
 
 function drawCells(
   context: CanvasRenderingContext2D,
-  layer: SceneMapLayer,
+  layer: SceneLayer,
   viewport: Viewport,
   visible: { left: number; top: number; right: number; bottom: number },
 ): void {
@@ -290,7 +295,7 @@ function drawCells(
 
 function drawGridLines(
   context: CanvasRenderingContext2D,
-  layer: SceneMapLayer,
+  layer: SceneLayer,
   viewport: Viewport,
   visible: { left: number; top: number; right: number; bottom: number },
   view: ImageSize,

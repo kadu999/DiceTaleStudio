@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { SceneDoc, WorldPosition } from "@dts/document";
+import { objectImage, type SceneDoc, type WorldPosition } from "@dts/document";
 import {
   createCanvasSceneRenderer,
   screenToWorld,
@@ -52,28 +52,29 @@ export function ScenePanel(): React.JSX.Element {
   const openObjectDialog = useEditorStore((state) => state.openObjectDialog);
   const resetViewport = useEditorStore((state) => state.resetViewport);
 
-  // 当前场景里所有地图的贴图：一张场景可以有任意多张地图，各自带贴图
-  const mapImageIds = (
+  // 当前场景里所有要显示的图片（地图贴图 + 精灵图片），一张场景可以有任意多张
+  const imageIds = (
     scenes.find((scene) => scene.name === activeSceneName)?.objects ?? []
-  ).flatMap((object) =>
-    object.kind === "Map" && object.map !== undefined ? [object.map.image.id] : [],
-  );
+  ).flatMap((object) => {
+    const ref = objectImage(object);
+    return ref === undefined ? [] : [ref.id];
+  });
 
-  // 贴图读不到（素材还没提交 / 文件名不匹配）时明确写出来，否则那块地方只有棋盘格
+  // 图片读不到（素材还没提交 / 文件名不匹配）时明确写出来，否则那块地方只有棋盘格
   const imageError =
-    mapImageIds
+    imageIds
       .map((id) => sceneImageError(id))
       .filter((error) => error !== undefined)
       .join("；") || undefined;
 
   /**
-   * 贴图加载完成信号。
+   * 图片加载完成信号。
    *
-   * 绘制循环是 rAF、读的是 `getState()`（不参与 React 重渲染），而贴图是异步加载的，
-   * 所以加载完必须**主动触发一次重渲染**：订阅贴图加载完成的事件即可。
+   * 绘制循环是 rAF、读的是 `getState()`（不参与 React 重渲染），而图片是异步加载的，
+   * 所以加载完必须**主动触发一次重渲染**：订阅图片加载完成的事件即可。
    */
   const [imageReady, setImageReady] = useState(false);
-  const subscribeKey = mapImageIds.join("|");
+  const subscribeKey = imageIds.join("|");
   useEffect(() => {
     if (subscribeKey.length === 0) {
       setImageReady(false);
@@ -315,27 +316,32 @@ export function ScenePanel(): React.JSX.Element {
         return;
       }
 
-      // 每张地图各画各的：它自己的矩形（位置 + 贴图尺寸）+ 自己的网格
-      const maps = scene.objects.flatMap((object) => {
-        if (object.kind !== "Map" || object.map === undefined || object.position === null) {
+      // 每张图片各画各的：地图的贴图（带网格）与精灵的图片走同一条路
+      const layers = scene.objects.flatMap((object) => {
+        const ref = objectImage(object);
+        if (ref === undefined || object.position === null) {
           return [];
         }
 
-        const { image, grid } = object.map;
-        const mapImage = sceneImage(image.id);
+        const image = sceneImage(ref.id);
 
-        // 贴图实际像素与声明尺寸不一致时说一声：画面会被拉伸，但网格仍按声明尺寸对齐
-        if (
-          mapImage !== null &&
-          (mapImage.naturalWidth !== image.width || mapImage.naturalHeight !== image.height)
-        ) {
+        // 图片实际像素与引用里声明的尺寸不一致时说一声：画面会被拉伸到声明的尺寸
+        if (image !== null && (image.naturalWidth !== ref.width || image.naturalHeight !== ref.height)) {
           warnImageSizeOnce(
-            image.id,
-            `贴图实际尺寸 ${mapImage.naturalWidth}×${mapImage.naturalHeight} 与地图数据里声明的 ${image.width}×${image.height} 不一致，已按声明尺寸拉伸铺满`,
+            ref.id,
+            `图片实际尺寸 ${image.naturalWidth}×${image.naturalHeight} 与数据里声明的 ${ref.width}×${ref.height} 不一致，已按声明尺寸拉伸`,
           );
         }
 
-        return [{ image: mapImage, rect: worldRectOf(object.position, image), grid, showGrid: true }];
+        const grid = object.map?.grid;
+        return [
+          {
+            image,
+            rect: worldRectOf(object.position, ref),
+            grid,
+            showGrid: grid !== undefined,
+          },
+        ];
       });
 
       // 每个对象在画布上画成标记点：看得见、能点、能拖，位置就是它的世界坐标
@@ -357,7 +363,7 @@ export function ScenePanel(): React.JSX.Element {
         viewport,
         cssWidth: viewportSize.width,
         cssHeight: viewportSize.height,
-        maps,
+        layers,
         showOrigin: true,
         markers,
       });

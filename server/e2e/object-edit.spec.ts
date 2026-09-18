@@ -702,6 +702,74 @@ test.describe("创建与编辑场景对象", () => {
     }
   });
 
+  test("精灵显示图片：选一张图后画在它自己的位置上（和地图贴图同一套规矩）", async ({
+    page,
+    request,
+  }) => {
+    const project = await newProject(request);
+    try {
+      await seedProjectDoc(request, project, [
+        sceneDoc(SCENE_A, [sceneObjectDoc("精灵", "SceneObject", { x: 0, y: 0 })]),
+      ]);
+      // 200×150 的纯绿图：声明尺寸就是它在世界里的尺寸（1 图片像素 = 1 世界像素）
+      const imageId = `project:${project}/Assets/images/sprite.png`;
+      const uploaded = await request.put(
+        `/api/resources/raw?id=${encodeURIComponent(imageId)}`,
+        {
+          headers: { "content-type": "image/png" },
+          data: solidPng(200, 150, [0, 255, 0]),
+        },
+      );
+      expect(uploaded.ok()).toBeTruthy();
+
+      await enterEditor(page);
+      await openProject(page, project);
+      await openLeftTab(page, "hierarchy");
+      await selectObject(page);
+
+      // 刚建出来的精灵没有图片：属性面板写明白，并给同一个「选择」入口
+      await expect(page.getByTestId("object-properties")).toContainText("（无贴图）");
+      const inside = { x: 40, y: 40 };
+      await expect
+        .poll(async () => (await canvasAverageColor(page, await worldSamplePoint(page, inside))).g)
+        .toBeLessThan(200);
+
+      // 选一张图
+      await page.getByTestId("pick-texture").click();
+      await expect(page.getByTestId("image-picker-dialog")).toBeVisible();
+      await page.locator(`[data-testid="image-picker-item"][data-asset-id="${imageId}"]`).click();
+      await page.getByTestId("image-picker-confirm").click();
+      await expect(page.getByTestId("image-picker-dialog")).toHaveCount(0);
+
+      // 属性面板显示简化路径；精灵中心在 (0,0)，所以 (40,40) 落在它的图里 → 绿了
+      await expect(page.getByTestId("object-properties")).toContainText("images/sprite.png");
+      await expect
+        .poll(async () => (await canvasAverageColor(page, await worldSamplePoint(page, inside))).g)
+        .toBeGreaterThan(200);
+
+      // 落盘：图片挂在对象自己的 image 上（不是 map.image），宽高就是素材本身
+      await expect
+        .poll(async () => {
+          const file = await request.get(
+            `/api/resources/text?id=${encodeURIComponent(
+              `project:${project}/Assets/scenes/${SCENE_A}.json`,
+            )}`,
+          );
+          const raw = (await file.json()) as {
+            objects?: Array<{ image?: unknown; map?: unknown }>;
+          };
+          const object = raw.objects?.[0];
+          return object === undefined ? null : { image: object.image, map: object.map };
+        })
+        .toEqual({
+          image: { id: imageId, width: 200, height: 150 },
+          map: undefined,
+        });
+    } finally {
+      await dropProject(request, project);
+    }
+  });
+
   test("属性面板与列表不显示内部字段（ID / 组件数量），地图行仍显示网格尺寸", async ({
     page,
     request,

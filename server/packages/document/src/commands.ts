@@ -518,29 +518,52 @@ export function setMapData(
 }
 
 /**
- * 换地图对象的贴图。
+ * 对象要显示的图片：地图在 `map.image` 里，其它对象（精灵等）在 `image` 里。
  *
- * 只动 `image`：网格尺寸不变（网格是**导入时**按贴图算好的，换图不该悄悄改动格子数——
- * 那会让已经画好的格子全部错位）。宽高由调用方从素材本身读出来，保证与真实像素一致。
+ * 两处形状一致（都是 `ImageRef`），所以显示、换图、改名同步都走这一个入口，
+ * 不必到处判 `kind`。
  */
-export function setMapImage(
+export function objectImage(object: SceneObjectDoc): ImageRef | undefined {
+  return object.kind === "Map" ? object.map?.image : object.image;
+}
+
+/**
+ * 给对象换贴图（地图写进 `map.image`，其它对象写进 `image`）。
+ *
+ * **只动贴图引用**：地图的网格尺寸不变（网格是**导入时**按贴图算好的，换图不该悄悄改动
+ * 格子数——那会让已经画好的格子全部错位）；精灵没有别的尺寸可动，它在世界里的尺寸
+ * 就是引用里声明的宽高。宽高由调用方从素材本身读出来，保证与真实像素一致。
+ */
+export function setObjectImage(
   scene: Draft<SceneDoc>,
-  mapObjectId: string,
+  objectId: string,
   image: ImageRef,
 ): boolean {
-  const map = findObject(scene, mapObjectId)?.map;
-  if (map === undefined) {
+  const object = findObject(scene, objectId);
+  if (object === undefined) {
     return false;
   }
 
+  const current = objectImage(object);
   if (
-    map.image.id === image.id &&
-    map.image.width === image.width &&
-    map.image.height === image.height
+    current !== undefined &&
+    current.id === image.id &&
+    current.width === image.width &&
+    current.height === image.height
   ) {
     return false;
   }
 
-  map.image = { id: image.id, width: image.width, height: image.height };
+  const next = { id: image.id, width: image.width, height: image.height };
+  if (object.kind === "Map") {
+    if (object.map === undefined) {
+      return false;
+    }
+
+    object.map.image = next;
+  } else {
+    object.image = next;
+  }
+
   return true;
 }
