@@ -19,22 +19,13 @@ import { visibleWorldRect, worldToScreen, type Point, type Viewport } from "./vi
  * - 对象要显示的图片各占一块矩形（`SceneLayer.rect` = 中心 + 图片尺寸）：地图的贴图、
  *   精灵的图片都走这条路，贴图铺满矩形、格子锚在矩形上，有多少张都各画各的；
  * - 网格：格子 `(x, y)` 与世界 y 同向，`(0, 0)` 在**那张地图矩形的左下角**；
- * - 标记点：直接用世界坐标，不做任何换算。
+ * - 对象：每层一张图片（可以没有图片），选中时在它那块矩形上画选中框。
  *
- * 渲染顺序：背景 + 棋盘底纹 → 每层图片（底纹 → 贴图 → 格子着色 → 网格线）→ 原点十字 → 标记。
+ * 渲染顺序：背景 + 棋盘底纹 → 每层图片（底纹 → 贴图 → 格子着色 → 网格线）→ 选中框 → 原点十字。
+ *
+ * **没有「标记点」这回事了**：对象在画布上就是它那块矩形（拾取、选中框、贴图同一块矩形），
+ * 所以看不见的对象不存在，需要用点/圆来兜底。
  */
-
-/** 对象标记（网格地图 / 精灵 / 玩家 / 道具 / 事件）。 */
-export interface SceneMarker {
-  readonly id: string;
-  /** 世界坐标（y 向上）。 */
-  readonly position: { x: number; y: number };
-  readonly kind: string;
-  readonly label?: string;
-  readonly selected?: boolean;
-  /** 覆盖默认配色（CSS 颜色）。 */
-  readonly color?: string;
-}
 
 /**
  * 世界里的一张图片：铺在一块矩形上，**可选**带网格。
@@ -54,6 +45,13 @@ export interface SceneLayer {
   readonly cellColor?: (mask: number) => string | null;
   readonly showGrid?: boolean;
   readonly gridColor?: string;
+  /**
+   * 选中：在这块矩形上画**选中框**（4 个角点 + 4 条边中点，不画中心点）。
+   *
+   * 画在矩形自己的位置上，所以「选中了谁」和「点哪能选中它」用的是**同一块矩形**
+   * （见 `hitTestRect`）——两者的旋转与缩放必然一致，不会出现「框在左、点不到」。
+   */
+  readonly selected?: boolean;
 }
 
 export interface SceneRenderInput {
@@ -64,7 +62,6 @@ export interface SceneRenderInput {
   readonly layers?: readonly SceneLayer[];
   /** 画在世界原点的十字光标，便于判断 0,0 在哪。 */
   readonly showOrigin?: boolean;
-  readonly markers?: readonly SceneMarker[];
   readonly background?: string;
   /**
    * 空处（以及贴图的透明处）垫的黑灰棋盘底纹；默认打开。
@@ -79,8 +76,6 @@ export interface SceneRenderInput {
    * 底纹跟着地图走，而不是像贴在屏幕上一样滑动。它只影响底纹的相位，不影响别的绘制。
    */
   readonly checkerOrigin?: Point;
-  /** 标记半径（屏幕像素）。 */
-  readonly markerRadius?: number;
 }
 
 export interface SceneRenderer {
@@ -123,7 +118,7 @@ const MIN_GRID_LINE_SPACING = 4;
 /** 网格线条数上限：视口缩得极小时不至于画上百万条线。 */
 const MAX_GRID_LINES = 4000;
 
-/** 标记点按对象类型着色。 */
+/** 对象类型色（新建对象弹框里那个小圆点用；画布上不再画标记点）。 */
 const KIND_MARKER_COLORS: Record<string, string> = {
   SceneObject: "#4f9cf9",
   Player: "#3fbf6f",
@@ -134,12 +129,42 @@ const KIND_MARKER_COLORS: Record<string, string> = {
 const DEFAULT_MARKER_COLOR = "#9aa4b2";
 
 /**
- * 取某类型标记点的颜色（未知类型走默认灰）。
+ * 取某类型对象的颜色（未知类型走默认灰）。
  *
- * 画布上的标记点与「新建对象」弹框里的类型色点共用一个来源，两边颜色必须对得上。
+ * 「新建对象」弹框里的类型色点用它；画布上不再画标记点，但配色仍从这里取，
+ * 免得弹框和别处各写一套颜色。
  */
 export function kindMarkerColor(kind: string): string {
   return KIND_MARKER_COLORS[kind] ?? DEFAULT_MARKER_COLOR;
+}
+
+/**
+ * 矩形绕自己的中心旋转 `rotation` 弧度后，是否覆盖世界点 `point`。
+ *
+ * 这是**拾取对象**用的碰撞体：和选中框、和贴图铺的那块矩形**完全同一块**，
+ * 所以「看到的框」与「点得到的范围」永远一致。判定在**世界坐标**里做——
+ * 命中区域于是与视口缩放无关（1:1 点和放大 8 倍点，命中的是同一个对象）。
+ *
+ * 做法是把点**反变换回矩形的本地坐标**（先平移到中心、再反向旋转），
+ * 于是旋转矩形也只是一个 `|x| ≤ 半宽 && |y| ≤ 半高` 的判断，
+ * 不用写四条边的交点、也不会在边界上算错。
+ */
+export function hitTestRect(point: Point, rect: WorldRect, rotation = 0): boolean {
+  const dx = point.x - rect.center.x;
+  const dy = point.y - rect.center.y;
+  const halfWidth = rect.size.width / 2;
+  const halfHeight = rect.size.height / 2;
+
+  if (rotation === 0) {
+    return Math.abs(dx) <= halfWidth && Math.abs(dy) <= halfHeight;
+  }
+
+  const cos = Math.cos(-rotation);
+  const sin = Math.sin(-rotation);
+  const localX = dx * cos - dy * sin;
+  const localY = dx * sin + dy * cos;
+
+  return Math.abs(localX) <= halfWidth && Math.abs(localY) <= halfHeight;
 }
 
 export function createCanvasSceneRenderer(canvas: HTMLCanvasElement): SceneRenderer {
@@ -194,7 +219,12 @@ export function createCanvasSceneRenderer(canvas: HTMLCanvasElement): SceneRende
         drawLayer(context, layer, viewport, visible, view);
       }
 
-      drawMarkers(context, input, viewport);
+      // 选中框画在**所有图层之后**：被别的图片盖住的对象也要看得见自己的框
+      for (const layer of input.layers ?? []) {
+        if (layer.selected === true) {
+          drawSelectionFrame(context, layer.rect, viewport);
+        }
+      }
 
       if (input.showOrigin === true) {
         drawOriginCross(context, viewport);
@@ -438,8 +468,71 @@ function drawGridLines(
   context.stroke();
 }
 
-/** 世界原点（场景中心）的十字光标。 */
-function drawOriginCross(context: CanvasRenderingContext2D, viewport: Viewport): void {
+/** 选中框的配色与尺寸（屏幕像素）。 */
+const SELECTION_COLOR = "#4f9cf9";
+const SELECTION_HANDLE_SIZE = 7;
+const SELECTION_DASH: readonly [number, number] = [4, 3];
+
+/**
+ * 选中框：矩形**四角 + 四边中点**共 8 个手柄，外加一圈虚线描边。
+ *
+ * 刻意**不画中心点**：中心点会被误读成「对象就长这个点」，而对象其实铺满整块矩形。
+ * 手柄用实心方块 + 细描边（Unity 那套），在任何贴图上都看得清。
+ */
+function drawSelectionFrame(
+  context: CanvasRenderingContext2D,
+  rect: WorldRect,
+  viewport: Viewport,
+): void {
+  const topLeft = worldToScreen(viewport, worldRectTopLeft(rect));
+  const width = rect.size.width * viewport.scale;
+  const height = rect.size.height * viewport.scale;
+
+  // 太小的矩形（缩得很远）只画框、不画手柄：手柄会比框还大，糊成一团
+  const half = SELECTION_HANDLE_SIZE / 2;
+  const handles: Point[] = [
+    { x: topLeft.x, y: topLeft.y },
+    { x: topLeft.x + width / 2, y: topLeft.y },
+    { x: topLeft.x + width, y: topLeft.y },
+    { x: topLeft.x + width, y: topLeft.y + height / 2 },
+    { x: topLeft.x + width, y: topLeft.y + height },
+    { x: topLeft.x + width / 2, y: topLeft.y + height },
+    { x: topLeft.x, y: topLeft.y + height },
+    { x: topLeft.x, y: topLeft.y + height / 2 },
+  ];
+
+  context.save();
+  context.lineWidth = 1;
+  context.strokeStyle = SELECTION_COLOR;
+
+  // 虚线描边容易被当成「对象的一部分」，但它能把带旋转的框也画得清清楚楚
+  context.setLineDash([...SELECTION_DASH]);
+  context.strokeRect(topLeft.x + 0.5, topLeft.y + 0.5, width - 1, height - 1);
+  context.setLineDash([]);
+
+  if (width >= SELECTION_HANDLE_SIZE * 2 && height >= SELECTION_HANDLE_SIZE * 2) {
+    for (const handle of handles) {
+      context.fillStyle = SELECTION_COLOR;
+      context.fillRect(
+        Math.round(handle.x - half),
+        Math.round(handle.y - half),
+        SELECTION_HANDLE_SIZE,
+        SELECTION_HANDLE_SIZE,
+      );
+      context.strokeStyle = "rgba(0,0,0,0.6)";
+      context.strokeRect(
+        Math.round(handle.x - half) + 0.5,
+        Math.round(handle.y - half) + 0.5,
+        SELECTION_HANDLE_SIZE - 1,
+        SELECTION_HANDLE_SIZE - 1,
+      );
+    }
+  }
+
+  context.restore();
+}
+
+/** 世界原点（场景中心）的十字光标。 */function drawOriginCross(context: CanvasRenderingContext2D, viewport: Viewport): void {
   const origin = worldToScreen(viewport, { x: 0, y: 0 });
   const arm = 7;
   const cx = Math.round(origin.x) + 0.5;
@@ -453,48 +546,4 @@ function drawOriginCross(context: CanvasRenderingContext2D, viewport: Viewport):
   context.moveTo(cx, cy - arm);
   context.lineTo(cx, cy + arm);
   context.stroke();
-}
-
-function drawMarkers(
-  context: CanvasRenderingContext2D,
-  input: SceneRenderInput,
-  viewport: Viewport,
-): void {
-  const markers = input.markers;
-  if (markers === undefined) {
-    return;
-  }
-
-  const radius = input.markerRadius ?? 7;
-
-  for (const marker of markers) {
-    const screen = worldToScreen(viewport, marker.position);
-
-    if (
-      screen.x < -radius * 2 ||
-      screen.y < -radius * 2 ||
-      screen.x > input.cssWidth + radius * 2 ||
-      screen.y > input.cssHeight + radius * 2
-    ) {
-      continue;
-    }
-
-    const color = marker.color ?? kindMarkerColor(marker.kind);
-
-    if (marker.selected === true) {
-      context.beginPath();
-      context.arc(screen.x, screen.y, radius + 4, 0, Math.PI * 2);
-      context.strokeStyle = "#ffffff";
-      context.lineWidth = 2;
-      context.stroke();
-    }
-
-    context.beginPath();
-    context.arc(screen.x, screen.y, radius, 0, Math.PI * 2);
-    context.fillStyle = color;
-    context.fill();
-    context.strokeStyle = "rgba(0,0,0,0.55)";
-    context.lineWidth = 1.5;
-    context.stroke();
-  }
 }

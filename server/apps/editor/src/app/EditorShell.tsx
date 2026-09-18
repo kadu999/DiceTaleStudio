@@ -222,12 +222,21 @@ interface DrawerProps {
   readonly children: React.ReactNode;
 }
 
-/** 平板下的滑出抽屉（覆盖式，不挤压场景）。 */
+/**
+ * 平板下的滑出抽屉（覆盖式，不挤压场景）。
+ *
+ * 外层这一圈是**绝对定位的整屏层**，但只有面板本身（`w-[min(88vw,340px)]`，靠左/靠右）
+ * 看得见、也接指针：`pointer-events-none` + 面板 `pointer-events-auto`。
+ * 少了这一对，整屏那层会把画布**全部**吃掉——抽屉开着时点画布没反应、也拖不动地图。
+ */
 function Drawer({ side, title, onClose, children }: DrawerProps): React.JSX.Element {
   return (
-    <div className="absolute inset-y-0 z-20 flex" style={side === "left" ? { left: 0 } : { right: 0 }}>
+    <div
+      className="pointer-events-none absolute inset-y-0 z-20 flex"
+      style={side === "left" ? { left: 0 } : { right: 0 }}
+    >
       <div
-        className="flex h-full w-[min(88vw,340px)] flex-col bg-[var(--color-editor-panel)] shadow-2xl"
+        className="pointer-events-auto flex h-full w-[min(88vw,340px)] flex-col bg-[var(--color-editor-panel)] shadow-2xl"
         style={
           side === "left"
             ? { borderRight: "1px solid var(--color-editor-border)" }

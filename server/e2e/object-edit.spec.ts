@@ -42,6 +42,22 @@ async function openSceneForEdit(
 }
 
 /**
+ * 画布（canvas）在屏幕上的外框。
+ *
+ * **必须用 canvas 而不是 `scene-viewport` 容器**：默认视口把世界原点摆在**画布正中**，
+ * 而画布是定宽撑满的——容器比它窄时（平板竖屏左边压着抽屉），两个「中心」能差出上百像素，
+ * 按容器中心算出来的世界坐标会整体偏掉，点哪儿都不中。
+ */
+async function canvasBox(page: Page): Promise<{ x: number; y: number; width: number; height: number }> {
+  const box = await page.locator("canvas").boundingBox();
+  if (box === null) {
+    throw new Error("拿不到画布尺寸");
+  }
+
+  return box;
+}
+
+/**
  * 世界坐标 → 画布上的屏幕点（见文件头的默认视口说明：世界原点在画布正中）。
  *
  * 算出来的点还要**夹进真正点得到的区域**：
@@ -52,10 +68,7 @@ async function openSceneForEdit(
  * 再拿这个坐标去种对象、做断言。
  */
 async function scenePoint(page: Page, x: number, y: number): Promise<{ x: number; y: number }> {
-  const box = await page.getByTestId("scene-viewport").boundingBox();
-  if (box === null) {
-    throw new Error("拿不到画布尺寸");
-  }
+  const box = await canvasBox(page);
 
   const inset = 24;
   const raw = { x: box.x + box.width / 2 + x, y: box.y + box.height / 2 - y };
@@ -67,6 +80,38 @@ async function scenePoint(page: Page, x: number, y: number): Promise<{ x: number
 
 /** 平板抽屉宽度：竖屏下它盖在画布左边缘上，落点必须避开。 */
 const DRAWER_WIDTH = 340;
+
+/**
+ * 找一个**真正点得到**的空白屏幕点：屏幕坐标在「抽屉右边 / 画布里面」，
+ * 而且正下方就是画布（不是别的面板）。
+ *
+ * 世界原点在画布正中，而画布可能比窗口宽——所以「画布左侧」未必露得出来。
+ * 这里不猜，直接按候选世界坐标换算出屏幕点再验证。
+ */
+async function findEmptyCanvasPoint(page: Page): Promise<{ x: number; y: number }> {
+  const box = await canvasBox(page);
+
+  // 世界坐标上下左右都撒一点：平板竖屏左边是抽屉、横屏右边可能是属性抽屉，
+  // 「哪一侧露得出来」随档位变，所以不猜方向，扫一遍。
+  for (let y = 360; y >= -360; y -= 120) {
+    for (let x = 320; x >= -320; x -= 80) {
+      const point = await worldSamplePoint(page, { x, y });
+      if (point.x < box.x + DRAWER_WIDTH + 24 || point.y < box.y + 24) {
+        continue;
+      }
+
+      const overCanvas = await page.evaluate(
+        ({ x, y }) => document.elementFromPoint(x, y)?.tagName === "CANVAS",
+        point,
+      );
+      if (overCanvas) {
+        return point;
+      }
+    }
+  }
+
+  throw new Error("找不到可点击的空白处");
+}
 
 /** 世界坐标 → 实际落点，以及**落点反推回来的世界坐标**（被夹过时用后者断言）。 */
 async function clampedWorldPoint(
@@ -83,16 +128,12 @@ async function sceneWorldAt(
   page: Page,
   point: { x: number; y: number },
 ): Promise<{ x: number; y: number }> {
-  const box = await page.getByTestId("scene-viewport").boundingBox();
-  if (box === null) {
-    throw new Error("拿不到画布尺寸");
-  }
-
+  const box = await canvasBox(page);
   return { x: point.x - (box.x + box.width / 2), y: box.y + box.height / 2 - point.y };
 }
 
 /**
- * 世界坐标 → 画布上的屏幕点，**不**夹取（只用来采样像素，不点它）。
+ * 世界坐标 → 画布上的屏幕点，**不**夹取（只用来采样像素 / 精确点击）。
  *
  * 采样要看地图真实画在哪，不能像点击那样被夹进「点得到的区域」。
  */
@@ -100,11 +141,7 @@ async function worldSamplePoint(
   page: Page,
   world: { x: number; y: number },
 ): Promise<{ x: number; y: number }> {
-  const box = await page.getByTestId("scene-viewport").boundingBox();
-  if (box === null) {
-    throw new Error("拿不到画布尺寸");
-  }
-
+  const box = await canvasBox(page);
   return { x: box.x + box.width / 2 + world.x, y: box.y + box.height / 2 - world.y };
 }
 
@@ -150,44 +187,6 @@ async function canvasAverageColor(
   );
 }
 
-/**
- * 数一数画布上某个**精确颜色**的像素（采样步长 2px）。
- *
- * 用途：判断某个标记点画没画。标记点是不透明实心圆，圆心附近就是精确色；
- * 网格线 / 原点十字 / 棋盘格都是别的颜色，不会误判。
- */
-async function countCanvasColor(
-  page: Page,
-  rgb: readonly [number, number, number],
-): Promise<number> {
-  const [r, g, b] = rgb;
-  return page.evaluate(
-    ({ r, g, b }) => {
-      const canvas = document.querySelector("canvas");
-      const context = canvas?.getContext("2d") ?? null;
-      if (canvas === null || context === null) {
-        return 0;
-      }
-
-      const data = context.getImageData(0, 0, canvas.width, canvas.height).data;
-      let count = 0;
-      for (let y = 0; y < canvas.height; y += 2) {
-        for (let x = 0; x < canvas.width; x += 2) {
-          const at = (y * canvas.width + x) * 4;
-          if (data[at] === r && data[at + 1] === g && data[at + 2] === b) {
-            count += 1;
-          }
-        }
-      }
-
-      return count;
-    },
-    { r, g, b },
-  );
-}
-
-/** 标记点颜色（`kindMarkerColor`）：地图等未知类型是灰色那枚。 */
-const MARKER_GRAY: readonly [number, number, number] = [154, 164, 178];
 
 /** 用属性面板把某个对象移到精确的世界坐标（面板在平板下是右抽屉，先唤出来）。 */
 async function setObjectPositionViaInspector(
@@ -529,7 +528,7 @@ test.describe("创建与编辑场景对象", () => {
     }
   });
 
-  test("拖动画布上的标记点：位置随之改变（世界坐标 y 向上，屏幕 y 向下）", async ({
+  test("拖动画布上的对象：位置随之改变（世界坐标 y 向上，屏幕 y 向下）", async ({
     page,
     request,
   }) => {
@@ -564,8 +563,99 @@ test.describe("创建与编辑场景对象", () => {
         })
         .toBe(true);
 
-      // 命中标记点也顺带选中了它
+      // 拖动整块矩形（不是中心那个点）：点哪儿都能拿起来
       await expect(page.getByTestId("object-row").first()).toHaveAttribute("data-selected", "true");
+    } finally {
+      await dropProject(request, project);
+    }
+  });
+
+  test("画布拾取：按对象整块矩形命中；重叠时选 sortingOrder 大的", async ({ page, request }) => {
+    const project = await newProject(request);
+    try {
+      // 两个 120×120 的纯色矩形，中心都在世界原点：谁盖住谁、点谁，只看 sortingOrder
+      const smallId = `project:${project}/Assets/images/small.png`;
+      const bigId = `project:${project}/Assets/images/big.png`;
+      await seedProjectDoc(request, project, [
+        sceneDoc(SCENE_A, [
+          sceneObjectDoc("大红", "SceneObject", { x: 0, y: 0 }, {
+            sortingOrder: 5,
+            image: { id: bigId, width: 120, height: 120 },
+          }),
+          sceneObjectDoc("小蓝", "SceneObject", { x: 0, y: 0 }, {
+            sortingOrder: 1,
+            image: { id: smallId, width: 120, height: 120 },
+          }),
+        ]),
+      ]);
+      for (const [id, color] of [
+        [bigId, [255, 0, 0]],
+        [smallId, [0, 0, 255]],
+      ] as const) {
+        const uploaded = await request.put(`/api/resources/raw?id=${encodeURIComponent(id)}`, {
+          headers: { "content-type": "image/png" },
+          data: solidPng(120, 120, color),
+        });
+        expect(uploaded.ok()).toBeTruthy();
+      }
+
+      await enterEditor(page);
+      await openProject(page, project);
+      await openLeftTab(page, "hierarchy");
+
+      const selectedNames = async (): Promise<string[]> =>
+        page
+          .locator('[data-testid="object-row"][data-selected="true"]')
+          .evaluateAll((nodes) => nodes.map((node) => node.getAttribute("data-name") ?? ""));
+
+      const clickWorld = async (world: { x: number; y: number }): Promise<void> => {
+        const point = await worldSamplePoint(page, world);
+        await page.mouse.click(point.x, point.y);
+      };
+
+      // 1) 点**离中心很远**的地方（世界 55,55，旧的「中心点 + 12px 半径」拾取根本点不到）
+      //    → 命中那块 120×120 的大红（半径 85，盖得住这里）
+      await clickWorld({ x: 55, y: 55 });
+      await expect.poll(selectedNames).toEqual(["大红"]);
+
+      // 2) 点两者重叠的正中 → 显示顺序大的赢（大红 5 > 小蓝 1）
+      await clickWorld({ x: 0, y: 0 });
+      await expect.poll(selectedNames).toEqual(["大红"]);
+
+      // 3) 把小蓝的顺序抬到大红之上 → 同一处重叠点改成选中小蓝
+      await page.getByTestId("object-row").filter({ hasText: "小蓝" }).first().click();
+      if (!(await page.getByTestId("inspector-object-sorting").isVisible().catch(() => false))) {
+        await page.getByRole("button", { name: "属性", exact: true }).click();
+      }
+      await page.getByTestId("inspector-object-sorting").fill("9");
+      await page.getByTestId("inspector-object-sorting").blur();
+      await expect
+        .poll(async () => {
+          const objects = await readSceneObjects(request, project, SCENE_A);
+          return objects.find((object) => object.name === "小蓝")?.sortingOrder ?? null;
+        })
+        .toBe(9);
+
+      await clickWorld({ x: 0, y: 0 });
+      await expect.poll(selectedNames).toEqual(["小蓝"]);
+
+      // 4) 点**谁都不在**的地方 → 取消选中（不是「点了没反应」）。
+      //    不能写死世界坐标：平板竖屏左边 340px 是抽屉，点在它盖住的位置等于点在抽屉上。
+      //    所以按「窗口宽度」换算候选点，挑一个**屏幕坐标确实在抽屉右边、底下又是画布**的。
+      const emptyPoint = await findEmptyCanvasPoint(page);
+      await page.mouse.click(emptyPoint.x, emptyPoint.y);
+      await expect.poll(selectedNames).toEqual([]);
+
+      // 5) 从空白处**拖动**是平移画布，不该顺手取消选中（选中要保持住）
+      await clickWorld({ x: 0, y: 0 });
+      await expect.poll(selectedNames).toEqual(["小蓝"]);
+
+      const blank = await worldSamplePoint(page, { x: 300, y: 300 });
+      await page.mouse.move(blank.x, blank.y);
+      await page.mouse.down();
+      await page.mouse.move(blank.x + 80, blank.y + 40, { steps: 5 });
+      await page.mouse.up();
+      await expect.poll(selectedNames).toEqual(["小蓝"]);
     } finally {
       await dropProject(request, project);
     }
@@ -592,13 +682,14 @@ test.describe("创建与编辑场景对象", () => {
         await expect(inspectorDrawer).toHaveCount(0);
       }
 
-      const center = await scenePoint(page, 0, 0);
+      // 从**没有对象的地方**开始拖 = 平移画布：对象的世界坐标不受影响（改的是相机）。
+      // 世界原点现在**不能**当空白点了——地图整块矩形在那儿，点下去会变成拖地图
+      // （矩形拾取之后的行为，正是「点哪儿选哪儿」）。所以用探针量一个真的空位。
+      const empty = await clampedWorldPoint(page, 0, -520);
 
-      // 从空白处拖动 = 平移画布：对象的世界坐标不受影响（改的是相机）。
-      // 对象在世界坐标里离原点至少 150px，所以画布正中一定是空白。
-      await page.mouse.move(center.x, center.y);
+      await page.mouse.move(empty.point.x, empty.point.y);
       await page.mouse.down();
-      await page.mouse.move(center.x + 200, center.y + 100, { steps: 5 });
+      await page.mouse.move(empty.point.x + 200, empty.point.y + 100, { steps: 5 });
       await page.mouse.up();
 
       // 平移只动相机，对象的世界坐标不变（落盘防抖，所以轮询）
@@ -809,7 +900,7 @@ test.describe("创建与编辑场景对象", () => {
     }
   });
 
-  test("地图是世界里的对象：改世界坐标 / 拖标记点，贴图跟着走", async ({ page, request }) => {
+  test("地图是世界里的对象：改世界坐标 / 拖它，贴图跟着走", async ({ page, request }) => {
     const project = await newProject(request);
     try {
       // 贴图声明成 400×300（比视口小）：这样地图是一块**看得见边界**的小棋盘，
@@ -834,8 +925,10 @@ test.describe("创建与编辑场景对象", () => {
         .poll(async () => (await canvasAverageColor(page, await worldSamplePoint(page, inside))).r)
         .toBeGreaterThan(180);
 
-      // 地图**有**可拖的标记点（它是世界里的对象，不是背景）
-      await expect.poll(() => countCanvasColor(page, MARKER_GRAY)).toBeGreaterThan(5);
+      // 点棋盘里任意一处就能选中地图：拾取用的是**它整块矩形**，不再是中心那个小圆点
+      const insidePoint = await worldSamplePoint(page, inside);
+      await page.mouse.click(insidePoint.x, insidePoint.y);
+      await expect(page.getByTestId("object-row").first()).toHaveAttribute("data-selected", "true");
 
       // 属性面板里改世界坐标：它就是贴图中心
       await setObjectPositionViaInspector(page, { x: -300, y: 200 });
@@ -859,7 +952,7 @@ test.describe("创建与编辑场景对象", () => {
         })
         .toEqual({ x: -300, y: 200 });
 
-      // 画布上拖它的标记点同样能移动地图（和普通对象一样）。
+      // 在画布上直接拖地图同样能移动它（和普通对象一样，按整块矩形拾取）。
       // 落点先探一次：平板竖屏左边有抽屉、桌面也可能被面板压住，
       // 直接按世界坐标算出的屏幕点不一定点得到（那一下会变成平移画布）
       const probed = await clampedWorldPoint(page, -200, 150);

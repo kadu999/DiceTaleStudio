@@ -12,9 +12,29 @@ import { defineConfig, devices } from "@playwright/test";
  * E2E 跑在**临时资源根**上（`DTS_RESOURCES_DIR`）：用例自建自删项目，既不往仓库的
  * `resources/` 里留垃圾，也不受仓库里现成项目的影响（用例必须自给自足）。
  * 临时根里没有 `config/app.json`，后端因此用内置默认值（目录名与生产一致）。
+ *
+ * **用例是完全并行的**（`fullyParallel` + 多 worker）：三条档位线各自跑一份，同一份里的
+ * 用例也不排队。这依赖两条纪律，破坏任何一条都会出现「偶发失败」：
+ * 1. **每个用例自建自删项目**（`newProject()` 里带时间戳 + 随机后缀），不共用固定名字；
+ * 2. **每个用例用自己的 page**（Playwright 默认），不共享 localStorage / 视口状态。
+ * 项目名之间不会撞车，所以并行时后端也不会有跨用例的写冲突。
  */
 
 const PORT = Number(process.env.E2E_PORT ?? 1421);
+
+/**
+ * 并行 worker 数。
+ *
+ * 实测（28 核机器，全量 173 条）：4 → 约 46s，连跑两次都干净；8 → 约 40s，
+ * 但偶尔有一条用例因为抢不到资源而超时（`Target page, context or browser has been closed`）；
+ * 14 以上开始出现真实失败。**稳定压倒快**：默认取 4，想更快再显式覆盖：
+ *
+ * ```
+ * E2E_WORKERS=8 pnpm e2e     # 本机跑，接受偶发一条（重跑即可）
+ * E2E_WORKERS=1 pnpm e2e     # 复现「串行才出现的时序问题」
+ * ```
+ */
+const WORKERS = Number(process.env.E2E_WORKERS ?? 4);
 
 /**
  * 本次运行的临时资源根。
@@ -31,8 +51,8 @@ export default defineConfig({
   testDir: "./e2e",
   timeout: 30_000,
   expect: { timeout: 7_000 },
-  fullyParallel: false,
-  workers: 1,
+  fullyParallel: true,
+  workers: WORKERS,
   reporter: [["list"]],
   globalTeardown: "./e2e/global-teardown.ts",
   use: {

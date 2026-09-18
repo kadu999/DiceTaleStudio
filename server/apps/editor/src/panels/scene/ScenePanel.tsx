@@ -8,17 +8,38 @@ import {
 } from "@dts/document";
 import {
   createCanvasSceneRenderer,
+  hitTestRect,
   screenToWorld,
-  worldToScreen,
   type SceneRenderer,
 } from "@dts/renderer";
-import { worldRectBottom, worldRectLeft, worldRectOf } from "@dts/grid";
+import { worldRectBottom, worldRectLeft, worldRectOf, type WorldRect } from "@dts/grid";
 import { sceneImage, sceneImageError, subscribeSceneImage } from "../../services/scene-image";
 import { useEditorStore } from "../../state/editor-store";
 import { EmptyState } from "../EmptyState";
 
-/** 标记点的命中半径（屏幕像素）：比渲染半径略大，手指也点得中。 */
-const MARKER_HIT_RADIUS = 12;
+/**
+ * 没有图片的对象（刚建出来的精灵）的**碰撞体**尺寸：世界里的一块 64×64。
+ *
+ * 拾取与选中框都按矩形来，所以每个对象都得有一块矩形；没有图片时不能是零面积
+ * （零面积的框看不见、也点不到）。它**与缩放无关**：拉远了也是一个对象该有的大小，
+ * 不会像按屏幕像素算的命中区那样忽大忽小。
+ */
+const COLLIDER_SIZE = { width: 64, height: 64 } as const;
+
+/**
+ * 对象在画布上占据的世界矩形 —— 拾取（碰撞体）、选中框、贴图铺的那块**共用这一个**。
+ *
+ * 有图片就是「中心 + 图片尺寸」，没有图片（刚建出来的精灵）就退回 `COLLIDER_SIZE`：
+ * 三件事只要有一件用了别的尺寸，就会出现「看着在那儿、点不到」或「框和图片不重合」。
+ */
+export function displayRectOf(object: SceneObjectDoc): WorldRect | undefined {
+  if (object.position === null) {
+    return undefined;
+  }
+
+  const image = objectImage(object);
+  return worldRectOf(object.position, image ?? COLLIDER_SIZE);
+}
 
 /**
  * 贴图实际尺寸与地图数据声明尺寸不一致时的提醒：**每张贴图只提醒一次**。
@@ -174,8 +195,26 @@ export function ScenePanel(): React.JSX.Element {
     const pointers = new Map<number, { x: number; y: number }>();
     let pinchDistance = 0;
     let pinchMid: { x: number; y: number } | null = null;
-    /** 正在拖动的对象：命中标记点后进入拖动，这一下就不再平移画布。 */
+    /** 正在拖动的对象：命中对象矩形后进入拖动，这一下就不再平移画布。 */
     let dragging: { pointerId: number; objectId: string } | null = null;
+    /**
+     * 空白处按下的那一下：**是拖（平移画布）还是点（取消选中）**，要等抬手才知道。
+     *
+     * 按下就取消选中是不行的——那样「选中一个对象后从空白处开始平移」会顺手把选中丢
+     * （而这正是最常用的手势）。所以按下只记位置，抬手时看有没有移动过：
+     * 没移动过才算「点空白 = 取消选中」。
+     */
+    let blankPress: { pointerId: number; x: number; y: number } | null = null;
+
+    /** 点空白处允许的抖动（屏幕像素）：手抖 / 触摸都会有几像素，超过就算拖动。 */
+    const CLICK_SLOP = 4;
+
+    /** 当前选中的对象 id（多选时是多个）。 */
+    const currentSelection = (): readonly string[] => useEditorStore.getState().selectedObjectIds;
+
+    /** Ctrl/⌘ 点选：已选中就取消，否则追加。 */
+    const toggleSelection = (selection: readonly string[], id: string): readonly string[] =>
+      selection.includes(id) ? selection.filter((item) => item !== id) : [...selection, id];
 
     /** 没有场景时画布不可交互：能拖能缩会让人以为「这里有个东西」。 */
     const hasScene = (): boolean => useEditorStore.getState().activeSceneName !== null;
@@ -197,8 +236,10 @@ export function ScenePanel(): React.JSX.Element {
     /**
      * 命中测试：指针下那个对象的 id（画布上看得见的对象才可能被命中）。
      *
-     * 从**后往前**找（`objectsInDrawOrder` 里靠后的画在上面），于是点到的永远是盖在最上面的
-     * 那一个——和眼睛看到的一致。没激活的对象根本不参与。
+     * 每个对象用**它自己那块矩形**当碰撞体（和选中框、贴图同一块），不是中心点周围的小圆；
+     * 指针落进矩形就算命中。**从后往前**找（`objectsInDrawOrder` 里靠后的画在上面），
+     * 于是重叠时点到的永远是**显示顺序最大**的那一个——和眼睛看到的一致。
+     * 没激活的、没落位的（`position: null`）对象根本不参与。
      */
     const hitTestObject = (local: { x: number; y: number }): string | undefined => {
       const scene = currentScene();
@@ -206,18 +247,18 @@ export function ScenePanel(): React.JSX.Element {
         return undefined;
       }
 
-      const store = useEditorStore.getState();
+      const viewport = useEditorStore.getState().viewport;
+      const world = screenToWorld(viewport, local);
       const drawOrder = objectsInDrawOrder(scene);
 
       for (let index = drawOrder.length - 1; index >= 0; index -= 1) {
         const object = drawOrder[index];
-        if (object === undefined || !object.active || object.position === null) {
+        if (object === undefined || !object.active) {
           continue;
         }
 
-        const screen = worldToScreen(store.viewport, object.position);
-
-        if (Math.hypot(screen.x - local.x, screen.y - local.y) <= MARKER_HIT_RADIUS) {
+        const rect = displayRectOf(object);
+        if (rect !== undefined && hitTestRect(world, rect, object.rotation)) {
           return object.id;
         }
       }
@@ -233,7 +274,11 @@ export function ScenePanel(): React.JSX.Element {
       const local = toLocal(event.clientX, event.clientY);
       const hit = hitTestObject(local);
       if (hit !== undefined) {
-        useEditorStore.getState().setSelection([hit]);
+        // 修饰键点选 = 多选（和列表里 Ctrl/⌘ 点行一个意思）；不加修饰就是单选
+        const additive = event.ctrlKey || event.metaKey || event.shiftKey;
+        useEditorStore
+          .getState()
+          .setSelection(additive ? toggleSelection(currentSelection(), hit) : [hit]);
         dragging = { pointerId: event.pointerId, objectId: hit };
         container.setPointerCapture(event.pointerId);
         return;
@@ -241,6 +286,7 @@ export function ScenePanel(): React.JSX.Element {
 
       container.setPointerCapture(event.pointerId);
       pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      blankPress = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
     };
 
     const onPointerMove = (event: PointerEvent): void => {
@@ -288,12 +334,27 @@ export function ScenePanel(): React.JSX.Element {
       store.panByScreen(event.clientX - previous.x, event.clientY - previous.y);
     };
 
-    const endPointer = (event: PointerEvent): void => {
+    /**
+     * 抬手 / 取消。`isClick` 只有真正的 pointerup 才为真：`pointercancel`（第二根手指
+     * 插进来时第一根会被取消）不该被当成「点了一下空白」，否则双指缩放会顺手清掉选中。
+     */
+    const endPointer = (event: PointerEvent, isClick = false): void => {
       if (dragging !== null && dragging.pointerId === event.pointerId) {
         // 一次拖动结束：断开撤销合并，下一次拖动成为独立记录
         useEditorStore.getState().endObjectDrag();
         dragging = null;
         return;
+      }
+
+      // 空白处**点一下**（按下到抬手没怎么动）= 取消选中；
+      // 动了就是平移画布，选中保持不动
+      if (blankPress !== null && blankPress.pointerId === event.pointerId) {
+        const moved = Math.hypot(event.clientX - blankPress.x, event.clientY - blankPress.y);
+        if (isClick && moved <= CLICK_SLOP) {
+          useEditorStore.getState().setSelection([]);
+        }
+
+        blankPress = null;
       }
 
       pointers.delete(event.pointerId);
@@ -314,17 +375,21 @@ export function ScenePanel(): React.JSX.Element {
       store.zoomAtScreen(toLocal(event.clientX, event.clientY), factor);
     };
 
+    /** pointerup = 可能是一次点击；pointercancel = 手势被打断，绝不能当成点击。 */
+    const onPointerUp = (event: PointerEvent): void => endPointer(event, true);
+    const onPointerCancel = (event: PointerEvent): void => endPointer(event, false);
+
     container.addEventListener("pointerdown", onPointerDown);
     container.addEventListener("pointermove", onPointerMove);
-    container.addEventListener("pointerup", endPointer);
-    container.addEventListener("pointercancel", endPointer);
+    container.addEventListener("pointerup", onPointerUp);
+    container.addEventListener("pointercancel", onPointerCancel);
     container.addEventListener("wheel", onWheel, { passive: false });
 
     return () => {
       container.removeEventListener("pointerdown", onPointerDown);
       container.removeEventListener("pointermove", onPointerMove);
-      container.removeEventListener("pointerup", endPointer);
-      container.removeEventListener("pointercancel", endPointer);
+      container.removeEventListener("pointerup", onPointerUp);
+      container.removeEventListener("pointercancel", onPointerCancel);
       container.removeEventListener("wheel", onWheel);
     };
   }, []);
@@ -364,17 +429,24 @@ export function ScenePanel(): React.JSX.Element {
       // 相同顺序保持场景文件里的先后，所以没调过顺序的场景看起来和以前一样
       const drawOrder = objectsInDrawOrder(scene).filter((object) => object.active);
 
-      // 每张图片各画各的：地图的贴图（带网格）与精灵的图片走同一条路
+      // 每张图片各画各的：地图的贴图（带网格）与精灵的图片走同一条路。
+      // **每个对象都要出一层**（哪怕没有图片）：没有图片的对象只画选中框 + 当碰撞体，
+      // 否则「刚建出来的精灵」在画布上就既看不见也点不到
       const layers = drawOrder.flatMap((object) => {
-        const ref = objectImage(object);
-        if (ref === undefined || object.position === null) {
+        const rect = displayRectOf(object);
+        if (rect === undefined) {
           return [];
         }
 
-        const image = sceneImage(ref.id);
+        const ref = objectImage(object);
+        const image = ref === undefined ? null : sceneImage(ref.id);
 
         // 图片实际像素与引用里声明的尺寸不一致时说一声：画面会被拉伸到声明的尺寸
-        if (image !== null && (image.naturalWidth !== ref.width || image.naturalHeight !== ref.height)) {
+        if (
+          ref !== undefined &&
+          image !== null &&
+          (image.naturalWidth !== ref.width || image.naturalHeight !== ref.height)
+        ) {
           warnImageSizeOnce(
             ref.id,
             `图片实际尺寸 ${image.naturalWidth}×${image.naturalHeight} 与数据里声明的 ${ref.width}×${ref.height} 不一致，已按声明尺寸拉伸`,
@@ -385,28 +457,14 @@ export function ScenePanel(): React.JSX.Element {
         return [
           {
             image,
-            rect: worldRectOf(object.position, ref),
+            rect,
             grid,
             showGrid: grid !== undefined,
+            // 选中 = 在这块矩形上画框（4 个角点 + 4 条边中点，没有中心点）
+            selected: selectedObjectIds.includes(object.id),
           },
         ];
       });
-
-      // 每个**激活的**对象在画布上画成标记点：看得见、能点、能拖，位置就是它的世界坐标。
-      // 记号点也按显示顺序画，和图片的遮挡关系一致
-      const markers = drawOrder.flatMap((object) =>
-        object.position === null
-          ? []
-          : [
-              {
-                id: object.id,
-                position: object.position,
-                kind: object.kind,
-                label: object.name,
-                selected: selectedObjectIds.includes(object.id),
-              },
-            ],
-      );
 
       renderer.draw({
         viewport,
@@ -414,7 +472,6 @@ export function ScenePanel(): React.JSX.Element {
         cssHeight: viewportSize.height,
         layers,
         showOrigin: true,
-        markers,
         // 棋盘底纹与**第一张地图**的左下角对齐：格子与地图的网格分成同一套，
         // 拖动地图时底纹跟着走。没有地图（纯精灵场景）就退回世界原点
         checkerOrigin: checkerOriginOf(drawOrder),
