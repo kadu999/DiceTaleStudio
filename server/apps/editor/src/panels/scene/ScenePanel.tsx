@@ -27,6 +27,15 @@ import { EmptyState } from "../EmptyState";
 const COLLIDER_SIZE = { width: 64, height: 64 } as const;
 
 /**
+ * 只有**主键（鼠标左键 / 触摸 / 笔尖）**才拾取与拖动。
+ *
+ * 中键、右键、侧键一律不参与：右键要留给将来的上下文菜单，中键常用来做「按哪儿都不该改
+ * 选中」的临时操作——让它们顺手选中 / 拖走对象只会添乱。触摸与笔的 `button` 也是 0，
+ * 所以平板手势不受影响（`pointerdown` 才是判断时机：`pointermove` 的 `button` 是 -1）。
+ */
+const PRIMARY_BUTTON = 0;
+
+/**
  * 对象在画布上占据的世界矩形 —— 拾取（碰撞体）、选中框、贴图铺的那块**共用这一个**。
  *
  * 有图片就是「中心 + 图片尺寸」，没有图片（刚建出来的精灵）就退回 `COLLIDER_SIZE`：
@@ -268,6 +277,11 @@ export function ScenePanel(): React.JSX.Element {
 
     const onPointerDown = (event: PointerEvent): void => {
       if (!hasScene()) {
+        return;
+      }
+
+      // 只认主键：中键 / 右键 / 侧键一律不拾取、不拖动、也不取消选中
+      if (event.button !== PRIMARY_BUTTON) {
         return;
       }
 

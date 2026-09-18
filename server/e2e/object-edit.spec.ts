@@ -656,6 +656,28 @@ test.describe("创建与编辑场景对象", () => {
       await page.mouse.move(blank.x + 80, blank.y + 40, { steps: 5 });
       await page.mouse.up();
       await expect.poll(selectedNames).toEqual(["小蓝"]);
+
+      // 6) **只有左键**拾取与拖动：中键 / 右键按下-拖动-抬起，既不该改选中，也不该挪动对象
+      const center = await worldSamplePoint(page, { x: 0, y: 0 });
+      const positionOf = async (name: string): Promise<unknown> =>
+        (await readSceneObjects(request, project, SCENE_A)).find((object) => object.name === name)
+          ?.position ?? null;
+      const before = await positionOf("小蓝");
+
+      for (const button of ["middle", "right"] as const) {
+        await page.mouse.move(center.x, center.y);
+        await page.mouse.down({ button });
+        await page.mouse.move(center.x + 90, center.y + 60, { steps: 5 });
+        await page.mouse.up({ button });
+
+        // 右键会弹出浏览器上下文菜单，按 Esc 收掉，免得挡住后面的操作
+        if (button === "right") {
+          await page.keyboard.press("Escape");
+        }
+
+        await expect.poll(selectedNames).toEqual(["小蓝"]);
+        expect(await positionOf("小蓝")).toEqual(before);
+      }
     } finally {
       await dropProject(request, project);
     }
