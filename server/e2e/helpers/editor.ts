@@ -148,6 +148,7 @@ export function mapObjectDoc(
   sceneName: string,
   name = `${sceneName} 地图`,
   size: { width: number; height: number } = { width: 1920, height: 1080 },
+  grid: { width: number; height: number } = { width: 64, height: 36 },
 ): Record<string, unknown> {
   return {
     ...sceneObjectDoc(name, "Map", { x: 0, y: 0 }, { sortingOrder: -10 }),
@@ -157,9 +158,9 @@ export function mapObjectDoc(
         width: size.width,
         height: size.height,
       },
-      grid: { width: 64, height: 36 },
+      grid,
       rowOrder: "bottom-up",
-      cells: { encoding: "rle", runs: [[0, 64 * 36]] },
+      cells: { encoding: "rle", runs: [[0, grid.width * grid.height]] },
     },
   };
 }
@@ -315,6 +316,56 @@ export async function readSceneObjects(
     objects?: Array<{ name: string; kind: string; position: { x: number; y: number } | null }>;
   };
   return file.objects ?? [];
+}
+
+/** 场景文件里地图对象的**网格数据**（标注用例断言落盘用）。 */
+export interface SceneMapData {
+  readonly grid: { readonly width: number; readonly height: number };
+  readonly runs: ReadonlyArray<readonly [number, number]>;
+}
+
+/**
+ * 读场景文件里第一个地图对象的网格数据（尺寸 + 展开前的游程）。
+ *
+ * 游程在文件里的位置是 `object.map.cells.runs`（`cells` 是 `{encoding, runs}`），
+ * 这里把它摊平成 `{grid, runs}`：用例只关心这两样。
+ */
+export async function readSceneMap(
+  request: APIRequestContext,
+  project: string,
+  sceneName: string,
+): Promise<SceneMapData | undefined> {
+  const id = `project:${project}/Assets/scenes/${sceneName}.json`;
+  const response = await request.get(`/api/resources/text?id=${encodeURIComponent(id)}`);
+  if (!response.ok()) {
+    return undefined;
+  }
+
+  const file = JSON.parse(await response.text()) as {
+    objects?: Array<{
+      kind?: string;
+      map?: { grid?: SceneMapData["grid"]; cells?: { runs?: SceneMapData["runs"] } };
+    }>;
+  };
+
+  const map = file.objects?.find((object) => object.kind === "Map")?.map;
+  if (map?.grid === undefined || map.cells?.runs === undefined) {
+    return undefined;
+  }
+
+  return { grid: map.grid, runs: map.cells.runs };
+}
+
+/** 把 RLE 游程展开成掩码数组（断言某一格画上了什么）。 */
+export function expandRuns(runs: ReadonlyArray<readonly [number, number]>): number[] {
+  const cells: number[] = [];
+  for (const [mask, count] of runs) {
+    for (let index = 0; index < count; index += 1) {
+      cells.push(mask);
+    }
+  }
+
+  return cells;
 }
 
 /**

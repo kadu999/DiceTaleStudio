@@ -1,5 +1,13 @@
 import type { Draft } from "immer";
-import { CellMask, decodeRle, encodeRle, type RleRun } from "@dts/grid";
+import {
+  CellMask,
+  applyBrushStroke,
+  decodeRle,
+  encodeRle,
+  isInsideGrid,
+  type GridPoint,
+  type RleRun,
+} from "@dts/grid";
 import { defaultComponentData } from "./components";
 import type {
   ActionInstanceDoc,
@@ -507,15 +515,70 @@ export function setMapCells(
   return true;
 }
 
-/** 清空地图对象的全部格子。 */
+/**
+ * 清空地图对象的全部格子。
+ *
+ * 写回的是**一个空游程**（`[[Empty, 列×行]]`）而不是空数组：格子数据必须铺满整张网格
+ * （校验与 `setMapGrid` 都按「展开格数 = 列 × 行」读），留空数组会被判成数据不完整。
+ * 这也与新建地图对象时的写法一致——比较与元组重建交给 `setMapCells`，只有一处实现。
+ */
 export function clearMapCells(scene: Draft<SceneDoc>, mapObjectId: string): boolean {
   const map = findObject(scene, mapObjectId)?.map;
-  if (map === undefined || map.cells.runs.length === 0) {
+  if (map === undefined) {
     return false;
   }
 
-  map.cells = { encoding: "rle", runs: [] };
-  return true;
+  return setMapCells(scene, mapObjectId, [[CellMask.Empty, map.grid.width * map.grid.height]]);
+}
+
+export interface PaintCellsOptions {
+  /** 要叠加的类型位；`0` 表示橡皮擦（整格清零，对齐 Unity 的「橡皮擦 (0)」）。 */
+  readonly mask: number;
+  readonly brushSize: number;
+}
+
+/**
+ * 标注一笔：把 `from → to`（含两端）经过的格子按画笔刷一遍。
+ *
+ * 与 Unity `GridMapEditorState.ApplyBrush` 同一套语义：类型位**按位叠加**，
+ * 橡皮（`mask === 0`）**整格清零**；越界的格子由画笔自己裁掉。
+ * 两条约束是刻意的：
+ * - **落笔点必须在网格内**才动手（Unity 的 `HandleInput` 也是先判在不在网格里）——
+ *   否则「在地图外面点一下」会被量化到边缘格，凭空画上一笔；
+ * - 整笔**只解码 / 编码一次 RLE**：一笔有几十个格心，逐点改写会把整张网格来回搬几十遍。
+ *
+ * 返回 `false` 表示没有产生变更（画笔没改到任何格、落笔点越界、数据坏了）。
+ */
+export function paintMapCells(
+  scene: Draft<SceneDoc>,
+  mapObjectId: string,
+  from: GridPoint,
+  to: GridPoint,
+  options: PaintCellsOptions,
+): boolean {
+  const map = findObject(scene, mapObjectId)?.map;
+  if (map === undefined || !isInsideGrid(to, map.grid)) {
+    return false;
+  }
+
+  const count = map.grid.width * map.grid.height;
+  let cells: Uint8Array;
+  try {
+    cells = decodeRle(map.cells.runs, count);
+  } catch {
+    // 格子数据本来就与网格尺寸对不上（坏数据）：不拿它当基底——照常理「修」一下，
+    // 等于把损坏的数据悄悄换成一张看起来正常的网格
+    return false;
+  }
+
+  const next = applyBrushStroke(cells, map.grid, from, to, {
+    mask: options.mask,
+    brushSize: options.brushSize,
+    erase: options.mask === CellMask.Empty,
+  });
+
+  // 相同的掩码写回去时 setMapCells 会判为「无变更」并返回 false，所以重复涂抹不进撤销栈
+  return setMapCells(scene, mapObjectId, encodeRle(next));
 }
 
 /**

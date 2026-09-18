@@ -87,6 +87,92 @@ export function maskToLabel(mask: number): string {
   return parts.length > 0 ? parts.join("+") : `未知(${mask})`;
 }
 
+/**
+ * 一个类型位的默认外观：`#rrggbb` + 固定透明度。
+ *
+ * 数值与 Unity `GridMapEditorState.GetDefaultColor` 严格一致（那里是 `Color(r, g, b, a)`）。
+ * 分开存是因为两条约束不同：
+ * - **RGB 可改**（面板上的取色器），
+ * - **透明度不给改**（Unity 的 `ColorField` 把 showAlpha 关掉了），所以它跟类型绑定。
+ */
+export interface CellMaskStyle {
+  readonly hex: string;
+  readonly alpha: number;
+}
+
+const MASK_STYLES: ReadonlyArray<readonly [number, CellMaskStyle]> = [
+  [CellMask.Obstacle, { hex: "#ff0000", alpha: 0.6 }],
+  [CellMask.Difficult, { hex: "#ff8000", alpha: 0.6 }],
+  [CellMask.Water, { hex: "#0080ff", alpha: 0.6 }],
+  [CellMask.Fog1, { hex: "#d9d9d9", alpha: 0.55 }],
+  [CellMask.Fog2, { hex: "#4dcce6", alpha: 0.6 }],
+  [CellMask.Fog3, { hex: "#a666e6", alpha: 0.65 }],
+  [CellMask.Fog4, { hex: "#ffa626", alpha: 0.7 }],
+  [CellMask.Fog5, { hex: "#f24d4d", alpha: 0.75 }],
+];
+
+/** 未知位退回不透明白色（对齐 Unity `GetDefaultColor` 的 default 分支）。 */
+const UNKNOWN_STYLE: CellMaskStyle = { hex: "#ffffff", alpha: 1 };
+
+/** 取类型位的默认外观。 */
+export function defaultCellMaskStyle(bit: number): CellMaskStyle {
+  return MASK_STYLES.find(([value]) => value === bit)?.[1] ?? UNKNOWN_STYLE;
+}
+
+/** 全部类型位的默认颜色表（`bit → #rrggbb`），画笔面板的取色器初值。 */
+export function defaultCellMaskColors(): Record<number, string> {
+  const colors: Record<number, string> = {};
+  for (const [bit, style] of MASK_STYLES) {
+    colors[bit] = style.hex;
+  }
+
+  return colors;
+}
+
+/**
+ * `#rrggbb` + 透明度 → canvas 认的 CSS 颜色。
+ *
+ * 颜色串只在这里拼一次：绘制端（`@dts/renderer`）拿到的就是最终颜色，
+ * 它不需要知道「掩码那套东西还有透明度」。
+ */
+export function cellMaskCss(hex: string, alpha: number): string {
+  const normalized = normalizeHex(hex);
+  const red = Number.parseInt(normalized.slice(1, 3), 16);
+  const green = Number.parseInt(normalized.slice(3, 5), 16);
+  const blue = Number.parseInt(normalized.slice(5, 7), 16);
+  return `rgba(${red},${green},${blue},${alpha})`;
+}
+
+/** 是否为合法的 `#rrggbb`（取色器与偏好持久化都靠它挡脏数据）。 */
+export function isHexColor(value: string): boolean {
+  return /^#[0-9a-fA-F]{6}$/.test(value);
+}
+
+function normalizeHex(hex: string): string {
+  return isHexColor(hex) ? hex.toLowerCase() : UNKNOWN_STYLE.hex;
+}
+
+/**
+ * 一个格子里**要画的类型位**，按绘制顺序排（先画的在前）。
+ *
+ * 与 Unity `GridMapEditorRenderer.DrawCells` 一致：遍历 `PaintableTypes` **从高位到低位**，
+ * 于是低位最后画、**显示在最上层**；一个格子含多个位时各类型的半透明色逐层叠加。
+ * `hiddenMask` 里的位被跳过——那是「显示开关」，只影响这一层绘制，不改变数据。
+ */
+export function visibleMaskBits(mask: number, hiddenMask = 0): number[] {
+  const bits: number[] = [];
+  for (let index = PAINTABLE_MASKS.length - 1; index >= 0; index -= 1) {
+    const bit = PAINTABLE_MASKS[index];
+    if (bit === undefined || !hasMask(mask, bit) || hasMask(hiddenMask, bit)) {
+      continue;
+    }
+
+    bits.push(bit);
+  }
+
+  return bits;
+}
+
 /** 校验掩码只含已知位（越界即视为损坏数据）。 */
 export function isValidMask(mask: number): boolean {
   return Number.isInteger(mask) && mask >= 0 && (mask & ~ALL_MASK) === 0;

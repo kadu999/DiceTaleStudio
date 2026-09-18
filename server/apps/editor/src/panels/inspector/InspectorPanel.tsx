@@ -6,6 +6,8 @@ import { findResourceNode, useEditorStore } from "../../state/editor-store";
 import { assetDisplayPath, findAssetById } from "../asset-picker";
 import { assetKindLabel, assetPreviewKind, formatSize } from "../asset-info";
 import { EmptyState } from "../EmptyState";
+import { Field, FieldGroup, FieldRow } from "./fields";
+import { GridAnnotationFields } from "./GridAnnotationFields";
 
 /** 右侧属性面板：当前选中对象 / 场景 / **资源文件**的属性。编辑能力在 M2/M3 接入。 */
 export function InspectorPanel(): React.JSX.Element {
@@ -67,6 +69,8 @@ export function InspectorPanel(): React.JSX.Element {
                 </>
               ) : null}
             </FieldGroup>
+            {/* 网格标注：只对地图对象出现（其它对象没有格子可标） */}
+            {selected.map !== undefined ? <GridAnnotationFields object={selected} /> : null}
           </div>
         ) : activeScene !== undefined ? (
           <FieldGroup title="场景">
@@ -86,53 +90,6 @@ export function InspectorPanel(): React.JSX.Element {
           projectOpen ? <ProjectProperties /> : <EmptyState />
         )}
       </div>
-    </div>
-  );
-}
-
-function FieldGroup({
-  title,
-  children,
-}: {
-  readonly title: string;
-  readonly children: React.ReactNode;
-}): React.JSX.Element {
-  return (
-    <section className="mb-3">
-      <div className="mb-1 text-[10px] uppercase tracking-wide text-[var(--color-editor-text-dim)]">{title}</div>
-      <div className="overflow-hidden rounded border border-[var(--color-editor-border)]">{children}</div>
-    </section>
-  );
-}
-
-function Field({
-  label,
-  value,
-  mono = false,
-}: {
-  readonly label: string;
-  readonly value: string;
-  readonly mono?: boolean;
-}): React.JSX.Element {
-  return (
-    <FieldRow label={label}>
-      <span className={`min-w-0 flex-1 truncate ${mono ? "font-mono text-[11px]" : ""}`}>{value}</span>
-    </FieldRow>
-  );
-}
-
-/** 属性行：标签 + 任意内容（只读值或输入框共用同一套排布）。 */
-function FieldRow({
-  label,
-  children,
-}: {
-  readonly label: string;
-  readonly children: React.ReactNode;
-}): React.JSX.Element {
-  return (
-    <div className="flex items-center gap-2 border-b border-[var(--color-editor-border)] px-2 py-1 last:border-b-0">
-      <span className="w-20 flex-none text-[11px] text-[var(--color-editor-text-dim)]">{label}</span>
-      {children}
     </div>
   );
 }

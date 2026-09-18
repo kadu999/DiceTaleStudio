@@ -15,6 +15,14 @@ import {
   solidPng,
   uploadSceneImage,
 } from "./helpers/editor";
+import {
+  canvasAverageColor,
+  clampedWorldPoint,
+  findEmptyCanvasPoint,
+  scenePoint,
+  sceneWorldAt,
+  worldSamplePoint,
+} from "./helpers/canvas";
 
 /**
  * 场景对象的创建与编辑。
@@ -40,153 +48,6 @@ async function openSceneForEdit(
   await openProject(page, project);
   await openLeftTab(page, "hierarchy");
 }
-
-/**
- * 画布（canvas）在屏幕上的外框。
- *
- * **必须用 canvas 而不是 `scene-viewport` 容器**：默认视口把世界原点摆在**画布正中**，
- * 而画布是定宽撑满的——容器比它窄时（平板竖屏左边压着抽屉），两个「中心」能差出上百像素，
- * 按容器中心算出来的世界坐标会整体偏掉，点哪儿都不中。
- */
-async function canvasBox(page: Page): Promise<{ x: number; y: number; width: number; height: number }> {
-  const box = await page.locator("canvas").boundingBox();
-  if (box === null) {
-    throw new Error("拿不到画布尺寸");
-  }
-
-  return box;
-}
-
-/**
- * 世界坐标 → 画布上的屏幕点（见文件头的默认视口说明：世界原点在画布正中）。
- *
- * 算出来的点还要**夹进真正点得到的区域**：
- * - 平板下左边 `DRAWER_WIDTH` 像素是抽屉，即使画布铺满整宽，点在那里也会被抽屉吃掉；
- * - 世界坐标可以很大（场景是 1920×1080），直接换算会跑到画布外面去。
- *
- * 所以用例用 `clampedWorldPoint()` 拿到「实际落点 + 它对应的世界坐标」，
- * 再拿这个坐标去种对象、做断言。
- */
-async function scenePoint(page: Page, x: number, y: number): Promise<{ x: number; y: number }> {
-  const box = await canvasBox(page);
-
-  const inset = 24;
-  const raw = { x: box.x + box.width / 2 + x, y: box.y + box.height / 2 - y };
-  return {
-    x: Math.min(box.x + box.width - inset, Math.max(box.x + DRAWER_WIDTH + inset, raw.x)),
-    y: Math.min(box.y + box.height - inset, Math.max(box.y + inset, raw.y)),
-  };
-}
-
-/** 平板抽屉宽度：竖屏下它盖在画布左边缘上，落点必须避开。 */
-const DRAWER_WIDTH = 340;
-
-/**
- * 找一个**真正点得到**的空白屏幕点：屏幕坐标在「抽屉右边 / 画布里面」，
- * 而且正下方就是画布（不是别的面板）。
- *
- * 世界原点在画布正中，而画布可能比窗口宽——所以「画布左侧」未必露得出来。
- * 这里不猜，直接按候选世界坐标换算出屏幕点再验证。
- */
-async function findEmptyCanvasPoint(page: Page): Promise<{ x: number; y: number }> {
-  const box = await canvasBox(page);
-
-  // 世界坐标上下左右都撒一点：平板竖屏左边是抽屉、横屏右边可能是属性抽屉，
-  // 「哪一侧露得出来」随档位变，所以不猜方向，扫一遍。
-  for (let y = 360; y >= -360; y -= 120) {
-    for (let x = 320; x >= -320; x -= 80) {
-      const point = await worldSamplePoint(page, { x, y });
-      if (point.x < box.x + DRAWER_WIDTH + 24 || point.y < box.y + 24) {
-        continue;
-      }
-
-      const overCanvas = await page.evaluate(
-        ({ x, y }) => document.elementFromPoint(x, y)?.tagName === "CANVAS",
-        point,
-      );
-      if (overCanvas) {
-        return point;
-      }
-    }
-  }
-
-  throw new Error("找不到可点击的空白处");
-}
-
-/** 世界坐标 → 实际落点，以及**落点反推回来的世界坐标**（被夹过时用后者断言）。 */
-async function clampedWorldPoint(
-  page: Page,
-  x: number,
-  y: number,
-): Promise<{ point: { x: number; y: number }; world: { x: number; y: number } }> {
-  const point = await scenePoint(page, x, y);
-  return { point, world: await sceneWorldAt(page, point) };
-}
-
-/** 屏幕点 → 世界坐标（默认视口：世界原点在画布正中，y 向上）。 */
-async function sceneWorldAt(
-  page: Page,
-  point: { x: number; y: number },
-): Promise<{ x: number; y: number }> {
-  const box = await canvasBox(page);
-  return { x: point.x - (box.x + box.width / 2), y: box.y + box.height / 2 - point.y };
-}
-
-/**
- * 世界坐标 → 画布上的屏幕点，**不**夹取（只用来采样像素 / 精确点击）。
- *
- * 采样要看地图真实画在哪，不能像点击那样被夹进「点得到的区域」。
- */
-async function worldSamplePoint(
-  page: Page,
-  world: { x: number; y: number },
-): Promise<{ x: number; y: number }> {
-  const box = await canvasBox(page);
-  return { x: box.x + box.width / 2 + world.x, y: box.y + box.height / 2 - world.y };
-}
-
-/**
- * 取画布上某个屏幕点周围 `radius` 像素的**平均颜色**（按 DPR 换算到后备缓冲像素）。
- *
- * 取平均而不是单点：网格线 / 原点十字随时可能正好压在被采样的那个像素上，
- * 单点会读到它们的颜色。一片纯色贴图的平均值仍然明显偏它自己的颜色。
- */
-async function canvasAverageColor(
-  page: Page,
-  point: { x: number; y: number },
-  radius = 4,
-): Promise<{ r: number; g: number; b: number }> {
-  return page.evaluate(
-    ({ x, y, radius }) => {
-      const canvas = document.querySelector("canvas");
-      const context = canvas?.getContext("2d") ?? null;
-      if (canvas === null || context === null) {
-        return { r: -1, g: -1, b: -1 };
-      }
-
-      const rect = canvas.getBoundingClientRect();
-      const ratio = canvas.width / Math.max(1, rect.width);
-      const size = Math.max(1, Math.round(radius * ratio));
-      const px = Math.round((x - rect.left) * ratio) - Math.floor(size / 2);
-      const py = Math.round((y - rect.top) * ratio) - Math.floor(size / 2);
-      const data = context.getImageData(px, py, size, size).data;
-
-      let r = 0;
-      let g = 0;
-      let b = 0;
-      const pixels = data.length / 4;
-      for (let i = 0; i < data.length; i += 4) {
-        r += data[i] ?? 0;
-        g += data[i + 1] ?? 0;
-        b += data[i + 2] ?? 0;
-      }
-
-      return { r: r / pixels, g: g / pixels, b: b / pixels };
-    },
-    { x: point.x, y: point.y, radius },
-  );
-}
-
 
 /** 用属性面板把某个对象移到精确的世界坐标（面板在平板下是右抽屉，先唤出来）。 */
 async function setObjectPositionViaInspector(

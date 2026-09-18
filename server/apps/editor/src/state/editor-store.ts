@@ -3,6 +3,7 @@ import {
   DOCUMENT_FORMAT_VERSION,
   DocumentHistory,
   addObject,
+  clearMapCells,
   createEmptyProject,
   createEmptyScene,
   createId,
@@ -10,6 +11,7 @@ import {
   createSceneObject,
   isSceneNameTaken,
   nextObjectName,
+  paintMapCells,
   parseProjectFile,
   parseSceneFile,
   removeObject as removeSceneObject,
@@ -30,8 +32,13 @@ import {
   type WorldPosition,
 } from "@dts/document";
 import {
+  CellMask,
+  PAINTABLE_MASKS,
+  clampBrushSize,
   gridSizeFromImage,
+  isHexColor,
   worldRectOf,
+  type GridPoint,
   type GridSize,
   type ImageSize,
   type WorldRect,
@@ -65,6 +72,11 @@ import {
   type ResourceTreeNode,
 } from "../services/project-api";
 import { clearLastProject, readLastProject, writeLastProject } from "../services/session";
+import {
+  readGridPaintPrefs,
+  writeGridPaintPrefs,
+  type GridPaintPrefs,
+} from "../services/grid-paint-prefs";
 import { clearSceneImageCache } from "../services/scene-image";
 
 /**
@@ -115,6 +127,30 @@ export type SceneDialogMode = "create" | "rename" | null;
 /** 场景文件的保存状态：已保存 / 有未保存改动 / 正在写 / 写失败。 */
 export type SceneSaveState = "saved" | "pending" | "saving" | "error";
 
+/**
+ * 网格标注（地图编辑）状态。
+ *
+ * 「怎么画」那一半（画笔类型 / 大小 / 每类的显示与颜色）是**编辑器偏好**，会写进浏览器本地
+ * （对齐 Unity 把这几项存在编辑窗口的序列化字段里）；「画到哪儿」那一半（目标地图、是否在标注中）
+ * 是**会话状态**，不进文档也不持久化。
+ *
+ * 画笔类型直接用格子掩码位表示，`CellMask.Empty`(=0) 就是橡皮擦——与 Unity 的
+ * 「橡皮擦 (0)」是同一件事，不必再造一个布尔字段。
+ */
+export interface GridPaintState {
+  /** 是否在标注模式：画布上的左键从此是画笔，不再是拾取 / 拖动对象。 */
+  readonly active: boolean;
+  /** 正在标注的地图对象 id；null 表示没有目标。 */
+  readonly mapObjectId: string | null;
+  /** 画笔：格子掩码位；0 = 橡皮擦。 */
+  readonly mask: number;
+  readonly brushSize: number;
+  /** 隐藏的类型位（显示开关）：只影响绘制，不动数据，也不影响画笔。 */
+  readonly hiddenMask: number;
+  /** 类型位 → `#rrggbb`；透明度跟类型绑定（见 `@dts/grid` 的 `defaultCellMaskStyle`）。 */
+  readonly colors: Readonly<Record<number, string>>;
+}
+
 export interface EditorStoreState {
   readonly mode: EditorMode;
   /** 项目文件（`project.json`）的内容：只有项目级数据 */
@@ -150,6 +186,8 @@ export interface EditorStoreState {
   /** 场景文件的保存状态（自动存与手动保存共用） */
   readonly sceneSaveState: SceneSaveState;
   readonly sceneSaveError: string;
+  /** 网格标注（画笔）状态：属性面板的调色板与画布的涂抹都读它。 */
+  readonly gridPaint: GridPaintState;
 
   /** 场景编辑（对象增删改）统一走这里：进撤销栈，并触发自动落盘。 */
   applyScenes(
@@ -254,6 +292,34 @@ export interface EditorStoreState {
   setObjectImage(objectId: string, image: ImageRef): boolean;
   /** 改地图网格的列数 / 行数（格子按新尺寸重建，重叠部分保留）。 */
   setMapGrid(mapObjectId: string, grid: GridSize): boolean;
+
+  /**
+   * 进入网格标注：目标地图由属性面板的开关传入。
+   *
+   * 进入后画布上的**左键 = 画笔**（中键照样平移、滚轮照样缩放），
+   * 直到退出（面板上的「退出标注」/ `Esc` / 选中别的东西 / 换场景）。
+   */
+  enterGridPaint(mapObjectId: string): void;
+  /** 退出网格标注（断开撤销合并，免得下一笔并进上一条记录）。 */
+  exitGridPaint(): void;
+  /** 换画笔：可绘制的类型位，或 `CellMask.Empty`（0）= 橡皮擦；其他值忽略。 */
+  setGridBrush(mask: number): void;
+  /** 改画笔大小（夹到 1..5，与 Unity 一致）。 */
+  setGridBrushSize(brushSize: number): void;
+  /** 切换某个类型在画布上的显示（只影响绘制）。 */
+  toggleGridTypeVisible(bit: number): void;
+  /** 改某个类型的颜色（只收 `#rrggbb`）。 */
+  setGridTypeColor(bit: number, hex: string): void;
+  /**
+   * 标注一笔：`from → to` 之间（含两端）经过的格子按当前画笔刷一遍。
+   * `from` 为 null 表示这一笔的起点就是 `to`；连续调用合并成一条撤销记录。
+   * 返回是否真的产生了变更（落笔在网格外、重复涂抹都会返回 false）。
+   */
+  paintGridStroke(mapObjectId: string, from: GridPoint | null, to: GridPoint): boolean;
+  /** 一次涂抹结束：断开撤销合并，使下一笔成为独立记录（对齐对象拖动的 `endObjectDrag`）。 */
+  endGridStroke(): void;
+  /** 清空整张网格（可撤销）。 */
+  clearGrid(mapObjectId: string): boolean;
 }
 
 const EMPTY_GAME_STATE: GameStateSnapshot = {
@@ -560,6 +626,40 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
     scheduleSceneSave();
   });
 
+  /**
+   * 标注偏好的落盘（画笔类型 / 大小 / 每类的显示与颜色）。
+   *
+   * 只写这几项、**同步写**：内容不到 200 字节，而且与文档无关（不参与自动存那套防抖）。
+   */
+  const persistGridPaint = (gridPaint: GridPaintState): void => {
+    const prefs: GridPaintPrefs = {
+      mask: gridPaint.mask,
+      brushSize: gridPaint.brushSize,
+      hiddenMask: gridPaint.hiddenMask,
+      colors: gridPaint.colors,
+    };
+    writeGridPaintPrefs(prefs);
+  };
+
+  /**
+   * 选中变了就退出标注：标注的目标必须一直是选中的那张地图。
+   *
+   * 不做「扫描全场景找目标」那种兜底——目标被别人删掉时，`paintGridStroke` 里
+   * 找不到对象自然什么都不做；而「换选中 = 换编辑对象」是用户看得见的意图，必须立刻生效。
+   */
+  const exitGridPaintIfDeselected = (selectedObjectIds: readonly string[]): void => {
+    const state = get();
+    if (!state.gridPaint.active || state.gridPaint.mapObjectId === null) {
+      return;
+    }
+
+    if (!selectedObjectIds.includes(state.gridPaint.mapObjectId)) {
+      state.exitGridPaint();
+    }
+  };
+
+  const storedGridPaint = readGridPaintPrefs();
+
   return {
     mode: "edit",
     doc: createEmptyProject(),
@@ -583,6 +683,15 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
     imagePickerTarget: null,
     sceneSaveState: "saved",
     sceneSaveError: "",
+    gridPaint: {
+      // 「画到哪儿」不进偏好：每次打开都从「没在标注」开始，目标由选中决定
+      active: false,
+      mapObjectId: null,
+      mask: storedGridPaint.mask,
+      brushSize: storedGridPaint.brushSize,
+      hiddenMask: storedGridPaint.hiddenMask,
+      colors: storedGridPaint.colors,
+    },
     runtime: {
       status: "idle",
       statusDetail: "",
@@ -609,7 +718,7 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       savedScenes.clear();
       // 订阅里会把 scenes 清空、撤销栈清掉，并把保存状态置回 saved
       sceneHistory.reset([]);
-      set({
+      set((state) => ({
         doc,
         canUndo: false,
         canRedo: false,
@@ -622,13 +731,19 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
         activeSceneName: null,
         sceneSaveState: "saved",
         sceneSaveError: "",
-      });
+        // 换了文档：标注目标必然失效（偏好留着，下个项目接着用）
+        gridPaint: { ...state.gridPaint, active: false, mapObjectId: null },
+      }));
     },
 
     setActiveScene(name) {
       // 切场景前先把手上未保存的改动写回（写入谁由内容差异决定，所以不会写错场景）
       void get().flushSceneSave();
-      set({ activeSceneName: name, selectedObjectIds: [] });
+      set((state) => ({
+        activeSceneName: name,
+        selectedObjectIds: [],
+        gridPaint: { ...state.gridPaint, active: false, mapObjectId: null },
+      }));
     },
 
     openScene(name) {
@@ -638,17 +753,26 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
 
       void get().flushSceneSave();
       // 打开场景 = 切到它并清掉别的选中：属性面板接着显示这个场景
-      set({ activeSceneName: name, selectedObjectIds: [], selectedAssetId: null });
+      set((state) => ({
+        activeSceneName: name,
+        selectedObjectIds: [],
+        selectedAssetId: null,
+        gridPaint: { ...state.gridPaint, active: false, mapObjectId: null },
+      }));
       pushLog(makeLog("info", `已切换到场景：${name}`));
     },
 
     setSelection(objectIds) {
+      const next = [...objectIds];
       // 选中对象就取消资源选中：属性面板一次只显示一样东西
-      set({ selectedObjectIds: [...objectIds], selectedAssetId: null });
+      set({ selectedObjectIds: next, selectedAssetId: null });
+      // 标注的目标必须一直选中（选中别的东西 = 换编辑对象，标注模式随之退出）
+      exitGridPaintIfDeselected(next);
     },
 
     selectAsset(id) {
       set({ selectedAssetId: id, selectedObjectIds: [] });
+      exitGridPaintIfDeselected([]);
     },
 
     setViewport(viewport) {
@@ -1082,11 +1206,13 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
         // 忘了这一步的话 `applyScenes` 会在空数组里找场景、永远「没产生变更」。
         // 场景级操作（增删改名 / 重新打开项目）不入撤销栈，所以这里直接 reset。
         sceneHistory.reset(scenes);
-        set({
+        set((state) => ({
           scenes,
           activeSceneName: keep ? previous : (scenes[0]?.name ?? null),
           selectedObjectIds: [],
-        });
+          // 场景重新装载过：对象 id 可能全换了，标注目标不再可信
+          gridPaint: { ...state.gridPaint, active: false, mapObjectId: null },
+        }));
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         set((state) => ({ project: { ...state.project, error: message } }));
@@ -1364,6 +1490,8 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
 
       if (changed) {
         set({ selectedObjectIds: [] });
+        // 正在标注的那张地图被删了：退出标注（否则「标注中」的界面指向一个不存在的对象）
+        exitGridPaintIfDeselected([]);
       }
 
       return changed;
@@ -1479,6 +1607,133 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
         // 打开「选择贴图」时刷新一次目录：素材由外部提交，不刷新的话刚放进去的图选不到。
         void get().refreshTree();
       }
+    },
+
+    // ------------------------------------------------------------ 网格标注
+
+    enterGridPaint(mapObjectId) {
+      const state = get();
+      // 换目标时先把上一笔的合并断开：不然新旧两笔可能并进同一条撤销记录
+      if (state.gridPaint.mapObjectId !== mapObjectId) {
+        sceneHistory.endCoalescing();
+      }
+
+      set({
+        gridPaint: { ...state.gridPaint, active: true, mapObjectId },
+        // 标注只作用于选中的那张地图：把选中对齐到目标，属性面板才会显示它的调色板
+        selectedObjectIds: [mapObjectId],
+        selectedAssetId: null,
+      });
+    },
+
+    exitGridPaint() {
+      const state = get();
+      if (!state.gridPaint.active && state.gridPaint.mapObjectId === null) {
+        return;
+      }
+
+      // 断开合并：退出后再进来的一笔不该并进上一次的记录
+      sceneHistory.endCoalescing();
+      set({ gridPaint: { ...state.gridPaint, active: false, mapObjectId: null } });
+    },
+
+    setGridBrush(mask) {
+      const paintable = mask === CellMask.Empty || PAINTABLE_MASKS.some((bit) => bit === mask);
+      if (!paintable) {
+        return;
+      }
+
+      const gridPaint: GridPaintState = { ...get().gridPaint, mask };
+      set({ gridPaint });
+      persistGridPaint(gridPaint);
+    },
+
+    setGridBrushSize(brushSize) {
+      if (!Number.isFinite(brushSize)) {
+        return;
+      }
+
+      const gridPaint: GridPaintState = {
+        ...get().gridPaint,
+        // 夹到 1..5：与 Unity 的 IntSlider 同一个范围，也决定了画笔半径
+        brushSize: clampBrushSize(brushSize),
+      };
+      set({ gridPaint });
+      persistGridPaint(gridPaint);
+    },
+
+    toggleGridTypeVisible(bit) {
+      if (!PAINTABLE_MASKS.some((value) => value === bit)) {
+        return;
+      }
+
+      const gridPaint: GridPaintState = {
+        ...get().gridPaint,
+        hiddenMask: get().gridPaint.hiddenMask ^ bit,
+      };
+      set({ gridPaint });
+      persistGridPaint(gridPaint);
+    },
+
+    setGridTypeColor(bit, hex) {
+      if (!PAINTABLE_MASKS.some((value) => value === bit) || !isHexColor(hex)) {
+        return;
+      }
+
+      const gridPaint: GridPaintState = {
+        ...get().gridPaint,
+        colors: { ...get().gridPaint.colors, [bit]: hex },
+      };
+      set({ gridPaint });
+      persistGridPaint(gridPaint);
+    },
+
+    paintGridStroke(mapObjectId, from, to) {
+      const sceneName = get().activeSceneName;
+      if (sceneName === null) {
+        return false;
+      }
+
+      // 画笔与大小取调用瞬间的值：慢速拖动时用户可能刚换过画笔，落下一笔就该用新的
+      const { mask, brushSize } = get().gridPaint;
+      const start = from ?? to;
+
+      return get().applyScenes(
+        mask === CellMask.Empty ? "擦除网格" : "标注网格",
+        (draft) => {
+          const scene = draft.find((item) => item.name === sceneName);
+          if (scene !== undefined) {
+            // 落笔在网格外 / 目标不是地图 / 数据坏了都会返回 false（不产生补丁）
+            paintMapCells(scene, mapObjectId, start, to, { mask, brushSize });
+          }
+        },
+        // 一整笔（按下 → 抬手的若干次 pointermove）合并成一条撤销记录
+        { coalesceKey: `paint:${mapObjectId}` },
+      );
+    },
+
+    endGridStroke() {
+      sceneHistory.endCoalescing();
+    },
+
+    clearGrid(mapObjectId) {
+      const sceneName = get().activeSceneName;
+      if (sceneName === null) {
+        return false;
+      }
+
+      const changed = get().applyScenes("清空网格", (draft) => {
+        const scene = draft.find((item) => item.name === sceneName);
+        if (scene !== undefined) {
+          clearMapCells(scene, mapObjectId);
+        }
+      });
+
+      if (changed) {
+        pushLog(makeLog("info", "已清空网格标注"));
+      }
+
+      return changed;
     },
   };
 });

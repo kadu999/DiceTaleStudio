@@ -56,6 +56,42 @@ export interface BrushOptions {
 }
 
 /**
+ * 一笔经过的格心：`from` 与 `to` 之间按直线取格（Bresenham 整数算法），**含两端**。
+ *
+ * 存在的理由只有一个：**指针事件之间会跳格**。鼠标一帧能移动几十像素，只按事件位置落笔
+ * 会画成断断续续的点；把两个事件点之间的格子补齐，看到的才是「一笔」。
+ * 两个端点约定都在网格内（越界的端点是调用方的事，这里照常给出直线上的格心）。
+ */
+export function strokeCenters(from: GridPoint, to: GridPoint): GridPoint[] {
+  const points: GridPoint[] = [];
+  let x = from.x;
+  let y = from.y;
+  const dx = Math.abs(to.x - x);
+  const dy = -Math.abs(to.y - y);
+  const stepX = x < to.x ? 1 : -1;
+  const stepY = y < to.y ? 1 : -1;
+  let error = dx + dy;
+
+  for (;;) {
+    points.push({ x, y });
+    if (x === to.x && y === to.y) {
+      return points;
+    }
+
+    const doubled = 2 * error;
+    if (doubled >= dy) {
+      error += dy;
+      x += stepX;
+    }
+
+    if (doubled <= dx) {
+      error += dx;
+      y += stepY;
+    }
+  }
+}
+
+/**
  * 应用一笔到副本并返回新数组（不修改入参，便于 immer 之外的纯函数复用）。
  */
 export function applyBrush(
@@ -65,17 +101,46 @@ export function applyBrush(
   options: BrushOptions,
 ): Uint8Array {
   const next = cells.slice();
+  stamp(next, size, [center], options);
+  return next;
+}
+
+/**
+ * 从 `from` 拖到 `to` 的一整笔：把直线经过的每个格心上的画笔覆盖合并进**一份副本**。
+ *
+ * 与 `applyBrush` 是同一套叠加 / 擦除语义（共用 `stamp`），区别只在**整笔只拷贝一次数组**——
+ * 一笔可能有几十个格心，逐点拷贝（每个都是一整张网格）纯属浪费。
+ */
+export function applyBrushStroke(
+  cells: Uint8Array,
+  size: GridSize,
+  from: GridPoint,
+  to: GridPoint,
+  options: BrushOptions,
+): Uint8Array {
+  const next = cells.slice();
+  stamp(next, size, strokeCenters(from, to), options);
+  return next;
+}
+
+/** 把若干格心的画笔覆盖就地写进 `target`（唯一的叠加 / 擦除实现，两个入口共用）。 */
+function stamp(
+  target: Uint8Array,
+  size: GridSize,
+  centers: readonly GridPoint[],
+  options: BrushOptions,
+): void {
   const erase = options.erase === true;
 
-  for (const point of brushCells(center, size, options.brushSize)) {
-    const index = point.y * size.width + point.x;
-    const existing = next[index] ?? 0;
-    if (erase) {
-      next[index] = options.eraseMask === undefined ? 0 : removeMask(existing, options.eraseMask);
-    } else {
-      next[index] = addMask(existing, options.mask);
+  for (const center of centers) {
+    for (const point of brushCells(center, size, options.brushSize)) {
+      const index = point.y * size.width + point.x;
+      const existing = target[index] ?? 0;
+      if (erase) {
+        target[index] = options.eraseMask === undefined ? 0 : removeMask(existing, options.eraseMask);
+      } else {
+        target[index] = addMask(existing, options.mask);
+      }
     }
   }
-
-  return next;
 }

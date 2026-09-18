@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { gridCornerToWorld, gridToWorld, unionWorldRects, worldRectOf, worldToGrid } from "../src/world";
-import type { GridSize } from "../src/coords";
+import {
+  gridCornerToWorld,
+  gridToWorld,
+  unionWorldRects,
+  worldRectOf,
+  worldToGrid,
+  worldToGridPoint,
+} from "../src/world";
+import { isInsideGrid, type GridSize } from "../src/coords";
 
 /**
  * 世界坐标契约：**x 向右、y 向上、单位像素，世界无限大**。
@@ -44,6 +51,56 @@ describe("世界坐标 ↔ 网格（同向，不翻转）", () => {
       x: GRID.width - 1,
       y: 0,
     });
+  });
+});
+
+describe("worldToGridPoint：量化的原样结果（不夹取）", () => {
+  it("网格内与钳制版一致", () => {
+    expect(worldToGridPoint({ x: 0, y: 0 }, GRID, AT_ORIGIN)).toEqual({ x: 32, y: 18 });
+    expect(worldToGridPoint({ x: -945, y: -525 }, GRID, AT_ORIGIN)).toEqual({ x: 0, y: 0 });
+    expect(worldToGridPoint({ x: 944, y: 524 }, GRID, AT_ORIGIN)).toEqual({
+      x: 63,
+      y: 35,
+    });
+  });
+
+  it("网格外返回越界坐标，而不是边缘格", () => {
+    // 地图左上角之外：列往负走、行超出 height
+    const beyondLeftTop = worldToGridPoint({ x: -99999, y: 99999 }, GRID, AT_ORIGIN);
+    expect(beyondLeftTop.x).toBeLessThan(0);
+    expect(beyondLeftTop.y).toBeGreaterThanOrEqual(GRID.height);
+    expect(isInsideGrid(beyondLeftTop, GRID)).toBe(false);
+
+    const beyondRightBottom = worldToGridPoint({ x: 99999, y: -99999 }, GRID, AT_ORIGIN);
+    expect(beyondRightBottom.x).toBeGreaterThanOrEqual(GRID.width);
+    expect(beyondRightBottom.y).toBeLessThan(0);
+    expect(isInsideGrid(beyondRightBottom, GRID)).toBe(false);
+  });
+
+  it("恰好落在左 / 下边界上算第 0 格，落在右 / 上边界外算越界", () => {
+    // 角点是半开区间：[left, right) × [bottom, top) 属于网格
+    const corner = worldRectOf({ x: 0, y: 0 }, IMAGE);
+    const left = gridCornerToWorld({ x: 0, y: 0 }, GRID, corner);
+    expect(worldToGridPoint(left, GRID, corner)).toEqual({ x: 0, y: 0 });
+
+    const topRight = gridCornerToWorld({ x: GRID.width, y: GRID.height }, GRID, corner);
+    expect(isInsideGrid(worldToGridPoint(topRight, GRID, corner), GRID)).toBe(false);
+  });
+
+  it("worldToGrid 就是它的夹取版", () => {
+    const samples = [
+      { x: -99999, y: 99999 },
+      { x: 0, y: 0 },
+      { x: 99999, y: -99999 },
+    ];
+
+    for (const point of samples) {
+      const exact = worldToGridPoint(point, GRID, AT_ORIGIN);
+      expect(worldToGrid(point, GRID, AT_ORIGIN)).toEqual({
+        x: Math.min(GRID.width - 1, Math.max(0, exact.x)),
+        y: Math.min(GRID.height - 1, Math.max(0, exact.y)),
+      });
+    }
   });
 });
 

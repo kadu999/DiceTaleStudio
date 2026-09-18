@@ -10,12 +10,22 @@ import {
   createCanvasSceneRenderer,
   hitTestRect,
   screenToWorld,
+  type SceneLayer,
   type SceneRenderer,
 } from "@dts/renderer";
-import { worldRectBottom, worldRectLeft, worldRectOf, type WorldRect } from "@dts/grid";
+import {
+  isInsideGrid,
+  worldRectBottom,
+  worldRectLeft,
+  worldRectOf,
+  worldToGridPoint,
+  type GridPoint,
+  type WorldRect,
+} from "@dts/grid";
 import { sceneImage, sceneImageError, subscribeSceneImage } from "../../services/scene-image";
 import { useEditorStore } from "../../state/editor-store";
 import { EmptyState } from "../EmptyState";
+import { brushPreviewLayer, cellColorsOf, decodeCellsCached } from "./grid-paint";
 
 /**
  * 没有图片的对象（刚建出来的精灵）的**碰撞体**尺寸：世界里的一块 64×64。
@@ -104,11 +114,20 @@ export function ScenePanel(): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rendererRef = useRef<SceneRenderer | null>(null);
+  /**
+   * 标注时指针下的格子（没在标注、或指针在网格外就是 null）。
+   *
+   * 刻意**不放 store**：指针每移动一像素都要更新它，放进 store 会让整个编辑器重渲染；
+   * 绘制循环本来就每帧读 ref，拿到的永远是最新值。
+   */
+  const hoverCellRef = useRef<GridPoint | null>(null);
   const activeSceneName = useEditorStore((state) => state.activeSceneName);
   const scenes = useEditorStore((state) => state.scenes);
   const setActiveScene = useEditorStore((state) => state.setActiveScene);
   const openObjectDialog = useEditorStore((state) => state.openObjectDialog);
   const resetViewport = useEditorStore((state) => state.resetViewport);
+  const gridPaintActive = useEditorStore((state) => state.gridPaint.active);
+  const exitGridPaint = useEditorStore((state) => state.exitGridPaint);
 
   // 当前场景里所有要显示的图片（地图贴图 + 精灵图片），一张场景可以有任意多张
   const imageIds =
@@ -208,6 +227,14 @@ export function ScenePanel(): React.JSX.Element {
     /** 正在拖动的对象：命中对象矩形后进入拖动，这一下就不再平移画布。 */
     let dragging: { pointerId: number; objectId: string } | null = null;
     /**
+     * 正在涂抹的那根指针（标注模式）：`null` 表示这一下不是涂抹。
+     *
+     * 与 `dragging` 互斥——标注模式下左键是画笔，根本不进入拾取 / 拖动那条路。
+     */
+    let paintingPointerId: number | null = null;
+    /** 这一笔的上一格：用来把两个 pointermove 之间的格子补齐（快拖不留断线）。 */
+    let strokeFrom: GridPoint | null = null;
+    /**
      * 空白处按下的那一下：**是拖（平移画布）还是点（取消选中）**，要等抬手才知道。
      *
      * 按下就取消选中是不行的——那样「选中一个对象后从空白处开始平移」会顺手把选中丢
@@ -276,16 +303,46 @@ export function ScenePanel(): React.JSX.Element {
       return undefined;
     };
 
+    /**
+     * 指针落在**标注目标那张地图**的哪一格。
+     *
+     * 不在目标地图的网格里（地图外、其它对象上、目标没选中）就返回 `undefined`——
+     * 与 Unity 一致：落笔必须在网格内，地图外面点一下什么都不该发生。
+     * 判定用**不夹取**的 `worldToGridPoint`：夹取版会把「地图外很远的一点」变成边缘格。
+     */
+    const gridCellAt = (
+      local: { x: number; y: number },
+    ): { mapObjectId: string; cell: GridPoint } | undefined => {
+      const store = useEditorStore.getState();
+      const target = store.gridPaint.mapObjectId;
+      if (target === null) {
+        return undefined;
+      }
+
+      const object = currentScene()?.objects.find((item) => item.id === target);
+      // 隐藏的地图不画也不点（和拾取同一条规矩）
+      if (object === undefined || !object.active) {
+        return undefined;
+      }
+
+      const rect = displayRectOf(object);
+      const grid = object.map?.grid;
+      if (rect === undefined || grid === undefined) {
+        return undefined;
+      }
+
+      const cell = worldToGridPoint(screenToWorld(store.viewport, local), grid, rect);
+      return isInsideGrid(cell, grid) ? { mapObjectId: target, cell } : undefined;
+    };
+
     const onPointerDown = (event: PointerEvent): void => {
       if (!hasScene()) {
         return;
       }
 
-
-
-
       // 中键 = 只平移摄像机：不拾取、不改选中（手势与绘图工具一致）。
-      // 位置进 `pointers`，于是 onPointerMove 里那条平移分支直接生效
+      // 位置进 `pointers`，于是 onPointerMove 里那条平移分支直接生效；
+      // 标注模式下也一样（左键画画、中键平移，互不干扰）
       if (event.button === MIDDLE_BUTTON) {
         container.setPointerCapture(event.pointerId);
         pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
@@ -298,6 +355,22 @@ export function ScenePanel(): React.JSX.Element {
       }
 
       const local = toLocal(event.clientX, event.clientY);
+
+      // 标注模式：左键是画笔。网格外那一下**吞掉**（既不画，也不改选中——
+      // 否则「在地图边缘外点一下」会顺手把地图取消选中、调色板跟着消失）
+      if (useEditorStore.getState().gridPaint.active) {
+        const hit = gridCellAt(local);
+        if (hit === undefined) {
+          return;
+        }
+
+        paintingPointerId = event.pointerId;
+        strokeFrom = hit.cell;
+        container.setPointerCapture(event.pointerId);
+        useEditorStore.getState().paintGridStroke(hit.mapObjectId, null, hit.cell);
+        return;
+      }
+
       const hit = hitTestObject(local);
       if (hit !== undefined) {
         // 修饰键点选 = 多选（和列表里 Ctrl/⌘ 点行一个意思）；不加修饰就是单选
@@ -320,6 +393,30 @@ export function ScenePanel(): React.JSX.Element {
         return;
       }
 
+      const store = useEditorStore.getState();
+
+      if (store.gridPaint.active) {
+        // 指针下的格子：画笔预览跟着走（网格外就是「没有落点」）
+        const hit = gridCellAt(toLocal(event.clientX, event.clientY));
+        hoverCellRef.current = hit?.cell ?? null;
+
+        if (paintingPointerId === event.pointerId) {
+          if (hit !== undefined) {
+            useEditorStore.getState().paintGridStroke(hit.mapObjectId, strokeFrom, hit.cell);
+            strokeFrom = hit.cell;
+          } else {
+            // 中途划出网格：这一笔断在这里，回到网格内从当前格重新起笔
+            strokeFrom = null;
+          }
+
+          return;
+        }
+
+        // 中键平移走下面那条（`pointers` 里只有中键），所以这里不 return
+      } else {
+        hoverCellRef.current = null;
+      }
+
       if (dragging !== null && dragging.pointerId === event.pointerId) {
         useEditorStore
           .getState()
@@ -333,7 +430,6 @@ export function ScenePanel(): React.JSX.Element {
       }
 
       pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
-      const store = useEditorStore.getState();
 
       if (pointers.size >= 2) {
         const [a, b] = [...pointers.values()];
@@ -367,6 +463,14 @@ export function ScenePanel(): React.JSX.Element {
      * 插进来时第一根会被取消）不该被当成「点了一下空白」，否则双指缩放会顺手清掉选中。
      */
     const endPointer = (event: PointerEvent, isClick = false): void => {
+      // 一笔涂抹结束（抬手 / 手势被打断都算）：断开撤销合并，让下一笔成为独立记录
+      if (paintingPointerId === event.pointerId) {
+        paintingPointerId = null;
+        strokeFrom = null;
+        useEditorStore.getState().endGridStroke();
+        return;
+      }
+
       if (dragging !== null && dragging.pointerId === event.pointerId) {
         // 一次拖动结束：断开撤销合并，下一次拖动成为独立记录
         useEditorStore.getState().endObjectDrag();
@@ -407,10 +511,16 @@ export function ScenePanel(): React.JSX.Element {
     const onPointerUp = (event: PointerEvent): void => endPointer(event, true);
     const onPointerCancel = (event: PointerEvent): void => endPointer(event, false);
 
+    /** 指针离开画布：画笔预览跟着消失（否则它会留在原地，看着像已经画上去了）。 */
+    const onPointerLeave = (): void => {
+      hoverCellRef.current = null;
+    };
+
     container.addEventListener("pointerdown", onPointerDown);
     container.addEventListener("pointermove", onPointerMove);
     container.addEventListener("pointerup", onPointerUp);
     container.addEventListener("pointercancel", onPointerCancel);
+    container.addEventListener("pointerleave", onPointerLeave);
     container.addEventListener("wheel", onWheel, { passive: false });
 
     return () => {
@@ -418,6 +528,7 @@ export function ScenePanel(): React.JSX.Element {
       container.removeEventListener("pointermove", onPointerMove);
       container.removeEventListener("pointerup", onPointerUp);
       container.removeEventListener("pointercancel", onPointerCancel);
+      container.removeEventListener("pointerleave", onPointerLeave);
       container.removeEventListener("wheel", onWheel);
     };
   }, []);
@@ -433,7 +544,7 @@ export function ScenePanel(): React.JSX.Element {
         return;
       }
 
-      const { viewport, viewportSize, scenes, activeSceneName, selectedObjectIds } =
+      const { viewport, viewportSize, scenes, activeSceneName, selectedObjectIds, gridPaint } =
         useEditorStore.getState();
       if (viewportSize.width <= 0 || viewportSize.height <= 0) {
         return;
@@ -459,8 +570,9 @@ export function ScenePanel(): React.JSX.Element {
 
       // 每张图片各画各的：地图的贴图（带网格）与精灵的图片走同一条路。
       // **每个对象都要出一层**（哪怕没有图片）：没有图片的对象只画选中框 + 当碰撞体，
-      // 否则「刚建出来的精灵」在画布上就既看不见也点不到
-      const layers = drawOrder.flatMap((object) => {
+      // 否则「刚建出来的精灵」在画布上就既看不见也点不到。
+      // 显式标注成 `SceneLayer[]`：后面还要往上追加画笔预览层（它也是同一张「图层」）
+      const layers = drawOrder.flatMap<SceneLayer>((object) => {
         const rect = displayRectOf(object);
         if (rect === undefined) {
           return [];
@@ -488,11 +600,40 @@ export function ScenePanel(): React.JSX.Element {
             rect,
             grid,
             showGrid: grid !== undefined,
+            // 格子着色：掩码位 → 一串颜色逐层叠加（隐藏的类型不画，但数据不动）
+            cells:
+              object.map === undefined
+                ? undefined
+                : decodeCellsCached(
+                    object.map.cells.runs,
+                    object.map.grid.width * object.map.grid.height,
+                  ),
+            cellColors:
+              object.map === undefined
+                ? undefined
+                : (mask: number) => cellColorsOf(mask, gridPaint.hiddenMask, gridPaint.colors),
             // 选中 = 在这块矩形上画框（4 个角点 + 4 条边中点，没有中心点）
             selected: selectedObjectIds.includes(object.id),
           },
         ];
       });
+
+      // 画笔预览：画在**所有图片之后**（盖在贴图上），用与地图格子完全同一套坐标
+      const previewTarget = drawOrder.find((object) => object.id === gridPaint.mapObjectId);
+      const previewRect = previewTarget === undefined ? undefined : displayRectOf(previewTarget);
+      const previewGrid = previewTarget?.map?.grid;
+      const hovered = hoverCellRef.current;
+      if (
+        gridPaint.active &&
+        previewGrid !== undefined &&
+        previewRect !== undefined &&
+        hovered !== null
+      ) {
+        const preview = brushPreviewLayer(previewGrid, previewRect, hovered, gridPaint.brushSize);
+        if (preview !== undefined) {
+          layers.push(preview);
+        }
+      }
 
       renderer.draw({
         viewport,
@@ -536,6 +677,26 @@ export function ScenePanel(): React.JSX.Element {
         {activeSceneName === null ? null : (
           // 放最右：平板竖屏下左边 340px 可能被抽屉盖住，靠右才一定点得到
           <div className="ml-auto flex flex-none items-center gap-1">
+            {gridPaintActive ? (
+              // 标注中：徽标 + 退出。属性抽屉在平板上会盖住画布右半边，关掉它也能退出
+              <>
+                <span
+                  data-testid="grid-paint-badge"
+                  className="rounded border border-[var(--color-editor-accent)] bg-[var(--color-editor-accent-dim)] px-1.5 py-0.5 text-[11px] text-white"
+                  title="左键涂抹、中键平移；Esc 退出"
+                >
+                  标注中
+                </span>
+                <button
+                  type="button"
+                  data-testid="grid-paint-exit"
+                  className="toolbar-button hover:toolbar-button-hover"
+                  onClick={() => exitGridPaint()}
+                >
+                  退出标注
+                </button>
+              </>
+            ) : null}
             <button
               type="button"
               data-testid="reset-viewport"
@@ -561,8 +722,12 @@ export function ScenePanel(): React.JSX.Element {
       <div
         ref={containerRef}
         data-testid="scene-viewport"
+        data-grid-paint={gridPaintActive}
         className="relative min-h-0 flex-1 overflow-hidden"
-        style={{ touchAction: "none", cursor: activeSceneName === null ? "default" : "grab" }}
+        style={{
+          touchAction: "none",
+          cursor: activeSceneName === null ? "default" : gridPaintActive ? "crosshair" : "grab",
+        }}
       >
         {/* biome-ignore lint/a11y/noNoninteractiveTabindex: 画布需要接受指针与触摸手势 */}
         <canvas ref={canvasRef} className="block h-full w-full" />

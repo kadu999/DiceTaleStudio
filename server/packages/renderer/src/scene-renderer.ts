@@ -41,8 +41,15 @@ export interface SceneLayer {
   readonly grid?: GridSize;
   /** 行主序 `y*width+x`，y=0 为图片最下面一行（= 世界 y 最小的一行）。 */
   readonly cells?: Uint8Array;
-  /** 掩码 → CSS 颜色；返回 null 表示不绘制该格。 */
-  readonly cellColor?: (mask: number) => string | null;
+  /**
+   * 掩码 → 这一格要画的颜色，**按顺序依次叠加绘制**（先画的在下面）。
+   *
+   * 之所以是一串颜色而不是一个：一个格子可以同时是多种类型（障碍 + 雾1），
+   * 每种的半透明色要各画一层，叠出来的效果才与 Unity 编辑窗口一致
+   * （`GridMapEditorRenderer.DrawCells` 就是逐位画若干个半透明矩形）。
+   * 返回空数组 = 这一格不画。
+   */
+  readonly cellColors?: (mask: number) => readonly string[];
   readonly showGrid?: boolean;
   readonly gridColor?: string;
   /**
@@ -326,7 +333,7 @@ function drawLayer(
   }
 
   if (layer.grid !== undefined) {
-    if (layer.cells !== undefined && layer.cellColor !== undefined) {
+    if (layer.cells !== undefined && layer.cellColors !== undefined) {
       drawCells(context, layer, viewport, visible);
     }
 
@@ -376,8 +383,8 @@ function drawCells(
 ): void {
   const grid = layer.grid;
   const cells = layer.cells;
-  const cellColor = layer.cellColor;
-  if (grid === undefined || cells === undefined || cellColor === undefined) {
+  const cellColors = layer.cellColors;
+  if (grid === undefined || cells === undefined || cellColors === undefined) {
     return;
   }
 
@@ -404,14 +411,18 @@ function drawCells(
         continue;
       }
 
-      const color = cellColor(mask);
-      if (color === null) {
+      const colors = cellColors(mask);
+      if (colors.length === 0) {
         continue;
       }
 
       const cellLeft = worldToScreen(viewport, gridCornerToWorld({ x, y: 0 }, grid, rect)).x;
-      context.fillStyle = color;
-      context.fillRect(cellLeft, cellBottom - size, cell.x * viewport.scale + 1, size);
+
+      // 逐层叠加：一个格子含多个类型位时，每一位的半透明色各画一遍（低位在上）
+      for (const color of colors) {
+        context.fillStyle = color;
+        context.fillRect(cellLeft, cellBottom - size, cell.x * viewport.scale + 1, size);
+      }
     }
   }
 }

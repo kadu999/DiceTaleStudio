@@ -5,6 +5,7 @@ import {
   addAction,
   addComponent,
   addObject,
+  clearMapCells,
   collectActionIds,
   createSceneObject,
   findMapObject,
@@ -12,6 +13,7 @@ import {
   objectImage,
   moveAction,
   objectsInDrawOrder,
+  paintMapCells,
   removeAction,
   removeObject,
   setMapCells,
@@ -285,6 +287,160 @@ describe("对象命令（都在场景上操作）", () => {
     });
 
     expect(next.objects[0]?.map?.cells.runs[0]?.[0]).toBe(CellMask.Obstacle);
+  });
+
+  it("清空格子：clearMapCells 把整张网格恢复成空", () => {
+    const scene = mutate(withMapObject(makeScene()), (draft) => {
+      const cells = new Uint8Array(GRID.width * GRID.height);
+      cells[3] = CellMask.Obstacle;
+      setMapCells(draft, "map-1", encodeRle(cells));
+    });
+
+    const cleared = mutate(scene, (draft) => {
+      expect(clearMapCells(draft, "map-1")).toBe(true);
+    });
+
+    const map = cleared.objects[0]?.map;
+    // 写回的是**一个空游程**（铺满整张网格），不是空数组：留空会被判成数据不完整
+    expect(map?.cells.runs).toEqual([[CellMask.Empty, GRID.width * GRID.height]]);
+    expect(decodeRle(map?.cells.runs ?? [], GRID.width * GRID.height)).toEqual(
+      new Uint8Array(GRID.width * GRID.height),
+    );
+    expect(hasErrors(validateScene(cleared))).toBe(false);
+
+    // 已经是空的：不再产生变更
+    let clearedAgain = true;
+    const untouched = mutate(cleared, (draft) => {
+      clearedAgain = clearMapCells(draft, "map-1");
+    });
+    expect(clearedAgain).toBe(false);
+    expect(untouched).toBe(cleared);
+
+    // 清空之后仍然可以改网格尺寸（空游程展开格数与网格一致）
+    const resized = mutate(cleared, (draft) => {
+      expect(setMapGrid(draft, "map-1", { width: 4, height: 3 })).toBe(true);
+    });
+    expect(resized.objects[0]?.map?.grid).toEqual({ width: 4, height: 3 });
+  });
+
+  it("标注一笔：直线经过的格子都被刷到，落盘仍是合法 RLE", () => {
+    const scene = withMapObject(makeScene());
+    const painted = mutate(scene, (draft) => {
+      expect(paintMapCells(draft, "map-1", { x: 1, y: 2 }, { x: 4, y: 2 }, {
+        mask: CellMask.Obstacle,
+        brushSize: 1,
+      })).toBe(true);
+    });
+
+    const cells = decodeRle(painted.objects[0]?.map?.cells.runs ?? [], GRID.width * GRID.height);
+    for (let x = 1; x <= 4; x += 1) {
+      expect(cells[2 * GRID.width + x]).toBe(CellMask.Obstacle);
+    }
+
+    expect([...cells].filter((mask) => mask !== 0)).toHaveLength(4);
+    expect(hasErrors(validateScene(painted))).toBe(false);
+  });
+
+  it("标注是**按位叠加**：同一格先画障碍再画雾，两个位都在", () => {
+    const painted = mutate(withMapObject(makeScene()), (draft) => {
+      paintMapCells(draft, "map-1", { x: 2, y: 2 }, { x: 2, y: 2 }, {
+        mask: CellMask.Obstacle,
+        brushSize: 1,
+      });
+      paintMapCells(draft, "map-1", { x: 2, y: 2 }, { x: 2, y: 2 }, {
+        mask: CellMask.Fog1,
+        brushSize: 1,
+      });
+    });
+
+    const cells = decodeRle(painted.objects[0]?.map?.cells.runs ?? [], GRID.width * GRID.height);
+    expect(cells[2 * GRID.width + 2]).toBe(CellMask.Obstacle | CellMask.Fog1);
+  });
+
+  it("橡皮擦（掩码 0）整格清零", () => {
+    const painted = mutate(withMapObject(makeScene()), (draft) => {
+      paintMapCells(draft, "map-1", { x: 2, y: 2 }, { x: 2, y: 2 }, {
+        mask: CellMask.Obstacle | CellMask.Fog1,
+        brushSize: 1,
+      });
+    });
+
+    const erased = mutate(painted, (draft) => {
+      expect(paintMapCells(draft, "map-1", { x: 2, y: 2 }, { x: 2, y: 2 }, {
+        mask: CellMask.Empty,
+        brushSize: 1,
+      })).toBe(true);
+    });
+
+    expect(
+      [...decodeRle(erased.objects[0]?.map?.cells.runs ?? [], GRID.width * GRID.height)].every(
+        (mask) => mask === 0,
+      ),
+    ).toBe(true);
+  });
+
+  it("画笔大小按 Unity 的整除语义覆盖：3 号画笔是 3×3", () => {
+    const painted = mutate(withMapObject(makeScene()), (draft) => {
+      paintMapCells(draft, "map-1", { x: 3, y: 3 }, { x: 3, y: 3 }, {
+        mask: CellMask.Water,
+        brushSize: 3,
+      });
+    });
+
+    const cells = decodeRle(painted.objects[0]?.map?.cells.runs ?? [], GRID.width * GRID.height);
+    expect([...cells].filter((mask) => mask !== 0)).toHaveLength(9);
+  });
+
+  it("落笔点在网格外时什么都不做（不夹到边缘格）", () => {
+    const scene = withMapObject(makeScene());
+    let changed = true;
+
+    const next = mutate(scene, (draft) => {
+      changed = paintMapCells(draft, "map-1", { x: 99, y: 99 }, { x: 99, y: 99 }, {
+        mask: CellMask.Obstacle,
+        brushSize: 5,
+      });
+    });
+
+    expect(changed).toBe(false);
+    expect(next).toBe(scene);
+  });
+
+  it("重复涂抹同一位不产生变更（不进撤销栈）", () => {
+    const painted = mutate(withMapObject(makeScene()), (draft) => {
+      paintMapCells(draft, "map-1", { x: 1, y: 1 }, { x: 1, y: 1 }, {
+        mask: CellMask.Obstacle,
+        brushSize: 1,
+      });
+    });
+
+    let changed = true;
+    const again = mutate(painted, (draft) => {
+      changed = paintMapCells(draft, "map-1", { x: 1, y: 1 }, { x: 1, y: 1 }, {
+        mask: CellMask.Obstacle,
+        brushSize: 1,
+      });
+    });
+
+    expect(changed).toBe(false);
+    expect(again).toBe(painted);
+  });
+
+  it("格子数据本来就坏时拒绝标注，不把坏数据「修」成正常网格", () => {
+    const scene = mutate(withMapObject(makeScene()), (draft) => {
+      setMapCells(draft, "map-1", [[CellMask.Obstacle, 3]]);
+    });
+
+    let changed = true;
+    const next = mutate(scene, (draft) => {
+      changed = paintMapCells(draft, "map-1", { x: 0, y: 0 }, { x: 0, y: 0 }, {
+        mask: CellMask.Water,
+        brushSize: 1,
+      });
+    });
+
+    expect(changed).toBe(false);
+    expect(next.objects[0]?.map?.cells.runs).toEqual([[CellMask.Obstacle, 3]]);
   });
 
   it("改网格尺寸：格子按新规格重建，重叠部分保留、多出来的格子是空", () => {

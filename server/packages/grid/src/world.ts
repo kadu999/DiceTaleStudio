@@ -80,12 +80,31 @@ export function gridToWorld(point: GridPoint, grid: GridSize, rect: WorldRect): 
   };
 }
 
-/** 世界坐标 → 这块地图上的格子（越界时夹到网格内）。 */
-export function worldToGrid(point: WorldPoint, grid: GridSize, rect: WorldRect): GridPoint {
+/**
+ * 世界坐标 → 这块地图上的格子，**不夹取**：越界就是越界（负数 / 超出列行数都是合法结果）。
+ *
+ * 这是量化的**原样**结果，所以「这个点在不在网格里」要靠它 + `isInsideGrid()` 判断。
+ * 标标注/拾取这类「落在网格外就什么都不做」的调用方必须用这个：
+ * 用夹取版的话，在地图外面老远点一下会命中边缘那一格（凭空画上一笔）。
+ */
+export function worldToGridPoint(point: WorldPoint, grid: GridSize, rect: WorldRect): GridPoint {
   const cell = cellPixelSize(grid, rect.size);
   return {
-    x: clampIndex(Math.floor((point.x - worldRectLeft(rect)) / cell.x), grid.width),
-    y: clampIndex(Math.floor((point.y - worldRectBottom(rect)) / cell.y), grid.height),
+    x: Math.floor((point.x - worldRectLeft(rect)) / cell.x),
+    y: Math.floor((point.y - worldRectBottom(rect)) / cell.y),
+  };
+}
+
+/**
+ * 世界坐标 → 这块地图上的格子（越界时夹到网格内）。
+ *
+ * 给「无论如何都要有个格子」的调用方（例如显示当前格）；要判越界用 `worldToGridPoint`。
+ */
+export function worldToGrid(point: WorldPoint, grid: GridSize, rect: WorldRect): GridPoint {
+  const exact = worldToGridPoint(point, grid, rect);
+  return {
+    x: clampIndex(exact.x, grid.width),
+    y: clampIndex(exact.y, grid.height),
   };
 }
 
