@@ -1,26 +1,27 @@
 {
-  "formatVersion": 5,
+  "formatVersion": 7,
   "objects": [
     {
       "id": "map_mu6uln3x1l7fg",
-      "name": "2D地图",
+      "name": "网格地图",
       "kind": "Map",
+      "active": true,
+      "sortingOrder": -10,
       "position": {
-        "x": 59.95773769325971,
-        "y": 87.20240458987666
+        "x": 0,
+        "y": 0
       },
       "rotation": 0,
       "components": [],
       "map": {
         "image": {
-          "id": "project:测试项目/Assets/images/场景1.png",
+          "id": "project:测试项目/Assets/images/Map001.png",
           "width": 1920,
           "height": 1080
         },
         "grid": {
           "width": 64,
-          "height": 36,
-          "cellSize": 1
+          "height": 36
         },
         "rowOrder": "bottom-up",
         "cells": {
@@ -35,15 +36,22 @@
       }
     },
     {
-      "id": "obj_mu72r20g1mvao",
-      "name": "精灵",
+      "id": "obj_mu79a5m81nv6w",
+      "name": "棒子",
       "kind": "SceneObject",
+      "active": true,
+      "sortingOrder": 0,
       "position": {
-        "x": 0,
-        "y": 0
+        "x": -70.05710038305158,
+        "y": -52.210196900541746
       },
       "rotation": 0,
-      "components": []
+      "components": [],
+      "image": {
+        "id": "project:测试项目/Assets/images/Baseballbat_weapon.png",
+        "width": 74,
+        "height": 74
+      }
     }
   ]
 }

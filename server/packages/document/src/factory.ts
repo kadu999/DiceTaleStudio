@@ -1,4 +1,4 @@
-import { createId } from "./commands";
+import { MAP_DEFAULT_SORTING_ORDER, createId } from "./commands";
 import {
   DOCUMENT_FORMAT_VERSION,
   type GridSpec,
@@ -56,6 +56,9 @@ export function createMapObject(input: {
     id: input.id ?? createId("map"),
     name: input.name,
     kind: "Map",
+    // 地图默认是「垫在所有东西下面」的那一层，所以给一个负的显示顺序
+    active: true,
+    sortingOrder: MAP_DEFAULT_SORTING_ORDER,
     position: input.position ?? { x: 0, y: 0 },
     rotation: 0,
     components: [],

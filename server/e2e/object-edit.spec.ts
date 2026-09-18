@@ -891,12 +891,130 @@ test.describe("创建与编辑场景对象", () => {
     try {
       await openSceneForEdit(page, request, project, [sceneDoc(SCENE_A, [sceneObjectDoc("木门")])]);
 
-      await page.getByTestId("object-row").first().locator("button").first().dblclick();
+      // 「双击那一行」现在要点名字那一块：行首多了一枚激活按钮，`.first()` 会点到它
+      await page.getByTestId("object-row").first().locator("button", { hasText: "木门" }).dblclick();
       await page.getByTestId("object-rename-input").fill("大门");
       await page.keyboard.press("Enter");
 
       await expect(page.getByTestId("object-row").filter({ hasText: "大门" })).toBeVisible();
       await expectPersistedObjectNames(request, project, SCENE_A, ["大门"]);
+    } finally {
+      await dropProject(request, project);
+    }
+  });
+
+  test("激活按钮：不激活就不画（对齐 Unity），对象仍在场景里", async ({ page, request }) => {
+    const project = await newProject(request);
+    try {
+      await seedProjectDoc(request, project, [
+        sceneDoc(SCENE_A, [mapObjectDoc(project, SCENE_A, "网格地图", { width: 400, height: 300 })]),
+      ]);
+      // 纯红贴图：画布上还有没有红色，就说明那张图还画不画
+      await uploadSceneImage(request, project, SCENE_A, solidPng(4, 4, [255, 0, 0]));
+
+      await enterEditor(page);
+      await openProject(page, project);
+      await openLeftTab(page, "hierarchy");
+
+      // 采样点避开世界原点：原点十字与网格线都会混进平均值里
+      // （地图 400×300，采样点仍稳稳落在贴图内）
+      const inside = { x: 60, y: 60 };
+      const redAt = async (): Promise<number> =>
+        (await canvasAverageColor(page, await worldSamplePoint(page, inside))).r;
+
+      await expect.poll(redAt).toBeGreaterThan(180);
+
+      const row = page.getByTestId("object-row").first();
+      const toggle = row.getByTestId("object-active-toggle");
+      await expect(row).toHaveAttribute("data-active", "true");
+      await expect(toggle).toHaveAttribute("data-active", "true");
+
+      // 点一下 = 隐藏：画布上那块变成底纹（红通道掉下去），行标记也跟着变
+      await toggle.click();
+      await expect(row).toHaveAttribute("data-active", "false");
+      await expect(toggle).toHaveAttribute("data-active", "false");
+      await expect.poll(redAt).toBeLessThan(90);
+
+      // 对象**还在**场景里（不是删除）：行还在，属性面板照样能打开
+      await expect(page.getByTestId("object-row")).toHaveCount(1);
+
+      // 落盘：active 写进场景文件
+      await expect
+        .poll(async () => (await readSceneObjects(request, project, SCENE_A))[0]?.active)
+        .toBe(false);
+
+      // 再点一下 = 又显示出来（第二下必须能切回来）
+      await toggle.click();
+      await expect(row).toHaveAttribute("data-active", "true");
+      await expect.poll(redAt).toBeGreaterThan(180);
+    } finally {
+      await dropProject(request, project);
+    }
+  });
+
+  test("显示顺序：大的画在前面（盖住小的），相同则按列表先后", async ({ page, request }) => {
+    const project = await newProject(request);
+    try {
+      // 两个重叠的纯色精灵，中心都在世界原点：谁盖住谁只看 sortingOrder
+      const greenId = `project:${project}/Assets/images/green.png`;
+      const blueId = `project:${project}/Assets/images/blue.png`;
+      await seedProjectDoc(request, project, [
+        sceneDoc(SCENE_A, [
+          sceneObjectDoc("绿块", "SceneObject", { x: 0, y: 0 }, {
+            sortingOrder: 5,
+            image: { id: greenId, width: 120, height: 120 },
+          }),
+          sceneObjectDoc("蓝块", "SceneObject", { x: 0, y: 0 }, {
+            sortingOrder: 1,
+            image: { id: blueId, width: 120, height: 120 },
+          }),
+        ]),
+      ]);
+      for (const [id, color] of [
+        [greenId, [0, 255, 0]],
+        [blueId, [0, 0, 255]],
+      ] as const) {
+        const uploaded = await request.put(`/api/resources/raw?id=${encodeURIComponent(id)}`, {
+          headers: { "content-type": "image/png" },
+          data: solidPng(120, 120, color),
+        });
+        expect(uploaded.ok()).toBeTruthy();
+      }
+
+      await enterEditor(page);
+      await openProject(page, project);
+      await openLeftTab(page, "hierarchy");
+
+      // 采样点避开世界原点：原点十字与标记点都会混进平均值里。
+      // 两个精灵都是 120×120，采样点仍在它们重合的那块里
+      const sample = await worldSamplePoint(page, { x: 36, y: 36 });
+      const colorAtSample = async (): Promise<{ r: number; g: number; b: number }> =>
+        canvasAverageColor(page, sample, 6);
+
+      // 绿块顺序 5 > 蓝块 1 → 绿的在上面（蓝块虽然列在后面，但顺序更小）
+      await expect.poll(async () => (await colorAtSample()).g).toBeGreaterThan(180);
+      await expect.poll(async () => (await colorAtSample()).b).toBeLessThan(90);
+
+      // 把绿块的顺序改成 -1（排到蓝块下面）→ 原点变成蓝色
+      const greenRow = page.getByTestId("object-row").filter({ hasText: "绿块" }).first();
+      await greenRow.click();
+      if (!(await page.getByTestId("inspector-object-sorting").isVisible().catch(() => false))) {
+        await page.getByRole("button", { name: "属性", exact: true }).click();
+      }
+
+      await page.getByTestId("inspector-object-sorting").fill("-1");
+      await page.getByTestId("inspector-object-sorting").blur();
+
+      await expect.poll(async () => (await colorAtSample()).b).toBeGreaterThan(180);
+      await expect.poll(async () => (await colorAtSample()).g).toBeLessThan(90);
+
+      // 落盘：顺序写进场景文件
+      await expect
+        .poll(async () => {
+          const objects = await readSceneObjects(request, project, SCENE_A);
+          return objects.find((object) => object.name === "绿块")?.sortingOrder ?? null;
+        })
+        .toBe(-1);
     } finally {
       await dropProject(request, project);
     }

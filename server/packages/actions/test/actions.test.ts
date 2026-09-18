@@ -136,6 +136,9 @@ describe("动作图校验", () => {
           id: "door",
           name: "门",
           kind: "SceneObject" as const,
+          // v7 起每个对象都显式带这两个字段（对齐 Unity 的激活勾选框与显示顺序）
+          active: true,
+          sortingOrder: 0,
           position: { x: -384, y: 216 },
           rotation: 0,
           components: [

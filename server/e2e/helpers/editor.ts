@@ -12,7 +12,7 @@ import { deflateSync } from "node:zlib";
 export type LeftTab = "assets" | "hierarchy";
 
 /** 场景文件的当前格式版本（与 `@dts/document` 的 `DOCUMENT_FORMAT_VERSION` 保持一致）。 */
-export const CURRENT_SCENE_FORMAT_VERSION = 6;
+export const CURRENT_SCENE_FORMAT_VERSION = 7;
 
 /** 用接口建一个真项目（含 `project.json`），返回项目名。 */
 export async function newProject(request: APIRequestContext): Promise<string> {
@@ -115,19 +115,24 @@ export function sceneDoc(
  * 造一个场景里的普通对象（形状与 `createSceneObject` 一致，无组件无动作）。
  *
  * `position` 是**世界坐标**（场景中心为原点，x 向右、y 向上，单位像素）；不传即未放置。
+ * `active` / `sortingOrder` 是 v7 起的显式字段：默认「显示、顺序 0」。
  */
 export function sceneObjectDoc(
   name: string,
   kind = "SceneObject",
   position: { x: number; y: number } | null = null,
+  patch: Record<string, unknown> = {},
 ): Record<string, unknown> {
   return {
     id: `object_${name}`,
     name,
     kind,
+    active: true,
+    sortingOrder: 0,
     position,
     rotation: 0,
     components: [],
+    ...patch,
   };
 }
 
@@ -136,6 +141,7 @@ export function sceneObjectDoc(
  *
  * 地图**有世界坐标**（贴图中心，默认世界原点），`size` 是贴图里声明的尺寸——
  * 声明得比视口小就能在画布上看到这块棋盘的边界。
+ * 显示顺序用编辑器建地图时的默认值（`MAP_DEFAULT_SORTING_ORDER = -10`，垫在最下面）。
  */
 export function mapObjectDoc(
   project: string,
@@ -144,7 +150,7 @@ export function mapObjectDoc(
   size: { width: number; height: number } = { width: 1920, height: 1080 },
 ): Record<string, unknown> {
   return {
-    ...sceneObjectDoc(name, "Map", { x: 0, y: 0 }),
+    ...sceneObjectDoc(name, "Map", { x: 0, y: 0 }, { sortingOrder: -10 }),
     map: {
       image: {
         id: `project:${project}/Assets/images/${sceneName}.png`,

@@ -54,6 +54,8 @@ export function InspectorPanel(): React.JSX.Element {
             <FieldGroup title="对象">
               <NameField object={selected} />
               <Field label="类型" value={selected.kind} />
+              <ActiveField object={selected} />
+              <SortingOrderField object={selected} />
               <PositionFields object={selected} />
               {/* 每个对象都能显示一张图片（精灵就是靠它显示图片的） */}
               <TextureField object={selected} />
@@ -178,6 +180,33 @@ function NameField({ object }: { readonly object: SceneObjectDoc }): React.JSX.E
 }
 
 /**
+ * 是否显示（对齐 Unity 的激活勾选框）：不勾就**不画**，也不参与画布上的点选。
+ *
+ * 对象本身还在场景里、还在列表里，所以这不是「删除」——随时可以再勾回来。
+ */
+function ActiveField({ object }: { readonly object: SceneObjectDoc }): React.JSX.Element {
+  const setObjectActive = useEditorStore((state) => state.setObjectActive);
+
+  return (
+    <FieldRow label="激活">
+      <label className="flex min-w-0 flex-1 items-center gap-1.5 text-[11px]">
+        <input
+          type="checkbox"
+          checked={object.active}
+          data-testid="inspector-object-active"
+          aria-label="激活（显示）"
+          className="h-3.5 w-3.5 flex-none accent-[var(--color-editor-accent)]"
+          onChange={(event) => setObjectActive(object.id, event.target.checked)}
+        />
+        <span className="truncate text-[var(--color-editor-text-dim)]">
+          {object.active ? "显示在场景里" : "已隐藏（不画、也点不到）"}
+        </span>
+      </label>
+    </FieldRow>
+  );
+}
+
+/**
  * 对象要显示的图片（**精灵**就靠它显示图片；地图的贴图也是这个字段，只是存在 `map.image` 里）：
  * 显示**项目内相对路径**（`images/Map001.png`），后面跟一个「选择」按钮。
  *
@@ -220,6 +249,58 @@ function TextureField({ object }: { readonly object: SceneObjectDoc }): React.JS
       >
         选择
       </button>
+    </FieldRow>
+  );
+}
+
+/**
+ * 显示顺序：**大的画在前面**（盖住小的）。
+ *
+ * 和坐标输入框一样是「各自提交、失焦/回车生效」，区别在于这里是**整数**且会**夹**到
+ * 允许范围内——顺序只是个层号，敲出小数或超大值没有意义。连续输入合并成一条撤销记录。
+ */
+function SortingOrderField({ object }: { readonly object: SceneObjectDoc }): React.JSX.Element {
+  const setObjectSortingOrder = useEditorStore((state) => state.setObjectSortingOrder);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [draft, setDraft] = useState(String(object.sortingOrder));
+
+  useEffect(() => {
+    // 正在输入的框不被 store 回灌（否则提交后触发的同步会把刚敲的值冲掉）
+    if (document.activeElement !== inputRef.current) {
+      setDraft(String(object.sortingOrder));
+    }
+  }, [object.id, object.sortingOrder]);
+
+  const commit = (): void => {
+    const parsed = Number.parseInt(draft, 10);
+    // 非法值（留空 / 敲了字母）退回当前值，不要把 NaN 写进文档
+    const next = Number.isFinite(parsed) ? parsed : object.sortingOrder;
+    setObjectSortingOrder(object.id, next);
+    // 提交后回到 store 实际采用的值（会被取整 / 夹取），否则框里留着用户敲的原始文本
+    setDraft(String(next));
+  };
+
+  return (
+    <FieldRow label="显示顺序">
+      <input
+        ref={inputRef}
+        value={draft}
+        data-testid="inspector-object-sorting"
+        aria-label="显示顺序"
+        inputMode="numeric"
+        type="number"
+        step="1"
+        title="大的画在前面（盖住小的）；相同则按场景对象列表里的先后"
+        className="min-w-0 flex-1 rounded border border-[var(--color-editor-border)] bg-black/30 px-1 py-0.5 font-mono text-[11px] outline-none"
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            commit();
+            event.currentTarget.blur();
+          }
+        }}
+      />
     </FieldRow>
   );
 }

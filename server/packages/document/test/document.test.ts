@@ -11,12 +11,15 @@ import {
   listMapObjects,
   objectImage,
   moveAction,
+  objectsInDrawOrder,
   removeAction,
   removeObject,
   setMapCells,
   setMapGrid,
+  setObjectActive,
   setObjectImage,
   setObjectPosition,
+  setObjectSortingOrder,
   updateAction,
   updateComponentData,
 } from "../src/commands";
@@ -30,7 +33,7 @@ import {
 import { parseProjectDoc, parseProjectFile, parseSceneFile, upgradeRawDocument } from "../src/schema";
 import { DEFAULT_HISTORY_LIMIT } from "../src/history";
 import { formatIssues, hasErrors, validateProject, validateScene } from "../src/validation";
-import { DOCUMENT_FORMAT_VERSION, type ProjectDoc, type SceneDoc } from "../src/types";
+import { DOCUMENT_FORMAT_VERSION, type ProjectDoc, type SceneDoc, type SceneObjectDoc } from "../src/types";
 
 const IMAGE = { id: "project:C/Assets/images/Map001.png", width: 1920, height: 1080 };
 const GRID = { width: 8, height: 6 };
@@ -68,17 +71,30 @@ function mutate<T>(value: T, recipe: (draft: Draft<T>) => void): T {
   return produce(value, recipe);
 }
 
+/**
+ * 场景里一个普通对象的完整形状（`active` / `sortingOrder` 是 v7 起的显式字段）。
+ *
+ * 用例里只关心其中一两个字段，缺的字段用这里的默认值补上——手写整个对象会在
+ * 每次加字段时把所有用例都拖下水。
+ */
+function plainObject(id: string, patch: Partial<SceneObjectDoc> = {}): SceneObjectDoc {
+  return {
+    id,
+    name: id,
+    kind: "SceneObject",
+    active: true,
+    sortingOrder: 0,
+    position: null,
+    rotation: 0,
+    components: [],
+    ...patch,
+  };
+}
+
 /** 往场景里加一个普通对象（带一个可选组件）。 */
 function withObject(scene: SceneDoc, objectId = "door", componentType?: string): SceneDoc {
   return produce(scene, (draft) => {
-    addObject(draft, {
-      id: objectId,
-      name: objectId,
-      kind: "SceneObject",
-      position: null,
-      rotation: 0,
-      components: [],
-    });
+    addObject(draft, plainObject(objectId));
 
     if (componentType !== undefined) {
       addComponent(draft, objectId, componentType, { id: "cmp" });
@@ -170,14 +186,10 @@ describe("组件注册表", () => {
 describe("对象命令（都在场景上操作）", () => {
   it("没有地图对象也能加对象", () => {
     const scene = mutate(makeScene(), (draft) => {
-      addObject(draft, {
-        id: "door_01",
-        name: "木门",
-        kind: "SceneObject",
-        position: { x: -340, y: 121 },
-        rotation: 0,
-        components: [],
-      });
+      addObject(
+        draft,
+        plainObject("door_01", { name: "木门", position: { x: -340, y: 121 } }),
+      );
     });
 
     expect(scene.objects).toHaveLength(1);
@@ -186,14 +198,7 @@ describe("对象命令（都在场景上操作）", () => {
 
   it("增删对象", () => {
     const scene = mutate(makeScene(), (draft) => {
-      addObject(draft, {
-        id: "door_01",
-        name: "木门",
-        kind: "SceneObject",
-        position: null,
-        rotation: 0,
-        components: [],
-      });
+      addObject(draft, plainObject("door_01", { name: "木门" }));
     });
 
     expect(scene.objects).toHaveLength(1);
@@ -201,6 +206,60 @@ describe("对象命令（都在场景上操作）", () => {
       removeObject(draft, "door_01");
     });
     expect(removed.objects).toHaveLength(0);
+  });
+
+  it("激活开关：只有真的变了才产生变更", () => {
+    const scene = withObject(makeScene(), "door");
+
+    expect(scene.objects[0]?.active).toBe(true);
+    const hidden = mutate(scene, (draft) => {
+      expect(setObjectActive(draft, "door", false)).toBe(true);
+    });
+    expect(hidden.objects[0]?.active).toBe(false);
+
+    // 已经是 false 了，再设一次不算变更（否则撤销栈里会多一条空记录）
+    mutate(hidden, (draft) => {
+      expect(setObjectActive(draft, "door", false)).toBe(false);
+    });
+
+    // 不存在的对象不报错、也不产生变更
+    mutate(scene, (draft) => {
+      expect(setObjectActive(draft, "nope", false)).toBe(false);
+    });
+  });
+
+  it("显示顺序：大的画在前面，取整并夹在范围内", () => {
+    const scene = withObject(makeScene(), "door");
+
+    const sorted = mutate(scene, (draft) => {
+      expect(setObjectSortingOrder(draft, "door", 12.6)).toBe(true);
+    });
+    expect(sorted.objects[0]?.sortingOrder).toBe(13);
+
+    // 夹取：顺序只是个层号，不接受失控的大数
+    const clamped = mutate(scene, (draft) => {
+      setObjectSortingOrder(draft, "door", 1e9);
+    });
+    expect(clamped.objects[0]?.sortingOrder).toBe(9999);
+
+    // NaN / Infinity 直接拒绝，绝不写进文档
+    mutate(scene, (draft) => {
+      expect(setObjectSortingOrder(draft, "door", Number.NaN)).toBe(false);
+      expect(setObjectSortingOrder(draft, "door", Number.POSITIVE_INFINITY)).toBe(false);
+    });
+    expect(scene.objects[0]?.sortingOrder).toBe(0);
+  });
+
+  it("绘制顺序：按 sortingOrder 排，相同的保持文件里的先后，且不改动原数组", () => {
+    const scene = mutate(makeScene(), (draft) => {
+      addObject(draft, plainObject("a", { sortingOrder: 5 }));
+      addObject(draft, plainObject("b", { sortingOrder: -1 }));
+      addObject(draft, plainObject("c", { sortingOrder: 5 }));
+    });
+
+    expect(objectsInDrawOrder(scene).map((object) => object.id)).toEqual(["b", "a", "c"]);
+    // 文件里的顺序是数据，不是渲染排序的结果
+    expect(scene.objects.map((object) => object.id)).toEqual(["a", "b", "c"]);
   });
 
   it("添加组件时用注册表默认数据，并可浅合并修改", () => {
@@ -438,14 +497,7 @@ describe("文档校验", () => {
 
   it("地图对象缺少地图数据时报错", () => {
     const scene = mutate(makeScene(), (draft) => {
-      addObject(draft, {
-        id: "broken-map",
-        name: "坏地图",
-        kind: "Map",
-        position: null,
-        rotation: 0,
-        components: [],
-      });
+      addObject(draft, plainObject("broken-map", { name: "坏地图", kind: "Map" }));
     });
 
     expect(formatIssues(validateScene(scene))).toMatch(/缺少地图数据/);
@@ -453,20 +505,18 @@ describe("文档校验", () => {
 
   it("非地图对象带地图数据时给警告", () => {
     const scene = mutate(makeScene(), (draft) => {
-      addObject(draft, {
-        id: "odd",
-        name: "怪对象",
-        kind: "SceneObject",
-        position: null,
-        rotation: 0,
-        components: [],
-        map: {
-          image: IMAGE,
-          grid: GRID,
-          rowOrder: "bottom-up",
-          cells: { encoding: "rle", runs: [[0, GRID.width * GRID.height]] },
-        },
-      });
+      addObject(
+        draft,
+        plainObject("odd", {
+          name: "怪对象",
+          map: {
+            image: IMAGE,
+            grid: GRID,
+            rowOrder: "bottom-up",
+            cells: { encoding: "rle", runs: [[0, GRID.width * GRID.height]] },
+          },
+        }),
+      );
     });
 
     const issues = validateScene(scene);
@@ -501,14 +551,7 @@ describe("文档校验", () => {
   it("动作 id 重复时报错（运行态要靠 actionId 寻址）", () => {
     let scene = withObject(makeScene(), "o1", "BoolValue");
     scene = produce(scene, (draft) => {
-      addObject(draft, {
-        id: "o2",
-        name: "o2",
-        kind: "SceneObject",
-        position: null,
-        rotation: 0,
-        components: [],
-      });
+      addObject(draft, plainObject("o2"));
       addComponent(draft, "o2", "BoolValue", { id: "cmp2" });
       addAction(draft, "o1", "cmp", { id: "dup", type: "ShowHide", enabled: true, params: {} });
       addAction(draft, "o2", "cmp2", { id: "dup", type: "ShowHide", enabled: true, params: {} });
@@ -780,6 +823,43 @@ describe("场景文件 schema", () => {
     expect(parsed.needsRewrite).toBe(true);
     // 归一化的 (0.5, 0.5) 就是贴图中心 → 世界原点
     expect(parsed.file.objects[0]?.position).toEqual({ x: 0, y: 0 });
+  });
+
+  it("v6 场景文件：补上 active / sortingOrder 的默认值，并要求回写一次", () => {
+    // v6 的文件里没有这两个字段（它们是 v7 新增的），语义只能是「显示、顺序 0」
+    const raw = {
+      formatVersion: 6,
+      objects: [
+        {
+          id: "door",
+          name: "木门",
+          kind: "SceneObject",
+          position: { x: 10, y: 20 },
+          rotation: 0,
+          components: [],
+        },
+      ],
+    };
+
+    const parsed = parseSceneFile(raw);
+    expect(parsed.needsRewrite).toBe(true);
+    expect(parsed.file.objects[0]?.active).toBe(true);
+    expect(parsed.file.objects[0]?.sortingOrder).toBe(0);
+    // 别的字段一个都不能动
+    expect(parsed.file.objects[0]?.position).toEqual({ x: 10, y: 20 });
+  });
+
+  it("当前版本：显式的 active / sortingOrder 原样读出来，不要求回写", () => {
+    const scene = withMapObject(createEmptyScene("Map001"));
+    const raw = {
+      formatVersion: DOCUMENT_FORMAT_VERSION,
+      objects: [{ ...scene.objects[0], active: false, sortingOrder: 42, position: { x: 0, y: 0 } }],
+    };
+
+    const parsed = parseSceneFile(raw);
+    expect(parsed.needsRewrite).toBe(false);
+    expect(parsed.file.objects[0]?.active).toBe(false);
+    expect(parsed.file.objects[0]?.sortingOrder).toBe(42);
   });
 
   it("当前版本：没有位置的地图补成世界原点，并要求回写一次", () => {

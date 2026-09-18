@@ -25,6 +25,7 @@ export function HierarchyPanel(): React.JSX.Element {
   const renameObject = useEditorStore((state) => state.renameObject);
   const deleteObjects = useEditorStore((state) => state.deleteObjects);
   const duplicateObjects = useEditorStore((state) => state.duplicateObjects);
+  const toggleObjectActive = useEditorStore((state) => state.toggleObjectActive);
   const saveSceneNow = useEditorStore((state) => state.saveSceneNow);
   const saveState = useEditorStore((state) => state.sceneSaveState);
   const saveError = useEditorStore((state) => state.sceneSaveError);
@@ -174,6 +175,7 @@ export function HierarchyPanel(): React.JSX.Element {
                 setRenamingId(null);
               }}
               onCancelRename={() => setRenamingId(null)}
+              onToggleActive={() => toggleObjectActive(object.id)}
               onDelete={() => deleteObjects([object.id])}
             />
           ))
@@ -223,6 +225,8 @@ interface ObjectRowProps {
   readonly onRenameChange: (value: string) => void;
   readonly onCommitRename: () => void;
   readonly onCancelRename: () => void;
+  /** 切换「显示 / 隐藏」（对齐 Unity 行首那只眼睛）。 */
+  readonly onToggleActive: () => void;
   readonly onDelete: () => void;
 }
 
@@ -236,6 +240,7 @@ function ObjectRow({
   onRenameChange,
   onCommitRename,
   onCancelRename,
+  onToggleActive,
   onDelete,
 }: ObjectRowProps): React.JSX.Element {
   // 只有地图有值得写在列表里的额外信息（网格尺寸）；其它对象不再显示「0 组件」这类噪声。
@@ -251,12 +256,28 @@ function ObjectRow({
       data-name={object.name}
       data-kind={object.kind}
       data-selected={selected}
+      data-active={object.active}
       className={`group flex items-center gap-1 rounded px-1.5 py-1 ${
         selected
           ? "bg-[var(--color-editor-accent-dim)] text-white"
           : "hover:bg-[var(--color-editor-panel-alt)]"
       }`}
     >
+      {/* 激活按钮：每一个对象都有。不激活的行整体变淡——一眼看出画布上为什么不画它 */}
+      <button
+        type="button"
+        data-testid="object-active-toggle"
+        data-active={object.active}
+        aria-pressed={object.active}
+        title={object.active ? `隐藏 ${object.name}` : `显示 ${object.name}`}
+        aria-label={object.active ? `隐藏 ${object.name}` : `显示 ${object.name}`}
+        className={`flex h-5 w-5 flex-none items-center justify-center rounded text-[11px] leading-none hover:bg-[var(--color-editor-panel-alt)] ${
+          object.active ? "" : "opacity-50"
+        }`}
+        onClick={onToggleActive}
+      >
+        {object.active ? "👁" : "🚫"}
+      </button>
       {renaming ? (
         <input
           autoFocus
@@ -276,7 +297,9 @@ function ObjectRow({
       ) : (
         <button
           type="button"
-          className="flex min-w-0 flex-1 items-center justify-between gap-2 text-left"
+          className={`flex min-w-0 flex-1 items-center justify-between gap-2 text-left ${
+            object.active ? "" : "opacity-50"
+          }`}
           onClick={(event) => onSelect(event.ctrlKey || event.metaKey || event.shiftKey)}
           onDoubleClick={onStartRename}
         >

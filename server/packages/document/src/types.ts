@@ -25,10 +25,12 @@ import type { RleRun } from "@dts/grid";
  *   （范围 `±宽/2`、`±高/2`；换算走 `@dts/grid` 的 `world.ts`）；
  * - 网格格子以 RLE 存储，`rowOrder: 'bottom-up'` 显式声明「第 0 行 = 图片最下面一行」，
  *   也就是世界 y 最小的一行——与世界坐标同向，不需要翻转；
- * - 图片/音频/视频用**资源逻辑 ID**引用，不存路径。
+ * - 图片/音频/视频用**资源逻辑 ID**引用，不存路径；
+ * - 每个对象都带 `active`（是否显示，对齐 Unity 的激活勾选框）与 `sortingOrder`
+ *   （谁画在前面；大的盖住小的，相同则按场景里的先后顺序）。
  */
 
-export const DOCUMENT_FORMAT_VERSION = 6;
+export const DOCUMENT_FORMAT_VERSION = 7;
 
 /** 网格行序：`bottom-up` 表示 cells 第 0 行是图片最下面一行（与 Unity GridMap 一致）。 */
 export type RowOrder = "bottom-up";
@@ -107,6 +109,17 @@ export interface SceneObjectDoc {
   readonly id: string;
   readonly name: string;
   readonly kind: ObjectKind;
+  /**
+   * 是否**显示**（对齐 Unity 的激活勾选框）：不激活的对象在画布上完全不画，
+   * 也不参与画布上的点选与拖动——但**对象还在场景里**，属性面板照样能改。
+   */
+  readonly active: boolean;
+  /**
+   * 显示顺序：**大的画在前面**（后画 = 盖在上面），相同则按场景文件里的先后顺序。
+   *
+   * 与世界坐标无关，纯控制「谁挡住谁」；地图通常给一个很小的值（甚至负数）当底图。
+   */
+  readonly sortingOrder: number;
   /** 世界坐标位置（场景中心为原点，y 向上）；未放置时为 null。 */
   readonly position: WorldPosition | null;
   readonly rotation: number;

@@ -69,6 +69,10 @@ export const sceneObjectSchema = z.object({
   id: z.string().min(1),
   name: z.string(),
   kind: z.enum(["Map", "SceneObject", "Player", "Item", "Event"]),
+  // v7 起：是否显示 + 显示顺序。**给默认值**是有意的——v6 及更早的文件没有这两个字段，
+  // 「没写」只能是「显示、顺序 0」；写成必填会让所有旧文件直接读不开。
+  active: z.boolean().default(true),
+  sortingOrder: z.number().int().default(0),
   position: worldPositionSchema.nullable(),
   rotation: z.number(),
   components: z.array(componentSchema),
@@ -186,16 +190,17 @@ export interface SceneSizeHint {
 }
 
 /**
- * 给**没有位置的地图**补上世界原点。
+ * 给对象补上 v7 新增的 `active` / `sortingOrder`，并给**没有位置的地图**补上世界原点。
  *
- * 地图是摆在世界里的对象，必须有位置才能渲染（`position: null` 的地图没有地方可画）。
- * 旧文件里确实可能是 `null`（v1→v2 升级时造的地图对象、或手写文件），补成 `(0, 0)`
- * 正好是它以前被隐式绘制的那个位置（世界原点为中心），画面不变。
+ * - 地图是摆在世界里的对象，必须有位置才能渲染（`position: null` 的地图没有地方可画）。
+ *   旧文件里确实可能是 `null`（v1→v2 升级时造的地图对象、或手写文件），补成 `(0, 0)`
+ *   正好是它以前被隐式绘制的那个位置（世界原点为中心），画面不变。
+ * - `active` / `sortingOrder` 是 v7 新增的**显式**字段：老文件里没有，语义只能是「显示、顺序 0」。
+ *   补进内存后要求调用方回写一次，否则会出现「内存里已补全、磁盘上还是缺字段」的长期不一致。
  *
- * 返回是否补过：补了就要求调用方回写一次文件，否则会出现「内存里已修好、
- * 磁盘上还是 null」的长期不一致。
+ * 返回是否补过：补了就要求调用方回写一次文件。
  */
-function withFilledMapPositions(raw: Record<string, unknown>): {
+function withFilledObjectFields(raw: Record<string, unknown>): {
   readonly raw: Record<string, unknown>;
   readonly changed: boolean;
 } {
@@ -203,16 +208,27 @@ function withFilledMapPositions(raw: Record<string, unknown>): {
   let changed = false;
 
   const next = objects.map((object) => {
-    if (!isRecord(object) || object.kind !== "Map") {
+    if (!isRecord(object)) {
       return object;
     }
 
-    if (object.position !== null && object.position !== undefined) {
-      return object;
+    let filled = object;
+    if (typeof filled.active !== "boolean") {
+      filled = { ...filled, active: true };
+      changed = true;
     }
 
-    changed = true;
-    return { ...object, position: { x: 0, y: 0 } };
+    if (typeof filled.sortingOrder !== "number") {
+      filled = { ...filled, sortingOrder: 0 };
+      changed = true;
+    }
+
+    if (filled.kind === "Map" && (filled.position === null || filled.position === undefined)) {
+      filled = { ...filled, position: { x: 0, y: 0 } };
+      changed = true;
+    }
+
+    return filled;
   });
 
   return changed ? { raw: { ...raw, objects: next }, changed } : { raw, changed };
@@ -336,7 +352,7 @@ export function parseProjectDoc(raw: unknown): ProjectDoc {
 /** 场景文件加载结果。 */
 export interface SceneFileLoad {
   readonly file: SceneFileDoc;
-  /** 文件需要按新格式回写一次（旧版本升级，或清掉了地图对象上无意义的位置）。 */
+  /** 文件需要按新格式回写一次（旧版本升级，或补上了缺失的字段）。 */
   readonly needsRewrite: boolean;
 }
 
@@ -365,8 +381,8 @@ export function parseSceneFile(raw: unknown, size?: SceneSizeHint): SceneFileLoa
       version < WORLD_POSITION_VERSION
         ? migrateScenePositions(upgraded, size ?? FALLBACK_SCENE_SIZE)
         : upgraded;
-    // 再补上「没有位置的地图」（旧文件 / 手写文件里可能是 null）
-    const filled = withFilledMapPositions(migrated);
+    // 再补上 v7 的显式字段（active / sortingOrder）与「没有位置的地图」
+    const filled = withFilledObjectFields(migrated);
     // 读出来的文档一律是当前版本（v6 起网格里不再存 `cellSize`，顺手被 schema 丢掉）
     normalized = { ...filled.raw, formatVersion: DOCUMENT_FORMAT_VERSION };
     needsRewrite = version < DOCUMENT_FORMAT_VERSION || filled.changed;

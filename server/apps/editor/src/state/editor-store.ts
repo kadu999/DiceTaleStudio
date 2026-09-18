@@ -15,8 +15,10 @@ import {
   removeObject as removeSceneObject,
   renameObject as renameSceneObject,
   setMapGrid as setSceneMapGrid,
+  setObjectActive as setSceneObjectActive,
   setObjectImage as setSceneObjectImage,
   setObjectPosition as setSceneObjectPosition,
+  setObjectSortingOrder as setSceneObjectSortingOrder,
   validateSceneName,
   type ImageRef,
   type ObjectKind,
@@ -231,6 +233,15 @@ export interface EditorStoreState {
   ): Promise<string | undefined>;
   /** 改对象名（trim 后为空则拒绝）。 */
   renameObject(id: string, name: string): boolean;
+  /**
+   * 激活 / 停用对象（对齐 Unity 的勾选框）：不激活就不画、也不能在画布上点选，
+   * 但对象仍在场景里，属性面板照样能改。
+   */
+  setObjectActive(id: string, active: boolean): boolean;
+  /** 翻转激活状态（列表里那只眼睛）。**目标值由 store 现算**，不交给界面上的旧值。 */
+  toggleObjectActive(id: string): boolean;
+  /** 改对象的显示顺序（大的画在前面）；连续输入合并成一条撤销记录。 */
+  setObjectSortingOrder(id: string, sortingOrder: number): boolean;
   /** 删除对象（不传 ids 则删当前选中）。 */
   deleteObjects(ids?: readonly string[]): boolean;
   /** 复制对象（不传 ids 则复制当前选中）：副本加「副本」后缀并偏移一点位置。 */
@@ -286,8 +297,9 @@ const DEFAULT_MAP_IMAGE = { width: 1920, height: 1080 } as const;
 
 /** 场景里的地图在世界里占的矩形（每张地图一块，各自带自己的贴图尺寸）。 */
 export function sceneMapRects(scene: SceneDoc | undefined): WorldRect[] {
+  // 只算**激活**的地图：它们才是画布上看得见的底图，「适配视图」自然只装看得见的东西
   return (scene?.objects ?? []).flatMap((object) =>
-    object.kind === "Map" && object.map !== undefined && object.position !== null
+    object.active && object.kind === "Map" && object.map !== undefined && object.position !== null
       ? [worldRectOf(object.position, object.map.image)]
       : [],
   );
@@ -1271,6 +1283,62 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
           renameSceneObject(scene, id, trimmed);
         }
       });
+    },
+
+    setObjectActive(id, active) {
+      const sceneName = get().activeSceneName;
+      if (sceneName === null) {
+        return false;
+      }
+
+      const scene = findSceneByName(get().scenes, sceneName);
+      const object = scene?.objects.find((item) => item.id === id);
+      if (object === undefined || object.active === active) {
+        return false;
+      }
+
+      const changed = get().applyScenes(active ? `激活 ${object.name}` : `停用 ${object.name}`, (draft) => {
+        const target = draft.find((item) => item.name === sceneName);
+        if (target !== undefined) {
+          setSceneObjectActive(target, id, active);
+        }
+      });
+
+      if (changed) {
+        pushLog(makeLog("info", `${active ? "已显示" : "已隐藏"}对象：${object.name}`));
+      }
+
+      return changed;
+    },
+
+    toggleObjectActive(id) {
+      const object = findSceneByName(get().scenes, get().activeSceneName)?.objects.find(
+        (item) => item.id === id,
+      );
+      if (object === undefined) {
+        return false;
+      }
+
+      return get().setObjectActive(id, !object.active);
+    },
+
+    setObjectSortingOrder(id, sortingOrder) {
+      const sceneName = get().activeSceneName;
+      if (sceneName === null) {
+        return false;
+      }
+
+      return get().applyScenes(
+        "修改显示顺序",
+        (draft) => {
+          const scene = draft.find((item) => item.name === sceneName);
+          if (scene !== undefined) {
+            setSceneObjectSortingOrder(scene, id, sortingOrder);
+          }
+        },
+        // 连续敲数字 / 按住微调按钮合并成一条撤销记录
+        { coalesceKey: `sorting:${id}` },
+      );
     },
 
     deleteObjects(ids) {

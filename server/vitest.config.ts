@@ -4,7 +4,7 @@ import { defineConfig } from "vitest/config";
  * 统一测试配置。
  *
  * - 内部包（packages/*）与后端跑在 node 环境；
- * - 编辑器组件测试跑在 jsdom；
+ * - 编辑器组件测试跑在 jsdom（`apps/editor/test/setup.ts` 补 jsdom 缺的浏览器 API）；
  * - 架构边界测试（test/）也跑在 node。
  */
 export default defineConfig({
@@ -25,6 +25,7 @@ export default defineConfig({
         test: {
           name: "editor",
           environment: "jsdom",
+          setupFiles: ["apps/editor/test/setup.ts"],
           include: ["apps/editor/test/**/*.test.ts", "apps/editor/test/**/*.test.tsx"],
         },
       },

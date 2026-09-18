@@ -25,6 +25,18 @@ import type {
 
 let idCounter = 0;
 
+/**
+ * 新建对象的默认显示顺序。
+ *
+ * 普通对象（精灵 / 玩家 / 道具 / 事件）是 `0`；地图当底图，默认排在下面（`-10`）。
+ * 谁盖住谁是**画布上的事**，这两个默认值只是让「新场景一建出来就是对的」。
+ */
+export const DEFAULT_SORTING_ORDER = 0;
+export const MAP_DEFAULT_SORTING_ORDER = -10;
+
+/** `sortingOrder` 的取值范围：足够表达「垫底 / 顶层」，又不至于让界面上的数字失控。 */
+const SORTING_ORDER_LIMIT = 9999;
+
 /** 生成稳定前缀 + 递增 + 随机后缀的 id（避免同毫秒内碰撞）。 */
 export function createId(prefix: string): string {
   idCounter += 1;
@@ -86,6 +98,8 @@ export function createSceneObject(input: CreateObjectInput): SceneObjectDoc {
     id: input.id ?? createId("obj"),
     name: input.name,
     kind: input.kind ?? "SceneObject",
+    active: true,
+    sortingOrder: DEFAULT_SORTING_ORDER,
     position: input.position ?? null,
     rotation: 0,
     components: [],
@@ -169,6 +183,57 @@ export function setObjectKind(scene: Draft<SceneDoc>, objectId: string, kind: Ob
 
   object.kind = kind;
   return true;
+}
+
+/** 是否显示该对象（对齐 Unity 的激活勾选框）：不激活就不画，但对象仍在场景里。 */
+export function setObjectActive(
+  scene: Draft<SceneDoc>,
+  objectId: string,
+  active: boolean,
+): boolean {
+  const object = findObject(scene, objectId);
+  if (object === undefined || object.active === active) {
+    return false;
+  }
+
+  object.active = active;
+  return true;
+}
+
+/**
+ * 对象的显示顺序：**大的画在前面**。
+ *
+ * 取整并夹在 `±SORTING_ORDER_LIMIT` 内：顺序只是个层号，允许输入框里敲出小数 /
+ * 极大值，但落到文档里必须是规规矩矩的整数，否则外部工具与画布对「谁在前」的理解会不一致。
+ */
+export function setObjectSortingOrder(
+  scene: Draft<SceneDoc>,
+  objectId: string,
+  sortingOrder: number,
+): boolean {
+  const object = findObject(scene, objectId);
+  if (object === undefined || !Number.isFinite(sortingOrder)) {
+    return false;
+  }
+
+  const next = Math.min(SORTING_ORDER_LIMIT, Math.max(-SORTING_ORDER_LIMIT, Math.round(sortingOrder)));
+  if (object.sortingOrder === next) {
+    return false;
+  }
+
+  object.sortingOrder = next;
+  return true;
+}
+
+/**
+ * 按**显示顺序**排好序的对象（先画的在前，后画的盖在上面）。
+ *
+ * 画布与命中测试共用它：命中测试反过来从后往前找，于是「点到的」永远是**看得见的最上面那个**。
+ * 只比较 `sortingOrder`，相同的保持场景文件里的先后（`Array.prototype.sort` 自 ES2019 起稳定）；
+ * **不改动 `scene.objects` 本身**——文件里的顺序是数据，不是渲染排序的结果。
+ */
+export function objectsInDrawOrder(scene: SceneDoc): SceneObjectDoc[] {
+  return [...scene.objects].sort((a, b) => a.sortingOrder - b.sortingOrder);
 }
 
 // ---------------------------------------------------------------- 组件

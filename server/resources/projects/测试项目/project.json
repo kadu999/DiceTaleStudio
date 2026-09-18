@@ -1,5 +1,5 @@
 {
-  "formatVersion": 5,
+  "formatVersion": 7,
   "name": "测试项目",
   "items": {
     "source": "item.xlsx",

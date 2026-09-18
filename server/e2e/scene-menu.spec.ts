@@ -66,8 +66,7 @@ test.describe("场景菜单", () => {
     }
   });
 
-  test("重命名场景：只改文件名（没有地图对象时内容一字不动）", async ({ page, request }) => {
-    const project = await newProject(request);
+  test("重命名场景：只改文件名（没有地图对象时内容一字不动）", async ({ page, request }) => {    const project = await newProject(request);
     try {
       await seedProjectDoc(request, project, [
         sceneDoc("Map001", [
@@ -84,9 +83,21 @@ test.describe("场景菜单", () => {
 
       await expect(page.getByTestId("status-active-scene")).toHaveText("当前场景 大厅");
 
-      // 没有地图对象 → 没有贴图引用要同步，新文件与旧文件逐字一致
+      // 没有地图对象 → 没有贴图引用要同步。
+      // **不再比对整个文件**：打开旧版本文件时它已被升到当前版本并补上新增字段
+      // （`active` / `sortingOrder`），所以「一字不动」只对**对象内容**成立。
       const after = await readSceneFile(request, project, "大厅");
-      expect(after).toEqual(before);
+      expect(after.formatVersion).toBe(CURRENT_SCENE_FORMAT_VERSION);
+
+      const door = (file: Record<string, unknown>): Record<string, unknown> =>
+        (file.objects as Record<string, unknown>[] | undefined)?.[0] ?? {};
+      // 除新增字段外，其余字段逐字一致（id / 名字 / 类型 / 位置 / 旋转 / 组件）
+      const withoutNewFields = (object: Record<string, unknown>): Record<string, unknown> =>
+        Object.fromEntries(
+          Object.entries(object).filter(([key]) => key !== "active" && key !== "sortingOrder"),
+        );
+
+      expect(withoutNewFields(door(after))).toEqual(withoutNewFields(door(before)));
 
       // 旧文件不存在了
       const old = await request.get(

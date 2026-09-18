@@ -1,12 +1,18 @@
 import { useEffect, useRef, useState } from "react";
-import { objectImage, type SceneDoc, type WorldPosition } from "@dts/document";
+import {
+  objectImage,
+  objectsInDrawOrder,
+  type SceneDoc,
+  type SceneObjectDoc,
+  type WorldPosition,
+} from "@dts/document";
 import {
   createCanvasSceneRenderer,
   screenToWorld,
   worldToScreen,
   type SceneRenderer,
 } from "@dts/renderer";
-import { worldRectOf } from "@dts/grid";
+import { worldRectBottom, worldRectLeft, worldRectOf } from "@dts/grid";
 import { sceneImage, sceneImageError, subscribeSceneImage } from "../../services/scene-image";
 import { useEditorStore } from "../../state/editor-store";
 import { EmptyState } from "../EmptyState";
@@ -33,6 +39,27 @@ function warnImageSizeOnce(id: string, message: string): void {
 const MAX_DPR = 2;
 
 /**
+ * 棋盘底纹对齐到哪一点：**第一张画在画布上的地图**的左下角。
+ *
+ * 地图的网格就是从它自己那块矩形的左下角起算的（见 `@dts/grid`），底纹用同一个锚点，
+ * 于是「底纹的格子」和「地图的格子」分成同一套，拖动 / 缩放地图时底纹跟着走。
+ * 没有地图（纯精灵场景 / 地图没激活）时退回世界原点——底纹总得有个相位。
+ *
+ * `objects` 必须是**画布上的对象**（已按显示顺序排好、且只剩激活的）。
+ */
+export function checkerOriginOf(objects: readonly SceneObjectDoc[]): WorldPosition {
+  for (const object of objects) {
+    const image = objectImage(object);
+    if (object.kind === "Map" && image !== undefined && object.position !== null) {
+      const rect = worldRectOf(object.position, image);
+      return { x: worldRectLeft(rect), y: worldRectBottom(rect) };
+    }
+  }
+
+  return { x: 0, y: 0 };
+}
+
+/**
  * 场景视口（中间区域）。
  *
  * 坐标只有**世界坐标**一套：场景中心 `(0, 0)`，x 向右、y 向上，单位像素。
@@ -53,12 +80,14 @@ export function ScenePanel(): React.JSX.Element {
   const resetViewport = useEditorStore((state) => state.resetViewport);
 
   // 当前场景里所有要显示的图片（地图贴图 + 精灵图片），一张场景可以有任意多张
-  const imageIds = (
-    scenes.find((scene) => scene.name === activeSceneName)?.objects ?? []
-  ).flatMap((object) => {
-    const ref = objectImage(object);
-    return ref === undefined ? [] : [ref.id];
-  });
+  const imageIds =
+    scenes
+      .find((scene) => scene.name === activeSceneName)
+      ?.objects.filter((object) => object.active) // 没激活的对象不画，也不用去加载它的图
+      .flatMap((object) => {
+        const ref = objectImage(object);
+        return ref === undefined ? [] : [ref.id];
+      }) ?? [];
 
   // 图片读不到（素材还没提交 / 文件名不匹配）时明确写出来，否则那块地方只有棋盘格
   const imageError =
@@ -165,7 +194,12 @@ export function ScenePanel(): React.JSX.Element {
     const toWorld = (local: { x: number; y: number }): WorldPosition =>
       screenToWorld(useEditorStore.getState().viewport, local);
 
-    /** 命中测试：指针下那个对象的 id（画布上看得见的对象才可能被命中）。 */
+    /**
+     * 命中测试：指针下那个对象的 id（画布上看得见的对象才可能被命中）。
+     *
+     * 从**后往前**找（`objectsInDrawOrder` 里靠后的画在上面），于是点到的永远是盖在最上面的
+     * 那一个——和眼睛看到的一致。没激活的对象根本不参与。
+     */
     const hitTestObject = (local: { x: number; y: number }): string | undefined => {
       const scene = currentScene();
       if (scene === undefined) {
@@ -173,8 +207,11 @@ export function ScenePanel(): React.JSX.Element {
       }
 
       const store = useEditorStore.getState();
-      for (const object of scene.objects) {
-        if (object.position === null) {
+      const drawOrder = objectsInDrawOrder(scene);
+
+      for (let index = drawOrder.length - 1; index >= 0; index -= 1) {
+        const object = drawOrder[index];
+        if (object === undefined || !object.active || object.position === null) {
           continue;
         }
 
@@ -312,12 +349,23 @@ export function ScenePanel(): React.JSX.Element {
       // 地图只是场景里的对象；没有它也能在场景里放对象
       const scene = scenes.find((item) => item.name === activeSceneName);
       if (scene === undefined) {
-        renderer.draw({ viewport, cssWidth: viewportSize.width, cssHeight: viewportSize.height });
+        // **没有场景时不铺底纹**（只留纯色）：底纹是「这里是空的」的标记，
+        // 铺满屏幕会让人以为「有个空场景」，而画面上的占位写得明明白白「没有场景」
+        renderer.draw({
+          viewport,
+          cssWidth: viewportSize.width,
+          cssHeight: viewportSize.height,
+          checker: false,
+        });
         return;
       }
 
+      // 画布上只画**激活**的对象；**按显示顺序**排队（顺序大的后画 = 盖在上面），
+      // 相同顺序保持场景文件里的先后，所以没调过顺序的场景看起来和以前一样
+      const drawOrder = objectsInDrawOrder(scene).filter((object) => object.active);
+
       // 每张图片各画各的：地图的贴图（带网格）与精灵的图片走同一条路
-      const layers = scene.objects.flatMap((object) => {
+      const layers = drawOrder.flatMap((object) => {
         const ref = objectImage(object);
         if (ref === undefined || object.position === null) {
           return [];
@@ -344,8 +392,9 @@ export function ScenePanel(): React.JSX.Element {
         ];
       });
 
-      // 每个对象在画布上画成标记点：看得见、能点、能拖，位置就是它的世界坐标
-      const markers = scene.objects.flatMap((object) =>
+      // 每个**激活的**对象在画布上画成标记点：看得见、能点、能拖，位置就是它的世界坐标。
+      // 记号点也按显示顺序画，和图片的遮挡关系一致
+      const markers = drawOrder.flatMap((object) =>
         object.position === null
           ? []
           : [
@@ -366,6 +415,9 @@ export function ScenePanel(): React.JSX.Element {
         layers,
         showOrigin: true,
         markers,
+        // 棋盘底纹与**第一张地图**的左下角对齐：格子与地图的网格分成同一套，
+        // 拖动地图时底纹跟着走。没有地图（纯精灵场景）就退回世界原点
+        checkerOrigin: checkerOriginOf(drawOrder),
       });
     };
 
