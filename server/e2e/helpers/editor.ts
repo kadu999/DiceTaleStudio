@@ -1,4 +1,5 @@
 import { expect, type APIRequestContext, type Page } from "@playwright/test";
+import { deflateSync } from "node:zlib";
 
 /**
  * E2E 公共操作。
@@ -142,6 +143,90 @@ export function mapObjectDoc(
       cells: { encoding: "rle", runs: [[0, 64 * 36]] },
     },
   };
+}
+
+/**
+ * 把贴图上传到项目的 `Assets/images/` 下（模拟外部把素材提交进目录）。
+ *
+ * 地图对象引用的就是这张图，所以画布应该把它画出来。
+ */
+export async function uploadSceneImage(
+  request: APIRequestContext,
+  project: string,
+  sceneName: string,
+  data: Buffer,
+): Promise<void> {
+  const response = await request.put(
+    `/api/resources/raw?id=${encodeURIComponent(`project:${project}/Assets/images/${sceneName}.png`)}`,
+    { headers: { "content-type": "image/png" }, data },
+  );
+  expect(response.ok()).toBeTruthy();
+}
+
+/**
+ * 造一张纯色 PNG（自己编码，不依赖任何图形库）。
+ *
+ * 用途：断言「贴图真的画到画布上了」——采样画布像素时，纯色最容易判断，
+ * 也不会被棋盘格背景或网格线混淆。
+ */
+export function solidPng(width: number, height: number, color: readonly [number, number, number]): Buffer {
+  const raw = Buffer.alloc(height * (1 + width * 3));
+  for (let y = 0; y < height; y += 1) {
+    const rowStart = y * (1 + width * 3);
+    raw[rowStart] = 0; // 每行的过滤器字节
+    for (let x = 0; x < width; x += 1) {
+      const at = rowStart + 1 + x * 3;
+      raw[at] = color[0];
+      raw[at + 1] = color[1];
+      raw[at + 2] = color[2];
+    }
+  }
+
+  const chunk = (type: string, payload: Buffer): Buffer => {
+    const head = Buffer.alloc(4);
+    head.writeUInt32BE(payload.length, 0);
+    const body = Buffer.concat([Buffer.from(type, "ascii"), payload]);
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(crc32(body), 0);
+    return Buffer.concat([head, body, crc]);
+  };
+
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8; // 位深
+  ihdr[9] = 2; // 颜色类型：真彩 RGB
+  // 10..12 依次是压缩方式 / 过滤方式 / 交错方式，都是 0
+
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk("IHDR", ihdr),
+    chunk("IDAT", deflateSync(raw)),
+    chunk("IEND", Buffer.alloc(0)),
+  ]);
+}
+
+const CRC_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let index = 0; index < 256; index += 1) {
+    let value = index;
+    for (let bit = 0; bit < 8; bit += 1) {
+      value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
+    }
+
+    table[index] = value >>> 0;
+  }
+
+  return table;
+})();
+
+function crc32(data: Buffer): number {
+  let crc = 0xffffffff;
+  for (const byte of data) {
+    crc = CRC_TABLE[(crc ^ byte) & 0xff]! ^ (crc >>> 8);
+  }
+
+  return (crc ^ 0xffffffff) >>> 0;
 }
 
 /**

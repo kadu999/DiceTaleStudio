@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { SceneDoc, WorldPosition } from "@dts/document";
 import {
   createCanvasSceneRenderer,
@@ -7,11 +7,27 @@ import {
   type SceneRenderer,
 } from "@dts/renderer";
 import { gridSizeFromImage } from "@dts/grid";
+import { sceneImage, sceneImageError, subscribeSceneImage } from "../../services/scene-image";
 import { sceneImageSize, useEditorStore } from "../../state/editor-store";
 import { EmptyState } from "../EmptyState";
 
 /** 标记点的命中半径（屏幕像素）：比渲染半径略大，手指也点得中。 */
 const MARKER_HIT_RADIUS = 12;
+
+/**
+ * 贴图实际尺寸与地图数据声明尺寸不一致时的提醒：**每张贴图只提醒一次**。
+ *
+ * 绘制循环每秒跑 60 次，不能每次都往控制台写。
+ */
+const warnedImageSize = new Set<string>();
+function warnImageSizeOnce(id: string, message: string): void {
+  if (warnedImageSize.has(id)) {
+    return;
+  }
+
+  warnedImageSize.add(id);
+  console.warn(`[scene] ${message}`);
+}
 
 /** DPR 上限：平板上 3x DPR 会把填充率吃光，限制到 2 已足够清晰。 */
 const MAX_DPR = 2;
@@ -35,6 +51,30 @@ export function ScenePanel(): React.JSX.Element {
   const setActiveScene = useEditorStore((state) => state.setActiveScene);
   const openObjectDialog = useEditorStore((state) => state.openObjectDialog);
   const resetViewport = useEditorStore((state) => state.resetViewport);
+
+  const mapImageId =
+    scenes
+      .find((scene) => scene.name === activeSceneName)
+      ?.objects.find((object) => object.kind === "Map")?.map?.image.id ?? null;
+
+  // 贴图读不到（素材还没提交 / 文件名不匹配）时明确写出来，否则画布上只有棋盘格
+  const imageError = mapImageId === null ? undefined : sceneImageError(mapImageId);
+
+  /**
+   * 贴图加载完成信号。
+   *
+   * 绘制循环是 rAF、读的是 `getState()`（不参与 React 重渲染），而贴图是异步加载的，
+   * 所以加载完必须**主动触发一次重渲染**：订阅贴图加载完成的事件即可。
+   */
+  const [imageReady, setImageReady] = useState(false);
+  useEffect(() => {
+    if (mapImageId === null) {
+      setImageReady(false);
+      return;
+    }
+
+    return subscribeSceneImage(mapImageId, () => setImageReady(true));
+  }, [mapImageId]);
 
   // 渲染器生命周期
   useEffect(() => {
@@ -263,9 +303,35 @@ export function ScenePanel(): React.JSX.Element {
       }
 
       const mapObject = scene.objects.find((object) => object.kind === "Map");
+      const mapImage = mapObject?.map === undefined ? null : sceneImage(mapObject.map.image.id);
+      /**
+       * 场景范围由**贴图引用里声明的尺寸**决定（网格就是按它排的），贴图本身再缩放铺满它。
+       *
+       * 不能拿 `naturalWidth` 当场景范围：素材的实际像素尺寸与引用里写的不一定一致
+       * （手写文件、或素材被换成低分辨率占位图），那样网格坐标与世界坐标就全错位了。
+       */
       const sceneSize = sceneImageSize(scene);
       // 网格与世界同向：没有地图时按默认尺寸铺网格，让「一格」这件事始终看得见
-      const grid = mapObject?.map?.grid ?? gridSizeFromImage(sceneSize);
+      const grid =
+        mapObject?.map === undefined
+          ? gridSizeFromImage(sceneSize)
+          : {
+              width: mapObject.map.grid.width,
+              height: mapObject.map.grid.height,
+            };
+
+      // 贴图实际像素与声明尺寸不一致时说一声：画面会被拉伸，但网格仍按声明尺寸对齐
+      if (
+        mapImage !== null &&
+        mapObject?.map !== undefined &&
+        (mapImage.naturalWidth !== sceneSize.width || mapImage.naturalHeight !== sceneSize.height)
+      ) {
+        const id = mapObject.map.image.id;
+        warnImageSizeOnce(
+          id,
+          `贴图实际尺寸 ${mapImage.naturalWidth}×${mapImage.naturalHeight} 与地图数据里声明的 ${sceneSize.width}×${sceneSize.height} 不一致，已按声明尺寸拉伸铺满`,
+        );
+      }
 
       // 对象在画布上画成标记点：看得见、能点、能拖，位置就是它的世界坐标
       const markers = scene.objects.flatMap((object) =>
@@ -286,9 +352,9 @@ export function ScenePanel(): React.JSX.Element {
         viewport,
         cssWidth: viewportSize.width,
         cssHeight: viewportSize.height,
-        image: null,
+        image: mapImage,
         sceneSize,
-        grid: { width: grid.width, height: grid.height },
+        grid,
         showGrid: true,
         showOrigin: true,
         markers,
@@ -299,7 +365,8 @@ export function ScenePanel(): React.JSX.Element {
     return () => {
       cancelAnimationFrame(frame);
     };
-  }, []);
+    // imageReady：贴图是异步加载的，加载完成要重跑循环把贴图画上
+  }, [imageReady]);
 
   return (
     <div className="relative flex h-full min-h-0 flex-col">
@@ -354,6 +421,16 @@ export function ScenePanel(): React.JSX.Element {
       >
         {/* biome-ignore lint/a11y/noNoninteractiveTabindex: 画布需要接受指针与触摸手势 */}
         <canvas ref={canvasRef} className="block h-full w-full" />
+
+        {imageError === undefined ? null : (
+          // 贴图读不到时说清楚原因，否则画面只有棋盘格，看不出是「没贴图」还是「贴图坏了」
+          <div
+            data-testid="scene-image-error"
+            className="pointer-events-none absolute left-0 top-0 rounded-br border-b border-r border-[var(--color-editor-border)] bg-black/70 px-2 py-1 text-[11px] text-[var(--color-editor-warn)]"
+          >
+            地图贴图未显示：{imageError}
+          </div>
+        )}
 
         {activeSceneName === null ? (
           // 占位本身可点（点一下新建场景），所以这一层**不能** pointer-events-none；

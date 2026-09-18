@@ -11,6 +11,8 @@ import {
   sceneDoc,
   sceneObjectDoc,
   seedProjectDoc,
+  solidPng,
+  uploadSceneImage,
 } from "./helpers/editor";
 
 /**
@@ -217,6 +219,72 @@ test.describe("创建与编辑场景对象", () => {
         "data-kind",
         "SceneObject",
       );
+    } finally {
+      await dropProject(request, project);
+    }
+  });
+
+  test("网格地图的贴图真的画在场景里（采样画布像素验证，不是只画棋盘格）", async ({
+    page,
+    request,
+  }) => {
+    const project = await newProject(request);
+    try {
+      await seedProjectDoc(request, project, [
+        sceneDoc(SCENE_A, [mapObjectDoc(project, SCENE_A)]),
+      ]);
+      // 纯红贴图：画布上出现 #ff0000 就说明贴图被画出来了（棋盘格与网格线都不是这个色）
+      await uploadSceneImage(request, project, SCENE_A, solidPng(4, 4, [255, 0, 0]));
+
+      await enterEditor(page);
+      await openProject(page, project);
+
+      // 全画布扫描找纯红像素：贴图按声明的 1920×1080 铺满整个可见区域，
+      // 中心那点会压着网格线与原点十字，所以不针对单点断言。
+      await expect
+        .poll(() =>
+          page.evaluate(() => {
+            const canvas = document.querySelector("canvas");
+            const context = canvas?.getContext("2d") ?? null;
+            if (canvas === null || context === null) {
+              return 0;
+            }
+
+            const whole = context.getImageData(0, 0, canvas.width, canvas.height).data;
+            let redCount = 0;
+            for (let y = 0; y < canvas.height; y += 4) {
+              for (let x = 0; x < canvas.width; x += 4) {
+                const at = (y * canvas.width + x) * 4;
+                if (whole[at] === 255 && whole[at + 1] === 0 && whole[at + 2] === 0) {
+                  redCount += 1;
+                }
+              }
+            }
+
+            return redCount;
+          }),
+        )
+        .toBeGreaterThan(1000);
+
+      // 贴图读得到，就不该出现「贴图未显示」的提示
+      await expect(page.getByTestId("scene-image-error")).toHaveCount(0);
+    } finally {
+      await dropProject(request, project);
+    }
+  });
+
+  test("贴图缺失时画布给出明确提示，而不是静默只画棋盘格", async ({ page, request }) => {
+    const project = await newProject(request);
+    try {
+      // 只声明地图对象，**不**上传贴图
+      await seedProjectDoc(request, project, [
+        sceneDoc(SCENE_A, [mapObjectDoc(project, SCENE_A)]),
+      ]);
+      await enterEditor(page);
+      await openProject(page, project);
+
+      await expect(page.getByTestId("scene-image-error")).toBeVisible();
+      await expect(page.getByTestId("scene-image-error")).toContainText("贴图读取失败");
     } finally {
       await dropProject(request, project);
     }

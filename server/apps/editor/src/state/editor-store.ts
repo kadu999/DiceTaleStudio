@@ -54,6 +54,7 @@ import {
   type ResourceTreeNode,
 } from "../services/project-api";
 import { clearLastProject, readLastProject, writeLastProject } from "../services/session";
+import { clearSceneImageCache } from "../services/scene-image";
 
 /**
  * 编辑器状态。
@@ -768,6 +769,8 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
         const text = await projectApi.readText(projectFileId(name));
         const load = parseProjectFile(JSON.parse(text) as unknown);
 
+        // 上一个项目的贴图不该继续占内存（缓存按逻辑 ID，跨项目也不会互相命中）
+        clearSceneImageCache();
         get().resetDoc(load.doc);
 
         // 旧版工程文件：把内联场景落成独立文件，工程文件按新格式回写（只做一次）
@@ -806,6 +809,7 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
     closeProject() {
       // 待保存的改动先写回：flush 内部会**同步**取好场景快照，所以随后的清空不会把它丢掉
       void get().flushSceneSave();
+      clearSceneImageCache();
       set((state) => ({ project: { ...state.project, current: null, tree: [], error: "" } }));
       // 主动关闭 = 不想再看到它，下次启动不该又把它拉回来
       clearLastProject();
