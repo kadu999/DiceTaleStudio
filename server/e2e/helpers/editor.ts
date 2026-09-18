@@ -68,6 +68,16 @@ export async function enterEditor(page: Page): Promise<void> {
 }
 
 /**
+ * 点菜单栏上的一个一级菜单（工程 / 场景 / 编辑 / 视图 / 运行）。
+ *
+ * **限定在菜单栏里**：属性面板的分组标题与菜单同名（例如「场景」「编辑」），
+ * 全页按名字找会命中两个按钮（Playwright 的严格模式会直接失败）。
+ */
+export async function openMenu(page: Page, label: string): Promise<void> {
+  await page.getByTestId("menu-bar").getByRole("button", { name: label, exact: true }).click();
+}
+
+/**
  * 切到左栏某个页签（默认停在「场景对象」）。
  *
  * 平板档位下左栏是抽屉、默认收起，所以先把它唤出来再切页签。
@@ -75,7 +85,8 @@ export async function enterEditor(page: Page): Promise<void> {
 export async function openLeftTab(page: Page, tab: LeftTab): Promise<void> {
   const button = page.getByTestId(`tab-${tab}`);
   if (!(await button.isVisible().catch(() => false))) {
-    await page.getByRole("button", { name: "项目", exact: true }).click();
+    // 唤出左抽屉的按钮在菜单栏上（属性面板的分组标题也可能叫「项目」）
+    await page.getByTestId("menu-bar").getByRole("button", { name: "项目", exact: true }).click();
   }
 
   // 已经是这个页签就别再点（重复点击只会徒增抖动）
@@ -86,7 +97,7 @@ export async function openLeftTab(page: Page, tab: LeftTab): Promise<void> {
 
 /** 从「工程 → 打开项目」里打开指定项目。 */
 export async function openProject(page: Page, name: string): Promise<void> {
-  await page.getByRole("button", { name: "工程", exact: true }).click();
+  await openMenu(page, "工程");
   await page.getByRole("menuitem", { name: "打开项目…" }).click();
   await page.getByTestId("project-row").filter({ hasText: name }).first().click();
   await expect(page.getByTestId("status-doc")).toHaveText(name);
@@ -94,7 +105,7 @@ export async function openProject(page: Page, name: string): Promise<void> {
 
 /** 用界面新建一个项目（会自动打开它并记入「上次打开」）。 */
 export async function createProjectViaUi(page: Page, name: string): Promise<void> {
-  await page.getByRole("button", { name: "工程", exact: true }).click();
+  await openMenu(page, "工程");
   await page.getByRole("menuitem", { name: "新建项目…" }).click();
   await page.getByTestId("project-name-input").fill(name);
   await page.getByTestId("confirm-create-project").click();

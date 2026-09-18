@@ -52,8 +52,10 @@ export function InspectorPanel(): React.JSX.Element {
         ) : selected !== undefined ? (
           // 对象视图只列**人要用它做决定**的字段：内部标识（id）与组件数量不显示——
           // id 是一串机器 id、组件数现在恒为 0，两者都只会占地方。
-          <div data-testid="object-properties">
-            <FieldGroup title="对象">
+          // `key` = 对象 id：**换对象时分组回到展开**（折叠状态是组件本地的，参考实现也在
+          // 切换对象时重置，免得「上一个对象收起的分组」跟着跑到下一个对象身上）
+          <div key={selected.id} data-testid="object-properties">
+            <FieldGroup title="基础" group="basic">
               <NameField object={selected} />
               <Field label="类型" value={selected.kind} />
               <ActiveField object={selected} />
@@ -66,16 +68,21 @@ export function InspectorPanel(): React.JSX.Element {
                   <GridFields object={selected} />
                   <CellSizeField object={selected} />
                   <Field label="行序" value={selected.map.rowOrder} mono />
-                  {/* 网格线 / 网格标注两个总开关：不标注时也能用（想看清贴图就关掉） */}
-                  <GridDisplayField />
                 </>
               ) : null}
             </FieldGroup>
-            {/* 网格标注：只对地图对象出现（其它对象没有格子可标） */}
-            {selected.map !== undefined ? <GridAnnotationFields object={selected} /> : null}
+
+            {/* 「编辑」只对地图对象出现：格子是地图独有的东西 */}
+            {selected.map !== undefined ? (
+              <FieldGroup title="编辑" group="edit">
+                {/* 网格线 / 网格标注两个总开关：不进入标注模式也能用（想看清贴图就关掉） */}
+                <GridDisplayField />
+                <GridAnnotationFields object={selected} />
+              </FieldGroup>
+            ) : null}
           </div>
         ) : activeScene !== undefined ? (
-          <FieldGroup title="场景">
+          <FieldGroup title="场景" group="scene">
             <Field label="名称" value={activeScene.name} />
             <Field label="对象" value={String(activeScene.objects.length)} />
             <Field
@@ -574,7 +581,7 @@ function AssetProperties({ asset }: { readonly asset: ResourceTreeNode }): React
 
   return (
     <div data-testid="asset-properties">
-      <FieldGroup title="资源">
+      <FieldGroup title="资源" group="asset">
         <Field label="名称" value={asset.name} />
         <Field label="路径" value={asset.path} mono />
         <Field label="类型" value={assetKindLabel(asset.name)} />
@@ -644,7 +651,7 @@ function ProjectProperties(): React.JSX.Element {
 
   return (
     <div data-testid="project-properties">
-      <FieldGroup title="项目">
+      <FieldGroup title="项目" group="project">
         <Field label="名称" value={doc.name} />
         <Field label="文件夹" value={folder ?? "—"} mono />
         <Field label="场景" value={`${scenes.length} 个`} />

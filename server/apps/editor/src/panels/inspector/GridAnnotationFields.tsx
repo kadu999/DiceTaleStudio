@@ -13,12 +13,12 @@ import { decodeCellsCached } from "../scene/grid-paint";
 import { FieldRow } from "./fields";
 
 /**
- * 网格标注的调色板（属性面板里，**只对地图对象出现**）。
+ * 网格标注的**编辑区**：放进属性面板的「编辑」分组里（分组标题由外面给，这里只出行）。
  *
  * 对照 Unity 的 `GridMapEditorWindow` 右侧面板：
  * | Unity | 这里 |
  * |---|---|
- * | 网格大小 | 上面那条「网格」行（已可编辑） |
+ * | 网格大小 | 「基础」里的「网格」行（已可编辑） |
  * | 画笔大小 IntSlider(1..5) | 「画笔大小」滑杆 |
  * | 「橡皮擦 (0)」+ 8 行类型（显示开关 / 名字 / 颜色） | 「画笔类型」列表 |
  * | Save / Load `.bytes` | **没有**：格子存进场景文件，自动存 + 撤销栈即保存 |
@@ -58,25 +58,20 @@ export function GridAnnotationFields({
         : "画布上左键涂抹、中键平移；Esc 退出";
 
     return (
-      <section className="mb-3">
-        <div className="mb-1 text-[10px] uppercase tracking-wide text-[var(--color-editor-text-dim)]">
-          网格标注
-        </div>
-        <div className="flex items-center gap-2 overflow-hidden rounded border border-[var(--color-editor-border)] px-2 py-1">
-          <button
-            type="button"
-            data-testid="grid-paint-enter"
-            disabled={!object.active || object.position === null}
-            className="toolbar-button flex-none hover:toolbar-button-hover disabled:opacity-40"
-            onClick={() => enterGridPaint(object.id)}
-          >
-            开始标注
-          </button>
-          <span className="min-w-0 flex-1 text-[10px] text-[var(--color-editor-text-dim)]">
-            {blocked}
-          </span>
-        </div>
-      </section>
+      <FieldRow label="网格标注">
+        <button
+          type="button"
+          data-testid="grid-paint-enter"
+          disabled={!object.active || object.position === null}
+          className="toolbar-button flex-none hover:toolbar-button-hover disabled:opacity-40"
+          onClick={() => enterGridPaint(object.id)}
+        >
+          开始标注
+        </button>
+        <span className="min-w-0 flex-1 text-[10px] text-[var(--color-editor-text-dim)]">
+          {blocked}
+        </span>
+      </FieldRow>
     );
   }
 
@@ -84,94 +79,78 @@ export function GridAnnotationFields({
 
   return (
     <>
-      <section className="mb-3">
-        <div className="mb-1 text-[10px] uppercase tracking-wide text-[var(--color-editor-text-dim)]">
-          网格标注
-        </div>
-        <div className="overflow-hidden rounded border border-[var(--color-editor-border)]">
-          <FieldRow label="画笔大小">
-            <input
-              type="range"
-              data-testid="grid-brush-size"
-              aria-label="画笔大小"
-              min={MIN_BRUSH_SIZE}
-              max={MAX_BRUSH_SIZE}
-              step={1}
-              value={gridPaint.brushSize}
-              className="min-w-0 flex-1 accent-[var(--color-editor-accent)]"
-              onChange={(event) => setGridBrushSize(Number(event.target.value))}
-            />
-            <span className="flex-none font-mono text-[11px]" data-testid="grid-brush-size-label">
-              {gridPaint.brushSize}（{brushEffectiveSize(gridPaint.brushSize)}×
-              {brushEffectiveSize(gridPaint.brushSize)} 格）
-            </span>
-          </FieldRow>
+      <FieldRow label="画笔大小">
+        <input
+          type="range"
+          data-testid="grid-brush-size"
+          aria-label="画笔大小"
+          min={MIN_BRUSH_SIZE}
+          max={MAX_BRUSH_SIZE}
+          step={1}
+          value={gridPaint.brushSize}
+          className="min-w-0 flex-1 accent-[var(--color-editor-accent)]"
+          onChange={(event) => setGridBrushSize(Number(event.target.value))}
+        />
+        <span className="flex-none font-mono text-[11px]" data-testid="grid-brush-size-label">
+          {gridPaint.brushSize}（{brushEffectiveSize(gridPaint.brushSize)}×
+          {brushEffectiveSize(gridPaint.brushSize)} 格）
+        </span>
+      </FieldRow>
 
-          <FieldRow label="已标注">
-            <span
-              className="min-w-0 flex-1 font-mono text-[11px]"
-              data-testid="grid-annotated-count"
-            >
-              {annotated} 格
-            </span>
-            <button
-              type="button"
-              data-testid="grid-clear"
-              title="清空整张网格（可撤销）"
-              className="toolbar-button flex-none hover:toolbar-button-hover disabled:opacity-40"
-              disabled={annotated === 0}
-              onClick={() => clearGrid(object.id)}
-            >
-              清空
-            </button>
-            <button
-              type="button"
-              data-testid="grid-paint-exit-panel"
-              className="toolbar-button flex-none hover:toolbar-button-hover"
-              onClick={() => exitGridPaint()}
-            >
-              退出标注
-            </button>
-          </FieldRow>
-        </div>
-      </section>
+      <FieldRow label="已标注">
+        <span className="min-w-0 flex-1 font-mono text-[11px]" data-testid="grid-annotated-count">
+          {annotated} 格
+        </span>
+        <button
+          type="button"
+          data-testid="grid-clear"
+          title="清空整张网格（可撤销）"
+          className="toolbar-button flex-none hover:toolbar-button-hover disabled:opacity-40"
+          disabled={annotated === 0}
+          onClick={() => clearGrid(object.id)}
+        >
+          清空
+        </button>
+        <button
+          type="button"
+          data-testid="grid-paint-exit-panel"
+          className="toolbar-button flex-none hover:toolbar-button-hover"
+          onClick={() => exitGridPaint()}
+        >
+          退出标注
+        </button>
+      </FieldRow>
 
-      <section className="mb-3">
-        <div className="mb-1 text-[10px] uppercase tracking-wide text-[var(--color-editor-text-dim)]">
-          画笔类型
-        </div>
-        <div className="overflow-hidden rounded border border-[var(--color-editor-border)]">
-          <div className="border-b border-[var(--color-editor-border)] px-2 py-1 text-[10px] text-[var(--color-editor-text-dim)]">
-            点击名字选画笔；左边的开关只影响显示（数据不动）
-          </div>
+      {/* 画笔类型：子标题 + 9 行（橡皮擦 + 8 种类型） */}
+      <div className="border-b border-[var(--color-editor-border)] px-2 py-1 text-[10px] text-[var(--color-editor-text-dim)]">
+        画笔类型：点击名字选画笔；左边的开关只影响显示（数据不动）
+      </div>
 
-          {/* 橡皮擦：对齐 Unity 的「橡皮擦 (0)」——掩码 0 就是把整格清掉 */}
-          <TypeRow
-            bit={CellMask.Empty}
-            label="橡皮擦"
-            selected={gridPaint.mask === CellMask.Empty}
-            visible
-            color="#999999"
-            showVisibleToggle={false}
-            onSelect={() => setGridBrush(CellMask.Empty)}
-          />
+      {/* 橡皮擦：对齐 Unity 的「橡皮擦 (0)」——掩码 0 就是把整格清掉 */}
+      <TypeRow
+        bit={CellMask.Empty}
+        label="橡皮擦"
+        selected={gridPaint.mask === CellMask.Empty}
+        visible
+        color="#999999"
+        showVisibleToggle={false}
+        onSelect={() => setGridBrush(CellMask.Empty)}
+      />
 
-          {PAINTABLE_MASKS.map((bit) => (
-            <TypeRow
-              key={bit}
-              bit={bit}
-              label={maskToLabel(bit)}
-              selected={gridPaint.mask === bit}
-              visible={!hasMask(gridPaint.hiddenMask, bit)}
-              color={gridPaint.colors[bit] ?? "#ffffff"}
-              showVisibleToggle
-              onSelect={() => setGridBrush(bit)}
-              onToggleVisible={() => toggleGridTypeVisible(bit)}
-              onColor={(hex) => setGridTypeColor(bit, hex)}
-            />
-          ))}
-        </div>
-      </section>
+      {PAINTABLE_MASKS.map((bit) => (
+        <TypeRow
+          key={bit}
+          bit={bit}
+          label={maskToLabel(bit)}
+          selected={gridPaint.mask === bit}
+          visible={!hasMask(gridPaint.hiddenMask, bit)}
+          color={gridPaint.colors[bit] ?? "#ffffff"}
+          showVisibleToggle
+          onSelect={() => setGridBrush(bit)}
+          onToggleVisible={() => toggleGridTypeVisible(bit)}
+          onColor={(hex) => setGridTypeColor(bit, hex)}
+        />
+      ))}
     </>
   );
 }

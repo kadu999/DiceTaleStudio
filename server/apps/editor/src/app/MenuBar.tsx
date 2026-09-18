@@ -45,7 +45,12 @@ export function MenuBar({ compact }: MenuBarProps): React.JSX.Element {
   const fitToViewport = useEditorStore((state) => state.fitToViewport);
 
   return (
-    <header className="flex h-9 flex-none items-center gap-1 border-b border-[var(--color-editor-border)] bg-[var(--color-editor-panel-alt)] px-2">
+    // `data-testid` 给测试一个**稳定的作用域**：菜单栏里叫「场景 / 编辑 / 项目」的按钮，
+    // 属性面板的分组标题可能同名（两边都合理），按名字找会歧义，按区域找才对
+    <header
+      data-testid="menu-bar"
+      className="flex h-9 flex-none items-center gap-1 border-b border-[var(--color-editor-border)] bg-[var(--color-editor-panel-alt)] px-2"
+    >
       <span className="mr-2 text-[12px] font-semibold tracking-wide text-[var(--color-editor-text)]">
         DiceTale<span className="text-[var(--color-editor-accent)]">Studio</span>
       </span>

@@ -6,6 +6,7 @@ import {
   mapObjectDoc,
   newProject,
   openLeftTab,
+  openMenu,
   openProject,
   sceneDoc,
   seedProjectDoc,
@@ -36,7 +37,8 @@ async function readSceneFile(
 
 /** 打开「场景」菜单里的一项。 */
 async function sceneMenu(page: Page, name: RegExp | string): Promise<void> {
-  await page.getByRole("button", { name: "场景", exact: true }).click();
+  // 走 openMenu（限定在菜单栏里）：属性面板也有一个叫「场景」的分组标题
+  await openMenu(page, "场景");
   await page.getByRole("menuitem", { name }).click();
 }
 
@@ -273,7 +275,7 @@ test.describe("场景菜单", () => {
       await enterEditor(page);
       await openProject(page, project);
 
-      await page.getByRole("button", { name: "场景", exact: true }).click();
+      await openMenu(page, "场景");
       await expect(page.getByRole("menuitem", { name: /^删除/ })).toBeDisabled();
       await page.keyboard.press("Escape");
     } finally {
