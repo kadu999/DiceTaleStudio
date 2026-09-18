@@ -185,20 +185,55 @@ export interface SceneSizeHint {
 }
 
 /**
+ * 清掉地图对象上残留的位置（地图是场景底图，位置没有意义，见 `commands.isPositionableObject`）。
+ *
+ * 旧文件里可能有：v4 及更早的地图对象带着归一化位置，或者手写文件里直接写了个世界坐标。
+ * 这里**只清不清算**：地图的位置不换算、不保留——留着它只会让「地图能摆」这件事看起来是真的。
+ *
+ * 返回是否真的清掉了东西：清了就要求调用方按新格式回写一次文件，
+ * 否则会出现「内存里已修好、磁盘上还留着」的长期不一致。
+ */
+function withClearedMapPositions(raw: Record<string, unknown>): {
+  readonly raw: Record<string, unknown>;
+  readonly changed: boolean;
+} {
+  const objects = Array.isArray(raw.objects) ? raw.objects : [];
+  let changed = false;
+
+  const next = objects.map((object) => {
+    if (!isRecord(object) || object.kind !== "Map") {
+      return object;
+    }
+
+    if (object.position === null || object.position === undefined) {
+      return object;
+    }
+
+    changed = true;
+    return { ...object, position: null };
+  });
+
+  return changed ? { raw: { ...raw, objects: next }, changed } : { raw, changed };
+}
+
+/**
  * v4 → v5：位置从**归一化坐标 `[0,1]`（y 向下）**换算成**世界坐标（场景中心为原点，y 向上）**。
  *
  * 换算与 `@dts/grid` 的 `world.ts` 一致，这里手写一遍是为了**不引入依赖**（document 只依赖 grid
  * 的字节与掩码工具，坐标换算在迁移里只出现这一次）。旧值越界（不在 `[0,1]`）时**原样保留**，
  * 宁可让它在画布上偏出去，也不静默夹到边界——那会把错误数据伪装成正确数据。
+ *
+ * 地图对象的位置先被 `withClearedMapPositions` 清成 `null`，于是自然跳过换算。
  */
 function migrateScenePositions(
   raw: Record<string, unknown>,
   size: SceneSizeHint,
 ): Record<string, unknown> {
-  const objects = Array.isArray(raw.objects) ? raw.objects : [];
+  const cleared = withClearedMapPositions(raw);
+  const objects = Array.isArray(cleared.raw.objects) ? cleared.raw.objects : [];
 
   return {
-    ...raw,
+    ...cleared.raw,
     formatVersion: DOCUMENT_FORMAT_VERSION,
     objects: objects.map((object) => {
       if (!isRecord(object) || !isRecord(object.position)) {
@@ -292,7 +327,7 @@ export function parseProjectDoc(raw: unknown): ProjectDoc {
 /** 场景文件加载结果。 */
 export interface SceneFileLoad {
   readonly file: SceneFileDoc;
-  /** 文件是旧版本（格式或坐标已升级），调用方需要按新格式回写一次。 */
+  /** 文件需要按新格式回写一次（旧版本升级，或清掉了地图对象上无意义的位置）。 */
   readonly needsRewrite: boolean;
 }
 
@@ -304,13 +339,21 @@ export interface SceneFileLoad {
  */
 export function parseSceneFile(raw: unknown, size?: SceneSizeHint): SceneFileLoad {
   const upgraded = upgradeRawDocument(raw);
-  const needsRewrite = isRecord(upgraded) && isLegacyPositionScene(upgraded);
+  let normalized = upgraded;
+  let needsRewrite = false;
 
-  const normalized = isRecord(upgraded)
-    ? needsRewrite
-      ? migrateScenePositions(upgraded, size ?? FALLBACK_SCENE_SIZE)
-      : upgraded
-    : upgraded;
+  if (isRecord(upgraded)) {
+    if (isLegacyPositionScene(upgraded)) {
+      normalized = migrateScenePositions(upgraded, size ?? FALLBACK_SCENE_SIZE);
+      needsRewrite = true;
+    } else {
+      // v5 文件里地图上可能还留着位置（手写文件、或「地图能摆」那版留下的）：
+      // 清掉并要求回写一次，磁盘上的旧数据不会一直挂着
+      const cleared = withClearedMapPositions(upgraded);
+      normalized = cleared.raw;
+      needsRewrite = cleared.changed;
+    }
+  }
 
   const result = sceneFileSchema.safeParse(normalized);
   if (!result.success) {

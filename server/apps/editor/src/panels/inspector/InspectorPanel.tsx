@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { SceneObjectDoc } from "@dts/document";
+import { isPositionableObject, type SceneObjectDoc } from "@dts/document";
 import type { ResourceTreeNode } from "../../services/project-api";
 import { findResourceNode, useEditorStore } from "../../state/editor-store";
 import { assetDisplayPath, findAssetById } from "../asset-picker";
@@ -53,7 +53,13 @@ export function InspectorPanel(): React.JSX.Element {
             <FieldGroup title="对象">
               <NameField object={selected} />
               <Field label="类型" value={selected.kind} />
-              <PositionFields object={selected} />
+              {isPositionableObject(selected) ? (
+                <PositionFields object={selected} />
+              ) : (
+                // 地图是场景底图：贴图铺满整个场景，没有「摆在哪个点」这回事，
+                // 所以这里不给坐标输入框——之前那个输入框能改、画面却纹丝不动
+                <Field label="位置" value="铺满整个场景（不参与摆放）" />
+              )}
               {selected.map !== undefined ? (
                 <>
                   <TextureField object={selected} />

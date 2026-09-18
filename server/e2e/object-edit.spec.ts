@@ -91,6 +91,46 @@ async function sceneWorldAt(
   return { x: point.x - (box.x + box.width / 2), y: box.y + box.height / 2 - point.y };
 }
 
+/**
+ * 数一数画布上某个**精确颜色**的像素（采样步长 2px）。
+ *
+ * 用途：判断某个标记点画没画。标记点是不透明实心圆，圆心附近就是精确色；
+ * 网格线 / 原点十字 / 棋盘格都是别的颜色，不会误判。
+ */
+async function countCanvasColor(
+  page: Page,
+  rgb: readonly [number, number, number],
+): Promise<number> {
+  const [r, g, b] = rgb;
+  return page.evaluate(
+    ({ r, g, b }) => {
+      const canvas = document.querySelector("canvas");
+      const context = canvas?.getContext("2d") ?? null;
+      if (canvas === null || context === null) {
+        return 0;
+      }
+
+      const data = context.getImageData(0, 0, canvas.width, canvas.height).data;
+      let count = 0;
+      for (let y = 0; y < canvas.height; y += 2) {
+        for (let x = 0; x < canvas.width; x += 2) {
+          const at = (y * canvas.width + x) * 4;
+          if (data[at] === r && data[at + 1] === g && data[at + 2] === b) {
+            count += 1;
+          }
+        }
+      }
+
+      return count;
+    },
+    { r, g, b },
+  );
+}
+
+/** 标记点颜色（`kindMarkerColor`）：普通对象蓝、地图（未知类型）灰。 */
+const MARKER_BLUE: readonly [number, number, number] = [79, 156, 249];
+const MARKER_GRAY: readonly [number, number, number] = [154, 164, 178];
+
 /** 用属性面板把某个对象移到精确的世界坐标（面板在平板下是右抽屉，先唤出来）。 */
 async function setObjectPositionViaInspector(
   page: Page,
@@ -556,6 +596,73 @@ test.describe("创建与编辑场景对象", () => {
       await expect(page.getByTestId("object-row").filter({ hasText: "地图" }).first()).toContainText(
         "64×36",
       );
+    } finally {
+      await dropProject(request, project);
+    }
+  });
+
+  test("地图不参与摆放：没有坐标输入框与标记点，文件里残留的位置会被清掉", async ({
+    page,
+    request,
+  }) => {
+    const project = await newProject(request);
+    try {
+      // 地图上带着世界坐标：早期编辑器留下的写法（贴图铺满场景，这个坐标没人读）
+      await seedProjectDoc(request, project, [
+        sceneDoc(SCENE_A, [
+          sceneObjectDoc("木门"),
+          sceneObjectDoc("无位置的木门"),
+          { ...mapObjectDoc(project, SCENE_A), position: { x: 0, y: 0 } },
+        ]),
+      ]);
+      // 贴图要在打开项目**之前**提交：编辑器不会盯着素材目录变化
+      await uploadSceneImage(request, project, SCENE_A, solidPng(4, 4, [255, 0, 0]));
+
+      await enterEditor(page);
+      await openProject(page, project);
+      await openLeftTab(page, "hierarchy");
+
+      // 兜底断言：地图的贴图确实画着（别把「地图没画」当成「没有标记点」）
+      await expect(page.getByTestId("scene-image-error")).toHaveCount(0);
+      await expect.poll(() => countCanvasColor(page, [255, 0, 0])).toBeGreaterThan(1000);
+
+      // 打开时就修好并回写：磁盘上不再留着那个假坐标
+      await expect
+        .poll(async () => {
+          const map = (await readSceneObjects(request, project, SCENE_A)).find(
+            (object) => object.kind === "Map",
+          );
+          // 别用 `??`：这里的期望值就是 null，null 会被它吞掉
+          return map === undefined ? "没有地图对象" : map.position;
+        })
+        .toBeNull();
+
+      // 普通对象挪到三种视口都点得到的落点：它的标记点就是「扫描确实能找到标记点」的对照
+      const probed = await clampedWorldPoint(page, -200, 150);
+      await setObjectPositionViaInspector(page, probed.world);
+
+      await expect.poll(() => countCanvasColor(page, MARKER_BLUE)).toBeGreaterThan(5);
+      // 地图没有标记点（灰色那枚），哪怕文件里残留过坐标
+      await expect.poll(() => countCanvasColor(page, MARKER_GRAY)).toBe(0);
+
+      // 属性面板：地图没有世界坐标输入框，只说明它铺满整个场景
+      await openLeftTab(page, "hierarchy");
+      await page.getByTestId("object-row").filter({ hasText: "地图" }).first().click();
+      if (!(await page.getByTestId("inspector-object-name").isVisible().catch(() => false))) {
+        await page.getByRole("button", { name: "属性", exact: true }).click();
+      }
+
+      await expect(page.getByTestId("object-properties")).toContainText("铺满整个场景");
+      await expect(page.getByTestId("inspector-object-x")).toHaveCount(0);
+      await expect(page.getByTestId("inspector-object-y")).toHaveCount(0);
+
+      // 列表里：地图不标「未放置」（它本来就没有位置），没位置的普通对象照旧要标
+      await expect(
+        page.getByTestId("object-row").filter({ hasText: "地图" }).first(),
+      ).not.toContainText("未放置");
+      await expect(
+        page.getByTestId("object-row").filter({ hasText: "无位置的木门" }).first(),
+      ).toContainText("未放置");
     } finally {
       await dropProject(request, project);
     }

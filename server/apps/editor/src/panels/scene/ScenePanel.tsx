@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { SceneDoc, WorldPosition } from "@dts/document";
+import { isPositionableObject, type SceneDoc, type WorldPosition } from "@dts/document";
 import {
   createCanvasSceneRenderer,
   screenToWorld,
@@ -159,7 +159,8 @@ export function ScenePanel(): React.JSX.Element {
 
       const store = useEditorStore.getState();
       for (const object of scene.objects) {
-        if (object.position === null) {
+        // 地图没有可拖的点（它是铺满场景的底图）：就算文件里残留着坐标，也不给它热区
+        if (object.position === null || !isPositionableObject(object)) {
           continue;
         }
 
@@ -334,8 +335,9 @@ export function ScenePanel(): React.JSX.Element {
       }
 
       // 对象在画布上画成标记点：看得见、能点、能拖，位置就是它的世界坐标
+      // （地图不画：它没有位置，铺满整个场景）
       const markers = scene.objects.flatMap((object) =>
-        object.position === null
+        object.position === null || !isPositionableObject(object)
           ? []
           : [
               {

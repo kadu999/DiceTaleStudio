@@ -55,6 +55,18 @@ export function listMapObjects(scene: SceneDoc): SceneObjectDoc[] {
   return scene.objects.filter((object) => object.kind === "Map");
 }
 
+/**
+ * 这个对象在世界上占一个点吗（也就是「可以有世界坐标」）。
+ *
+ * **地图不占点**：它是场景底图，贴图铺满整个场景——世界范围（±宽/2、±高/2）本来就是由它的
+ * 贴图尺寸定出来的，所以「地图摆在哪个点」这件事不存在，位置恒为 `null`。
+ * 界面（属性面板、层级、画布标记点）与写入端都看这一个判断，免得再出现
+ * 「坐标输入框能改、画面纹丝不动」这种骗人的控件。
+ */
+export function isPositionableObject(object: SceneObjectDoc): boolean {
+  return object.kind !== "Map";
+}
+
 /** 收集某场景内全部动作 id（校验唯一性用）。 */
 export function collectActionIds(scene: SceneDoc): Map<string, string[]> {
   const byId = new Map<string, string[]>();
@@ -144,6 +156,12 @@ export function setObjectPosition(
 ): boolean {
   const object = findObject(scene, objectId);
   if (object === undefined) {
+    return false;
+  }
+
+  // 地图是场景底图，位置没有意义（见 `isPositionableObject`）：这里挡住写入端，
+  // 任何路径（属性面板、画布拖动、协议）都改不动它——返回值就是「没产生变更」。
+  if (!isPositionableObject(object)) {
     return false;
   }
 
