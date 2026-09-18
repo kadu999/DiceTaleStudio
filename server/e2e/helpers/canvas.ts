@@ -136,6 +136,31 @@ export async function canvasPointReachable(
 }
 
 /**
+ * 整块画布的**像素和**：一条粗粒度的「画布指纹」。
+ *
+ * 用来断言「显示开关真的改了画面」而不用挑单点：贴图取深色时，网格线（白，α0.12）
+ * 压在它上面会让总和明显变高，关掉网格线总和就掉下来。单点采样反而不好使——
+ * 网格线只有 1px 宽，采样点很容易正好压在线上或正好避开。
+ */
+export async function canvasPixelSum(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const canvas = document.querySelector("canvas");
+    const context = canvas?.getContext("2d") ?? null;
+    if (canvas === null || context === null) {
+      return -1;
+    }
+
+    const data = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    let sum = 0;
+    for (let index = 0; index < data.length; index += 4) {
+      sum += (data[index] ?? 0) + (data[index + 1] ?? 0) + (data[index + 2] ?? 0);
+    }
+
+    return sum;
+  });
+}
+
+/**
  * 找一个**真正点得到**的空白屏幕点：屏幕坐标在「抽屉右边 / 画布里面」，
  * 而且正下方就是画布（不是别的面板）。
  *

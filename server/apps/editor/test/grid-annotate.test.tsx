@@ -66,6 +66,8 @@ afterEach(() => {
       brushSize: 1,
       hiddenMask: 0,
       colors: {},
+      showGridLines: true,
+      showAnnotations: true,
     },
   });
 });
@@ -284,6 +286,47 @@ describe("涂抹：写进 RLE，整笔可撤销", () => {
   });
 });
 
+describe("显示开关：网格线与网格标注", () => {
+  it("两者默认都显示", () => {
+    seedScene([mapObject()], ["map-1"]);
+    render(<InspectorPanel />);
+
+    expect((screen.getByTestId("grid-lines-toggle") as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByTestId("grid-annotations-toggle") as HTMLInputElement).checked).toBe(true);
+  });
+
+  it("不标注时也能关（想看清贴图就关掉网格线）", () => {
+    seedScene([mapObject()], ["map-1"]);
+    render(<InspectorPanel />);
+
+    fireEvent.click(screen.getByTestId("grid-lines-toggle"));
+    expect(useEditorStore.getState().gridPaint.showGridLines).toBe(false);
+    // 关掉的是「显示」：没进标注模式，画笔也没被改
+    expect(useEditorStore.getState().gridPaint.active).toBe(false);
+    expect(useEditorStore.getState().gridPaint.mask).toBe(CellMask.Obstacle);
+  });
+
+  it("两个开关都写进偏好（下次打开还是这个样子）", () => {
+    seedScene([mapObject()], ["map-1"]);
+    render(<InspectorPanel />);
+
+    fireEvent.click(screen.getByTestId("grid-annotations-toggle"));
+
+    const stored = JSON.parse(
+      window.localStorage.getItem("dts.editor.gridPaint") ?? "{}",
+    ) as Record<string, unknown>;
+    expect(stored.showAnnotations).toBe(false);
+    expect(stored.showGridLines).toBe(true);
+  });
+
+  it("精灵没有这两个开关（格子是地图的事）", () => {
+    seedScene([mapObject(), createSceneObject({ id: "sprite", name: "精灵" })], ["sprite"]);
+    render(<InspectorPanel />);
+
+    expect(screen.queryByTestId("grid-lines-toggle")).toBeNull();
+    expect(screen.queryByTestId("grid-annotations-toggle")).toBeNull();
+  });
+});
 describe("格子颜色：只画可见的类型位，按低位在上叠加", () => {
   const colors = { [CellMask.Obstacle]: "#ff0000", [CellMask.Fog1]: "#d9d9d9" };
 

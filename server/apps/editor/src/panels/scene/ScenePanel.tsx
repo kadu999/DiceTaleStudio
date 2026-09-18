@@ -593,25 +593,24 @@ export function ScenePanel(): React.JSX.Element {
           );
         }
 
-        const grid = object.map?.grid;
+        const map = object.map;
+        const grid = map?.grid;
+        // 「网格标注」总开关：关掉就整层不着色（格子数据与画笔都不受影响）
+        const colored = map !== undefined && gridPaint.showAnnotations;
         return [
           {
             image,
             rect,
             grid,
-            showGrid: grid !== undefined,
+            // 「网格线」总开关：关了就不画线（数据与画笔都不受影响）
+            showGrid: grid !== undefined && gridPaint.showGridLines,
             // 格子着色：掩码位 → 一串颜色逐层叠加（隐藏的类型不画，但数据不动）
-            cells:
-              object.map === undefined
-                ? undefined
-                : decodeCellsCached(
-                    object.map.cells.runs,
-                    object.map.grid.width * object.map.grid.height,
-                  ),
-            cellColors:
-              object.map === undefined
-                ? undefined
-                : (mask: number) => cellColorsOf(mask, gridPaint.hiddenMask, gridPaint.colors),
+            cells: colored
+              ? decodeCellsCached(map.cells.runs, map.grid.width * map.grid.height)
+              : undefined,
+            cellColors: colored
+              ? (mask: number) => cellColorsOf(mask, gridPaint.hiddenMask, gridPaint.colors)
+              : undefined,
             // 选中 = 在这块矩形上画框（4 个角点 + 4 条边中点，没有中心点）
             selected: selectedObjectIds.includes(object.id),
           },

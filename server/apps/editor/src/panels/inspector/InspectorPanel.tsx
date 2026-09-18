@@ -66,6 +66,8 @@ export function InspectorPanel(): React.JSX.Element {
                   <GridFields object={selected} />
                   <CellSizeField object={selected} />
                   <Field label="行序" value={selected.map.rowOrder} mono />
+                  {/* 网格线 / 网格标注两个总开关：不标注时也能用（想看清贴图就关掉） */}
+                  <GridDisplayField />
                 </>
               ) : null}
             </FieldGroup>
@@ -481,6 +483,53 @@ function CellSizeField({ object }: { readonly object: SceneObjectDoc }): React.J
 
   const cell = cellPixelSize(grid, image);
   return <Field label="每格" value={`${round2(cell.x)} × ${round2(cell.y)} px`} mono />;
+}
+
+/**
+ * 画布上**网格线**与**网格标注**两个总开关。
+ *
+ * 它们是**显示开关**（纯看，不动数据）：想看清贴图时把网格线关掉、想只看美术时把标注关掉，
+ * 关掉以后画笔照样能画、撤销栈与落盘都不受影响。
+ *
+ * 与「每类的显示开关」一样属于**编辑器偏好**（写浏览器本地，见 `services/grid-paint-prefs`），
+ * 不是文档数据——所以它作用于画布上的**所有地图**（一个场景可以有多张），
+ * 而不是「这张地图自己记着」。
+ */
+function GridDisplayField(): React.JSX.Element {
+  const showGridLines = useEditorStore((state) => state.gridPaint.showGridLines);
+  const showAnnotations = useEditorStore((state) => state.gridPaint.showAnnotations);
+  const setGridLinesVisible = useEditorStore((state) => state.setGridLinesVisible);
+  const setGridAnnotationsVisible = useEditorStore((state) => state.setGridAnnotationsVisible);
+
+  return (
+    <FieldRow label="显示">
+      <div className="flex min-w-0 flex-1 items-center gap-3 text-[11px]">
+        <label className="flex items-center gap-1.5" title="在画布上画网格线（所有地图；只影响显示）">
+          <input
+            type="checkbox"
+            data-testid="grid-lines-toggle"
+            checked={showGridLines}
+            className="h-3.5 w-3.5 flex-none accent-[var(--color-editor-accent)]"
+            onChange={(event) => setGridLinesVisible(event.target.checked)}
+          />
+          <span>网格线</span>
+        </label>
+        <label
+          className="flex items-center gap-1.5"
+          title="在画布上给格子着色（所有地图；只影响显示，标出来的数据不会动）"
+        >
+          <input
+            type="checkbox"
+            data-testid="grid-annotations-toggle"
+            checked={showAnnotations}
+            className="h-3.5 w-3.5 flex-none accent-[var(--color-editor-accent)]"
+            onChange={(event) => setGridAnnotationsVisible(event.target.checked)}
+          />
+          <span>网格标注</span>
+        </label>
+      </div>
+    </FieldRow>
+  );
 }
 
 /** 网格列 / 行输入框里的文本。 */

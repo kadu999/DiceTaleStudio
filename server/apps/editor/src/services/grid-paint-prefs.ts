@@ -10,10 +10,11 @@ import {
 /**
  * 网格标注的**编辑器偏好**（浏览器本地）。
  *
- * 这里存的是「怎么画」，不是「画了什么」：画笔类型 / 画笔大小 / 每个类型的显示开关与颜色。
+ * 这里存的是「怎么看、怎么画」，不是「画了什么」：画笔类型 / 画笔大小 / 每个类型的显示开关与颜色，
+ * 以及画布上**网格线**与**网格标注**这两个总开关。
  * 它们**不进文档**——对齐 Unity：那几项存在 `GridMapEditorWindow` 的序列化字段里
  * （每个编辑窗口自己记着），而地图数据（格子掩码）才进 `.bytes` / 场景文件。
- * 所以换个项目、甚至重开浏览器，标注的手感与配色都还在。
+ * 所以换个项目、甚至重开浏览器，显示方式与配色都还在。
  *
  * 读写一律吞掉异常：隐私模式 / 禁用站点存储时，记不住也不该让编辑器打不开（同 `session.ts`）。
  */
@@ -26,11 +27,15 @@ export interface GridPaintPrefs {
   readonly hiddenMask: number;
   /** 类型位 → `#rrggbb`（透明度跟类型绑定，不在这里存）。 */
   readonly colors: Readonly<Record<number, string>>;
+  /** 画布上是否画网格线（所有地图；纯显示，不影响数据）。 */
+  readonly showGridLines: boolean;
+  /** 画布上是否给格子着色（所有地图；纯显示，不影响数据）。 */
+  readonly showAnnotations: boolean;
 }
 
 const GRID_PAINT_KEY = "dts.editor.gridPaint";
 
-/** 默认偏好：障碍画笔、1 号画笔、全部显示、Unity 的默认配色。 */
+/** 默认偏好：障碍画笔、1 号画笔、全部显示、Unity 的默认配色；网格线与标注都画。 */
 export function defaultGridPaintPrefs(): GridPaintPrefs {
   return {
     // 与 Unity `GridMapEditorState.selectedType` 的初值一致
@@ -38,6 +43,8 @@ export function defaultGridPaintPrefs(): GridPaintPrefs {
     brushSize: 1,
     hiddenMask: 0,
     colors: defaultCellMaskColors(),
+    showGridLines: true,
+    showAnnotations: true,
   };
 }
 
@@ -99,5 +106,9 @@ export function parseGridPaintPrefs(raw: unknown): GridPaintPrefs {
         ? hiddenMask & ALL_MASK
         : fallback.hiddenMask,
     colors,
+    // 旧版本（还没这两个开关时）写下的记录里没有它们 → 默认「都显示」
+    showGridLines: typeof record.showGridLines === "boolean" ? record.showGridLines : fallback.showGridLines,
+    showAnnotations:
+      typeof record.showAnnotations === "boolean" ? record.showAnnotations : fallback.showAnnotations,
   };
 }

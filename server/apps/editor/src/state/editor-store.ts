@@ -130,9 +130,9 @@ export type SceneSaveState = "saved" | "pending" | "saving" | "error";
 /**
  * 网格标注（地图编辑）状态。
  *
- * 「怎么画」那一半（画笔类型 / 大小 / 每类的显示与颜色）是**编辑器偏好**，会写进浏览器本地
- * （对齐 Unity 把这几项存在编辑窗口的序列化字段里）；「画到哪儿」那一半（目标地图、是否在标注中）
- * 是**会话状态**，不进文档也不持久化。
+ * 「怎么看 / 怎么画」那一半（画笔类型 / 大小 / 每类的显示与颜色 / 网格线与标注两个总开关）
+ * 是**编辑器偏好**，会写进浏览器本地（对齐 Unity 把这几项存在编辑窗口的序列化字段里）；
+ * 「画到哪儿」那一半（目标地图、是否在标注中）是**会话状态**，不进文档也不持久化。
  *
  * 画笔类型直接用格子掩码位表示，`CellMask.Empty`(=0) 就是橡皮擦——与 Unity 的
  * 「橡皮擦 (0)」是同一件事，不必再造一个布尔字段。
@@ -149,6 +149,10 @@ export interface GridPaintState {
   readonly hiddenMask: number;
   /** 类型位 → `#rrggbb`；透明度跟类型绑定（见 `@dts/grid` 的 `defaultCellMaskStyle`）。 */
   readonly colors: Readonly<Record<number, string>>;
+  /** 画布上是否画网格线（所有地图；纯显示）。 */
+  readonly showGridLines: boolean;
+  /** 画布上是否给格子着色（所有地图；纯显示）。 */
+  readonly showAnnotations: boolean;
 }
 
 export interface EditorStoreState {
@@ -310,6 +314,10 @@ export interface EditorStoreState {
   toggleGridTypeVisible(bit: number): void;
   /** 改某个类型的颜色（只收 `#rrggbb`）。 */
   setGridTypeColor(bit: number, hex: string): void;
+  /** 画布上是否画**网格线**（所有地图；纯显示，不影响数据）。 */
+  setGridLinesVisible(visible: boolean): void;
+  /** 画布上是否给**格子着色**（所有地图；纯显示，不影响数据）。 */
+  setGridAnnotationsVisible(visible: boolean): void;
   /**
    * 标注一笔：`from → to` 之间（含两端）经过的格子按当前画笔刷一遍。
    * `from` 为 null 表示这一笔的起点就是 `to`；连续调用合并成一条撤销记录。
@@ -637,6 +645,8 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       brushSize: gridPaint.brushSize,
       hiddenMask: gridPaint.hiddenMask,
       colors: gridPaint.colors,
+      showGridLines: gridPaint.showGridLines,
+      showAnnotations: gridPaint.showAnnotations,
     };
     writeGridPaintPrefs(prefs);
   };
@@ -691,6 +701,8 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       brushSize: storedGridPaint.brushSize,
       hiddenMask: storedGridPaint.hiddenMask,
       colors: storedGridPaint.colors,
+      showGridLines: storedGridPaint.showGridLines,
+      showAnnotations: storedGridPaint.showAnnotations,
     },
     runtime: {
       status: "idle",
@@ -1684,6 +1696,18 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
         ...get().gridPaint,
         colors: { ...get().gridPaint.colors, [bit]: hex },
       };
+      set({ gridPaint });
+      persistGridPaint(gridPaint);
+    },
+
+    setGridLinesVisible(visible) {
+      const gridPaint: GridPaintState = { ...get().gridPaint, showGridLines: visible };
+      set({ gridPaint });
+      persistGridPaint(gridPaint);
+    },
+
+    setGridAnnotationsVisible(visible) {
+      const gridPaint: GridPaintState = { ...get().gridPaint, showAnnotations: visible };
       set({ gridPaint });
       persistGridPaint(gridPaint);
     },
