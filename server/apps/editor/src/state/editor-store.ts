@@ -14,8 +14,10 @@ import {
   parseSceneFile,
   removeObject as removeSceneObject,
   renameObject as renameSceneObject,
+  setMapImage as setSceneMapImage,
   setObjectPosition as setSceneObjectPosition,
   validateSceneName,
+  type ImageRef,
   type ObjectKind,
   type ProjectDoc,
   type SceneDoc,
@@ -132,6 +134,10 @@ export interface EditorStoreState {
   readonly sceneDialog: SceneDialogMode;
   /** 「新建对象」弹框是否打开（按钮与快捷键都能唤出，所以放 store） */
   readonly objectDialog: boolean;
+  /** 「选择贴图」弹框是否打开（属性面板上的按钮唤出） */
+  readonly imagePicker: boolean;
+  /** 正在换贴图的地图对象 id；null 表示弹框没打开 */
+  readonly imagePickerTarget: string | null;
   /** 场景文件的保存状态（自动存与手动保存共用） */
   readonly sceneSaveState: SceneSaveState;
   readonly sceneSaveError: string;
@@ -193,6 +199,12 @@ export interface EditorStoreState {
   openSceneDialog(mode: SceneDialogMode): void;
   openObjectDialog(open: boolean): void;
   /**
+   * 打开「选择贴图」弹框（传要换贴图的地图对象 id）；传 null 关闭。
+   *
+   * 打开与关闭走同一条路：**记住当前目标是 store 的事**，弹框组件只读它。
+   */
+  openImagePicker(mapObjectId: string | null): void;
+  /**
    * 新建场景：在 `Assets/scenes/` 下建一个空场景文件。成功返回 undefined，失败返回原因。
    */
   createScene(name: string): Promise<string | undefined>;
@@ -220,6 +232,8 @@ export interface EditorStoreState {
   moveObject(id: string, position: WorldPosition): void;
   /** 一次拖动结束：断开撤销合并，使后续拖动成为独立记录。 */
   endObjectDrag(): void;
+  /** 换地图对象的贴图（宽高由调用方从素材本身读出）。 */
+  setMapImage(mapObjectId: string, image: ImageRef): boolean;
 }
 
 const EMPTY_GAME_STATE: GameStateSnapshot = {
@@ -563,6 +577,8 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
     projectDialog: null,
     sceneDialog: null,
     objectDialog: false,
+    imagePicker: false,
+    imagePickerTarget: null,
     sceneSaveState: "saved",
     sceneSaveError: "",
     runtime: {
@@ -1367,6 +1383,34 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
 
     endObjectDrag() {
       sceneHistory.endCoalescing();
+    },
+
+    setMapImage(mapObjectId, image) {
+      const sceneName = get().activeSceneName;
+      if (sceneName === null) {
+        return false;
+      }
+
+      const changed = get().applyScenes("更换贴图", (draft) => {
+        const scene = draft.find((item) => item.name === sceneName);
+        if (scene !== undefined) {
+          setSceneMapImage(scene, mapObjectId, image);
+        }
+      });
+
+      if (changed) {
+        pushLog(makeLog("info", `已更换贴图：${image.id}（${image.width}×${image.height}）`));
+      }
+
+      return changed;
+    },
+
+    openImagePicker(mapObjectId) {
+      set({ imagePicker: mapObjectId !== null, imagePickerTarget: mapObjectId });
+      if (mapObjectId !== null) {
+        // 打开「选择贴图」时刷新一次目录：素材由外部提交，不刷新的话刚放进去的图选不到。
+        void get().refreshTree();
+      }
     },
   };
 });

@@ -6,6 +6,7 @@ import { LeftPanel } from "../panels/LeftPanel";
 import { InspectorPanel } from "../panels/inspector/InspectorPanel";
 import { RuntimePanel } from "../panels/runtime/RuntimePanel";
 import { ScenePanel } from "../panels/scene/ScenePanel";
+import { ImagePickerDialog } from "./ImagePickerDialog";
 import { MenuBar } from "./MenuBar";
 import { StatusBar } from "./StatusBar";
 
@@ -28,6 +29,20 @@ export function EditorShell(): React.JSX.Element {
   const undo = useEditorStore((state) => state.undo);
   const redo = useEditorStore((state) => state.redo);
   const openObjectDialog = useEditorStore((state) => state.openObjectDialog);
+  const imagePicker = useEditorStore((state) => state.imagePicker);
+  const imagePickerTarget = useEditorStore((state) => state.imagePickerTarget);
+  const openImagePicker = useEditorStore((state) => state.openImagePicker);
+  const setMapImage = useEditorStore((state) => state.setMapImage);
+  const scenes = useEditorStore((state) => state.scenes);
+  const activeSceneName = useEditorStore((state) => state.activeSceneName);
+
+  /** 弹框要换贴图的那个地图对象（对象可能已被删掉，所以现查一次）。 */
+  const pickerTarget =
+    imagePickerTarget === null
+      ? undefined
+      : scenes
+          .find((scene) => scene.name === activeSceneName)
+          ?.objects.find((object) => object.id === imagePickerTarget);
 
   // 启动引导：自动打开上次的项目 / 一个项目都没有时弹新建 / 有项目但没记录时弹打开列表。
   // store 内部有幂等保护，StrictMode 下重复调用不会弹两次。
@@ -181,6 +196,20 @@ export function EditorShell(): React.JSX.Element {
       </div>
 
       <StatusBar />
+
+      {/* 选择贴图：从项目已有的图片里挑（编辑器不导入素材） */}
+      <ImagePickerDialog
+        open={imagePicker && pickerTarget !== undefined}
+        currentId={pickerTarget?.map?.image.id}
+        onClose={() => openImagePicker(null)}
+        onPick={(image) => {
+          if (imagePickerTarget !== null) {
+            setMapImage(imagePickerTarget, image);
+          }
+
+          openImagePicker(null);
+        }}
+      />
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { defaultComponentData } from "./components";
 import type {
   ActionInstanceDoc,
   ComponentDoc,
+  ImageRef,
   MapDataDoc,
   WorldPosition,
   ObjectKind,
@@ -464,5 +465,33 @@ export function setMapData(
   }
 
   object.map = map as Draft<MapDataDoc>;
+  return true;
+}
+
+/**
+ * 换地图对象的贴图。
+ *
+ * 只动 `image`：网格尺寸不变（网格是**导入时**按贴图算好的，换图不该悄悄改动格子数——
+ * 那会让已经画好的格子全部错位）。宽高由调用方从素材本身读出来，保证与真实像素一致。
+ */
+export function setMapImage(
+  scene: Draft<SceneDoc>,
+  mapObjectId: string,
+  image: ImageRef,
+): boolean {
+  const map = findObject(scene, mapObjectId)?.map;
+  if (map === undefined) {
+    return false;
+  }
+
+  if (
+    map.image.id === image.id &&
+    map.image.width === image.width &&
+    map.image.height === image.height
+  ) {
+    return false;
+  }
+
+  map.image = { id: image.id, width: image.width, height: image.height };
   return true;
 }

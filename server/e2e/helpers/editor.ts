@@ -316,3 +316,17 @@ export async function expectPersistedObjectNames(
     })
     .toEqual(expected);
 }
+
+/**
+ * 选中场景里的第 `index` 个对象，并保证属性面板露出来（平板下它是右抽屉）。
+ *
+ * 对象列表在「场景对象」页签里，所以要先把左栏切过去。
+ */
+export async function selectObject(page: Page, index = 0): Promise<void> {
+  await openLeftTab(page, "hierarchy");
+  await page.getByTestId("object-row").nth(index).click();
+
+  if (!(await page.getByTestId("inspector-object-name").isVisible().catch(() => false))) {
+    await page.getByRole("button", { name: "属性", exact: true }).click();
+  }
+}

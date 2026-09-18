@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { SceneObjectDoc } from "@dts/document";
 import type { ResourceTreeNode } from "../../services/project-api";
 import { findResourceNode, useEditorStore } from "../../state/editor-store";
+import { assetDisplayPath, findAssetById } from "../asset-picker";
 import { assetKindLabel, assetPreviewKind, formatSize } from "../asset-info";
 import { EmptyState } from "../EmptyState";
 
@@ -55,7 +56,7 @@ export function InspectorPanel(): React.JSX.Element {
               <PositionFields object={selected} />
               {selected.map !== undefined ? (
                 <>
-                  <Field label="贴图" value={selected.map.image.id} mono />
+                  <TextureField object={selected} />
                   <Field
                     label="网格"
                     value={`${selected.map.grid.width} × ${selected.map.grid.height}`}
@@ -174,6 +175,53 @@ function NameField({ object }: { readonly object: SceneObjectDoc }): React.JSX.E
           }
         }}
       />
+    </FieldRow>
+  );
+}
+
+/**
+ * 地图对象的贴图：显示**项目内相对路径**（`images/Map001.png`），后面跟一个「选择」按钮。
+ *
+ * 按钮唤出的是「选择贴图」弹框（对齐 Unity 的 Object Picker）——素材由外部提交到
+ * `Assets/images/`，编辑器不导入，所以这里只负责从已有图片里挑。
+ */
+function TextureField({ object }: { readonly object: SceneObjectDoc }): React.JSX.Element {
+  const tree = useEditorStore((state) => state.project.tree);
+  const openImagePicker = useEditorStore((state) => state.openImagePicker);
+  const image = object.map?.image;
+  if (image === undefined) {
+    return (
+      <FieldRow label="贴图">
+        <span className="flex-1 text-[11px] text-[var(--color-editor-text-dim)]">（无贴图数据）</span>
+      </FieldRow>
+    );
+  }
+
+  // 引用的文件不在项目里（素材没提交 / 改名了）：直接把这件事写出来
+  const missing = findAssetById(tree, image.id) === undefined;
+
+  return (
+    <FieldRow label="贴图">
+      <span className="min-w-0 flex-1 truncate font-mono text-[11px]" title={image.id}>
+        {assetDisplayPath(image.id)}
+      </span>
+      {missing ? (
+        <span
+          data-testid="texture-missing"
+          className="flex-none text-[10px] text-[var(--color-editor-warn)]"
+          title="项目里找不到这个文件：素材要提交到 Assets/images/ 下，或在这里换一张"
+        >
+          找不到
+        </span>
+      ) : null}
+      <button
+        type="button"
+        data-testid="pick-texture"
+        className="toolbar-button flex-none hover:toolbar-button-hover"
+        onClick={() => openImagePicker(object.id)}
+      >
+        选择
+      </button>
     </FieldRow>
   );
 }

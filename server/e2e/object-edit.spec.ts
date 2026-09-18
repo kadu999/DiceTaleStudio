@@ -11,6 +11,7 @@ import {
   sceneDoc,
   sceneObjectDoc,
   seedProjectDoc,
+  selectObject,
   solidPng,
   uploadSceneImage,
 } from "./helpers/editor";
@@ -95,10 +96,7 @@ async function setObjectPositionViaInspector(
   page: Page,
   world: { x: number; y: number },
 ): Promise<void> {
-  await page.getByTestId("object-row").first().click();
-  if (!(await page.getByTestId("inspector-object-name").isVisible().catch(() => false))) {
-    await page.getByRole("button", { name: "属性", exact: true }).click();
-  }
+  await selectObject(page);
 
   await page.getByTestId("inspector-object-x").fill(String(world.x));
   await page.getByTestId("inspector-object-y").fill(String(world.y));
@@ -289,6 +287,84 @@ test.describe("创建与编辑场景对象", () => {
       await expect(page.getByTestId("scene-image-error")).toContainText(
         `project:${project}/Assets/images/${SCENE_A}.png`,
       );
+    } finally {
+      await dropProject(request, project);
+    }
+  });
+
+  test("属性面板显示简短的贴图路径，并能在弹框里换一张贴图", async ({ page, request }) => {
+    const project = await newProject(request);
+    try {
+      await seedProjectDoc(request, project, [
+        sceneDoc(SCENE_A, [mapObjectDoc(project, SCENE_A)]),
+      ]);
+      // 当前贴图（红色）+ 备选贴图（蓝色）：两张都提交进 Assets/images/
+      await uploadSceneImage(request, project, SCENE_A, solidPng(4, 4, [255, 0, 0]));
+      const response = await request.put(
+        `/api/resources/raw?id=${encodeURIComponent(`project:${project}/Assets/images/floor.png`)}`,
+        { headers: { "content-type": "image/png" }, data: solidPng(4, 4, [0, 0, 255]) },
+      );
+      expect(response.ok()).toBeTruthy();
+
+      await enterEditor(page);
+      await openProject(page, project);
+      await selectObject(page);
+
+      // 1) 路径只显示项目内相对路径：project:项目/Assets/images/x.png → images/x.png
+      const fields = page.locator('[data-testid="object-properties"]');
+      await expect(fields).toContainText(`images/${SCENE_A}.png`);
+      await expect(fields).not.toContainText(`project:${project}`);
+      await expect(fields).not.toContainText("Assets/");
+      // 贴图存在 → 不该有「找不到」标记
+      await expect(page.getByTestId("texture-missing")).toHaveCount(0);
+
+      // 2) 点「选择」打开弹框，列出项目里的两张图，当前那张是高亮的
+      await page.getByTestId("pick-texture").click();
+      const picker = page.getByTestId("image-picker-dialog");
+      const items = page.getByTestId("image-picker-item");
+
+      // 弹框内容依赖打开时顺手刷新出来的资源树，所以整块一起轮询
+      await expect
+        .poll(
+          async () => ({
+            visible: await picker.isVisible().catch(() => false),
+            count: await items.count(),
+          }),
+          { timeout: 15_000 },
+        )
+        .toMatchObject({ visible: true, count: 2 });
+
+      // 按逻辑 ID 断言选中态，不靠显示文本
+      const current = page.locator(
+        `[data-testid="image-picker-item"][data-asset-id="project:${project}/Assets/images/${SCENE_A}.png"]`,
+      );
+      await expect(current).toHaveAttribute("data-selected", "true");
+
+      // 3) 选另一张并确定：地图贴图与尺寸都写回文件
+      await page
+        .locator(
+          `[data-testid="image-picker-item"][data-asset-id="project:${project}/Assets/images/floor.png"]`,
+        )
+        .click();
+      await page.getByTestId("image-picker-confirm").click();
+      await expect(page.getByTestId("image-picker-dialog")).toHaveCount(0);
+
+      await expect
+        .poll(async () => {
+          const object = (
+            await readSceneObjects(request, project, SCENE_A)
+          )[0] as unknown as { map?: { image?: { id: string; width: number; height: number } } };
+          return object?.map?.image;
+        })
+        .toEqual({
+          id: `project:${project}/Assets/images/floor.png`,
+          width: 4,
+          height: 4,
+        });
+
+      // 面板上的路径跟着变，而且**不是**一整串逻辑 ID
+      await expect(fields).toContainText("images/floor.png");
+      await expect(fields).not.toContainText(`project:${project}`);
     } finally {
       await dropProject(request, project);
     }
