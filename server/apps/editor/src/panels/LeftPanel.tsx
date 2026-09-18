@@ -3,24 +3,19 @@ import { AssetsPanel } from "./assets/AssetsPanel";
 import { HierarchyPanel } from "./hierarchy/HierarchyPanel";
 
 /**
- * 左栏：资源（Assets）+ 场景对象（Hierarchy）两个页签。
+ * 左栏：场景对象（Hierarchy）+ 资源（Assets）两个页签。
  *
- * 对应 Unity 里 Project 与 Hierarchy 两个窗口；窄屏/平板下这一栏是抽屉，
+ * 对应 Unity 里 Hierarchy 与 Project 两个窗口；窄屏/平板下这一栏是抽屉，
  * 两个页签共用同一个抽屉，避免再挤出一列。
+ *
+ * 顺序：**场景对象在前、资源在后**，默认停在场景对象——编辑时最常看的是「这个场景里有什么」。
  */
 export function LeftPanel(): React.JSX.Element {
-  const [tab, setTab] = useState<"assets" | "hierarchy">("assets");
+  const [tab, setTab] = useState<"assets" | "hierarchy">("hierarchy");
 
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex flex-none items-center gap-1 border-b border-[var(--color-editor-border)] bg-[var(--color-editor-panel-alt)] px-1 py-0.5">
-        <TabButton
-          active={tab === "assets"}
-          testId="tab-assets"
-          onClick={() => setTab("assets")}
-        >
-          资源
-        </TabButton>
         <TabButton
           active={tab === "hierarchy"}
           testId="tab-hierarchy"
@@ -28,11 +23,18 @@ export function LeftPanel(): React.JSX.Element {
         >
           场景对象
         </TabButton>
+        <TabButton
+          active={tab === "assets"}
+          testId="tab-assets"
+          onClick={() => setTab("assets")}
+        >
+          资源
+        </TabButton>
       </div>
 
       <div className="min-h-0 flex-1">
-        {tab === "assets" ? <AssetsPanel /> : null}
         {tab === "hierarchy" ? <HierarchyPanel /> : null}
+        {tab === "assets" ? <AssetsPanel /> : null}
       </div>
     </div>
   );

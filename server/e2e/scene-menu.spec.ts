@@ -160,16 +160,19 @@ test.describe("场景菜单", () => {
       await openProject(page, project);
       await expect(page.getByTestId("no-scene-canvas")).toBeVisible();
 
-      // 占位本身就是入口
-      await page.getByTestId("empty-create-scene").click();
+      // 占位本身就是入口。注意「场景对象」面板里也有同样的占位（它默认就显示），
+      // 所以这里限定在**画布**上点。
+      await page.getByTestId("no-scene-canvas").getByTestId("empty-create-scene").click();
       await expect(page.getByTestId("scene-dialog")).toBeVisible();
       await page.getByTestId("scene-name-input").fill("Map001");
       await page.getByTestId("confirm-scene").click();
 
       await expect(page.getByTestId("status-scenes")).toHaveText("场景 1");
       await expect(page.getByTestId("status-active-scene")).toHaveText("当前场景 Map001");
-      // 有场景了，占位就该消失
+      // 有场景了，画布上的占位就该消失
       await expect(page.getByTestId("no-scene-canvas")).toHaveCount(0);
+      // 场景对象面板里的占位同样消失
+      await expect(page.getByTestId("object-tree").getByTestId("empty-create-scene")).toHaveCount(0);
     } finally {
       await dropProject(request, project);
     }

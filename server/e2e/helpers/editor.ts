@@ -67,14 +67,21 @@ export async function enterEditor(page: Page): Promise<void> {
   await dismissStartupDialog(page);
 }
 
-/** 左栏在平板档位下是抽屉、默认收起，先展开再切页签。 */
+/**
+ * 切到左栏某个页签（默认停在「场景对象」）。
+ *
+ * 平板档位下左栏是抽屉、默认收起，所以先把它唤出来再切页签。
+ */
 export async function openLeftTab(page: Page, tab: LeftTab): Promise<void> {
-  const testId = `tab-${tab}`;
-  if (!(await page.getByTestId(testId).isVisible().catch(() => false))) {
+  const button = page.getByTestId(`tab-${tab}`);
+  if (!(await button.isVisible().catch(() => false))) {
     await page.getByRole("button", { name: "项目", exact: true }).click();
   }
 
-  await page.getByTestId(testId).click();
+  // 已经是这个页签就别再点（重复点击只会徒增抖动）
+  if ((await button.getAttribute("data-active")) !== "true") {
+    await button.click();
+  }
 }
 
 /** 从「工程 → 打开项目」里打开指定项目。 */
