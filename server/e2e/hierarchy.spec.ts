@@ -251,16 +251,20 @@ test.describe("场景对象", () => {
     }
   });
 
-  test("面板只读：没有新建对象 / 添加地图入口", async ({ page, request }) => {
+  test("面板只列对象（没有内联新建行），新建入口在画布标题栏", async ({ page, request }) => {
     const project = await newProject(request);
     try {
       await openSeededProject(page, request, project, [sceneDoc(SCENE_A)]);
       await openLeftTab(page, "hierarchy");
 
       await expect(page.getByTestId("object-tree")).toBeVisible();
-      await expect(page.getByTestId("new-object")).toHaveCount(0);
-      await expect(page.getByTestId("add-map")).toHaveCount(0);
+      // 创建统一走弹框，面板里不该再有类型下拉 / 名字输入 / 确定按钮
       await expect(page.getByTestId("object-name-input")).toHaveCount(0);
+      await expect(page.getByTestId("object-kind")).toHaveCount(0);
+      await expect(page.getByTestId("confirm-object")).toHaveCount(0);
+      // 入口在画布标题栏（创建出来的对象落在场景正中）
+      await expect(page.getByTestId("new-object")).toBeVisible();
+      await expect(page.getByTestId("add-map")).toHaveCount(0);
     } finally {
       await dropProject(request, project);
     }

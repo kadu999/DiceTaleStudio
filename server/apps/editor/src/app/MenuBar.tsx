@@ -1,6 +1,7 @@
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { ProjectDialog } from "./ProjectDialog";
 import { SceneDialog } from "./SceneDialog";
+import { ObjectDialog } from "./ObjectDialog";
 import { useEditorStore } from "../state/editor-store";
 
 /**
@@ -23,6 +24,13 @@ export function MenuBar({ compact }: MenuBarProps): React.JSX.Element {
   const sceneDialog = useEditorStore((state) => state.sceneDialog);
   const openSceneDialog = useEditorStore((state) => state.openSceneDialog);
   const deleteScene = useEditorStore((state) => state.deleteScene);
+  const selection = useEditorStore((state) => state.selectedObjectIds);
+  const duplicateObjects = useEditorStore((state) => state.duplicateObjects);
+  const deleteObjects = useEditorStore((state) => state.deleteObjects);
+  const saveSceneNow = useEditorStore((state) => state.saveSceneNow);
+  const saveState = useEditorStore((state) => state.sceneSaveState);
+  const objectDialog = useEditorStore((state) => state.objectDialog);
+  const openObjectDialog = useEditorStore((state) => state.openObjectDialog);
   const closeProject = useEditorStore((state) => state.closeProject);
   const ui = useEditorStore((state) => state.ui);
   const setUi = useEditorStore((state) => state.setUi);
@@ -81,6 +89,28 @@ export function MenuBar({ compact }: MenuBarProps): React.JSX.Element {
       <Menu label="编辑">
         <MenuItem label={canUndo ? `撤销 ${undoLabel}` : "撤销"} disabled={!canUndo} onSelect={undo} />
         <MenuItem label={canRedo ? `重做 ${redoLabel}` : "重做"} disabled={!canRedo} onSelect={redo} />
+        <MenuSeparator />
+        <MenuItem
+          label="新建对象…"
+          disabled={activeSceneName === null}
+          onSelect={() => openObjectDialog(true)}
+        />
+        <MenuItem
+          label="复制选中对象"
+          disabled={selection.length === 0}
+          onSelect={() => duplicateObjects()}
+        />
+        <MenuItem
+          label="删除选中对象"
+          disabled={selection.length === 0}
+          onSelect={() => deleteObjects()}
+        />
+        <MenuSeparator />
+        <MenuItem
+          label="保存场景"
+          disabled={activeSceneName === null || saveState === "saved"}
+          onSelect={() => void saveSceneNow()}
+        />
       </Menu>
 
       <Menu label="视图">
@@ -130,6 +160,7 @@ export function MenuBar({ compact }: MenuBarProps): React.JSX.Element {
 
       <ProjectDialog mode={projectDialog} onClose={() => openProjectDialog(null)} />
       <SceneDialog mode={sceneDialog} onClose={() => openSceneDialog(null)} />
+      <ObjectDialog open={objectDialog} onClose={() => openObjectDialog(false)} />
     </header>
   );
 }

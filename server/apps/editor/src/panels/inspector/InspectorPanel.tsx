@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { SceneObjectDoc } from "@dts/document";
 import type { ResourceTreeNode } from "../../services/project-api";
 import { findResourceNode, useEditorStore } from "../../state/editor-store";
 import { assetKindLabel, assetPreviewKind, formatSize } from "../asset-info";
@@ -46,18 +47,10 @@ export function InspectorPanel(): React.JSX.Element {
           <AssetProperties key={asset.id} asset={asset} />
         ) : selected !== undefined ? (
           <FieldGroup title="对象">
-            <Field label="名称" value={selected.name} />
+            <NameField object={selected} />
             <Field label="ID" value={selected.id} mono />
             <Field label="类型" value={selected.kind} />
-            <Field
-              label="位置"
-              value={
-                selected.position === null
-                  ? "未放置"
-                  : `${selected.position.x.toFixed(3)}, ${selected.position.y.toFixed(3)}`
-              }
-              mono
-            />
+            <PositionFields object={selected} />
             <Field label="组件" value={String(selected.components.length)} />
             {selected.map !== undefined ? (
               <>
@@ -119,11 +112,167 @@ function Field({
   readonly mono?: boolean;
 }): React.JSX.Element {
   return (
+    <FieldRow label={label}>
+      <span className={`min-w-0 flex-1 truncate ${mono ? "font-mono text-[11px]" : ""}`}>{value}</span>
+    </FieldRow>
+  );
+}
+
+/** 属性行：标签 + 任意内容（只读值或输入框共用同一套排布）。 */
+function FieldRow({
+  label,
+  children,
+}: {
+  readonly label: string;
+  readonly children: React.ReactNode;
+}): React.JSX.Element {
+  return (
     <div className="flex items-center gap-2 border-b border-[var(--color-editor-border)] px-2 py-1 last:border-b-0">
       <span className="w-20 flex-none text-[11px] text-[var(--color-editor-text-dim)]">{label}</span>
-      <span className={`min-w-0 flex-1 truncate ${mono ? "font-mono text-[11px]" : ""}`}>{value}</span>
+      {children}
     </div>
   );
+}
+
+/** 对象名称：就地改名（Enter / 失焦提交，Esc 还原）。 */
+function NameField({ object }: { readonly object: SceneObjectDoc }): React.JSX.Element {
+  const renameObject = useEditorStore((state) => state.renameObject);
+  const [draft, setDraft] = useState(object.name);
+
+  // 选中的对象换了、或名字在别处被改（例如列表内联改名），输入框跟着走
+  useEffect(() => {
+    setDraft(object.name);
+  }, [object.id, object.name]);
+
+  const commit = (): void => {
+    if (draft.trim() === object.name) {
+      return;
+    }
+
+    if (!renameObject(object.id, draft)) {
+      // 名字非法（空）：退回原值，不要留下一个会被拒绝的输入
+      setDraft(object.name);
+    }
+  };
+
+  return (
+    <FieldRow label="名称">
+      <input
+        value={draft}
+        data-testid="inspector-object-name"
+        className="min-w-0 flex-1 rounded border border-[var(--color-editor-border)] bg-black/30 px-1 py-0.5 text-[11px] outline-none"
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            commit();
+            event.currentTarget.blur();
+          } else if (event.key === "Escape") {
+            setDraft(object.name);
+          }
+        }}
+      />
+    </FieldRow>
+  );
+}
+
+/**
+ * 对象位置：归一化坐标 `[0,1]`（y 向下）。
+ *
+ * 这是**精确**摆放的入口；粗略摆放直接拖画布上的标记点。
+ *
+ * 两条容易踩的坑，这里都避开了：
+ * 1. **各自提交各自的字段**，另一个轴取对象当前值——不能用兄弟输入框的 state，
+ *    否则「改完 x 再去改 y」时，x 的失焦提交会带上还没敲完的 y；
+ * 2. **正在输入的框不被 store 回灌**，否则提交后触发的同步会把用户刚敲的值冲掉。
+ *    留空或非法值按场景正中处理（手写文件里 `position: null` 的对象也能一键落位）。
+ */
+function PositionFields({ object }: { readonly object: SceneObjectDoc }): React.JSX.Element {
+  const moveObject = useEditorStore((state) => state.moveObject);
+  const xRef = useRef<HTMLInputElement>(null);
+  const yRef = useRef<HTMLInputElement>(null);
+  const [x, setX] = useState(formatCoordinate(object.position?.x));
+  const [y, setY] = useState(formatCoordinate(object.position?.y));
+
+  useEffect(() => {
+    if (document.activeElement !== xRef.current) {
+      setX(formatCoordinate(object.position?.x));
+    }
+
+    if (document.activeElement !== yRef.current) {
+      setY(formatCoordinate(object.position?.y));
+    }
+  }, [object.id, object.position]);
+
+  const commitX = (): void => {
+    moveObject(object.id, {
+      x: parseCoordinate(x),
+      y: object.position?.y ?? SCENE_CENTER_FALLBACK,
+    });
+  };
+
+  const commitY = (): void => {
+    moveObject(object.id, {
+      x: object.position?.x ?? SCENE_CENTER_FALLBACK,
+      y: parseCoordinate(y),
+    });
+  };
+
+  const onKeyDown = (commit: () => void) => (event: React.KeyboardEvent<HTMLInputElement>): void => {
+    if (event.key === "Enter") {
+      commit();
+      event.currentTarget.blur();
+    }
+  };
+
+  return (
+    <FieldRow label="位置">
+      <input
+        ref={xRef}
+        value={x}
+        data-testid="inspector-object-x"
+        inputMode="decimal"
+        type="number"
+        step="0.01"
+        min="0"
+        max="1"
+        placeholder={String(SCENE_CENTER_FALLBACK)}
+        className="w-16 rounded border border-[var(--color-editor-border)] bg-black/30 px-1 py-0.5 font-mono text-[11px] outline-none"
+        onChange={(event) => setX(event.target.value)}
+        onBlur={commitX}
+        onKeyDown={onKeyDown(commitX)}
+      />
+      <input
+        ref={yRef}
+        value={y}
+        data-testid="inspector-object-y"
+        inputMode="decimal"
+        type="number"
+        step="0.01"
+        min="0"
+        max="1"
+        placeholder={String(SCENE_CENTER_FALLBACK)}
+        className="w-16 rounded border border-[var(--color-editor-border)] bg-black/30 px-1 py-0.5 font-mono text-[11px] outline-none"
+        onChange={(event) => setY(event.target.value)}
+        onBlur={commitY}
+        onKeyDown={onKeyDown(commitY)}
+      />
+    </FieldRow>
+  );
+}
+
+/** 位置输入留空 / 非法时的落点：场景正中。 */
+const SCENE_CENTER_FALLBACK = 0.5;
+
+/** 位置输入框里的文本：没有位置时留空（提交时按场景正中处理）。 */
+function formatCoordinate(value: number | undefined): string {
+  return value === undefined ? "" : value.toFixed(3);
+}
+
+/** 位置输入：留空或非法都按场景正中。 */
+function parseCoordinate(raw: string): number {
+  const parsed = Number.parseFloat(raw);
+  return Number.isFinite(parsed) ? parsed : SCENE_CENTER_FALLBACK;
 }
 
 /**

@@ -95,6 +95,27 @@ export function addObject(scene: Draft<SceneDoc>, object: SceneObjectDoc): void 
   scene.objects.push(object as Draft<SceneObjectDoc>);
 }
 
+/**
+ * 给新对象取一个不重名的名字：`门`、`门 2`、`门 3`…
+ *
+ * 对象名**不要求唯一**（前端不靠名字寻址，靠 id），但列表里一堆同名行没法看，
+ * 所以「连续创建」与「复制」都走这里自动去重。比较与场景名一致：trim + 大小写不敏感。
+ */
+export function nextObjectName(objects: readonly SceneObjectDoc[], base: string): string {
+  const taken = new Set(objects.map((object) => object.name.trim().toLowerCase()));
+  const trimmed = base.trim();
+  if (!taken.has(trimmed.toLowerCase())) {
+    return trimmed;
+  }
+
+  for (let index = 2; ; index += 1) {
+    const candidate = `${trimmed} ${index}`;
+    if (!taken.has(candidate.toLowerCase())) {
+      return candidate;
+    }
+  }
+}
+
 export function removeObject(scene: Draft<SceneDoc>, objectId: string): boolean {
   const index = scene.objects.findIndex((object) => object.id === objectId);
   if (index < 0) {

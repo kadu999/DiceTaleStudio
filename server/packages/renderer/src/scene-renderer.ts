@@ -56,12 +56,24 @@ const CHECKER_SIZE = 16;
 /** 网格线在该屏幕上间距小于此值时不再绘制（避免密到糊成一片）。 */
 const MIN_GRID_LINE_SPACING = 4;
 
-const KIND_COLORS: Record<string, string> = {
+/** 标记点按对象类型着色。 */
+const KIND_MARKER_COLORS: Record<string, string> = {
   SceneObject: "#4f9cf9",
   Player: "#3fbf6f",
   Item: "#e0a13c",
   Event: "#b06ef0",
 };
+
+const DEFAULT_MARKER_COLOR = "#9aa4b2";
+
+/**
+ * 取某类型标记点的颜色（未知类型走默认灰）。
+ *
+ * 画布上的标记点与「新建对象」弹框里的类型色点共用一个来源，两边颜色必须对得上。
+ */
+export function kindMarkerColor(kind: string): string {
+  return KIND_MARKER_COLORS[kind] ?? DEFAULT_MARKER_COLOR;
+}
 
 export function createCanvasSceneRenderer(canvas: HTMLCanvasElement): SceneRenderer {
   const context = canvas.getContext("2d");
@@ -281,7 +293,7 @@ function drawMarkers(
       continue;
     }
 
-    const color = marker.color ?? KIND_COLORS[marker.kind] ?? "#9aa4b2";
+    const color = marker.color ?? kindMarkerColor(marker.kind);
 
     if (marker.selected === true) {
       context.beginPath();

@@ -2,23 +2,36 @@ import { create } from "zustand";
 import {
   DOCUMENT_FORMAT_VERSION,
   DocumentHistory,
+  addObject,
   createEmptyProject,
   createEmptyScene,
+  createId,
+  createMapObject,
+  createSceneObject,
   isSceneNameTaken,
+  nextObjectName,
   parseProjectFile,
   parseSceneFile,
+  removeObject as removeSceneObject,
+  renameObject as renameSceneObject,
+  setObjectPosition as setSceneObjectPosition,
   validateSceneName,
+  type NormPosition,
+  type ObjectKind,
   type ProjectDoc,
-  type ProjectDraft,
   type SceneDoc,
   type SceneFileDoc,
+  type SceneListDraft,
+  type SceneObjectDoc,
 } from "@dts/document";
+import { gridSizeFromImage } from "@dts/grid";
 import {
   PROJECT_FOLDERS,
   PROJECT_SCENE_FILE_EXTENSION,
   projectAssetId,
   projectFileId,
   projectSceneFileId,
+  projectSceneImageId,
 } from "@dts/resources";
 import { createViewport, fitViewport, panBy, zoomAt, type Viewport } from "@dts/renderer";
 import type { GameStateSnapshot } from "@dts/protocol";
@@ -80,6 +93,9 @@ export type ProjectDialogMode = "create" | "open" | null;
 /** 场景对话框模式：新建 / 重命名 / 未展开。 */
 export type SceneDialogMode = "create" | "rename" | null;
 
+/** 场景文件的保存状态：已保存 / 有未保存改动 / 正在写 / 写失败。 */
+export type SceneSaveState = "saved" | "pending" | "saving" | "error";
+
 export interface EditorStoreState {
   readonly mode: EditorMode;
   /** 项目文件（`project.json`）的内容：只有项目级数据 */
@@ -106,10 +122,16 @@ export interface EditorStoreState {
   readonly projectDialog: ProjectDialogMode;
   /** 场景对话框模式（同样由菜单驱动） */
   readonly sceneDialog: SceneDialogMode;
+  /** 「新建对象」弹框是否打开（按钮与快捷键都能唤出，所以放 store） */
+  readonly objectDialog: boolean;
+  /** 场景文件的保存状态（自动存与手动保存共用） */
+  readonly sceneSaveState: SceneSaveState;
+  readonly sceneSaveError: string;
 
-  applyDoc(
+  /** 场景编辑（对象增删改）统一走这里：进撤销栈，并触发自动落盘。 */
+  applyScenes(
     label: string,
-    recipe: (draft: ProjectDraft) => void,
+    recipe: (draft: SceneListDraft) => void,
     options?: { coalesceKey?: string },
   ): boolean;
   undo(): void;
@@ -151,11 +173,15 @@ export interface EditorStoreState {
   uploadFiles(dirPath: string, files: readonly File[]): Promise<void>;
   deleteResource(id: string, label: string): Promise<boolean>;
 
-  saveProject(): Promise<boolean>;
+  /** 立即把有改动的场景写回文件（手动保存 / 切场景前 flush）。 */
+  saveSceneNow(): Promise<boolean>;
+  /** 有待保存改动就立刻写回；场景级操作与关闭项目之前调用，避免丢失或写错场景。 */
+  flushSceneSave(): Promise<void>;
 
   /** 重新扫描 `Assets/scenes/` 并把场景读进内存（打开项目、增删改名后调用）。 */
   loadScenes(): Promise<void>;
   openSceneDialog(mode: SceneDialogMode): void;
+  openObjectDialog(open: boolean): void;
   /**
    * 新建场景：在 `Assets/scenes/` 下建一个空场景文件。成功返回 undefined，失败返回原因。
    */
@@ -164,6 +190,23 @@ export interface EditorStoreState {
   renameScene(name: string): Promise<string | undefined>;
   /** 删除当前场景（至少要保留一个场景）。 */
   deleteScene(): Promise<string | undefined>;
+
+  /** 在当前场景新建对象；不传 position 就放在场景正中。成功返回 undefined，失败返回原因。 */
+  createObject(
+    kind: ObjectKind,
+    name: string,
+    position?: NormPosition,
+  ): Promise<string | undefined>;
+  /** 改对象名（trim 后为空则拒绝）。 */
+  renameObject(id: string, name: string): boolean;
+  /** 删除对象（不传 ids 则删当前选中）。 */
+  deleteObjects(ids?: readonly string[]): boolean;
+  /** 复制对象（不传 ids 则复制当前选中）：副本加「副本」后缀并偏移一点位置。 */
+  duplicateObjects(ids?: readonly string[]): boolean;
+  /** 移动对象（画布拖动用；连续调用合并成一条撤销记录）。 */
+  moveObject(id: string, position: NormPosition): void;
+  /** 一次拖动结束：断开撤销合并，使后续拖动成为独立记录。 */
+  endObjectDrag(): void;
 }
 
 const EMPTY_GAME_STATE: GameStateSnapshot = {
@@ -184,8 +227,52 @@ function initialUi(): EditorUiState {
   return { leftOpen: !compact, rightOpen: !compact, runtimeOpen: false };
 }
 
-/** 文档历史（React 之外持有；store 只订阅其变更）。 */
-export const docHistory = new DocumentHistory<ProjectDoc>(createEmptyProject(), { limit: 200 });
+/**
+ * 场景编辑历史（React 之外持有；store 只订阅其变更）。
+ *
+ * 场景是独立文件、不进工程文件，所以历史挂在**场景列表**上：对象的新建 / 改名 /
+ * 删除 / 移动都经 `applyScenes`，因此天然可撤销；撤销发生在哪个场景就改哪个场景。
+ */
+export const sceneHistory = new DocumentHistory<readonly SceneDoc[]>([], { limit: 200 });
+
+/** 自动落盘的防抖窗口：连续拖动 / 连续输入只写一次盘。 */
+const SCENE_SAVE_DEBOUNCE_MS = 800;
+
+/** 场景里对象位置的默认落点：正中。 */
+const SCENE_CENTER: NormPosition = { x: 0.5, y: 0.5 };
+
+/**
+ * 新建地图对象时的默认贴图尺寸。
+ *
+ * 与画布占位尺寸取同一个值（1920×1080 → 64×36 格）：贴图按同名约定放在
+ * `Assets/images/<场景名>.png`，网格尺寸由图片算出来，不手写 64×36。
+ */
+const DEFAULT_MAP_IMAGE = { width: 1920, height: 1080 } as const;
+
+/** 归一化坐标夹到 `[0,1]`——画布拖动与双击落点都可能越界。 */
+function clamp01(value: number): number {
+  return Math.min(1, Math.max(0, value));
+}
+
+/** 副本相对原对象的偏移量（按第几个副本递增，避免整批叠在一起）。 */
+const COPY_OFFSET = 0.02;
+
+/** 复制出来的副本落点：偏移一点并夹回场景内。 */
+function offsetPosition(position: NormPosition | null, step: number): NormPosition {
+  const base = position ?? SCENE_CENTER;
+  return {
+    x: clamp01(base.x + COPY_OFFSET * step),
+    y: clamp01(base.y + COPY_OFFSET * step),
+  };
+}
+
+/** 在场景列表里按名字找场景（对象编辑都作用于当前场景）。 */
+function findSceneByName(
+  scenes: readonly SceneDoc[],
+  name: string | null,
+): SceneDoc | undefined {
+  return name === null ? undefined : scenes.find((scene) => scene.name === name);
+}
 
 /**
  * 场景文件的序列化。
@@ -284,49 +371,61 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
 
   const syncHistoryFlags = (): void => {
     set({
-      doc: docHistory.current,
-      canUndo: docHistory.canUndo,
-      canRedo: docHistory.canRedo,
-      undoLabel: docHistory.undoLabel ?? "",
-      redoLabel: docHistory.redoLabel ?? "",
+      scenes: sceneHistory.current,
+      canUndo: sceneHistory.canUndo,
+      canRedo: sceneHistory.canRedo,
+      undoLabel: sceneHistory.undoLabel ?? "",
+      redoLabel: sceneHistory.redoLabel ?? "",
     });
   };
 
-  /** 打开项目时不要立刻回写文件。 */
-  let suppressAutoSave = false;
-  let saveTimer: number | null = null;
   /** 启动引导是否正在跑（同步占位，挡住 StrictMode 的第二次 effect）。 */
   let bootstrapping = false;
+  /** 上次成功写盘时的场景内容（场景名 → 序列化文本），用来算「哪些场景有未保存改动」。 */
+  const savedScenes = new Map<string, string>();
+  let saveTimer: number | null = null;
+
+  /** 内存里与磁盘不一致的场景名（顺序与 scenes 一致）。 */
+  const dirtySceneNames = (): string[] =>
+    get()
+      .scenes.filter((scene) => savedScenes.get(scene.name) !== serializeSceneFile(scene))
+      .map((scene) => scene.name);
 
   /**
-   * 文档变更后延迟回写工程文件。
+   * 有改动就延迟回写场景文件。
    *
-   * 工程就是那一个文件，因此「改了就存」比「记得手动保存」更不容易丢东西；
-   * 撤销/重做也会一并落盘，磁盘与内存不会脱节。
+   * 「改了就存」比「记得手动保存」更不容易丢东西，手动保存只是把它提前。
+   * 待保存的场景**按内容差异算**，所以撤销 / 重做、跨场景编辑都不会写错文件。
    */
-  const scheduleAutoSave = (): void => {
-    if (suppressAutoSave || get().project.current === null) {
+  const scheduleSceneSave = (): void => {
+    if (get().project.current === null) {
       return;
     }
 
+    set({ sceneSaveState: "pending" });
     if (saveTimer !== null) {
       window.clearTimeout(saveTimer);
     }
 
     saveTimer = window.setTimeout(() => {
       saveTimer = null;
-      void get().saveProject();
-    }, 800);
+      void get().saveSceneNow();
+    }, SCENE_SAVE_DEBOUNCE_MS);
   };
 
-  docHistory.subscribe(() => {
+  sceneHistory.subscribe(() => {
     syncHistoryFlags();
-    scheduleAutoSave();
+    if (dirtySceneNames().length === 0) {
+      set({ sceneSaveState: "saved" });
+      return;
+    }
+
+    scheduleSceneSave();
   });
 
   return {
     mode: "edit",
-    doc: docHistory.current,
+    doc: createEmptyProject(),
     scenes: [],
     activeSceneName: null,
     canUndo: false,
@@ -342,6 +441,9 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
     bootstrapped: false,
     projectDialog: null,
     sceneDialog: null,
+    objectDialog: false,
+    sceneSaveState: "saved",
+    sceneSaveError: "",
     runtime: {
       status: "idle",
       statusDetail: "",
@@ -351,31 +453,25 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       lastError: "",
     },
 
-    applyDoc(label, recipe, options) {
-      const changed = docHistory.apply(label, recipe, options ?? {});
-      if (changed) {
-        syncHistoryFlags();
-      }
-
-      return changed;
+    applyScenes(label, recipe, options) {
+      // 订阅里会同步 scenes 与撤销/重做标记，并安排自动落盘
+      return sceneHistory.apply(label, recipe, options ?? {});
     },
 
     undo() {
-      if (docHistory.undo()) {
-        syncHistoryFlags();
-      }
+      sceneHistory.undo();
     },
 
     redo() {
-      if (docHistory.redo()) {
-        syncHistoryFlags();
-      }
+      sceneHistory.redo();
     },
 
     resetDoc(doc) {
-      docHistory.reset(doc);
+      savedScenes.clear();
+      // 订阅里会把 scenes 清空、撤销栈清掉，并把保存状态置回 saved
+      sceneHistory.reset([]);
       set({
-        doc: docHistory.current,
+        doc,
         canUndo: false,
         canRedo: false,
         undoLabel: "",
@@ -385,10 +481,14 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
         // 场景是独立文件，由 loadScenes() 装进来；这里只清空当前指向
         scenes: [],
         activeSceneName: null,
+        sceneSaveState: "saved",
+        sceneSaveError: "",
       });
     },
 
     setActiveScene(name) {
+      // 切场景前先把手上未保存的改动写回（写入谁由内容差异决定，所以不会写错场景）
+      void get().flushSceneSave();
       set({ activeSceneName: name, selectedObjectIds: [] });
     },
 
@@ -397,6 +497,7 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
         return;
       }
 
+      void get().flushSceneSave();
       // 打开场景 = 切到它并清掉别的选中：属性面板接着显示这个场景
       set({ activeSceneName: name, selectedObjectIds: [], selectedAssetId: null });
       pushLog(makeLog("info", `已切换到场景：${name}`));
@@ -569,14 +670,15 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
     },
 
     async openProject(name) {
+      // 切项目前先把上一个项目里未保存的改动写回
+      await get().flushSceneSave();
+
       set((state) => ({ project: { ...state.project, busy: true, error: "" } }));
       try {
         const text = await projectApi.readText(projectFileId(name));
         const load = parseProjectFile(JSON.parse(text) as unknown);
 
-        suppressAutoSave = true;
         get().resetDoc(load.doc);
-        suppressAutoSave = false;
 
         // 旧版工程文件：把内联场景落成独立文件，工程文件按新格式回写（只做一次）
         if (load.migratedScenes.length > 0 || load.needsRewrite) {
@@ -612,6 +714,8 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
     },
 
     closeProject() {
+      // 待保存的改动先写回：flush 内部会**同步**取好场景快照，所以随后的清空不会把它丢掉
+      void get().flushSceneSave();
       set((state) => ({ project: { ...state.project, current: null, tree: [], error: "" } }));
       // 主动关闭 = 不想再看到它，下次启动不该又把它拉回来
       clearLastProject();
@@ -715,23 +819,55 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
 
     // ---------------------------------------------------------------- 场景
 
-    async saveProject() {
+    async saveSceneNow() {
       const project = get().project.current;
       if (project === null) {
         return false;
       }
 
+      if (saveTimer !== null) {
+        window.clearTimeout(saveTimer);
+        saveTimer = null;
+      }
+
+      // 同步取快照：调用方可能紧接着清空内存（例如关闭项目）
+      const dirty = get().scenes.filter(
+        (scene) => savedScenes.get(scene.name) !== serializeSceneFile(scene),
+      );
+      if (dirty.length === 0) {
+        set({ sceneSaveState: "saved", sceneSaveError: "" });
+        return true;
+      }
+
+      set({ sceneSaveState: "saving", sceneSaveError: "" });
       try {
-        // 工程文件只有项目级数据（场景是 Assets/scenes/ 下的独立文件）
-        const text = `${JSON.stringify(get().doc, null, 2)}\n`;
-        await projectApi.writeText(projectFileId(project), text);
+        for (const scene of dirty) {
+          const text = serializeSceneFile(scene);
+          await projectApi.writeText(projectSceneFileId(project, scene.name), text);
+          savedScenes.set(scene.name, text);
+        }
+
+        set({ sceneSaveState: "saved" });
         return true;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        set((state) => ({ project: { ...state.project, error: message } }));
-        pushLog(makeLog("error", `保存项目失败：${message}`));
+        set({ sceneSaveState: "error", sceneSaveError: message });
+        pushLog(makeLog("error", `保存场景失败：${message}`));
         return false;
       }
+    },
+
+    async flushSceneSave() {
+      if (saveTimer !== null) {
+        window.clearTimeout(saveTimer);
+        saveTimer = null;
+      }
+
+      if (get().project.current === null || dirtySceneNames().length === 0) {
+        return;
+      }
+
+      await get().saveSceneNow();
     },
 
     async loadScenes() {
@@ -777,8 +913,19 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
           );
         }
 
+        // 记下每个场景「磁盘上的样子」：之后的未保存改动就是拿它比出来的
+        savedScenes.clear();
+        for (const scene of scenes) {
+          savedScenes.set(scene.name, serializeSceneFile(scene));
+        }
+        set({ sceneSaveState: "saved", sceneSaveError: "" });
+
         const previous = get().activeSceneName;
         const keep = scenes.some((scene) => scene.name === previous);
+        // 把装载进来的场景交给历史容器：**对象编辑的 recipe 都在它上面改**，
+        // 忘了这一步的话 `applyScenes` 会在空数组里找场景、永远「没产生变更」。
+        // 场景级操作（增删改名 / 重新打开项目）不入撤销栈，所以这里直接 reset。
+        sceneHistory.reset(scenes);
         set({
           scenes,
           activeSceneName: keep ? previous : (scenes[0]?.name ?? null),
@@ -795,11 +942,18 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       set({ sceneDialog: mode });
     },
 
+    openObjectDialog(open) {
+      set({ objectDialog: open });
+    },
+
     async createScene(name) {
       const project = get().project.current;
       if (project === null) {
         return "还没有打开项目";
       }
+
+      // 先把手上的改动写回，免得紧接着的 loadScenes 把它们冲掉
+      await get().flushSceneSave();
 
       const trimmed = name.trim();
       const reason = validateSceneName(trimmed);
@@ -835,6 +989,9 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       if (project === null || current === null) {
         return "还没有可以重命名的场景";
       }
+
+      // 先写回：改名只搬文件，待保存的改动必须落进被搬的那个文件里
+      await get().flushSceneSave();
 
       const trimmed = name.trim();
       const reason = validateSceneName(trimmed);
@@ -879,6 +1036,9 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
         return "至少要保留一个场景";
       }
 
+      // 先把手上的改动写回（别的场景可能还有未保存的编辑）
+      await get().flushSceneSave();
+
       try {
         await projectApi.deleteResource(projectSceneFileId(project, current));
         await get().refreshTree();
@@ -890,6 +1050,175 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
         pushLog(makeLog("error", `删除场景失败：${message}`));
         return message;
       }
+    },
+
+    // ---------------------------------------------------------------- 场景对象
+
+    async createObject(kind, name, position) {
+      const project = get().project.current;
+      const sceneName = get().activeSceneName;
+      const scene = findSceneByName(get().scenes, sceneName);
+      if (project === null || sceneName === null || scene === undefined) {
+        return "还没有场景";
+      }
+
+      const trimmed = name.trim();
+      if (trimmed.length === 0) {
+        return "请输入对象名";
+      }
+
+      // 落点夹到场景内：画布双击/拖动可能给出越界坐标，夹一次就够（写入端唯一）
+      const at =
+        position === undefined
+          ? { ...SCENE_CENTER }
+          : { x: clamp01(position.x), y: clamp01(position.y) };
+      const object: SceneObjectDoc =
+        kind === "Map"
+          ? {
+              // 地图对象的贴图按同名约定取 Assets/images/<场景名>.png，网格由贴图尺寸算出来
+              ...createMapObject({
+                name: trimmed,
+                image: {
+                  id: projectSceneImageId(project, sceneName),
+                  width: DEFAULT_MAP_IMAGE.width,
+                  height: DEFAULT_MAP_IMAGE.height,
+                },
+                grid: { ...gridSizeFromImage(DEFAULT_MAP_IMAGE), cellSize: 1 },
+              }),
+              position: at,
+            }
+          : createSceneObject({ name: trimmed, kind, position: at });
+
+      const changed = get().applyScenes(`新建对象 ${trimmed}`, (draft) => {
+        const target = draft.find((item) => item.name === sceneName);
+        if (target !== undefined) {
+          addObject(target, object);
+        }
+      });
+
+      if (!changed) {
+        return "新建对象失败";
+      }
+
+      set({ selectedObjectIds: [object.id], selectedAssetId: null });
+      pushLog(makeLog("info", `已新建对象：${trimmed}（${kind}）`));
+      return undefined;
+    },
+
+    renameObject(id, name) {
+      const sceneName = get().activeSceneName;
+      const trimmed = name.trim();
+      if (sceneName === null || trimmed.length === 0) {
+        return false;
+      }
+
+      return get().applyScenes(`重命名对象 ${trimmed}`, (draft) => {
+        const scene = draft.find((item) => item.name === sceneName);
+        if (scene !== undefined) {
+          renameSceneObject(scene, id, trimmed);
+        }
+      });
+    },
+
+    deleteObjects(ids) {
+      const sceneName = get().activeSceneName;
+      const targetIds = ids ?? get().selectedObjectIds;
+      if (sceneName === null || targetIds.length === 0) {
+        return false;
+      }
+
+      const changed = get().applyScenes(
+        targetIds.length === 1 ? "删除对象" : `删除 ${targetIds.length} 个对象`,
+        (draft) => {
+          const scene = draft.find((item) => item.name === sceneName);
+          if (scene === undefined) {
+            return;
+          }
+
+          for (const id of targetIds) {
+            removeSceneObject(scene, id);
+          }
+        },
+      );
+
+      if (changed) {
+        set({ selectedObjectIds: [] });
+      }
+
+      return changed;
+    },
+
+    duplicateObjects(ids) {
+      const sceneName = get().activeSceneName;
+      const targetIds = ids ?? get().selectedObjectIds;
+      if (sceneName === null || targetIds.length === 0) {
+        return false;
+      }
+
+      const copies: string[] = [];
+      const changed = get().applyScenes(
+        targetIds.length === 1 ? "复制对象" : `复制 ${targetIds.length} 个对象`,
+        (draft) => {
+          const scene = draft.find((item) => item.name === sceneName);
+          if (scene === undefined) {
+            return;
+          }
+
+          let step = 1;
+          for (const id of targetIds) {
+            const source = scene.objects.find((object) => object.id === id);
+            if (source === undefined) {
+              continue;
+            }
+
+            const copy: SceneObjectDoc = {
+              ...source,
+              id: createId("obj"),
+              // 名字与位置都错开，复制出来的东西不会与原对象完全重叠 / 同名
+              name: nextObjectName(scene.objects, `${source.name} 副本`),
+              position: offsetPosition(source.position, step),
+            };
+            step += 1;
+            addObject(scene, copy);
+            copies.push(copy.id);
+          }
+        },
+        // 连按复制合并成一条撤销记录
+        { coalesceKey: "duplicate" },
+      );
+
+      if (!changed) {
+        return false;
+      }
+
+      set({ selectedObjectIds: copies, selectedAssetId: null });
+      pushLog(makeLog("info", `已复制 ${copies.length} 个对象`));
+      return true;
+    },
+
+    moveObject(id, position) {
+      const sceneName = get().activeSceneName;
+      if (sceneName === null) {
+        return;
+      }
+
+      get().applyScenes(
+        "移动对象",
+        (draft) => {
+          const scene = draft.find((item) => item.name === sceneName);
+          if (scene !== undefined) {
+            setSceneObjectPosition(scene, id, {
+              x: clamp01(position.x),
+              y: clamp01(position.y),
+            });
+          }
+        },
+        { coalesceKey: `move:${id}` },
+      );
+    },
+
+    endObjectDrag() {
+      sceneHistory.endCoalescing();
     },
   };
 });

@@ -1,5 +1,5 @@
 import { applyPatches, enablePatches, produceWithPatches, type Draft, type Patch } from "immer";
-import type { ProjectDoc } from "./types";
+import type { ProjectDoc, SceneDoc } from "./types";
 
 enablePatches();
 
@@ -9,6 +9,14 @@ enablePatches();
  * 对外暴露这个别名，使用方（编辑器）就不必直接依赖 immer。
  */
 export type ProjectDraft = Draft<ProjectDoc>;
+
+/**
+ * 场景列表 recipe 的 draft 类型。
+ *
+ * 场景是独立文件、不进工程文件，所以场景/对象编辑的历史挂在**场景列表**上；
+ * 编辑器不必直接依赖 immer。
+ */
+export type SceneListDraft = Draft<readonly SceneDoc[]>;
 
 /**
  * 补丁式撤销 / 重做。

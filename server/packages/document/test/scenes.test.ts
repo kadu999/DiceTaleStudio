@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { produce, type Draft } from "immer";
-import { addObject, findScene, isSceneNameTaken, validateSceneName } from "../src/commands";
+import { addObject, findScene, isSceneNameTaken, nextObjectName, validateSceneName } from "../src/commands";
 import { createEmptyScene, createMapObject } from "../src/factory";
 import type { SceneDoc } from "../src/types";
 
@@ -83,5 +83,37 @@ describe("场景内容命令", () => {
 
     expect(result.objects[0]?.kind).toBe("Map");
     expect(result.objects[0]?.map?.grid).toEqual(GRID);
+  });
+});
+
+describe("对象命名（连续创建与复制共用）", () => {
+  function withNames(names: readonly string[]): SceneDoc {
+    return {
+      name: "Map001",
+      objects: names.map((name, index) => ({
+        id: `obj_${index}`,
+        name,
+        kind: "SceneObject" as const,
+        position: null,
+        rotation: 0,
+        components: [],
+      })),
+    };
+  }
+
+  it("没被占用就用原名", () => {
+    expect(nextObjectName(withNames([]).objects, "木门")).toBe("木门");
+    expect(nextObjectName(withNames(["酒桶"]).objects, "木门")).toBe("木门");
+  });
+
+  it("被占用就依次递增", () => {
+    expect(nextObjectName(withNames(["木门"]).objects, "木门")).toBe("木门 2");
+    expect(nextObjectName(withNames(["木门", "木门 2"]).objects, "木门")).toBe("木门 3");
+    // 跳号不影响：只要求不重名
+    expect(nextObjectName(withNames(["木门", "木门 3"]).objects, "木门")).toBe("木门 2");
+  });
+
+  it("trim + 大小写不敏感，与场景名判定一致", () => {
+    expect(nextObjectName(withNames(["Door"]).objects, " door ")).toBe("door 2");
   });
 });

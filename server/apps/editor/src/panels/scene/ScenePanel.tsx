@@ -1,10 +1,30 @@
 import { useEffect, useRef } from "react";
-import { createCanvasSceneRenderer, type SceneRenderer } from "@dts/renderer";
+import { type NormPosition, type SceneDoc } from "@dts/document";
+import {
+  createCanvasSceneRenderer,
+  screenToWorld,
+  worldToScreen,
+  type SceneRenderer,
+} from "@dts/renderer";
 import { gridSizeFromImage } from "@dts/grid";
 import { useEditorStore } from "../../state/editor-store";
 import { EmptyState } from "../EmptyState";
+
 /** 尚未创建地图时用于演示视口交互的默认画布尺寸（与 DiceTale 现有地图一致）。 */
 const PLACEHOLDER_IMAGE = { width: 1920, height: 1080 };
+
+/** 标记点的命中半径（屏幕像素）：比渲染半径略大，手指也点得中。 */
+const MARKER_HIT_RADIUS = 12;
+
+/**
+ * 场景的「画布区域」尺寸：有地图对象就用它的贴图尺寸，否则用占位尺寸。
+ *
+ * 绘制、命中测试、落点换算**必须用同一个尺寸**，否则会出现「点哪儿不在哪儿」。
+ */
+function sceneImageSize(scene: SceneDoc | undefined): { width: number; height: number } {
+  const mapObject = scene?.objects.find((object) => object.kind === "Map");
+  return mapObject?.map?.image ?? PLACEHOLDER_IMAGE;
+}
 
 /** DPR 上限：平板上 3x DPR 会把填充率吃光，限制到 2 已足够清晰。 */
 const MAX_DPR = 2;
@@ -22,6 +42,7 @@ export function ScenePanel(): React.JSX.Element {
   const activeSceneName = useEditorStore((state) => state.activeSceneName);
   const scenes = useEditorStore((state) => state.scenes);
   const setActiveScene = useEditorStore((state) => state.setActiveScene);
+  const openObjectDialog = useEditorStore((state) => state.openObjectDialog);
 
   // 渲染器生命周期
   useEffect(() => {
@@ -77,6 +98,8 @@ export function ScenePanel(): React.JSX.Element {
     const pointers = new Map<number, { x: number; y: number }>();
     let pinchDistance = 0;
     let pinchMid: { x: number; y: number } | null = null;
+    /** 正在拖动的对象：命中标记点后进入拖动，这一下就不再平移画布。 */
+    let dragging: { pointerId: number; objectId: string } | null = null;
 
     /** 没有场景时画布不可交互：能拖能缩会让人以为「这里有个东西」。 */
     const hasScene = (): boolean => useEditorStore.getState().activeSceneName !== null;
@@ -86,8 +109,56 @@ export function ScenePanel(): React.JSX.Element {
       return { x: clientX - rect.left, y: clientY - rect.top };
     };
 
+    const currentScene = (): SceneDoc | undefined => {
+      const store = useEditorStore.getState();
+      return store.scenes.find((item) => item.name === store.activeSceneName);
+    };
+
+    /** 屏幕点 → 归一化场景坐标（`[0,1]`，y 向下）；越界由 store 统一夹。 */
+    const toScenePosition = (local: { x: number; y: number }): NormPosition => {
+      const world = screenToWorld(useEditorStore.getState().viewport, local);
+      const size = sceneImageSize(currentScene());
+      return { x: world.x / size.width, y: world.y / size.height };
+    };
+
+    /** 命中测试：指针下那个对象的 id（画布上看得见的对象才可能被命中）。 */
+    const hitTestObject = (local: { x: number; y: number }): string | undefined => {
+      const scene = currentScene();
+      if (scene === undefined) {
+        return undefined;
+      }
+
+      const store = useEditorStore.getState();
+      const size = sceneImageSize(scene);
+      for (const object of scene.objects) {
+        if (object.position === null) {
+          continue;
+        }
+
+        const screen = worldToScreen(store.viewport, {
+          x: object.position.x * size.width,
+          y: object.position.y * size.height,
+        });
+
+        if (Math.hypot(screen.x - local.x, screen.y - local.y) <= MARKER_HIT_RADIUS) {
+          return object.id;
+        }
+      }
+
+      return undefined;
+    };
+
     const onPointerDown = (event: PointerEvent): void => {
       if (!hasScene()) {
+        return;
+      }
+
+      const local = toLocal(event.clientX, event.clientY);
+      const hit = hitTestObject(local);
+      if (hit !== undefined) {
+        useEditorStore.getState().setSelection([hit]);
+        dragging = { pointerId: event.pointerId, objectId: hit };
+        container.setPointerCapture(event.pointerId);
         return;
       }
 
@@ -97,6 +168,13 @@ export function ScenePanel(): React.JSX.Element {
 
     const onPointerMove = (event: PointerEvent): void => {
       if (!hasScene()) {
+        return;
+      }
+
+      if (dragging !== null && dragging.pointerId === event.pointerId) {
+        useEditorStore
+          .getState()
+          .moveObject(dragging.objectId, toScenePosition(toLocal(event.clientX, event.clientY)));
         return;
       }
 
@@ -134,6 +212,13 @@ export function ScenePanel(): React.JSX.Element {
     };
 
     const endPointer = (event: PointerEvent): void => {
+      if (dragging !== null && dragging.pointerId === event.pointerId) {
+        // 一次拖动结束：断开撤销合并，下一次拖动成为独立记录
+        useEditorStore.getState().endObjectDrag();
+        dragging = null;
+        return;
+      }
+
       pointers.delete(event.pointerId);
       if (pointers.size < 2) {
         pinchDistance = 0;
@@ -178,7 +263,8 @@ export function ScenePanel(): React.JSX.Element {
         return;
       }
 
-      const { viewport, viewportSize, scenes, activeSceneName } = useEditorStore.getState();
+      const { viewport, viewportSize, scenes, activeSceneName, selectedObjectIds } =
+        useEditorStore.getState();
       if (viewportSize.width <= 0 || viewportSize.height <= 0) {
         return;
       }
@@ -192,12 +278,27 @@ export function ScenePanel(): React.JSX.Element {
       }
 
       const mapObject = scene.objects.find((object) => object.kind === "Map");
-      const imageSize = mapObject?.map?.image ?? PLACEHOLDER_IMAGE;
+      const imageSize = sceneImageSize(scene);
       const grid = mapObject?.map?.grid ?? {
         width: gridSizeFromImage(PLACEHOLDER_IMAGE).width,
         height: gridSizeFromImage(PLACEHOLDER_IMAGE).height,
         cellSize: 1,
       };
+
+      // 对象在画布上画成标记点：看得见、能点、能拖，位置就是它的归一化坐标
+      const markers = scene.objects.flatMap((object) =>
+        object.position === null
+          ? []
+          : [
+              {
+                id: object.id,
+                position: object.position,
+                kind: object.kind,
+                label: object.name,
+                selected: selectedObjectIds.includes(object.id),
+              },
+            ],
+      );
 
       renderer.draw({
         viewport,
@@ -207,6 +308,7 @@ export function ScenePanel(): React.JSX.Element {
         imageSize,
         grid: { width: grid.width, height: grid.height },
         showGrid: true,
+        markers,
       });
     };
 
@@ -237,7 +339,16 @@ export function ScenePanel(): React.JSX.Element {
           </select>
         )}
         {activeSceneName === null ? null : (
-          <span className="ml-auto text-[10px]">拖拽平移 / 滚轮或双指缩放</span>
+          // 放最右：平板竖屏下左边 340px 可能被抽屉盖住，靠右才一定点得到
+          <button
+            type="button"
+            data-testid="new-object"
+            title="新建对象（Ctrl/⌘+Shift+N）"
+            className="toolbar-button ml-auto flex-none hover:toolbar-button-hover"
+            onClick={() => openObjectDialog(true)}
+          >
+            新建对象
+          </button>
         )}
       </div>
 

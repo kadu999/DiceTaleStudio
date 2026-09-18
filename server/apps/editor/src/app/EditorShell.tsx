@@ -22,12 +22,86 @@ export function EditorShell(): React.JSX.Element {
   const bootstrapped = useEditorStore((state) => state.bootstrapped);
   const projectDialog = useEditorStore((state) => state.projectDialog);
   const bootstrapEditor = useEditorStore((state) => state.bootstrapEditor);
+  const saveSceneNow = useEditorStore((state) => state.saveSceneNow);
+  const duplicateObjects = useEditorStore((state) => state.duplicateObjects);
+  const deleteObjects = useEditorStore((state) => state.deleteObjects);
+  const undo = useEditorStore((state) => state.undo);
+  const redo = useEditorStore((state) => state.redo);
+  const openObjectDialog = useEditorStore((state) => state.openObjectDialog);
 
   // 启动引导：自动打开上次的项目 / 一个项目都没有时弹新建 / 有项目但没记录时弹打开列表。
   // store 内部有幂等保护，StrictMode 下重复调用不会弹两次。
   useEffect(() => {
     void bootstrapEditor();
   }, [bootstrapEditor]);
+
+  /**
+   * 快捷键。
+   *
+   * 平板没有键盘，所以每一项都能从菜单/按钮触发；这里只是让桌面顺手：
+   * **输入框里打字时不拦截**（除 Ctrl+S），否则 Enter/退格都会被吃掉。
+   */
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      const modifier = event.ctrlKey || event.metaKey;
+      const target = event.target as HTMLElement | null;
+      const typing =
+        target !== null &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "SELECT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable);
+
+      if (modifier && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        void saveSceneNow();
+        return;
+      }
+
+      if (modifier && event.shiftKey && event.key.toLowerCase() === "n") {
+        event.preventDefault();
+        openObjectDialog(true);
+        return;
+      }
+
+      if (typing) {
+        return;
+      }
+
+      if (modifier && event.key.toLowerCase() === "d") {
+        event.preventDefault();
+        duplicateObjects();
+        return;
+      }
+
+      if (modifier && event.key.toLowerCase() === "z") {
+        event.preventDefault();
+        if (event.shiftKey) {
+          redo();
+        } else {
+          undo();
+        }
+
+        return;
+      }
+
+      if (modifier && event.key.toLowerCase() === "y") {
+        event.preventDefault();
+        redo();
+        return;
+      }
+
+      if (event.key === "Delete" || event.key === "Backspace") {
+        event.preventDefault();
+        deleteObjects();
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [deleteObjects, duplicateObjects, openObjectDialog, redo, saveSceneNow, undo]);
 
   // 跨越断点（窗口缩放 / 接上触屏）时重置面板开合，避免平板下三栏互相挤压
   const previousCompact = useRef<boolean | null>(null);

@@ -178,3 +178,40 @@ export async function seedProjectDoc(
     expect(response.ok()).toBeTruthy();
   }
 }
+
+/** 直接读一个场景文件里的对象（e2e 断言用）。 */
+export async function readSceneObjects(
+  request: APIRequestContext,
+  project: string,
+  sceneName: string,
+): Promise<Array<{ name: string; position: { x: number; y: number } | null }>> {
+  const id = `project:${project}/Assets/scenes/${sceneName}.json`;
+  const response = await request.get(`/api/resources/text?id=${encodeURIComponent(id)}`);
+  if (!response.ok()) {
+    return [];
+  }
+
+  const file = JSON.parse(await response.text()) as {
+    objects?: Array<{ name: string; position: { x: number; y: number } | null }>;
+  };
+  return file.objects ?? [];
+}
+
+/**
+ * 轮询场景文件，等自动保存落盘后断言对象名。
+ *
+ * 「改了就存」有 800ms 防抖，所以断言落盘不能靠固定 sleep。
+ */
+export async function expectPersistedObjectNames(
+  request: APIRequestContext,
+  project: string,
+  sceneName: string,
+  expected: readonly string[],
+): Promise<void> {
+  await expect
+    .poll(async () => (await readSceneObjects(request, project, sceneName)).map((o) => o.name), {
+      timeout: 8000,
+      message: "等待场景文件落盘",
+    })
+    .toEqual(expected);
+}

@@ -1,4 +1,38 @@
 {
   "formatVersion": 4,
-  "objects": []
+  "objects": [
+    {
+      "id": "map_mu6uln3x1l7fg",
+      "name": "2D地图",
+      "kind": "Map",
+      "position": {
+        "x": 0.5060113994465885,
+        "y": 0.5012479091144243
+      },
+      "rotation": 0,
+      "components": [],
+      "map": {
+        "image": {
+          "id": "project:测试项目/Assets/images/场景1.png",
+          "width": 1920,
+          "height": 1080
+        },
+        "grid": {
+          "width": 64,
+          "height": 36,
+          "cellSize": 1
+        },
+        "rowOrder": "bottom-up",
+        "cells": {
+          "encoding": "rle",
+          "runs": [
+            [
+              0,
+              2304
+            ]
+          ]
+        }
+      }
+    }
+  ]
 }
