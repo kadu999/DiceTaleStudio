@@ -324,6 +324,46 @@ export function clampToScene(position: WorldPosition, scene: SceneDoc | undefine
   };
 }
 
+/** 逻辑 ID 里的文件名（`project:项目/Assets/images/Map001.png` → `Map001.png`）。 */
+function fileNameOfResourceId(id: string): string {
+  const slash = id.lastIndexOf("/");
+  return slash < 0 ? id : id.slice(slash + 1);
+}
+
+/**
+ * 场景改名时同步**场景名隐式引用**的贴图 ID。
+ *
+ * 贴图是按「与场景同名」的约定自动指到 `Assets/images/<场景名>.png` 的
+ * （见 `projectSceneImageId`）。所以只要某个地图对象的贴图**当前指向旧场景名**，
+ * 就把它改指到新场景名——否则场景一改名，贴图立刻就找不到了。
+ *
+ * 只动文件名与旧场景名一致的引用：**手工指定的其它贴图不会被动到**。
+ */
+function withRenamedSceneImage(
+  project: string,
+  file: SceneFileDoc,
+  oldName: string,
+  newName: string,
+): { file: SceneFileDoc; changed: number } {
+  const oldFile = `${oldName}.png`;
+  let changed = 0;
+
+  const objects = file.objects.map((object) => {
+    const map = object.map;
+    if (map === undefined || fileNameOfResourceId(map.image.id) !== oldFile) {
+      return object;
+    }
+
+    changed += 1;
+    return {
+      ...object,
+      map: { ...map, image: { ...map.image, id: projectSceneImageId(project, newName) } },
+    };
+  });
+
+  return { file: { ...file, objects }, changed };
+}
+
 /** 副本相对原对象的偏移量（世界像素，按第几个副本递增，避免整批叠在一起）。 */
 const COPY_OFFSET = 24;
 
@@ -1105,11 +1145,23 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       }
 
       try {
-        // 只改文件名：场景名就是文件名，所以内容一个字节都不用重写
-        await projectApi.renameResource(
-          projectSceneFileId(project, current),
-          projectSceneFileId(project, trimmed),
-        );
+        // 场景改名会牵动**与场景同名的贴图引用**：先把文件里的引用改指到新名字，
+        // 否则场景一改名，贴图（`Assets/images/<场景名>.png`）立刻就找不到了。
+        const sceneFileId = projectSceneFileId(project, current);
+        const raw: unknown = JSON.parse(await projectApi.readText(sceneFileId));
+        const renamed = withRenamedSceneImage(project, parseSceneFile(raw).file, current, trimmed);
+        if (renamed.changed > 0) {
+          await projectApi.writeText(
+            sceneFileId,
+            `${JSON.stringify({ ...renamed.file, formatVersion: DOCUMENT_FORMAT_VERSION }, null, 2)}\n`,
+          );
+          pushLog(
+            makeLog("info", `场景贴图引用已同步为：${trimmed}.png（${renamed.changed} 个地图对象）`),
+          );
+        }
+
+        // 改文件名：场景名就是文件名，场景内容由上面的引用同步负责
+        await projectApi.renameResource(sceneFileId, projectSceneFileId(project, trimmed));
         await get().refreshTree();
         await get().loadScenes();
         get().setActiveScene(trimmed);

@@ -284,7 +284,11 @@ test.describe("创建与编辑场景对象", () => {
       await openProject(page, project);
 
       await expect(page.getByTestId("scene-image-error")).toBeVisible();
-      await expect(page.getByTestId("scene-image-error")).toContainText("贴图读取失败");
+      // 原因里要带上**找不到的那个路径**，否则只有一句「失败了」根本没法查
+      await expect(page.getByTestId("scene-image-error")).toContainText("找不到资源");
+      await expect(page.getByTestId("scene-image-error")).toContainText(
+        `project:${project}/Assets/images/${SCENE_A}.png`,
+      );
     } finally {
       await dropProject(request, project);
     }

@@ -2,6 +2,7 @@ import { expect, test, type APIRequestContext, type Page } from "@playwright/tes
 import {
   dropProject,
   enterEditor,
+  mapObjectDoc,
   newProject,
   openLeftTab,
   openProject,
@@ -64,7 +65,7 @@ test.describe("场景菜单", () => {
     }
   });
 
-  test("重命名场景：只改文件名，内容一个字节都不动", async ({ page, request }) => {
+  test("重命名场景：只改文件名（没有地图对象时内容一字不动）", async ({ page, request }) => {
     const project = await newProject(request);
     try {
       await seedProjectDoc(request, project, [
@@ -82,7 +83,7 @@ test.describe("场景菜单", () => {
 
       await expect(page.getByTestId("status-active-scene")).toHaveText("当前场景 大厅");
 
-      // 新文件内容与旧文件逐字一致——重命名就是搬家，不重写内容
+      // 没有地图对象 → 没有贴图引用要同步，新文件与旧文件逐字一致
       const after = await readSceneFile(request, project, "大厅");
       expect(after).toEqual(before);
 
@@ -91,6 +92,35 @@ test.describe("场景菜单", () => {
         `/api/resources/text?id=${encodeURIComponent(sceneFileId(project, "Map001"))}`,
       );
       expect(old.status()).toBe(404);
+    } finally {
+      await dropProject(request, project);
+    }
+  });
+
+  test("重命名场景：与场景同名的贴图引用跟着改名（否则贴图立刻找不到）", async ({
+    page,
+    request,
+  }) => {
+    const project = await newProject(request);
+    try {
+      await seedProjectDoc(request, project, [
+        sceneDoc("Map001", [mapObjectDoc(project, "Map001")]),
+      ]);
+      await enterEditor(page);
+      await openProject(page, project);
+
+      await sceneMenu(page, /重命名/);
+      await page.getByTestId("scene-name-input").fill("大厅");
+      await page.getByTestId("confirm-scene").click();
+      await expect(page.getByTestId("status-active-scene")).toHaveText("当前场景 大厅");
+
+      // 贴图是按「与场景同名」约定引用的，所以引用要一起改指到 大厅.png
+      const file = (await readSceneFile(request, project, "大厅")) as {
+        objects: Array<{ map?: { image?: { id?: string } } }>;
+      };
+      expect(file.objects[0]?.map?.image?.id).toBe(
+        `project:${project}/Assets/images/大厅.png`,
+      );
     } finally {
       await dropProject(request, project);
     }

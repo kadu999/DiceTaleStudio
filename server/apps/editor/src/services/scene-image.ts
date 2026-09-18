@@ -88,7 +88,7 @@ async function load(id: string): Promise<HTMLImageElement | null> {
   try {
     const response = await fetch(`/api/resources/raw?id=${encodeURIComponent(id)}`);
     if (!response.ok) {
-      failures.set(id, `贴图读取失败：${response.status} ${response.statusText}`);
+      failures.set(id, `找不到资源 ${id}（HTTP ${response.status}）`);
       return null;
     }
 
