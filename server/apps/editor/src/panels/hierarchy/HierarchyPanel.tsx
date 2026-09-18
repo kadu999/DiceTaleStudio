@@ -238,12 +238,12 @@ function ObjectRow({
   onCancelRename,
   onDelete,
 }: ObjectRowProps): React.JSX.Element {
-  // 地图显示网格尺寸，其它显示组件数；「未放置」是额外的一枚标记（位置为 null，
-  // 只可能来自手写文件），所以不能顶掉尺寸信息
+  // 只有地图有值得写在列表里的额外信息（网格尺寸）；其它对象不再显示「0 组件」这类噪声。
+  // 「未放置」是额外的一枚标记（位置为 null，只可能来自手写文件），所以不能顶掉尺寸信息
   const hint =
     object.kind === "Map"
       ? `${object.map?.grid.width ?? 0}×${object.map?.grid.height ?? 0}`
-      : `${object.components.length} 组件`;
+      : null;
 
   return (
     <div
@@ -283,7 +283,7 @@ function ObjectRow({
           <span className="truncate">{object.name}</span>
           <span className="flex flex-none items-center gap-1 text-[10px] text-[var(--color-editor-text-dim)]">
             {object.position === null ? <span>未放置</span> : null}
-            <span>{hint}</span>
+            {hint === null ? null : <span>{hint}</span>}
           </span>
         </button>
       )}

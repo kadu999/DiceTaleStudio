@@ -46,25 +46,27 @@ export function InspectorPanel(): React.JSX.Element {
         {asset !== undefined ? (
           <AssetProperties key={asset.id} asset={asset} />
         ) : selected !== undefined ? (
-          <FieldGroup title="对象">
-            <NameField object={selected} />
-            <Field label="ID" value={selected.id} mono />
-            <Field label="类型" value={selected.kind} />
-            <PositionFields object={selected} />
-            <Field label="组件" value={String(selected.components.length)} />
-            {selected.map !== undefined ? (
-              <>
-                <Field label="贴图" value={selected.map.image.id} mono />
-                <Field
-                  label="网格"
-                  value={`${selected.map.grid.width} × ${selected.map.grid.height}`}
-                  mono
-                />
-                <Field label="每格尺寸" value={String(selected.map.grid.cellSize)} mono />
-                <Field label="行序" value={selected.map.rowOrder} mono />
-              </>
-            ) : null}
-          </FieldGroup>
+          // 对象视图只列**人要用它做决定**的字段：内部标识（id）与组件数量不显示——
+          // id 是一串机器 id、组件数现在恒为 0，两者都只会占地方。
+          <div data-testid="object-properties">
+            <FieldGroup title="对象">
+              <NameField object={selected} />
+              <Field label="类型" value={selected.kind} />
+              <PositionFields object={selected} />
+              {selected.map !== undefined ? (
+                <>
+                  <Field label="贴图" value={selected.map.image.id} mono />
+                  <Field
+                    label="网格"
+                    value={`${selected.map.grid.width} × ${selected.map.grid.height}`}
+                    mono
+                  />
+                  <Field label="每格尺寸" value={String(selected.map.grid.cellSize)} mono />
+                  <Field label="行序" value={selected.map.rowOrder} mono />
+                </>
+              ) : null}
+            </FieldGroup>
+          </div>
         ) : activeScene !== undefined ? (
           <FieldGroup title="场景">
             <Field label="名称" value={activeScene.name} />
@@ -177,7 +179,7 @@ function NameField({ object }: { readonly object: SceneObjectDoc }): React.JSX.E
 }
 
 /**
- * 对象位置：归一化坐标 `[0,1]`（y 向下）。
+ * 对象位置：**世界坐标**（场景中心为原点，x 向右、y 向上，单位像素）。
  *
  * 这是**精确**摆放的入口；粗略摆放直接拖画布上的标记点。
  *
@@ -185,7 +187,7 @@ function NameField({ object }: { readonly object: SceneObjectDoc }): React.JSX.E
  * 1. **各自提交各自的字段**，另一个轴取对象当前值——不能用兄弟输入框的 state，
  *    否则「改完 x 再去改 y」时，x 的失焦提交会带上还没敲完的 y；
  * 2. **正在输入的框不被 store 回灌**，否则提交后触发的同步会把用户刚敲的值冲掉。
- *    留空或非法值按场景正中处理（手写文件里 `position: null` 的对象也能一键落位）。
+ *    留空或非法值按世界原点（场景正中）处理（手写文件里 `position: null` 的对象也能一键落位）。
  */
 function PositionFields({ object }: { readonly object: SceneObjectDoc }): React.JSX.Element {
   const moveObject = useEditorStore((state) => state.moveObject);
@@ -207,13 +209,13 @@ function PositionFields({ object }: { readonly object: SceneObjectDoc }): React.
   const commitX = (): void => {
     moveObject(object.id, {
       x: parseCoordinate(x),
-      y: object.position?.y ?? SCENE_CENTER_FALLBACK,
+      y: object.position?.y ?? WORLD_ORIGIN_FALLBACK,
     });
   };
 
   const commitY = (): void => {
     moveObject(object.id, {
-      x: object.position?.x ?? SCENE_CENTER_FALLBACK,
+      x: object.position?.x ?? WORLD_ORIGIN_FALLBACK,
       y: parseCoordinate(y),
     });
   };
@@ -226,17 +228,15 @@ function PositionFields({ object }: { readonly object: SceneObjectDoc }): React.
   };
 
   return (
-    <FieldRow label="位置">
+    <FieldRow label="世界坐标">
       <input
         ref={xRef}
         value={x}
         data-testid="inspector-object-x"
         inputMode="decimal"
         type="number"
-        step="0.01"
-        min="0"
-        max="1"
-        placeholder={String(SCENE_CENTER_FALLBACK)}
+        step="1"
+        placeholder={String(WORLD_ORIGIN_FALLBACK)}
         className="w-16 rounded border border-[var(--color-editor-border)] bg-black/30 px-1 py-0.5 font-mono text-[11px] outline-none"
         onChange={(event) => setX(event.target.value)}
         onBlur={commitX}
@@ -248,31 +248,30 @@ function PositionFields({ object }: { readonly object: SceneObjectDoc }): React.
         data-testid="inspector-object-y"
         inputMode="decimal"
         type="number"
-        step="0.01"
-        min="0"
-        max="1"
-        placeholder={String(SCENE_CENTER_FALLBACK)}
+        step="1"
+        placeholder={String(WORLD_ORIGIN_FALLBACK)}
         className="w-16 rounded border border-[var(--color-editor-border)] bg-black/30 px-1 py-0.5 font-mono text-[11px] outline-none"
         onChange={(event) => setY(event.target.value)}
         onBlur={commitY}
         onKeyDown={onKeyDown(commitY)}
       />
+      <span className="flex-none text-[10px] text-[var(--color-editor-text-dim)]">px</span>
     </FieldRow>
   );
 }
 
-/** 位置输入留空 / 非法时的落点：场景正中。 */
-const SCENE_CENTER_FALLBACK = 0.5;
+/** 位置留空 / 非法时的落点：世界原点（= 场景正中）。 */
+const WORLD_ORIGIN_FALLBACK = 0;
 
-/** 位置输入框里的文本：没有位置时留空（提交时按场景正中处理）。 */
+/** 位置输入框里的文本：没有位置时留空（提交时按世界原点处理）。 */
 function formatCoordinate(value: number | undefined): string {
-  return value === undefined ? "" : value.toFixed(3);
+  return value === undefined ? "" : String(Math.round(value * 100) / 100);
 }
 
-/** 位置输入：留空或非法都按场景正中。 */
+/** 位置输入：留空或非法都按世界原点。 */
 function parseCoordinate(raw: string): number {
   const parsed = Number.parseFloat(raw);
-  return Number.isFinite(parsed) ? parsed : SCENE_CENTER_FALLBACK;
+  return Number.isFinite(parsed) ? parsed : WORLD_ORIGIN_FALLBACK;
 }
 
 /**

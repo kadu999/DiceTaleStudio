@@ -10,6 +10,9 @@ import { expect, type APIRequestContext, type Page } from "@playwright/test";
 
 export type LeftTab = "assets" | "hierarchy";
 
+/** 场景文件的当前格式版本（与 `@dts/document` 的 `DOCUMENT_FORMAT_VERSION` 保持一致）。 */
+export const CURRENT_SCENE_FORMAT_VERSION = 5;
+
 /** 用接口建一个真项目（含 `project.json`），返回项目名。 */
 export async function newProject(request: APIRequestContext): Promise<string> {
   const name = `E2E项目${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
@@ -100,13 +103,21 @@ export function sceneDoc(
   return { name, objects };
 }
 
-/** 造一个场景里的普通对象（形状与 `createSceneObject` 一致，无组件无动作）。 */
-export function sceneObjectDoc(name: string, kind = "SceneObject"): Record<string, unknown> {
+/**
+ * 造一个场景里的普通对象（形状与 `createSceneObject` 一致，无组件无动作）。
+ *
+ * `position` 是**世界坐标**（场景中心为原点，x 向右、y 向上，单位像素）；不传即未放置。
+ */
+export function sceneObjectDoc(
+  name: string,
+  kind = "SceneObject",
+  position: { x: number; y: number } | null = null,
+): Record<string, unknown> {
   return {
     id: `object_${name}`,
     name,
     kind,
-    position: null,
+    position,
     rotation: 0,
     components: [],
   };
@@ -136,16 +147,19 @@ export function mapObjectDoc(
 /**
  * 直接往盘上写工程文件与场景文件。
  *
- * 编辑器目前**只读**（对象内容不能改，场景只有建 / 删 / 改名三个菜单动作），
- * 所以用例要先把内容造在盘上，再从编辑器里读回来——这同时也验证了
- * 「`project.json`（v3，只有项目级数据）+ `Assets/scenes/*.json` 会被正确读出」。
+ * 用例要先把内容造在盘上，再从编辑器里读回来——这同时也验证了
+ * 「`project.json` + `Assets/scenes/*.json` 会被正确读出」。
+ *
+ * 工程文件**故意写 v4**（打开时会被升到当前版本并回写），场景文件写当前版本：
+ * 场景文件若有版本差就会被重写一次，那会让「重命名场景内容不变」这类断言变得不确定。
+ * 旧版**坐标格式**的迁移由 `hierarchy.spec.ts` 的专门用例覆盖。
  */
 export async function seedProjectDoc(
   request: APIRequestContext,
   project: string,
   scenes: readonly Record<string, unknown>[],
 ): Promise<void> {
-  // 工程文件：v4 只有项目级数据，场景不在里面
+  // 工程文件：项目级数据，场景不在里面
   const doc = {
     formatVersion: 4,
     name: project,
@@ -164,7 +178,7 @@ export async function seedProjectDoc(
   // 场景文件：场景名就是文件名，文件内容里不存名字
   for (const scene of scenes) {
     const name = String(scene.name);
-    const file = { formatVersion: 4, objects: scene.objects ?? [] };
+    const file = { formatVersion: CURRENT_SCENE_FORMAT_VERSION, objects: scene.objects ?? [] };
 
     const response = await request.put(
       `/api/resources/text?id=${encodeURIComponent(
@@ -184,7 +198,9 @@ export async function readSceneObjects(
   request: APIRequestContext,
   project: string,
   sceneName: string,
-): Promise<Array<{ name: string; position: { x: number; y: number } | null }>> {
+): Promise<
+  Array<{ name: string; kind: string; position: { x: number; y: number } | null }>
+> {
   const id = `project:${project}/Assets/scenes/${sceneName}.json`;
   const response = await request.get(`/api/resources/text?id=${encodeURIComponent(id)}`);
   if (!response.ok()) {
@@ -192,7 +208,7 @@ export async function readSceneObjects(
   }
 
   const file = JSON.parse(await response.text()) as {
-    objects?: Array<{ name: string; position: { x: number; y: number } | null }>;
+    objects?: Array<{ name: string; kind: string; position: { x: number; y: number } | null }>;
   };
   return file.objects ?? [];
 }
