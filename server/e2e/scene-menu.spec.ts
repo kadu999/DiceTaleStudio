@@ -1,5 +1,6 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import {
+  CURRENT_SCENE_FORMAT_VERSION,
   dropProject,
   enterEditor,
   mapObjectDoc,
@@ -58,7 +59,7 @@ test.describe("场景菜单", () => {
       // 文件落在 Assets/scenes/ 下，而且**名字不进文件**（名字就是文件名）
       const file = await readSceneFile(request, project, "酒馆");
       expect(file.objects).toEqual([]);
-      expect(file.formatVersion).toBe(5);
+      expect(file.formatVersion).toBe(CURRENT_SCENE_FORMAT_VERSION);
       expect("name" in file).toBe(false);
     } finally {
       await dropProject(request, project);

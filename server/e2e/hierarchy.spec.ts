@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import {
+  CURRENT_SCENE_FORMAT_VERSION,
   dropProject,
   enterEditor,
   mapObjectDoc,
@@ -114,7 +115,7 @@ test.describe("场景数据", () => {
       const doc = JSON.parse(
         await (await request.get(`/api/resources/text?id=${encodeURIComponent(projectId)}`)).text(),
       ) as Record<string, unknown>;
-      expect(doc.formatVersion).toBe(5);
+      expect(doc.formatVersion).toBe(CURRENT_SCENE_FORMAT_VERSION);
       expect("scenes" in doc).toBe(false);
 
       // 场景被拆成了独立文件，内容原样搬过去
@@ -128,7 +129,7 @@ test.describe("场景数据", () => {
         objects: Array<{ name: string }>;
         formatVersion: number;
       };
-      expect(scene.formatVersion).toBe(5);
+      expect(scene.formatVersion).toBe(CURRENT_SCENE_FORMAT_VERSION);
       expect(scene.objects.map((object) => object.name)).toEqual(["木门"]);
     } finally {
       await dropProject(request, project);
@@ -182,7 +183,7 @@ test.describe("场景数据", () => {
       const scene = JSON.parse(await sceneResponse.text()) as Record<string, unknown> & {
         objects: Array<{ name: string }>;
       };
-      expect(scene.formatVersion).toBe(5);
+      expect(scene.formatVersion).toBe(CURRENT_SCENE_FORMAT_VERSION);
       expect(scene.objects.map((object) => object.name)).toEqual(["木门"]);
     } finally {
       await dropProject(request, project);
@@ -251,7 +252,7 @@ test.describe("场景数据", () => {
           };
           return { version: file.formatVersion, position: file.objects[0]?.position };
         })
-        .toEqual({ version: 5, position: { x: -480, y: 270 } });
+        .toEqual({ version: CURRENT_SCENE_FORMAT_VERSION, position: { x: -480, y: 270 } });
 
       // 对象照样在列表里（迁移不会丢对象）
       await openLeftTab(page, "hierarchy");

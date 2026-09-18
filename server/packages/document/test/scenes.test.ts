@@ -7,7 +7,7 @@ import type { SceneDoc } from "../src/types";
 /** 场景层命令：场景已各自成文件，这里只剩「按名字找 / 判重名 / 名校验」。 */
 
 const IMAGE = { id: "project:C/Assets/images/Map001.png", width: 1920, height: 1080 };
-const GRID = { width: 64, height: 36, cellSize: 1 };
+const GRID = { width: 64, height: 36 };
 
 function scene(name: string): SceneDoc {
   return createEmptyScene(name);

@@ -28,7 +28,7 @@ import type { RleRun } from "@dts/grid";
  * - 图片/音频/视频用**资源逻辑 ID**引用，不存路径。
  */
 
-export const DOCUMENT_FORMAT_VERSION = 5;
+export const DOCUMENT_FORMAT_VERSION = 6;
 
 /** 网格行序：`bottom-up` 表示 cells 第 0 行是图片最下面一行（与 Unity GridMap 一致）。 */
 export type RowOrder = "bottom-up";
@@ -40,10 +40,15 @@ export interface ImageRef {
   readonly height: number;
 }
 
+/**
+ * 网格规格：只有**列数 / 行数**。
+ *
+ * 每格的像素尺寸**不存**——它是算出来的（`贴图宽 ÷ 列数`，1920×1080 分 64×36 格就是 30×30）。
+ * 存一份只会和事实不一致（v5 及更早存过一个恒为 1 的 `cellSize`，谁也没读它）。
+ */
 export interface GridSpec {
   readonly width: number;
   readonly height: number;
-  readonly cellSize: number;
 }
 
 export interface CellRuns {

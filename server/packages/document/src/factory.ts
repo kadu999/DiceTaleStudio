@@ -40,13 +40,12 @@ export function createMapObject(input: {
   readonly image: ImageRef;
   readonly grid: GridSpec;
   readonly id?: string;
-  readonly cellSize?: number;
   /** 地图中心的世界坐标；不传就是世界原点。 */
   readonly position?: WorldPosition;
 }): SceneObjectDoc {
   const map: MapDataDoc = {
     image: input.image,
-    grid: { ...input.grid, cellSize: input.cellSize ?? input.grid.cellSize },
+    grid: { ...input.grid },
     rowOrder: "bottom-up",
     // 显式写出「整张图都是空格子」，而不是留空数组：
     // 校验时 runs 的展开格数必须等于 width*height，留空会被判为数据不完整。

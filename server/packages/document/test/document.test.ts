@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { produce, type Draft } from "immer";
-import { CellMask, encodeRle } from "@dts/grid";
+import { CellMask, decodeRle, encodeRle } from "@dts/grid";
 import {
   addAction,
   addComponent,
@@ -12,6 +12,7 @@ import {
   removeAction,
   removeObject,
   setMapCells,
+  setMapGrid,
   setObjectPosition,
   updateAction,
   updateComponentData,
@@ -26,10 +27,10 @@ import {
 import { parseProjectDoc, parseProjectFile, parseSceneFile, upgradeRawDocument } from "../src/schema";
 import { DEFAULT_HISTORY_LIMIT } from "../src/history";
 import { formatIssues, hasErrors, validateProject, validateScene } from "../src/validation";
-import type { ProjectDoc, SceneDoc } from "../src/types";
+import { DOCUMENT_FORMAT_VERSION, type ProjectDoc, type SceneDoc } from "../src/types";
 
 const IMAGE = { id: "project:C/Assets/images/Map001.png", width: 1920, height: 1080 };
-const GRID = { width: 8, height: 6, cellSize: 1 };
+const GRID = { width: 8, height: 6 };
 
 function makeScene(name = "Map001"): SceneDoc {
   return createEmptyScene(name);
@@ -103,14 +104,14 @@ describe("文档工厂：场景是容器，对象挂在场景上", () => {
 
   it("新建项目只带项目级数据（没有 scenes）与空道具库", () => {
     const project = createEmptyProject("我的模组");
-    expect(project.formatVersion).toBe(5);
+    expect(project.formatVersion).toBe(DOCUMENT_FORMAT_VERSION);
     expect("scenes" in project).toBe(false);
     expect(project.items.count).toBe(0);
   });
 
   it("新建场景文件：当前版本、空对象", () => {
     const file = createEmptySceneFile();
-    expect(file.formatVersion).toBe(5);
+    expect(file.formatVersion).toBe(DOCUMENT_FORMAT_VERSION);
     expect(file.objects).toEqual([]);
   });
 
@@ -222,6 +223,76 @@ describe("对象命令（都在场景上操作）", () => {
     });
 
     expect(next.objects[0]?.map?.cells.runs[0]?.[0]).toBe(CellMask.Obstacle);
+  });
+
+  it("改网格尺寸：格子按新规格重建，重叠部分保留、多出来的格子是空", () => {
+    // (0,0) 放障碍、(1,1) 放水
+    const scene = mutate(withMapObject(makeScene()), (draft) => {
+      const cells = new Uint8Array(GRID.width * GRID.height);
+      cells[0] = CellMask.Obstacle;
+      cells[GRID.width + 1] = CellMask.Water;
+      setMapCells(draft, "map-1", encodeRle(cells));
+    });
+
+    const grown = mutate(scene, (draft) => {
+      expect(setMapGrid(draft, "map-1", { width: 10, height: 8 })).toBe(true);
+    });
+
+    const map = grown.objects[0]?.map;
+    expect(map?.grid).toEqual({ width: 10, height: 8 });
+
+    // 行主序铺满新网格：格数 = 列 × 行（校验就是这么要求的）
+    const cells = decodeRle(map?.cells.runs ?? [], 10 * 8);
+    expect(cells[0]).toBe(CellMask.Obstacle);
+    expect(cells[10 + 1]).toBe(CellMask.Water);
+    expect([...cells].filter((mask) => mask !== 0).length).toBe(2);
+
+    // 缩回去：还在范围内的格子保留
+    const shrunk = mutate(grown, (draft) => {
+      expect(setMapGrid(draft, "map-1", { width: 8, height: 6 })).toBe(true);
+    });
+    const back = decodeRle(shrunk.objects[0]?.map?.cells.runs ?? [], 8 * 6);
+    expect(back[0]).toBe(CellMask.Obstacle);
+    expect(back[8 + 1]).toBe(CellMask.Water);
+  });
+
+  it("改网格尺寸：没变就不产生变更，0 / 负数被挡回 1 格", () => {
+    const scene = withMapObject(makeScene());
+    let changed = true;
+
+    const same = mutate(scene, (draft) => {
+      changed = setMapGrid(draft, "map-1", GRID);
+    });
+    expect(changed).toBe(false);
+    expect(same.objects[0]?.map?.grid).toEqual(GRID);
+
+    const tiny = mutate(scene, (draft) => {
+      setMapGrid(draft, "map-1", { width: 0, height: -3 });
+    });
+    expect(tiny.objects[0]?.map?.grid).toEqual({ width: 1, height: 1 });
+    expect(decodeRle(tiny.objects[0]?.map?.cells.runs ?? [], 1)).toEqual(new Uint8Array([0]));
+  });
+
+  it("改过尺寸的网格仍然通过校验（格数与网格一致）", () => {
+    const scene = mutate(withMapObject(makeScene()), (draft) => {
+      setMapGrid(draft, "map-1", { width: 10, height: 8 });
+    });
+
+    expect(hasErrors(validateScene(scene))).toBe(false);
+  });
+
+  it("格子数据本来就坏（展开格数对不上）时拒绝改尺寸，不把坏数据「修」成空网格", () => {
+    const scene = mutate(withMapObject(makeScene()), (draft) => {
+      setMapCells(draft, "map-1", [[CellMask.Obstacle, 3]]);
+    });
+
+    let changed = true;
+    const next = mutate(scene, (draft) => {
+      changed = setMapGrid(draft, "map-1", { width: 10, height: 8 });
+    });
+
+    expect(changed).toBe(false);
+    expect(next.objects[0]?.map?.grid).toEqual(GRID);
   });
 
   it("findMapObject / listMapObjects 只挑地图对象", () => {
@@ -471,7 +542,7 @@ describe("工程文件 schema 与版本迁移", () => {
 
   it("当前版本工程文件：无需迁移也无需回写", () => {
     const loaded = parseProjectFile(JSON.parse(JSON.stringify(makeProject())));
-    expect(loaded.doc.formatVersion).toBe(5);
+    expect(loaded.doc.formatVersion).toBe(DOCUMENT_FORMAT_VERSION);
     expect(loaded.doc.name).toBe("测试项目");
     expect(loaded.migratedScenes).toEqual([]);
     expect(loaded.needsRewrite).toBe(false);
@@ -493,7 +564,7 @@ describe("工程文件 schema 与版本迁移", () => {
 
     const loaded = parseProjectFile(v3);
     expect(loaded.needsRewrite).toBe(true);
-    expect(loaded.doc.formatVersion).toBe(5);
+    expect(loaded.doc.formatVersion).toBe(DOCUMENT_FORMAT_VERSION);
     expect(loaded.migratedScenes.map((scene) => scene.name)).toEqual(["Map001"]);
   });
 
@@ -509,7 +580,7 @@ describe("工程文件 schema 与版本迁移", () => {
     expect("id" in (loaded.migratedScenes[0] ?? {})).toBe(false);
     // 工程文件本身只留项目级数据
     expect("scenes" in loaded.doc).toBe(false);
-    expect(loaded.doc.formatVersion).toBe(5);
+    expect(loaded.doc.formatVersion).toBe(DOCUMENT_FORMAT_VERSION);
   });
 
   it("v1（地图即场景）先升级为 v2 再拆成场景文件", () => {
@@ -540,7 +611,7 @@ describe("工程文件 schema 与版本迁移", () => {
     };
 
     const loaded = parseProjectFile(v1);
-    expect(loaded.doc.formatVersion).toBe(5);
+    expect(loaded.doc.formatVersion).toBe(DOCUMENT_FORMAT_VERSION);
     expect(loaded.needsRewrite).toBe(true);
     expect(loaded.migratedScenes).toHaveLength(1);
 
@@ -561,7 +632,7 @@ describe("工程文件 schema 与版本迁移", () => {
     const loaded = parseProjectFile(JSON.parse(JSON.stringify(v2ProjectWith())));
     expect(loaded.migratedScenes).toEqual([]);
     expect(loaded.needsRewrite).toBe(true);
-    expect(loaded.doc.formatVersion).toBe(5);
+    expect(loaded.doc.formatVersion).toBe(DOCUMENT_FORMAT_VERSION);
   });
 
   it("非 bottom-up 行序在场景文件里被拒绝（避免坐标约定被悄悄改掉）", () => {
@@ -581,16 +652,22 @@ describe("工程文件 schema 与版本迁移", () => {
 });
 
 describe("场景文件 schema", () => {
+  it("拒绝高于支持版本的文件（不静默丢字段）", () => {
+    expect(() =>
+      parseSceneFile({ formatVersion: DOCUMENT_FORMAT_VERSION + 1, objects: [] }),
+    ).toThrow(/高于本编辑器支持/);
+  });
+
   it("合法场景文件可解析（场景名不在文件里）", () => {
     const scene = withMapObject(createEmptyScene("Map001"));
     const raw = {
-      formatVersion: 5,
+      formatVersion: DOCUMENT_FORMAT_VERSION,
       objects: scene.objects,
     };
 
     const parsed = parseSceneFile(JSON.parse(JSON.stringify(raw)));
     expect(parsed.needsRewrite).toBe(false);
-    expect(parsed.file.formatVersion).toBe(5);
+    expect(parsed.file.formatVersion).toBe(DOCUMENT_FORMAT_VERSION);
     expect(parsed.file.objects.map((object) => object.kind)).toEqual(["Map"]);
     expect("name" in parsed.file).toBe(false);
   });
@@ -656,10 +733,10 @@ describe("场景文件 schema", () => {
     expect(parsed.file.objects[0]?.position).toEqual({ x: 0, y: 0 });
   });
 
-  it("v5 场景文件：没有位置的地图补成世界原点，并要求回写一次", () => {
+  it("当前版本：没有位置的地图补成世界原点，并要求回写一次", () => {
     const scene = withMapObject(createEmptyScene("Map001"));
     const raw = {
-      formatVersion: 5,
+      formatVersion: DOCUMENT_FORMAT_VERSION,
       objects: [{ ...scene.objects[0], position: null }],
     };
 
@@ -668,16 +745,38 @@ describe("场景文件 schema", () => {
     expect(parsed.file.objects[0]?.position).toEqual({ x: 0, y: 0 });
   });
 
-  it("v5 场景文件：地图本来就有位置时不动它（不要求回写）", () => {
+  it("当前版本：地图本来就有位置时不动它，也不要求回写", () => {
     const scene = withMapObject(createEmptyScene("Map001"));
     const raw = {
-      formatVersion: 5,
+      formatVersion: DOCUMENT_FORMAT_VERSION,
       objects: [{ ...scene.objects[0], position: { x: 300, y: -200 } }],
     };
 
     const parsed = parseSceneFile(raw);
     expect(parsed.needsRewrite).toBe(false);
     expect(parsed.file.objects[0]?.position).toEqual({ x: 300, y: -200 });
+  });
+
+  it("v5 场景文件：世界坐标不被二次换算，只把网格里那个 cellSize 丢掉", () => {
+    const scene = withMapObject(createEmptyScene("Map001"));
+    const raw = {
+      formatVersion: 5,
+      objects: [
+        {
+          ...scene.objects[0],
+          position: { x: 300, y: -200 },
+          map: { ...scene.objects[0]?.map, grid: { width: 64, height: 36, cellSize: 1 } },
+        },
+      ],
+    };
+
+    const parsed = parseSceneFile(raw);
+    // 版本升到 v6：要回写一次（把没人读的 cellSize 从磁盘上清掉）
+    expect(parsed.needsRewrite).toBe(true);
+    expect(parsed.file.formatVersion).toBe(DOCUMENT_FORMAT_VERSION);
+    // 世界坐标原样保留——位置换算只认 v5 这条线，不能拿「< 当前版本」当条件
+    expect(parsed.file.objects[0]?.position).toEqual({ x: 300, y: -200 });
+    expect(parsed.file.objects[0]?.map?.grid).toEqual({ width: 64, height: 36 });
   });
 
   it("v4 场景文件：调用方给了贴图尺寸就按它换算", () => {

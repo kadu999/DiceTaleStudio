@@ -655,6 +655,53 @@ test.describe("创建与编辑场景对象", () => {
     }
   });
 
+  test("网格列数 / 行数可以改：格子按新规格重建，每格尺寸是算出来的", async ({ page, request }) => {
+    const project = await newProject(request);
+    try {
+      await openSceneForEdit(page, request, project, [
+        sceneDoc(SCENE_A, [mapObjectDoc(project, SCENE_A)]),
+      ]);
+
+      // 地图那一行（列表里它是唯一带网格尺寸的）
+      await page.getByTestId("object-row").filter({ hasText: "地图" }).first().click();
+      if (!(await page.getByTestId("inspector-object-name").isVisible().catch(() => false))) {
+        await page.getByRole("button", { name: "属性", exact: true }).click();
+      }
+
+      // 1920×1080 分 64×36：每格 30×30（**算出来的**，文档里不存这个数）
+      await expect(page.getByLabel("网格列数")).toHaveValue("64");
+      await expect(page.getByLabel("网格行数")).toHaveValue("36");
+      await expect(page.getByTestId("object-properties")).toContainText("30 × 30 px");
+
+      // 列数 64 → 32：每格变成 60×30
+      await page.getByLabel("网格列数").fill("32");
+      await page.getByLabel("网格列数").blur();
+      await expect(page.getByTestId("object-properties")).toContainText("60 × 30 px");
+
+      // 落盘：网格是新规格，格子数据按新格数重建（校验要求展开格数 = 列 × 行）
+      await expect
+        .poll(async () => {
+          const file = await request.get(
+            `/api/resources/text?id=${encodeURIComponent(
+              `project:${project}/Assets/scenes/${SCENE_A}.json`,
+            )}`,
+          );
+          const raw = (await file.json()) as {
+            objects?: Array<{ map?: { grid: unknown; cells: { runs: Array<[number, number]> } } }>;
+          };
+          return raw.objects?.[0]?.map?.grid ?? null;
+        })
+        .toEqual({ width: 32, height: 36 });
+
+      // 0 / 负数被挡回原值（网格至少 1 格），不会写进文件
+      await page.getByLabel("网格列数").fill("0");
+      await page.getByLabel("网格列数").blur();
+      await expect(page.getByLabel("网格列数")).toHaveValue("32");
+    } finally {
+      await dropProject(request, project);
+    }
+  });
+
   test("属性面板与列表不显示内部字段（ID / 组件数量），地图行仍显示网格尺寸", async ({
     page,
     request,

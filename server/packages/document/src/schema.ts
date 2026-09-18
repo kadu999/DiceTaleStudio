@@ -29,7 +29,6 @@ export const imageRefSchema = z.object({
 export const gridSpecSchema = z.object({
   width: z.number().int().positive(),
   height: z.number().int().positive(),
-  cellSize: z.number().positive(),
 });
 
 export const cellRunsSchema = z.object({
@@ -260,14 +259,22 @@ function migrateScenePositions(
   };
 }
 
-/** 场景文件是不是「位置还是归一化坐标」的旧版本。 */
-function isLegacyPositionScene(raw: Record<string, unknown>): boolean {
-  const version = typeof raw.formatVersion === "number" ? raw.formatVersion : 1;
-  return version < DOCUMENT_FORMAT_VERSION;
+/**
+ * 文件里写的 `formatVersion`（没写就按 v1 算）。
+ *
+ * **判断迁移不能拿它跟 `DOCUMENT_FORMAT_VERSION` 比**：版本号一涨，所有旧文件都会被
+ * 判成「需要做位置换算」，那会把已经是世界坐标的 v5 文件再换算一次（(0,0) 变成 (-960, …)）。
+ * 每一步迁移只认它自己那个版本线（见 `WORLD_POSITION_VERSION`）。
+ */
+function formatVersionOf(raw: Record<string, unknown>): number {
+  return typeof raw.formatVersion === "number" ? raw.formatVersion : 1;
 }
 
+/** v5 起位置是世界坐标；更早的是归一化坐标 `[0,1]`（y 向下）。 */
+const WORLD_POSITION_VERSION = 5;
+
 /**
- * 版本迁移。当前最高 v5；遇到更高版本明确拒绝
+ * 版本迁移。当前最高 v6；遇到更高版本明确拒绝
  * （避免高版本字段被静默丢弃后回存造成数据损坏）。
  */
 export function migrateProjectDoc(doc: ProjectDoc): ProjectDoc {
@@ -343,14 +350,24 @@ export function parseSceneFile(raw: unknown, size?: SceneSizeHint): SceneFileLoa
   let needsRewrite = false;
 
   if (isRecord(upgraded)) {
+    const version = formatVersionOf(upgraded);
+    // 高版本文件明确拒绝：读不懂的字段被静默丢掉再回存，等于把数据毁掉
+    if (version > DOCUMENT_FORMAT_VERSION) {
+      throw new Error(
+        `场景文件 formatVersion=${version} 高于本编辑器支持的 ${DOCUMENT_FORMAT_VERSION}，请升级编辑器`,
+      );
+    }
+
     // 归一化坐标（v4 及更早）先换算成世界坐标；地图的位置照常换算，它也是摆在世界里的对象
-    const migrated = isLegacyPositionScene(upgraded)
-      ? migrateScenePositions(upgraded, size ?? FALLBACK_SCENE_SIZE)
-      : upgraded;
+    const migrated =
+      version < WORLD_POSITION_VERSION
+        ? migrateScenePositions(upgraded, size ?? FALLBACK_SCENE_SIZE)
+        : upgraded;
     // 再补上「没有位置的地图」（旧文件 / 手写文件里可能是 null）
     const filled = withFilledMapPositions(migrated);
-    normalized = filled.raw;
-    needsRewrite = migrated !== upgraded || filled.changed;
+    // 读出来的文档一律是当前版本（v6 起网格里不再存 `cellSize`，顺手被 schema 丢掉）
+    normalized = { ...filled.raw, formatVersion: DOCUMENT_FORMAT_VERSION };
+    needsRewrite = version < DOCUMENT_FORMAT_VERSION || filled.changed;
   }
 
   const result = sceneFileSchema.safeParse(normalized);

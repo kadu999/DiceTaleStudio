@@ -6,6 +6,7 @@ import { createTempResourceRoot } from "./helpers/temp-root";
 import { FsResourceProvider } from "../src/resources/fs-provider";
 import { RuntimeHub } from "../src/ws/hub";
 import { PROJECT_FILE_NAME, listProjects, projectFileId, type ResourceTreeNode } from "@dts/resources";
+import { DOCUMENT_FORMAT_VERSION } from "@dts/document";
 
 /**
  * 项目（一个项目 = 一个文件夹 + 一个 `project.json`）的 HTTP 接口测试。
@@ -114,7 +115,7 @@ describe("项目 API", () => {
       formatVersion: number;
       name: string;
     };
-    expect(doc.formatVersion).toBe(5);
+    expect(doc.formatVersion).toBe(DOCUMENT_FORMAT_VERSION);
     expect(doc.name).toBe(TEST_PROJECT);
     // v3 起项目文件只带项目级数据：场景是 Assets/scenes/<场景名>.json 独立文件，不再有 scenes 数组
     expect("scenes" in doc).toBe(false);

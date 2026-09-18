@@ -1,5 +1,5 @@
 import type { Draft } from "immer";
-import type { RleRun } from "@dts/grid";
+import { CellMask, decodeRle, encodeRle, type RleRun } from "@dts/grid";
 import { defaultComponentData } from "./components";
 import type {
   ActionInstanceDoc,
@@ -450,6 +450,55 @@ export function clearMapCells(scene: Draft<SceneDoc>, mapObjectId: string): bool
   }
 
   map.cells = { encoding: "rle", runs: [] };
+  return true;
+}
+
+/**
+ * 改地图网格的列数 / 行数。
+ *
+ * 格子数据是**按行主序铺满整张网格**的（校验要求展开格数 = 列 × 行），所以改尺寸必须把
+ * 格子一起重建：左上对齐的重叠部分原样保留，多出来的格子是空（`CellMask.Empty`），
+ * 被缩掉的格子丢弃。每格的像素尺寸不用记——它是 `贴图宽 ÷ 列数` 算出来的。
+ */
+export function setMapGrid(
+  scene: Draft<SceneDoc>,
+  mapObjectId: string,
+  grid: { readonly width: number; readonly height: number },
+): boolean {
+  const map = findObject(scene, mapObjectId)?.map;
+  if (map === undefined) {
+    return false;
+  }
+
+  const width = Math.max(1, Math.round(grid.width));
+  const height = Math.max(1, Math.round(grid.height));
+  if (width === map.grid.width && height === map.grid.height) {
+    return false;
+  }
+
+  let cells: Uint8Array;
+  try {
+    cells = decodeRle(map.cells.runs, map.grid.width * map.grid.height);
+  } catch {
+    // 格子数据本来就是坏的（展开格数对不上）：不拿它当基底，否则会把坏数据
+    // 「修」成一张看起来正常的空网格，等于把错误悄悄抹掉
+    return false;
+  }
+
+  const next = new Uint8Array(width * height);
+  const keepColumns = Math.min(width, map.grid.width);
+  const keepRows = Math.min(height, map.grid.height);
+  for (let y = 0; y < keepRows; y += 1) {
+    for (let x = 0; x < keepColumns; x += 1) {
+      next[y * width + x] = cells[y * map.grid.width + x] ?? CellMask.Empty;
+    }
+  }
+
+  map.grid = { width, height };
+  map.cells = {
+    encoding: "rle",
+    runs: encodeRle(next).map((run) => [run[0], run[1]] as [number, number]),
+  };
   return true;
 }
 

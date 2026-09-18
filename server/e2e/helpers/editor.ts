@@ -12,7 +12,7 @@ import { deflateSync } from "node:zlib";
 export type LeftTab = "assets" | "hierarchy";
 
 /** 场景文件的当前格式版本（与 `@dts/document` 的 `DOCUMENT_FORMAT_VERSION` 保持一致）。 */
-export const CURRENT_SCENE_FORMAT_VERSION = 5;
+export const CURRENT_SCENE_FORMAT_VERSION = 6;
 
 /** 用接口建一个真项目（含 `project.json`），返回项目名。 */
 export async function newProject(request: APIRequestContext): Promise<string> {
@@ -151,7 +151,7 @@ export function mapObjectDoc(
         width: size.width,
         height: size.height,
       },
-      grid: { width: 64, height: 36, cellSize: 1 },
+      grid: { width: 64, height: 36 },
       rowOrder: "bottom-up",
       cells: { encoding: "rle", runs: [[0, 64 * 36]] },
     },

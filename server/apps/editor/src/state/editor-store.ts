@@ -14,6 +14,7 @@ import {
   parseSceneFile,
   removeObject as removeSceneObject,
   renameObject as renameSceneObject,
+  setMapGrid as setSceneMapGrid,
   setMapImage as setSceneMapImage,
   setObjectPosition as setSceneObjectPosition,
   validateSceneName,
@@ -29,6 +30,7 @@ import {
 import {
   gridSizeFromImage,
   worldRectOf,
+  type GridSize,
   type ImageSize,
   type WorldRect,
 } from "@dts/grid";
@@ -239,6 +241,8 @@ export interface EditorStoreState {
   endObjectDrag(): void;
   /** 换地图对象的贴图（宽高由调用方从素材本身读出）。 */
   setMapImage(mapObjectId: string, image: ImageRef): boolean;
+  /** 改地图网格的列数 / 行数（格子按新尺寸重建，重叠部分保留）。 */
+  setMapGrid(mapObjectId: string, grid: GridSize): boolean;
 }
 
 const EMPTY_GAME_STATE: GameStateSnapshot = {
@@ -1230,7 +1234,7 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
                 width: DEFAULT_MAP_IMAGE.width,
                 height: DEFAULT_MAP_IMAGE.height,
               },
-              grid: { ...gridSizeFromImage(DEFAULT_MAP_IMAGE), cellSize: 1 },
+              grid: gridSizeFromImage(DEFAULT_MAP_IMAGE),
               position: at,
             })
           : // 其它实体（例如精灵，kind = "SceneObject"）走普通对象：只有名字、类型与位置
@@ -1363,6 +1367,20 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
 
     endObjectDrag() {
       sceneHistory.endCoalescing();
+    },
+
+    setMapGrid(mapObjectId, grid) {
+      const sceneName = get().activeSceneName;
+      if (sceneName === null) {
+        return false;
+      }
+
+      return get().applyScenes("修改网格尺寸", (draft) => {
+        const scene = draft.find((item) => item.name === sceneName);
+        if (scene !== undefined) {
+          setSceneMapGrid(scene, mapObjectId, grid);
+        }
+      });
     },
 
     setMapImage(mapObjectId, image) {

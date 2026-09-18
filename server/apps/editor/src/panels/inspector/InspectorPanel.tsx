@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { SceneObjectDoc } from "@dts/document";
+import { cellPixelSize } from "@dts/grid";
 import type { ResourceTreeNode } from "../../services/project-api";
 import { findResourceNode, useEditorStore } from "../../state/editor-store";
 import { assetDisplayPath, findAssetById } from "../asset-picker";
@@ -57,12 +58,8 @@ export function InspectorPanel(): React.JSX.Element {
               {selected.map !== undefined ? (
                 <>
                   <TextureField object={selected} />
-                  <Field
-                    label="网格"
-                    value={`${selected.map.grid.width} × ${selected.map.grid.height}`}
-                    mono
-                  />
-                  <Field label="每格尺寸" value={String(selected.map.grid.cellSize)} mono />
+                  <GridFields object={selected} />
+                  <CellSizeField object={selected} />
                   <Field label="行序" value={selected.map.rowOrder} mono />
                 </>
               ) : null}
@@ -258,82 +255,91 @@ function PositionFields({ object }: { readonly object: SceneObjectDoc }): React.
   }, [object.id, object.position]);
 
   const commitX = (): void => {
-    moveObject(object.id, {
-      x: parseCoordinate(x),
-      y: object.position?.y ?? WORLD_ORIGIN_FALLBACK,
-    });
+    const next = parseCoordinate(x);
+    moveObject(object.id, { x: next, y: object.position?.y ?? WORLD_ORIGIN_FALLBACK });
+    // 提交后输入框回到规范值：store 没产生变更时不会有回灌，
+    // 不写回就会把用户敲的非法/留空值留在框里
+    setX(formatCoordinate(next));
   };
 
   const commitY = (): void => {
-    moveObject(object.id, {
-      x: object.position?.x ?? WORLD_ORIGIN_FALLBACK,
-      y: parseCoordinate(y),
-    });
+    const next = parseCoordinate(y);
+    moveObject(object.id, { x: object.position?.x ?? WORLD_ORIGIN_FALLBACK, y: next });
+    setY(formatCoordinate(next));
   };
 
   return (
     <FieldRow label="世界坐标 (px)">
       <div className="flex min-w-0 flex-1 items-center gap-2">
-        <AxisInput
-          axis="X"
+        <NumberInput
+          prefix="X"
+          prefixClassName="text-[var(--color-editor-danger)]"
+          label="世界坐标 X"
           value={x}
           testId="inspector-object-x"
           inputRef={xRef}
           onChange={setX}
           onCommit={commitX}
+          placeholder={String(WORLD_ORIGIN_FALLBACK)}
         />
-        <AxisInput
-          axis="Y"
+        <NumberInput
+          prefix="Y"
+          prefixClassName="text-[var(--color-editor-ok)]"
+          label="世界坐标 Y"
           value={y}
           testId="inspector-object-y"
           inputRef={yRef}
           onChange={setY}
           onCommit={commitY}
+          placeholder={String(WORLD_ORIGIN_FALLBACK)}
         />
       </div>
     </FieldRow>
   );
 }
 
-interface AxisInputProps {
-  /** 轴标（X / Y）：**看得见**，免得两个框分不清哪个是哪个。 */
-  readonly axis: "X" | "Y";
+interface NumberInputProps {
+  /** 前缀（世界的 X / Y、网格的「列」「行」）：**看得见**，免得几个框分不清谁是谁。 */
+  readonly prefix: string;
+  /** 前缀配色；不传就用暗色。 */
+  readonly prefixClassName?: string;
+  /** 无障碍名字：前缀只有一个字，读屏听不出来。 */
+  readonly label: string;
   readonly value: string;
   readonly testId: string;
   readonly inputRef: React.RefObject<HTMLInputElement | null>;
   readonly onChange: (value: string) => void;
   readonly onCommit: () => void;
+  readonly placeholder?: string;
 }
 
-/** 一个轴：轴标 + 输入框。两个轴等分整行剩下的宽度（输入框尽量宽，好读也好改）。 */
-function AxisInput({
-  axis,
+/** 带前缀的数字输入：两三个这样的框在一行里**等分**整行剩下的宽度（好读也好改）。 */
+function NumberInput({
+  prefix,
+  prefixClassName = "text-[var(--color-editor-text-dim)]",
+  label,
   value,
   testId,
   inputRef,
   onChange,
   onCommit,
-}: AxisInputProps): React.JSX.Element {
+  placeholder,
+}: NumberInputProps): React.JSX.Element {
   return (
-    // 用 label 包住：点轴标也能聚焦到输入框；无障碍名字由 aria-label 给
+    // 用 label 包住：点前缀也能聚焦到输入框；无障碍名字由 aria-label 给
     <label className="flex min-w-0 flex-1 items-center gap-1">
-      <span
-        aria-hidden="true"
-        className={`flex-none font-mono text-[10px] ${
-          axis === "X" ? "text-[var(--color-editor-danger)]" : "text-[var(--color-editor-ok)]"
-        }`}
-      >
-        {axis}
+      <span aria-hidden="true" className={`flex-none font-mono text-[10px] ${prefixClassName}`}>
+        {prefix}
       </span>
       <input
         ref={inputRef}
         value={value}
         data-testid={testId}
-        aria-label={`世界坐标 ${axis}`}
+        aria-label={label}
         inputMode="decimal"
         type="number"
         step="1"
-        placeholder={String(WORLD_ORIGIN_FALLBACK)}
+        placeholder={placeholder}
         className="min-w-0 flex-1 rounded border border-[var(--color-editor-border)] bg-black/30 px-1 py-0.5 font-mono text-[11px] outline-none"
         onChange={(event) => onChange(event.target.value)}
         onBlur={onCommit}
@@ -346,6 +352,111 @@ function AxisInput({
       />
     </label>
   );
+}
+
+/**
+ * 地图网格的**列数 / 行数**：可编辑。
+ *
+ * 改尺寸会把格子按新规格重建（重叠部分原样保留，多出来的格子是空、被缩掉的丢弃）——
+ * 格子数据是铺满整张网格的，尺寸与格数必须一致。
+ */
+function GridFields({ object }: { readonly object: SceneObjectDoc }): React.JSX.Element {
+  const setMapGrid = useEditorStore((state) => state.setMapGrid);
+  const columnsRef = useRef<HTMLInputElement>(null);
+  const rowsRef = useRef<HTMLInputElement>(null);
+  const grid = object.map?.grid;
+  const [columns, setColumns] = useState(formatCount(grid?.width));
+  const [rows, setRows] = useState(formatCount(grid?.height));
+
+  useEffect(() => {
+    // 正在输入的框不被 store 回灌（否则提交后触发的同步会把刚敲的值冲掉）
+    if (document.activeElement !== columnsRef.current) {
+      setColumns(formatCount(grid?.width));
+    }
+
+    if (document.activeElement !== rowsRef.current) {
+      setRows(formatCount(grid?.height));
+    }
+  }, [object.id, grid]);
+
+  // 各自提交各自的字段：改列数时行数取当前值，反之亦然
+  const commitColumns = (): void => {
+    if (grid === undefined) {
+      return;
+    }
+
+    const width = parseCount(columns, grid.width);
+    setMapGrid(object.id, { width, height: grid.height });
+    // 提交后输入框回到**规范值**：store 里没产生变更时不会有回灌，
+    // 不写回就会把用户敲的非法值（例如 0）留在框里
+    setColumns(String(width));
+  };
+
+  const commitRows = (): void => {
+    if (grid === undefined) {
+      return;
+    }
+
+    const height = parseCount(rows, grid.height);
+    setMapGrid(object.id, { width: grid.width, height });
+    setRows(String(height));
+  };
+
+  return (
+    <FieldRow label="网格">
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        <NumberInput
+          prefix="列"
+          label="网格列数"
+          value={columns}
+          testId="inspector-grid-columns"
+          inputRef={columnsRef}
+          onChange={setColumns}
+          onCommit={commitColumns}
+        />
+        <NumberInput
+          prefix="行"
+          label="网格行数"
+          value={rows}
+          testId="inspector-grid-rows"
+          inputRef={rowsRef}
+          onChange={setRows}
+          onCommit={commitRows}
+        />
+      </div>
+    </FieldRow>
+  );
+}
+
+/**
+ * 每格的世界尺寸：**算出来的**（贴图宽 ÷ 列数），所以只读。
+ *
+ * 文档里不存这个数（v6 起那个恒为 1 的 `cellSize` 已经删掉）——存一份只会和事实不一致。
+ */
+function CellSizeField({ object }: { readonly object: SceneObjectDoc }): React.JSX.Element {
+  const image = object.map?.image;
+  const grid = object.map?.grid;
+  if (image === undefined || grid === undefined) {
+    return <Field label="每格" value="—" />;
+  }
+
+  const cell = cellPixelSize(grid, image);
+  return <Field label="每格" value={`${round2(cell.x)} × ${round2(cell.y)} px`} mono />;
+}
+
+/** 网格列 / 行输入框里的文本。 */
+function formatCount(value: number | undefined): string {
+  return value === undefined ? "" : String(value);
+}
+
+/** 网格列 / 行输入：留空或非法（含 0 与负数）都退回原值——网格至少要有 1 格。 */
+function parseCount(raw: string, fallback: number): number {
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed >= 1 ? parsed : fallback;
+}
+
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
 }
 
 /** 位置留空 / 非法时的落点：世界原点（= 场景正中）。 */
