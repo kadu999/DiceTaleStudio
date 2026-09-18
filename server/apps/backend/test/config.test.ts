@@ -33,9 +33,9 @@ describe("资源根解析（不受启动目录影响）", () => {
     expect(config.usingDefaults).toBe(false);
     expect(config.resourceRoot).toBe(join(SERVER_ROOT, "resources"));
     expect(config.app.server.port).toBe(1420);
-    expect(config.dirs.campaign).toBe("campaigns");
+    expect(config.dirs.project).toBe("projects");
     expect(config.dirs.config).toBe("config");
-    expect(config.app.campaignFolders).toContain("maps");
+    expect(config.app.projectFolders).toContain("Assets/scenes");
   });
 
   it("显式传入的绝对路径同样生效", async () => {

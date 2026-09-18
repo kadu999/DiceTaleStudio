@@ -3,12 +3,13 @@ import { useEditorStore } from "../state/editor-store";
 export function StatusBar(): React.JSX.Element {
   const mode = useEditorStore((state) => state.mode);
   const doc = useEditorStore((state) => state.doc);
-  const activeMapId = useEditorStore((state) => state.activeMapId);
+  const scenes = useEditorStore((state) => state.scenes);
+  const activeSceneName = useEditorStore((state) => state.activeSceneName);
   const selection = useEditorStore((state) => state.selectedObjectIds);
   const status = useEditorStore((state) => state.runtime.status);
   const clientConnected = useEditorStore((state) => state.runtime.clientConnected);
 
-  const activeScene = doc.scenes.find((scene) => scene.id === activeMapId);
+  const activeScene = scenes.find((scene) => scene.name === activeSceneName);
 
   const runtimeLabel =
     mode === "edit"
@@ -22,7 +23,7 @@ export function StatusBar(): React.JSX.Element {
   return (
     <footer className="flex h-6 flex-none items-center gap-4 border-t border-[var(--color-editor-border)] bg-[var(--color-editor-panel-alt)] px-2 text-[11px] text-[var(--color-editor-text-dim)]">
       <span data-testid="status-doc">{doc.name}</span>
-      <span data-testid="status-scenes">场景 {doc.scenes.length}</span>
+      <span data-testid="status-scenes">场景 {scenes.length}</span>
       <span data-testid="status-active-scene">当前场景 {activeScene?.name ?? "—"}</span>
       <span data-testid="status-selection">已选 {selection.length}</span>
       <span data-testid="status-mode" data-mode={mode} className="ml-auto flex items-center gap-1">

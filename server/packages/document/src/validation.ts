@@ -157,22 +157,6 @@ export function validateScene(scene: SceneDoc): ValidationIssue[] {
     issues.push({ level: "error", path: base, message: "场景名不能为空" });
   }
 
-  // 出生点
-  const spawnIds = new Set<string>();
-  for (const spawn of scene.spawnPoints) {
-    const path = `${base}/spawnPoints/${spawn.id}`;
-    if (spawnIds.has(spawn.id)) {
-      issues.push({ level: "error", path, message: `出生点 id 重复: ${spawn.id}` });
-    }
-
-    spawnIds.add(spawn.id);
-    if (spawn.id.trim().length === 0) {
-      issues.push({ level: "error", path, message: "出生点 id 不能为空" });
-    }
-
-    checkPosition(spawn.position, `${path}/position`, issues);
-  }
-
   // 对象（地图也只是其中之一）
   const objectIds = new Set<string>();
   for (const object of scene.objects) {
@@ -203,27 +187,14 @@ export function validateScene(scene: SceneDoc): ValidationIssue[] {
   return issues;
 }
 
-/** 校验整个项目。 */
+/**
+ * 校验工程文件里的项目级数据。
+ *
+ * 场景已各自成文件、由 `validateScene` 逐个校验，所以这里不再遍历场景；
+ * 场景名唯一性也由文件系统保证（同名即同文件）。
+ */
 export function validateProject(doc: ProjectDoc): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
-  const sceneIds = new Set<string>();
-  const sceneNames = new Set<string>();
-
-  for (const scene of doc.scenes) {
-    if (sceneIds.has(scene.id)) {
-      issues.push({ level: "error", path: `scenes/${scene.id}`, message: `场景 id 重复: ${scene.id}` });
-    }
-
-    sceneIds.add(scene.id);
-
-    const normalized = scene.name.trim().toLowerCase();
-    if (sceneNames.has(normalized)) {
-      issues.push({ level: "warning", path: `scenes/${scene.name}`, message: `场景名重复: ${scene.name}` });
-    }
-
-    sceneNames.add(normalized);
-    issues.push(...validateScene(scene));
-  }
 
   if (doc.items.count !== doc.items.items.length) {
     issues.push({

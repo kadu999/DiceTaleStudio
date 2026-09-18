@@ -95,7 +95,6 @@ function main(): void {
     send({
       type: "register_map_objects",
       mapName: MAP_NAME,
-      spawnPoints: [{ id: "Default" }, { id: "NorthEntrance" }],
       objects: objects.map((object) => ({
         id: object.id,
         name: object.name,

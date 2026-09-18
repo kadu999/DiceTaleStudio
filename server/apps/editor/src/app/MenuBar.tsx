@@ -1,6 +1,6 @@
-import { useState } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { ProjectDialog, type ProjectDialogMode } from "./ProjectDialog";
+import { ProjectDialog } from "./ProjectDialog";
+import { SceneDialog } from "./SceneDialog";
 import { useEditorStore } from "../state/editor-store";
 
 /**
@@ -14,8 +14,15 @@ interface MenuBarProps {
 }
 
 export function MenuBar({ compact }: MenuBarProps): React.JSX.Element {
-  const [dialog, setDialog] = useState<ProjectDialogMode>(null);
-  const currentCampaign = useEditorStore((state) => state.campaign.current);
+  // 对话框模式放在 store 里：启动引导也要能弹出它，不能只由菜单驱动
+  const projectDialog = useEditorStore((state) => state.projectDialog);
+  const openProjectDialog = useEditorStore((state) => state.openProjectDialog);
+  const currentProject = useEditorStore((state) => state.project.current);
+  const scenes = useEditorStore((state) => state.scenes);
+  const activeSceneName = useEditorStore((state) => state.activeSceneName);
+  const sceneDialog = useEditorStore((state) => state.sceneDialog);
+  const openSceneDialog = useEditorStore((state) => state.openSceneDialog);
+  const deleteScene = useEditorStore((state) => state.deleteScene);
   const closeProject = useEditorStore((state) => state.closeProject);
   const ui = useEditorStore((state) => state.ui);
   const setUi = useEditorStore((state) => state.setUi);
@@ -36,13 +43,38 @@ export function MenuBar({ compact }: MenuBarProps): React.JSX.Element {
       </span>
 
       <Menu label="工程">
-        <MenuItem label="新建项目…" onSelect={() => setDialog("create")} />
-        <MenuItem label="打开项目…" onSelect={() => setDialog("open")} />
+        <MenuItem label="新建项目…" onSelect={() => openProjectDialog("create")} />
+        <MenuItem label="打开项目…" onSelect={() => openProjectDialog("open")} />
         <MenuSeparator />
         <MenuItem
-          label={currentCampaign === null ? "关闭当前项目" : `关闭项目（${currentCampaign}）`}
-          disabled={currentCampaign === null}
+          label={currentProject === null ? "关闭当前项目" : `关闭项目（${currentProject}）`}
+          disabled={currentProject === null}
           onSelect={closeProject}
+        />
+      </Menu>
+
+      <Menu label="场景">
+        <MenuItem
+          label="新建场景…"
+          disabled={currentProject === null}
+          onSelect={() => openSceneDialog("create")}
+        />
+        <MenuItem
+          label={activeSceneName === null ? "重命名场景…" : `重命名「${activeSceneName}」…`}
+          disabled={activeSceneName === null}
+          onSelect={() => openSceneDialog("rename")}
+        />
+        <MenuItem
+          label={activeSceneName === null ? "删除场景" : `删除「${activeSceneName}」`}
+          disabled={activeSceneName === null || scenes.length <= 1}
+          onSelect={() => {
+            if (
+              activeSceneName !== null &&
+              confirm(`确定删除场景「${activeSceneName}」？该操作会删除场景文件，且不可恢复。`)
+            ) {
+              void deleteScene();
+            }
+          }}
         />
       </Menu>
 
@@ -53,7 +85,7 @@ export function MenuBar({ compact }: MenuBarProps): React.JSX.Element {
 
       <Menu label="视图">
         <MenuItem
-          label={ui.leftOpen ? "隐藏对象容器" : "显示对象容器"}
+          label={ui.leftOpen ? "隐藏场景对象" : "显示场景对象"}
           onSelect={() => setUi({ leftOpen: !ui.leftOpen })}
         />
         <MenuItem
@@ -96,7 +128,8 @@ export function MenuBar({ compact }: MenuBarProps): React.JSX.Element {
         <ModeSwitch mode={mode} onChange={setMode} />
       </div>
 
-      <ProjectDialog mode={dialog} onClose={() => setDialog(null)} />
+      <ProjectDialog mode={projectDialog} onClose={() => openProjectDialog(null)} />
+      <SceneDialog mode={sceneDialog} onClose={() => openSceneDialog(null)} />
     </header>
   );
 }

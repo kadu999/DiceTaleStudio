@@ -129,7 +129,6 @@ describe("运行态端到端（编辑器 → 服务端 → 前端）", () => {
     send(client.socket, {
       type: "register_map_objects",
       mapName: "Map001",
-      spawnPoints: [{ id: "Default" }],
       objects: [
         {
           id: "door_01",
@@ -346,11 +345,11 @@ describe("后端 HTTP 接口", () => {
     const body = (await response.json()) as {
       resourceRoot: string;
       dirs: Record<string, string>;
-      campaignFolders: string[];
+      projectFolders: string[];
     };
     expect(body.resourceRoot).toContain("resources");
-    expect(body.dirs.campaign).toBe("campaigns");
-    expect(body.campaignFolders).toContain("maps");
+    expect(body.dirs.project).toBe("projects");
+    expect(body.projectFolders).toContain("Assets/scenes");
   });
 
   it("/api/resources/index 列出资源并可按类别过滤", async () => {
@@ -372,7 +371,7 @@ describe("后端 HTTP 接口", () => {
     expect(ok.status).toBe(200);
     expect(await ok.text()).toContain("resourceRoot");
 
-    const missing = await fetch(`${baseUrl}/api/resources/raw?id=${encodeURIComponent("campaign:Nope/Nope.dtproj.json")}`);
+    const missing = await fetch(`${baseUrl}/api/resources/raw?id=${encodeURIComponent("project:Nope/project.json")}`);
     expect(missing.status).toBe(404);
   });
 

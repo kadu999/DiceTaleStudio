@@ -2,16 +2,14 @@
   "resourceRoot": "resources",
   "dirs": {
     "config": "config",
-    "campaign": "campaigns"
+    "project": "projects"
   },
-  "campaignFolders": [
-    "config",
-    "maps",
-    "images",
-    "images/maps",
-    "audio",
-    "video",
-    "items"
+  "projectFolders": [
+    "Assets/config",
+    "Assets/scenes",
+    "Assets/images",
+    "Assets/audio",
+    "Assets/video"
   ],
   "server": {
     "host": "0.0.0.0",

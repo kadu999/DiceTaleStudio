@@ -55,7 +55,6 @@ export const playerStateSchema = z.object({
 export const gameStateSchema = z.object({
   currentMap: z.string(),
   players: z.record(z.string(), playerStateSchema),
-  spawnPoints: z.record(z.string(), z.array(z.object({ id: z.string() }))),
   objects: z.record(z.string(), objectStateSchema),
 });
 
@@ -104,7 +103,6 @@ export const actionResultSchema = z.object({
 export const registerMapObjectsSchema = z.object({
   type: z.literal("register_map_objects"),
   mapName: z.string(),
-  spawnPoints: z.array(z.object({ id: z.string() })).optional(),
   objects: z
     .array(
       z.object({

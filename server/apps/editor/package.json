@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "DiceTaleStudio 跑团编辑器（Web，PC + 平板）",
+  "description": "DiceTaleStudio 编辑器（Web，PC + 平板）",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

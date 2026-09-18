@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { DEFAULT_RESOURCE_DIRS, type ResourceDirs } from "./provider";
-import { DEFAULT_CAMPAIGN_FOLDERS, type ResourceKind } from "./ids";
+import { DEFAULT_PROJECT_FOLDERS, type ResourceKind } from "./ids";
 
 /**
  * 应用配置（`resources/config/app.json`）。
@@ -11,7 +11,7 @@ import { DEFAULT_CAMPAIGN_FOLDERS, type ResourceKind } from "./ids";
 // 显式列出每个类别，并用 satisfies 保证与 ResourceKind 一一对应（漏一个就编译失败）
 const dirsSchema = z.object({
   config: z.string().min(1),
-  campaign: z.string().min(1),
+  project: z.string().min(1),
 } satisfies Record<ResourceKind, z.ZodString>);
 
 export const appConfigSchema = z.object({
@@ -19,8 +19,8 @@ export const appConfigSchema = z.object({
   resourceRoot: z.string().min(1).default("resources"),
   /** 各类别在资源根下的子目录名。 */
   dirs: dirsSchema.default(DEFAULT_RESOURCE_DIRS as ResourceDirs),
-  /** 新建跑团时自动创建的子目录（相对跑团根）。 */
-  campaignFolders: z.array(z.string().min(1)).default([...DEFAULT_CAMPAIGN_FOLDERS]),
+  /** 新建项目时自动创建的子目录（相对项目根）。 */
+  projectFolders: z.array(z.string().min(1)).default([...DEFAULT_PROJECT_FOLDERS]),
   server: z
     .object({
       host: z.string().min(1).default("0.0.0.0"),

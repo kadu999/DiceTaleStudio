@@ -1,25 +1,25 @@
 import {
-  campaignFolderId,
-  campaignPath,
-  campaignProjectId,
+  PROJECT_FILE_NAME,
+  PROJECT_SPECIAL_FILES,
   formatResourceId,
   normalizePath,
   parseResourceId,
+  projectFileId,
+  projectFolderId,
+  projectPath,
 } from "./ids";
 import type { ResourceEntry, ResourceProvider } from "./provider";
 
 /**
- * 跑团工程（一个跑团 = 一个文件夹）的读写操作。
+ * 项目（一个项目 = 一个文件夹 + 一个固定名的项目文件）的读写操作。
  *
  * 这些是纯业务操作，只依赖 `ResourceProvider` 抽象，因此浏览器端（HTTP）、
  * 后端（文件系统）、测试（内存）三处行为一致。
  */
 
-/** 跑团概览（编辑器「打开项目」列表用）。 */
-export interface CampaignSummary {
+/** 项目概览（编辑器「打开项目」列表用）。 */
+export interface ProjectSummary {
   readonly name: string;
-  /** 工程文件是否存在（缺失说明目录不完整或不是合法跑团） */
-  readonly hasProject: boolean;
   readonly fileCount: number;
   readonly updatedAt?: string;
 }
@@ -28,7 +28,7 @@ export interface CampaignSummary {
 export interface ResourceTreeNode {
   /** 显示名（最后一段） */
   readonly name: string;
-  /** 跑团内的相对路径（空串表示跑团根） */
+  /** 项目内的相对路径（空串表示项目根） */
   readonly path: string;
   /** 资源逻辑 ID */
   readonly id: string;
@@ -64,30 +64,30 @@ const RESERVED_NAMES = new Set([
 ]);
 
 /**
- * 校验跑团名。返回错误原因；合法时返回 undefined。
+ * 校验项目名。返回错误原因；合法时返回 undefined。
  *
- * 跑团名会直接成为文件夹名，因此必须挡住路径分隔符、Windows 非法字符与保留名。
+ * 项目名会直接成为文件夹名，因此必须挡住路径分隔符、Windows 非法字符与保留名。
  */
-export function validateCampaignName(name: string): string | undefined {
+export function validateProjectName(name: string): string | undefined {
   const trimmed = name.trim();
   if (trimmed.length === 0) {
-    return "跑团名不能为空";
+    return "项目名不能为空";
   }
 
   if (trimmed !== name) {
-    return "跑团名首尾不能有空白字符";
+    return "项目名首尾不能有空白字符";
   }
 
   if (trimmed.length > 64) {
-    return "跑团名不能超过 64 个字符";
+    return "项目名不能超过 64 个字符";
   }
 
   if (/[\\/:*?"<>|]/.test(trimmed)) {
-    return '跑团名不能包含 \\ / : * ? " < > | 等字符';
+    return '项目名不能包含 \\ / : * ? " < > | 等字符';
   }
 
   if (trimmed === "." || trimmed === "..") {
-    return "跑团名不合法";
+    return "项目名不合法";
   }
 
   if (RESERVED_NAMES.has(trimmed.toLowerCase())) {
@@ -97,15 +97,15 @@ export function validateCampaignName(name: string): string | undefined {
   return undefined;
 }
 
-/** 校验跑团内的相对路径（新建文件夹 / 上传文件时用）。 */
-export function validateCampaignRelativePath(path: string): string | undefined {
+/** 校验项目内的相对路径（新建文件夹 / 上传文件时用）。 */
+export function validateProjectRelativePath(path: string): string | undefined {
   const normalized = normalizePath(path).trim();
   if (normalized.length === 0) {
     return "路径不能为空";
   }
 
   if (normalized.startsWith("/") || normalized.includes("/../") || normalized.startsWith("../")) {
-    return "路径不允许越出跑团目录";
+    return "路径不允许越出项目目录";
   }
 
   const segments = normalized.split("/");
@@ -114,7 +114,7 @@ export function validateCampaignRelativePath(path: string): string | undefined {
       return "路径中不能有空的目录名";
     }
 
-    const reason = validateCampaignName(segment);
+    const reason = validateProjectName(segment);
     if (reason !== undefined) {
       return reason;
     }
@@ -123,11 +123,16 @@ export function validateCampaignRelativePath(path: string): string | undefined {
   return undefined;
 }
 
-/** 列出全部跑团（按名称排序）。 */
-export async function listCampaigns(provider: ResourceProvider): Promise<CampaignSummary[]> {
-  const entries = await provider.list("campaign");
-  const byName = new Map<string, ResourceEntry[]>();
+/**
+ * 列出全部项目（按名称排序）。
+ *
+ * **判定标准只有一条：项目文件夹里有 `project.json`。** 没有的目录直接不算项目
+ * （半途创建的目录、只剩资源的残骸都不该出现在「打开项目」列表里）。
+ */
+export async function listProjects(provider: ResourceProvider): Promise<ProjectSummary[]> {
+  const entries = await provider.list("project");
 
+  const byName = new Map<string, ResourceEntry[]>();
   for (const entry of entries) {
     const separator = entry.path.indexOf("/");
     if (separator <= 0) {
@@ -143,49 +148,67 @@ export async function listCampaigns(provider: ResourceProvider): Promise<Campaig
     }
   }
 
-  const summaries: CampaignSummary[] = [];
+  const summaries: ProjectSummary[] = [];
   for (const [name, list] of byName) {
     const files = list.filter((entry) => entry.type === "file");
     const projectEntry = files.find(
-      (entry) => entry.path.slice(name.length + 1) === `${name}.dtproj.json`,
+      (entry) => entry.path.slice(name.length + 1) === PROJECT_FILE_NAME,
     );
+    if (projectEntry === undefined) {
+      continue;
+    }
 
     summaries.push({
       name,
-      hasProject: projectEntry !== undefined,
       fileCount: files.length,
-      ...(projectEntry?.modifiedAt === undefined ? {} : { updatedAt: projectEntry.modifiedAt }),
+      ...(projectEntry.modifiedAt === undefined ? {} : { updatedAt: projectEntry.modifiedAt }),
     });
   }
 
   return summaries.sort((a, b) => a.name.localeCompare(b.name, "zh-Hans-CN"));
 }
 
-/** 读取跑团内的全部资源（扁平列表）。 */
-export async function readCampaignEntries(
+/** 该项目是否存在（= 项目文件夹里有 `project.json`）。 */
+export async function projectExists(
   provider: ResourceProvider,
-  campaign: string,
+  name: string,
+): Promise<boolean> {
+  const reason = validateProjectName(name);
+  if (reason !== undefined) {
+    return false;
+  }
+
+  return provider.exists(projectFileId(name));
+}
+
+/** 读取项目内的全部资源（扁平列表）。 */
+export async function readProjectEntries(
+  provider: ResourceProvider,
+  project: string,
 ): Promise<ResourceEntry[]> {
-  const prefix = `${normalizePath(campaign)}/`;
-  const entries = await provider.list("campaign");
+  const prefix = `${normalizePath(project)}/`;
+  const entries = await provider.list("project");
   return entries.filter((entry) => entry.path.startsWith(prefix));
 }
 
 /**
  * 把扁平资源列表构建成树（编辑器 Assets 面板用）。
  *
- * `folders` 用于把**空目录**也显示出来（新建跑团时会建出标准子目录，
- * 但空目录不会出现在文件列表里）——例如刚创建的跑团也应看到 maps/、images/。
+ * `folders` 用于把**空目录**也显示出来（新建项目时会建出标准子目录，
+ * 但空目录不会出现在文件列表里）——例如刚创建的项目也应看到 maps/、images/。
+ *
+ * `PROJECT_SPECIAL_FILES`（目前是 `project.json`）会被跳过：项目文件是元数据，
+ * 不该混在资源里，更不该让用户从资源面板里把它删掉。
  */
 export function buildResourceTree(
-  campaign: string,
+  project: string,
   entries: readonly ResourceEntry[],
   folders: readonly string[] = [],
 ): ResourceTreeNode[] {
   const root: ResourceTreeNode = {
-    name: campaign,
+    name: project,
     path: "",
-    id: formatResourceId("campaign", campaignPath(campaign)),
+    id: formatResourceId("project", projectPath(project)),
     type: "folder",
     children: [],
   };
@@ -205,7 +228,7 @@ export function buildResourceTree(
     const node: ResourceTreeNode = {
       name,
       path,
-      id: formatResourceId("campaign", campaignPath(campaign, path)),
+      id: formatResourceId("project", projectPath(project, path)),
       type: "folder",
       children: [],
     };
@@ -215,7 +238,7 @@ export function buildResourceTree(
     return node;
   };
 
-  const prefixLength = campaign.length + 1;
+  const prefixLength = project.length + 1;
 
   // 先建出配置里的标准目录（含空目录），再挂文件
   for (const folder of folders) {
@@ -224,6 +247,11 @@ export function buildResourceTree(
 
   for (const entry of entries) {
     const relative = entry.path.slice(prefixLength);
+    // 特殊文件（项目文件）不进资源树：它是项目元数据，不是项目内容
+    if (entry.type === "file" && PROJECT_SPECIAL_FILES.includes(relative)) {
+      continue;
+    }
+
     if (entry.type === "folder") {
       ensureFolder(relative);
       continue;
@@ -260,72 +288,72 @@ function sortTree(node: ResourceTreeNode): void {
   }
 }
 
-export interface CreateCampaignOptions {
-  /** 要自动创建的子目录（相对跑团根）；缺省用配置里的 campaignFolders。 */
+export interface CreateProjectOptions {
+  /** 要自动创建的子目录（相对项目根）；缺省用配置里的 projectFolders。 */
   readonly folders?: readonly string[];
-  /** 工程文件内容（对象会被序列化）。 */
+  /** 项目文件内容（对象会被序列化）。 */
   readonly project: unknown;
 }
 
 /**
- * 创建一个跑团：建立跑团文件夹、写入工程文件、创建标准子目录。
- * 已存在同名跑团时抛错（不覆盖用户数据）。
+ * 创建一个项目：建立项目文件夹、写入项目文件、创建标准子目录。
+ * 已存在同名项目时抛错（不覆盖用户数据）。
  */
-export async function createCampaign(
+export async function createProject(
   provider: ResourceProvider,
   name: string,
-  options: CreateCampaignOptions,
+  options: CreateProjectOptions,
 ): Promise<void> {
-  const reason = validateCampaignName(name);
+  const reason = validateProjectName(name);
   if (reason !== undefined) {
     throw new Error(reason);
   }
 
-  const projectFileId = campaignProjectId(name);
-  if (await provider.exists(projectFileId)) {
-    throw new Error(`跑团「${name}」已存在`);
+  const projectFile = projectFileId(name);
+  if (await provider.exists(projectFile)) {
+    throw new Error(`项目「${name}」已存在`);
   }
 
-  await provider.writeText(projectFileId, `${JSON.stringify(options.project, null, 2)}\n`);
+  await provider.writeText(projectFile, `${JSON.stringify(options.project, null, 2)}\n`);
   for (const folder of options.folders ?? []) {
-    await provider.ensureFolder(campaignFolderId(name, folder));
+    await provider.ensureFolder(projectFolderId(name, folder));
   }
 }
 
-/** 删除整个跑团（连同其全部资源）。 */
-export async function deleteCampaign(
+/** 删除整个项目（连同其全部资源）。 */
+export async function deleteProject(
   provider: ResourceProvider,
   name: string,
 ): Promise<{ removed: number }> {
-  const reason = validateCampaignName(name);
+  const reason = validateProjectName(name);
   if (reason !== undefined) {
     throw new Error(reason);
   }
 
-  const entries = await readCampaignEntries(provider, name);
-  const files = entries.filter((entry) => entry.type === "file");
-  if (files.length === 0) {
-    throw new Error(`跑团「${name}」不存在`);
+  if (!(await provider.exists(projectFileId(name)))) {
+    throw new Error(`项目「${name}」不存在`);
   }
 
-  // 递归删除跑团根目录：文件与空目录一并清掉（provider 的 remove 对目录是递归语义）
-  await provider.remove(formatResourceId("campaign", campaignPath(name)));
-  return { removed: files.length };
+  const entries = await readProjectEntries(provider, name);
+
+  // 递归删除项目根目录：文件与空目录一并清掉（provider 的 remove 对目录是递归语义）
+  await provider.remove(formatResourceId("project", projectPath(name)));
+  return { removed: entries.filter((entry) => entry.type === "file").length };
 }
 
-/** 读取跑团的工程文件内容。 */
-export async function readCampaignProject(
+/** 读取项目的项目文件内容。 */
+export async function readProjectFile(
   provider: ResourceProvider,
   name: string,
 ): Promise<string> {
-  return provider.readText(campaignProjectId(name));
+  return provider.readText(projectFileId(name));
 }
 
-/** 判断某个资源 ID 是否属于某个跑团（编辑器做权限/归属校验用）。 */
-export function belongsToCampaign(id: string, campaign: string): boolean {
+/** 判断某个资源 ID 是否属于某个项目（编辑器做权限/归属校验用）。 */
+export function belongsToProject(id: string, project: string): boolean {
   try {
     const { kind, path } = parseResourceId(id);
-    return kind === "campaign" && path.startsWith(`${campaign}/`);
+    return kind === "project" && path.startsWith(`${project}/`);
   } catch {
     return false;
   }

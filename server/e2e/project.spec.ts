@@ -1,48 +1,34 @@
-import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
+import {
+  dropProject,
+  dropStrayFolder,
+  enterEditor,
+  newProject,
+  openLeftTab,
+  openProject,
+} from "./helpers/editor";
 
 /**
- * 跑团工程：新建 / 打开 / 项目资源面板（Assets）。
+ * 项目：新建 / 打开 / 资源面板（Assets）。
+ *
+ * 项目目录对齐 Unity 模板：项目根只有「项目文件 + `Assets/`」，
+ * 所有资源都在 `Assets/` 下。面板**只读**：素材由人/外部工具提交到指定目录。
  *
  * 每个用例自建数据并自清理，互不依赖。
  */
 
-async function newCampaign(request: APIRequestContext): Promise<string> {
-  const name = `E2E工程${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
-  const response = await request.post("/api/campaigns", { data: { name } });
-  expect(response.ok()).toBeTruthy();
-  return name;
-}
+/** `Assets/` 下预建的标准目录（约定见 @dts/resources 的 PROJECT_FOLDERS）。 */
+const STANDARD_FOLDERS = ["config", "scenes", "images", "audio", "video"];
 
-async function dropCampaign(request: APIRequestContext, name: string): Promise<void> {
-  await request.delete(`/api/campaigns?name=${encodeURIComponent(name)}`);
-}
-
-/** 平板档位下左栏是抽屉、默认收起，先展开再切页签。 */
-async function openLeftTab(page: Page, tab: "assets" | "scenes" | "hierarchy"): Promise<void> {
-  const testId = `tab-${tab}`;
-  if (!(await page.getByTestId(testId).isVisible().catch(() => false))) {
-    await page.getByRole("button", { name: "项目", exact: true }).click();
-  }
-
-  await page.getByTestId(testId).click();
-}
-
-async function openCampaign(page: Page, name: string): Promise<void> {
-  await page.goto("/");
-  await page.getByRole("button", { name: "工程", exact: true }).click();
-  await page.getByRole("menuitem", { name: "打开项目…" }).click();
-  await page.getByTestId("campaign-row").filter({ hasText: name }).first().click();
-}
-
-test.describe("跑团工程", () => {
-  test("新建项目后自动打开，资源面板显示工程文件与标准目录", async ({ page, request }) => {
+test.describe("项目", () => {
+  test("新建项目后自动打开，资源面板显示 Assets 与标准目录", async ({ page, request }) => {
     const name = `E2E新建${Date.now().toString(36)}`;
     try {
-      await page.goto("/");
+      await enterEditor(page);
       await openLeftTab(page, "assets");
 
-      // 未打开工程时给出明确指引，而不是空白面板
-      await expect(page.getByText("还没有打开跑团")).toBeVisible();
+      // 未打开项目时给出明确指引，而不是空白面板
+      await expect(page.getByText("还没有打开项目")).toBeVisible();
 
       await page.getByRole("button", { name: "工程", exact: true }).click();
       await page.getByRole("menuitem", { name: "新建项目…" }).click();
@@ -50,59 +36,149 @@ test.describe("跑团工程", () => {
       await page.getByTestId("confirm-create-project").click();
 
       await openLeftTab(page, "assets");
-      await expect(page.getByText(`项目资源 · ${name}`)).toBeVisible();
+      await expect(page.getByTestId("status-doc")).toHaveText(name);
 
-      const rows = page.getByTestId("asset-row");
-      await expect(rows.filter({ hasText: `${name}.dtproj.json` })).toHaveCount(1);
-      for (const folder of ["maps", "images", "items"]) {
-        await expect(rows.filter({ hasText: folder }).first()).toBeVisible();
+      const treeRows = page.getByTestId("folder-tree-row");
+      const contentRows = page.getByTestId("folder-content-row");
+
+      // 树根就是 Assets（对齐 Unity）：项目名不出现在目录树里
+      await expect(treeRows).toHaveCount(1 + STANDARD_FOLDERS.length);
+      await expect(treeRows.filter({ hasText: "Assets" })).toHaveCount(1);
+      await expect(treeRows.filter({ hasText: name })).toHaveCount(0);
+
+      // 右列默认显示 Assets 的内容
+      await expect(page.getByTestId("folder-breadcrumb")).toHaveText("/");
+      await expect(contentRows).toHaveCount(STANDARD_FOLDERS.length);
+      for (const folder of STANDARD_FOLDERS) {
+        await expect(contentRows.filter({ hasText: folder }).first()).toBeVisible();
       }
+
+      // 项目文件是特殊文件，两侧都不该出现；maps / items 也不再是标准目录
+      await expect(contentRows.filter({ hasText: "project.json" })).toHaveCount(0);
+      await expect(treeRows.filter({ hasText: "project.json" })).toHaveCount(0);
+      await expect(contentRows.filter({ hasText: "maps" })).toHaveCount(0);
+      await expect(contentRows.filter({ hasText: "items" })).toHaveCount(0);
     } finally {
-      await dropCampaign(request, name);
+      await dropProject(request, name);
     }
   });
 
-  test("新建文件夹出现在资源树里，并可删除", async ({ page, request }) => {
-    const campaign = await newCampaign(request);
-    const folder = "第一章";
-    page.on("dialog", (dialog) => {
-      void dialog.accept();
+  test("打开项目对话框只列出有 project.json 的项目", async ({ page, request }) => {
+    const project = await newProject(request);
+    const stray = `E2E残骸${Date.now().toString(36)}`;
+
+    // 造一个只有目录、没有 project.json 的残留
+    const created = await request.post("/api/projects/folder", {
+      data: { project: stray, path: "Assets/scenes" },
     });
+    expect(created.ok()).toBeTruthy();
 
     try {
-      await openCampaign(page, campaign);
-      await openLeftTab(page, "assets");
-      await expect(page.getByText(`项目资源 · ${campaign}`)).toBeVisible();
-
-      // 选中 maps 目录并新建子目录
-      await page.getByTestId("asset-row").filter({ hasText: "maps" }).first().click();
-      await page.getByRole("button", { name: "新建文件夹" }).click();
-      await page.getByTestId("new-folder-input").fill(folder);
-      await page.getByTestId("confirm-new-folder").click();
-
-      const folderRow = page.getByTestId("asset-row").filter({ hasText: folder }).first();
-      await expect(folderRow).toBeVisible();
-      await expect(folderRow).toHaveAttribute("data-path", `maps/${folder}`);
-
-      await page.getByLabel(`删除 ${folder}`).click();
-      await expect(page.getByTestId("asset-row").filter({ hasText: folder })).toHaveCount(0);
-    } finally {
-      await dropCampaign(request, campaign);
-    }
-  });
-
-  test("打开项目对话框列出已有跑团", async ({ page, request }) => {
-    const campaign = await newCampaign(request);
-    try {
-      await page.goto("/");
+      await enterEditor(page);
       await page.getByRole("button", { name: "工程", exact: true }).click();
       await page.getByRole("menuitem", { name: "打开项目…" }).click();
 
-      await expect(
-        page.getByTestId("campaign-row").filter({ hasText: campaign }).first(),
-      ).toBeVisible();
+      await expect(page.getByTestId("project-row").filter({ hasText: project })).toBeVisible();
+      // 没有 project.json 的目录不是项目，不该出现在列表里
+      await expect(page.getByTestId("project-row").filter({ hasText: stray })).toHaveCount(0);
     } finally {
-      await dropCampaign(request, campaign);
+      await dropProject(request, project);
+      await dropStrayFolder(request, stray);
+    }
+  });
+
+  test("素材提交到指定目录后出现在面板里，且面板只读", async ({ page, request }) => {
+    const project = await newProject(request);
+    try {
+      // 资源不由编辑器写入：这里模拟外部把素材提交进项目目录
+      const submitted = await request.put(
+        `/api/resources/raw?id=${encodeURIComponent(`project:${project}/Assets/images/Map001.png`)}`,
+        {
+          headers: { "content-type": "image/png" },
+          data: Buffer.from([137, 80, 78, 71]),
+        },
+      );
+      expect(submitted.ok()).toBeTruthy();
+
+      await enterEditor(page);
+      await openProject(page, project);
+      await openLeftTab(page, "assets");
+
+      // 右列可以逐级往下走：根（Assets）→ images
+      const contentRows = page.getByTestId("folder-content-row");
+      await expect(page.getByTestId("folder-breadcrumb")).toHaveText("/");
+
+      await contentRows.filter({ hasText: "images" }).first().click();
+      await expect(page.getByTestId("folder-breadcrumb")).toHaveText("/images");
+      // 列表里**不显示扩展名**（完整文件名在属性面板里看）
+      await expect(contentRows.filter({ hasText: "Map001" })).toBeVisible();
+      await expect(contentRows.filter({ hasText: "Map001.png" })).toHaveCount(0);
+
+      // 暂时不提供编辑：没有新建 / 导入 / 删除入口
+      await expect(page.getByRole("button", { name: "新建文件夹" })).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "导入资源" })).toHaveCount(0);
+      await expect(page.getByTestId("asset-file-input")).toHaveCount(0);
+      await expect(page.getByLabel(/^删除 /)).toHaveCount(0);
+    } finally {
+      await dropProject(request, project);
+    }
+  });
+
+  test("选中贴图 / 视频可以查看属性（图片尺寸从图片本身读出）", async ({ page, request }) => {
+    const project = await newProject(request);
+    // 一张真的 1×1 PNG：这样「尺寸」只能是从图片本身读出来的
+    const onePixelPng = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==",
+      "base64",
+    );
+    const tinyMp4 = Buffer.from([0, 0, 0, 24, 102, 116, 121, 112, 105, 115, 111, 109]);
+
+    try {
+      const uploads: Array<[string, string, Buffer]> = [
+        ["Assets/images/Map001.png", "image/png", onePixelPng],
+        ["Assets/video/Map002.mp4", "video/mp4", tinyMp4],
+      ];
+      for (const [subPath, contentType, data] of uploads) {
+        const response = await request.put(
+          `/api/resources/raw?id=${encodeURIComponent(`project:${project}/${subPath}`)}`,
+          { headers: { "content-type": contentType }, data },
+        );
+        expect(response.ok()).toBeTruthy();
+      }
+
+      await enterEditor(page);
+      await openProject(page, project);
+      await openLeftTab(page, "assets");
+
+      // 进 images/ 选中贴图（列表里显示的名字不带扩展名）
+      const contentRows = page.getByTestId("folder-content-row");
+      await contentRows.filter({ hasText: "images" }).first().click();
+      await contentRows.filter({ hasText: "Map001" }).first().click();
+
+      // 平板下属性面板是右抽屉，先唤出来
+      if (!(await page.getByTestId("asset-properties").isVisible().catch(() => false))) {
+        await page.getByRole("button", { name: "属性", exact: true }).click();
+      }
+
+      const properties = page.getByTestId("asset-properties");
+      await expect(properties).toBeVisible();
+      await expect(properties).toContainText("Map001.png");
+      await expect(properties).toContainText("Assets/images/Map001.png");
+      await expect(properties).toContainText("PNG 图片");
+      // 尺寸是从图片本身读出来的，不是编的
+      await expect(properties).toContainText("1 × 1");
+      await expect(page.getByTestId("asset-preview-image")).toBeVisible();
+
+      // 换一个目录选视频：属性跟着换，并给出视频预览
+      await page.getByTestId("folder-tree-row").filter({ hasText: "video" }).first().click();
+      await contentRows.filter({ hasText: "Map002" }).first().click();
+
+      await expect(properties).toContainText("Map002.mp4");
+      await expect(properties).toContainText("Assets/video/Map002.mp4");
+      await expect(properties).toContainText("MP4 视频");
+      await expect(page.getByTestId("asset-preview-video")).toHaveCount(1);
+    } finally {
+      await dropProject(request, project);
     }
   });
 });

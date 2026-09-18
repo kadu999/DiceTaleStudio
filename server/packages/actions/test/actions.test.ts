@@ -1,9 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  createEmptyProject,
-  createSceneDoc,
+  createEmptyScene,
   type ComponentDoc,
-  type ProjectDoc,
   type SceneDoc,
 } from "@dts/document";
 import {
@@ -129,7 +127,7 @@ describe("动作图校验", () => {
     type: string;
     params: Record<string, unknown>;
   }): SceneDoc {
-    const scene = createSceneDoc({ name: "Map001", id: "m1" });
+    const scene = createEmptyScene("Map001");
 
     return {
       ...scene,
@@ -154,18 +152,17 @@ describe("动作图校验", () => {
 
   }
 
-  function projectWith(action: {
+  /** 场景是独立文件，校验入口直接吃场景列表。 */
+  function scenesWith(action: {
     id: string;
     type: string;
     params: Record<string, unknown>;
-  }): ProjectDoc {
-    const base = createEmptyProject("t");
-    const second = createSceneDoc({ name: "Map002", id: "m2" });
-    return { ...base, scenes: [sceneWithAction(action), second] };
+  }): SceneDoc[] {
+    return [sceneWithAction(action), createEmptyScene("Map002")];
   }
 
   it("合法动作图没有问题", () => {
-    const project = projectWith({
+    const project = scenesWith({
       id: "a1",
       type: "Teleport",
       params: { range: 1, teleportAllPlayers: false, targetMapName: "Map002", targetMarkerId: "Default" },
@@ -174,72 +171,60 @@ describe("动作图校验", () => {
   });
 
   it("未知动作类型报错", () => {
-    const issues = validateActionGraph(projectWith({ id: "a1", type: "NotAnAction", params: {} }));
+    const issues = validateActionGraph(scenesWith({ id: "a1", type: "NotAnAction", params: {} }));
     expect(issues.some((issue) => issue.level === "error" && /未知动作类型/.test(issue.message))).toBe(true);
   });
 
   it("未实现的动作只给警告", () => {
-    const issues = validateActionGraph(projectWith({ id: "a1", type: "PlayAudio", params: {} }));
+    const issues = validateActionGraph(scenesWith({ id: "a1", type: "PlayAudio", params: {} }));
     expect(issues.every((issue) => issue.level === "warning")).toBe(true);
     expect(issues[0]?.message).toMatch(/尚未实现/);
   });
 
   it("缺少必填参数报错", () => {
     const issues = validateActionGraph(
-      projectWith({ id: "a1", type: "TeleportZone", params: { targetMapName: "", targetMarkerId: "" } }),
+      scenesWith({ id: "a1", type: "TeleportZone", params: { targetMapName: "", targetMarkerId: "" } }),
     );
     expect(issues.filter((issue) => /缺少必填参数/.test(issue.message)).length).toBe(2);
   });
 
-  it("目标场景或标记点不存在时报错（否则运行态会静默失败）", () => {
+  it("目标场景不存在时报错（否则运行态会静默失败）", () => {
     const badScene = validateActionGraph(
-      projectWith({
+      scenesWith({
         id: "a1",
         type: "Teleport",
         params: { range: 1, teleportAllPlayers: true, targetMapName: "Map999", targetMarkerId: "Default" },
       }),
     );
     expect(badScene.some((issue) => /目标场景不存在/.test(issue.message))).toBe(true);
-
-    const badMarker = validateActionGraph(
-      projectWith({
-        id: "a1",
-        type: "Teleport",
-        params: { range: 1, teleportAllPlayers: true, targetMapName: "Map002", targetMarkerId: "Nope" },
-      }),
-    );
-    expect(badMarker.some((issue) => /不存在标记点/.test(issue.message))).toBe(true);
   });
 
   it("目标对象不存在时报错", () => {
     const issues = validateActionGraph(
-      projectWith({ id: "a1", type: "PlayVideo", params: { targetObjectId: "ghost", index: 0 } }),
+      scenesWith({ id: "a1", type: "PlayVideo", params: { targetObjectId: "ghost", index: 0 } }),
     );
     expect(issues.some((issue) => /目标对象不存在/.test(issue.message))).toBe(true);
   });
 
   it("条件形态与组件不匹配时报错（例如 OptionValue 用 Bool 条件）", () => {
-    const project = projectWith({ id: "a1", type: "ShowHide", params: { targetObjectId: "" } });
-    const broken: ProjectDoc = {
-      ...project,
-      scenes: project.scenes.map((scene, index) =>
-        index !== 0
-          ? scene
-          : {
-              ...scene,
-              objects: scene.objects.map((object) => ({
-                ...object,
-                components: object.components.map((component) => ({
-                  ...component,
-                  actions: component.actions.map((action) => ({
-                    ...action,
-                    condition: { valueType: "Bool" as const, op: "Equal" as const, target: true },
-                  })),
+    const scenes = scenesWith({ id: "a1", type: "ShowHide", params: { targetObjectId: "" } });
+    const broken: SceneDoc[] = scenes.map((scene, index) =>
+      index !== 0
+        ? scene
+        : {
+            ...scene,
+            objects: scene.objects.map((object) => ({
+              ...object,
+              components: object.components.map((component) => ({
+                ...component,
+                actions: component.actions.map((action) => ({
+                  ...action,
+                  condition: { valueType: "Bool" as const, op: "Equal" as const, target: true },
                 })),
               })),
-            },
-      ),
-    };
+            })),
+          },
+    );
 
     const issues = validateActionGraph(broken);
     expect(issues.some((issue) => /不支持 Bool 条件/.test(issue.message))).toBe(true);

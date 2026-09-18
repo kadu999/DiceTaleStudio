@@ -115,7 +115,7 @@ describe("文件系统资源实现", () => {
 
   it("读写往返一致，删除时连目录一起清掉", async () => {
     const { provider, dispose } = await withTempProvider();
-    const id = "campaign:__arch_test/__arch_test.dtproj.json";
+    const id = "project:__arch_test/project.json";
 
     try {
       await provider.writeText(id, "{\"hello\":\"世界\"}");
@@ -123,7 +123,7 @@ describe("文件系统资源实现", () => {
       expect(await provider.readText(id)).toBe("{\"hello\":\"世界\"}");
     } finally {
       // 连目录一起清掉：writeText 会自动建出父目录，只删文件会留下空目录
-      await provider.remove("campaign:__arch_test");
+      await provider.remove("project:__arch_test");
       await dispose();
     }
 
@@ -133,10 +133,10 @@ describe("文件系统资源实现", () => {
   it("目录也会被列出（编辑器要能看到空目录）", async () => {
     const { provider, dispose } = await withTempProvider();
     try {
-      await provider.ensureFolder("campaign:C/maps");
+      await provider.ensureFolder("project:C/maps");
 
       // 文件系统会同时列出中间目录（C）与目标目录（C/maps）
-      const entries = await provider.list("campaign");
+      const entries = await provider.list("project");
       const described = entries.map((entry) => `${entry.type}:${entry.path}`);
       expect(described).toContain("folder:C");
       expect(described).toContain("folder:C/maps");
@@ -148,7 +148,7 @@ describe("文件系统资源实现", () => {
 
   it("二进制读写往返一致", async () => {
     const { provider, dispose } = await withTempProvider();
-    const id = "campaign:__arch_test/maps/__arch_test.bytes";
+    const id = "project:__arch_test/maps/__arch_test.bytes";
 
     try {
       const payload = new Uint8Array([1, 2, 3, 250]).buffer;
@@ -172,7 +172,7 @@ describe("文件系统资源实现", () => {
       () =>
         new FsResourceProvider(config.resourceRoot, {
           ...config.dirs,
-          campaign: "C:\\Windows",
+          project: "C:\\Windows",
         }),
     ).toThrow(/不允许是绝对路径/);
   });
@@ -183,7 +183,7 @@ describe("文件系统资源实现", () => {
       () =>
         new FsResourceProvider(config.resourceRoot, {
           ...config.dirs,
-          campaign: "../outside",
+          project: "../outside",
         }),
     ).toThrow(/越出资源根/);
   });

@@ -1,15 +1,16 @@
-import type { ComponentDoc, ProjectDoc, SceneDoc, ValidationIssue } from "@dts/document";
+import type { ComponentDoc, SceneDoc, ValidationIssue } from "@dts/document";
 import { conditionValueTypesFor } from "@dts/document";
 import { findActionType } from "./registry";
 
 /**
  * 动作图校验（依赖动作注册表，因此放在 `@dts/actions`；结构性问题在 `@dts/document`）。
  *
- * 这些错误会阻止编辑器进入运行态：动作 id 无法寻址、目标场景/标记点/对象不存在，
+ * 这些错误会阻止编辑器进入运行态：动作 id 无法寻址、目标场景/对象不存在，
  * 都会让「触发动作」在运行态静默失败——必须在编辑态就拦住。
  *
  * 注意：动作挂在**对象**上，对象挂在**场景**上；`Teleport` 的 `targetMapName`
  * 指的就是目标**场景名**（字段名沿用前端 wire 协议，不改）。
+ * `targetMarkerId`（落点 id）只是透传给前端的字符串，编辑态没有对应数据可校验。
  */
 
 function isBlank(value: unknown): boolean {
@@ -17,7 +18,7 @@ function isBlank(value: unknown): boolean {
 }
 
 function validateComponentActions(
-  project: ProjectDoc,
+  scenes: readonly SceneDoc[],
   scene: SceneDoc,
   objectId: string,
   component: ComponentDoc,
@@ -75,28 +76,17 @@ function validateComponentActions(
       }
     }
 
-    // 目标场景 / 标记点引用
+    // 目标场景引用（传送落点属于运行态，这里只校验场景是否存在）
     if (action.type === "Teleport" || action.type === "TeleportZone") {
       const targetSceneName = action.params.targetMapName;
       if (typeof targetSceneName === "string" && targetSceneName.trim().length > 0) {
-        const targetScene = project.scenes.find((item) => item.name === targetSceneName);
+        const targetScene = scenes.find((item) => item.name === targetSceneName);
         if (targetScene === undefined) {
           issues.push({
             level: "error",
             path: `${path}/params/targetMapName`,
             message: `目标场景不存在: ${targetSceneName}`,
           });
-        } else {
-          const markerId = action.params.targetMarkerId;
-          if (typeof markerId === "string" && markerId.trim().length > 0) {
-            if (!targetScene.spawnPoints.some((spawn) => spawn.id === markerId)) {
-              issues.push({
-                level: "error",
-                path: `${path}/params/targetMarkerId`,
-                message: `目标场景 ${targetSceneName} 上不存在标记点: ${markerId}`,
-              });
-            }
-          }
         }
       }
     }
@@ -119,14 +109,14 @@ function validateComponentActions(
   }
 }
 
-/** 校验整个项目的动作图。 */
-export function validateActionGraph(project: ProjectDoc): ValidationIssue[] {
+/** 校验整个项目的动作图（场景是独立文件，所以直接传场景列表）。 */
+export function validateActionGraph(scenes: readonly SceneDoc[]): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
 
-  for (const scene of project.scenes) {
+  for (const scene of scenes) {
     for (const object of scene.objects) {
       for (const component of object.components) {
-        validateComponentActions(project, scene, object.id, component, issues);
+        validateComponentActions(scenes, scene, object.id, component, issues);
       }
     }
   }

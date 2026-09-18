@@ -124,11 +124,12 @@ function drawBackground(context: CanvasRenderingContext2D, input: SceneRenderInp
   context.fillStyle = input.background ?? DEFAULT_BACKGROUND;
   context.fillRect(0, 0, input.cssWidth, input.cssHeight);
 
-  if (input.image != null) {
+  // 有地图区域才铺棋盘：没给 imageSize（例如项目里还没有场景）时不该画出
+  // 一个「看起来像地图」的区域，否则「什么都没有」看起来就像「有个空地图」
+  if (input.image != null || input.imageSize === undefined) {
     return;
   }
 
-  // 无贴图时铺棋盘，直观表达「这里还没有地图」
   for (let y = 0; y < input.cssHeight; y += CHECKER_SIZE) {
     for (let x = 0; x < input.cssWidth; x += CHECKER_SIZE) {
       const light = ((x / CHECKER_SIZE + y / CHECKER_SIZE) | 0) % 2 === 0;

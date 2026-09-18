@@ -7,17 +7,16 @@ import type {
   MapDataDoc,
   NormPosition,
   ObjectKind,
-  ProjectDoc,
   SceneDoc,
   SceneObjectDoc,
-  SpawnPointDoc,
 } from "./types";
 
 /**
  * 文档修改命令（纯函数，作用于 immer draft）。
  *
- * 层级：项目 → 场景 → 对象 → 组件 → 动作。
- * **对象一律挂在场景上**（`scene.objects`），地图也只是其中 kind = "Map" 的一个对象。
+ * 层级：场景 → 对象 → 组件 → 动作。
+ * **对象一律挂在场景上**（`scene.objects`），地图也只是其中 kind = "Map" 的一个对象；
+ * 场景本身不再是工程文件里的一项，增删改名是调用方的文件操作，这里只管「按名字找」。
  *
  * 所有编辑都经这里 → 由 `DocumentHistory.apply` 记录补丁 → 自动获得撤销/重做。
  * 命令返回 `false` 表示未产生变更（历史不会入栈）。
@@ -31,10 +30,6 @@ export function createId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}${idCounter.toString(36)}${Math.random()
     .toString(36)
     .slice(2, 6)}`;
-}
-
-export function findScene(doc: Draft<ProjectDoc>, sceneId: string): Draft<SceneDoc> | undefined {
-  return doc.scenes.find((scene) => scene.id === sceneId);
 }
 
 export function findObject(scene: Draft<SceneDoc>, objectId: string): Draft<SceneObjectDoc> | undefined {
@@ -352,15 +347,33 @@ export function moveAction(
 
 // ---------------------------------------------------------------- 场景
 
-/** 场景名是否已被占用（大小写不敏感；场景名将来会作为文件名，必须唯一）。 */
-export function isSceneNameTaken(doc: ProjectDoc, name: string, exceptId?: string): boolean {
+/**
+ * 按名字找场景（传送动作按场景名引用目标）。
+ *
+ * 场景名就是文件名，所以查找要 trim + 大小写不敏感：磁盘上跨平台大小写规则不一致，
+ * 用严格比较会让「Map001」和「map001」变成两个都打不开的引用。
+ */
+export function findScene(scenes: readonly SceneDoc[], name: string): SceneDoc | undefined {
   const normalized = name.trim().toLowerCase();
-  return doc.scenes.some(
-    (scene) => scene.id !== exceptId && scene.name.trim().toLowerCase() === normalized,
-  );
+  return scenes.find((scene) => scene.name.trim().toLowerCase() === normalized);
 }
 
-/** 场景名合法性：与跑团名同样的限制（会作为文件名与传送目标名）。 */
+/** 场景名是否已被占用（trim + 大小写不敏感；`exceptName` 用于改名时排除自身）。 */
+export function isSceneNameTaken(
+  scenes: readonly SceneDoc[],
+  name: string,
+  exceptName?: string,
+): boolean {
+  const found = findScene(scenes, name);
+  if (found === undefined) {
+    return false;
+  }
+
+  // 改名时允许「占用者就是自己」
+  return exceptName === undefined || found.name.trim().toLowerCase() !== exceptName.trim().toLowerCase();
+}
+
+/** 场景名合法性：与项目名同样的限制；**场景名会直接成为文件名**，非法字符必须挡在这里。 */
 export function validateSceneName(name: string): string | undefined {
   const trimmed = name.trim();
   if (trimmed.length === 0) {
@@ -380,87 +393,6 @@ export function validateSceneName(name: string): string | undefined {
   }
 
   return undefined;
-}
-
-/** 追加一个场景。 */
-export function addScene(doc: Draft<ProjectDoc>, scene: SceneDoc): void {
-  doc.scenes.push(scene as Draft<SceneDoc>);
-}
-
-/** 删除场景，返回是否删掉了。 */
-export function removeScene(doc: Draft<ProjectDoc>, sceneId: string): boolean {
-  const index = doc.scenes.findIndex((scene) => scene.id === sceneId);
-  if (index < 0) {
-    return false;
-  }
-
-  doc.scenes.splice(index, 1);
-  return true;
-}
-
-/** 重命名场景。 */
-export function renameScene(doc: Draft<ProjectDoc>, sceneId: string, name: string): boolean {
-  const scene = doc.scenes.find((item) => item.id === sceneId);
-  if (scene === undefined || scene.name === name) {
-    return false;
-  }
-
-  scene.name = name;
-  return true;
-}
-
-/** 按名字找场景（传送动作按场景名引用目标）。 */
-export function findSceneByName(doc: ProjectDoc, name: string): SceneDoc | undefined {
-  const normalized = name.trim().toLowerCase();
-  return doc.scenes.find((scene) => scene.name.trim().toLowerCase() === normalized);
-}
-
-// ---------------------------------------------------------------- 出生点
-
-export function addSpawnPoint(scene: Draft<SceneDoc>, spawnPoint: SpawnPointDoc): boolean {
-  if (scene.spawnPoints.some((item) => item.id === spawnPoint.id)) {
-    return false;
-  }
-
-  scene.spawnPoints.push(spawnPoint as Draft<SpawnPointDoc>);
-  return true;
-}
-
-export function removeSpawnPoint(scene: Draft<SceneDoc>, spawnId: string): boolean {
-  const index = scene.spawnPoints.findIndex((item) => item.id === spawnId);
-  if (index < 0) {
-    return false;
-  }
-
-  scene.spawnPoints.splice(index, 1);
-  return true;
-}
-
-export function updateSpawnPoint(
-  scene: Draft<SceneDoc>,
-  spawnId: string,
-  patch: Partial<Omit<SpawnPointDoc, "id">>,
-): boolean {
-  const spawn = scene.spawnPoints.find((item) => item.id === spawnId);
-  if (spawn === undefined) {
-    return false;
-  }
-
-  let changed = false;
-  if (patch.name !== undefined && patch.name !== spawn.name) {
-    spawn.name = patch.name;
-    changed = true;
-  }
-
-  if (
-    patch.position !== undefined &&
-    (patch.position.x !== spawn.position.x || patch.position.y !== spawn.position.y)
-  ) {
-    spawn.position = patch.position;
-    changed = true;
-  }
-
-  return changed;
 }
 
 // ---------------------------------------------------------------- 地图对象数据

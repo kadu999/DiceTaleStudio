@@ -3,19 +3,22 @@ import type { RleRun } from "@dts/grid";
 /**
  * 编辑器文档模型。
  *
- * 层级关系（**场景是容器，地图只是场景里的一个对象**）：
+ * 层级关系（**场景是容器，地图只是场景里的一个对象**；**场景各自成文件**）：
  *
  * ```
- * 项目（一个跑团 = 一个工程文件）
- * └─ 场景 SceneDoc                 ← 所有对象都在场景上
- *    ├─ 对象 SceneObjectDoc[]      ← 地图、门、宝箱、玩家、事件…都只是这里的普通对象
- *    │  ├─ 地图对象（kind = "Map"）← 携带贴图 + 网格数据
- *    │  └─ 其它对象                 ← 携带若干能力组件与动作
- *    └─ 出生点 SpawnPointDoc[]
+ * 项目（一个项目 = 一个文件夹 + 一个 `project.json`）
+ * ├─ 项目级数据（道具库…）           ← `project.json` 里只有这些
+ * └─ 场景（每个场景 = `Assets/scenes/<场景名>.json`，场景名就是文件名）
+ *    └─ 对象 SceneObjectDoc[]       ← 所有对象都在场景上
+ *       ├─ 地图对象（kind = "Map"） ← 携带贴图 + 网格数据
+ *       └─ 其它对象                 ← 携带若干能力组件与动作
  * ```
  *
  * 关键约定：**对象挂在场景上，不挂在地图上**——所以没有地图也能建对象；
  * 地图只是众多对象之一，且可以有多个（例如分层地图）或一个都没有。
+ *
+ * 为什么场景要拆成独立文件：场景名即文件名，重命名/删除就是文件操作，
+ * 多场景协作时也不会因为共用一个 `project.json` 而互相冲突。
  *
  * 其它约定：
  * - 坐标一律是**归一化图片坐标 `[0,1]`，y 向下**（与后端协议、前端上报一致）；
@@ -23,13 +26,13 @@ import type { RleRun } from "@dts/grid";
  * - 图片/音频/视频用**资源逻辑 ID**引用，不存路径。
  */
 
-export const DOCUMENT_FORMAT_VERSION = 2;
+export const DOCUMENT_FORMAT_VERSION = 4;
 
 /** 网格行序：`bottom-up` 表示 cells 第 0 行是图片最下面一行（与 Unity GridMap 一致）。 */
 export type RowOrder = "bottom-up";
 
 export interface ImageRef {
-  /** 资源逻辑 ID，例如 `campaign:我的跑团/images/maps/Map001.png`。 */
+  /** 资源逻辑 ID，例如 `project:我的项目/Assets/images/Map001.png`。 */
   readonly id: string;
   readonly width: number;
   readonly height: number;
@@ -49,12 +52,6 @@ export interface CellRuns {
 export interface NormPosition {
   readonly x: number;
   readonly y: number;
-}
-
-export interface SpawnPointDoc {
-  readonly id: string;
-  readonly name: string;
-  readonly position: NormPosition;
 }
 
 /** 动作实例（挂在组件上，与前端 `BackendComponent.actions` 一一对齐）。 */
@@ -111,13 +108,24 @@ export interface SceneObjectDoc {
   readonly map?: MapDataDoc;
 }
 
-/** 场景：对象容器（地图也只是它的一个对象）。 */
+/** 项目文件（project.json）：只有项目级数据；场景在 Assets/scenes/ 下各自成文件。 */
+export interface ProjectDoc {
+  readonly formatVersion: number;
+  readonly name: string;
+  readonly items: ItemLibraryDoc;
+}
+
+/** 场景文件（Assets/scenes/<场景名>.json）的内容：场景名就是文件名，文件里不存名字。 */
+export interface SceneFileDoc {
+  readonly formatVersion: number;
+  readonly objects: SceneObjectDoc[];
+}
+
+/** 内存里的场景 = 场景名（= 文件名）+ 文件内容。 */
 export interface SceneDoc {
-  readonly id: string;
   readonly name: string;
   /** ★ 所有对象都在场景上 */
   readonly objects: SceneObjectDoc[];
-  readonly spawnPoints: SpawnPointDoc[];
 }
 
 export interface ItemDef {
@@ -135,12 +143,4 @@ export interface ItemLibraryDoc {
   readonly updatedAt: string;
   readonly count: number;
   readonly items: ItemDef[];
-}
-
-/** 编辑项目文件（`*.dtproj.json`）。 */
-export interface ProjectDoc {
-  readonly formatVersion: number;
-  readonly name: string;
-  readonly scenes: SceneDoc[];
-  readonly items: ItemLibraryDoc;
 }

@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import {
   RESOURCE_KINDS,
@@ -126,6 +126,35 @@ export class FsResourceProvider implements ResourceProvider {
     await rm(this.pathFor(id), { force: true, recursive: true });
   }
 
+  /**
+   * 重命名资源（文件或目录）。
+   *
+   * 校验顺序与错误消息跟内存实现一致：类别一致 → 源存在 → 目标不存在。
+   * **绝不覆盖用户数据**：目标已存在时直接抛错，磁盘上不做任何动作。
+   * 重命名场景（`Assets/scenes/<场景名>.json`）就靠它——只搬文件，内容不重写。
+   */
+  async rename(fromId: string, toId: string): Promise<void> {
+    const from = parseResourceId(fromId);
+    const to = parseResourceId(toId);
+    if (from.kind !== to.kind) {
+      throw new Error(`重命名两端类别必须一致: ${fromId} → ${toId}`);
+    }
+
+    // pathFor 顺带做越权校验；下面两个 stat 都按「路径是否存在」判断，目录同样算存在
+    const fromPath = this.pathFor(fromId);
+    const toPath = this.pathFor(toId);
+    if (!(await existsAt(fromPath))) {
+      throw new Error(`资源不存在: ${fromId}`);
+    }
+
+    if (await existsAt(toPath)) {
+      throw new Error(`资源已存在: ${toId}`);
+    }
+
+    await mkdir(dirname(toPath), { recursive: true });
+    await rename(fromPath, toPath);
+  }
+
   private baseFor(kind: ResourceKind): string {
     return resolve(this.root, this.dirs[kind]);
   }
@@ -156,5 +185,19 @@ export class FsResourceProvider implements ResourceProvider {
         throw new Error(`资源配置目录越出资源根: ${kind} = ${dir}`);
       }
     }
+  }
+}
+
+/**
+ * 路径是否存在（不管它是文件还是目录）。
+ *
+ * 不能复用 `provider.exists`：那个方法按「是不是文件」回答，重命名目录时会被判成不存在。
+ */
+async function existsAt(path: string): Promise<boolean> {
+  try {
+    await stat(path);
+    return true;
+  } catch {
+    return false;
   }
 }

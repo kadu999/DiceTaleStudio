@@ -1,0 +1,180 @@
+import { expect, type APIRequestContext, type Page } from "@playwright/test";
+
+/**
+ * E2E 公共操作。
+ *
+ * 编辑器启动时会跑一次**启动引导**：自动打开上次的项目 / 一个项目都没有时弹「新建项目」/
+ * 有项目但没记录时弹「打开项目」列表。所以用例入口统一走 `gotoEditor`，先等引导跑完
+ * （`data-bootstrapped="true"`），否则启动对话框可能在点击中途冒出来把点击吃掉。
+ */
+
+export type LeftTab = "assets" | "hierarchy";
+
+/** 用接口建一个真项目（含 `project.json`），返回项目名。 */
+export async function newProject(request: APIRequestContext): Promise<string> {
+  const name = `E2E项目${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+  const response = await request.post("/api/projects", { data: { name } });
+  expect(response.ok()).toBeTruthy();
+  return name;
+}
+
+/** 删除整个项目（连同它的目录）。 */
+export async function dropProject(request: APIRequestContext, name: string): Promise<void> {
+  await request.delete(`/api/projects?name=${encodeURIComponent(name)}`);
+}
+
+/**
+ * 删掉一个**不是项目**的目录（没有 `project.json`，接口不认它是项目）。
+ * 用于清理「半途创建」的残留目录。
+ */
+export async function dropStrayFolder(request: APIRequestContext, name: string): Promise<void> {
+  await request.delete(`/api/resources/raw?id=${encodeURIComponent(`project:${name}`)}`);
+}
+
+/** 打开编辑器，并等启动引导跑完。 */
+export async function gotoEditor(page: Page): Promise<void> {
+  await page.goto("/");
+  await waitForBootstrap(page);
+}
+
+export async function waitForBootstrap(page: Page): Promise<void> {
+  await expect(page.locator('[data-bootstrapped="true"]')).toBeVisible();
+}
+
+/** 启动引导弹出了哪种对话框（`create` / `open` / `none`）——引导结束后才可信。 */
+export async function startupDialogMode(page: Page): Promise<string> {
+  const attribute = await page.locator("[data-bootstrapped]").getAttribute("data-project-dialog");
+  return attribute ?? "none";
+}
+
+/** 把启动引导弹出的对话框关掉（用例自己决定要打开哪个项目）。 */
+export async function dismissStartupDialog(page: Page): Promise<void> {
+  if ((await startupDialogMode(page)) === "none") {
+    return;
+  }
+
+  await page.getByTestId("project-dialog-cancel").click();
+  await expect(page.getByTestId("project-dialog")).toBeHidden();
+}
+
+/** 进入编辑器，并且不让启动对话框挡路。 */
+export async function enterEditor(page: Page): Promise<void> {
+  await gotoEditor(page);
+  await dismissStartupDialog(page);
+}
+
+/** 左栏在平板档位下是抽屉、默认收起，先展开再切页签。 */
+export async function openLeftTab(page: Page, tab: LeftTab): Promise<void> {
+  const testId = `tab-${tab}`;
+  if (!(await page.getByTestId(testId).isVisible().catch(() => false))) {
+    await page.getByRole("button", { name: "项目", exact: true }).click();
+  }
+
+  await page.getByTestId(testId).click();
+}
+
+/** 从「工程 → 打开项目」里打开指定项目。 */
+export async function openProject(page: Page, name: string): Promise<void> {
+  await page.getByRole("button", { name: "工程", exact: true }).click();
+  await page.getByRole("menuitem", { name: "打开项目…" }).click();
+  await page.getByTestId("project-row").filter({ hasText: name }).first().click();
+  await expect(page.getByTestId("status-doc")).toHaveText(name);
+}
+
+/** 用界面新建一个项目（会自动打开它并记入「上次打开」）。 */
+export async function createProjectViaUi(page: Page, name: string): Promise<void> {
+  await page.getByRole("button", { name: "工程", exact: true }).click();
+  await page.getByRole("menuitem", { name: "新建项目…" }).click();
+  await page.getByTestId("project-name-input").fill(name);
+  await page.getByTestId("confirm-create-project").click();
+  await expect(page.getByTestId("status-doc")).toHaveText(name);
+}
+
+/**
+ * 造一个场景（内存形状：场景名 + 内容）。场景名就是 `Assets/scenes/` 下的文件名。
+ */
+export function sceneDoc(
+  name: string,
+  objects: readonly Record<string, unknown>[] = [],
+): Record<string, unknown> {
+  return { name, objects };
+}
+
+/** 造一个场景里的普通对象（形状与 `createSceneObject` 一致，无组件无动作）。 */
+export function sceneObjectDoc(name: string, kind = "SceneObject"): Record<string, unknown> {
+  return {
+    id: `object_${name}`,
+    name,
+    kind,
+    position: null,
+    rotation: 0,
+    components: [],
+  };
+}
+
+/** 造一个地图对象（地图只是场景里的对象；贴图与场景同名，放 `Assets/images/`）。 */
+export function mapObjectDoc(
+  project: string,
+  sceneName: string,
+  name = `${sceneName} 地图`,
+): Record<string, unknown> {
+  return {
+    ...sceneObjectDoc(name, "Map"),
+    map: {
+      image: {
+        id: `project:${project}/Assets/images/${sceneName}.png`,
+        width: 1920,
+        height: 1080,
+      },
+      grid: { width: 64, height: 36, cellSize: 1 },
+      rowOrder: "bottom-up",
+      cells: { encoding: "rle", runs: [[0, 64 * 36]] },
+    },
+  };
+}
+
+/**
+ * 直接往盘上写工程文件与场景文件。
+ *
+ * 编辑器目前**只读**（对象内容不能改，场景只有建 / 删 / 改名三个菜单动作），
+ * 所以用例要先把内容造在盘上，再从编辑器里读回来——这同时也验证了
+ * 「`project.json`（v3，只有项目级数据）+ `Assets/scenes/*.json` 会被正确读出」。
+ */
+export async function seedProjectDoc(
+  request: APIRequestContext,
+  project: string,
+  scenes: readonly Record<string, unknown>[],
+): Promise<void> {
+  // 工程文件：v4 只有项目级数据，场景不在里面
+  const doc = {
+    formatVersion: 4,
+    name: project,
+    items: { source: "item.xlsx", updatedAt: "2026-09-18", count: 0, items: [] },
+  };
+
+  const projectResponse = await request.put(
+    `/api/resources/text?id=${encodeURIComponent(`project:${project}/project.json`)}`,
+    {
+      headers: { "content-type": "text/plain; charset=utf-8" },
+      data: `${JSON.stringify(doc, null, 2)}\n`,
+    },
+  );
+  expect(projectResponse.ok()).toBeTruthy();
+
+  // 场景文件：场景名就是文件名，文件内容里不存名字
+  for (const scene of scenes) {
+    const name = String(scene.name);
+    const file = { formatVersion: 4, objects: scene.objects ?? [] };
+
+    const response = await request.put(
+      `/api/resources/text?id=${encodeURIComponent(
+        `project:${project}/Assets/scenes/${name}.json`,
+      )}`,
+      {
+        headers: { "content-type": "text/plain; charset=utf-8" },
+        data: `${JSON.stringify(file, null, 2)}\n`,
+      },
+    );
+    expect(response.ok()).toBeTruthy();
+  }
+}

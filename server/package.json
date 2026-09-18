@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "version": "0.0.0",
-  "description": "DiceTaleStudio 跑团编辑器（workspace 根）",
+  "description": "DiceTaleStudio 编辑器（workspace 根）",
   "scripts": {
     "dev": "pnpm --parallel --filter @dts/editor --filter @dts/backend dev",
     "dev:editor": "pnpm --filter @dts/editor dev",

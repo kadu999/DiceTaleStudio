@@ -26,7 +26,7 @@ Thumbs.db
 !.vscode/extensions.json
 
 # 大体积二进制资源：默认不入库，需要时显式 git add -f（详见 server/README.md）
-server/resources/video/
-server/resources/audio/
-server/resources/images/maps/*.png
-server/resources/images/textures/*.png
+# 素材按「一个项目一个文件夹」放在 projects/<项目>/Assets/ 下，所以按目录忽略
+server/resources/projects/*/Assets/audio/
+server/resources/projects/*/Assets/video/
+server/resources/projects/*/Assets/images/

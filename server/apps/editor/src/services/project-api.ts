@@ -1,12 +1,12 @@
 import type { ResourceEntry } from "@dts/resources";
 
 /**
- * 跑团工程 HTTP 客户端。
+ * 项目 HTTP 客户端。
  *
  * 编辑器不直接碰文件系统，所有资源访问都经后端 `/api/*`。
  */
 
-export interface CampaignSummary {
+export interface ProjectSummary {
   readonly name: string;
   readonly hasProject: boolean;
   readonly fileCount: number;
@@ -53,14 +53,14 @@ async function request<T>(input: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
-export const campaignApi = {
-  async list(): Promise<CampaignSummary[]> {
-    const body = await request<{ campaigns: CampaignSummary[] }>("/api/campaigns");
-    return body.campaigns;
+export const projectApi = {
+  async list(): Promise<ProjectSummary[]> {
+    const body = await request<{ projects: ProjectSummary[] }>("/api/projects");
+    return body.projects;
   },
 
   async create(name: string): Promise<void> {
-    await request("/api/campaigns", {
+    await request("/api/projects", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ name }),
@@ -68,21 +68,21 @@ export const campaignApi = {
   },
 
   async remove(name: string): Promise<void> {
-    await request(`/api/campaigns?name=${encodeURIComponent(name)}`, { method: "DELETE" });
+    await request(`/api/projects?name=${encodeURIComponent(name)}`, { method: "DELETE" });
   },
 
   async tree(name: string): Promise<ResourceTreeNode[]> {
     const body = await request<{ tree: ResourceTreeNode[] }>(
-      `/api/campaigns/tree?name=${encodeURIComponent(name)}`,
+      `/api/projects/tree?name=${encodeURIComponent(name)}`,
     );
     return body.tree;
   },
 
-  async createFolder(campaign: string, path: string): Promise<void> {
-    await request("/api/campaigns/folder", {
+  async createFolder(project: string, path: string): Promise<void> {
+    await request("/api/projects/folder", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ campaign, path }),
+      body: JSON.stringify({ project, path }),
     });
   },
 
@@ -118,6 +118,15 @@ export const campaignApi = {
 
   async deleteResource(id: string): Promise<void> {
     await request(`/api/resources/raw?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+  },
+
+  /** 重命名资源（场景文件改名用）。服务端不覆盖已有文件，重名会报错。 */
+  async renameResource(from: string, to: string): Promise<void> {
+    await request("/api/resources/rename", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ from, to }),
+    });
   },
 };
 

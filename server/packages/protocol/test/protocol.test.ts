@@ -21,7 +21,6 @@ describe("协议：前端 → 服务端", () => {
     const registered = parseClientToServer({
       type: "register_map_objects",
       mapName: "Map001",
-      spawnPoints: [{ id: "Default" }],
       objects: [
         {
           id: "door_01",
@@ -101,7 +100,6 @@ describe("协议：服务端 → 前端", () => {
     const snapshot = {
       currentMap: "Map001",
       players: { p1: { name: "调查员", position: { x: 0.5, y: 0.5 }, mapName: "Map001" } },
-      spawnPoints: { Map001: [{ id: "Default" }] },
       objects: {
         door_01: {
           name: "木门",
@@ -142,7 +140,7 @@ describe("协议：编辑器 ↔ 服务端", () => {
     const snapshot = parseServerToEditor({
       type: "editor_snapshot",
       clientConnected: false,
-      state: { currentMap: "", players: {}, spawnPoints: {}, objects: {} },
+      state: { currentMap: "", players: {}, objects: {} },
     });
     expect(snapshot.type).toBe("editor_snapshot");
 

@@ -5,13 +5,13 @@ import { fileURLToPath } from "node:url";
 import { createEmptyProject } from "@dts/document";
 import {
   buildResourceTree,
-  campaignFolderId,
-  createCampaign,
-  deleteCampaign,
-  listCampaigns,
+  createProject,
+  deleteProject,
+  listProjects,
   parseResourceId,
-  readCampaignEntries,
-  validateCampaignRelativePath,
+  projectFolderId,
+  readProjectEntries,
+  validateProjectRelativePath,
   type ResourceProvider,
 } from "@dts/resources";
 import type { LogLevel } from "../ws/hub";
@@ -134,16 +134,16 @@ export function createHttpServer(options: HttpServerOptions): Server {
         sendJson(response, 200, {
           resourceRoot: config.resourceRoot,
           dirs: config.dirs,
-          campaignFolders: config.app.campaignFolders,
+          projectFolders: config.app.projectFolders,
           defaultCellPixels: config.app.defaultCellPixels,
           usingDefaults: config.usingDefaults,
         });
         return;
 
-      // ---------------------------------------------------------- 跑团工程
-      case "/api/campaigns": {
+      // ---------------------------------------------------------- 项目
+      case "/api/projects": {
         if (request.method === "GET") {
-          sendJson(response, 200, { campaigns: await listCampaigns(provider) });
+          sendJson(response, 200, { projects: await listProjects(provider) });
           return;
         }
 
@@ -151,8 +151,8 @@ export function createHttpServer(options: HttpServerOptions): Server {
           const body = await readJsonBody(request);
           const name = typeof body.name === "string" ? body.name.trim() : "";
           try {
-            await createCampaign(provider, name, {
-              folders: config.app.campaignFolders,
+            await createProject(provider, name, {
+              folders: config.app.projectFolders,
               project: createEmptyProject(name),
             });
           } catch (error) {
@@ -162,7 +162,7 @@ export function createHttpServer(options: HttpServerOptions): Server {
             return;
           }
 
-          log("info", `已创建跑团: ${name}`);
+          log("info", `已创建项目: ${name}`);
           sendJson(response, 201, { ok: true, name });
           return;
         }
@@ -170,8 +170,8 @@ export function createHttpServer(options: HttpServerOptions): Server {
         if (request.method === "DELETE") {
           const name = url.searchParams.get("name") ?? "";
           try {
-            const result = await deleteCampaign(provider, name);
-            log("info", `已删除跑团: ${name}（清理 ${result.removed} 个文件）`);
+            const result = await deleteProject(provider, name);
+            log("info", `已删除项目: ${name}（清理 ${result.removed} 个文件）`);
             sendJson(response, 200, { ok: true, name, removed: result.removed });
           } catch (error) {
             sendJson(response, 400, {
@@ -186,39 +186,39 @@ export function createHttpServer(options: HttpServerOptions): Server {
         return;
       }
 
-      case "/api/campaigns/tree": {
+      case "/api/projects/tree": {
         const name = url.searchParams.get("name") ?? "";
         if (name.length === 0) {
           sendJson(response, 400, { error: "缺少 name 参数" });
           return;
         }
 
-        const entries = await readCampaignEntries(provider, name);
-        // 不存在的跑团返回空树：否则会把「标准子目录」凭空画出来，让人以为工程还在
+        const entries = await readProjectEntries(provider, name);
+        // 不存在的项目返回空树：否则会把「标准子目录」凭空画出来，让人以为项目还在
         sendJson(response, 200, {
           name,
           exists: entries.length > 0,
-          tree: entries.length === 0 ? [] : buildResourceTree(name, entries, config.app.campaignFolders),
+          tree: entries.length === 0 ? [] : buildResourceTree(name, entries, config.app.projectFolders),
         });
         return;
       }
 
-      case "/api/campaigns/folder": {
+      case "/api/projects/folder": {
         if (request.method !== "POST") {
           sendJson(response, 405, { error: `不支持的方法: ${request.method}` });
           return;
         }
 
         const body = await readJsonBody(request);
-        const campaign = typeof body.campaign === "string" ? body.campaign : "";
+        const project = typeof body.project === "string" ? body.project : "";
         const folderPath = typeof body.path === "string" ? body.path : "";
-        const reason = validateCampaignRelativePath(folderPath);
-        if (campaign.length === 0 || reason !== undefined) {
-          sendJson(response, 400, { error: reason ?? "缺少 campaign 参数" });
+        const reason = validateProjectRelativePath(folderPath);
+        if (project.length === 0 || reason !== undefined) {
+          sendJson(response, 400, { error: reason ?? "缺少 project 参数" });
           return;
         }
 
-        const id = campaignFolderId(campaign, folderPath);
+        const id = projectFolderId(project, folderPath);
         await provider.ensureFolder(id);
         log("info", `已创建目录: ${id}`);
         sendJson(response, 201, { ok: true, id });
@@ -296,6 +296,35 @@ export function createHttpServer(options: HttpServerOptions): Server {
 
         response.writeHead(200, { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" });
         response.end(await provider.readText(id));
+        return;
+      }
+
+      case "/api/resources/rename": {
+        if (request.method !== "POST") {
+          sendJson(response, 405, { error: `不支持的方法: ${request.method}` });
+          return;
+        }
+
+        const body = await readJsonBody(request);
+        const from = typeof body.from === "string" ? body.from.trim() : "";
+        const to = typeof body.to === "string" ? body.to.trim() : "";
+        if (from.length === 0 || to.length === 0) {
+          sendJson(response, 400, { error: "缺少 from / to 参数" });
+          return;
+        }
+
+        try {
+          // 类别不同 / 源不存在 / 目标已存在都由 provider 抛错，原样转成 400
+          await provider.rename(from, to);
+        } catch (error) {
+          sendJson(response, 400, {
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return;
+        }
+
+        log("info", `资源已重命名: ${from} → ${to}`);
+        sendJson(response, 200, { ok: true, id: to });
         return;
       }
 

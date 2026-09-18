@@ -128,10 +128,6 @@ export class RuntimeHub {
 
       case "register_map_objects": {
         this.state.registerObjects(message.mapName, message.objects ?? []);
-        if (message.spawnPoints !== undefined) {
-          this.state.registerSpawnPoints(message.mapName, message.spawnPoints);
-        }
-
         this.log("info", `前端上报地图对象: ${message.mapName}（${message.objects?.length ?? 0} 个）`);
         this.pushSnapshot();
         break;

@@ -5,7 +5,6 @@ import {
   addAction,
   addComponent,
   addObject,
-  addSpawnPoint,
   collectActionIds,
   findMapObject,
   listMapObjects,
@@ -17,17 +16,22 @@ import {
   updateComponentData,
 } from "../src/commands";
 import { defaultComponentData, findComponentType, isKnownComponentType } from "../src/components";
-import { createEmptyProject, createMapObject, createSceneDoc } from "../src/factory";
-import { parseProjectDoc } from "../src/schema";
+import {
+  createEmptyProject,
+  createEmptyScene,
+  createEmptySceneFile,
+  createMapObject,
+} from "../src/factory";
+import { parseProjectDoc, parseProjectFile, parseSceneFile, upgradeRawDocument } from "../src/schema";
 import { DEFAULT_HISTORY_LIMIT } from "../src/history";
 import { formatIssues, hasErrors, validateProject, validateScene } from "../src/validation";
 import type { ProjectDoc, SceneDoc } from "../src/types";
 
-const IMAGE = { id: "campaign:C/images/maps/Map001.png", width: 1920, height: 1080 };
+const IMAGE = { id: "project:C/Assets/images/Map001.png", width: 1920, height: 1080 };
 const GRID = { width: 8, height: 6, cellSize: 1 };
 
 function makeScene(name = "Map001"): SceneDoc {
-  return createSceneDoc({ name, id: "scene-1" });
+  return createEmptyScene(name);
 }
 
 function withMapObject(scene: SceneDoc, name = "Map001"): SceneDoc {
@@ -36,8 +40,23 @@ function withMapObject(scene: SceneDoc, name = "Map001"): SceneDoc {
   });
 }
 
-function makeProject(...scenes: SceneDoc[]): ProjectDoc {
-  return { ...createEmptyProject("测试项目"), scenes };
+/** 旧的 v2 工程文件：格式仍是 v2，且场景内联在里面（迁移用例用）。 */
+function v2ProjectWith(...scenes: SceneDoc[]): Record<string, unknown> {
+  const { items } = createEmptyProject("测试项目");
+  return {
+    formatVersion: 2,
+    name: "测试项目",
+    scenes: scenes.map((scene) => ({
+      id: scene.name,
+      name: scene.name,
+      objects: scene.objects,
+    })),
+    items,
+  };
+}
+
+function makeProject(): ProjectDoc {
+  return createEmptyProject("测试项目");
 }
 
 function mutate<T>(value: T, recipe: (draft: Draft<T>) => void): T {
@@ -65,8 +84,9 @@ function withObject(scene: SceneDoc, objectId = "door", componentType?: string):
 describe("文档工厂：场景是容器，对象挂在场景上", () => {
   it("新建场景是**空场景**（不需要地图也能建对象）", () => {
     const scene = makeScene();
+    expect(scene.name).toBe("Map001");
     expect(scene.objects).toEqual([]);
-    expect(scene.spawnPoints.map((spawn) => spawn.id)).toEqual(["Default"]);
+    expect(Object.keys(scene).sort()).toEqual(["name", "objects"]);
   });
 
   it("地图是一个普通对象，数据挂在自己身上", () => {
@@ -80,11 +100,28 @@ describe("文档工厂：场景是容器，对象挂在场景上", () => {
     });
   });
 
-  it("新建项目带上空场景列表与空道具库", () => {
+  it("新建项目只带项目级数据（没有 scenes）与空道具库", () => {
     const project = createEmptyProject("我的模组");
-    expect(project.formatVersion).toBe(2);
-    expect(project.scenes).toEqual([]);
+    expect(project.formatVersion).toBe(4);
+    expect("scenes" in project).toBe(false);
     expect(project.items.count).toBe(0);
+  });
+
+  it("新建场景文件：v4、空对象", () => {
+    const file = createEmptySceneFile();
+    expect(file.formatVersion).toBe(4);
+    expect(file.objects).toEqual([]);
+  });
+
+  it("场景文件里**不存名字**（场景名就是文件名）", () => {
+    const file = createEmptySceneFile();
+    expect("name" in file).toBe(false);
+    expect(Object.keys(file).sort()).toEqual(["formatVersion", "objects"]);
+  });
+
+  it("内存场景也不带 id（身份就是名字）", () => {
+    const scene = createEmptyScene("酒馆");
+    expect("id" in scene).toBe(false);
   });
 
   it("默认历史上限是 200", () => {
@@ -246,18 +283,11 @@ describe("对象命令（都在场景上操作）", () => {
     });
     expect(scene.objects[0]?.components[0]?.actions[0]?.condition).toBeUndefined();
   });
-
-  it("出生点不可重复添加", () => {
-    const scene = mutate(makeScene(), (draft) => {
-      addSpawnPoint(draft, { id: "Default", name: "重复", position: { x: 0, y: 0 } });
-    });
-    expect(scene.spawnPoints).toHaveLength(1);
-  });
 });
 
 describe("文档校验", () => {
   it("干净的项目没有错误", () => {
-    expect(hasErrors(validateProject(makeProject(withMapObject(makeScene()))))).toBe(false);
+    expect(hasErrors(validateProject(makeProject()))).toBe(false);
   });
 
   it("没有地图对象的场景也是合法的（对象挂在场景上，不依赖地图）", () => {
@@ -369,7 +399,7 @@ describe("文档校验", () => {
 
   it("道具库 count 与实际条目不一致时给警告", () => {
     const project: ProjectDoc = {
-      ...makeProject(makeScene()),
+      ...makeProject(),
       items: { source: "x", updatedAt: "2026-01-01", count: 5, items: [] },
     };
 
@@ -379,22 +409,65 @@ describe("文档校验", () => {
   });
 });
 
-describe("文档 schema 与版本迁移", () => {
-  it("合法文档可解析", () => {
-    const project = makeProject(withMapObject(makeScene()));
+describe("工程文件 schema 与版本迁移", () => {
+  it("合法工程文件可解析", () => {
+    const project = makeProject();
     expect(parseProjectDoc(JSON.parse(JSON.stringify(project))).name).toBe("测试项目");
   });
 
   it("缺少必填字段时抛出带路径的错误", () => {
-    expect(() => parseProjectDoc({ formatVersion: 2, name: "x" })).toThrow(/项目文档校验失败/);
+    expect(() => parseProjectDoc({ formatVersion: 3, name: "x" })).toThrow(/项目文档校验失败/);
   });
 
   it("拒绝高于支持版本的文件（不静默丢字段）", () => {
-    const project = { ...makeProject(makeScene()), formatVersion: 99 };
+    const project = { ...makeProject(), formatVersion: 99 };
     expect(() => parseProjectDoc(project)).toThrow(/高于本编辑器支持/);
   });
 
-  it("v1（地图即场景）自动升级为 v2（地图是场景里的对象）", () => {
+  it("v4 工程文件：无需迁移也无需回写", () => {
+    const loaded = parseProjectFile(JSON.parse(JSON.stringify(makeProject())));
+    expect(loaded.doc.formatVersion).toBe(4);
+    expect(loaded.doc.name).toBe("测试项目");
+    expect(loaded.migratedScenes).toEqual([]);
+    expect(loaded.needsRewrite).toBe(false);
+  });
+
+  it("v3 工程文件：需要回写成 v4", () => {
+    const v3 = {
+      formatVersion: 3,
+      name: "旧工程",
+      scenes: [
+        {
+          id: "Map001",
+          name: "Map001",
+          objects: [],
+        },
+      ],
+      items: { source: "item.xlsx", updatedAt: "2026-01-01", count: 0, items: [] },
+    };
+
+    const loaded = parseProjectFile(v3);
+    expect(loaded.needsRewrite).toBe(true);
+    expect(loaded.doc.formatVersion).toBe(4);
+    expect(loaded.migratedScenes.map((scene) => scene.name)).toEqual(["Map001"]);
+  });
+
+  it("v2 工程文件：内联场景被拆出来交给调用方落盘，并要求回写", () => {
+    const mapScene = withMapObject(makeScene("Map001"));
+    const loaded = parseProjectFile(JSON.parse(JSON.stringify(v2ProjectWith(mapScene, makeScene("酒馆")))));
+
+    expect(loaded.needsRewrite).toBe(true);
+    expect(loaded.migratedScenes.map((scene) => scene.name)).toEqual(["Map001", "酒馆"]);
+    // 地图数据原样搬进场景（对象仍是场景上的对象），且内存场景没有 id
+    expect(loaded.migratedScenes[0]?.objects.map((object) => object.kind)).toEqual(["Map"]);
+    expect(loaded.migratedScenes[0]?.objects[0]?.map?.image).toEqual(IMAGE);
+    expect("id" in (loaded.migratedScenes[0] ?? {})).toBe(false);
+    // 工程文件本身只留项目级数据
+    expect("scenes" in loaded.doc).toBe(false);
+    expect(loaded.doc.formatVersion).toBe(4);
+  });
+
+  it("v1（地图即场景）先升级为 v2 再拆成场景文件", () => {
     const v1 = {
       formatVersion: 1,
       name: "老工程",
@@ -406,7 +479,6 @@ describe("文档 schema 与版本迁移", () => {
           grid: GRID,
           rowOrder: "bottom-up",
           cells: { encoding: "rle", runs: [[0, GRID.width * GRID.height]] },
-          spawnPoints: [{ id: "Default", name: "默认", position: { x: 0.5, y: 0.5 } }],
           objects: [
             {
               id: "door",
@@ -422,29 +494,100 @@ describe("文档 schema 与版本迁移", () => {
       items: { source: "item.xlsx", updatedAt: "2026-01-01", count: 0, items: [] },
     };
 
-    const doc = parseProjectDoc(v1);
-    expect(doc.formatVersion).toBe(2);
-    expect(doc.scenes).toHaveLength(1);
+    const loaded = parseProjectFile(v1);
+    expect(loaded.doc.formatVersion).toBe(4);
+    expect(loaded.needsRewrite).toBe(true);
+    expect(loaded.migratedScenes).toHaveLength(1);
 
-    const scene = doc.scenes[0];
+    const scene = loaded.migratedScenes[0];
     expect(scene?.name).toBe("Map001");
     // 原来的地图数据被搬到一个 Map 对象上，原有对象保持不动
     expect(scene?.objects.map((object) => object.kind)).toEqual(["Map", "SceneObject"]);
     expect(scene?.objects[0]?.map?.image).toEqual(IMAGE);
     expect(scene?.objects[1]?.id).toBe("door");
-    expect(hasErrors(validateProject(doc))).toBe(false);
+
+    // 旧名字仍可用：只取项目级数据
+    expect(parseProjectDoc(v1).name).toBe("老工程");
+    // upgradeRawDocument 仍是公开入口（有调用方/测试依赖）
+    expect((upgradeRawDocument(v1) as { formatVersion: number }).formatVersion).toBe(2);
   });
 
-  it("拒绝非 bottom-up 行序（避免坐标约定被悄悄改掉）", () => {
-    const project = makeProject(withMapObject(makeScene()));
-    const broken = JSON.parse(JSON.stringify(project)) as {
-      scenes: Array<{ objects: Array<{ map?: { rowOrder: string } }> }>;
-    };
-    const mapObject = broken.scenes[0]?.objects[0];
+  it("v2 但场景为空：仍需回写（把版本号升到 v4）", () => {
+    const loaded = parseProjectFile(JSON.parse(JSON.stringify(v2ProjectWith())));
+    expect(loaded.migratedScenes).toEqual([]);
+    expect(loaded.needsRewrite).toBe(true);
+    expect(loaded.doc.formatVersion).toBe(4);
+  });
+
+  it("非 bottom-up 行序在场景文件里被拒绝（避免坐标约定被悄悄改掉）", () => {
+    const scene = JSON.parse(
+      JSON.stringify({
+        formatVersion: 4,
+        objects: withMapObject(makeScene()).objects,
+      }),
+    ) as { objects: Array<{ map?: { rowOrder: string } }> };
+    const mapObject = scene.objects[0];
     if (mapObject?.map !== undefined) {
       mapObject.map.rowOrder = "top-down";
     }
 
-    expect(() => parseProjectDoc(broken)).toThrow(/项目文档校验失败/);
+    expect(() => parseSceneFile(scene)).toThrow(/场景文件校验失败/);
+  });
+});
+
+describe("场景文件 schema", () => {
+  it("合法场景文件可解析（场景名不在文件里）", () => {
+    const scene = withMapObject(createEmptyScene("Map001"));
+    const raw = {
+      formatVersion: 4,
+      objects: scene.objects,
+    };
+
+    const parsed = parseSceneFile(JSON.parse(JSON.stringify(raw)));
+    expect(parsed.needsRewrite).toBe(false);
+    expect(parsed.file.formatVersion).toBe(4);
+    expect(parsed.file.objects.map((object) => object.kind)).toEqual(["Map"]);
+    expect("name" in parsed.file).toBe(false);
+  });
+
+  it("v3 场景文件：需要回写一次", () => {
+    const scene = withMapObject(createEmptyScene("Map001"));
+    const raw = {
+      formatVersion: 3,
+      objects: scene.objects,
+    };
+
+    const parsed = parseSceneFile(JSON.parse(JSON.stringify(raw)));
+    expect(parsed.needsRewrite).toBe(true);
+    expect(parsed.file.objects.map((object) => object.kind)).toEqual(["Map"]);
+  });
+
+  it("缺 objects 时抛出带路径的错误", () => {
+    expect(() => parseSceneFile({ formatVersion: 4 })).toThrow(/场景文件校验失败/);
+    expect(() => parseSceneFile({ formatVersion: 4 })).toThrow(/objects/);
+  });
+
+  it("拒绝非 bottom-up 行序（避免坐标约定被悄悄改掉）", () => {
+    const raw = {
+      formatVersion: 4,
+      objects: [
+        {
+          id: "m1",
+          name: "地图",
+          kind: "Map",
+          position: null,
+          rotation: 0,
+          components: [],
+          map: {
+            image: IMAGE,
+            grid: GRID,
+            rowOrder: "top-down",
+            cells: { encoding: "rle", runs: [[0, GRID.width * GRID.height]] },
+          },
+        },
+      ],
+    };
+
+    expect(() => parseSceneFile(raw)).toThrow(/场景文件校验失败/);
   });
 });

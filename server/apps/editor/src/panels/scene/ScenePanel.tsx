@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { createCanvasSceneRenderer, type SceneRenderer } from "@dts/renderer";
 import { gridSizeFromImage } from "@dts/grid";
 import { useEditorStore } from "../../state/editor-store";
-
+import { EmptyState } from "../EmptyState";
 /** 尚未创建地图时用于演示视口交互的默认画布尺寸（与 DiceTale 现有地图一致）。 */
 const PLACEHOLDER_IMAGE = { width: 1920, height: 1080 };
 
@@ -19,14 +19,9 @@ export function ScenePanel(): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rendererRef = useRef<SceneRenderer | null>(null);
-
-  const mode = useEditorStore((state) => state.mode);
-  const hasMapObject = useEditorStore(
-    (state) =>
-      state.doc.scenes
-        .find((scene) => scene.id === state.activeMapId)
-        ?.objects.some((object) => object.kind === "Map") ?? false,
-  );
+  const activeSceneName = useEditorStore((state) => state.activeSceneName);
+  const scenes = useEditorStore((state) => state.scenes);
+  const setActiveScene = useEditorStore((state) => state.setActiveScene);
 
   // 渲染器生命周期
   useEffect(() => {
@@ -83,17 +78,28 @@ export function ScenePanel(): React.JSX.Element {
     let pinchDistance = 0;
     let pinchMid: { x: number; y: number } | null = null;
 
+    /** 没有场景时画布不可交互：能拖能缩会让人以为「这里有个东西」。 */
+    const hasScene = (): boolean => useEditorStore.getState().activeSceneName !== null;
+
     const toLocal = (clientX: number, clientY: number): { x: number; y: number } => {
       const rect = container.getBoundingClientRect();
       return { x: clientX - rect.left, y: clientY - rect.top };
     };
 
     const onPointerDown = (event: PointerEvent): void => {
+      if (!hasScene()) {
+        return;
+      }
+
       container.setPointerCapture(event.pointerId);
       pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
     };
 
     const onPointerMove = (event: PointerEvent): void => {
+      if (!hasScene()) {
+        return;
+      }
+
       const previous = pointers.get(event.pointerId);
       if (previous === undefined) {
         return;
@@ -136,6 +142,10 @@ export function ScenePanel(): React.JSX.Element {
     };
 
     const onWheel = (event: WheelEvent): void => {
+      if (!hasScene()) {
+        return;
+      }
+
       event.preventDefault();
       const store = useEditorStore.getState();
       const factor = Math.exp(-event.deltaY * 0.0015);
@@ -168,14 +178,20 @@ export function ScenePanel(): React.JSX.Element {
         return;
       }
 
-      const { viewport, viewportSize, doc, activeMapId } = useEditorStore.getState();
+      const { viewport, viewportSize, scenes, activeSceneName } = useEditorStore.getState();
       if (viewportSize.width <= 0 || viewportSize.height <= 0) {
         return;
       }
 
       // 地图只是场景里的一个对象；没有它也能在场景里放对象
-      const scene = doc.scenes.find((item) => item.id === activeMapId);
-      const mapObject = scene?.objects.find((object) => object.kind === "Map");
+      const scene = scenes.find((item) => item.name === activeSceneName);
+      if (scene === undefined) {
+        // 没有场景就画空：不要凭空画出一个「看起来像地图」的区域
+        renderer.draw({ viewport, cssWidth: viewportSize.width, cssHeight: viewportSize.height });
+        return;
+      }
+
+      const mapObject = scene.objects.find((object) => object.kind === "Map");
       const imageSize = mapObject?.map?.image ?? PLACEHOLDER_IMAGE;
       const grid = mapObject?.map?.grid ?? {
         width: gridSizeFromImage(PLACEHOLDER_IMAGE).width,
@@ -204,28 +220,41 @@ export function ScenePanel(): React.JSX.Element {
     <div className="relative flex h-full min-h-0 flex-col">
       <div className="panel-header">
         <span>场景</span>
-        <span className="text-[10px]">
-          {mode === "run" ? "运行状态（只读）" : "编辑状态"} · 拖拽平移 / 滚轮或双指缩放
-        </span>
+        {scenes.length === 0 ? null : (
+          // 当前场景要看得见、也能切：否则多场景时根本不知道自己在哪一个
+          <select
+            data-testid="scene-switcher"
+            aria-label="当前场景"
+            value={activeSceneName ?? ""}
+            onChange={(event) => setActiveScene(event.target.value)}
+            className="min-w-0 max-w-[40%] rounded border border-[var(--color-editor-border)] bg-black/30 px-1 py-0.5 text-[11px] outline-none"
+          >
+            {scenes.map((scene) => (
+              <option key={scene.name} value={scene.name}>
+                {scene.name}
+              </option>
+            ))}
+          </select>
+        )}
+        {activeSceneName === null ? null : (
+          <span className="ml-auto text-[10px]">拖拽平移 / 滚轮或双指缩放</span>
+        )}
       </div>
 
       <div
         ref={containerRef}
         data-testid="scene-viewport"
         className="relative min-h-0 flex-1 overflow-hidden"
-        style={{ touchAction: "none", cursor: "grab" }}
+        style={{ touchAction: "none", cursor: activeSceneName === null ? "default" : "grab" }}
       >
         {/* biome-ignore lint/a11y/noNoninteractiveTabindex: 画布需要接受指针与触摸手势 */}
         <canvas ref={canvasRef} className="block h-full w-full" />
 
-        {!hasMapObject ? (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-            <div className="rounded border border-[var(--color-editor-border)] bg-black/55 px-4 py-3 text-center">
-              <div className="text-[12px] text-[var(--color-editor-text)]">当前场景还没有地图对象</div>
-              <div className="mt-1 text-[11px] text-[var(--color-editor-text-dim)]">
-                这里显示的是默认画布区域（1920×1080 / 64×36 格）；对象不依赖地图，可直接添加
-              </div>
-            </div>
+        {activeSceneName === null ? (
+          // 占位本身可点（点一下新建场景），所以这一层**不能** pointer-events-none；
+          // 没有场景时画布本来也不响应手势，不会互相干扰
+          <div data-testid="no-scene-canvas" className="absolute inset-0">
+            <EmptyState />
           </div>
         ) : null}
       </div>

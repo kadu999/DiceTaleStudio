@@ -12,7 +12,7 @@ export interface RunStateSnapshot {
 }
 
 export function createEmptyGameState(): GameStateSnapshot {
-  return { currentMap: "", players: {}, spawnPoints: {}, objects: {} };
+  return { currentMap: "", players: {}, objects: {} };
 }
 
 export class RunState {
@@ -107,13 +107,6 @@ export class RunState {
         mapName,
       };
     }
-  }
-
-  registerSpawnPoints(
-    mapName: string,
-    spawnPoints: ReadonlyArray<{ id: string }>,
-  ): void {
-    this.gameState.spawnPoints[mapName] = spawnPoints.map((spawn) => ({ id: spawn.id }));
   }
 
   setPlayerPosition(playerId: string, position: { x: number; y: number }, mapName: string): void {

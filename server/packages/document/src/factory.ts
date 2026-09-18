@@ -6,6 +6,7 @@ import {
   type MapDataDoc,
   type ProjectDoc,
   type SceneDoc,
+  type SceneFileDoc,
   type SceneObjectDoc,
 } from "./types";
 
@@ -16,13 +17,19 @@ import {
  * `document` 包不依赖 `resources` 包，因此不在这里拼装 ID。
  */
 
-/** 新建场景：**空场景**——对象由调用方按需添加（地图也只是其中一个对象）。 */
-export function createSceneDoc(input: { readonly name: string; readonly id?: string }): SceneDoc {
+/** 新建场景文件内容：**空场景**，且不含场景名（名字就是文件名）。 */
+export function createEmptySceneFile(): SceneFileDoc {
   return {
-    id: input.id ?? createId("scene"),
-    name: input.name,
+    formatVersion: DOCUMENT_FORMAT_VERSION,
     objects: [],
-    spawnPoints: [{ id: "Default", name: "默认", position: { x: 0.5, y: 0.5 } }],
+  };
+}
+
+/** 新建内存场景：场景名 = 将来的文件名，所以这里只带名字，不生成 id。 */
+export function createEmptyScene(name: string): SceneDoc {
+  return {
+    name,
+    objects: [],
   };
 }
 
@@ -54,11 +61,11 @@ export function createMapObject(input: {
   };
 }
 
+/** 新建工程文件内容：只有项目级数据，场景由调用方在 `Assets/scenes/` 下各自建文件。 */
 export function createEmptyProject(name = "未命名项目"): ProjectDoc {
   return {
     formatVersion: DOCUMENT_FORMAT_VERSION,
     name,
-    scenes: [],
     items: {
       source: "item.xlsx",
       updatedAt: new Date().toISOString().slice(0, 10),

@@ -19,6 +19,15 @@ export function EditorShell(): React.JSX.Element {
   const compact = useCompactLayout();
   const ui = useEditorStore((state) => state.ui);
   const setUi = useEditorStore((state) => state.setUi);
+  const bootstrapped = useEditorStore((state) => state.bootstrapped);
+  const projectDialog = useEditorStore((state) => state.projectDialog);
+  const bootstrapEditor = useEditorStore((state) => state.bootstrapEditor);
+
+  // 启动引导：自动打开上次的项目 / 一个项目都没有时弹新建 / 有项目但没记录时弹打开列表。
+  // store 内部有幂等保护，StrictMode 下重复调用不会弹两次。
+  useEffect(() => {
+    void bootstrapEditor();
+  }, [bootstrapEditor]);
 
   // 跨越断点（窗口缩放 / 接上触屏）时重置面板开合，避免平板下三栏互相挤压
   const previousCompact = useRef<boolean | null>(null);
@@ -35,7 +44,11 @@ export function EditorShell(): React.JSX.Element {
   }, [compact, setUi]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div
+      className="flex h-full min-h-0 flex-col"
+      data-bootstrapped={bootstrapped}
+      data-project-dialog={projectDialog ?? "none"}
+    >
       <MenuBar compact={compact} />
 
       <div className="relative flex min-h-0 flex-1">
