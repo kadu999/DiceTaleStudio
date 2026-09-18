@@ -67,7 +67,7 @@ describe("场景内容命令", () => {
         id: "door",
         name: "木门",
         kind: "SceneObject",
-        position: { x: 0.3, y: 0.4 },
+        position: { x: -288, y: 108 },
         rotation: 0,
         components: [],
       });

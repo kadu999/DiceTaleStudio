@@ -102,14 +102,14 @@ describe("文档工厂：场景是容器，对象挂在场景上", () => {
 
   it("新建项目只带项目级数据（没有 scenes）与空道具库", () => {
     const project = createEmptyProject("我的模组");
-    expect(project.formatVersion).toBe(4);
+    expect(project.formatVersion).toBe(5);
     expect("scenes" in project).toBe(false);
     expect(project.items.count).toBe(0);
   });
 
-  it("新建场景文件：v4、空对象", () => {
+  it("新建场景文件：当前版本、空对象", () => {
     const file = createEmptySceneFile();
-    expect(file.formatVersion).toBe(4);
+    expect(file.formatVersion).toBe(5);
     expect(file.objects).toEqual([]);
   });
 
@@ -169,7 +169,7 @@ describe("对象命令（都在场景上操作）", () => {
         id: "door_01",
         name: "木门",
         kind: "SceneObject",
-        position: { x: 0.32, y: 0.61 },
+        position: { x: -340, y: 121 },
         rotation: 0,
         components: [],
       });
@@ -386,15 +386,26 @@ describe("文档校验", () => {
     expect(formatIssues(issues)).toMatch(/未知组件类型/);
   });
 
-  it("归一化位置越界时报错", () => {
+  it("位置不是有限数值时报错", () => {
     const scene = mutate(withObject(makeScene(), "o"), (draft) => {
       const object = draft.objects[0];
       if (object !== undefined) {
-        object.position = { x: 1.5, y: -0.2 };
+        object.position = { x: Number.NaN, y: 0 };
       }
     });
 
-    expect(formatIssues(validateScene(scene))).toMatch(/归一化位置越界/);
+    expect(formatIssues(validateScene(scene))).toMatch(/位置不是有限数值/);
+  });
+
+  it("世界坐标不受 [0,1] 限制（场景可以很大，位置可以是负数）", () => {
+    const scene = mutate(withObject(makeScene(), "o"), (draft) => {
+      const object = draft.objects[0];
+      if (object !== undefined) {
+        object.position = { x: -1200, y: 800 };
+      }
+    });
+
+    expect(hasErrors(validateScene(scene))).toBe(false);
   });
 
   it("道具库 count 与实际条目不一致时给警告", () => {
@@ -424,15 +435,15 @@ describe("工程文件 schema 与版本迁移", () => {
     expect(() => parseProjectDoc(project)).toThrow(/高于本编辑器支持/);
   });
 
-  it("v4 工程文件：无需迁移也无需回写", () => {
+  it("当前版本工程文件：无需迁移也无需回写", () => {
     const loaded = parseProjectFile(JSON.parse(JSON.stringify(makeProject())));
-    expect(loaded.doc.formatVersion).toBe(4);
+    expect(loaded.doc.formatVersion).toBe(5);
     expect(loaded.doc.name).toBe("测试项目");
     expect(loaded.migratedScenes).toEqual([]);
     expect(loaded.needsRewrite).toBe(false);
   });
 
-  it("v3 工程文件：需要回写成 v4", () => {
+  it("v3 工程文件：需要回写成当前版本", () => {
     const v3 = {
       formatVersion: 3,
       name: "旧工程",
@@ -448,7 +459,7 @@ describe("工程文件 schema 与版本迁移", () => {
 
     const loaded = parseProjectFile(v3);
     expect(loaded.needsRewrite).toBe(true);
-    expect(loaded.doc.formatVersion).toBe(4);
+    expect(loaded.doc.formatVersion).toBe(5);
     expect(loaded.migratedScenes.map((scene) => scene.name)).toEqual(["Map001"]);
   });
 
@@ -464,7 +475,7 @@ describe("工程文件 schema 与版本迁移", () => {
     expect("id" in (loaded.migratedScenes[0] ?? {})).toBe(false);
     // 工程文件本身只留项目级数据
     expect("scenes" in loaded.doc).toBe(false);
-    expect(loaded.doc.formatVersion).toBe(4);
+    expect(loaded.doc.formatVersion).toBe(5);
   });
 
   it("v1（地图即场景）先升级为 v2 再拆成场景文件", () => {
@@ -495,7 +506,7 @@ describe("工程文件 schema 与版本迁移", () => {
     };
 
     const loaded = parseProjectFile(v1);
-    expect(loaded.doc.formatVersion).toBe(4);
+    expect(loaded.doc.formatVersion).toBe(5);
     expect(loaded.needsRewrite).toBe(true);
     expect(loaded.migratedScenes).toHaveLength(1);
 
@@ -512,17 +523,17 @@ describe("工程文件 schema 与版本迁移", () => {
     expect((upgradeRawDocument(v1) as { formatVersion: number }).formatVersion).toBe(2);
   });
 
-  it("v2 但场景为空：仍需回写（把版本号升到 v4）", () => {
+  it("v2 但场景为空：仍需回写（把版本号升到当前版本）", () => {
     const loaded = parseProjectFile(JSON.parse(JSON.stringify(v2ProjectWith())));
     expect(loaded.migratedScenes).toEqual([]);
     expect(loaded.needsRewrite).toBe(true);
-    expect(loaded.doc.formatVersion).toBe(4);
+    expect(loaded.doc.formatVersion).toBe(5);
   });
 
   it("非 bottom-up 行序在场景文件里被拒绝（避免坐标约定被悄悄改掉）", () => {
     const scene = JSON.parse(
       JSON.stringify({
-        formatVersion: 4,
+        formatVersion: 5,
         objects: withMapObject(makeScene()).objects,
       }),
     ) as { objects: Array<{ map?: { rowOrder: string } }> };
@@ -539,13 +550,13 @@ describe("场景文件 schema", () => {
   it("合法场景文件可解析（场景名不在文件里）", () => {
     const scene = withMapObject(createEmptyScene("Map001"));
     const raw = {
-      formatVersion: 4,
+      formatVersion: 5,
       objects: scene.objects,
     };
 
     const parsed = parseSceneFile(JSON.parse(JSON.stringify(raw)));
     expect(parsed.needsRewrite).toBe(false);
-    expect(parsed.file.formatVersion).toBe(4);
+    expect(parsed.file.formatVersion).toBe(5);
     expect(parsed.file.objects.map((object) => object.kind)).toEqual(["Map"]);
     expect("name" in parsed.file).toBe(false);
   });
@@ -562,14 +573,74 @@ describe("场景文件 schema", () => {
     expect(parsed.file.objects.map((object) => object.kind)).toEqual(["Map"]);
   });
 
+  it("v4 场景文件：归一化位置按场景尺寸换算成世界坐标（y 翻转）", () => {
+    const raw = {
+      formatVersion: 4,
+      objects: [
+        {
+          id: "door",
+          name: "木门",
+          kind: "SceneObject",
+          // 旧格式：左上为原点、y 向下
+          position: { x: 0.25, y: 0.25 },
+          rotation: 0,
+          components: [],
+        },
+      ],
+    };
+
+    const parsed = parseSceneFile(raw);
+    expect(parsed.needsRewrite).toBe(true);
+    // 1920×1080：x = 0.25*1920-960 = -480；y = 540-0.25*1080 = 270
+    expect(parsed.file.objects[0]?.position).toEqual({ x: -480, y: 270 });
+  });
+
+  it("v4 场景文件：调用方给了贴图尺寸就按它换算", () => {
+    const raw = {
+      formatVersion: 4,
+      objects: [
+        {
+          id: "door",
+          name: "木门",
+          kind: "SceneObject",
+          position: { x: 1, y: 1 },
+          rotation: 0,
+          components: [],
+        },
+      ],
+    };
+
+    const parsed = parseSceneFile(raw, { width: 800, height: 600 });
+    // x = 800 - 400 = 400；y = 300 - 600 = -300
+    expect(parsed.file.objects[0]?.position).toEqual({ x: 400, y: -300 });
+  });
+
+  it("v4 场景文件：越界的旧值原样保留（不静默夹到边界）", () => {
+    const raw = {
+      formatVersion: 4,
+      objects: [
+        {
+          id: "door",
+          name: "木门",
+          kind: "SceneObject",
+          position: { x: 1.5, y: -0.2 },
+          rotation: 0,
+          components: [],
+        },
+      ],
+    };
+
+    expect(parseSceneFile(raw).file.objects[0]?.position).toEqual({ x: 1.5, y: -0.2 });
+  });
+
   it("缺 objects 时抛出带路径的错误", () => {
-    expect(() => parseSceneFile({ formatVersion: 4 })).toThrow(/场景文件校验失败/);
-    expect(() => parseSceneFile({ formatVersion: 4 })).toThrow(/objects/);
+    expect(() => parseSceneFile({ formatVersion: 5 })).toThrow(/场景文件校验失败/);
+    expect(() => parseSceneFile({ formatVersion: 5 })).toThrow(/objects/);
   });
 
   it("拒绝非 bottom-up 行序（避免坐标约定被悄悄改掉）", () => {
     const raw = {
-      formatVersion: 4,
+      formatVersion: 5,
       objects: [
         {
           id: "m1",

@@ -28,16 +28,10 @@ function checkPosition(
 ): void {
   if (!Number.isFinite(position.x) || !Number.isFinite(position.y)) {
     issues.push({ level: "error", path, message: "位置不是有限数值" });
-    return;
   }
 
-  if (position.x < 0 || position.x > 1 || position.y < 0 || position.y > 1) {
-    issues.push({
-      level: "error",
-      path,
-      message: `归一化位置越界 [0,1]: (${position.x}, ${position.y})`,
-    });
-  }
+  // 世界坐标的范围就是场景范围（±宽/2、±高/2），而校验拿不到场景尺寸；
+  // 这里**不**给坐标设上下限——越界的对象在画布上看得见，比静默拒绝更有用。
 }
 
 function validateObject(object: SceneObjectDoc, path: string, issues: ValidationIssue[]): void {

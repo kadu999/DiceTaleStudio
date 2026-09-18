@@ -1,20 +1,20 @@
 /**
- * 坐标转换：**全项目唯一的坐标换算入口**。
+ * 坐标契约：**全项目只有一套坐标系——世界坐标**。
  *
- * 三套坐标系（务必区分，这里是历史上反复出错的地方）：
+ * ```
+ * 世界坐标 world：原点 = 场景中心 (0, 0)，x 向右，y 向上，单位像素
+ *   左上 (-w/2, +h/2)   右上 (+w/2, +h/2)
+ *   左下 (-w/2, -h/2)   右下 (+w/2, -h/2)      (w, h = 贴图像素尺寸)
+ * ```
  *
- * 1. 图像像素 `px`：原点图片左上角，x 向右，y 向下。
- * 2. 归一化 `norm`：`[0,1]`，x 向右，**y 向下**（与后端协议 GameStateSnapshot / GM 控制台一致）。
- * 3. 网格 `grid`：x 向右，**y 向上**；`grid.y = 0` 对应 Unity `GridMap.GridOrigin`（网格左下角，-Z 侧）。
+ * **网格坐标不是另一套坐标系**，只是把世界坐标按格子量化：
+ * `grid.y` 与世界 y **同向**（都向上），`grid (0, 0)` 在场景左下角，
+ * 也就是图片的**最下面一行**（与 Unity `GridMap` 一致）。因此：
  *
- * 关键结论（由 Unity `MapManager.GetNormalizedPosition` 与 `GridMap.GridToWorld` 推导）：
- *   `norm.y = 1 - (worldZ - originZ) / height`，而 `grid.y` 随 `worldZ` 递增，
- *   因此 **`grid.y = 0` 是图片最下面一行**，即：
+ *      世界 y 最小的一行 = 图片最下面一行 = grid.y = 0
  *
- *       imageRow = height - 1 - gridY
- *       gridY    = height - 1 - imageRow
- *
- * 任何地方需要在这两套坐标间换算，都必须走本模块。
+ * 唯一的翻转发生在「世界坐标 ↔ 图像像素」之间（图片的 y 天生向下），
+ * 那是贴图绘制与鼠标命中才需要的一步，换算在 `world.ts` 里，别处不要再写。
  */
 
 export interface GridSize {
@@ -27,13 +27,13 @@ export interface ImageSize {
   readonly height: number;
 }
 
-/** 归一化坐标点（`[0,1]`，y 向下）。 */
-export interface NormPoint {
+/** 世界坐标点。 */
+export interface WorldPoint {
   readonly x: number;
   readonly y: number;
 }
 
-/** 网格坐标点（整数，y 向上）。 */
+/** 网格坐标点（整数，y 向上，与世界同向）。 */
 export interface GridPoint {
   readonly x: number;
   readonly y: number;
@@ -59,35 +59,6 @@ export function imageRowToGridRow(imageRow: number, height: number): number {
   return height - 1 - imageRow;
 }
 
-/** 格子中心 → 归一化坐标（y 向下）。 */
-export function gridToNorm(point: GridPoint, size: GridSize): NormPoint {
-  return {
-    x: (point.x + 0.5) / size.width,
-    y: 1 - (point.y + 0.5) / size.height,
-  };
-}
-
-/** 归一化坐标 → 所在格子（y 向下换算回网格）。 */
-export function normToGrid(point: NormPoint, size: GridSize): GridPoint {
-  return {
-    x: Math.min(size.width - 1, Math.max(0, Math.floor(point.x * size.width))),
-    y: Math.min(
-      size.height - 1,
-      Math.max(0, Math.floor((1 - point.y) * size.height)),
-    ),
-  };
-}
-
-/** 归一化坐标 → 图像像素坐标。 */
-export function normToImagePixel(point: NormPoint, image: ImageSize): { x: number; y: number } {
-  return { x: point.x * image.width, y: point.y * image.height };
-}
-
-/** 图像像素坐标 → 归一化坐标。 */
-export function imagePixelToNorm(px: number, py: number, image: ImageSize): NormPoint {
-  return { x: px / image.width, y: py / image.height };
-}
-
 /** 判断网格坐标是否在范围内。 */
 export function isInsideGrid(point: GridPoint, size: GridSize): boolean {
   return point.x >= 0 && point.x < size.width && point.y >= 0 && point.y < size.height;
@@ -102,11 +73,8 @@ export function cellsAreSquare(grid: GridSize, image: ImageSize): boolean {
   return Math.abs(image.width / grid.width - image.height / grid.height) < 1e-6;
 }
 
-/** 每格在图片上的像素尺寸（用于渲染换算；非等比时取 x 方向并给出 y 方向）。 */
-export function cellPixelSize(
-  grid: GridSize,
-  image: ImageSize,
-): { x: number; y: number } {
+/** 每格在世界坐标里的尺寸（非等比时 x / y 各自算）。 */
+export function cellPixelSize(grid: GridSize, image: ImageSize): { x: number; y: number } {
   return { x: image.width / grid.width, y: image.height / grid.height };
 }
 

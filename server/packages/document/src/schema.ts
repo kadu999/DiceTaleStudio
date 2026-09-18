@@ -11,10 +11,11 @@ import {
  *
  * 加载任何文件都必须先过这里：不合法就报错，**不静默丢字段**。
  * 工程文件（`project.json`）与场景文件（`Assets/scenes/<场景名>.json`）各有一套 schema；
- * 旧版本（v1：地图即场景；v2：场景内联在工程文件里）由 `upgradeRawDocument` 先升级结构，再走 schema。
+ * 旧版本（v1：地图即场景；v2：场景内联在工程文件里；v4 及更早：位置是归一化坐标）
+ * 由 `upgradeRawDocument` / `migrateScenePositions` 先升级结构，再走 schema。
  */
 
-export const normPositionSchema = z.object({
+export const worldPositionSchema = z.object({
   x: z.number(),
   y: z.number(),
 });
@@ -69,7 +70,7 @@ export const sceneObjectSchema = z.object({
   id: z.string().min(1),
   name: z.string(),
   kind: z.enum(["Map", "SceneObject", "Player", "Item", "Event"]),
-  position: normPositionSchema.nullable(),
+  position: worldPositionSchema.nullable(),
   rotation: z.number(),
   components: z.array(componentSchema),
   map: mapDataSchema.optional(),
@@ -171,7 +172,67 @@ export function upgradeRawDocument(raw: unknown): unknown {
 }
 
 /**
- * 版本迁移。当前最高 v4；遇到更高版本明确拒绝
+ * 场景范围的兜底尺寸（旧文件里没写尺寸、调用方也拿不到时用）。
+ *
+ * 与编辑器新建地图对象的默认贴图尺寸一致（1920×1080 → 64×36 格）。
+ */
+const FALLBACK_SCENE_SIZE = { width: 1920, height: 1080 } as const;
+
+/** 位置迁移用到的场景尺寸：优先用调用方给的（地图贴图尺寸），否则兜底。 */
+export interface SceneSizeHint {
+  readonly width: number;
+  readonly height: number;
+}
+
+/**
+ * v4 → v5：位置从**归一化坐标 `[0,1]`（y 向下）**换算成**世界坐标（场景中心为原点，y 向上）**。
+ *
+ * 换算与 `@dts/grid` 的 `world.ts` 一致，这里手写一遍是为了**不引入依赖**（document 只依赖 grid
+ * 的字节与掩码工具，坐标换算在迁移里只出现这一次）。旧值越界（不在 `[0,1]`）时**原样保留**，
+ * 宁可让它在画布上偏出去，也不静默夹到边界——那会把错误数据伪装成正确数据。
+ */
+function migrateScenePositions(
+  raw: Record<string, unknown>,
+  size: SceneSizeHint,
+): Record<string, unknown> {
+  const objects = Array.isArray(raw.objects) ? raw.objects : [];
+
+  return {
+    ...raw,
+    formatVersion: DOCUMENT_FORMAT_VERSION,
+    objects: objects.map((object) => {
+      if (!isRecord(object) || !isRecord(object.position)) {
+        return object;
+      }
+
+      const { x, y } = object.position;
+      if (typeof x !== "number" || typeof y !== "number") {
+        return object;
+      }
+
+      if (x < 0 || x > 1 || y < 0 || y > 1) {
+        return object;
+      }
+
+      return {
+        ...object,
+        position: {
+          x: x * size.width - size.width / 2,
+          y: size.height / 2 - y * size.height,
+        },
+      };
+    }),
+  };
+}
+
+/** 场景文件是不是「位置还是归一化坐标」的旧版本。 */
+function isLegacyPositionScene(raw: Record<string, unknown>): boolean {
+  const version = typeof raw.formatVersion === "number" ? raw.formatVersion : 1;
+  return version < DOCUMENT_FORMAT_VERSION;
+}
+
+/**
+ * 版本迁移。当前最高 v5；遇到更高版本明确拒绝
  * （避免高版本字段被静默丢弃后回存造成数据损坏）。
  */
 export function migrateProjectDoc(doc: ProjectDoc): ProjectDoc {
@@ -209,10 +270,10 @@ export function parseProjectFile(raw: unknown): ProjectFileLoad {
 
   // v2（以及经 v1 升级后的 v2）的工程文件里还有内联场景；v3 起没有
   const scenes = isRecord(upgraded) && Array.isArray(upgraded.scenes) ? upgraded.scenes : [];
-  const migratedScenes: SceneDoc[] = scenes.map((scene) => ({
-    name: scene.name,
-    objects: scene.objects,
-  }));
+  const migratedScenes: SceneDoc[] = scenes.map((scene) => {
+    const file = parseSceneFile(scene).file;
+    return { name: scene.name, objects: file.objects };
+  });
 
   const needsRewrite = migratedScenes.length > 0 || result.data.formatVersion < DOCUMENT_FORMAT_VERSION;
   const doc = migrateProjectDoc({
@@ -231,23 +292,33 @@ export function parseProjectDoc(raw: unknown): ProjectDoc {
 /** 场景文件加载结果。 */
 export interface SceneFileLoad {
   readonly file: SceneFileDoc;
-  /** 文件是旧版本（格式已升级），调用方需要按新格式回写一次。 */
+  /** 文件是旧版本（格式或坐标已升级），调用方需要按新格式回写一次。 */
   readonly needsRewrite: boolean;
 }
 
-/** 读场景文件；场景名由调用方从文件名得到。 */
-export function parseSceneFile(raw: unknown): SceneFileLoad {
+/**
+ * 读场景文件；场景名由调用方从文件名得到。
+ *
+ * `size` 是场景（地图贴图）尺寸，旧格式的归一化位置靠它换算成世界坐标；
+ * 拿不到时用兜底尺寸（1920×1080）。
+ */
+export function parseSceneFile(raw: unknown, size?: SceneSizeHint): SceneFileLoad {
   const upgraded = upgradeRawDocument(raw);
-  const result = sceneFileSchema.safeParse(upgraded);
+  const needsRewrite = isRecord(upgraded) && isLegacyPositionScene(upgraded);
+
+  const normalized = isRecord(upgraded)
+    ? needsRewrite
+      ? migrateScenePositions(upgraded, size ?? FALLBACK_SCENE_SIZE)
+      : upgraded
+    : upgraded;
+
+  const result = sceneFileSchema.safeParse(normalized);
   if (!result.success) {
     throw new Error(`场景文件校验失败: ${formatIssues(result.error)}`);
   }
 
-  // 只按版本判断是否需要回写（`formatVersion` 缺失按 1 算，与工程文件一致）
-  const version = isRecord(upgraded) && typeof upgraded.formatVersion === "number" ? upgraded.formatVersion : 1;
-
   return {
     file: result.data as SceneFileDoc,
-    needsRewrite: version < DOCUMENT_FORMAT_VERSION,
+    needsRewrite,
   };
 }

@@ -21,12 +21,14 @@ import type { RleRun } from "@dts/grid";
  * 多场景协作时也不会因为共用一个 `project.json` 而互相冲突。
  *
  * 其它约定：
- * - 坐标一律是**归一化图片坐标 `[0,1]`，y 向下**（与后端协议、前端上报一致）；
- * - 网格格子以 RLE 存储，`rowOrder: 'bottom-up'` 显式声明「第 0 行 = 图片最下面一行」；
+ * - 坐标一律是**世界坐标**：原点 = 场景中心 `(0, 0)`，x 向右，**y 向上**，单位像素
+ *   （范围 `±宽/2`、`±高/2`；换算走 `@dts/grid` 的 `world.ts`）；
+ * - 网格格子以 RLE 存储，`rowOrder: 'bottom-up'` 显式声明「第 0 行 = 图片最下面一行」，
+ *   也就是世界 y 最小的一行——与世界坐标同向，不需要翻转；
  * - 图片/音频/视频用**资源逻辑 ID**引用，不存路径。
  */
 
-export const DOCUMENT_FORMAT_VERSION = 4;
+export const DOCUMENT_FORMAT_VERSION = 5;
 
 /** 网格行序：`bottom-up` 表示 cells 第 0 行是图片最下面一行（与 Unity GridMap 一致）。 */
 export type RowOrder = "bottom-up";
@@ -49,7 +51,7 @@ export interface CellRuns {
   readonly runs: RleRun[];
 }
 
-export interface NormPosition {
+export interface WorldPosition {
   readonly x: number;
   readonly y: number;
 }
@@ -100,8 +102,8 @@ export interface SceneObjectDoc {
   readonly id: string;
   readonly name: string;
   readonly kind: ObjectKind;
-  /** 归一化位置，y 向下；未放置时为 null。 */
-  readonly position: NormPosition | null;
+  /** 世界坐标位置（场景中心为原点，y 向上）；未放置时为 null。 */
+  readonly position: WorldPosition | null;
   readonly rotation: number;
   readonly components: ComponentDoc[];
   /** 仅 `kind === "Map"` 的地图对象携带；其它对象没有。 */

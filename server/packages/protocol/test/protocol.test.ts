@@ -26,7 +26,7 @@ describe("协议：前端 → 服务端", () => {
           id: "door_01",
           name: "木门",
           kind: "SceneObject",
-          position: { x: 0.32, y: 0.61 },
+          position: { x: -345, y: 118 },
           componentData: [{ component: "OptionValue", displayName: "状态", data: "{\"options\":[]}" }],
         },
       ],
@@ -96,16 +96,16 @@ describe("协议：服务端 → 前端", () => {
     ).toThrow(/校验失败/);
   });
 
-  it("状态快照结构可校验", () => {
+  it("状态快照结构可校验（位置是世界坐标，y 向上）", () => {
     const snapshot = {
       currentMap: "Map001",
-      players: { p1: { name: "调查员", position: { x: 0.5, y: 0.5 }, mapName: "Map001" } },
+      players: { p1: { name: "调查员", position: { x: 0, y: 0 }, mapName: "Map001" } },
       objects: {
         door_01: {
           name: "木门",
           kind: "SceneObject",
           mapName: "Map001",
-          position: { x: 0.3, y: 0.6 },
+          position: { x: -384, y: 108 },
           actions: [{ actionId: "a1", type: "ShowHide" }],
         },
       },

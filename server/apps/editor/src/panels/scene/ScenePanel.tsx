@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { type NormPosition, type SceneDoc } from "@dts/document";
+import type { SceneDoc, WorldPosition } from "@dts/document";
 import {
   createCanvasSceneRenderer,
   screenToWorld,
@@ -7,30 +7,21 @@ import {
   type SceneRenderer,
 } from "@dts/renderer";
 import { gridSizeFromImage } from "@dts/grid";
-import { useEditorStore } from "../../state/editor-store";
+import { sceneImageSize, useEditorStore } from "../../state/editor-store";
 import { EmptyState } from "../EmptyState";
-
-/** 尚未创建地图时用于演示视口交互的默认画布尺寸（与 DiceTale 现有地图一致）。 */
-const PLACEHOLDER_IMAGE = { width: 1920, height: 1080 };
 
 /** 标记点的命中半径（屏幕像素）：比渲染半径略大，手指也点得中。 */
 const MARKER_HIT_RADIUS = 12;
-
-/**
- * 场景的「画布区域」尺寸：有地图对象就用它的贴图尺寸，否则用占位尺寸。
- *
- * 绘制、命中测试、落点换算**必须用同一个尺寸**，否则会出现「点哪儿不在哪儿」。
- */
-function sceneImageSize(scene: SceneDoc | undefined): { width: number; height: number } {
-  const mapObject = scene?.objects.find((object) => object.kind === "Map");
-  return mapObject?.map?.image ?? PLACEHOLDER_IMAGE;
-}
 
 /** DPR 上限：平板上 3x DPR 会把填充率吃光，限制到 2 已足够清晰。 */
 const MAX_DPR = 2;
 
 /**
  * 场景视口（中间区域）。
+ *
+ * 坐标只有**世界坐标**一套：场景中心 `(0, 0)`，x 向右、y 向上，单位像素。
+ * 屏幕坐标（canvas 的 CSS 像素）是相机，指针 → 世界只做一次换算；
+ * 绘制、命中测试、拖动落点**共用同一个场景尺寸**，否则会出现「点哪儿不在哪儿」。
  *
  * 性能约定：指针事件只改 store，**不触发 React 重渲染**；
  * 绘制在 rAF 循环里通过 `getState()` 直读最新值。
@@ -43,6 +34,7 @@ export function ScenePanel(): React.JSX.Element {
   const scenes = useEditorStore((state) => state.scenes);
   const setActiveScene = useEditorStore((state) => state.setActiveScene);
   const openObjectDialog = useEditorStore((state) => state.openObjectDialog);
+  const resetViewport = useEditorStore((state) => state.resetViewport);
 
   // 渲染器生命周期
   useEffect(() => {
@@ -114,12 +106,9 @@ export function ScenePanel(): React.JSX.Element {
       return store.scenes.find((item) => item.name === store.activeSceneName);
     };
 
-    /** 屏幕点 → 归一化场景坐标（`[0,1]`，y 向下）；越界由 store 统一夹。 */
-    const toScenePosition = (local: { x: number; y: number }): NormPosition => {
-      const world = screenToWorld(useEditorStore.getState().viewport, local);
-      const size = sceneImageSize(currentScene());
-      return { x: world.x / size.width, y: world.y / size.height };
-    };
+    /** 屏幕点 → 世界坐标（越界由 store 统一夹回场景）。 */
+    const toWorld = (local: { x: number; y: number }): WorldPosition =>
+      screenToWorld(useEditorStore.getState().viewport, local);
 
     /** 命中测试：指针下那个对象的 id（画布上看得见的对象才可能被命中）。 */
     const hitTestObject = (local: { x: number; y: number }): string | undefined => {
@@ -129,16 +118,12 @@ export function ScenePanel(): React.JSX.Element {
       }
 
       const store = useEditorStore.getState();
-      const size = sceneImageSize(scene);
       for (const object of scene.objects) {
         if (object.position === null) {
           continue;
         }
 
-        const screen = worldToScreen(store.viewport, {
-          x: object.position.x * size.width,
-          y: object.position.y * size.height,
-        });
+        const screen = worldToScreen(store.viewport, object.position);
 
         if (Math.hypot(screen.x - local.x, screen.y - local.y) <= MARKER_HIT_RADIUS) {
           return object.id;
@@ -174,7 +159,7 @@ export function ScenePanel(): React.JSX.Element {
       if (dragging !== null && dragging.pointerId === event.pointerId) {
         useEditorStore
           .getState()
-          .moveObject(dragging.objectId, toScenePosition(toLocal(event.clientX, event.clientY)));
+          .moveObject(dragging.objectId, toWorld(toLocal(event.clientX, event.clientY)));
         return;
       }
 
@@ -278,14 +263,11 @@ export function ScenePanel(): React.JSX.Element {
       }
 
       const mapObject = scene.objects.find((object) => object.kind === "Map");
-      const imageSize = sceneImageSize(scene);
-      const grid = mapObject?.map?.grid ?? {
-        width: gridSizeFromImage(PLACEHOLDER_IMAGE).width,
-        height: gridSizeFromImage(PLACEHOLDER_IMAGE).height,
-        cellSize: 1,
-      };
+      const sceneSize = sceneImageSize(scene);
+      // 网格与世界同向：没有地图时按默认尺寸铺网格，让「一格」这件事始终看得见
+      const grid = mapObject?.map?.grid ?? gridSizeFromImage(sceneSize);
 
-      // 对象在画布上画成标记点：看得见、能点、能拖，位置就是它的归一化坐标
+      // 对象在画布上画成标记点：看得见、能点、能拖，位置就是它的世界坐标
       const markers = scene.objects.flatMap((object) =>
         object.position === null
           ? []
@@ -305,9 +287,10 @@ export function ScenePanel(): React.JSX.Element {
         cssWidth: viewportSize.width,
         cssHeight: viewportSize.height,
         image: null,
-        imageSize,
+        sceneSize,
         grid: { width: grid.width, height: grid.height },
         showGrid: true,
+        showOrigin: true,
         markers,
       });
     };
@@ -340,15 +323,26 @@ export function ScenePanel(): React.JSX.Element {
         )}
         {activeSceneName === null ? null : (
           // 放最右：平板竖屏下左边 340px 可能被抽屉盖住，靠右才一定点得到
-          <button
-            type="button"
-            data-testid="new-object"
-            title="新建对象（Ctrl/⌘+Shift+N）"
-            className="toolbar-button ml-auto flex-none hover:toolbar-button-hover"
-            onClick={() => openObjectDialog(true)}
-          >
-            新建对象
-          </button>
+          <div className="ml-auto flex flex-none items-center gap-1">
+            <button
+              type="button"
+              data-testid="reset-viewport"
+              title="视图复位：缩放回 1:1，世界原点 (0,0) 回到画布正中"
+              className="toolbar-button hover:toolbar-button-hover"
+              onClick={() => resetViewport()}
+            >
+              复位
+            </button>
+            <button
+              type="button"
+              data-testid="new-object"
+              title="新建对象（Ctrl/⌘+Shift+N）"
+              className="toolbar-button hover:toolbar-button-hover"
+              onClick={() => openObjectDialog(true)}
+            >
+              新建对象
+            </button>
+          </div>
         )}
       </div>
 

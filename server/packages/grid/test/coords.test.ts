@@ -5,20 +5,19 @@ import {
   gridIndex,
   gridRowToImageRow,
   gridSizeFromImage,
-  gridToNorm,
   imageRowToGridRow,
   indexToGrid,
   isInsideGrid,
-  normToGrid,
 } from "../src/coords";
+import { gridToWorld, worldToGrid } from "../src/world";
 import type { GridSize } from "../src/coords";
 
 // DiceTale 现有地图的实测尺寸：Map001.png 为 1920x1080，网格 64x36。
 const GRID: GridSize = { width: 64, height: 36 };
 const IMAGE = { width: 1920, height: 1080 };
 
-describe("坐标契约：网格 y 向上，归一化 y 向下", () => {
-  it("grid.y = 0 对应图片最下面一行（Y 翻转的唯一真相）", () => {
+describe("坐标契约：只有世界坐标一套（y 向上）", () => {
+  it("grid.y = 0 对应图片最下面一行（唯一的行序翻转）", () => {
     expect(gridRowToImageRow(0, 36)).toBe(35);
     expect(gridRowToImageRow(35, 36)).toBe(0);
     expect(imageRowToGridRow(0, 36)).toBe(35);
@@ -31,28 +30,38 @@ describe("坐标契约：网格 y 向上，归一化 y 向下", () => {
     }
   });
 
-  it("网格左下角（grid 0,0）在归一化坐标里是左下（y 接近 1）", () => {
-    const norm = gridToNorm({ x: 0, y: 0 }, GRID);
-    expect(norm.x).toBeLessThan(0.5);
-    expect(norm.y).toBeGreaterThan(0.9);
+  it("网格左下角（grid 0,0）在世界坐标里是左下角（x、y 都是负的）", () => {
+    const world = gridToWorld({ x: 0, y: 0 }, GRID, IMAGE);
+    expect(world.x).toBeLessThan(0);
+    expect(world.y).toBeLessThan(0);
+    // 第一格中心：-960 + 15 = -945；-540 + 15 = -525
+    expect(world).toEqual({ x: -945, y: -525 });
   });
 
-  it("网格左上角（grid y = height-1）在归一化坐标里是顶部（y 接近 0）", () => {
-    const norm = gridToNorm({ x: 0, y: GRID.height - 1 }, GRID);
-    expect(norm.y).toBeLessThan(0.1);
+  it("网格左上角（grid y = height-1）在世界坐标里是左上（y 为正）", () => {
+    const world = gridToWorld({ x: 0, y: GRID.height - 1 }, GRID, IMAGE);
+    expect(world.x).toBeLessThan(0);
+    expect(world.y).toBeGreaterThan(0);
   });
 
-  it("gridToNorm / normToGrid 在整张地图上往返一致", () => {
+  it("gridToWorld / worldToGrid 在整张地图上往返一致", () => {
     for (let y = 0; y < GRID.height; y += 1) {
       for (let x = 0; x < GRID.width; x += 1) {
-        expect(normToGrid(gridToNorm({ x, y }, GRID), GRID)).toEqual({ x, y });
+        expect(worldToGrid(gridToWorld({ x, y }, GRID, IMAGE), GRID, IMAGE)).toEqual({ x, y });
       }
     }
   });
 
-  it("normToGrid 越界输入被钳制到边界格", () => {
-    expect(normToGrid({ x: -0.5, y: -0.5 }, GRID)).toEqual({ x: 0, y: GRID.height - 1 });
-    expect(normToGrid({ x: 1.5, y: 1.5 }, GRID)).toEqual({ x: GRID.width - 1, y: 0 });
+  it("worldToGrid 越界输入被钳制到边界格", () => {
+    // 远在左上角之外 → 最后一列 / 最后一行；远在右下角之外 → 第一列 / 第一行
+    expect(worldToGrid({ x: -99999, y: 99999 }, GRID, IMAGE)).toEqual({
+      x: 0,
+      y: GRID.height - 1,
+    });
+    expect(worldToGrid({ x: 99999, y: -99999 }, GRID, IMAGE)).toEqual({
+      x: GRID.width - 1,
+      y: 0,
+    });
   });
 });
 

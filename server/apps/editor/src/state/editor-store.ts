@@ -16,15 +16,15 @@ import {
   renameObject as renameSceneObject,
   setObjectPosition as setSceneObjectPosition,
   validateSceneName,
-  type NormPosition,
   type ObjectKind,
   type ProjectDoc,
   type SceneDoc,
   type SceneFileDoc,
   type SceneListDraft,
   type SceneObjectDoc,
+  type WorldPosition,
 } from "@dts/document";
-import { gridSizeFromImage } from "@dts/grid";
+import { gridSizeFromImage, worldExtentOf, type ImageSize } from "@dts/grid";
 import {
   PROJECT_FOLDERS,
   PROJECT_SCENE_FILE_EXTENSION,
@@ -33,7 +33,14 @@ import {
   projectSceneFileId,
   projectSceneImageId,
 } from "@dts/resources";
-import { createViewport, fitViewport, panBy, zoomAt, type Viewport } from "@dts/renderer";
+import {
+  createCenteredViewport,
+  createViewport,
+  fitViewport,
+  panBy,
+  zoomAt,
+  type Viewport,
+} from "@dts/renderer";
 import type { GameStateSnapshot } from "@dts/protocol";
 import {
   RuntimeClient,
@@ -147,6 +154,8 @@ export interface EditorStoreState {
   zoomAtScreen(anchor: { x: number; y: number }, factor: number): void;
   panByScreen(dx: number, dy: number): void;
   fitToViewport(): void;
+  /** 视图复位：缩放回 1:1，并把**世界原点摆回画布正中**（用户平移/缩放后一键回到 0,0）。 */
+  resetViewport(): void;
   setViewportSize(size: { width: number; height: number }): void;
   setUi(patch: Partial<EditorUiState>): void;
   setMode(mode: EditorMode): void;
@@ -191,11 +200,14 @@ export interface EditorStoreState {
   /** 删除当前场景（至少要保留一个场景）。 */
   deleteScene(): Promise<string | undefined>;
 
-  /** 在当前场景新建对象；不传 position 就放在场景正中。成功返回 undefined，失败返回原因。 */
+  /**
+   * 在当前场景新建对象；不传 position 就放在世界原点（= 场景正中）。
+   * 成功返回 undefined，失败返回原因。
+   */
   createObject(
     kind: ObjectKind,
     name: string,
-    position?: NormPosition,
+    position?: WorldPosition,
   ): Promise<string | undefined>;
   /** 改对象名（trim 后为空则拒绝）。 */
   renameObject(id: string, name: string): boolean;
@@ -203,8 +215,8 @@ export interface EditorStoreState {
   deleteObjects(ids?: readonly string[]): boolean;
   /** 复制对象（不传 ids 则复制当前选中）：副本加「副本」后缀并偏移一点位置。 */
   duplicateObjects(ids?: readonly string[]): boolean;
-  /** 移动对象（画布拖动用；连续调用合并成一条撤销记录）。 */
-  moveObject(id: string, position: NormPosition): void;
+  /** 移动对象（画布拖动用，参数是世界坐标；连续调用合并成一条撤销记录）。 */
+  moveObject(id: string, position: WorldPosition): void;
   /** 一次拖动结束：断开撤销合并，使后续拖动成为独立记录。 */
   endObjectDrag(): void;
 }
@@ -238,8 +250,8 @@ export const sceneHistory = new DocumentHistory<readonly SceneDoc[]>([], { limit
 /** 自动落盘的防抖窗口：连续拖动 / 连续输入只写一次盘。 */
 const SCENE_SAVE_DEBOUNCE_MS = 800;
 
-/** 场景里对象位置的默认落点：正中。 */
-const SCENE_CENTER: NormPosition = { x: 0.5, y: 0.5 };
+/** 场景里对象位置的默认落点：世界原点（= 场景正中）。 */
+const SCENE_CENTER: WorldPosition = { x: 0, y: 0 };
 
 /**
  * 新建地图对象时的默认贴图尺寸。
@@ -249,21 +261,82 @@ const SCENE_CENTER: NormPosition = { x: 0.5, y: 0.5 };
  */
 const DEFAULT_MAP_IMAGE = { width: 1920, height: 1080 } as const;
 
-/** 归一化坐标夹到 `[0,1]`——画布拖动与双击落点都可能越界。 */
-function clamp01(value: number): number {
-  return Math.min(1, Math.max(0, value));
+/** 系统尚未创建地图对象时的占位场景尺寸（与 `DEFAULT_MAP_IMAGE` 同值）。 */
+export const PLACEHOLDER_SCENE_SIZE: ImageSize = DEFAULT_MAP_IMAGE;
+
+/**
+ * 场景尺寸（世界坐标的半宽半高就由它决定）：有地图对象就用它的贴图尺寸，否则用占位尺寸。
+ *
+ * **绘制、命中测试、拖动落点必须用同一个尺寸**，否则会出现「点哪儿不在哪儿」。
+ */
+export function sceneImageSize(scene: SceneDoc | undefined): ImageSize {
+  const mapObject = scene?.objects.find((object) => object.kind === "Map");
+  return mapObject?.map?.image ?? PLACEHOLDER_SCENE_SIZE;
 }
 
-/** 副本相对原对象的偏移量（按第几个副本递增，避免整批叠在一起）。 */
-const COPY_OFFSET = 0.02;
+/**
+ * 从**原始场景文件 JSON** 里挖出场景尺寸（地图对象的贴图尺寸）。
+ *
+ * 旧格式的位置是归一化坐标，读文件时就要用它换算成世界坐标——那时还没解析出对象，
+ * 所以这里直接看原始 JSON；挖不到就返回 undefined（由 `parseSceneFile` 用兜底尺寸）。
+ */
+function sceneSizeHint(raw: unknown): ImageSize | undefined {
+  if (typeof raw !== "object" || raw === null) {
+    return undefined;
+  }
+
+  const objects = (raw as { objects?: unknown }).objects;
+  if (!Array.isArray(objects)) {
+    return undefined;
+  }
+
+  for (const object of objects) {
+    if (typeof object !== "object" || object === null) {
+      continue;
+    }
+
+    const map = (object as { map?: unknown }).map;
+    if (typeof map !== "object" || map === null) {
+      continue;
+    }
+
+    const image = (map as { image?: unknown }).image;
+    if (typeof image !== "object" || image === null) {
+      continue;
+    }
+
+    const { width, height } = image as { width?: unknown; height?: unknown };
+    if (typeof width === "number" && typeof height === "number" && width > 0 && height > 0) {
+      return { width, height };
+    }
+  }
+
+  return undefined;
+}
+
+/** 把世界坐标夹进场景范围内（画布拖动可能拖到场景外）。 */
+export function clampToScene(position: WorldPosition, scene: SceneDoc | undefined): WorldPosition {
+  const extent = worldExtentOf(sceneImageSize(scene));
+  return {
+    x: Math.min(extent.halfWidth, Math.max(-extent.halfWidth, position.x)),
+    y: Math.min(extent.halfHeight, Math.max(-extent.halfHeight, position.y)),
+  };
+}
+
+/** 副本相对原对象的偏移量（世界像素，按第几个副本递增，避免整批叠在一起）。 */
+const COPY_OFFSET = 24;
 
 /** 复制出来的副本落点：偏移一点并夹回场景内。 */
-function offsetPosition(position: NormPosition | null, step: number): NormPosition {
+function offsetPosition(
+  position: WorldPosition | null,
+  step: number,
+  scene: SceneDoc | undefined,
+): WorldPosition {
   const base = position ?? SCENE_CENTER;
-  return {
-    x: clamp01(base.x + COPY_OFFSET * step),
-    y: clamp01(base.y + COPY_OFFSET * step),
-  };
+  return clampToScene(
+    { x: base.x + COPY_OFFSET * step, y: base.y + COPY_OFFSET * step },
+    scene,
+  );
 }
 
 /** 在场景列表里按名字找场景（对象编辑都作用于当前场景）。 */
@@ -381,6 +454,13 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
 
   /** 启动引导是否正在跑（同步占位，挡住 StrictMode 的第二次 effect）。 */
   let bootstrapping = false;
+  /**
+   * 用户有没有自己调过视口（平移 / 缩放 / 适配）。
+   *
+   * 没调过时，画布尺寸一变就把**世界原点摆回正中**——首帧量到的容器尺寸常常是布局
+   * 中间态（窄列 / 0 宽），不跟着校正的话「场景中心 = 0,0」会偏到一边去。
+   */
+  let viewportAdjusted = false;
   /** 上次成功写盘时的场景内容（场景名 → 序列化文本），用来算「哪些场景有未保存改动」。 */
   const savedScenes = new Map<string, string>();
   let saveTimer: number | null = null;
@@ -513,34 +593,32 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
     },
 
     setViewport(viewport) {
+      viewportAdjusted = true;
       set({ viewport });
     },
 
     zoomAtScreen(anchor, factor) {
+      viewportAdjusted = true;
       set({ viewport: zoomAt(get().viewport, factor, anchor) });
     },
 
     panByScreen(dx, dy) {
+      viewportAdjusted = true;
       set({ viewport: panBy(get().viewport, dx, dy) });
     },
 
     fitToViewport() {
       const { scenes, activeSceneName, viewportSize } = get();
-      // 视口按场景里地图对象的贴图尺寸适配；没有地图对象就回到默认视口
+      // 场景整体铺满视口；视口尺寸还没量出来时退回「世界原点居中」
       const scene = scenes.find((item) => item.name === activeSceneName);
-      const mapObject = scene?.objects.find((object) => object.kind === "Map");
-      if (mapObject?.map === undefined || viewportSize.width === 0) {
+      if (viewportSize.width === 0 || viewportSize.height === 0) {
+        viewportAdjusted = false;
         set({ viewport: createViewport() });
         return;
       }
 
-      set({
-        viewport: fitViewport(
-          { width: mapObject.map.image.width, height: mapObject.map.image.height },
-          viewportSize,
-          24,
-        ),
-      });
+      viewportAdjusted = true;
+      set({ viewport: fitViewport(sceneImageSize(scene), viewportSize, 24) });
     },
 
     setViewportSize(size) {
@@ -549,7 +627,19 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
         return;
       }
 
+      // 尺寸首次确定或用户还没调过视口时，把世界原点摆回正中；
+      // 用户一旦自己平移 / 缩放过，就不要再动他的视角。
+      if (!viewportAdjusted) {
+        set({ viewportSize: size, viewport: createCenteredViewport(size) });
+        return;
+      }
+
       set({ viewportSize: size });
+    },
+
+    resetViewport() {
+      viewportAdjusted = false;
+      set({ viewport: createCenteredViewport(get().viewportSize) });
     },
 
     setUi(patch) {
@@ -890,7 +980,10 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
         const legacy: SceneDoc[] = [];
         for (const file of files) {
           const text = await projectApi.readText(file.id);
-          const parsed = parseSceneFile(JSON.parse(text) as unknown);
+          const raw: unknown = JSON.parse(text);
+          // 旧格式（v4 及更早）的位置是归一化坐标，换算成世界坐标需要场景尺寸：
+          // 先看文件里地图对象的贴图尺寸，没有再退回默认尺寸。
+          const parsed = parseSceneFile(raw, sceneSizeHint(raw));
           const scene: SceneDoc = {
             // 场景名就是文件名，文件内容里不存名字
             name: file.name.slice(0, -PROJECT_SCENE_FILE_EXTENSION.length),
@@ -1067,11 +1160,11 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
         return "请输入对象名";
       }
 
-      // 落点夹到场景内：画布双击/拖动可能给出越界坐标，夹一次就够（写入端唯一）
+      // 落点夹到场景内：画布拖动可能给出越界坐标，夹一次就够（写入端唯一）
       const at =
         position === undefined
           ? { ...SCENE_CENTER }
-          : { x: clamp01(position.x), y: clamp01(position.y) };
+          : clampToScene({ x: position.x, y: position.y }, scene);
       const object: SceneObjectDoc =
         kind === "Map"
           ? {
@@ -1085,9 +1178,11 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
                 },
                 grid: { ...gridSizeFromImage(DEFAULT_MAP_IMAGE), cellSize: 1 },
               }),
-              position: at,
+              // 地图铺满整个场景，没有「摆在哪个点」这回事：不给位置，画布上就不画标记点
+              position: null,
             }
-          : createSceneObject({ name: trimmed, kind, position: at });
+          : // 其它实体（例如精灵，kind = "SceneObject"）走普通对象：只有名字、类型与位置
+            createSceneObject({ name: trimmed, kind, position: at });
 
       const changed = get().applyScenes(`新建对象 ${trimmed}`, (draft) => {
         const target = draft.find((item) => item.name === sceneName);
@@ -1176,7 +1271,7 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
               id: createId("obj"),
               // 名字与位置都错开，复制出来的东西不会与原对象完全重叠 / 同名
               name: nextObjectName(scene.objects, `${source.name} 副本`),
-              position: offsetPosition(source.position, step),
+              position: offsetPosition(source.position, step, scene),
             };
             step += 1;
             addObject(scene, copy);
@@ -1207,10 +1302,7 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
         (draft) => {
           const scene = draft.find((item) => item.name === sceneName);
           if (scene !== undefined) {
-            setSceneObjectPosition(scene, id, {
-              x: clamp01(position.x),
-              y: clamp01(position.y),
-            });
+            setSceneObjectPosition(scene, id, clampToScene(position, scene));
           }
         },
         { coalesceKey: `move:${id}` },

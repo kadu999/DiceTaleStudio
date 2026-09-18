@@ -5,7 +5,7 @@ import type {
   ActionInstanceDoc,
   ComponentDoc,
   MapDataDoc,
-  NormPosition,
+  WorldPosition,
   ObjectKind,
   SceneDoc,
   SceneObjectDoc,
@@ -75,7 +75,7 @@ export function collectActionIds(scene: SceneDoc): Map<string, string[]> {
 export interface CreateObjectInput {
   readonly name: string;
   readonly kind?: ObjectKind;
-  readonly position?: NormPosition | null;
+  readonly position?: WorldPosition | null;
   readonly id?: string;
 }
 
@@ -139,7 +139,7 @@ export function renameObject(scene: Draft<SceneDoc>, objectId: string, name: str
 export function setObjectPosition(
   scene: Draft<SceneDoc>,
   objectId: string,
-  position: NormPosition | null,
+  position: WorldPosition | null,
 ): boolean {
   const object = findObject(scene, objectId);
   if (object === undefined) {

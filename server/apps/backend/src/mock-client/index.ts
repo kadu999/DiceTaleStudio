@@ -34,13 +34,17 @@ interface MockObject {
 
 const MAP_NAME = "Map001";
 
+/**
+ * 位置全部是**世界坐标**（场景中心为原点，y 向上，单位像素）；
+ * 这里的取值按 Mock 地图 1920×1080 摆（范围 ±960 × ±540）。
+ */
 function buildObjects(): MockObject[] {
   return [
     {
       id: "door_01",
       name: "木门",
       kind: "SceneObject",
-      position: { x: 0.32, y: 0.61 },
+      position: { x: -345, y: 118 },
       components: [
         {
           component: "OptionValue",
@@ -57,7 +61,7 @@ function buildObjects(): MockObject[] {
       id: "chest_01",
       name: "旧宝箱",
       kind: "SceneObject",
-      position: { x: 0.55, y: 0.44 },
+      position: { x: 96, y: 65 },
       components: [
         { component: "BoolValue", displayName: "已开启", data: { value: false } },
         { component: "ItemExchange", displayName: "道具货源", data: { itemName: "钥匙", quantity: 1 } },
@@ -68,7 +72,7 @@ function buildObjects(): MockObject[] {
       id: "player_01",
       name: "调查员",
       kind: "Player",
-      position: { x: 0.5, y: 0.5 },
+      position: { x: 0, y: 0 },
       components: [{ component: "Backpack", displayName: "背包", data: { items: [] } }],
       actions: [],
     },

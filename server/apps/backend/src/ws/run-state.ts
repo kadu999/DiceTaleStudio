@@ -103,7 +103,8 @@ export class RunState {
     for (const player of players) {
       this.gameState.players[player.id] = {
         name: player.name,
-        position: this.gameState.players[player.id]?.position ?? { x: 0.5, y: 0.5 },
+        // 世界坐标的原点就是场景中心，所以「还不知道位置」时的兜底就是 (0, 0)
+        position: this.gameState.players[player.id]?.position ?? { x: 0, y: 0 },
         mapName,
       };
     }

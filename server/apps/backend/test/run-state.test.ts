@@ -18,13 +18,13 @@ describe("RunState 合并语义", () => {
 
     // 模拟地图重载后的再次上报（对象数据里没有 actions 字段）
     state.registerObjects("Map001", [
-      { id: "door", name: "木门", kind: "SceneObject", position: { x: 0.2, y: 0.3 } },
+      { id: "door", name: "木门", kind: "SceneObject", position: { x: -576, y: 216 } },
     ]);
 
     expect(state.snapshot.state.objects.door?.actions?.map((action) => action.actionId)).toEqual([
       "act_1",
     ]);
-    expect(state.snapshot.state.objects.door?.position).toEqual({ x: 0.2, y: 0.3 });
+    expect(state.snapshot.state.objects.door?.position).toEqual({ x: -576, y: 216 });
   });
 
   it("对未知对象上报动作清单返回 false（不静默创建幽灵对象）", () => {
@@ -65,18 +65,18 @@ describe("RunState 合并语义", () => {
     expect(state.snapshot.state.currentMap).toBe("");
   });
 
-  it("玩家与对象位置按 id 更新", () => {
+  it("玩家与对象位置按 id 更新（世界坐标）", () => {
     const state = new RunState();
     state.registerPlayers([{ id: "p1", name: "调查员" }], "Map001");
-    state.setPlayerPosition("p1", { x: 0.1, y: 0.2 }, "Map002");
+    state.setPlayerPosition("p1", { x: -768, y: 216 }, "Map002");
     expect(state.snapshot.state.players.p1).toEqual({
       name: "调查员",
-      position: { x: 0.1, y: 0.2 },
+      position: { x: -768, y: 216 },
       mapName: "Map002",
     });
 
-    state.setObjectPosition("door", { x: 0.5, y: 0.5 }, "Map001");
-    expect(state.snapshot.state.objects.door?.position).toEqual({ x: 0.5, y: 0.5 });
+    state.setObjectPosition("door", { x: 0, y: 0 }, "Map001");
+    expect(state.snapshot.state.objects.door?.position).toEqual({ x: 0, y: 0 });
   });
 });
 

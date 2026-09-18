@@ -134,7 +134,7 @@ describe("运行态端到端（编辑器 → 服务端 → 前端）", () => {
           id: "door_01",
           name: "木门",
           kind: "SceneObject",
-          position: { x: 0.32, y: 0.61 },
+          position: { x: -345, y: 118 },
           componentData: [{ component: "OptionValue", displayName: "状态", data: "{}" }],
         },
       ],

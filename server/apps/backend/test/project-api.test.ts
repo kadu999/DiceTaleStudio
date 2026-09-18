@@ -114,7 +114,7 @@ describe("项目 API", () => {
       formatVersion: number;
       name: string;
     };
-    expect(doc.formatVersion).toBe(4);
+    expect(doc.formatVersion).toBe(5);
     expect(doc.name).toBe(TEST_PROJECT);
     // v3 起项目文件只带项目级数据：场景是 Assets/scenes/<场景名>.json 独立文件，不再有 scenes 数组
     expect("scenes" in doc).toBe(false);

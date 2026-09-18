@@ -136,7 +136,7 @@ describe("动作图校验", () => {
           id: "door",
           name: "门",
           kind: "SceneObject" as const,
-          position: { x: 0.3, y: 0.3 },
+          position: { x: -384, y: 216 },
           rotation: 0,
           components: [
             {

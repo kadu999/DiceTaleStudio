@@ -114,7 +114,7 @@ test.describe("场景数据", () => {
       const doc = JSON.parse(
         await (await request.get(`/api/resources/text?id=${encodeURIComponent(projectId)}`)).text(),
       ) as Record<string, unknown>;
-      expect(doc.formatVersion).toBe(4);
+      expect(doc.formatVersion).toBe(5);
       expect("scenes" in doc).toBe(false);
 
       // 场景被拆成了独立文件，内容原样搬过去
@@ -128,7 +128,7 @@ test.describe("场景数据", () => {
         objects: Array<{ name: string }>;
         formatVersion: number;
       };
-      expect(scene.formatVersion).toBe(4);
+      expect(scene.formatVersion).toBe(5);
       expect(scene.objects.map((object) => object.name)).toEqual(["木门"]);
     } finally {
       await dropProject(request, project);
@@ -182,8 +182,80 @@ test.describe("场景数据", () => {
       const scene = JSON.parse(await sceneResponse.text()) as Record<string, unknown> & {
         objects: Array<{ name: string }>;
       };
-      expect(scene.formatVersion).toBe(4);
+      expect(scene.formatVersion).toBe(5);
       expect(scene.objects.map((object) => object.name)).toEqual(["木门"]);
+    } finally {
+      await dropProject(request, project);
+    }
+  });
+
+  test("旧版场景文件（位置还是归一化坐标）打开时按场景尺寸换算成世界坐标并回写", async ({
+    page,
+    request,
+  }) => {
+    const project = await newProject(request);
+    try {
+      // 造一份 v4 场景文件：position 是归一化坐标（左上为原点、y 向下）
+      const legacyProject = {
+        formatVersion: 4,
+        name: project,
+        items: { source: "item.xlsx", updatedAt: "2026-09-18", count: 0, items: [] },
+      };
+      const legacyScene = {
+        formatVersion: 4,
+        objects: [
+          {
+            id: "door",
+            // 归一化 (0.25, 0.25) 在 1920×1080 场景里 = 左上四分之一处
+            name: "木门",
+            kind: "SceneObject",
+            position: { x: 0.25, y: 0.25 },
+            rotation: 0,
+            components: [],
+          },
+        ],
+      };
+
+      for (const [subPath, body] of [
+        ["project.json", legacyProject],
+        [`Assets/scenes/${SCENE_A}.json`, legacyScene],
+      ] as const) {
+        const response = await request.put(
+          `/api/resources/text?id=${encodeURIComponent(`project:${project}/${subPath}`)}`,
+          {
+            headers: { "content-type": "text/plain; charset=utf-8" },
+            data: `${JSON.stringify(body, null, 2)}\n`,
+          },
+        );
+        expect(response.ok()).toBeTruthy();
+      }
+
+      await enterEditor(page);
+      await openProject(page, project);
+
+      // 文件被回写成新版本，位置换成世界坐标：x = 0.25*1920-960 = -480；y = 540-0.25*1080 = 270
+      await expect
+        .poll(async () => {
+          const response = await request.get(
+            `/api/resources/text?id=${encodeURIComponent(
+              `project:${project}/Assets/scenes/${SCENE_A}.json`,
+            )}`,
+          );
+          if (!response.ok()) {
+            return null;
+          }
+
+          const file = JSON.parse(await response.text()) as {
+            formatVersion: number;
+            objects: Array<{ position: { x: number; y: number } | null }>;
+          };
+          return { version: file.formatVersion, position: file.objects[0]?.position };
+        })
+        .toEqual({ version: 5, position: { x: -480, y: 270 } });
+
+      // 对象照样在列表里（迁移不会丢对象）
+      await openLeftTab(page, "hierarchy");
+      await expect(page.getByTestId("object-row").filter({ hasText: "木门" })).toBeVisible();
     } finally {
       await dropProject(request, project);
     }
