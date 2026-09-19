@@ -2,7 +2,7 @@
   "formatVersion": 10,
   "objects": [
     {
-      "id": "map_mu7t4t731b222",
+      "id": "map_mu7t58za2yr2b",
       "name": "网格地图",
       "kind": "Map",
       "active": true,
@@ -17,7 +17,7 @@
       "components": [],
       "map": {
         "image": {
-          "id": "project:测试项目/Assets/images/Map002.png",
+          "id": "project:测试项目/Assets/images/Map003.png",
           "width": 1920,
           "height": 1080
         },
