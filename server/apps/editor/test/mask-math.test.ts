@@ -2,22 +2,24 @@ import { describe, expect, it } from "vitest";
 import { CellMask } from "@dts/grid";
 import {
   MASK_BRUSH_RADIUS,
+  MASK_BRUSH_RATIO,
   MASK_BRUSH_SOFTNESS,
   MASK_PREVIEW_WIDTH,
   applyEraseToPixels,
   brushRadiusFor,
   fillFogMaskPixels,
-  interpolateStrokePoints,
   previewMaskSizeFor,
+  strokeStampCenters,
   type MaskColorOf,
   type MaskPixelColor,
 } from "../src/services/mask-math";
 
 /**
- * 遮罩擦除的像素运算（移植自参考实现 `backend_diceTale` 的 `maskMath`）。
+ * 遮罩擦除的像素运算（**按前端 Unity 实际执行的那套**逐字实现）。
  *
- * 这几条公式必须钉死：编辑器里擦出来的样子与前端（Unity `MaskImage` 的 shader）
- * 擦出来的样子要对得上——两边一旦不一致，GM 在后台看到的和玩家看到的就是两回事。
+ * 这几条公式必须钉死：编辑器里擦出来的纹素范围与前端（`MaskImage.ApplyEraseStroke` +
+ * `MaskEraseStamp.shader`）擦出来的要**完全一致**——否则 GM 在后台看到的和玩家看到的就是两回事。
+ * 每一条的出处与算式都写在 `mask-math.ts` 的文件头。
  */
 
 const GRID = { width: 4, height: 2 };
@@ -37,40 +39,57 @@ function opaquePixels(width: number, height: number): Uint8ClampedArray {
   return pixels;
 }
 
-describe("interpolateStrokePoints", () => {
-  it("按步长补点、含两端", () => {
-    const points = interpolateStrokePoints({ x: 0, y: 0 }, { x: 1, y: 0 }, 0.25);
-    expect(points).toHaveLength(5);
-    expect(points[0]).toEqual({ x: 0, y: 0 });
-    expect(points[4]).toEqual({ x: 1, y: 0 });
-    // 中间点均匀分布（快拖时靠它把两个事件点连成一条线）
-    expect(points[2]?.x).toBeCloseTo(0.5, 6);
+describe("strokeStampCenters", () => {
+  it("与前端同式：step = max(1, 半径 / 2)，两端各打一个圆", () => {
+    // 半径 8 → step 4；距离 16 → samples = 4 → 5 个落点（0,4,8,12,16）
+    const centers = strokeStampCenters({ x: 0, y: 0 }, { x: 16, y: 0 }, 8);
+    expect(centers.map((point) => point.x)).toEqual([0, 4, 8, 12, 16]);
+    expect(centers.every((point) => point.y === 0)).toBe(true);
   });
 
-  it("两点重合时只有一个点（单击照常打一个圆）", () => {
-    expect(interpolateStrokePoints({ x: 0.3, y: 0.7 }, { x: 0.3, y: 0.7 }, 0.1)).toEqual([
-      { x: 0.3, y: 0.7 },
+  it("半径很小时步长兜到 1（前端的 max(1, …)）", () => {
+    // 半径 1 → radius * 0.5 = 0.5 → step 兜到 1 → 距离 3 打 4 个点
+    expect(strokeStampCenters({ x: 0, y: 0 }, { x: 3, y: 0 }, 1)).toHaveLength(4);
+  });
+
+  it("两点重合时给出同一个点两次（前端的段循环就是 samples = 1；min 幂等所以等价）", () => {
+    // 前端单点笔画走的是另一支（只打一个圆），窗口里按下也是直接打一个圆；
+    // 这里保持与它的「段循环」逐字一致，重复的那一下被 min 吃掉，不影响结果
+    expect(strokeStampCenters({ x: 5, y: 7 }, { x: 5, y: 7 }, 48)).toEqual([
+      { x: 5, y: 7 },
+      { x: 5, y: 7 },
     ]);
   });
 
-  it("步长非法（0 / 负数）时退化成起点，不做除零", () => {
-    expect(interpolateStrokePoints({ x: 0, y: 0 }, { x: 1, y: 1 }, 0)).toEqual([{ x: 0, y: 0 }]);
-    expect(interpolateStrokePoints({ x: 0, y: 0 }, { x: 1, y: 1 }, -1)).toEqual([{ x: 0, y: 0 }]);
+  it("斜线也照距离补点（不是按轴）", () => {
+    const centers = strokeStampCenters({ x: 0, y: 0 }, { x: 3, y: 4 }, 10);
+    expect(centers).toHaveLength(2); // 距离 5 < step 5 → samples = 1
+    expect(centers[1]).toEqual({ x: 3, y: 4 });
   });
 });
 
-describe("applyEraseToPixels", () => {
-  it("圆心全擦、边缘不擦，且只改 alpha（RGB 不动）", () => {
+describe("applyEraseToPixels（与 MaskEraseStamp.shader 同式）", () => {
+  /** 把圆心放在纹素中心上，好算：纹素 (8,8) 的中心是 (8.5, 8.5)。 */
+  const CENTER = { x: 8.5, y: 8.5 };
+
+  it("距离从**纹素中心**算起（i.uv × _MaskSize = i + 0.5）", () => {
     const pixels = opaquePixels(16, 16);
-    applyEraseToPixels(pixels, 16, 16, { x: 8, y: 8 }, 4, 1);
+    applyEraseToPixels(pixels, 16, 16, CENTER, 4, 1);
 
+    // 圆心那一纹素：d = 0 → 全擦
     expect(alphaAt(pixels, 16, 8, 8)).toBe(0);
-    // 半径之外原样
-    expect(alphaAt(pixels, 16, 0, 0)).toBe(255);
-    // 边缘（d ≈ r）几乎没擦掉
-    expect(alphaAt(pixels, 16, 12, 8)).toBeGreaterThan(200);
+    // (11,8) 的纹素中心 (11.5,8.5)：d = 3 → 3/4 → alpha 191
+    expect(alphaAt(pixels, 16, 11, 8)).toBe(Math.round((3 / 4) * 255));
+    // (12,8)：d = 4（正好在半径上）→ 不动
+    expect(alphaAt(pixels, 16, 12, 8)).toBe(255);
+    // 再远一点更是不动
+    expect(alphaAt(pixels, 16, 13, 8)).toBe(255);
+  });
 
-    // RGB 一直是黑的：遮罩的「厚薄」只由 alpha 表达
+  it("只改 alpha：RGB 一点不动", () => {
+    const pixels = opaquePixels(16, 16);
+    applyEraseToPixels(pixels, 16, 16, CENTER, 4, 1);
+
     for (let index = 0; index < pixels.length; index += 4) {
       expect(pixels[index]).toBe(0);
       expect(pixels[index + 1]).toBe(0);
@@ -80,23 +99,44 @@ describe("applyEraseToPixels", () => {
 
   it("幂等：同一处擦 N 次 = 擦 1 次（渐变带不被叠加抹平）", () => {
     const once = opaquePixels(16, 16);
-    applyEraseToPixels(once, 16, 16, { x: 8, y: 8 }, 4, 1);
+    applyEraseToPixels(once, 16, 16, CENTER, 4, 1);
 
     const thrice = opaquePixels(16, 16);
     for (let index = 0; index < 3; index += 1) {
-      applyEraseToPixels(thrice, 16, 16, { x: 8, y: 8 }, 4, 1);
+      applyEraseToPixels(thrice, 16, 16, CENTER, 4, 1);
     }
 
     expect([...thrice]).toEqual([...once]);
   });
 
-  it("软边 0 = 硬边（半径内全擦）", () => {
-    const pixels = opaquePixels(16, 16);
-    applyEraseToPixels(pixels, 16, 16, { x: 8, y: 8 }, 4, 0);
+  it("软边曲线：softness=0 硬边（核 = 半径，核内全擦）、softness=1 全程线性", () => {
+    const hard = opaquePixels(16, 16);
+    applyEraseToPixels(hard, 16, 16, CENTER, 4, 0);
+    // core = 4、软边带被 max(…, 1e-5) 兜到几乎为 0 → d ≤ 半径全擦、之外不动（硬边）
+    expect(alphaAt(hard, 16, 8, 8)).toBe(0);
+    expect(alphaAt(hard, 16, 11, 8)).toBe(0);
+    expect(alphaAt(hard, 16, 12, 8)).toBe(0); // d = 4 正好在半径上：硬边把它也算在内
+    expect(alphaAt(hard, 16, 13, 8)).toBe(255);
 
-    expect(alphaAt(pixels, 16, 8, 8)).toBe(0);
-    expect(alphaAt(pixels, 16, 11, 8)).toBe(0);
-    expect(alphaAt(pixels, 16, 13, 8)).toBe(255);
+    const soft = opaquePixels(16, 16);
+    applyEraseToPixels(soft, 16, 16, CENTER, 4, 1);
+    // core = 0 → 全程线性：d = 1 → 64、d = 2 → 128
+    expect(alphaAt(soft, 16, 9, 8)).toBe(Math.round((1 / 4) * 255));
+    expect(alphaAt(soft, 16, 10, 8)).toBe(Math.round((2 / 4) * 255));
+  });
+
+  it("softness 越界（负数 / 大于 1）按 saturate 处理", () => {
+    const tooBig = opaquePixels(16, 16);
+    applyEraseToPixels(tooBig, 16, 16, CENTER, 4, 5);
+    const exactlyOne = opaquePixels(16, 16);
+    applyEraseToPixels(exactlyOne, 16, 16, CENTER, 4, 1);
+    expect([...tooBig]).toEqual([...exactlyOne]);
+
+    const negative = opaquePixels(16, 16);
+    applyEraseToPixels(negative, 16, 16, CENTER, 4, -3);
+    const exactlyZero = opaquePixels(16, 16);
+    applyEraseToPixels(exactlyZero, 16, 16, CENTER, 4, 0);
+    expect([...negative]).toEqual([...exactlyZero]);
   });
 
   it("越界的圆不会写坏数组（边缘落笔不崩）", () => {
@@ -115,13 +155,19 @@ describe("applyEraseToPixels", () => {
     expect(alphaAt(pixels, 4, 2, 2)).toBe(255);
   });
 
-  it("笔刷参数与参考实现一致：半径 48 texel、软边 1、遮罩 960 宽", () => {
-    // 参考实现 `useMaskEditor.ts` 的 `const brushRadius = 48`，而它那块遮罩的默认尺寸是
-    // 960×540（`MaskImage.maskWidth/maskHeight`、shader 的 `_MaskSize`）——两者一起决定了
-    // 「归一化半径 = 宽度的 5%」，也就是它真正下发给前端的那个数
+  it("笔刷参数与前端一致：48 texel / 960 宽 / 软边 1，且半径按同一个归一化值换算", () => {
+    // 前端 `MaskImage.maskWidth` 与 shader `_MaskSize` 的默认都是 960×540，
+    // `useMaskEditor.ts` 的 `brushRadius` 是 48 —— 两者一起定了归一化半径 48/960 = 0.05
     expect(MASK_BRUSH_RADIUS).toBe(48);
     expect(MASK_PREVIEW_WIDTH).toBe(960);
     expect(MASK_BRUSH_SOFTNESS).toBe(1);
+    expect(MASK_BRUSH_RATIO).toBeCloseTo(0.05, 10);
+
+    // 前端 `radiusTex = max(1, 归一化半径 × 遮罩宽)` 同式：遮罩宽变了，纹素半径跟着变
+    expect(brushRadiusFor(960)).toBe(48);
+    expect(brushRadiusFor(1920)).toBe(96);
+    expect(brushRadiusFor(4)).toBe(1); // 极小遮罩兜到 1（前端的 Mathf.Max(1f, …)）
+    expect(brushRadiusFor(960) / 960).toBeCloseTo(brushRadiusFor(1920) / 1920, 10);
   });
 });
 
@@ -242,7 +288,8 @@ describe("fillFogMaskPixels", () => {
     const pixels = new Uint8ClampedArray(8 * 4 * 4);
     fillFogMaskPixels(pixels, 8, 4, cells, GRID, CellMask.Fog1, COLOR_OF);
 
-    applyEraseToPixels(pixels, 8, 4, { x: 4, y: 2 }, 3, 1);
+    // 圆心落在纹素中心上 → 那一纹素全擦
+    applyEraseToPixels(pixels, 8, 4, { x: 4.5, y: 2.5 }, 3, 1);
     expect(alphaAt(pixels, 8, 4, 2)).toBe(0);
 
     // 「关掉再打开」就是这个动作：按文档重新画一遍

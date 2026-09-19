@@ -16,8 +16,8 @@ import {
   applyEraseToPixels,
   brushRadiusFor,
   fillFogMaskPixels,
-  interpolateStrokePoints,
   previewMaskSizeFor,
+  strokeStampCenters,
   type MaskPoint,
 } from "../services/mask-math";
 import { useEditorStore } from "../state/editor-store";
@@ -136,21 +136,18 @@ export function FogMaskDialog({
   }, [open, canvas, maskSize, grid, cells, fogMask, colors]);
 
   const ready = open && maskSize !== undefined && grid !== undefined;
-  // 笔刷半径：参考实现是 960 宽遮罩上的 48 texel（= 宽度 5%），宽度变了按比例缩。
-  // 补点的步长按宽度归一化后再除以 2——`interpolateStrokePoints` 吃的是归一化坐标，
-  // 而距离在纹理像素上算，所以非正方形纹理上也是正圆（与 shader 里那句注释同一个意思）
+  // 笔刷半径（纹理像素）：与前端 `ApplyEraseStroke` 的 `radiusTex` 同式（归一化半径 × 遮罩宽）
   const radius = brushRadiusFor(maskSize?.width ?? MASK_PREVIEW_WIDTH);
 
-  /** 指针位置 → 遮罩上的归一化坐标（左上原点、y 向下，与参考实现一致）。 */
-  const toNormalized = (event: React.PointerEvent<HTMLCanvasElement>): MaskPoint => {
+  /** 指针位置 → 遮罩的**纹理像素坐标**（左上原点、y 向下；前端收到后再翻转 y）。 */
+  const toTexelPoint = (event: React.PointerEvent<HTMLCanvasElement>): MaskPoint => {
     const box = event.currentTarget.getBoundingClientRect();
-    return {
-      x: Math.max(0, Math.min(1, (event.clientX - box.left) / Math.max(1, box.width))),
-      y: Math.max(0, Math.min(1, (event.clientY - box.top) / Math.max(1, box.height))),
-    };
+    const x = Math.max(0, Math.min(1, (event.clientX - box.left) / Math.max(1, box.width)));
+    const y = Math.max(0, Math.min(1, (event.clientY - box.top) / Math.max(1, box.height)));
+    return { x: x * (maskSize?.width ?? 1), y: y * (maskSize?.height ?? 1) };
   };
 
-  /** 在一个归一化点上擦一下（就地改遮罩像素并回写画布）。 */
+  /** 在纹理像素坐标的一个点上擦一下（就地改遮罩像素并回写画布）。 */
   const eraseAt = (point: MaskPoint): void => {
     const imageData = imageDataRef.current;
     const context = canvas?.getContext("2d") ?? null;
@@ -162,7 +159,7 @@ export function FogMaskDialog({
       imageData.data,
       maskSize.width,
       maskSize.height,
-      { x: point.x * maskSize.width, y: point.y * maskSize.height },
+      point,
       radius,
       MASK_BRUSH_SOFTNESS,
     );
@@ -176,22 +173,22 @@ export function FogMaskDialog({
     }
 
     event.currentTarget.setPointerCapture(event.pointerId);
-    const point = toNormalized(event);
+    // 按下 = 前端「单点」那一支：只在这一处打一个圆
+    const point = toTexelPoint(event);
     lastPointRef.current = point;
     eraseAt(point);
   };
 
   const onPointerMove = (event: React.PointerEvent<HTMLCanvasElement>): void => {
     const last = lastPointRef.current;
-    if (last === null || !ready || maskSize === undefined) {
+    if (last === null || !ready) {
       return;
     }
 
-    const point = toNormalized(event);
-    // 补点：指针事件之间会跳，逐点打圆才擦得连贯（步长 = 半径的一半，与参考实现一致）
-    const step = (radius / maskSize.width) / 2;
-    for (const sample of interpolateStrokePoints(last, point, step)) {
-      eraseAt(sample);
+    const point = toTexelPoint(event);
+    // 补点与前端同式：step = max(1, 半径 / 2) 纹理像素，两端各打一个圆
+    for (const center of strokeStampCenters(last, point, radius)) {
+      eraseAt(center);
     }
 
     lastPointRef.current = point;
