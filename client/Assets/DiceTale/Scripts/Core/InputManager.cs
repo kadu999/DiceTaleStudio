@@ -2,7 +2,6 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
-using NuLight.ProjectionAlignment;
 
 namespace DiceTale
 {
@@ -79,13 +78,13 @@ namespace DiceTale
         }
 
         /// <summary>按方案安装输入源（所有入口统一走这里；touchscreen 仅压板源用，可空自动查找）。</summary>
-        public void InstallInputSource(InputSourceKind kind, ProjectionVirtualTouchscreen touchscreen = null)
+        public void InstallInputSource(InputSourceKind kind)
         {
-            SetInputSource(CreateSource(kind, touchscreen));
+            SetInputSource(CreateSource(kind));
         }
 
         /// <summary>按方案创建输入源实例（初始化的唯一工厂，切换版本只改调用方传的 <paramref name="kind"/>）。</summary>
-        public static InputSource CreateSource(InputSourceKind kind, ProjectionVirtualTouchscreen touchscreen = null)
+        public static InputSource CreateSource(InputSourceKind kind)
         {
             switch (kind)
             {
@@ -94,7 +93,6 @@ namespace DiceTale
                 case InputSourceKind.PipeSource:
                     return new DevicePipeInputSource2
                     {
-                        ProjectionTouchscreen = touchscreen,
                         // 重启/场景重载后恢复 GM 上次设置的指挥 Id（与后台"断开不清配置"配合，前后端一致）
                         CommandId = InputConfigPrefs.LoadCommandId(),
                     };
@@ -106,9 +104,9 @@ namespace DiceTale
 
         /// <summary>安装压板设备输入源（v1），与装置的 UI 事件共用虚拟触摸屏；不依赖地图加载时机。
         /// 保留兼容入口，实际走 <see cref="InstallInputSource"/>。</summary>
-        public void InstallDevicePipeSource(ProjectionVirtualTouchscreen touchscreen = null)
+        public void InstallDevicePipeSource()
         {
-            InstallInputSource(InputSourceKind.PipeSource, touchscreen);
+            InstallInputSource(InputSourceKind.PipeSource);
         }
 
         /// <summary>取鼠标右键当前【世界坐标】（网格平面）；右键未按住或挂起时返回 false。</summary>

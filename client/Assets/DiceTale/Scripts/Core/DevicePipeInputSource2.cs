@@ -1,6 +1,5 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
-using NuLight.ProjectionAlignment;
 
 namespace DiceTale
 {
@@ -15,7 +14,7 @@ namespace DiceTale
     public class DevicePipeInputSource2 : InputSource
     {
         /// <summary>宿主的虚拟触摸屏；未指定时自动查找，支持装置稍后加载。</summary>
-        public ProjectionVirtualTouchscreen ProjectionTouchscreen { get; set; }
+        //public ProjectionVirtualTouchscreen ProjectionTouchscreen { get; set; }
 
         /// <summary>指挥 Id（CommandId，本类行为开关，GM set_input_config 下发、PlayerPrefs 持久化）：
         /// 单点指挥（Unassigned 0 / 玩家 1..5 / 拍照 6）：每帧只上报压力最大触点，其 Id = 本值
@@ -31,99 +30,99 @@ namespace DiceTale
 
         public override void Sample(InputFrame frame, bool suspended, Camera pointerCamera)
         {
-            frame.Reset();
-            frame.ScreenPositionsAvailable = true;
-            if (suspended)
-            {
-                return;
-            }
+            //frame.Reset();
+            //frame.ScreenPositionsAvailable = true;
+            //if (suspended)
+            //{
+            //    return;
+            //}
 
-            if (ProjectionTouchscreen == null)
-            {
-                ProjectionTouchscreen = Object.FindFirstObjectByType<ProjectionVirtualTouchscreen>();
-            }
+            //if (ProjectionTouchscreen == null)
+            //{
+            //    ProjectionTouchscreen = Object.FindFirstObjectByType<ProjectionVirtualTouchscreen>();
+            //}
 
-            if (ProjectionTouchscreen == null || !ProjectionTouchscreen.isActiveAndEnabled)
-            {
-                WarnOnce("缺少启用的 ProjectionVirtualTouchscreen。请从 DMGameLibraryProjection 进入 Demo；独立调试请启用模拟输入。");
-                return;
-            }
+            //if (ProjectionTouchscreen == null || !ProjectionTouchscreen.isActiveAndEnabled)
+            //{
+            //    WarnOnce("缺少启用的 ProjectionVirtualTouchscreen。请从 DMGameLibraryProjection 进入 Demo；独立调试请启用模拟输入。");
+            //    return;
+            //}
 
-            // 校正取消事件可能还在 Input System 队列中，不能继续消费上一帧的按压。
-            if (ProjectionTouchscreen.Suspended)
-            {
-                return;
-            }
+            //// 校正取消事件可能还在 Input System 队列中，不能继续消费上一帧的按压。
+            //if (ProjectionTouchscreen.Suspended)
+            //{
+            //    return;
+            //}
 
-            var device = ProjectionTouchscreen.Device;
-            if (device == null || !device.added)
-            {
-                WarnOnce("投影装置的虚拟触摸屏尚未就绪。");
-                return;
-            }
+            //var device = ProjectionTouchscreen.Device;
+            //if (device == null || !device.added)
+            //{
+            //    WarnOnce("投影装置的虚拟触摸屏尚未就绪。");
+            //    return;
+            //}
 
-            if (pointerCamera == null)
-            {
-                WarnOnce("缺少游戏指针相机，无法把压感触点转换到地图平面。");
-                return;
-            }
+            //if (pointerCamera == null)
+            //{
+            //    WarnOnce("缺少游戏指针相机，无法把压感触点转换到地图平面。");
+            //    return;
+            //}
 
-            lastWarning = null;
-            // 多点触屏标记：全触点口径（多人多点玩法需要多点）；否则单点指挥（只认压力最大触点）
-            if (CommandId == PointerId.MultiTouch)
-            {
-                SampleMultiTouch(frame, pointerCamera, device);
-                return;
-            }
+            //lastWarning = null;
+            //// 多点触屏标记：全触点口径（多人多点玩法需要多点）；否则单点指挥（只认压力最大触点）
+            //if (CommandId == PointerId.MultiTouch)
+            //{
+            //    SampleMultiTouch(frame, pointerCamera, device);
+            //    return;
+            //}
 
-            // 单点指挥：只读宿主拥有的设备（Touchscreen.current 可能被其它触屏抢占），
-            // 在全部按压触点里选压力最大的那个；同时按下多点也只这一个进入输入帧，
-            // 不允许同帧触发多个点。
-            var touches = device.touches;
-            int bestIndex = -1;
-            float bestPressure = 0f;
-            for (int i = 0; i < touches.Count; i++)
-            {
-                var touch = touches[i];
-                if (!touch.press.isPressed)
-                {
-                    continue;
-                }
+            //// 单点指挥：只读宿主拥有的设备（Touchscreen.current 可能被其它触屏抢占），
+            //// 在全部按压触点里选压力最大的那个；同时按下多点也只这一个进入输入帧，
+            //// 不允许同帧触发多个点。
+            //var touches = device.touches;
+            //int bestIndex = -1;
+            //float bestPressure = 0f;
+            //for (int i = 0; i < touches.Count; i++)
+            //{
+            //    var touch = touches[i];
+            //    if (!touch.press.isPressed)
+            //    {
+            //        continue;
+            //    }
 
-                float pressure = Mathf.Clamp01(touch.pressure.ReadValue());
-                if (bestIndex < 0 || pressure > bestPressure)
-                {
-                    bestIndex = i;
-                    bestPressure = pressure;
-                }
-            }
+            //    float pressure = Mathf.Clamp01(touch.pressure.ReadValue());
+            //    if (bestIndex < 0 || pressure > bestPressure)
+            //    {
+            //        bestIndex = i;
+            //        bestPressure = pressure;
+            //    }
+            //}
 
-            if (bestIndex < 0)
-            {
-                return;
-            }
+            //if (bestIndex < 0)
+            //{
+            //    return;
+            //}
 
-            var selected = touches[bestIndex];
-            // Id 由 CommandId 控制：设为 1..5 / Photo 即固定为对应玩家/拍照指针。
-            PointerId pressId = CommandId;
-            Vector2 screen = selected.position.ReadValue();
-            Vector3 world = PointerWorldConversion.ScreenToPlane(pointerCamera, screen);
-            frame.PressedWorldPositions.Add(world);
-            frame.PressedPressures.Add(bestPressure);
-            frame.PressedScreenPositions.Add(screen);
-            frame.PressedIds.Add(pressId);
+            //var selected = touches[bestIndex];
+            //// Id 由 CommandId 控制：设为 1..5 / Photo 即固定为对应玩家/拍照指针。
+            //PointerId pressId = CommandId;
+            //Vector2 screen = selected.position.ReadValue();
+            //Vector3 world = PointerWorldConversion.ScreenToPlane(pointerCamera, screen);
+            //frame.PressedWorldPositions.Add(world);
+            //frame.PressedPressures.Add(bestPressure);
+            //frame.PressedScreenPositions.Add(screen);
+            //frame.PressedIds.Add(pressId);
 
-            if (!selected.press.wasPressedThisFrame)
-            {
-                return;
-            }
+            //if (!selected.press.wasPressedThisFrame)
+            //{
+            //    return;
+            //}
 
-            frame.NewlyPressed.Add(new PointerPress { Id = pressId, Screen = screen, Pressure = bestPressure });
+            //frame.NewlyPressed.Add(new PointerPress { Id = pressId, Screen = screen, Pressure = bestPressure });
 
-            if (LogDiagnostics)
-            {
-                Debug.Log($"[DevicePipe] f={Time.frameCount} Id={pressId} screen={screen:F1} world={world:F3} P={bestPressure:F2}");
-            }
+            //if (LogDiagnostics)
+            //{
+            //    Debug.Log($"[DevicePipe] f={Time.frameCount} Id={pressId} screen={screen:F1} world={world:F3} P={bestPressure:F2}");
+            //}
         }
 
         /// <summary>多点触屏口径：上报全部按压触点（Id 按本帧按压顺序编号 1..N）——
