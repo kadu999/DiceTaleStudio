@@ -1,0 +1,47 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!21 &2100000
+Material:
+  serializedVersion: 8
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: MintChampagneEnergyAura
+  m_Shader: {fileID: 4800000, guid: cea0a202f44e8ff449b848ed2f944e16, type: 3}
+  m_Parent: {fileID: 0}
+  m_ModifiedSerializedProperties: 0
+  m_ValidKeywords: []
+  m_InvalidKeywords: []
+  m_LightmapFlags: 4
+  m_EnableInstancingVariants: 0
+  m_DoubleSidedGI: 0
+  m_CustomRenderQueue: -1
+  stringTagMap: {}
+  disabledShaderPasses: []
+  m_LockedProperties: 
+  m_SavedProperties:
+    serializedVersion: 3
+    m_TexEnvs: []
+    m_Ints: []
+    m_Floats:
+    - _BodyAlpha: 0.45
+    - _EdgeBreakup: 1
+    - _EdgeFlowSpeed: 2.05
+    - _GlowIntensity: 1.2
+    - _GlowWidth: 0.055
+    - _NoiseScale: 10.5
+    - _NoiseStrength: 0.0035
+    - _PulseSpeed: 3
+    - _ShapeFlowSpeed: 0.72
+    - _ShapeScale: 10
+    - _ShapeWarp: 0.025
+    - _Smoothness: 0.036
+    - _VolumeScaleRatio: 1
+    - _ZTest: 4
+    m_Colors:
+    - _HeadColor: {r: 0.2, g: 0.4, b: 2.5, a: 1}
+    - _RimColor: {r: 0.9, g: 0.45, b: 4, a: 1}
+    - _TailColor: {r: 0.8, g: 0.15, b: 3, a: 1}
+  m_BuildTextureStacks: []
+  m_AllowLocking: 1

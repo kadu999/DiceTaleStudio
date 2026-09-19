@@ -1,0 +1,33 @@
+{
+  "initial": "Scene000",
+  "scenes": [
+    {
+      "id": "Scene000",
+      "title": "创建角色",
+      "image": "Scene000.png",
+      "order": 0,
+      "next": { "scene": "Scene001", "marker": "001" }
+    },
+    {
+      "id": "Scene001",
+      "title": "古堡大厅",
+      "image": "Scene001.png",
+      "order": 1,
+      "next": { "scene": "Scene002", "marker": "001" }
+    },
+    {
+      "id": "Scene002",
+      "title": "东侧回廊",
+      "image": "Scene002.png",
+      "order": 2,
+      "next": { "scene": "Scene003", "marker": "001" }
+    },
+    {
+      "id": "Scene003",
+      "title": "地窖",
+      "image": "Scene003.png",
+      "order": 3,
+      "next": null
+    }
+  ]
+}

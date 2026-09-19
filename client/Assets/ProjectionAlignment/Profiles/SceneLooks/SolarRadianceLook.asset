@@ -1,0 +1,24 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0134378344014c94d86623b557b76ead, type: 3}
+  m_Name: SolarRadianceLook
+  m_EditorClassIdentifier: NuLight.ProjectionAlignment::NuLight.ProjectionAlignment.ProjectionSceneLookProfile
+  displayName: "\u84DD\u6A59\u6668\u8F89"
+  skyboxMaterial: {fileID: 2100000, guid: 5344955d792373641aff45adb02940a7, type: 2}
+  volumeProfile: {fileID: 11400000, guid: 060c056705bd36743a5f624b68385877, type: 2}
+  ambientIntensity: 0.95
+  reflectionIntensity: 1
+  directionalLightColor: {r: 1, g: 0.78, b: 0.62, a: 1}
+  directionalLightIntensity: 1.25
+  fogEnabled: 0
+  fogColor: {r: 0.08, g: 0.08, b: 0.2, a: 1}
+  fogDensity: 0

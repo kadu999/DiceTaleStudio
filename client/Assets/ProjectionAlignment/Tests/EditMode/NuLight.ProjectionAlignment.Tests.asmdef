@@ -1,0 +1,23 @@
+{
+  "name": "NuLight.ProjectionAlignment.Tests",
+  "rootNamespace": "NuLight.ProjectionAlignment.Tests",
+  "references": [
+    "NuLight.ProjectionAlignment"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": false,
+  "defineConstraints": [
+    "UNITY_INCLUDE_TESTS"
+  ],
+  "versionDefines": [],
+  "noEngineReferences": false,
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ]
+}
