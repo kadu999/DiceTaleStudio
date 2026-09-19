@@ -97,6 +97,69 @@ function validateObject(object: SceneObjectDoc, path: string, issues: Validation
     });
   }
 
+  // 声音对象（动作对象）：基础属性与实体一样，另加声音数据——缺了就是个什么都不播的空壳
+  if (object.kind === "PlaySound") {
+    const sound = object.sound;
+    if (sound === undefined) {
+      issues.push({
+        level: "error",
+        path,
+        message: "声音对象缺少声音数据（音频列表 / 层级）",
+      });
+    }
+
+    if (sound !== undefined && sound.clips.some((clip) => clip.trim().length === 0)) {
+      issues.push({
+        level: "warning",
+        path: `${path}/sound/clips`,
+        message: "音频列表里有空条目（会被忽略）",
+      });
+    }
+
+    // 选中的那条必须落在音频列表里：对不上就是数据坏了，按「还没选」处理（播放按钮点不了）
+    if (sound?.picked !== undefined && !sound.clips.includes(sound.picked)) {
+      issues.push({
+        level: "warning",
+        path: `${path}/sound/picked`,
+        message: "选中的那条音频不在音频列表里（按还没选处理）",
+      });
+    }
+
+    // 名字是给人看的标签：空白名字会被当成「没起名字」，退回素材文件名
+    const namedClips = sound?.names === undefined ? [] : Object.entries(sound.names);
+    for (const [clipId, name] of namedClips) {
+      if (name.trim().length === 0) {
+        issues.push({
+          level: "warning",
+          path: `${path}/sound/names/${clipId}`,
+          message: "声音名字是空的（会退回素材文件名）",
+        });
+      } else if (sound !== undefined && !sound.clips.includes(clipId)) {
+        // 名字挂在文件上：对应的音频已经不在列表里了，这条名字就是看不见的死数据
+        issues.push({
+          level: "warning",
+          path: `${path}/sound/names/${clipId}`,
+          message: "这条名字对应的音频不在音频列表里（会被忽略）",
+        });
+      }
+    }
+
+    // 它画的是**固定的内置图标**（不给换贴图），所以 `image` 字段没有意义
+    if (object.image !== undefined) {
+      issues.push({
+        level: "warning",
+        path: `${path}/image`,
+        message: "声音对象用固定的内置图标（不允许改贴图），多余的 image 字段会被忽略",
+      });
+    }
+  } else if (object.sound !== undefined) {
+    issues.push({
+      level: "warning",
+      path: `${path}/sound`,
+      message: `非声音对象（kind=${object.kind}）不应携带声音数据`,
+    });
+  }
+
   const componentIds = new Set<string>();
   for (const component of object.components) {
     const componentPath = `${path}/components/${component.id}`;

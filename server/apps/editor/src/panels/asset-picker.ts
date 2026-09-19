@@ -40,21 +40,33 @@ export function findAssetById(
 /** 资源面板里当前项目下的全部图片（按路径排序）。 */
 export function listImageAssets(nodes: readonly ResourceTreeNode[]): ResourceTreeNode[] {
   const found: ResourceTreeNode[] = [];
-  collectImages(nodes, found);
+  collectByKind(nodes, "image", found);
   return found.sort((a, b) => a.path.localeCompare(b.path, "zh-Hans-CN"));
 }
 
-function collectImages(nodes: readonly ResourceTreeNode[], into: ResourceTreeNode[]): void {
+/** 资源面板里当前项目下的全部音频（按路径排序）。 */
+export function listAudioAssets(nodes: readonly ResourceTreeNode[]): ResourceTreeNode[] {
+  const found: ResourceTreeNode[] = [];
+  collectByKind(nodes, "audio", found);
+  return found.sort((a, b) => a.path.localeCompare(b.path, "zh-Hans-CN"));
+}
+
+/** 按预览类别（图片 / 音频 / 视频）收资源：判断扩展名的地方只有 `asset-info` 一处。 */
+function collectByKind(
+  nodes: readonly ResourceTreeNode[],
+  kind: "image" | "audio",
+  into: ResourceTreeNode[],
+): void {
   for (const node of nodes) {
     if (node.type === "file") {
-      if (assetPreviewKind(node.name) === "image") {
+      if (assetPreviewKind(node.name) === kind) {
         into.push(node);
       }
 
       continue;
     }
 
-    collectImages(node.children ?? [], into);
+    collectByKind(node.children ?? [], kind, into);
   }
 }
 

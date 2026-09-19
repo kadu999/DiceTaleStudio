@@ -59,9 +59,21 @@ export function displayRectOf(object: SceneObjectDoc): WorldRect | undefined {
     return undefined;
   }
 
-  const base = objectImage(object) ?? COLLIDER_SIZE;
+  // 声音对象画的是**固定的内置图标**（不允许改贴图），所以它那块矩形就是图标的大小：
+  // 手写文件里万一挂了 `image` 也不认（`validateScene` 会警告），
+  // 免得出现「选中框按贴图算、画出来的却是徽标」这种对不上的情况
+  const base = object.kind === "PlaySound" ? COLLIDER_SIZE : objectImage(object) ?? COLLIDER_SIZE;
   const scale = Number.isFinite(object.scale) && object.scale > 0 ? object.scale : 1;
   return worldRectOf(object.position, { width: base.width * scale, height: base.height * scale });
+}
+
+/**
+ * 这个对象要画的贴图：**声音对象的图标是内置的**，所以它不看 `image`（那个字段对它没有意义）。
+ *
+ * 只在场景面板里用（加载图片与出图层各一次）：要把「不认贴图」这条规矩收在一处。
+ */
+function displayImageOf(object: SceneObjectDoc) {
+  return object.kind === "PlaySound" ? undefined : objectImage(object);
 }
 
 /**
@@ -136,7 +148,7 @@ export function ScenePanel(): React.JSX.Element {
       .find((scene) => scene.name === activeSceneName)
       ?.objects.filter((object) => object.active) // 没激活的对象不画，也不用去加载它的图
       .flatMap((object) => {
-        const ref = objectImage(object);
+        const ref = displayImageOf(object);
         return ref === undefined ? [] : [ref.id];
       }) ?? [];
 
@@ -462,8 +474,15 @@ export function ScenePanel(): React.JSX.Element {
         return;
       }
 
-      const { viewport, viewportSize, scenes, activeSceneName, selectedObjectIds, gridPaint } =
-        useEditorStore.getState();
+      const {
+        viewport,
+        viewportSize,
+        scenes,
+        activeSceneName,
+        selectedObjectIds,
+        gridPaint,
+        soundPlayback,
+      } = useEditorStore.getState();
       if (viewportSize.width <= 0 || viewportSize.height <= 0) {
         return;
       }
@@ -486,6 +505,12 @@ export function ScenePanel(): React.JSX.Element {
       // 相同顺序保持场景文件里的先后，所以没调过顺序的场景看起来和以前一样
       const drawOrder = objectsInDrawOrder(scene).filter((object) => object.active);
 
+      // 哪些声音对象**正在播**（记账里「本层该响的就是它」）：画布上的音频徽标要画成活的。
+      // 记账是运行态，改它不会触发重渲染——好在这个循环本来就每帧重绘，所以下帧就变。
+      const playingSounds = new Set(
+        Object.values(soundPlayback.layers).map((entry) => entry.objectId),
+      );
+
       // 每张图片各画各的：地图的贴图（带网格）与精灵的图片走同一条路。
       // **每个对象都要出一层**（哪怕没有图片）：没有图片的对象只画选中框 + 当碰撞体，
       // 否则「刚建出来的精灵」在画布上就既看不见也点不到。
@@ -499,7 +524,8 @@ export function ScenePanel(): React.JSX.Element {
           return [];
         }
 
-        const ref = objectImage(object);
+        // 声音对象不认贴图（图标是内置的），所以它既不加载图片、也不走下面那条尺寸核对
+        const ref = displayImageOf(object);
         const image = ref === undefined ? null : sceneImage(ref.id);
 
         // 图片实际像素与引用里声明的尺寸不一致时说一声：画面会被拉伸到声明的尺寸
@@ -523,6 +549,10 @@ export function ScenePanel(): React.JSX.Element {
             image,
             rect,
             grid,
+            // 声音对象画**内置的音频徽标**（固定图标，不能换）：有它在，场景里才看得见、
+            // 点得到、拖得动；正在播时徽标会动（一圈圈声波 + 喇叭呼吸）
+            icon: object.kind === "PlaySound" ? "audio" : undefined,
+            playing: playingSounds.has(object.id),
             // 「网格线」总开关：关了就不画线（只是不画，格子数据不动）
             showGrid: grid !== undefined && gridPaint.showGridLines,
             // 格子着色：掩码位 → 一串颜色逐层叠加（隐藏的类型不画，但数据不动）
@@ -546,6 +576,8 @@ export function ScenePanel(): React.JSX.Element {
         cssHeight: viewportSize.height,
         layers,
         showOrigin: true,
+        // 正在播的声音徽标按这个时刻出动画：循环本来就每帧跑，把时刻传进去就够了
+        animationTimeMs: performance.now(),
         // 棋盘底纹与**第一张地图**的左下角对齐：格子与地图的网格分成同一套，
         // 拖动地图时底纹跟着走。没有地图（纯精灵场景）就退回世界原点
         checkerOrigin: checkerOriginOf(drawOrder),

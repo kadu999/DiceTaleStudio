@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assetDisplayPath, findAssetById, listImageAssets } from "../src/panels/asset-picker";
+import { assetDisplayPath, findAssetById, listAudioAssets, listImageAssets } from "../src/panels/asset-picker";
 import type { ResourceTreeNode } from "../src/services/project-api";
 
 /** 资源树的小样例：一张图、一个视频、一层子目录。 */
@@ -44,6 +44,26 @@ const TREE: ResourceTreeNode[] = [
           },
         ],
       },
+      {
+        name: "audio",
+        path: "Assets/audio",
+        id: "project:我的项目/Assets/audio",
+        type: "folder",
+        children: [
+          {
+            name: "bgm.mp3",
+            path: "Assets/audio/bgm.mp3",
+            id: "project:我的项目/Assets/audio/bgm.mp3",
+            type: "file",
+          },
+          {
+            name: "step1.wav",
+            path: "Assets/audio/step1.wav",
+            id: "project:我的项目/Assets/audio/step1.wav",
+            type: "file",
+          },
+        ],
+      },
     ],
   },
 ];
@@ -70,5 +90,14 @@ describe("图片素材列表", () => {
   it("按 id 找得到文件（用于判断贴图是否存在）", () => {
     expect(findAssetById(TREE, "project:我的项目/Assets/images/Map002.png")?.name).toBe("Map002.png");
     expect(findAssetById(TREE, "project:我的项目/Assets/images/场景1.png")).toBeUndefined();
+  });
+});
+
+describe("音频素材列表（选择音频弹框用）", () => {
+  it("只挑音频（mp3 / wav），图片与视频都不算", () => {
+    expect(listAudioAssets(TREE).map((node) => node.id)).toEqual([
+      "project:我的项目/Assets/audio/bgm.mp3",
+      "project:我的项目/Assets/audio/step1.wav",
+    ]);
   });
 });

@@ -92,10 +92,13 @@ export interface ComponentDoc {
 /**
  * 对象类型。
  *
- * 前四种对齐前端 `BackendObjectKind`；`Map` 是**编辑器侧新增的地图对象类型**——
- * 地图就是场景里的一个对象，携带贴图与网格数据。
+ * 前四种对齐前端 `BackendObjectKind`；后两种是**编辑器侧新增的**：
+ * - `Map`：地图就是场景里的一个对象，携带贴图与网格数据；
+ * - `PlaySound`：**动作对象**（弹框里「动作」种类下的「播放声音」），基础属性与实体一样，
+ *   另带「播什么 + 哪个层级」；画布上画一枚**固定的内置音频图标**（不给换贴图），
+ *   编辑器**不播放**——出声是前端的事。
  */
-export type ObjectKind = "Map" | "SceneObject" | "Player" | "Item" | "Event";
+export type ObjectKind = "Map" | "SceneObject" | "Player" | "Item" | "Event" | "PlaySound";
 
 /** 地图对象携带的数据（贴图 + 网格）。 */
 export interface MapDataDoc {
@@ -120,6 +123,62 @@ export interface MapDataDoc {
 export interface MapFogDoc {
   /** 指定的雾区位（如 `[8, 16]` = 区域4 + 区域5）；空数组 = 一个都没指定。 */
   readonly regions: number[];
+}
+
+/**
+ * 声音层级：**固定四档**（同层同时只响一条，后来的顶掉先前的）。
+ *
+ * 文档里存英文 slug（与其它枚举同一个口径），中文名只在界面上出现
+ * （`SOUND_LAYER_LABELS`）。分层是**声道分组**：前端按层占用声源——「背景音乐」
+ * 起了新的，旧的那条自然停；想要两件事同时响就得分到两层。
+ */
+export const SOUND_LAYERS = ["bgm", "ambient", "sfx", "voice"] as const;
+
+export type SoundLayer = (typeof SOUND_LAYERS)[number];
+
+/** 层级的中文名（面板上的下拉框；只有这里写中文）。 */
+export const SOUND_LAYER_LABELS: Record<SoundLayer, string> = {
+  bgm: "背景音乐",
+  ambient: "环境音",
+  sfx: "音效",
+  voice: "语音",
+};
+
+/**
+ * 播放声音（动作对象）的数据：**加进来的音频列表 + 当前选中的那条 + 层级**。
+ *
+ * 它声明的是「**要告诉前端播什么**」，编辑器不播放（没有试听、不解码音频），
+ * 真正出声在前端。
+ *
+ * 分工（界面上就是两个地方，别混）：
+ * - **音频列表**（`clips`）在「编辑声音」窗口里加 / 删 / 起名字；
+ * - **选中哪条**（`picked`）在属性面板上点那些小方块切——前端播的就是它。
+ */
+export interface SoundDataDoc {
+  /**
+   * **加进来的**音频（资源逻辑 ID，如 `project:我的项目/Assets/audio/step1.mp3`）。
+   *
+   * 顺序 = 加进来的先后，没有别的语义（不排序、不代表优先级）；空数组 = 这条声音还没有
+   * 任何音频可播（新建出来就是这样）。加与删都在「编辑声音」窗口里做。
+   */
+  readonly clips: string[];
+  /**
+   * 加进来的音频里**当前选中的那一条**（资源逻辑 ID，必须是 `clips` 里的一个）。
+   *
+   * 属性面板把它们全列出来（小方块），点一下就把 `picked` 换成它——前端播的正是这一条，
+   * 所以这个选择是**场景数据**（重开项目还在，撤销能回退），不是界面偏好。
+   * 缺省 = 还没选（这时「播放」按钮点不了）。
+   */
+  readonly picked?: string;
+  /**
+   * 音频文件（资源逻辑 ID）→ **显示用的名字**（例如把 `thunderstorm-30s-high` 叫成「雷雨·高」）。
+   *
+   * 缺省（或这一条没起名）= 用素材文件名去掉扩展名。它只是编辑器里给人看的标签：
+   * **不参与播放、也不进协议**。按文件记（不是按「选中」记），所以在窗口里给哪条起名都行，
+   * 换选 / 换层级都不会动它。
+   */
+  readonly names?: Record<string, string>;
+  readonly layer: SoundLayer;
 }
 
 export interface SceneObjectDoc {
@@ -162,6 +221,13 @@ export interface SceneObjectDoc {
   readonly components: ComponentDoc[];
   /** 仅 `kind === "Map"` 的地图对象携带；其它对象没有。 */
   readonly map?: MapDataDoc;
+  /**
+   * 仅 `kind === "PlaySound"` 的声音对象携带：音频列表 + 选中的那条 + 层级。
+   *
+   * 它的其余属性（位置 / 缩放 / 激活 / 锁定 / 显示顺序）与实体完全同一套；
+   * 画布上的样子是**固定的内置音频图标**，所以它没有 `image`（挂了也会被忽略并警告）。
+   */
+  readonly sound?: SoundDataDoc;
   /**
    * 对象要显示的图片（**精灵**就靠它显示图片；地图的贴图在 `map.image` 里）。
    *

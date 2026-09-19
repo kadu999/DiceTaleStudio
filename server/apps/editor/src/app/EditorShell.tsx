@@ -10,6 +10,7 @@ import { ScenePanel } from "../panels/scene/ScenePanel";
 import { FogMaskDialog } from "./FogMaskDialog";
 import { GridEditDialog } from "./GridEditDialog";
 import { ImagePickerDialog } from "./ImagePickerDialog";
+import { SoundEditDialog } from "./SoundEditDialog";
 import { MenuBar } from "./MenuBar";
 import { StatusBar } from "./StatusBar";
 
@@ -35,6 +36,9 @@ export function EditorShell(): React.JSX.Element {
   const imagePicker = useEditorStore((state) => state.imagePicker);
   const imagePickerTarget = useEditorStore((state) => state.imagePickerTarget);
   const openImagePicker = useEditorStore((state) => state.openImagePicker);
+  const soundEditor = useEditorStore((state) => state.soundEditor);
+  const soundEditorTarget = useEditorStore((state) => state.soundEditorTarget);
+  const openSoundEditor = useEditorStore((state) => state.openSoundEditor);
   const fogMask = useEditorStore((state) => state.fogMask);
   const fogMaskTarget = useEditorStore((state) => state.fogMaskTarget);
   const openFogMask = useEditorStore((state) => state.openFogMask);
@@ -218,6 +222,13 @@ export function EditorShell(): React.JSX.Element {
 
           openImagePicker(null);
         }}
+      />
+
+      {/* 编辑声音：看得到路径、挑一条、给每个音频起名字（属性面板只显示选中的名字） */}
+      <SoundEditDialog
+        open={soundEditor && soundEditorTarget !== null}
+        objectId={soundEditorTarget}
+        onClose={() => openSoundEditor(null)}
       />
 
       {/* 战争雾 Mask 窗口：在贴图上按雾区涂 / 擦（目标地图由属性面板指定） */}

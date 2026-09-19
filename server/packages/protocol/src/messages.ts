@@ -72,6 +72,9 @@ export type PlayerStateSnapshot = z.infer<typeof playerStateSchema>;
 export type GameStateSnapshot = z.infer<typeof gameStateSchema>;
 export type InvokeActionMessage = z.infer<typeof invokeActionSchema>;
 export type ActionResultMessage = z.infer<typeof actionResultSchema>;
+export type PlaySoundMessage = z.infer<typeof playSoundSchema>;
+export type StopSoundMessage = z.infer<typeof stopSoundSchema>;
+export type CommandResultMessage = z.infer<typeof commandResultSchema>;
 
 /** 遮罩擦除笔画（既有协议）。 */
 export const eraseStrokeSchema = z.object({
@@ -98,6 +101,48 @@ export const actionResultSchema = z.object({
   requestId: z.string().min(1),
   objectId: z.string().min(1),
   actionId: z.string().min(1),
+  ok: z.boolean(),
+  reason: z.string().optional(),
+  effects: z.array(z.string()).optional(),
+});
+
+// ---------------------------------------------------------------- 后台下发命令（声音）
+
+/**
+ * 播放声音：**后台把要播的东西整份推下去**。
+ *
+ * 与 `invoke_action` 的区别是**数据方向**：`invoke_action` 是「前端拥有动作、后台按 id 寻址」；
+ * 这里是「数据在后台，前端只是播放效果」——命令里带着候选音频与层级，前端不去回头查数据。
+ *
+ * `clips` 是**备选**（每次播放挑一条，顺序没有语义）；`layer` 是**声道分组**，
+ * 同层同时只响一条，后来的顶掉先前的。
+ */
+export const playSoundSchema = z.object({
+  type: z.literal("play_sound"),
+  requestId: z.string().min(1),
+  /** 归属：日志与「同一对象」的排查用；播放本身由 clips + layer 决定。 */
+  objectId: z.string().min(1),
+  layer: z.string().min(1),
+  /** 候选音频（资源逻辑 ID）。空列表没有意义，所以至少一条。 */
+  clips: z.array(z.string().min(1)).min(1),
+});
+
+/** 停止声音：停掉**某一层**（同层只响一条，所以按层停就够，不需要对象 id）。 */
+export const stopSoundSchema = z.object({
+  type: z.literal("stop_sound"),
+  requestId: z.string().min(1),
+  layer: z.string().min(1),
+});
+
+/**
+ * 命令回执：后端下发的命令，前端到底执行了没有。
+ *
+ * 与 `action_result` 分开是因为两者属于两套模型（动作寻址 / 后台推数据）；
+ * 后续协议重构会把动作那一套收敛掉，这条通用回执留下。
+ */
+export const commandResultSchema = z.object({
+  type: z.literal("command_result"),
+  requestId: z.string().min(1),
   ok: z.boolean(),
   reason: z.string().optional(),
   effects: z.array(z.string()).optional(),
@@ -154,6 +199,7 @@ export const clientToServerSchema = z.discriminatedUnion("type", [
     mapName: z.string(),
   }),
   actionResultSchema,
+  commandResultSchema,
   z.object({ type: z.literal("heartbeat") }),
 ]);
 
@@ -174,6 +220,9 @@ export const serverToClientSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("set_map"), mapName: z.string(), spawnId: z.string().optional() }),
   /** 核心新增。 */
   invokeActionSchema,
+  /** 后台下发的声音命令（数据在后台，前端只是播放效果）。 */
+  playSoundSchema,
+  stopSoundSchema,
 ]);
 
 export type ServerToClientMessage = z.infer<typeof serverToClientSchema>;
@@ -188,6 +237,9 @@ export const atomicCommandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("set_float"), objectId: z.string(), value: z.number() }),
   z.object({ type: z.literal("set_object_items"), objectId: z.string(), items: z.array(z.string()) }),
   z.object({ type: z.literal("teleport_player"), mapName: z.string(), spawnId: z.string() }),
+  /** 声音：后台编排的内容整份推给前端（前端只是播放效果）。 */
+  playSoundSchema,
+  stopSoundSchema,
 ]);
 
 export const editorToServerSchema = z.discriminatedUnion("type", [
@@ -211,6 +263,7 @@ export const serverToEditorSchema = z.discriminatedUnion("type", [
     editorConnected: z.boolean().default(true),
   }),
   actionResultSchema,
+  commandResultSchema,
   z.object({
     type: z.literal("editor_error"),
     requestId: z.string().optional(),

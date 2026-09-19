@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   DOCUMENT_FORMAT_VERSION,
+  SOUND_LAYERS,
   type ProjectDoc,
   type SceneDoc,
   type SceneFileDoc,
@@ -56,6 +57,24 @@ export const mapDataSchema = z.object({
   fog: mapFogSchema.optional(),
 });
 
+/**
+ * 播放声音（动作对象）的数据：加进来的音频列表 + 选中的那条（可选）+ 每个文件的显示名（可选）+ 层级。
+ *
+ * `clips` 给默认值 `[]`、`layer` 给默认值 `"sfx"`：手写文件里少写一项时，
+ * 语义只能是「还没加音频」「音效这一层」，给默认值省掉一处三元判断。
+ * 层级只认四档（`SOUND_LAYERS`）：写了别的值说明数据不是这份编辑器写的，报错比猜更安全。
+ * `picked` 缺省 = 还没选（播放按钮点不了）：它必须落在 `clips` 里，越界不算解析错误
+ * （`validateScene` 会把「选中的那条不在列表里」提醒出来并按没选处理）。
+ * `names` 是「文件 → 显示名」的可选标签（缺省 = 素材文件名）：空白名字不在这里硬拒，
+ * 由 `validateScene` 提醒。
+ */
+export const soundDataSchema = z.object({
+  clips: z.array(z.string().min(1)).default([]),
+  picked: z.string().min(1).optional(),
+  names: z.record(z.string(), z.string()).optional(),
+  layer: z.enum(SOUND_LAYERS).default("sfx"),
+});
+
 export const conditionSchema = z.object({
   valueType: z.enum(["Bool", "String", "Number", "Integer"]),
   op: z.enum(["Equal", "NotEqual", "AtLeast", "AtMost"]),
@@ -81,7 +100,7 @@ export const componentSchema = z.object({
 export const sceneObjectSchema = z.object({
   id: z.string().min(1),
   name: z.string(),
-  kind: z.enum(["Map", "SceneObject", "Player", "Item", "Event"]),
+  kind: z.enum(["Map", "SceneObject", "Player", "Item", "Event", "PlaySound"]),
   // v7 起：是否显示 + 显示顺序。**给默认值**是有意的——v6 及更早的文件没有这两个字段，
   // 「没写」只能是「显示、顺序 0」；写成必填会让所有旧文件直接读不开。
   active: z.boolean().default(true),
@@ -95,6 +114,8 @@ export const sceneObjectSchema = z.object({
   scale: z.number().default(1),
   components: z.array(componentSchema),
   map: mapDataSchema.optional(),
+  // 动作对象（播放声音）的声音数据
+  sound: soundDataSchema.optional(),
   // 对象要显示的图片（精灵用；地图的贴图在 map.image 里）
   image: imageRefSchema.optional(),
 });

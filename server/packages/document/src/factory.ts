@@ -1,4 +1,10 @@
-import { DEFAULT_OBJECT_SCALE, MAP_DEFAULT_SORTING_ORDER, createId } from "./commands";
+import {
+  DEFAULT_OBJECT_SCALE,
+  DEFAULT_SORTING_ORDER,
+  DEFAULT_SOUND_LAYER,
+  MAP_DEFAULT_SORTING_ORDER,
+  createId,
+} from "./commands";
 import {
   DOCUMENT_FORMAT_VERSION,
   type GridSpec,
@@ -8,6 +14,7 @@ import {
   type SceneDoc,
   type SceneFileDoc,
   type SceneObjectDoc,
+  type SoundLayer,
   type WorldPosition,
 } from "./types";
 
@@ -66,6 +73,45 @@ export function createMapObject(input: {
     locked: false,
     components: [],
     map,
+  };
+}
+
+/**
+ * 新建**声音对象**（动作对象）：和实体一样摆在世界里，另带「候选音频列表 + 层级」。
+ *
+ * 位置 / 缩放 / 激活 / 锁定 / 显示顺序与实体完全同一套；**画布上的样子是固定的**：
+ * 编辑器给它画一枚**内置音频图标**（不给换贴图，所以没有 `image`），不然一个没有图的
+ * 「播放声音」在场景里既看不见也点不到。
+ * 新建时音频列表是空的（还没挑素材）——空列表 = 这条声音还不响；给了 `clips` 就把第一条
+ * 当作已选中（点开面板就能直接播）。
+ */
+export function createSoundObject(input: {
+  readonly name: string;
+  readonly clips?: readonly string[];
+  readonly layer?: SoundLayer;
+  readonly id?: string;
+  /** 对象中心的世界坐标；不传 = 未放置（与普通对象同一个口径，由调用方给落点）。 */
+  readonly position?: WorldPosition | null;
+}): SceneObjectDoc {
+  const clips = [...(input.clips ?? [])];
+  const picked = clips.length > 0 ? clips[0] : undefined;
+
+  return {
+    id: input.id ?? createId("sound"),
+    name: input.name,
+    kind: "PlaySound",
+    active: true,
+    sortingOrder: DEFAULT_SORTING_ORDER,
+    position: input.position ?? null,
+    rotation: 0,
+    scale: DEFAULT_OBJECT_SCALE,
+    locked: false,
+    components: [],
+    sound: {
+      clips,
+      layer: input.layer ?? DEFAULT_SOUND_LAYER,
+      ...(picked === undefined ? {} : { picked }),
+    },
   };
 }
 

@@ -1,7 +1,9 @@
 import { create } from "zustand";
 import {
+  DEFAULT_SOUND_LAYER,
   DOCUMENT_FORMAT_VERSION,
   DocumentHistory,
+  SOUND_LAYER_LABELS,
   addObject,
   clearMapCells,
   createEmptyProject,
@@ -9,6 +11,7 @@ import {
   createId,
   createMapObject,
   createSceneObject,
+  createSoundObject,
   isSceneNameTaken,
   nextObjectName,
   paintMapCells,
@@ -24,6 +27,10 @@ import {
   setObjectLocked as setSceneObjectLocked,
   setObjectScale as setSceneObjectScale,
   setObjectSortingOrder as setSceneObjectSortingOrder,
+  setSoundClips as setSceneSoundClips,
+  setSoundLayer as setSceneSoundLayer,
+  setSoundClipName as setSceneSoundClipName,
+  setSoundPicked as setSceneSoundPicked,
   validateSceneName,
   type ImageRef,
   type ObjectKind,
@@ -32,6 +39,7 @@ import {
   type SceneFileDoc,
   type SceneListDraft,
   type SceneObjectDoc,
+  type SoundLayer,
   type WorldPosition,
 } from "@dts/document";
 import {
@@ -81,6 +89,14 @@ import {
   type GridPaintPrefs,
 } from "../services/grid-paint-prefs";
 import { clearSceneImageCache } from "../services/scene-image";
+import {
+  emptySoundPlayback,
+  soundPlaybackResendPlan,
+  withPlaying,
+  withStopped,
+  type SoundPlaybackEntry,
+  type SoundPlaybackState,
+} from "../services/sound-playback";
 
 /**
  * 编辑器状态。
@@ -188,6 +204,10 @@ export interface EditorStoreState {
   readonly imagePicker: boolean;
   /** 正在换贴图的地图对象 id；null 表示弹框没打开 */
   readonly imagePickerTarget: string | null;
+  /** 「编辑声音」窗口是否打开（属性面板「声音」组上的按钮唤出） */
+  readonly soundEditor: boolean;
+  /** 正在编辑哪个声音对象的声音；null 表示窗口没打开 */
+  readonly soundEditorTarget: string | null;
   /** 「战争雾 Mask 窗口」是否打开（属性面板的按钮唤出） */
   readonly fogMask: boolean;
   /** Mask 窗口正在编辑哪张地图；null 表示窗口没打开 */
@@ -201,6 +221,12 @@ export interface EditorStoreState {
   readonly sceneSaveError: string;
   /** 网格标注（画笔）状态：编辑窗口的涂 / 擦与画布的着色都读它。 */
   readonly gridPaint: GridPaintState;
+  /**
+   * 声音的**期望播放状态**（编辑器记账，见 `services/sound-playback`）。
+   *
+   * 不写文档、不进撤销栈；点播放 / 停止只改它 + 尽力下发，前端连上时补发。
+   */
+  readonly soundPlayback: SoundPlaybackState;
 
   /** 场景编辑（对象增删改）统一走这里：进撤销栈，并触发自动落盘。 */
   applyScenes(
@@ -229,6 +255,21 @@ export interface EditorStoreState {
   connectRuntime(): void;
   disconnectRuntime(): void;
   invokeAction(objectId: string, actionId: string): string | undefined;
+  /**
+   * 让**前端**播放这个声音对象选中的那一条（编辑器自己不出声，只**记账** + 尽力下发）。
+   *
+   * 面板是单选的，所以只发选中的那一条；编辑器还没连上服务端 / 前端没连时**照样能点**：
+   * 状态记在 `soundPlayback` 里，等前端连上补发。
+   */
+  playSound(objectId: string): string | undefined;
+  /** 让前端**停掉**某个声音对象所在的层级（同层只响一条，所以按层停）。 */
+  stopSound(objectId: string): string | undefined;
+  /**
+   * 把记着的期望状态补发一遍（前端刚连上时调用）。
+   *
+   * 返回补发的层数；编辑器的服务端连接没开、或前端没连时什么都不做（返回 0）。
+   */
+  flushSoundPlayback(): number;
   clearRuntimeLogs(): void;
 
   /**
@@ -319,6 +360,37 @@ export interface EditorStoreState {
   endObjectDrag(): void;
   /** 换对象显示的图片（地图写进 map.image，精灵写进 image；宽高由调用方从素材本身读出）。 */
   setObjectImage(objectId: string, image: ImageRef): boolean;
+  /**
+   * 替换声音对象的音频列表（资源逻辑 ID；去空去重，值没变不算变更）。
+   *
+   * 低层入口：面板上点小方块走 `selectSoundClip`，窗口里加 / 删走 `addSoundClip` /
+   * `removeSoundClip`（它们各自只做一件事，好读）。
+   */
+  setSoundClips(objectId: string, clips: readonly string[]): boolean;
+  /**
+   * 把一条音频**加进来**（已在列表里就什么都不做，只把它选上）。
+   *
+   * 只有已经加进来的音频才能被播（`selectSoundClip` 会拒掉别的），所以这是「添素材」的入口；
+   * 原来选中的那条如果还在，**不抢**——正听着 A 的时候加一条 B，选择不该被顶掉。
+   */
+  addSoundClip(objectId: string, clipId: string): boolean;
+  /**
+   * 把一条音频**移出去**：它的名字一起删掉，移走的正好是选中的那条就顺到下一条
+   * （都没了 = 这条声音暂时没得播）。
+   */
+  removeSoundClip(objectId: string, clipId: string): boolean;
+  /**
+   * 选这一条声音（**单选**：只能选已经加进来的，传 null 取消选中）。
+   *
+   * 名字按文件记（`names`），所以换选不会动名字。
+   */
+  selectSoundClip(objectId: string, clip: string | null): boolean;
+  /** 给某个音频文件起显示名（留空 = 退回素材文件名）；名字只是标签，不进协议。 */
+  setSoundClipName(objectId: string, clipId: string, name: string): boolean;
+  /** 打开 / 关闭「编辑声音」窗口（传声音对象 id；传 null 关闭）。 */
+  openSoundEditor(objectId: string | null): void;
+  /** 改声音层级（同层同时只响一条的那一层）；非声音对象 / 值没变返回 false。 */
+  setSoundLayer(objectId: string, layer: SoundLayer): boolean;
   /** 改地图网格的列数 / 行数（格子按新尺寸重建，重叠部分保留）。 */
   setMapGrid(mapObjectId: string, grid: GridSize): boolean;
 
@@ -571,7 +643,14 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
   const runtimeClient = new RuntimeClient({
     onStatus: (status, detail) => {
       set((state) => ({
-        runtime: { ...state.runtime, status, statusDetail: detail ?? "" },
+        runtime: {
+          ...state.runtime,
+          status,
+          statusDetail: detail ?? "",
+          // 自己没连着服务端时「前端在不在」无从得知：别留一个过期的「已连接」，
+          // 也让「前端刚连上 → 补发」这条判断只在真的连上之后成立
+          ...(status === "open" ? {} : { clientConnected: false }),
+        },
       }));
 
       if (status === "open") {
@@ -584,9 +663,20 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
     },
 
     onSnapshot: (gameState, clientConnected) => {
+      const wasClientConnected = get().runtime.clientConnected;
       set((state) => ({
         runtime: { ...state.runtime, state: gameState, clientConnected },
       }));
+
+      // 前端刚连上：把记着的期望播放状态补发一遍（「点的时候前端不在」也不会丢）
+      const plan = soundPlaybackResendPlan({
+        wasClientConnected,
+        isClientConnected: clientConnected,
+        playback: get().soundPlayback,
+      });
+      if (plan.length > 0) {
+        get().flushSoundPlayback();
+      }
     },
 
     onActionResult: (message) => {
@@ -606,7 +696,45 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       set((state) => ({ runtime: { ...state.runtime, lastError: reason } }));
       pushLog(makeLog("error", requestId === undefined ? reason : `[${requestId}] ${reason}`));
     },
+
+    onCommandResult: (message) => {
+      pushLog(
+        makeLog(
+          message.ok ? "info" : "warn",
+          `声音命令 ${message.ok ? "执行成功" : `执行失败：${message.reason ?? "未知原因"}`}${
+            message.effects !== undefined && message.effects.length > 0
+              ? `（${message.effects.join("，")}）`
+              : ""
+          }`,
+        ),
+      );
+    },
   });
+
+  /**
+   * 把一条「这一层该播什么」**尽力**发给前端。
+   *
+   * 编辑器没连服务端 / 前端不在时**不发**（状态已经记下），只写明白原因——
+   * 等前端连上由 `flushSoundPlayback()` 补发，所以「点的时候前端不在」也不会丢。
+   */
+  const deliverSoundPlay = (entry: SoundPlaybackEntry): string | undefined => {
+    const label = `层级 ${SOUND_LAYER_LABELS[entry.layer]}`;
+    const what = entry.clips[0] ?? "(空)";
+
+    if (!runtimeClient.connected) {
+      pushLog(makeLog("info", `已记录播放：${label}（${what}；编辑器还没连上服务端，连上后自动补发）`));
+      return undefined;
+    }
+
+    if (!get().runtime.clientConnected) {
+      pushLog(makeLog("info", `已记录播放：${label}（${what}；前端未连接，等它连上后自动补发）`));
+      return undefined;
+    }
+
+    const requestId = runtimeClient.playSound(entry.objectId, entry.layer, entry.clips);
+    pushLog(makeLog("info", `下发播放：${label}（${what}）`));
+    return requestId;
+  };
 
   const syncHistoryFlags = (): void => {
     set({
@@ -710,6 +838,8 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
     objectDialog: false,
     imagePicker: false,
     imagePickerTarget: null,
+    soundEditor: false,
+    soundEditorTarget: null,
     fogMask: false,
     fogMaskTarget: null,
     gridEditor: false,
@@ -725,6 +855,7 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       showAnnotations: storedGridPaint.showAnnotations,
       showFog: storedGridPaint.showFog,
     },
+    soundPlayback: emptySoundPlayback(),
     runtime: {
       status: "idle",
       statusDetail: "",
@@ -770,6 +901,8 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
         fogMaskTarget: null,
         gridEditor: false,
         gridEditorTarget: null,
+        // 换了文档：记着的「哪一层该播什么」盯的是上一个项目的对象，清掉
+        soundPlayback: emptySoundPlayback(),
       });
     },
 
@@ -783,6 +916,8 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
         fogMaskTarget: null,
         gridEditor: false,
         gridEditorTarget: null,
+        // 切场景：记账里的对象属于上一个场景，清掉（前端那边由使用方自己按新场景重播）
+        soundPlayback: emptySoundPlayback(),
       });
     },
 
@@ -801,6 +936,7 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
         fogMaskTarget: null,
         gridEditor: false,
         gridEditorTarget: null,
+        soundPlayback: emptySoundPlayback(),
       });
       pushLog(makeLog("info", `已切换到场景：${name}`));
     },
@@ -901,6 +1037,92 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       const requestId = runtimeClient.invokeAction(objectId, actionId);
       pushLog(makeLog("info", `触发动作 ${objectId}/${actionId}（${requestId}）`));
       return requestId;
+    },
+
+    // ---------------------------------------------------------------- 声音对象
+
+    playSound(objectId) {
+      const object = findSceneByName(get().scenes, get().activeSceneName)?.objects.find(
+        (item) => item.id === objectId,
+      );
+      if (object === undefined || object.kind !== "PlaySound") {
+        pushLog(makeLog("error", "找不到这个声音对象"));
+        return undefined;
+      }
+
+      const sound = object.sound;
+      const clips = sound?.clips ?? [];
+      if (clips.length === 0) {
+        pushLog(makeLog("error", `${object.name}：还没有加音频，先在「编辑声音」窗口里加一条`));
+        return undefined;
+      }
+
+      // 播的就是**选中的那一条**（面板上点小方块切）。手写文件里 `picked` 可能不在列表里，
+      // 那种按「还没选」处理，别拿一条对不上的音频去播。
+      const picked = sound?.picked;
+      if (picked === undefined || !clips.includes(picked)) {
+        pushLog(makeLog("error", `${object.name}：还没选声音，先选一条`));
+        return undefined;
+      }
+
+      // 先记账（「这一层现在该播什么」），再尽力下发——所以编辑器没连服务端 / 前端不在
+      // 也点得动：状态记着，等前端连上补发
+      const entry: SoundPlaybackEntry = {
+        objectId,
+        layer: sound?.layer ?? DEFAULT_SOUND_LAYER,
+        clips: [picked],
+      };
+      set({ soundPlayback: withPlaying(get().soundPlayback, entry) });
+
+      return deliverSoundPlay(entry);
+    },
+
+    stopSound(objectId) {
+      const object = findSceneByName(get().scenes, get().activeSceneName)?.objects.find(
+        (item) => item.id === objectId,
+      );
+      if (object === undefined || object.kind !== "PlaySound") {
+        pushLog(makeLog("error", "找不到这个声音对象"));
+        return undefined;
+      }
+
+      const layer = object.sound?.layer ?? DEFAULT_SOUND_LAYER;
+      set({ soundPlayback: withStopped(get().soundPlayback, layer) });
+
+      const label = `层级 ${SOUND_LAYER_LABELS[layer]}`;
+      if (!runtimeClient.connected) {
+        pushLog(makeLog("info", `已记录停止：${label}（编辑器还没连上服务端，连上后自动补发）`));
+        return undefined;
+      }
+
+      if (!get().runtime.clientConnected) {
+        pushLog(makeLog("info", `已记录停止：${label}（前端未连接，等它连上后自动补发）`));
+        return undefined;
+      }
+
+      const requestId = runtimeClient.stopSound(layer);
+      pushLog(makeLog("info", `下发停止：${label}`));
+      return requestId;
+    },
+
+    flushSoundPlayback() {
+      const { runtime, soundPlayback } = get();
+      if (!runtimeClient.connected || !runtime.clientConnected) {
+        return 0;
+      }
+
+      const entries = Object.values(soundPlayback.layers);
+      for (const entry of entries) {
+        runtimeClient.playSound(entry.objectId, entry.layer, entry.clips);
+        pushLog(
+          makeLog(
+            "info",
+            `补发播放：层级 ${SOUND_LAYER_LABELS[entry.layer]}（${entry.clips[0] ?? "(空)"}）`,
+          ),
+        );
+      }
+
+      return entries.length;
     },
 
     clearRuntimeLogs() {
@@ -1440,8 +1662,12 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
               grid: gridSizeFromImage(DEFAULT_MAP_IMAGE),
               position: at,
             })
-          : // 其它实体（例如精灵，kind = "SceneObject"）走普通对象：只有名字、类型与位置
-            createSceneObject({ name: trimmed, kind, position: at });
+          : kind === "PlaySound"
+            ? // 声音对象（动作对象）：和实体一样摆在世界里（画布上是一枚音频徽标，可以拖），
+              // 新建时音频列表是空的（还没挑素材）
+              createSoundObject({ name: trimmed, position: at })
+            : // 其它实体（例如精灵，kind = "SceneObject"）走普通对象：只有名字、类型与位置
+              createSceneObject({ name: trimmed, kind, position: at });
 
       const changed = get().applyScenes(`新建对象 ${trimmed}`, (draft) => {
         const target = draft.find((item) => item.name === sceneName);
@@ -1743,6 +1969,147 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
         // 打开「选择贴图」时刷新一次目录：素材由外部提交，不刷新的话刚放进去的图选不到。
         void get().refreshTree();
       }
+    },
+
+    // ------------------------------------------------------------ 声音对象（动作对象）
+
+    setSoundClips(objectId, clips) {
+      const sceneName = get().activeSceneName;
+      if (sceneName === null) {
+        return false;
+      }
+
+      return get().applyScenes("修改音频列表", (draft) => {
+        const scene = draft.find((item) => item.name === sceneName);
+        if (scene !== undefined) {
+          setSceneSoundClips(scene, objectId, clips);
+        }
+      });
+    },
+
+    selectSoundClip(objectId, clip) {
+      const sceneName = get().activeSceneName;
+      if (sceneName === null) {
+        return false;
+      }
+
+      const object = findSceneByName(get().scenes, sceneName)?.objects.find(
+        (item) => item.id === objectId,
+      );
+      if (object === undefined || object.kind !== "PlaySound") {
+        return false;
+      }
+
+      // 单选：只能选**加进来的**那几条（`setSoundPicked` 会把不在列表里的拒掉）。
+      // 名字按文件记，换选不动它。
+      return get().applyScenes("选择声音", (draft) => {
+        const scene = draft.find((item) => item.name === sceneName);
+        if (scene !== undefined) {
+          setSceneSoundPicked(scene, objectId, clip);
+        }
+      });
+    },
+
+    addSoundClip(objectId, clipId) {
+      const sceneName = get().activeSceneName;
+      if (sceneName === null) {
+        return false;
+      }
+
+      const object = findSceneByName(get().scenes, sceneName)?.objects.find(
+        (item) => item.id === objectId,
+      );
+      if (object === undefined || object.kind !== "PlaySound") {
+        return false;
+      }
+
+      const sound = object.sound;
+      const already = (sound?.clips ?? []).includes(clipId);
+      // 原来选中的那条要是还在，就不抢（正听着 A 加一条 B，选择不该被顶掉）
+      const hadPicked = sound?.picked;
+
+      return get().applyScenes("添加声音", (draft) => {
+        const scene = draft.find((item) => item.name === sceneName);
+        if (scene === undefined) {
+          return;
+        }
+
+        if (!already) {
+          setSceneSoundClips(scene, objectId, [...(sound?.clips ?? []), clipId]);
+        }
+
+        if (hadPicked === undefined) {
+          // 之前一条都没选（或列表本来是空的）：加进来的这条就是现在要播的
+          setSceneSoundPicked(scene, objectId, clipId);
+        }
+      });
+    },
+
+    removeSoundClip(objectId, clipId) {
+      const sceneName = get().activeSceneName;
+      if (sceneName === null) {
+        return false;
+      }
+
+      const object = findSceneByName(get().scenes, sceneName)?.objects.find(
+        (item) => item.id === objectId,
+      );
+      if (object === undefined || object.kind !== "PlaySound") {
+        return false;
+      }
+
+      const clips = object.sound?.clips ?? [];
+      if (!clips.includes(clipId)) {
+        return false;
+      }
+
+      // 名字与「选中的那条」由 `setSoundClips` 一起收拾（见 `syncSoundSideData`）
+      return get().applyScenes("移除声音", (draft) => {
+        const scene = draft.find((item) => item.name === sceneName);
+        if (scene !== undefined) {
+          setSceneSoundClips(
+            scene,
+            objectId,
+            clips.filter((id) => id !== clipId),
+          );
+        }
+      });
+    },
+
+    setSoundClipName(objectId, clipId, name) {
+      const sceneName = get().activeSceneName;
+      if (sceneName === null) {
+        return false;
+      }
+
+      return get().applyScenes("修改声音名字", (draft) => {
+        const scene = draft.find((item) => item.name === sceneName);
+        if (scene !== undefined) {
+          setSceneSoundClipName(scene, objectId, clipId, name);
+        }
+      });
+    },
+
+    openSoundEditor(objectId) {
+      set({ soundEditor: objectId !== null, soundEditorTarget: objectId });
+      if (objectId !== null) {
+        // 与「选择贴图」同一条规矩：素材由外部提交进 Assets/audio/，打开时刷一次目录
+        void get().refreshTree();
+      }
+    },
+
+    setSoundLayer(objectId, layer) {
+      const sceneName = get().activeSceneName;
+      if (sceneName === null) {
+        return false;
+      }
+
+      return get().applyScenes("修改声音层级", (draft) => {
+        const scene = draft.find((item) => item.name === sceneName);
+        if (scene !== undefined) {
+          setSceneSoundLayer(scene, objectId, layer);
+        }
+      });
     },
 
     // ------------------------------------------------------------ 网格标注

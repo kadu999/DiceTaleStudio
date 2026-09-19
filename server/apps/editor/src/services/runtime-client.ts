@@ -27,6 +27,8 @@ export interface RuntimeHandlers {
   onStatus(status: RuntimeStatus, detail?: string): void;
   onSnapshot(state: GameStateSnapshot, clientConnected: boolean): void;
   onActionResult(message: Extract<ServerToEditorMessage, { type: "action_result" }>): void;
+  /** 后台下发命令的回执（声音命令等）。 */
+  onCommandResult(message: Extract<ServerToEditorMessage, { type: "command_result" }>): void;
   onError(reason: string, requestId?: string): void;
 }
 
@@ -125,6 +127,25 @@ export class RuntimeClient {
     return requestId;
   }
 
+  /**
+   * 让前端**播放**一段声音：命令里带着要播的内容（候选音频 + 层级）。
+   *
+   * 这是「数据在后台、前端只是播放效果」那套方向：前端不回头查场景数据，按消息里的
+   * clips 挑一条、按 layer 占用声源（同层顶替）。编辑器本身不播放。
+   */
+  playSound(objectId: string, layer: string, clips: readonly string[]): string {
+    const requestId = createRequestId("snd");
+    this.send({ type: "play_sound", requestId, objectId, layer, clips: [...clips] });
+    return requestId;
+  }
+
+  /** 让前端**停止**某一层的声音（同层只响一条，所以按层停就够）。 */
+  stopSound(layer: string): string {
+    const requestId = createRequestId("snd");
+    this.send({ type: "stop_sound", requestId, layer });
+    return requestId;
+  }
+
   /** 原子命令直通（低层：改组件值，副作用由前端本地动作链产生）。 */
   sendAtomic(
     command:
@@ -154,6 +175,10 @@ export class RuntimeClient {
 
       case "action_result":
         this.handlers.onActionResult(message);
+        break;
+
+      case "command_result":
+        this.handlers.onCommandResult(message);
         break;
 
       case "editor_error":

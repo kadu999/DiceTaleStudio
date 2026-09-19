@@ -309,6 +309,112 @@ describe("运行态端到端（编辑器 → 服务端 → 前端）", () => {
 
     expect(forwarded.option).toBe("打开");
   });
+
+  /**
+   * 声音命令：**后台把要播的东西整份推下去**（数据在后台、前端只是播放效果）。
+   *
+   * 假前端这里刻意「不认识」这个对象（它没有上报过 sound_1）：命令照样送到 —— 前端按
+   * 消息里的 clips + layer 播就行，不需要回头查数据。
+   */
+  it("播放命令带着 clips + layer 原样送到前端，回执回到编辑器", async () => {
+    const client = await startClient();
+    send(client.socket, { type: "request_join" });
+
+    // 假前端：收到 play_sound 就回执（把拿到的内容写进 effects，便于断言）
+    client.socket.on("message", (data) => {
+      const message = parseServerToClient(JSON.parse(typeof data === "string" ? data : data.toString()));
+      if (message.type !== "play_sound") {
+        return;
+      }
+
+      send(client.socket, {
+        type: "command_result",
+        requestId: message.requestId,
+        ok: true,
+        effects: [`播放 ${message.layer}: ${message.clips.join("|")}`],
+      });
+    });
+
+    const editor = await startEditor();
+    send(editor.socket, { type: "editor_subscribe" });
+    await editor.inbox.waitFor((message) => (message as { type?: string }).type === "editor_snapshot");
+
+    send(editor.socket, {
+      type: "play_sound",
+      requestId: "snd-1",
+      objectId: "sound_1",
+      layer: "bgm",
+      clips: ["project:P/Assets/audio/a.mp3", "project:P/Assets/audio/b.mp3"],
+    });
+
+    const received = await client.inbox.waitFor<ServerToClientMessage>(
+      (message) => (message as { type?: string }).type === "play_sound",
+    );
+    if (received.type !== "play_sound") {
+      throw new Error("类型不符");
+    }
+
+    expect(received.objectId).toBe("sound_1");
+    expect(received.layer).toBe("bgm");
+    expect(received.clips).toEqual(["project:P/Assets/audio/a.mp3", "project:P/Assets/audio/b.mp3"]);
+
+    const result = await editor.inbox.waitFor<ServerToEditorMessage>(
+      (message) => (message as { type?: string }).type === "command_result",
+    );
+    if (result.type !== "command_result") {
+      throw new Error("类型不符");
+    }
+
+    expect(result.requestId).toBe("snd-1");
+    expect(result.ok).toBe(true);
+    expect(result.effects).toEqual([
+      "播放 bgm: project:P/Assets/audio/a.mp3|project:P/Assets/audio/b.mp3",
+    ]);
+  });
+
+  it("停止命令送达前端（按层级停）", async () => {
+    const client = await startClient();
+    const editor = await startEditor();
+    send(editor.socket, { type: "editor_subscribe" });
+    await editor.inbox.waitFor((message) => (message as { type?: string }).type === "editor_snapshot");
+
+    send(editor.socket, { type: "stop_sound", requestId: "snd-2", layer: "sfx" });
+
+    const received = await client.inbox.waitFor<ServerToClientMessage>(
+      (message) => (message as { type?: string }).type === "stop_sound",
+    );
+    if (received.type !== "stop_sound") {
+      throw new Error("类型不符");
+    }
+
+    expect(received.layer).toBe("sfx");
+  });
+
+  it("前端未连接时下发声音命令给出明确错误（不静默失败）", async () => {
+    const editor = await startEditor();
+    send(editor.socket, { type: "editor_subscribe" });
+    await editor.inbox.waitFor((message) => (message as { type?: string }).type === "editor_snapshot");
+
+    send(editor.socket, {
+      type: "play_sound",
+      requestId: "snd-3",
+      objectId: "sound_1",
+      layer: "sfx",
+      clips: ["project:P/Assets/audio/a.mp3"],
+    });
+
+    const error = await editor.inbox.waitFor<ServerToEditorMessage>(
+      (message) =>
+        (message as { type?: string }).type === "editor_error" &&
+        (message as { requestId?: string }).requestId === "snd-3",
+    );
+
+    if (error.type !== "editor_error") {
+      throw new Error("类型不符");
+    }
+
+    expect(error.reason).toMatch(/前端未连接/);
+  });
 });
 
 describe("后端 HTTP 接口", () => {

@@ -9,6 +9,7 @@ import { EmptyState } from "../EmptyState";
 import { Field, FieldGroup, FieldRow } from "./fields";
 import { FogFields } from "./FogFields";
 import { GridAnnotationFields } from "./GridAnnotationFields";
+import { SoundFields } from "./SoundFields";
 
 /** 右侧属性面板：当前选中对象 / 场景 / **资源文件**的属性。编辑能力在 M2/M3 接入。 */
 export function InspectorPanel(): React.JSX.Element {
@@ -71,10 +72,20 @@ export function InspectorPanel(): React.JSX.Element {
               图片，精灵就是靠它显示图片的；地图的贴图也是同一个字段，只是存在 `map.image` 里）。
               暂时只支持**替换图片**，后面要加的「怎么画」（着色、混合、动画…）都往这一组里放，
               不再塞回「基础」——「对象是什么」与「对象画成什么样」是两件事。
+              **声音对象没有这一组**：它画的是**固定的内置音频图标**，不给换贴图。
             */}
-            <FieldGroup title="渲染" group="render">
-              <TextureField object={selected} />
-            </FieldGroup>
+            {selected.kind === "PlaySound" ? null : (
+              <FieldGroup title="渲染" group="render">
+                <TextureField object={selected} />
+              </FieldGroup>
+            )}
+
+            {/* 「声音」只对声音对象出现：音频列表 + 层级就是它自己那点东西（基础属性照旧） */}
+            {selected.kind === "PlaySound" ? (
+              <FieldGroup title="声音" group="sound">
+                <SoundFields object={selected} />
+              </FieldGroup>
+            ) : null}
 
             {/*
               「区域」只对地图对象出现：格子是地图独有的东西。网格规格（列 · 行 / 每格 / 行序）
@@ -398,6 +409,9 @@ function formatScale(value: number): string {
  * 2. **正在输入的框不被 store 回灌**，否则提交后触发的同步会把用户刚敲的值冲掉。
  *    留空或非法值按世界原点处理（手写文件里 `position: null` 的对象也能一键落位）。
  *
+ * 还没有落点的对象（`position: null`）多一个「**落位**」按钮：那种对象在画布上不画、也点不到，
+ * 没有这个按钮就只能靠「在坐标框里敲一个数」这种没人猜得到的办法把它找回来。
+ *
  * **锁定的对象禁用这两个框**：锁上就是「不能被移动」，留一个还能改坐标的入口等于没锁
  * （store 的 `moveObject` 也会拒掉，那是第二道保险）。
  */
@@ -461,6 +475,23 @@ function PositionFields({ object }: { readonly object: SceneObjectDoc }): React.
           disabled={object.locked}
           title={object.locked ? "对象已锁定：先解锁才能改坐标" : undefined}
         />
+        {/*
+          未放置（`position: null`，只可能来自手写文件或旧版数据）的对象**既画不出来也点不到**，
+          看起来就像「这个对象没了」。给一个明确的落位入口：一键放到世界原点，之后照常拖 / 缩放。
+        */}
+        {object.position === null ? (
+          <button
+            type="button"
+            data-testid="place-object-at-origin"
+            title="这个对象还没有落点（画布上不画、也点不到）：放到世界原点（画布正中）"
+            className="flex-none rounded bg-[var(--color-editor-accent)] px-1.5 py-0.5 text-[10px] text-black hover:opacity-90"
+            onClick={() =>
+              moveObject(object.id, { x: WORLD_ORIGIN_FALLBACK, y: WORLD_ORIGIN_FALLBACK })
+            }
+          >
+            落位
+          </button>
+        ) : null}
       </div>
     </FieldRow>
   );

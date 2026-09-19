@@ -14,7 +14,7 @@ import { RunState } from "./run-state";
 export type LogLevel = "info" | "warn" | "error";
 export type HubLogger = (level: LogLevel, message: string) => void;
 
-/** 触发动作后等待回执的超时（超时向前端编辑器报错，避免界面一直转圈）。 */
+/** 触发动作 / 下发命令后等待回执的超时（超时向编辑器报错，避免界面一直转圈）。 */
 const ACTION_RESULT_TIMEOUT_MS = 5000;
 
 interface PendingInvocation {
@@ -176,6 +176,21 @@ export class RuntimeHub {
         break;
       }
 
+      case "command_result": {
+        const pending = this.pending.get(message.requestId);
+        if (pending !== undefined) {
+          clearTimeout(pending.timer);
+          this.pending.delete(message.requestId);
+        }
+
+        this.log(
+          message.ok ? "info" : "warn",
+          `命令回执 ${message.requestId}: ${message.ok ? "成功" : `失败(${message.reason ?? "未知"})`}`,
+        );
+        this.broadcastToEditors({ ...message });
+        break;
+      }
+
       case "request_teleport":
         this.state.setMap(message.mapName);
         this.pushSnapshot();
@@ -246,7 +261,31 @@ export class RuntimeHub {
           return;
         }
 
-        this.trackInvocation(message.requestId, ws);
+        this.trackCommand(message.requestId, ws, "invoke_action");
+        break;
+      }
+
+      case "play_sound":
+      case "stop_sound": {
+        if (!this.clientConnected) {
+          this.sendTo(ws, {
+            type: "editor_error",
+            requestId: message.requestId,
+            reason: "前端未连接，无法下发声音命令",
+          });
+          return;
+        }
+
+        if (!this.forwardToClient({ ...message })) {
+          this.sendTo(ws, {
+            type: "editor_error",
+            requestId: message.requestId,
+            reason: "下发失败：前端连接不可用",
+          });
+          return;
+        }
+
+        this.trackCommand(message.requestId, ws, message.type);
         break;
       }
 
@@ -263,7 +302,13 @@ export class RuntimeHub {
     }
   }
 
-  private trackInvocation(requestId: string, editor: WebSocket): void {
+  /**
+   * 记一笔「等着前端回执」的命令（`invoke_action` 与声音命令共用）。
+   *
+   * 超时后向前端编辑器报错，**不静默失败**：前端没实现这条命令时，界面上要看得见原因
+   * （而不是点了没反应）。`label` 只出现在超时文案里，说明是哪条命令没回执。
+   */
+  private trackCommand(requestId: string, editor: WebSocket, label: string): void {
     const existing = this.pending.get(requestId);
     if (existing !== undefined) {
       clearTimeout(existing.timer);
@@ -274,7 +319,7 @@ export class RuntimeHub {
       this.sendTo(editor, {
         type: "editor_error",
         requestId,
-        reason: `动作回执超时（${ACTION_RESULT_TIMEOUT_MS}ms）：前端可能未实现 invoke_action`,
+        reason: `命令回执超时（${ACTION_RESULT_TIMEOUT_MS}ms）：前端可能未实现 ${label}`,
       });
     }, ACTION_RESULT_TIMEOUT_MS);
 

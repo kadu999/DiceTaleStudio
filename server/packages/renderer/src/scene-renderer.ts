@@ -65,6 +65,21 @@ export interface SceneLayer {
    * 画布上「为什么拖不动」总得有个说法——锁不改对象长什么样，换个框的颜色就能一眼看出来。
    */
   readonly locked?: boolean;
+  /**
+   * **没有贴图时**在矩形里画的**内置图标**（有贴图就画贴图，不画图标）。
+   *
+   * 现在只有一种：`"audio"` = 声音对象（动作对象）的喇叭徽标——它和别的对象一样摆在
+   * 世界里，刚建出来还没有图，画一个徽标才能「看得见、点得到、拖得动」。
+   */
+  readonly icon?: "audio";
+  /**
+   * 这个声音对象**现在正在播**（只对 `icon: "audio"` 有意义）：徽标会画成「活的」——
+   * 一圈圈往外扩的声波 + 随节拍一胀一缩的喇叭，配合 `animationTimeMs` 出动画。
+   *
+   * 为什么要动：编辑器自己不出声，「有个音频正在播」在画布上只能靠**看得见的变化**表达；
+   * 静态画面里谁也分不出这个图标是在响还是待命。
+   */
+  readonly playing?: boolean;
 }
 
 export interface SceneRenderInput {
@@ -89,6 +104,13 @@ export interface SceneRenderInput {
    * 底纹跟着地图走，而不是像贴在屏幕上一样滑动。它只影响底纹的相位，不影响别的绘制。
    */
   readonly checkerOrigin?: Point;
+  /**
+   * 动画用的当前时刻（毫秒，一般给 `performance.now()`）；缺省 `0` = 静止的第一帧。
+   *
+   * 只有**正在播**的声音徽标会用它（见 `SceneLayer.playing`）：编辑器本来就每帧重绘，
+   * 所以只要把时刻传进来，图标就动起来了——不需要另起定时器。
+   */
+  readonly animationTimeMs?: number;
 }
 
 export interface SceneRenderer {
@@ -131,12 +153,15 @@ const MIN_GRID_LINE_SPACING = 4;
 /** 网格线条数上限：视口缩得极小时不至于画上百万条线。 */
 const MAX_GRID_LINES = 4000;
 
-/** 对象类型色（新建对象弹框里那个小圆点用；画布上不再画标记点）。 */
+/** 对象类型色（弹框里那个小圆点、以及声音对象那枚内置图标都用它）。 */
 const KIND_MARKER_COLORS: Record<string, string> = {
   SceneObject: "#4f9cf9",
   Player: "#3fbf6f",
   Item: "#e0a13c",
   Event: "#b06ef0",
+  // 动作对象（播放声音）：画布上的内置音频图标也用它（见 drawAudioBadge）。
+  // 用**暖橙**是有意的：地图底图多是草地 / 水面 / 石头（绿蓝灰一片），暖色在那种底上跳得出来
+  PlaySound: "#ff7a1a",
 };
 
 const DEFAULT_MARKER_COLOR = "#9aa4b2";
@@ -229,7 +254,7 @@ export function createCanvasSceneRenderer(canvas: HTMLCanvasElement): SceneRende
       }
 
       for (const layer of input.layers ?? []) {
-        drawLayer(context, layer, viewport, visible, view);
+        drawLayer(context, layer, viewport, visible, view, input.animationTimeMs ?? 0);
       }
 
       // 选中框画在**所有图层之后**：被别的图片盖住的对象也要看得见自己的框
@@ -320,18 +345,25 @@ function drawLayer(
   context: CanvasRenderingContext2D,
   layer: SceneLayer,
   viewport: Viewport,
-  visible: { left: number; top: number; right: number; bottom: number },
+  visible: { readonly left: number; readonly top: number; readonly right: number; readonly bottom: number },
   view: ImageSize,
+  animationTimeMs: number,
 ): void {
   const box = screenBoxOf(layer.rect, viewport);
   if (box.right < 0 || box.bottom < 0 || box.left > view.width || box.top > view.height) {
     return;
   }
 
-  context.save();
-  context.beginPath();
-  context.rect(box.left, box.top, box.right - box.left, box.bottom - box.top);
-  context.clip();
+  // 内置图标（声音对象）**不裁剪**：正在播时那几圈声波要扩到矩形外面去，裁剪会把它切掉；
+  // 这块矩形里本来也没有别的东西（图标与贴图互斥），所以挪到裁剪之外画不影响别人
+  const badgeOnly = layer.image == null && layer.icon === "audio";
+
+  if (!badgeOnly) {
+    context.save();
+    context.beginPath();
+    context.rect(box.left, box.top, box.right - box.left, box.bottom - box.top);
+    context.clip();
+  }
 
   if (layer.image != null) {
     context.imageSmoothingEnabled = viewport.scale < 4;
@@ -346,6 +378,188 @@ function drawLayer(
     if (layer.showGrid === true) {
       drawGridLines(context, layer, viewport, visible, view);
     }
+  }
+
+  if (!badgeOnly) {
+    context.restore();
+  } else {
+    drawAudioBadge(context, box, { playing: layer.playing === true, timeMs: animationTimeMs });
+  }
+}
+
+/** 徽标画到这个屏幕尺寸以下就不画了（缩得极小时画出来只是几个像素的噪点）。 */
+const MIN_AUDIO_BADGE_SIZE = 6;
+
+/**
+ * 「正在播」的动画：**一圈圈往外扩的声波**（毫秒一个周期）。
+ *
+ * 取 1200ms：比心跳慢一点，看上去像声音一圈圈送出去，而不是在闪。
+ */
+const AUDIO_PULSE_PERIOD_MS = 1200;
+
+/** 同一个周期里**同时有几圈**声波在往外走（错开半个周期，看起来是连续的）。 */
+const AUDIO_PULSE_RING_COUNT = 2;
+
+/** 一圈往外扩的声波（半径与透明度都只由相位决定，方便单测）。 */
+export interface AudioPulseRing {
+  /** 半径 = 徽标半边长（`badge / 2`）的几倍。 */
+  readonly radiusFactor: number;
+  /** 描边的不透明度（越往外越淡）。 */
+  readonly alpha: number;
+}
+
+export interface AudioBadgeAnimation {
+  /** 正在播时才有：错开相位的一圈圈声波；不播时为空数组。 */
+  readonly rings: readonly AudioPulseRing[];
+  /** 喇叭自身声波的胀缩系数（不播时恒为 1）。 */
+  readonly waveScale: number;
+}
+
+/**
+ * `#rrggbb` → `rgba(r,g,b,a)`（半透明地画声波圈用）。
+ *
+ * 只认这一种输入：颜色都是本文件里的常量（`KIND_MARKER_COLORS`）。不做通用解析是为了
+ * 不引一堆用不上的格式分支，也不用猜 `#abc` 这种缩写。
+ */
+function withAlpha(hex: string, alpha: number): string {
+  const value = hex.startsWith("#") ? hex.slice(1) : hex;
+  const red = Number.parseInt(value.slice(0, 2), 16);
+  const green = Number.parseInt(value.slice(2, 4), 16);
+  const blue = Number.parseInt(value.slice(4, 6), 16);
+  return `rgba(${red}, ${green}, ${blue}, ${alpha.toFixed(3)})`;
+}
+
+/**
+ * 声音徽标的动画参数（**纯函数**，只跟 `playing` 与时刻有关——所以能直接单测，不用真画布）。
+ *
+ * 两件事：
+ * - **外圈声波**：两圈错开半个周期，从贴着牌面扩到牌面半边的 1.9 倍，边走边淡；
+ * - **喇叭呼吸**：内部两道声波按周期 ±18% 胀缩，让图标本身也「在动」。
+ */
+export function audioBadgeAnimation(input: {
+  readonly playing: boolean;
+  readonly timeMs: number;
+}): AudioBadgeAnimation {
+  if (!input.playing) {
+    return { rings: [], waveScale: 1 };
+  }
+
+  // 取模成 0..1 的相位；负时刻（时钟回拨）也能算出合法相位
+  const period = AUDIO_PULSE_PERIOD_MS;
+  const base = (((input.timeMs % period) + period) % period) / period;
+
+  const rings: AudioPulseRing[] = [];
+  for (let index = 0; index < AUDIO_PULSE_RING_COUNT; index += 1) {
+    const phase = (base + index / AUDIO_PULSE_RING_COUNT) % 1;
+    rings.push({
+      // 1.05 起（刚好贴着牌面）→ 2 倍（扩到矩形外一圈，像声波送出去）
+      radiusFactor: 1.05 + 0.95 * phase,
+      // 一路淡下去（线性，单调；一头是刚出牌面最实，一头的半径到顶时淡到看不见）
+      // 起始不透明度给得足一点：这圈声波是「正在播」的主要信号，压在小图标上本来就显小
+      alpha: 0.75 * (1 - phase),
+    });
+  }
+
+  return { rings, waveScale: 1 + 0.18 * Math.sin(base * Math.PI * 2) };
+}
+
+/**
+ * 声音对象的**内置徽标**：一块圆角牌 + 一个白色喇叭，画在它那块矩形正中。
+ *
+ * 声音对象没有贴图（图标固定、不给换），所以这里要保证它在**任何底图上都看得清**，
+ * 三条一起用：
+ * - 牌面是**实色**（类型色），不是半透明——半透明压在花花绿绿的地图上会糊成一团；
+ * - 牌外面先描一圈**深色**（亮底：雪地 / 白墙 / 浅色地图，靠它把图标「抠」出来）；
+ * - 喇叭与声波是**白色**（深色底上最清楚）。
+ *
+ * 全部用路径画——**不占资产、也不依赖字体**（emoji / 字形在不同机器上大小不一，还会被
+ * 字号顶得忽大忽小）。尺寸只由矩形决定，所以缩放对象时它跟着一起缩放。
+ *
+ * `playing`（这个声音对象正在播）时再画上动画：外面一圈圈扩出去的声波 + 喇叭呼吸
+ * （参数见 `audioBadgeAnimation`）。**画布上「有个音频在响」只能靠看得见的变化表达**——
+ * 编辑器自己不出声，静态图标谁也分不出它是在响还是待命。
+ */
+function drawAudioBadge(
+  context: CanvasRenderingContext2D,
+  box: { readonly left: number; readonly top: number; readonly right: number; readonly bottom: number },
+  animation: { readonly playing: boolean; readonly timeMs: number },
+): void {
+  const boxSize = Math.min(box.right - box.left, box.bottom - box.top);
+  if (boxSize < MIN_AUDIO_BADGE_SIZE) {
+    return;
+  }
+
+  const cx = (box.left + box.right) / 2;
+  const cy = (box.top + box.bottom) / 2;
+  // 徽标占矩形的大半（剩下那点留白让「这块矩形」本身也看得出来——选中框画的正是它）
+  const badge = boxSize * 0.72;
+  const half = badge / 2;
+  const left = cx - half;
+  const top = cy - half;
+  const radius = badge * 0.2;
+  const color = kindMarkerColor("PlaySound");
+  const motion = audioBadgeAnimation({ playing: animation.playing, timeMs: animation.timeMs });
+
+  const outline = (): void => {
+    context.beginPath();
+    context.moveTo(left + radius, top);
+    context.arcTo(left + badge, top, left + badge, top + badge, radius);
+    context.arcTo(left + badge, top + badge, left, top + badge, radius);
+    context.arcTo(left, top + badge, left, top, radius);
+    context.arcTo(left, top, left + badge, top, radius);
+    context.closePath();
+  };
+
+  context.save();
+
+  // 0) 正在播：先铺外圈声波（画在牌面**下面**，被牌面盖住内半边，看着就像从喇叭里送出来的）
+  for (const ring of motion.rings) {
+    if (ring.alpha <= 0.01) {
+      continue;
+    }
+
+    context.beginPath();
+    context.arc(cx, cy, half * ring.radiusFactor, 0, Math.PI * 2);
+    context.lineWidth = Math.max(2, badge * 0.09);
+    context.strokeStyle = withAlpha(color, ring.alpha);
+    context.stroke();
+  }
+
+  // 1) 深色外描边（一半在牌外、一半被牌面盖住 → 亮底上也有清晰边界）
+  outline();
+  context.lineWidth = Math.max(2, badge * 0.12);
+  context.strokeStyle = "rgba(0,0,0,0.62)";
+  context.stroke();
+
+  // 2) 实色牌面（类型色）
+  outline();
+  context.fillStyle = color;
+  context.fill();
+
+  // 3) 喇叭：音箱（小方块）+ 号角（梯形）+ 右侧两道声波，统一白色
+  const midY = cy;
+  const unit = badge / 100;
+  context.beginPath();
+  context.rect(left + 22 * unit, midY - 11 * unit, 13 * unit, 22 * unit);
+  context.moveTo(left + 35 * unit, midY - 11 * unit);
+  context.lineTo(left + 56 * unit, midY - 25 * unit);
+  context.lineTo(left + 56 * unit, midY + 25 * unit);
+  context.lineTo(left + 35 * unit, midY + 11 * unit);
+  context.closePath();
+  context.fillStyle = "#ffffff";
+  context.fill();
+
+  context.strokeStyle = "#ffffff";
+  context.lineWidth = Math.max(1.2, badge * 0.075);
+  context.lineCap = "round";
+  for (const [radiusFactor, spread] of [
+    [0.16, 0.95],
+    [0.29, 0.8],
+  ] as const) {
+    context.beginPath();
+    // 正在播时这两道声波跟着「呼吸」，图标自己也在动
+    context.arc(left + 56 * unit, midY, badge * radiusFactor * motion.waveScale, -spread, spread);
+    context.stroke();
   }
 
   context.restore();

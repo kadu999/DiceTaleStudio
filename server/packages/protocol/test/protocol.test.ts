@@ -114,6 +114,32 @@ describe("协议：服务端 → 前端", () => {
     expect(gameStateSchema.safeParse(snapshot).success).toBe(true);
     expect(serverToClientSchema.safeParse({ type: "sync_state", state: snapshot }).success).toBe(true);
   });
+
+  it("后台下发的声音命令：play_sound / stop_sound 带全量内容", () => {
+    const play = parseServerToClient({
+      type: "play_sound",
+      requestId: "s1",
+      objectId: "sound_1",
+      layer: "bgm",
+      clips: ["project:P/Assets/audio/a.mp3", "project:P/Assets/audio/b.mp3"],
+    });
+    expect(play.type).toBe("play_sound");
+
+    const stop = parseServerToClient({ type: "stop_sound", requestId: "s2", layer: "bgm" });
+    expect(stop.type).toBe("stop_sound");
+  });
+
+  it("play_sound 少了音频（clips 为空）时被拒绝：空列表没有可播的东西", () => {
+    expect(() =>
+      parseServerToClient({
+        type: "play_sound",
+        requestId: "s1",
+        objectId: "sound_1",
+        layer: "bgm",
+        clips: [],
+      }),
+    ).toThrow(/校验失败/);
+  });
 });
 
 describe("协议：编辑器 ↔ 服务端", () => {
@@ -161,6 +187,32 @@ describe("协议：编辑器 ↔ 服务端", () => {
     expect(actionResultSchema.safeParse(payload).success).toBe(true);
     expect(clientToServerSchema.safeParse(payload).success).toBe(true);
     expect(editorToServerSchema.safeParse({ type: "editor_subscribe" }).success).toBe(true);
+  });
+
+  it("声音命令：编辑器能下发，前端能回 command_result", () => {
+    expect(
+      parseEditorToServer({
+        type: "play_sound",
+        requestId: "s1",
+        objectId: "sound_1",
+        layer: "sfx",
+        clips: ["project:P/Assets/audio/step1.mp3"],
+      }).type,
+    ).toBe("play_sound");
+
+    expect(parseEditorToServer({ type: "stop_sound", requestId: "s2", layer: "sfx" }).type).toBe(
+      "stop_sound",
+    );
+
+    // 回执两个方向共用同一份契约（前端 → 服务端 → 编辑器）
+    const result = {
+      type: "command_result" as const,
+      requestId: "s1",
+      ok: true,
+      effects: ["已播放（Mock）"],
+    };
+    expect(parseClientToServer(result).type).toBe("command_result");
+    expect(parseServerToEditor(result).type).toBe("command_result");
   });
 });
 

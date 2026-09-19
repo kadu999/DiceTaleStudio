@@ -12,6 +12,8 @@ import {
  * **运行态与动作触发链路今天就能端到端跑通并写测试**：
  * - 连上后上报地图对象、玩家、以及可触发动作清单；
  * - 收到 `invoke_action` 后模拟执行并回 `action_result`；
+ * - 收到后台下发的声音命令（`play_sound` / `stop_sound`）时打印并回 `command_result`
+ *   —— 这两条是「数据在后台、前端只是播放效果」那套方向的样板；
  * - 收到原子命令（set_option / set_bool ...）时更新本地镜像值并打印。
  *
  * 用法：`pnpm --filter @dts/backend mock`（端口取 PORT，默认 1420）
@@ -166,6 +168,31 @@ function main(): void {
           ...(ok
             ? { effects: [`${action?.type ?? "unknown"} 已执行（Mock）`] }
             : { reason: "该对象上没有这个动作" }),
+        });
+        break;
+      }
+
+      case "play_sound": {
+        // 后台把要播的东西整份推下来：Mock 只当自己是「播放器」，不回查任何数据
+        console.log(
+          `[mock] 播放声音 ${message.objectId} / 层级 ${message.layer}（候选 ${message.clips.length} 条：${message.clips[0]}）`,
+        );
+        send({
+          type: "command_result",
+          requestId: message.requestId,
+          ok: true,
+          effects: [`已播放 ${message.clips[0]}（Mock，层级 ${message.layer}）`],
+        });
+        break;
+      }
+
+      case "stop_sound": {
+        console.log(`[mock] 停止声音 / 层级 ${message.layer}`);
+        send({
+          type: "command_result",
+          requestId: message.requestId,
+          ok: true,
+          effects: [`已停止层级 ${message.layer}（Mock）`],
         });
         break;
       }

@@ -1,0 +1,484 @@
+import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import {
+  dropProject,
+  enterEditor,
+  newProject,
+  openLeftTab,
+  openProject,
+  sceneDoc,
+  sceneObjectDoc,
+  seedProjectDoc,
+  selectObject,
+} from "./helpers/editor";
+import { canvasAverageColor, dragOnCanvas, worldSamplePoint } from "./helpers/canvas";
+
+/**
+ * **声音对象**（动作对象）：弹框里「动作」种类下的「播放声音」。
+ *
+ * 它和实体一样摆在世界里（位置 / 缩放 / 激活 / 锁定 / 显示顺序），画布上是一枚**固定的
+ * 内置音频图标**（不给换贴图，能点选、能拖），另带自己的东西：**加进来的音频列表 + 选中的
+ * 那条**（面板上单选，前端播的就是它）与**层级**（同层同时只响一条）。
+ * 编辑器**不播放**——这里既钉住「画布上看得见、点得到、拖得动」，也钉住「页面上没有播放器」。
+ *
+ * 两个入口的分工也在这一份里钉住：**属性面板**把加进来的音频列出来单选（播哪条）；
+ * **「编辑声音」窗口**负责加 / 删 / 起名字（看得见每条音频的路径），加音频走「选择音频」弹框。
+ */
+
+const SCENE = "Map001";
+
+/** 把一段假音频提交到 `Assets/audio/`（内容无所谓：编辑器不解析音频、也不播放）。 */
+async function uploadAudio(
+  request: APIRequestContext,
+  project: string,
+  name: string,
+): Promise<string> {
+  const id = `project:${project}/Assets/audio/${name}`;
+  const response = await request.put(`/api/resources/raw?id=${encodeURIComponent(id)}`, {
+    headers: { "content-type": "audio/mpeg" },
+    data: Buffer.from(`not-really-audio:${name}`),
+  });
+  expect(response.ok()).toBeTruthy();
+  return id;
+}
+
+/** 场景文件里的声音对象（断言落盘用）。 */
+async function readSound(
+  request: APIRequestContext,
+  project: string,
+  sceneName: string,
+): Promise<{
+  clips?: unknown;
+  picked?: unknown;
+  names?: unknown;
+  layer?: unknown;
+  position?: unknown;
+} | null> {
+  const id = `project:${project}/Assets/scenes/${sceneName}.json`;
+  const response = await request.get(`/api/resources/text?id=${encodeURIComponent(id)}`);
+  if (!response.ok()) {
+    return null;
+  }
+
+  const file = (await response.json()) as {
+    objects?: Array<{
+      kind?: string;
+      position?: unknown;
+      sound?: { clips?: unknown; picked?: unknown; names?: unknown; layer?: unknown };
+    }>;
+  };
+  const object = file.objects?.find((item) => item.kind === "PlaySound");
+  if (object === undefined) {
+    return null;
+  }
+
+  return {
+    clips: object.sound?.clips,
+    picked: object.sound?.picked,
+    names: object.sound?.names,
+    layer: object.sound?.layer,
+    position: object.position,
+  };
+}
+
+/** 某个屏幕点的「暖度」（r − g）：音频图标的牌面是暖橙，棋盘底纹是中性灰。 */
+async function redness(page: Page, point: { x: number; y: number }): Promise<number> {
+  const color = await canvasAverageColor(page, point, 12);
+  return color.r - color.g;
+}
+
+test.describe("动作对象：播放声音", () => {
+  test("新建 → 窗口里加 / 移出音频、起名字 → 面板上换选 → 落盘；编辑器只存数据、不播放", async ({
+    page,
+    request,
+  }) => {
+    const project = await newProject(request);
+    try {
+      const step1 = await uploadAudio(request, project, "step1.mp3");
+      const step2 = await uploadAudio(request, project, "step2.mp3");
+      const step3 = await uploadAudio(request, project, "step3.mp3");
+
+      await seedProjectDoc(request, project, [sceneDoc(SCENE, [])]);
+      await enterEditor(page);
+      await openProject(page, project);
+      await openLeftTab(page, "hierarchy");
+
+      // 新建对象 →「动作」→「播放声音」（名字按类型预填）
+      await page.getByTestId("new-object").click();
+      await page.getByTestId("object-category-action").click();
+      await page.getByTestId("object-type-PlaySound").click();
+      await expect(page.getByTestId("object-name-input")).toHaveValue("播放声音");
+      await page.getByTestId("confirm-object").click();
+      await expect(page.getByTestId("object-dialog")).toHaveCount(0);
+
+      // 列表：动作种类筛得出来；行尾显示层级
+      await expect(page.getByTestId("category-filter-action")).toBeVisible();
+      await page.getByTestId("category-filter-action").click();
+      const row = page.getByTestId("object-row").first();
+      await expect(row).toHaveAttribute("data-kind", "PlaySound");
+      await expect(row).toContainText("音效");
+
+      // 属性面板：基础和实体一样（位置 / 缩放 / 锁定 / 显示顺序都在），另有「声音」；
+      // **没有「渲染」**——图标是固定的内置图标，不给换贴图
+      await selectObject(page, 0);
+      await expect(page.locator('[data-group="sound"]')).toBeVisible();
+      await expect(page.locator('[data-group="render"]')).toHaveCount(0);
+      await expect(page.getByTestId("pick-texture")).toHaveCount(0);
+      await expect(page.getByTestId("inspector-object-x")).toHaveValue("0");
+      await expect(page.getByTestId("inspector-object-scale")).toHaveValue("1");
+      await expect(page.getByLabel("声音层级")).toHaveValue("sfx");
+
+      // **编辑器不播放**：页面上没有任何播放器（音频试听不在这个功能里）
+      await expect(page.locator("audio")).toHaveCount(0);
+
+      // 面板行序是 层级 → 音频 → 编辑音频… → 播放（层级在上面）；一条都没加时写明「还没加音频」
+      const panelOrder = await page
+        .locator('[data-group="sound"] [data-testid^="sound-"]')
+        .evaluateAll((elements) => elements.map((element) => element.getAttribute("data-testid")));
+      expect(panelOrder).toEqual([
+        "sound-layer",
+        // 「音频」那一行的容器（现在里面只有「还没加音频」）
+        "sound-clips",
+        "sound-empty",
+        // 开窗口的按钮自己一行（挨着小方块容易点错）
+        "sound-edit",
+        "sound-play",
+        "sound-stop",
+        // 按钮旁边那行小字：本层现在在播什么（点下去有没有生效一眼看得见）
+        "sound-status",
+      ]);
+      await expect(page.getByTestId("sound-empty")).toHaveText("还没加音频");
+      await expect(page.getByTestId("sound-edit")).toHaveText("编辑音频…");
+      await expect(page.locator('[data-group="sound"]')).not.toContainText("audio/");
+
+      // 「编辑声音」窗口：这里是**这条声音对象的音频清单**（加 / 删 / 起名字），
+      // 「播哪条」在属性面板上点小方块选，所以窗口里没有选中这一套
+      await page.getByTestId("sound-edit").click();
+      const dialog = page.getByTestId("sound-edit-dialog");
+      await expect(dialog).toBeVisible();
+      await expect(dialog.getByTestId("sound-edit-row")).toHaveCount(0);
+      await expect(dialog.getByTestId("sound-edit-list")).toContainText("还没加音频");
+      await expect(dialog.getByTestId("sound-edit-pick")).toHaveCount(0);
+
+      // 「＋ 添加音频」弹「选择音频」：列出项目里的音频（带路径），点一条就加进来
+      await dialog.getByTestId("sound-add").click();
+      const picker = page.getByTestId("audio-picker-dialog");
+      await expect(picker).toBeVisible();
+      const pickItem = (id: string) =>
+        picker.locator(`[data-testid="audio-picker-item"][data-asset-id="${id}"]`);
+      await expect(pickItem(step1)).toContainText("audio/step1.mp3");
+      await pickItem(step1).click();
+      await pickItem(step2).click();
+      await pickItem(step3).click();
+      // 加过的标「已加入」（不会再重复加）
+      await expect(pickItem(step1)).toHaveAttribute("data-added", "true");
+      // 关掉素材弹框，回到「编辑声音」（两层模态：关上面那层，下面那层还在）
+      await picker.getByTestId("audio-picker-close").click();
+      await expect(picker).toHaveCount(0);
+      await expect(dialog).toBeVisible();
+
+      const rowOf = (clip: string) => dialog.locator(`[data-testid="sound-edit-row"][data-clip="${clip}"]`);
+      await expect(dialog.getByTestId("sound-edit-row")).toHaveCount(3);
+      await expect(rowOf(step3)).toContainText("audio/step3.mp3");
+
+      // 加错了可以移出（素材文件不会被删）
+      await dialog.locator(`[data-testid="sound-remove"][data-clip="${step3}"]`).click();
+      await expect(dialog.getByTestId("sound-edit-row")).toHaveCount(2);
+      await expect(dialog.getByTestId("sound-edit-list")).not.toContainText("audio/step3.mp3");
+
+      // 给 step1 起名（按文件存；留空 = 用文件名）
+      const nameInput = dialog.locator(`[data-testid="sound-edit-name"][data-clip="${step1}"]`);
+      await expect(nameInput).toHaveAttribute("placeholder", "step1");
+      await nameInput.fill("雷雨");
+      await nameInput.press("Enter");
+
+      await dialog.getByTestId("sound-edit-close").click();
+      await expect(dialog).toHaveCount(0);
+
+      // 面板：**加进来的音频全列出来**（小方块）；加进来的第一条自动是「播的那条」
+      const chips = page.getByTestId("sound-clip");
+      await expect(chips).toHaveCount(2);
+      await expect(chips.nth(0)).toHaveText("雷雨");
+      await expect(chips.nth(1)).toHaveText("step2");
+      await expect(chips.nth(0)).toHaveAttribute("data-selected", "true");
+      await expect(chips.nth(1)).toHaveAttribute("data-selected", "false");
+
+      // 换选就在面板上点（单选）：点第二条 → 播的就换成它（清单不动）
+      await chips.nth(1).click();
+      await expect(chips.nth(1)).toHaveAttribute("data-selected", "true");
+      await expect(chips.nth(0)).toHaveAttribute("data-selected", "false");
+      await expect(chips.nth(1)).toHaveAttribute("title", /audio\/step2\.mp3/);
+
+      // 「编辑音频…」在小方块**下面**自己一行：挨着放太容易点错
+      const editBox = await page.getByTestId("sound-edit").boundingBox();
+      const chipsBox = await page.getByTestId("sound-clips").boundingBox();
+      expect((editBox?.y ?? 0)).toBeGreaterThanOrEqual(
+        (chipsBox?.y ?? 0) + (chipsBox?.height ?? 0) - 1,
+      );
+
+      // 换层级：音效 → 背景音乐
+      await page.getByLabel("声音层级").selectOption("bgm");
+      await expect(row).toContainText("背景音乐");
+
+      // 落盘：加进来的清单 + 选中的那条 + 每个文件的名字表 + 层级，对象和实体一样摆在世界原点
+      await expect
+        .poll(() => readSound(request, project, SCENE))
+        .toEqual({
+          clips: [step1, step2],
+          picked: step2,
+          names: { [step1]: "雷雨" },
+          layer: "bgm",
+          position: { x: 0, y: 0 },
+        });
+    } finally {
+      await dropProject(request, project);
+    }
+  });
+
+  test("世界里看得见：画布上是一枚音频徽标，能点选、能拖", async ({ page, request }) => {
+    const project = await newProject(request);
+    try {
+      // 一个摆在世界原点的声音对象（手写文件里的样子：只有 kind + sound）
+      await seedProjectDoc(request, project, [
+        sceneDoc(SCENE, [
+          {
+            ...sceneObjectDoc("脚步", "PlaySound", { x: 0, y: 0 }),
+            sound: { clips: [], layer: "sfx" },
+          },
+        ]),
+      ]);
+
+      await enterEditor(page);
+      await openProject(page, project);
+      await openLeftTab(page, "hierarchy");
+
+      const origin = await worldSamplePoint(page, { x: 0, y: 0 });
+
+      // 1) 画出来了：牌面是**实色**暖橙（暖度很高），旁边的棋盘底纹是中性灰（暖度 ≈ 0）
+      const plainRedness = await redness(page, await worldSamplePoint(page, { x: 240, y: 0 }));
+      await expect.poll(() => redness(page, origin)).toBeGreaterThan(plainRedness + 20);
+
+      // 2) 点得到：拾取用的还是那块显示矩形（与实体同一套）
+      await page.mouse.click(origin.x, origin.y);
+      const soundRow = page.getByTestId("object-row").first();
+      await expect(soundRow).toHaveAttribute("data-kind", "PlaySound");
+      await expect(soundRow).toHaveAttribute("data-selected", "true");
+
+      // 3) 拖得动：位置跟着走，并自动落盘
+      await dragOnCanvas(page, origin, { x: origin.x + 120, y: origin.y - 80 });
+      await expect
+        .poll(async () => (await readSound(request, project, SCENE))?.position)
+        .not.toEqual({ x: 0, y: 0 });
+    } finally {
+      await dropProject(request, project);
+    }
+  });
+
+  /**
+   * 未放置（`position: null`）的声音对象：**画布上什么也画不出来**——没有位置就没有那块
+   * 显示矩形（与没落位的精灵同一个口径），所以旧文件 / 手写文件里的这种对象要「落位」才看得见。
+   * 这里把那条路钉住：列表写明「未放置」→ 属性面板给个坐标 → 图标出现并落盘。
+   */
+  test("未放置的声音对象要落位才看得见（列表写明「未放置」，给坐标后图标出现）", async ({
+    page,
+    request,
+  }) => {
+    const project = await newProject(request);
+    try {
+      // 手写文件里的样子：有 kind 与 sound，但 position 是 null
+      await seedProjectDoc(request, project, [
+        sceneDoc(SCENE, [
+          {
+            ...sceneObjectDoc("脚步", "PlaySound", null),
+            sound: { clips: [], layer: "sfx" },
+          },
+        ]),
+      ]);
+
+      await enterEditor(page);
+      await openProject(page, project);
+      await openLeftTab(page, "hierarchy");
+
+      // 列表写明「未放置」，画布上没有它（世界原点那块就是空底纹）
+      const row = page.getByTestId("object-row").first();
+      await expect(row).toContainText("未放置");
+
+      const origin = await worldSamplePoint(page, { x: 0, y: 0 });
+      const plainRedness = await redness(page, await worldSamplePoint(page, { x: 240, y: 0 }));
+      expect(await redness(page, origin)).toBeLessThan(plainRedness + 6);
+
+      // 属性面板给一个坐标（这里点「落位」= 一键放到世界原点）→ 图标立刻出现
+      await selectObject(page, 0);
+      await expect(page.getByTestId("place-object-at-origin")).toBeVisible();
+      await page.getByTestId("place-object-at-origin").click();
+
+      await expect.poll(() => redness(page, origin)).toBeGreaterThan(plainRedness + 20);
+      await expect(row).not.toContainText("未放置");
+      await expect
+        .poll(async () => (await readSound(request, project, SCENE))?.position)
+        .toEqual({ x: 0, y: 0 });
+    } finally {
+      await dropProject(request, project);
+    }
+  });
+
+  /**
+   * 播放 / 停止按钮的**能不能点**：随时都能点——编辑器只**记账**（哪一层该播什么），
+   * 连上了就下发，没连上就等前端连上补发。所以这里钉住「点得动 + 记账 + 不写文档」。
+   *
+   * 「前端已连 + 真回执 + 连上补发」那条链路在 `apps/backend/test/runtime-hub.test.ts`
+   * 与 `apps/editor/test/sound-playback.test.ts` 里钉（不在 e2e 常驻一个 mock：
+   * 那会让所有并行用例都看到一个「已连接的前端」）。
+   */
+  test("播放 / 停止随时可点：编辑态点一下只记账，不写文档", async ({ page, request }) => {
+    const project = await newProject(request);
+    try {
+      // 一条音频素材：窗口里才加得进来
+      const step1 = await uploadAudio(request, project, "step1.mp3");
+
+      await seedProjectDoc(request, project, [
+        sceneDoc(SCENE, [
+          {
+            ...sceneObjectDoc("脚步", "PlaySound", { x: 0, y: 0 }),
+            sound: { clips: [], layer: "sfx" },
+          },
+        ]),
+      ]);
+
+      await enterEditor(page);
+      await openProject(page, project);
+      await openLeftTab(page, "hierarchy");
+      await selectObject(page, 0);
+
+      const play = page.getByTestId("sound-play");
+      const stop = page.getByTestId("sound-stop");
+
+      // 编辑态（编辑器还没连服务端）：两个按钮都**点得动**，title 写明白「已记录、等连上补发」；
+      // 一条音频都没加 → 「播放」置灰，「停止」照样能点
+      await expect(play).toBeDisabled();
+      await expect(play).toHaveAttribute("title", /先加一条音频/);
+      await expect(stop).toBeEnabled();
+      await expect(stop).toHaveAttribute("title", /已记录：编辑器还没连上服务端/);
+
+      // 在「编辑声音」窗口里加一条 → 它自动成为「播的那条」，「播放」可以点了
+      await page.getByTestId("sound-edit").click();
+      const dialog = page.getByTestId("sound-edit-dialog");
+      await expect(dialog).toBeVisible();
+      await dialog.getByTestId("sound-add").click();
+      const picker = page.getByTestId("audio-picker-dialog");
+      await expect(picker).toBeVisible();
+      await picker.locator(`[data-testid="audio-picker-item"][data-asset-id="${step1}"]`).click();
+      await picker.getByTestId("audio-picker-close").click();
+      await dialog.getByTestId("sound-edit-close").click();
+      await expect(dialog).toHaveCount(0);
+
+      await expect(page.getByTestId("sound-clip")).toHaveCount(1);
+      await expect(page.getByTestId("sound-clip")).toHaveAttribute("data-selected", "true");
+      await expect(page.getByTestId("sound-clip")).toHaveText("step1");
+      await expect(play).toBeEnabled();
+      await expect(play).toHaveAttribute("title", /已记录：编辑器还没连上服务端/);
+
+      // 点「播放」：**看得见的变化** —— 按钮写成「播放中」并高亮，旁边写明白本层在播什么；
+      // 只记账 + 下发指令 —— 页面上仍然没有播放器，保存状态也还是「已保存」（不写文档）
+      await expect(page.getByTestId("sound-status")).toHaveAttribute("data-state", "idle");
+      await expect(page.getByTestId("sound-status")).toHaveText("本层没在播");
+
+      await play.click();
+      await expect(play).toHaveText("播放中");
+      await expect(play).toHaveAttribute("data-playing", "true");
+      await expect(page.getByTestId("sound-status")).toHaveAttribute("data-state", "playing");
+      await expect(page.getByTestId("sound-status")).toHaveText("本层正在播：step1");
+
+      // 会动的那个图标：三根声音条**真在跑动画**（不是只放了一张静态图）
+      // —— 先关掉「跟随系统减少动效」，否则系统偏好会让它按规范停下来（那时靠文字表达）
+      await page.emulateMedia({ reducedMotion: "no-preference" });
+      const wave = play.getByTestId("sound-wave").locator("span").first();
+      await expect(wave).toBeVisible();
+      const waveAnimation = await wave.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return { name: style.animationName, duration: style.animationDuration };
+      });
+      expect(waveAnimation.name).not.toBe("none");
+      expect(Number.parseFloat(waveAnimation.duration)).toBeGreaterThan(0);
+
+      await expect(page.locator("audio")).toHaveCount(0);
+      await expect(page.getByTestId("status-scene-save")).toHaveAttribute("data-state", "saved");
+
+      // 点「停止」：状态回落到「本层没在播」，按钮也变回「播放」
+      await stop.click();
+      await expect(play).toHaveText("▶ 播放");
+      await expect(play).toHaveAttribute("data-playing", "false");
+      await expect(page.getByTestId("sound-wave")).toHaveCount(0);
+      await expect(page.getByTestId("sound-status")).toHaveAttribute("data-state", "idle");
+      await expect(page.getByTestId("sound-status")).toHaveText("本层没在播");
+
+      // 切到运行态（还没有前端）：照样点得动，title 换成「前端未连接，等它连上补发」。
+      // 这里**不再点**：平板档位下「运行态」抽屉压着「属性」抽屉（两个都是右侧抽屉），点不到；
+      // 「点下去确实会记账」这条由 jsdom 单测钉（store 的记账与日志）。
+      await page.getByTestId("mode-run").click();
+      await expect(page.getByTestId("status-mode")).toHaveAttribute("data-mode", "run");
+      await selectObject(page, 0);
+
+      await expect(page.getByTestId("sound-play")).toBeEnabled();
+      await expect(page.getByTestId("sound-play")).toHaveAttribute(
+        "title",
+        /已记录：前端（Unity）未连接/,
+      );
+    } finally {
+      await dropProject(request, project);
+    }
+  });
+
+  /**
+   * **画布上看得见「在播」**：正在播的声音对象，图标是活的（一圈圈往外扩的声波 + 喇叭呼吸）。
+   *
+   * 编辑器自己不出声，所以这条「看得见的变化」就是它在响的唯一证据——这里用「相隔一会儿的
+   * 两帧画布**像素是否相同**」来钉：没在播时一帧都不该变，播起来必须变，停掉又回到不变。
+   * 动画本身的参数（圈数 / 越扩越淡 / 周期性）在 `packages/renderer/test/audio-badge.test.ts` 里钉。
+   */
+  test("正在播的声音对象：画布上的图标会动，停掉就不动了", async ({ page, request }) => {
+    const project = await newProject(request);
+    try {
+      const clip = await uploadAudio(request, project, "step1.mp3");
+
+      await seedProjectDoc(request, project, [
+        sceneDoc(SCENE, [
+          {
+            ...sceneObjectDoc("脚步", "PlaySound", { x: 0, y: 0 }),
+            // 加进来一条并选中它（`picked`），否则「播放」点不了
+            sound: { clips: [clip], picked: clip, layer: "sfx" },
+          },
+        ]),
+      ]);
+
+      await enterEditor(page);
+      await openProject(page, project);
+      await openLeftTab(page, "hierarchy");
+      await selectObject(page, 0);
+
+      const canvas = page.locator('[data-testid="scene-viewport"] canvas');
+
+      // 1) 还没播：图标是静止的——相隔一会儿两帧**一模一样**
+      const still = await canvas.screenshot();
+      await page.waitForTimeout(200);
+      expect((await canvas.screenshot()).equals(still)).toBe(true);
+
+      // 2) 点「播放」（只记账 + 下发指令，编辑器不出声）：图标动起来了
+      await page.getByTestId("sound-play").click();
+      await expect(page.getByTestId("sound-status")).toHaveAttribute("data-state", "playing");
+
+      const playing = await canvas.screenshot();
+      await page.waitForTimeout(200);
+      expect((await canvas.screenshot()).equals(playing)).toBe(false);
+
+      // 3) 停掉：回到静止（再取两帧又一样了）
+      await page.getByTestId("sound-stop").click();
+      await expect(page.getByTestId("sound-status")).toHaveAttribute("data-state", "idle");
+
+      const stopped = await canvas.screenshot();
+      await page.waitForTimeout(200);
+      expect((await canvas.screenshot()).equals(stopped)).toBe(true);
+    } finally {
+      await dropProject(request, project);
+    }
+  });
+});

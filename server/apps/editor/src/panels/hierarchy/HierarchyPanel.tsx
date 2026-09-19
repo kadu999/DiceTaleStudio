@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { SceneObjectDoc } from "@dts/document";
+import { DEFAULT_SOUND_LAYER, SOUND_LAYER_LABELS, type SceneObjectDoc } from "@dts/document";
 import { useEditorStore } from "../../state/editor-store";
 import { EmptyState } from "../EmptyState";
 import { KIND_LABELS, OBJECT_CATEGORIES, categoryOfKind } from "../object-kinds";
@@ -249,11 +249,15 @@ function ObjectRow({
   onDelete,
 }: ObjectRowProps): React.JSX.Element {
   // 只有地图有值得写在列表里的额外信息（网格尺寸）；其它对象不再显示「0 组件」这类噪声。
-  // 「未放置」是额外的一枚标记（位置为 null，只可能来自手写文件），所以不能顶掉尺寸信息
+  // 声音对象（动作对象）和实体一样摆在世界里，行尾显示它落在**哪一层**——那是这条声音
+  // 除了名字之外最该一眼看到的东西。
+  // 「未放置」是额外的一枚标记（位置为 null，只可能来自手写文件），所以不能顶掉这些信息
   const hint =
     object.kind === "Map"
       ? `${object.map?.grid.width ?? 0}×${object.map?.grid.height ?? 0}`
-      : null;
+      : object.kind === "PlaySound"
+        ? SOUND_LAYER_LABELS[object.sound?.layer ?? DEFAULT_SOUND_LAYER]
+        : null;
 
   return (
     <div

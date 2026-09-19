@@ -106,8 +106,12 @@ test.describe("创建与编辑场景对象", () => {
       await expect(page.getByTestId("object-type-SceneObject")).toBeVisible();
       await expect(page.getByTestId("object-name-input")).toHaveValue("网格地图");
 
-      // 还没做出来的种类：给提示，且创建按钮不可用
+      // 动作种类下有「播放声音」（动作对象）；事件种类还没做出来 → 给提示、创建按钮不可用
       await page.getByTestId("object-category-action").click();
+      await expect(page.getByTestId("object-type-PlaySound")).toBeVisible();
+      await expect(page.getByTestId("object-name-input")).toHaveValue("播放声音");
+
+      await page.getByTestId("object-category-event").click();
       await expect(page.getByTestId("object-type-list")).toContainText("还没有可创建的对象");
       await expect(page.getByTestId("confirm-object")).toBeDisabled();
 
