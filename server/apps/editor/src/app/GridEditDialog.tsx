@@ -303,59 +303,88 @@ export function GridEditDialog({
             </div>
           ) : (
             <>
-              {/* 画笔工具条：橡皮擦 + 8 个区域（名字前是它的颜色，点一下即可改） */}
-              <div className="mb-2 flex flex-none flex-wrap items-center gap-1.5 rounded border border-[var(--color-editor-border)] bg-[var(--color-editor-panel-alt)] px-2 py-1 text-[11px]">
-                <span className="text-[var(--color-editor-text-dim)]">画笔</span>
+              <div className="flex min-h-0 flex-1 gap-2">
+                <div ref={setContainer} className="relative min-h-0 flex-1 rounded bg-black/30">
+                  <canvas
+                    ref={setCanvas}
+                    data-testid="grid-editor-canvas"
+                    className="h-full w-full touch-none"
+                    onPointerDown={onPointerDown}
+                    onPointerMove={onPointerMove}
+                    onPointerUp={onPointerEnd}
+                    onPointerCancel={onPointerEnd}
+                  />
+                  {imageError === undefined ? null : (
+                    <div
+                      data-testid="grid-editor-image-error"
+                      className="pointer-events-none absolute left-2 top-2 rounded bg-black/70 px-2 py-1 font-mono text-[10px] text-[var(--color-editor-warn)]"
+                    >
+                      {imageError}
+                    </div>
+                  )}
+                </div>
 
-                {/* 橡皮擦：对齐 Unity 的「橡皮擦 (0)」——掩码 0 就是把整格清掉 */}
-                <button
-                  type="button"
-                  data-testid={`grid-editor-brush-${CellMask.Empty}`}
-                  data-active={gridPaint.mask === CellMask.Empty}
-                  aria-pressed={gridPaint.mask === CellMask.Empty}
-                  className={`rounded border px-1.5 py-0.5 ${
-                    gridPaint.mask === CellMask.Empty
-                      ? "border-[var(--color-editor-accent)] bg-[var(--color-editor-accent-dim)] text-white"
-                      : "border-[var(--color-editor-border)] hover:bg-[var(--color-editor-panel)]"
-                  }`}
-                  onClick={() => setGridBrush(CellMask.Empty)}
+                {/* 右侧：**标记类型**（橡皮擦 + 8 个区域）+ 画笔大小，与战争雾窗口同一套布局 */}
+                <div
+                  data-testid="grid-editor-type-panel"
+                  className="flex w-40 flex-none flex-col gap-1 overflow-auto rounded border border-[var(--color-editor-border)] bg-[var(--color-editor-panel-alt)] p-2 text-[11px]"
                 >
-                  橡皮擦
-                </button>
+                  <span className="text-[10px] text-[var(--color-editor-text-dim)]">标记类型</span>
 
-                {PAINTABLE_MASKS.map((bit) => {
-                  const selected = gridPaint.mask === bit;
-                  return (
-                    <span key={bit} className="flex items-center gap-1">
-                      <input
-                        type="color"
-                        data-testid={`grid-editor-color-${bit}`}
-                        aria-label={`${maskToLabel(bit)}颜色`}
-                        title={`${maskToLabel(bit)}的颜色（透明度由类型决定）`}
-                        value={colors[bit] ?? "#ffffff"}
-                        className="h-5 w-6 flex-none rounded border border-[var(--color-editor-border)] bg-transparent"
-                        onChange={(event) => setGridTypeColor(bit, event.target.value)}
-                      />
-                      <button
-                        type="button"
-                        data-testid={`grid-editor-brush-${bit}`}
-                        data-active={selected}
-                        aria-pressed={selected}
-                        className={`rounded border px-1.5 py-0.5 ${
-                          selected
-                            ? "border-[var(--color-editor-accent)] bg-[var(--color-editor-accent-dim)] text-white"
-                            : "border-[var(--color-editor-border)] hover:bg-[var(--color-editor-panel)]"
-                        }`}
-                        onClick={() => setGridBrush(bit)}
-                      >
-                        {maskToLabel(bit)}
-                      </button>
-                    </span>
-                  );
-                })}
+                  {/* 橡皮擦：对齐 Unity 的「橡皮擦 (0)」——掩码 0 就是把整格清掉 */}
+                  <div className="flex items-center gap-1">
+                    {/* 与下面的类型行对齐：色块位置留空 */}
+                    <span aria-hidden="true" className="h-5 w-6 flex-none" />
+                    <button
+                      type="button"
+                      data-testid={`grid-editor-brush-${CellMask.Empty}`}
+                      data-active={gridPaint.mask === CellMask.Empty}
+                      aria-pressed={gridPaint.mask === CellMask.Empty}
+                      className={`min-w-0 flex-1 truncate rounded border px-1.5 py-0.5 text-left ${
+                        gridPaint.mask === CellMask.Empty
+                          ? "border-[var(--color-editor-accent)] bg-[var(--color-editor-accent-dim)] text-white"
+                          : "border-[var(--color-editor-border)] hover:bg-[var(--color-editor-panel)]"
+                      }`}
+                      onClick={() => setGridBrush(CellMask.Empty)}
+                    >
+                      橡皮擦
+                    </button>
+                  </div>
 
-                <span className="ml-auto flex items-center gap-1.5">
-                  <span className="text-[var(--color-editor-text-dim)]">大小</span>
+                  {PAINTABLE_MASKS.map((bit) => {
+                    const selected = gridPaint.mask === bit;
+                    return (
+                      <div key={bit} className="flex items-center gap-1">
+                        <input
+                          type="color"
+                          data-testid={`grid-editor-color-${bit}`}
+                          aria-label={`${maskToLabel(bit)}颜色`}
+                          title={`${maskToLabel(bit)}的颜色（透明度由类型决定）`}
+                          value={colors[bit] ?? "#ffffff"}
+                          className="h-5 w-6 flex-none rounded border border-[var(--color-editor-border)] bg-transparent"
+                          onChange={(event) => setGridTypeColor(bit, event.target.value)}
+                        />
+                        <button
+                          type="button"
+                          data-testid={`grid-editor-brush-${bit}`}
+                          data-active={selected}
+                          aria-pressed={selected}
+                          className={`min-w-0 flex-1 truncate rounded border px-1.5 py-0.5 text-left ${
+                            selected
+                              ? "border-[var(--color-editor-accent)] bg-[var(--color-editor-accent-dim)] text-white"
+                              : "border-[var(--color-editor-border)] hover:bg-[var(--color-editor-panel)]"
+                          }`}
+                          onClick={() => setGridBrush(bit)}
+                        >
+                          {maskToLabel(bit)}
+                        </button>
+                      </div>
+                    );
+                  })}
+
+                  <span className="mt-1 text-[10px] text-[var(--color-editor-text-dim)]">
+                    画笔大小
+                  </span>
                   <input
                     type="range"
                     data-testid="grid-editor-brush-size"
@@ -364,34 +393,14 @@ export function GridEditDialog({
                     max={MAX_BRUSH_SIZE}
                     step={1}
                     value={gridPaint.brushSize}
-                    className="w-24 accent-[var(--color-editor-accent)]"
+                    className="w-full accent-[var(--color-editor-accent)]"
                     onChange={(event) => setGridBrushSize(Number(event.target.value))}
                   />
-                  <span className="font-mono" data-testid="grid-editor-brush-size-label">
+                  <span className="font-mono text-[10px]" data-testid="grid-editor-brush-size-label">
                     {gridPaint.brushSize}（{brushEffectiveSize(gridPaint.brushSize)}×
                     {brushEffectiveSize(gridPaint.brushSize)} 格）
                   </span>
-                </span>
-              </div>
-
-              <div ref={setContainer} className="relative min-h-0 flex-1 rounded bg-black/30">
-                <canvas
-                  ref={setCanvas}
-                  data-testid="grid-editor-canvas"
-                  className="h-full w-full touch-none"
-                  onPointerDown={onPointerDown}
-                  onPointerMove={onPointerMove}
-                  onPointerUp={onPointerEnd}
-                  onPointerCancel={onPointerEnd}
-                />
-                {imageError === undefined ? null : (
-                  <div
-                    data-testid="grid-editor-image-error"
-                    className="pointer-events-none absolute left-2 top-2 rounded bg-black/70 px-2 py-1 font-mono text-[10px] text-[var(--color-editor-warn)]"
-                  >
-                    {imageError}
-                  </div>
-                )}
+                </div>
               </div>
 
               <div className="mt-2 flex flex-none items-center gap-2 text-[10px] text-[var(--color-editor-text-dim)]">
