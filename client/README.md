@@ -73,3 +73,8 @@ Assets/
   `DevicePipeInputSource2`（整段注释、`Sample` 不工作——若在 Game 里把输入方案选成 `PipeSource`，
   输入会静默失效），以及 `InputConfigPrefs`、14 个无人引用的 shader、6 个孤儿材质、
   `Resources/RealMap.prefab`、`Assets/Readme.asset`。要清的时候按清理文档的口径来（都能从 git 取回）。
+- **待办（关掉 Unity 后再改，否则会被编辑器内存里的旧值覆盖）**：
+  `ProjectSettings/EditorBuildSettings.asset` 里还挂着 6 个**已不存在**的场景
+  （`Assets/Scenes/DMGameLibrary.unity`、`SampleScene.unity`、`DarkwaterM0.unity`、
+  `Assets/TableBand/Scenes/TableBandGamePlay.unity`、`Assets/ProjectionAlignment/Scenes/*.unity`），
+  构建列表应当只留 `Assets/DiceTale/Scenes/Demo.unity`。
