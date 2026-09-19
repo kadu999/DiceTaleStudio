@@ -9,7 +9,7 @@ namespace DiceTale
     /// 行为由 <see cref="CommandId"/> 决定（见字段注释）：
     ///   - 单点指挥（默认 / 玩家 1..5 / 拍照）：每帧只认**压力最大的触点**，不允许同帧触发多个点；
     ///   - 多点触屏（= <see cref="PointerId.MultiTouch"/> 标记）：按全触点口径上报所有按压触点，
-    ///     Id 按按压顺序编号——MultiPointRegion / SurroundRegion 等多人多点玩法在此模式下可触发。
+    ///     Id 按按压顺序编号——只有这个模式才拿得到「多点同时按住」的全部触点。
     /// 装置仍负责坐标映射、触点跟踪和校正取消；游戏只把屏幕坐标投到当前地图平面。
     /// </summary>
     public class DevicePipeInputSource2 : InputSource
@@ -126,8 +126,8 @@ namespace DiceTale
             }
         }
 
-        /// <summary>多点触屏口径：上报全部按压触点（Id 按本帧按压顺序编号 1..N），
-        /// 与 <see cref="DevicePipeInputSource"/> 同构——多点同时按下 / 包围区域在此模式才可触发。</summary>
+        /// <summary>多点触屏口径：上报全部按压触点（Id 按本帧按压顺序编号 1..N）——
+        /// 只有这个模式才拿得到「多点同时按住」的全部触点。</summary>
         private void SampleMultiTouch(InputFrame frame, Camera pointerCamera, Touchscreen device)
         {
             var touches = device.touches;

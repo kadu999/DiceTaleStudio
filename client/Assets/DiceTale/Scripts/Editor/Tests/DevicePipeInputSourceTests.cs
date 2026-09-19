@@ -1,7 +1,6 @@
 using System.Collections.Generic;
 using System.Reflection;
 using System.Text.RegularExpressions;
-using DMGameLibrary.Hosting;
 using NUnit.Framework;
 using NuLight.ProjectionAlignment;
 using UnityEngine;
@@ -64,7 +63,7 @@ namespace DiceTale.Editor.Tests
             touchscreen.Configure(alignment, router, pointerCamera);
             rig.SetActive(true);
             Invoke(touchscreen, "OnEnable");
-            source = new DevicePipeInputSource { ProjectionTouchscreen = touchscreen, LogDiagnostics = false };
+            source = new DevicePipeInputSource2 { ProjectionTouchscreen = touchscreen, LogDiagnostics = false };
             SetMatRect(1);
             Frame();
         }
@@ -211,20 +210,6 @@ namespace DiceTale.Editor.Tests
             source.Sample(frame, false, null);
             source.Sample(frame, false, null);
             Assert.That(frame.PressedWorldPositions, Is.Empty);
-        }
-
-        [Test]
-        public void HostedGame_ReplacesSimulatedInputAndDisablesKeyboardDebugUi()
-        {
-            var manager = Child("Game input").AddComponent<InputManager>();
-            manager.SetInputSource(new SimulatedTouchInputSource());
-            var debugUi = manager.gameObject.AddComponent<SimulatedTouchDebugUI>();
-            var proxy = Child("Hosted game").AddComponent<DiceTaleHostedGame>();
-            proxy.ConfigureInput(touchscreen);
-            Assert.That(manager.CurrentInputSource, Is.TypeOf<DevicePipeInputSource>());
-            Assert.That(((DevicePipeInputSource)manager.CurrentInputSource).ProjectionTouchscreen, Is.SameAs(touchscreen));
-            Assert.That(debugUi.enabled, Is.False);
-            Assert.That(debugUi.ShowDebugUi, Is.False);
         }
 
         private void SetMatRect(int boards)

@@ -3,7 +3,7 @@ using UnityEngine;
 namespace DiceTale
 {
     /// <summary>
-    /// UI 窗口基类：所有由 <see cref="UIManager"/> 统一管理的窗口（StartSceneUI / PlayerSwitcherUI / 未来其它）
+    /// UI 窗口基类：所有由 <see cref="UIManager"/> 统一管理的窗口（字幕 / 场景淡入淡出 / 未来其它）
     /// 都继承本类。窗口实例经 UIManager.OpenWindow 实例化后挂到全局唯一 Canvas 下。
     ///
     /// 生命周期约定：

@@ -8,11 +8,13 @@ namespace DiceTale
 {
     /// <summary>
     /// 输入逻辑管理器：消费 <see cref="InputSource"/> 产出的统一输入帧（<see cref="InputFrame"/>），
-    /// 执行游戏逻辑——点击区域触发（<see cref="ClickRegion.HandleClick"/>，与玩家解耦）与
-    /// 按 Id 移动（玩家编号 Id 1..5 → 玩家索引 0..4，非玩家 Id 忽略）、UI 点击豁免。
+    /// 对外提供统一状态（<see cref="PressedWorldPositions"/> / 右键）供 FogOfWar 等查询。
     /// **输入采集与逻辑分离**：本类不直接采样设备（触摸/鼠标/键盘都在输入源里），
     /// 后续接入其它输入方案只需实现 <see cref="InputSource"/> 并 <see cref="SetInputSource"/>。
-    /// 对外统一状态（<see cref="PressedWorldPositions"/> / 右键）供 MultiPointRegion / SurroundRegion / FogOfWar 等查询。
+    ///
+    /// 目前这一层只剩「纯显示响应」（拍照指针点光）与 UI 点击豁免：点击区域触发、按玩家编号移动
+    /// 都属「前端拥有游戏逻辑」的旧模型，已随旧协议删除。新协议落地后，这里应当把按下事件
+    /// 上报后台，由后台决定发生什么。
     /// </summary>
     public class InputManager : MonoBehaviour
     {
@@ -20,8 +22,8 @@ namespace DiceTale
         public static bool PointerSuspended { get; set; }
 
         /// <summary>当前被按住的指针【世界坐标】快照（全触点/全手指，网格平面）。
-        /// 由输入源每帧采样产出；挂起时为空。多点区域（MultiPointRegion / SurroundRegion）的
-        /// 统一输入接口——直接用它做触发点/三角形判定，不再采样设备。</summary>
+        /// 由输入源每帧采样产出；挂起时为空。将来要做「多点同时按住」类玩法
+        /// （如多点区域判定）就拿它当统一输入接口，不必再采样设备。</summary>
         public static IReadOnlyList<Vector3> PressedWorldPositions => pressedWorldPositions;
 
         /// <summary>与 <see cref="PressedWorldPositions"/> 一一对应的压力值（0..1：
@@ -151,8 +153,8 @@ namespace DiceTale
                 return;
             }
 
-            // 点击处理与玩家移动解耦：每次指针按下先走点击区域（命中 + Id 匹配即触发，见 ClickRegion.HandleClick），
-            // 玩家指针（Id 1..5）再独立移动对应玩家；非玩家指针（拍照 Id 6 等）只触发区域、不移动。
+            // 点击/移动的解耦说明已成历史：点击区域触发与按玩家编号移动都随旧模型删除，
+            // 现在按下事件只用来做显示响应（拍照点光）；新协议落地后这里改为上报后台。
             if (frame.NewlyPressed.Count == 0)
             {
                 return;
@@ -173,23 +175,11 @@ namespace DiceTale
                 // 按下事件只带屏幕坐标：与输入源一样，经当前相机投到当前地图平面。
                 Vector3 pressWorld = PointerWorldConversion.ScreenToPlane(GetPointerCamera(), pointerPress.Screen);
 
-                // 1) 点击区域（与玩家/移动解耦）：区域 Id 匹配该指针 Id 即触发
-                ClickRegion.HandleClick(pressWorld, pointerPress.Id);
-
                 // 拍照指针：点击处发光（位置跟随点击点，参考 Scene002/Photograps/Photograph02 点光预设）
                 if (pointerPress.Id == PointerId.Photo && game.PhotoClickGlow != null)
                 {
                     game.PhotoClickGlow.ShowAt(pressWorld);
                 }
-
-                // 2) 玩家移动：玩家编号 Id（1..5）→ 玩家索引 0..4；非玩家 Id 不移动
-                int playerIndex = pointerPress.Id.ToPlayerIndex();
-                if (playerIndex < 0 || game.PlayerMoveManager == null)
-                {
-                    continue;
-                }
-
-                game.PlayerMoveManager.MovePlayerTo(pressWorld, playerIndex, false);
             }
         }
 

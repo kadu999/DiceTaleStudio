@@ -12,6 +12,10 @@ namespace DiceTale.Server
     /// <summary>
     /// 管理到 DiceTale 权威服务器的 WebSocket 连接生命周期（连接、断开、自动重连）。
     /// 收到消息后通过 <see cref="OnMessage"/> 广播原始 JSON。
+    ///
+    /// **纯传输骨架**：本类不认识任何协议——旧协议（`request_join` / 心跳 / 上行上报 / 下行命令）
+    /// 已整层删除，新协议在功能落地时重新定义。现在这里只提供连接、收发字节、重连与代次防串台；
+    /// 新协议来了之后，谁需要发消息就用 <see cref="Send{T}"/>，谁需要收消息就订阅 <see cref="OnMessage"/>。
     /// </summary>
     public class ServerConnection : MonoBehaviour
     {
@@ -27,7 +31,7 @@ namespace DiceTale.Server
         /// <summary>收到服务器消息（原始 JSON 字符串）。</summary>
         public event Action<string> OnMessage;
 
-        /// <summary>成功建立连接并发送 request_join 后触发。</summary>
+        /// <summary>成功建立连接后触发。</summary>
         public event Action OnConnected;
 
         public bool IsConnected => webSocket != null && webSocket.State == WebSocketState.Open;
@@ -103,8 +107,6 @@ namespace DiceTale.Server
                 }
 
                 _ = ReceiveLoop(gen);
-                SendJoin();
-                StartCoroutine(HeartbeatCoroutine(gen)); // 应用层心跳，供后台存活检测
                 OnConnected?.Invoke();
             }
             catch (Exception ex)
@@ -162,30 +164,11 @@ namespace DiceTale.Server
             }
         }
 
-        /// <summary>应用层心跳间隔（秒）：后台据此判断连接是否半开并清理死连接。</summary>
-        private const float HeartbeatInterval = 15f;
-
-        private IEnumerator HeartbeatCoroutine(int gen)
-        {
-            var wait = new WaitForSeconds(HeartbeatInterval);
-            // 断线/会话被取代后自动退出；重连时 Connect() 会启动新一代的心跳
-            while (gen == generation && IsConnected)
-            {
-                yield return wait;
-                Send(new HeartbeatMessage());
-            }
-        }
-
         public void Close()
         {
             closing = true;
             generation++; // 立即作废旧会话：进行中的 ReceiveLoop/排队的发送不再触碰本连接
             _ = CloseAsync();
-        }
-
-        private void SendJoin()
-        {
-            Send(new RequestJoinMessage());
         }
 
         private async Task ReceiveLoop(int gen)

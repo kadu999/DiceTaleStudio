@@ -1,6 +1,8 @@
 # 客户端无用代码删除清单（2026-09-19）
 
-> 状态：**待执行**。本文件只做「删什么、怎么删、怎么验」，不含新功能设计。
+> 状态：**已执行（2026-09-19）**。本文件只做「删什么、怎么删、怎么验」，不含新功能设计。
+> 执行结果、验证证据与遗留状态见第 14 节；D1（场景数据载体）按推荐**未动**，7 个旧场景预置体
+> 因此留着 Missing Script，清单在第 14.3 节。
 > 数据方向已反转：以前是**前端把数据上报给后台**（对象 / 玩家 / 位置 / 输入配置，
 > 后台再按 `objectId` 下发 `set_option` 这类命令）；现在是**后台给前端数据，前端只做显示与播放效果**。
 > 因此「前端拥有数据、动作与条件」的那一整层、以及**整个旧协议层**都没有存在意义了。
@@ -242,7 +244,7 @@
 | 资产 | 挂在它上面的脚本（标「(留)」的是保留的，其余随 A 类删除；「+ 保留的若干」= 还有一批保留脚本没逐一列出） |
 |---|---|
 | `Resources/Scenes/Map001.prefab` | `OptionValue`×2、`BackendObject`×3、`ShowHideAction`×2、`TeleportAction`、`DynamicObstacle`(留)、`GridMap`(留)、`FogOfWar`(留)、`SmartVideoPlayer`(留)、`GroundSpriteRenderer`(留)、`MapMarker`(留) |
-| `Resources/Scenes/Map002.prefab` | `OptionValue`×2、`BackendObject`×3、`ShowHideAction`、`PlayAudioAction`、`MaskImage`、`MaskObjectDisplay`（+ 保留的若干） |
+| `Resources/Scenes/Map002.prefab` | `OptionValue`×2、`BackendObject`×3、`ShowHideAction`、`TeleportAction`、`PlayAudioAction`、`MaskImage`、`MaskObjectDisplay`（+ 保留的若干） |
 | `Resources/Scenes/Map003.prefab` | `OptionValue`、`BackendObject`×2、`PlayVideoAction`×6（+ 保留的若干） |
 | `Resources/Scenes/Scene000.prefab` | `BackendObject`×2、`PlayDialogueAction`、`CallbackAction`、`PlayVideoAction`、`Game000`（+ 保留的若干） |
 | `Resources/Scenes/Scene001.prefab` | `Game001` |
@@ -257,7 +259,7 @@
 | `Resources/Scenes/scenes.json` | 旧场景注册表：**全工程（客户端 + 服务端）没有任何代码读它**（`.cs` 里只有 `Resources.Load("Scenes/" + 场景名)` 的 prefab/.bytes 路径）→ 孤儿资产，可直接删 |
 | `Resources/Replay/游戏剧本.md` | `ReplayClient` 的剧本注入源 |
 
-### 7.2 D 待拍板（每条都给了推荐）
+### 7.2 D 待拍板（每条都给了推荐；**D2 / D3 / D4 / D5 已按推荐执行，D1 仍未决**——见第 14 节）
 
 | # | 问题 | 推荐 | 影响面 |
 |---|---|---|---|
@@ -373,3 +375,69 @@ git -C E:\WorkSpace\DiceTaleStudio status --short server
 4. 判定以「数据方向」为准，不以「代码能不能跑」为准：能跑但方向反了的，照样删。
 5. 本文件所有路径与引用关系均于 **2026-09-19** 在仓库里实查过（grep + `.cs.meta` GUID 反查）；
    执行删除时若与事实不符，以实查为准并回来改这份文档。
+
+## 14. 执行记录（2026-09-19）
+
+### 14.1 做了什么
+
+| 批次 | 动作 | 备注 |
+|---|---|---|
+| 0 | `client/` 快照提交 | `22407c4 chore(client): 清理前快照（Unity 客户端现状）`（717 个文件）——**回滚点** |
+| 1 | A8 死代码（`IInteractable`、压板 v1、`BurningRoom`）+ C7 | fixture 切到 `DevicePipeInputSource2`；删掉已失效的 `HostedGame_...` 测例与 `using DMGameLibrary.Hosting` |
+| 2 | A4 触发链与动作编辑器（7 个）+ C5 | `InputManager` 只留采样 / UI 豁免 / 拍照点光 |
+| 3 | A3 `Backend/Actions`（13）+ `Backend/Components`（10） | 目录清空并删除（含 `.meta`） |
+| 4 | A2 旧上行层（4）+ A1 协议整层（2）+ C1/C2/C3/C4/C6 | `ServerConnection` 剥成纯传输骨架；`BackendManager` 只留连接装配；`Game` / `GameSceneManager` / `FogOfWar` 同步收敛 |
+| 5 | A5 旧场景/角色逻辑（11）+ D2/D3（`PlayerSwitcherUI`、`StartSceneUI`、`PlayerPanelStructureBuilder`、`PlayerSelectionRing`） | 按 D2/D3 推荐执行（可从快照恢复） |
+| 6 | A6 网格编辑工具（5）+ A7 录制/回放（5）+ A9 旧协议单测（1） | — |
+| 7 | 资产：D2 的 3 个预置体、D4 的 `Resources/Replay`、孤儿 `scenes.json` / `TestMap.bytes` / `OverlapTestMap.bytes` | D1 的 `Resources/Scenes/*.prefab` 与 `Map00x.bytes` 按推荐**保留** |
+| 8 | 清空目录（`Backend/Actions`、`Backend/Components`、`Characters`、`Resources/Replay`）与 4 个目录 `.meta`；清理保留下来的注释级残留引用（`UIWindow`/`UIManager`/`InputSource`/`InputManager`/`DevicePipeInputSource2`/`SimulatedTouchInputSource`/`BirdWanderer`/`GroundSpriteRenderer`/`SmartVideoPlayer`/`Game`） | — |
+
+净结果：`DiceTale/Scripts` 从 **93 个 .cs / 13738 行** → **28 个 .cs / 4382 行**；
+工作区 **148 个删除 + 15 个修改**。
+
+### 14.2 验证
+
+1. **符号归零**：`client/Assets/DiceTale` 下搜被删类型名 → 只剩 4 处**明确写着「已删除」的历史说明**
+   （`BackendManager` / `GameSceneManager` / `FogOfWar` / `Game`），没有任何一处代码引用。
+2. **编译 0 错误**：用 Unity 自己生成的工程 + .NET SDK，在同一套引用（Unity 的 `unity-4.8-api`
+   + Unity/包程序集 + `NuLight.ProjectionAlignment.dll`）下编译：
+   - `Assembly-CSharp`（27 个运行时脚本 + `DMGameLibrary`）→ 退出码 0，**error CS = 0**；
+   - `Assembly-CSharp-Editor`（3 个编辑器脚本，含改过的 `DevicePipeInputSourceTests`）→ 退出码 0，**error CS = 0**。
+
+   这**不等价于** Unity 自己的批处理编译；Unity 关掉后仍建议按第 10 节第 3 条跑一遍（见 14.5）。
+3. **资产引用**：被删脚本的 65 个 GUID 反查 `*.prefab` / `*.unity` / `*.asset` / `*.mat`
+   → 只剩 7 个旧场景预置体（见 14.3），与 7.1 表一致。
+
+### 14.3 已知遗留（唯一一处）
+
+`Resources/Scenes/{Map001,Map002,Map003,Scene000,Scene001,Scene002,Scene003}.prefab`
+仍挂着被删组件，Unity 打开时会显示 Missing Script。这是 **D1「载体未定」的直接后果**，
+处理方式二选一（等载体定了再做）：
+
+- **载体换成后台数据** → 这 7 个预置体随载体一起删（`git show 22407c4:<路径>` 可取回）；
+- **载体仍是预置体 + `.bytes`** → 在 Unity 里把这批 Missing 组件摘掉（手工或用一次性编辑器脚本），
+  保留 `GridMap` / `FogOfWar` / `MapMarker` / `SmartVideoPlayer` / `GroundSpriteRenderer` /
+  `DynamicObstacle` 与场景布局。
+
+与 7.1 / D2 的两处**有依据的偏差**：
+
+- `Resources/Characters/Character001..004.prefab` **保留**（7.1 表原把它列在 D2 里）：它们是纯美术的
+  嵌套预置体（PrefabInstance，零脚本、零 Missing Script），删了只会白白丢角色模型，留给新角色系统用。
+- `Resources/RealMap.prefab` 保留（不含被删脚本引用）。
+- `Server/JsonParser.cs` 保留但**暂时零调用方**（新协议要复用的通用 JSON 工具，刻意的）。
+
+### 14.4 复现编译验证的做法
+
+Unity 开着、不能 `-batchmode` 抢工程目录时，可以复制 Unity 生成的工程文件到临时目录，只保留仍存在的
+`Compile` 项，补上 `FrameworkPathOverride`（指 Unity 的 `unity-4.8-api`）与
+`NuLight.ProjectionAlignment.dll` 引用，再 `dotnet msbuild check.csproj`：
+
+- 运行时：`Assembly-CSharp.csproj`（保留 27 / 丢弃 52 个已删文件项）；
+- 编辑器：`Assembly-CSharp-Editor.csproj`（保留 3 / 丢弃 13），并把它对 `Assembly-CSharp.dll` 的引用
+  换成刚编出来的那一份（否则会拿 Unity 的旧产物，**掩盖错误**）。
+
+### 14.5 还没做的
+
+- **Unity 自己的批处理编译**（第 10 节第 3 条）：需要先关掉正在运行的 Unity（本机 3 个 `Unity` 进程）。
+- 7 个旧场景预置体的 Missing Script 处理（等 D1）。
+- 服务端旧协议收敛（第 8 节，只登记）。

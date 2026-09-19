@@ -51,7 +51,7 @@ namespace DiceTale
         Photo = 6,
 
         /// <summary>多点触屏标记（仅用于 <c>CommandId</c> 设置，非真实指针 Id）：
-        /// 选中时压板源按全触点口径上报（MultiPointRegion / SurroundRegion 等多人玩法才可触发）。</summary>
+        /// 选中时压板源按全触点口径上报（只有需要多点同时按住的玩法才用得上）。</summary>
         MultiTouch = 7,
     }
 

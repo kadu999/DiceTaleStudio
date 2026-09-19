@@ -33,7 +33,7 @@ namespace DiceTale
         public float Pressure = 1f;
 
         /// <summary>是否透传鼠标右键（迷雾右键擦除等）。默认开 = 与 Unity 设备输入一致（开发便利）；
-        /// 关 = 模拟 <see cref="DevicePipeInputSource"/>（压板真机恒无右键）。</summary>
+        /// 关 = 模拟压板真机（压板恒无右键）。</summary>
         public bool RightMousePassThrough = true;
 
         /// <summary>指针位选择键：主键盘 + 小键盘成对（1..5 = 玩家，6 = 拍照）。</summary>

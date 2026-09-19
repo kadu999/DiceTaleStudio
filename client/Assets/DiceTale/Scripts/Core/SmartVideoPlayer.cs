@@ -155,7 +155,7 @@ namespace DiceTale
         private void OnVideoLoopPointReached(VideoPlayer vp)
         {
             // 循环播放时 loopPointReached 每圈都触发：只在「非循环自然结束」时广播播完事件
-            //（与 PlaybackFinished 注释语义一致，避免 StartSceneUI 等按播完计数的流程被提前/重复推进）
+            //（与 PlaybackFinished 注释语义一致，避免「按播完计数」的流程被提前/重复推进）
             if (_isLooping)
             {
                 return;

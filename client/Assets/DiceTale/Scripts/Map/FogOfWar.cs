@@ -6,11 +6,13 @@ namespace DiceTale
     /// <summary>
     /// 迷雾区域（探索揭示，GPU 渲染，单层）：
     /// 所有雾标记（Fog1~Fog5）合成一块整体雾，边缘统一 GPU 羽化（有雾就光滑）。
-    /// 玩家进入某个区域 → 该区域格子清除，剩余雾自动重新羽化，边缘保持光滑。
-    /// 揭示对所有在场玩家（1~4 号棋子）生效，不只当前玩家。
-    /// 支持按住鼠标右键逐格擦除（自包含鼠标采样，不依赖 InputManager 组件；
-    /// 屏幕→世界坐标投影复用 GridMap.ScreenToPlane）。
-    /// 需要与 GridMap 同物体。
+    ///
+    /// **渲染与「怎么揭示」是两件事**：旧模型里「玩家走进某区域 → 该区域整片清除」是客户端自己判的
+    /// （读 `CharacterManager.Players`），已随旧模型删除；现在只保留雾的渲染与**按住鼠标右键逐格擦除**
+    /// （自包含鼠标采样，不依赖 InputManager 组件；屏幕→世界坐标投影复用 <see cref="GridMap.ScreenToPlane"/>），
+    /// 方便单独看效果。新方向下「哪个区域揭示」应由后台下发的命令驱动（服务端 README 里规划的
+    /// `erase_mask` / 区域揭示命令），接线时在这里加一个公开方法即可。
+    /// 需要与 <see cref="GridMap"/> 同物体。
     /// </summary>
     [RequireComponent(typeof(GridMap))]
     public class FogOfWar : MonoBehaviour
@@ -20,9 +22,6 @@ namespace DiceTale
 
         [SerializeField]
         private int fogSortingOrder = 1;
-
-        [SerializeField]
-        private float checkInterval = 0.2f;
 
         [Tooltip("允许按住鼠标右键擦除鼠标所指的雾（逐格擦除）")]
         [SerializeField]
@@ -55,8 +54,6 @@ namespace DiceTale
         private Material displayMaterial;
 
         private readonly Dictionary<GridCellType, List<int>> cellsByType = new Dictionary<GridCellType, List<int>>();
-        private readonly HashSet<GridCellType> revealedAreas = new HashSet<GridCellType>();
-        private float checkTimer;
 
         private void Start()
         {
@@ -67,7 +64,6 @@ namespace DiceTale
         private void Update()
         {
             HandleRightClickErase();
-            TickPlayerReveal();
         }
 
         private void OnDestroy()
@@ -301,57 +297,6 @@ namespace DiceTale
             displayMaterial.mainTexture = blurRTs[blurRTs.Length - 1];
         }
 
-        // ---------------------------------------------------------------- 玩家揭示
-
-        private void TickPlayerReveal()
-        {
-            checkTimer -= Time.deltaTime;
-            if (checkTimer > 0f)
-            {
-                return;
-            }
-
-            checkTimer = checkInterval;
-            CheckPlayerFogArea();
-        }
-
-        private void CheckPlayerFogArea()
-        {
-            var players = Game.Instance != null && Game.Instance.CharacterManager != null
-                ? Game.Instance.CharacterManager.Players
-                : null;
-            if (players == null)
-            {
-                return;
-            }
-
-            // 所有在场玩家都可揭示雾区（当前玩家之外，其余玩家的棋子走过同样清雾）
-            for (int i = 0; i < players.Count; i++)
-            {
-                var type = GetPlayerGridType(players[i]);
-                if (type == GridCellType.Empty || revealedAreas.Contains(type))
-                {
-                    continue;
-                }
-
-                revealedAreas.Add(type);
-                ClearAreaCells(type);
-                Debug.Log($"[FogOfWar] area {type} revealed (cleared)");
-            }
-        }
-
-        private GridCellType GetPlayerGridType(BackendObject player)
-        {
-            if (gridMap == null || player == null)
-            {
-                return GridCellType.Empty;
-            }
-
-            var gridPos = gridMap.WorldToGrid(player.transform.position);
-            // 只取雾位：与 cellsByType 的分组口径一致（Obstacle|Fog1 的格子按 Fog1 归属）
-            return gridMap.GetCellType(gridPos) & FogMask;
-        }
-
         // ---------------------------------------------------------------- 右键擦除
 
         private void HandleRightClickErase()
@@ -381,25 +326,6 @@ namespace DiceTale
         }
 
         // ---------------------------------------------------------------- 格子操作
-
-        /// <summary>清除某区域的所有雾格子（批量写入，只上传一次 GPU）。</summary>
-        private void ClearAreaCells(GridCellType type)
-        {
-            if (!cellsByType.TryGetValue(type, out var indices))
-            {
-                return;
-            }
-
-            var cleared = new Color(fogColor.r, fogColor.g, fogColor.b, 0f);
-            for (int i = 0; i < indices.Count; i++)
-            {
-                fogState.SetPixel(indices[i] % width, indices[i] / width, cleared);
-            }
-
-            fogState.Apply(); // 只上传一次
-
-            BlurFog(); // 状态变化后重新羽化一次
-        }
 
         private void ClearCell(int index)
         {

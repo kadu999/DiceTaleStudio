@@ -8,7 +8,7 @@ namespace DiceTale
 {
     /// <summary>
     /// UI 管理器：统一管理**唯一** Canvas 与所有 <see cref="UIWindow"/> 窗口。
-    /// 所有 UI 预设（StartSceneUI / PlayerPanel / 未来其它）都实例化挂在这一个 Canvas 下，
+    /// 所有 UI 预设（字幕窗口 / 场景淡入淡出 / 未来其它）都实例化挂在这一个 Canvas 下，
     /// 不再各自创建 Canvas；EventSystem 也统一由本管理器补建。
     ///
     /// **对外接口只暴露 <see cref="OpenWindow{T}"/> / <see cref="CloseWindow{T}"/>**，

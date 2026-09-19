@@ -10,7 +10,7 @@ namespace DiceTale
     /// 面片尺寸自动跟随纹理宽高比：**宽度 = 比例 × 1、高度固定 1**（纹理不被拉伸，保持原比例）；
     /// 想整体放大缩小用 Transform 的 localScale（保持比例放大）。
     ///
-    /// 与项目惯例一致（FogOfWar / PlayerSelectionRing）：**不用内置 Quad**——其原生朝向是 XY 平面、
+    /// 与项目惯例一致（FogOfWar 等地面网格）：**不用内置 Quad**——其原生朝向是 XY 平面、
     /// 要贴地面必须旋转；这里代码自建 4 顶点 XZ 网格（法线朝上、无需旋转），UV 方向与格子/贴图一致。
     /// 材质用项目自建 Shader "DiceTale/GroundSprite"（tex × 顶点色，straight alpha），
     /// 支持带透明通道的 PNG，不受场景光照影响。

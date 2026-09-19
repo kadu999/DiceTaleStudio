@@ -6,7 +6,7 @@ namespace DiceTale
     /// 小鸟模拟：让一个物体（<see cref="target"/>）在一个 BoxCollider 区域内做**水平随机移动**
     /// （XZ 平面；**固定飞行高度** <see cref="flyHeight"/>，默认开启 <see cref="lockHeight"/>
     /// 每帧强制锁定 y，不会往下掉；关闭时保持目标自身高度不动）。
-    /// 行为与 <see cref="SurroundRegion"/> 的随机游荡一致：匀速直线漂移 + 定时随机换向 + 撞边界反弹，
+    /// 行为沿用项目里「区域随机游荡」那一套：匀速直线漂移 + 定时随机换向 + 撞边界反弹，
     /// 因此小鸟永远不会越出区域（世界 AABB）。
     ///
     /// 用法：挂到小鸟物体上（或任意物体 + <see cref="target"/> 指定小鸟），

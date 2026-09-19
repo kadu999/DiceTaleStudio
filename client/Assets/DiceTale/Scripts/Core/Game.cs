@@ -12,21 +12,18 @@ namespace DiceTale
             "PipeSource2=压板 v2 单点指挥（只触发压力最大点，Id 由 CommandId 控制）。")]
         [SerializeField] private InputManager.InputSourceKind inputSourceKind = InputManager.InputSourceKind.SimulatedTouch;
 
-        /// <summary>宿主实例：所有管理器（Character/Input/Scene/Backend/UI/Registry）都挂在本组件所在物体，
+        /// <summary>宿主实例：所有管理器（Input/Scene/Backend/UI/Audio/Registry…）都挂在本组件所在物体，
         /// 随宿主一起销毁（本组件所在场景物体卸载即全部销毁，退出即清、重进可重建）。</summary>
         public static Game Instance { get; private set; }
 
-        /// <summary>所有管理器统一由宿主 Game 初始化并持有（唯一入口，经 Game.Instance 访问），不再各自使用单例。</summary>
-        public CharacterManager CharacterManager { get; private set; }
+        /// <summary>所有管理器统一由宿主 Game 初始化并持有（唯一入口，经 Game.Instance 访问），不再各自使用单例。
+        /// 角色/玩家、后台对象注册、录音回放等管理器已随旧模型删除（见
+        /// `client/docs/2026-09-19-unused-code-removal.md`），新功能按新方向重建。</summary>
         public InputManager InputManager { get; private set; }
         public GameSceneManager GameSceneManager { get; private set; }
         public BackendManager BackendManager { get; private set; }
-        public BackendRegistry BackendRegistry { get; private set; }
         public UIManager UIManager { get; private set; }
-        public PlayerMoveManager PlayerMoveManager { get; private set; }
         public AudioPlayerManager AudioPlayerManager { get; private set; }
-        public RecordingManager RecordingManager { get; private set; }
-        public ReplayClient ReplayClient { get; private set; }
         public PhotoClickGlow PhotoClickGlow { get; private set; }
 
         /// <summary>后台 WebSocket 连接（由 BackendManager 创建并持有；未创建/已销毁时为 null）。</summary>
@@ -48,19 +45,12 @@ namespace DiceTale
             Instance = this;
             // 初始化并持有全部管理器：所有管理器都挂在宿主物体上（GetOrCreateManager 找到即用、
             // 没有则挂一个），经 Game.Instance.X 访问
-            CharacterManager = GetOrCreateManager<CharacterManager>();
             InputManager = GetOrCreateManager<InputManager>();
             InitializeInputSource(); // 输入方案：按开关装模拟源或压板设备源
             GameSceneManager = GetOrCreateManager<GameSceneManager>();
             BackendManager = GetOrCreateManager<BackendManager>();
-            BackendRegistry = GetOrCreateManager<BackendRegistry>();
             UIManager = GetOrCreateManager<UIManager>();
-            PlayerMoveManager = GetOrCreateManager<PlayerMoveManager>();
             AudioPlayerManager = GetOrCreateManager<AudioPlayerManager>();
-            // 录音管理器：随宿主创建开启本局录音文件夹（一局开始），随宿主销毁停止收尾（一局结束）
-            RecordingManager = GetOrCreateManager<RecordingManager>();
-            // Replay 客户端：开局创建唯一 sessionId，上传录音分段、触发小说生成
-            ReplayClient = GetOrCreateManager<ReplayClient>();
             // 拍照点击发光：拍照指针点地时点击处点光闪烁（参考 Scene002 Photograph02 预设）
             PhotoClickGlow = GetOrCreateManager<PhotoClickGlow>();
         }
@@ -73,7 +63,7 @@ namespace DiceTale
             }
         }
 
-        /// <summary>开始场景人数选择 UI（StartSceneUI）的加载/卸载已移交场景脚本 Game000，Game 不再持有。</summary>
+        /// <summary>互动锁句柄：锁定期间 <see cref="CanInteract"/> 为假，输入层据此忽略按压。</summary>
         private Coroutine unlockRoutine;
 
         public void LockInteraction(float duration)
