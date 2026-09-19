@@ -25,14 +25,23 @@ namespace DiceTale
         [Tooltip("断线后是否自动重连")]
         public bool AutoReconnect = true;
 
-        [Tooltip("重连间隔（秒）")]
-        public float ReconnectDelay = 5f;
+        [Tooltip("重连间隔（秒）：编辑器点「运行」之前服务端会拒绝握手，靠这个间隔重试")]
+        public float ReconnectDelay = 3f;
 
         /// <summary>收到服务器消息（原始 JSON 字符串）。</summary>
         public event Action<string> OnMessage;
 
         /// <summary>成功建立连接后触发。</summary>
         public event Action OnConnected;
+
+        /// <summary>
+        /// 连接失败（参数是原因）。**编辑器还没点「运行」时服务端会拒握手（HTTP 503），这是正常现象**：
+        /// 上层据此显示「等待运行态」，而不是当成故障。
+        /// </summary>
+        public event Action<string> OnConnectFailed;
+
+        /// <summary>连接断开（参数是可读原因；服务端主动踢下线时带着它是为什么）。</summary>
+        public event Action<string> OnDisconnected;
 
         public bool IsConnected => webSocket != null && webSocket.State == WebSocketState.Open;
 
@@ -107,11 +116,20 @@ namespace DiceTale
                 }
 
                 _ = ReceiveLoop(gen);
+                connectionFailed = false; // 连上了：下次失败重新提示一遍
                 OnConnected?.Invoke();
             }
             catch (Exception ex)
             {
-                Debug.LogWarning($"[ServerConnection] Connect failed: {ex.Message}");
+                // 编辑器还没点「运行」时服务端会以 HTTP 503 拒绝握手（**这是正常现象**，不是故障）：
+                // 只在连续失败的头一次提示一下，免得每 3 秒刷一行把控制台淹掉
+                if (!connectionFailed)
+                {
+                    connectionFailed = true;
+                    Debug.Log($"[网络] 连不上服务端（{ex.Message}）。编辑器点「运行」后会自动连上，正在重试…");
+                }
+
+                OnConnectFailed?.Invoke(ex.Message);
                 await CloseSocketAsync(socket, tokenSource);
                 if (ReferenceEquals(webSocket, socket))
                 {
@@ -124,6 +142,9 @@ namespace DiceTale
                 }
             }
         }
+
+        /// <summary>本轮「连不上」是否已经提示过（成功一次即复位）。</summary>
+        private bool connectionFailed;
 
         /// <summary>串行发送链：ClientWebSocket 不允许并发 SendAsync，排队逐个发送，避免后续消息被丢弃。</summary>
         private Task sendChain = Task.CompletedTask;
@@ -202,13 +223,51 @@ namespace DiceTale
                 if (gen == generation)
                 {
                     // 只有「当前代次」的接收循环有权收尾：旧会话的 finally 不碰新会话的 socket
+                    var reason = DescribeClose(socket);
                     await CloseAsync();
+                    OnDisconnected?.Invoke(reason);
                     if (!closing)
                     {
                         ScheduleReconnect();
                     }
                 }
             }
+        }
+
+        /// <summary>
+        /// 把「连接怎么断的」翻成人能看懂的一句话。
+        ///
+        /// 编辑器的运行态是**服务端主动踢**的（close code 4003）；协议版本不符是 4002。
+        /// </summary>
+        private static string DescribeClose(ClientWebSocket socket)
+        {
+            try
+            {
+                if (socket.CloseStatus.HasValue)
+                {
+                    var code = (int)socket.CloseStatus.Value;
+                    if (code == Protocol.CloseRuntimeStopped)
+                    {
+                        return "编辑器已退出运行态，等待它再次点「运行」";
+                    }
+
+                    if (code == Protocol.CloseProtocolMismatch)
+                    {
+                        return $"协议版本不一致（{code}）";
+                    }
+
+                    var description = socket.CloseStatusDescription;
+                    return string.IsNullOrEmpty(description)
+                        ? $"连接已关闭（{code}）"
+                        : $"连接已关闭（{code}：{description}）";
+                }
+            }
+            catch (Exception)
+            {
+                // 取不到关闭原因不影响收尾
+            }
+
+            return "与服务端断开";
         }
 
         /// <summary>

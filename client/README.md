@@ -1,9 +1,18 @@
 # DiceTaleStudio / client
 
-Unity 客户端（Unity **6000.3.19f1**）。方向已反转：**数据在后端，前端只做显示与播放效果**。
-旧模型（前端上报对象 / 玩家 / 位置，后端按 id 寻址动作与组件）已整层删除，现在客户端只剩
-「显示层 + 输入采集 + WebSocket 传输骨架」，**新协议在功能落地时重新定义**。
-删除依据、逐文件清单与遗留说明见 [`docs/2026-09-19-unused-code-removal.md`](docs/2026-09-19-unused-code-removal.md)。
+Unity 客户端（Unity **6000.3.19f1**）。方向已反转：**后台（编辑器文档）是唯一真源，前端只是它的镜像 + 播放器**——
+后台有什么对象，前端就有什么对象（同场景名、同对象 `id`、同属性）。旧模型（前端上报对象 / 玩家 / 位置，
+后端按 id 寻址动作与组件）已整层删除。
+协议与字段口径见 [`server/docs/specs/2026-09-19-runtime-mirror-protocol.md`](../server/docs/specs/2026-09-19-runtime-mirror-protocol.md)；
+逐文件删除清单与遗留见 [`docs/2026-09-19-unused-code-removal.md`](docs/2026-09-19-unused-code-removal.md)。
+
+## 运行态怎么跑起来
+
+1. 编辑器（`server/`）点 **运行** → 服务端**开闸**并把当前场景推下去；
+2. 前端连上（**没点运行之前连不上**：`/client` 升级会被 HTTP 503 拒绝，这是正常现象）——
+   连接默认每 3s 重试，控制台只提示一次；
+3. 编辑器里改对象（激活 / 位置 / 缩放 / 显示顺序 / 增删）→ 前端 ≤0.5s 跟进；
+4. 编辑器点 **编辑**（或刷新页面）→ 关闸、前端被踢下线并回到「等待运行态」。
 
 ## 目录结构：数据层 / 逻辑层 / 表现层
 
@@ -11,14 +20,21 @@ Unity 客户端（Unity **6000.3.19f1**）。方向已反转：**数据在后端
 Assets/
 ├─ DiceTale/                          ← 本客户端唯一的游戏模块
 │  ├─ Scripts/                        DiceTale.asmdef（rootNamespace: DiceTale）
-│  │  ├─ Data/          （2）         数据层：纯数据结构 / 枚举
+│  │  ├─ Data/          （6）         数据层：镜像模型 / 解析 / 枚举
+│  │  │                 SceneModel.cs            镜像的场景与对象（与后端 `SceneDoc` 同构）
+│  │  │                 SceneParser.cs           场景 JSON → 镜像模型（JsonUtility 读不了嵌套数组）
+│  │  │                 JsonParser.cs            通用 JSON 解析（协议报文用）
+│  │  │                 GridRle.cs               网格 RLE 解码（掩码值与 `@dts/grid` 一致）
 │  │  │                 GridCellType.cs          网格类型位掩码（区域 / 障碍 / 雾位）
 │  │  │                 MapMarker.cs             场景标记点（id + 世界坐标，落点用）
-│  │  ├─ Network/       （3）         网络层：与后端通信的一切（不认识游戏逻辑，也不碰显示）
-│  │  │                 ServerConnection.cs      WebSocket 连接（接收队列 / 重连，不认识协议）
-│  │  │                 BackendManager.cs        连接装配
-│  │  │                 JsonParser.cs            报文 JSON 解析（新协议用）
-│  │  ├─ Logic/         （8）         逻辑层：输入 / 流程 / 状态，不直接画东西
+│  │  ├─ Network/       （4）         网络层：与后端通信的一切（不认识游戏逻辑，也不碰显示）
+│  │  │                 Protocol.cs              协议常量 / 出站 DTO / ws→http 推导
+│  │  │                 ServerConnection.cs      WebSocket 连接（未开闸被拒 = 正常，自动重试）
+│  │  │                 ClientSession.cs         握手 / 心跳 / 把消息变成事件
+│  │  │                 BackendManager.cs        装配：连接 + 会话 + 镜像 + 命令 + 取图
+│  │  ├─ Logic/         （11）        逻辑层：输入 / 流程 / 状态，不直接画东西
+│  │  │                 SceneMirror.cs           **按 id 增 / 改 / 删视图**（镜像落地的地方）
+│  │  │                 CommandRouter.cs         命令 → 动作 → 回执（成败都回）
 │  │  │                 Game.cs                  宿主 + 组合根：装配全部管理器、交互锁
 │  │  │                 InputManager.cs          消费输入帧 + 对外统一状态快照
 │  │  │                 InputSource.cs           输入源抽象 / PointerId / InputFrame
@@ -27,11 +43,13 @@ Assets/
 │  │  │                 InputConfigPrefs.cs      CommandId 的 PlayerPrefs 持久化
 │  │  │                 GameSceneManager.cs      场景加载 / 卸载 / 淡入淡出
 │  │  │                 DynamicObstacle.cs       运行时把物体占据的格子标成动态阻挡
-│  │  └─ Presentation/  （12）        表现层：直接画 / 播 / 显示
+│  │  └─ Presentation/  （13）        表现层：直接画 / 播 / 显示
+│  │                    SceneObjectView.cs       **一个镜像对象 = 一块贴地面片**（位置/缩放/激活/顺序/取图）
+│  │                    ResourceImageLoader.cs   按资源逻辑 ID 取图（缓存 / 去重 / 失败记忆）
 │  │                    GridMap.cs               地图格子数据 + 网格渲染（+ .bytes 读取）
 │  │                    FogOfWar.cs              战争雾（GPU 羽化 + 右键擦除）
 │  │                    BirdWanderer.cs          装饰物区域随机游荡
-│  │                    GroundSpriteRenderer.cs  贴地面的纹理面片
+│  │                    GroundSpriteRenderer.cs  贴地面的纹理面片（含运行时纹理入口）
 │  │                    PhotoClickGlow.cs        拍照指针点地时的点光
 │  │                    AudioPlayerManager.cs    分层音频（4 层，同层顶替）+ 字幕
 │  │                    SmartVideoPlayer.cs      视频播放 / 播完回调 / 淡入淡出
@@ -57,22 +75,23 @@ Assets/
 
 | 层 | 放什么 | 不放什么 |
 |---|---|---|
-| **Data** | 数据结构、枚举、可序列化模型 | 不引用另外三层（当前 Data 零外部引用） |
-| **Network** | 与后端通信的一切：连接、连接装配、报文解析 | 不认识游戏逻辑、不碰显示（当前 Network 零外部代码依赖，注释里提到 `Game` 不算） |
-| **Logic** | 输入消费、流程与状态驱动、运行时改数据 | 不直接操作渲染器 / Canvas / AudioSource |
-| **Presentation** | 直接画 / 播 / 显示：MeshRenderer、Texture、Canvas、AudioSource、VideoPlayer、Light | 不做协议、不拥有业务状态（数据在后端） |
+| **Data** | 数据结构、枚举、可序列化模型、解析（场景 / JSON / RLE） | 不引用另外三层（当前 Data 零外部引用） |
+| **Network** | 与后端通信的一切：连接、会话、协议 DTO、连接装配 | 只依赖数据层；不认识游戏逻辑、不碰显示 |
+| **Logic** | 输入消费、流程与状态驱动、**镜像落地**、命令路由 | 不直接操作渲染器 / Canvas / AudioSource |
+| **Presentation** | 直接画 / 播 / 显示：MeshRenderer、Texture、Canvas、AudioSource、VideoPlayer、Light | 不做协议 |
 
-**客户端几乎没有自己的数据**（数据都在后端），所以 Data 现在只有「网格类型枚举 + 场景标记」两个文件
-——这是对的，不是没写完。以后从后端收到的场景 / 对象 / 声音等模型，都放 `Data/`。
-**网络层也一样薄**：旧协议整层删除后，它只剩「连接 + 装配 + 报文解析」，新协议落地时
-报文类型与分发也放这里（`Logic/Game` 只负责把它装配起来）。
+**客户端不拥有数据**（数据都在后端），所以 Data 里是「镜像模型 + 解析」，不是业务数据：
+`SceneModel` 就是后端 `SceneDoc` 的同构副本，`SceneMirror` 负责把它变成 Unity 对象。
+**网络层**同理只做「连接 + 会话 + 协议」，一行游戏逻辑都没有。
 
-**已知的「逻辑层碰表现层」4 处**（不是随手写的，是现状：真要让方向绝对干净，得先把 `GridMap` 拆成
+**已知的「逻辑层碰表现层」6 处**（不是随手写的，是现状：真要让方向绝对干净，得先把 `GridMap` 拆成
 「格子数据 + 渲染」两个东西，那是新功能落地时的事）：
 
 | 位置 | 碰了什么 | 说明 |
 |---|---|---|
 | `Logic/Game.cs` | 网络层 + 全部表现层管理器 | **组合根**：装配入口本来就得认识所有管理器，这处是允许的 |
+| `Logic/SceneMirror.cs` | `Presentation/SceneObjectView` | 镜像落地就是「建视图」，这是它的本职 |
+| `Logic/CommandRouter.cs` | 镜像 + 回执（下一步接音频） | 命令要作用到表现上，回执要经会话发出去 |
 | `Logic/GameSceneManager.cs` | `UIManager` → `SceneFadeUI` | 切场景的淡入淡出属于流程的一部分 |
 | `Logic/InputManager.cs` | uGUI 命中判定 + `PhotoClickGlow` | UI 点击豁免与拍照点光 |
 | `Logic/DynamicObstacle.cs` | `GridMap` | 它只跟 `GridMap` 打交道，而 `GridMap` 目前同时持有格子数据与渲染 |
@@ -97,14 +116,18 @@ Assets/
 - 不想开 Unity（或它正开着、不能 `-batchmode` 抢工程）时：把 Unity 生成的 `.csproj` 复制到临时目录，
   只保留仍存在的 `Compile` 项、补 `FrameworkPathOverride`（指 Unity 的 `unity-4.8-api`），
   再 `dotnet msbuild` 编译（做法见清理文档第 14.4 节）。本次就是这样验的：
-  `DiceTale`（25 个脚本）与 `DiceTale.Editor`（2 个）都是 **0 error CS**。
+  `DiceTale`（34 个脚本）与 `DiceTale.Editor`（2 个）都是 **0 error CS**。
 
 ## 当前状态（2026-09-19）
 
-- **25 个运行时脚本 + 2 个编辑器脚本**；旧模型零残留；两个程序集编译 0 错误；`.meta` 齐全。
-- **新协议还没实现**：连上后端后收到的消息目前无人处理（刻意的），也没有任何上行消息。
-- **场景载体待定**：旧 `Resources/Scenes/*.prefab` 与 `*.bytes` 已删，`GameSceneManager` 现在
-  按名加载 `Resources` 预置体那条路径**没有资产可加载**；新方向落地时改成「按后台数据搭场景」。
+- **34 个运行时脚本 + 2 个编辑器脚本**；旧模型零残留；两个程序集编译 0 错误；`.meta` 齐全。
+- **镜像协议已实现**（见 `server/docs/specs/2026-09-19-runtime-mirror-protocol.md`）：
+  编辑器点「运行」→ 服务端开闸 → 前端连上 → 场景整份推下来 → 按 `id` 建 / 改 / 删对象
+  （位置 / 缩放 / 旋转 / **激活** / 显示顺序 / 取图都同步）。
+- **下一步**：`play_sound` 的真出声（取音频 + 按层播放）。现在命令链路已通（转发 / 回执 / 超时 / 日志），
+  但前端如实回 `ok:false` 并说明「镜像里该播哪一条」——不假装成功。
+- **场景载体**：旧 `Resources/Scenes/*.prefab` 与 `*.bytes` 已删；现在场景内容由后台推下来，
+  `GameSceneManager` 的「按名加载 Resources 预置体」那条路径暂时没有资产可加载（等场景加载命令）。
 - **已停用但未删**（你要求先不动）：`DevicePipeInputSource2`（`Sample` 整段注释——若在 Game 里把
   输入方案选成 `PipeSource`，输入会**静默失效**）、`InputConfigPrefs`、14 个无人引用的 shader、
   6 个孤儿材质、`Resources/RealMap.prefab`、`Assets/Readme.asset`。要清时按清理文档的口径来

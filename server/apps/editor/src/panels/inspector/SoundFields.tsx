@@ -73,7 +73,7 @@ export function SoundFields({ object }: { readonly object: SceneObjectDoc }): Re
   const stopSound = useEditorStore((state) => state.stopSound);
   const mode = useEditorStore((state) => state.mode);
   const status = useEditorStore((state) => state.runtime.status);
-  const clientConnected = useEditorStore((state) => state.runtime.clientConnected);
+  const clientConnected = useEditorStore((state) => state.runtime.client !== null);
 
   const sound = object.sound;
   // 手写文件里可能整个 sound 都没有（`validateScene` 会报错）：这里按「还没加音频、音效层」显示

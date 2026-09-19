@@ -46,6 +46,26 @@ namespace DiceTale
         /// <summary>本组件创建的材质（由本组件负责销毁；用户手挂的材质不属于这里）。</summary>
         private Material ownedMaterial;
 
+        /// <summary>运行时形态：镜像来的图不是 Sprite 资产，直接给纹理 + 宽高比 + 染色。</summary>
+        private bool hasRuntimeVisual;
+        private Texture2D runtimeTexture;
+        private float runtimeAspect = 1f;
+
+        /// <summary>
+        /// 运行时入口（镜像对象走这条）：给纹理（可空 = 先用占位色）、宽高比（宽/高）、染色、
+        /// 渲染排序与离地高度。每次收到新数据都会调；宽高比没变时不会重建网格。
+        /// </summary>
+        public void SetRuntimeVisual(Texture2D texture, float aspect, Color tint, int order, float lift)
+        {
+            hasRuntimeVisual = true;
+            runtimeTexture = texture;
+            runtimeAspect = aspect <= 0f ? 1f : aspect;
+            color = tint;
+            sortingOrder = order;
+            liftHeight = lift;
+            Build();
+        }
+
         private void Awake()
         {
             Build();
@@ -80,7 +100,8 @@ namespace DiceTale
             }
 
             // 面片尺寸跟随纹理比例：宽度 = 高度(1) × 宽高比。无图时回退 1×1（比例 1）。
-            float aspect = sprite != null ? SpriteAspect(sprite) : 1f;
+            // 运行时（镜像对象）用显式给的宽高比；否则从拖进来的 Sprite 算。
+            float aspect = hasRuntimeVisual ? runtimeAspect : (sprite != null ? SpriteAspect(sprite) : 1f);
             bool meshNeedsRebuild = mf.sharedMesh == null
                 || mf.sharedMesh != ownedMesh
                 || !Mathf.Approximately(mf.sharedMesh.bounds.size.x, aspect); // 换图导致比例变化
@@ -113,7 +134,9 @@ namespace DiceTale
                 mr.sharedMaterial = ownedMaterial;
             }
 
-            ownedMaterial.mainTexture = sprite != null ? sprite.texture : null;
+            ownedMaterial.mainTexture = hasRuntimeVisual
+                ? runtimeTexture
+                : (sprite != null ? sprite.texture : null);
             mr.shadowCastingMode = ShadowCastingMode.Off;
             mr.receiveShadows = false;
             mr.sortingOrder = sortingOrder;

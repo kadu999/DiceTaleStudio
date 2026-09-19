@@ -1,9 +1,10 @@
 # DiceTaleStudio / server
 
 跑团（TRPG）**Web 编辑器 + 服务端**。用于编辑地图网格、场景对象与对象上的动作，
-并可在**运行状态**下连接前端（Unity 客户端）实时镜像状态、触发对象上的动作。
+并可在**运行状态**下把当前场景推给前端（Unity 客户端）——**后台有什么对象，前端就有什么对象**，
+前端只做镜像与播放；命令（如播放声音）由后台下发。
 
-本仓库是 DiceTale 的下一代：`server/` 是编辑器与服务端，`client/`（Unity 前端）后续并入。
+本仓库：`server/` 是编辑器与服务端，`client/` 是 Unity 前端（见 `client/README.md`）。
 
 ---
 
@@ -18,7 +19,7 @@ pnpm dev            # 同时起后端（1420）与编辑器 Vite（5173）
 pnpm dev:backend
 pnpm dev:editor
 
-pnpm --filter @dts/backend mock   # 另开一个终端：启动 Mock 前端
+pnpm --filter @dts/backend mock   # 另开一个终端：启动 Mock 前端（先让编辑器点「运行」它才连得上）
 ```
 
 - 编辑器（开发）：<http://localhost:5173>（`/api` 与 `/editor`、`/client` 由 Vite 代理到后端）
@@ -28,8 +29,9 @@ pnpm --filter @dts/backend mock   # 另开一个终端：启动 Mock 前端
 - 后端接口：`/api/projects`（列表 / 新建 / 删除）、`/api/projects/tree`、`/api/projects/folder`、
   `/api/projects/reveal`（在服务端那台机器上用文件管理器打开项目目录）、
   `/api/health`、`/api/config`、`/api/resources/index`、`/api/resources/raw?id=...`、`/api/resources/text?id=...`、
-  `/api/resources/rename`（重命名资源：`{from,to}` 逻辑 ID）、`/api/state`
-- WebSocket：`/client`（前端）、`/editor`（编辑器）
+  `/api/resources/rename`（重命名资源：`{from,to}` 逻辑 ID）、
+  `/api/state`（运行态摘要：开没开闸 / 前端是谁 / 镜像的是哪份场景）
+- WebSocket：`/client`（前端，**只有编辑器点了「运行」才接受连接**）、`/editor`（编辑器）
 
 ## 常用脚本（在 `server/` 下执行）
 
@@ -349,15 +351,15 @@ protocol, resources, grid → （无）
 | 前端连着（Unity / mock） | 立刻下发；前端回 `command_result` 后日志写「声音命令执行成功」 |
 | 编辑器还没连服务端 / 前端没连 | 只记账，按钮 title 写明「已记录：…，连上后自动补发」；**前端连上的那一刻自动补发**一遍 |
 
-协议上是**后台把要播的东西整份推下去**（`play_sound{objectId, layer, clips}` /
-`stop_sound{layer}`，前端回 `command_result`）：前端不回头查场景数据、也不上报数据——
-这是「**数据在后台、前端只是播放效果**」那套方向的样板，与老的 `invoke_action`
-（前端拥有动作、后台按 id 寻址）是两条路。前端没实现这条命令时，编辑器会在 5 秒后把
-「命令回执超时：前端可能未实现 play_sound」写进运行日志（不静默失败）。
+协议上是**命令只当触发器**（`editor_command` → 服务端转 `command{kind:"play_sound", objectId, layer}` /
+`{kind:"stop_sound", layer}`，前端回 `command_result`）：**命令里没有音频路径**——播哪一条由前端从
+**自己镜像里的那个对象**读 `sound.picked`（数据在推下去的场景里）。前端没实现这条命令时，
+编辑器会在 5 秒后把「命令回执超时：前端可能未实现 play_sound」写进运行日志（不静默失败）。
 
-**手动验证**：起后端 → `pnpm --filter @dts/backend mock`（假前端）→ 编辑器切到运行态 →
-选中声音对象 → 点 ▶：Mock 打印 `[mock] 播放声音 … / 层级 …`，运行日志出现「声音命令执行成功」。
-「**先点播放、再开前端**」同样成立：前端一连上，日志里出现「补发播放：…」。
+**手动验证**：起后端 → 编辑器点「运行」→ `pnpm --filter @dts/backend mock`（假前端会自动连上）→
+选中声音对象 → 点 ▶：Mock 打印收到的命令并回执（它不出声，真出声在 Unity 里），
+编辑器运行日志出现「命令执行失败：mock 前端不出声…」——**这是预期的**，它证明链路通了、回执回来了。
+「**先点播放、再开前端**」同样成立：前端一连上，编辑器会把记着的每层补发一遍。
 
 ### 网格标注（地图编辑）
 
@@ -591,46 +593,56 @@ Playwright 跑在临时资源根上（见 `playwright.config.ts` 的 `DTS_RESOUR
   音频列表 + 层级）与**地图网格标注**（画 / 擦格子类型），
   全程可撤销/重做（补丁式历史，连续拖拽 / 一整笔涂抹 / 复制会合并成一条记录）；
   组件编辑与「把动作挂到组件上」的编排尚未落地（声音对象是动作种类里落地的第一个）。
-- **运行态**：连接服务端，实时镜像前端状态（当前地图、玩家、对象、可触发动作），并可一键触发动作。
+- **运行态**：点「运行」后编辑器声明运行态（服务端**开闸**），把**当前场景整份推下去**；
+  之后每次编辑（去抖 200ms）再推一份全量，前端按对象 `id` 增 / 改 / 删自己的对象。
+  运行态数据与编辑文档物理隔离：推下去的那份放在独立的 `runtime` 状态里，**永不写回文档**，也不进撤销栈。
 
-**运行态数据与编辑文档物理隔离**：镜像放在独立的 `runtime` 状态里，永不写回文档，也不进撤销栈。
+## 数据方向：后台有什么对象，前端就有什么对象
 
-## 告诉前端执行一个动作：三级降级
+**后台（编辑器文档）是唯一真源，前端只是它的镜像 + 播放器。**
 
-| 场景 | 下发 | 前端行为 | 依赖 |
-|---|---|---|---|
-| 触发前端已配置好的动作（**主路径**） | `invoke_action{objectId, actionId}` | 按 id 找动作 → 评估条件 → 执行效果 | 需前端实现下方契约 |
-| 动作只在编辑器里编排（v2 服务端权威） | 服务端求值后下发原子命令序列 | 执行 `set_option` 等，本地动作链产生副作用 | 待实现 |
-| 只想改某个值 | `set_option` / `set_bool` / `set_int` / `set_float` … | 组件改值 → 本地动作链 | **现在就能用** |
-| 后台编排好的内容整份推下去（**声音**） | `play_sound` / `stop_sound` + 回执 `command_result` | 按消息里的 clips + layer 播放 / 停层 | 需前端实现下方契约 |
+| 环节 | 做什么 |
+|---|---|
+| 编辑器点「运行」 | 连服务端 → `runtime_start`（**服务端据此开闸**）→ `scene_push` 推当前场景 |
+| 编辑场景 | 文档一变就（去抖 200ms + 内容去重）再推一份全量 |
+| 服务端 | 缓存最近一份场景；转发 `scene_sync` 给前端；把运行态摘要广播给编辑器 |
+| 前端 | 按 `id` 建 / 改 / 删 GameObject：位置、缩放、旋转、**激活**、显示顺序、贴图 |
+| 命令（如播放声音） | 只是**触发器**：`play_sound{objectId, layer}` 里没有音频路径，前端从**自己的镜像**读 `sound.picked` |
 
-前两条是「**前端拥有动作 / 数据，后台按 id 寻址**」的老模型；最后一条（声音）是**新方向**：
-**数据在后台，前端只是播放效果**——命令里带着要播的内容，前端不回头查数据、也不上报数据。
-后续协议重构会把老的 `register_*` / `invoke_action` / `action_result` 收敛掉，声音这一套留下。
+**没点「运行」时前端根本连不上**：`/client` 的 WebSocket 升级会被以 **HTTP 503** 拒绝（`x-dts-reason: runtime-inactive`），
+而不是「连上再被踢」。退出运行态（点「编辑」、编辑器刷新或断开）会**关闸并踢掉前端**（close `4003`）——
+运行态跟着编辑器会话活着，不留没人管的「已连接」。
 
-前端（Unity）当前未开放，因此运行态用 **Mock 前端**（`apps/backend/src/mock-client`）先行验证：
-它实现同一套 `/client` 协议，上报对象与动作清单，并对 `invoke_action` 与声音命令回执。
-端到端链路已有测试锁定（`apps/backend/test/runtime-hub.test.ts`）。
+协议定义以 `packages/protocol` 为唯一来源（编辑器与后端共用，入站消息全部经过 zod 校验），
+字段口径与门控细节见 [`docs/specs/2026-09-19-runtime-mirror-protocol.md`](docs/specs/2026-09-19-runtime-mirror-protocol.md)。
 
-## 前端（Unity 客户端）需要配合的最小契约
+### 用 Mock 前端手工验证
 
-待前端开放后实施，详见 `docs/specs/`：
+```bash
+pnpm dev                                        # 后端 + 编辑器
+pnpm --filter @dts/backend mock                 # 另开一个终端（先点「运行」它才连得上）
+```
 
-1. `BackendChangeAction` 增加可序列化稳定 `actionId`（跨会话稳定，用于远程寻址动作）。
-2. 注册上报增加动作清单：`{ type: "register_actions", objectId, componentId, actions: [{ actionId, type, displayName, paramSummary, conditionSummary }] }`。
-3. `ServerCommandDispatcher` 增加 `invoke_action` 分支：定位对象 → 按 `actionId` 找动作 → 执行 → 回 `action_result`。
-   注意动作挂在组件上，需要一条**按动作 id 定位的旁路**，不改动现有「按命令类型路由组件」的语义。
-4. 条件求值保持现状（客户端本地 `Satisfies`）；服务端权威求值作为后续可选项。
-5. 认**声音对象**（`kind: "PlaySound"` + `object.sound`）：按 `layer` 占用声源——
-   同层同时只响一条、播新的顶掉旧的；播的是 `picked` 那一条（`clips` 是这条对象加进来的全部音频，
-   只在编辑器里用来切换）。编辑器只负责把这份清单写进场景文件，**不播放**。
-6. 实现**后台下发的声音命令**（新方向：数据在后台、前端只是播放效果）：
-   收到 `play_sound{requestId, objectId, layer, clips}` 就按层级播 `clips` 里的那条
-   （编辑器目前**只发选中的那一条**，所以列表长度为 1）、`stop_sound{requestId, layer}`
-   就停掉该层，**回 `command_result{requestId, ok, reason?}`**（不回执的话编辑器会在 5 秒后报
-   「命令回执超时：前端可能未实现 play_sound」）。字段与语义见 `docs/specs/` 的契约五。
+Mock 前端不上报任何数据，只做三件事：连上（带重试）、把收到的 `scene_sync` 打印成镜像清单、
+对 `command` 回 `command_result`（它不出声，真出声在 Unity 里）。
 
-协议定义以 `packages/protocol` 为唯一来源（编辑器与后端共用，入站消息全部经过 zod 校验）。
+端到端链路由测试锁定（`apps/backend/test/runtime-hub.test.ts`：门控 → 缓存 → 转发 → 回执；
+`apps/backend/test/runtime-session.test.ts`：开闸 / 关闸 / 场景缓存）。
+
+## 前端（Unity 客户端）要做的
+
+前端只做「镜像 + 播放」，要做的事已经落地在 `client/Assets/DiceTale/Scripts`：
+
+1. **认协议**（`Network/`）：`client_hello` 自报家门；收 `server_hello` / `scene_sync` / `command` / `ping`；
+   回 `command_result` / `pong`。协议版本不一致时服务端以 close `4002` 断开。
+2. **建镜像**（`Logic/SceneMirror.cs` + `Presentation/SceneObjectView.cs`）：一份场景 = 一批对象；
+   同 `id` 复用、缺的销毁；位置 / 缩放 / 旋转 / 激活 / 显示顺序逐项同步。
+   **坐标换算**：文档世界坐标 `(x, y)`（y 向上）→ 客户端 `(x, 0, y)`（地面是 XZ 平面，与 `GridMap.WorldToGrid` 同口径）。
+3. **取资源**（`Presentation/ResourceImageLoader.cs`）：对象里的图是**资源逻辑 ID**，
+   走 `GET /api/resources/raw?id=…` 取字节；没图时先用按 `kind` 上色的占位矩形。
+4. **收命令**（`Logic/CommandRouter.cs`）：`play_sound` / `stop_sound` 从镜像里读数据再执行，
+   **无论成败都回 `command_result`**（不回的话编辑器 5 秒后会报「命令回执超时」）。
+   当前 `play_sound` 的真出声（取音频 + 按层播放）是下一步，前端如实回 `ok:false` 并说明原因。
 
 ---
 

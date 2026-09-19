@@ -70,12 +70,14 @@ import {
   zoomAt,
   type Viewport,
 } from "@dts/renderer";
-import type { GameStateSnapshot } from "@dts/protocol";
+import type { ClientInfo, SceneInfo, ScenePayload } from "@dts/protocol";
 import {
   RuntimeClient,
   type RuntimeLogEntry,
+  type RuntimeStateSnapshot,
   type RuntimeStatus,
 } from "../services/runtime-client";
+import { ScenePushScheduler, scenePayloadText, shouldPushScene } from "../services/runtime-push";
 import {
   projectApi,
   contentTypeFor,
@@ -120,8 +122,12 @@ export interface EditorUiState {
 export interface RuntimeUiState {
   readonly status: RuntimeStatus;
   readonly statusDetail: string;
-  readonly clientConnected: boolean;
-  readonly state: GameStateSnapshot;
+  /** 服务端有没有开闸（= 编辑器声明了运行态）。没开闸时前端连不上。 */
+  readonly runtimeActive: boolean;
+  /** 前端是谁（连上后由 `client_hello` 补上名字与版本）；null = 没连。 */
+  readonly client: ClientInfo | null;
+  /** 已经推给服务端的那份场景的摘要；null = 还没推过。 */
+  readonly scene: SceneInfo | null;
   readonly logs: RuntimeLogEntry[];
   readonly lastError: string;
 }
@@ -254,12 +260,18 @@ export interface EditorStoreState {
   setMode(mode: EditorMode): void;
   connectRuntime(): void;
   disconnectRuntime(): void;
-  invokeAction(objectId: string, actionId: string): string | undefined;
+  /**
+   * 把**当前场景整份**推给服务端（运行态才推，内容没变不推）。
+   *
+   * 进运行态、WS 重连后调用它是「补齐全量」；平时由文档变更自动去抖触发，
+   * 所以正常情况下不用手点（面板上那句「已同步 N 个对象」就是它的结果）。
+   */
+  pushRuntimeScene(): void;
   /**
    * 让**前端**播放这个声音对象选中的那一条（编辑器自己不出声，只**记账** + 尽力下发）。
    *
-   * 面板是单选的，所以只发选中的那一条；编辑器还没连上服务端 / 前端没连时**照样能点**：
-   * 状态记在 `soundPlayback` 里，等前端连上补发。
+   * 命令里只有 `objectId + layer`：**播哪一条由前端从镜像里的那个对象读**（数据在场景里）。
+   * 编辑器还没连上服务端 / 前端没连时**照样能点**：状态记在 `soundPlayback` 里，等前端连上补发。
    */
   playSound(objectId: string): string | undefined;
   /** 让前端**停掉**某个声音对象所在的层级（同层只响一条，所以按层停）。 */
@@ -436,12 +448,6 @@ export interface EditorStoreState {
   /** 战争雾那一组设置是否露出来（编辑器偏好；纯界面，不动文档、也不画到画布上）。 */
   setFogVisible(visible: boolean): void;
 }
-
-const EMPTY_GAME_STATE: GameStateSnapshot = {
-  currentMap: "",
-  players: {},
-  objects: {},
-};
 
 /**
  * 平板（触控优先或窄屏）下默认收起左右面板，让场景铺满——
@@ -640,6 +646,13 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
     }));
   };
 
+  /** 当前打开的场景（`activeSceneName` 对应的那份）；没打开就是 null。 */
+  const currentSceneDoc = (): SceneDoc | null =>
+    findSceneByName(get().scenes, get().activeSceneName) ?? null;
+
+  /** 上次**真的推出去**的场景文本（去重与「补发全量」都靠它）。 */
+  let lastPushedSceneText: string | null = null;
+
   const runtimeClient = new RuntimeClient({
     onStatus: (status, detail) => {
       set((state) => ({
@@ -649,7 +662,7 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
           statusDetail: detail ?? "",
           // 自己没连着服务端时「前端在不在」无从得知：别留一个过期的「已连接」，
           // 也让「前端刚连上 → 补发」这条判断只在真的连上之后成立
-          ...(status === "open" ? {} : { clientConnected: false }),
+          ...(status === "open" ? {} : { client: null, scene: null, runtimeActive: false }),
         },
       }));
 
@@ -662,16 +675,21 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       }
     },
 
-    onSnapshot: (gameState, clientConnected) => {
-      const wasClientConnected = get().runtime.clientConnected;
+    onState: (snapshot: RuntimeStateSnapshot) => {
+      const wasClientConnected = get().runtime.client !== null;
       set((state) => ({
-        runtime: { ...state.runtime, state: gameState, clientConnected },
+        runtime: {
+          ...state.runtime,
+          runtimeActive: snapshot.runtimeActive,
+          client: snapshot.client,
+          scene: snapshot.scene,
+        },
       }));
 
       // 前端刚连上：把记着的期望播放状态补发一遍（「点的时候前端不在」也不会丢）
       const plan = soundPlaybackResendPlan({
         wasClientConnected,
-        isClientConnected: clientConnected,
+        isClientConnected: snapshot.client !== null,
         playback: get().soundPlayback,
       });
       if (plan.length > 0) {
@@ -679,17 +697,8 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       }
     },
 
-    onActionResult: (message) => {
-      pushLog(
-        makeLog(
-          message.ok ? "info" : "warn",
-          `动作 ${message.objectId}/${message.actionId} ${message.ok ? "执行成功" : `执行失败：${message.reason ?? "未知原因"}`}${
-            message.effects !== undefined && message.effects.length > 0
-              ? `（${message.effects.join("，")}）`
-              : ""
-          }`,
-        ),
-      );
+    onServerLog: (entry) => {
+      pushLog(entry);
     },
 
     onError: (reason, requestId) => {
@@ -701,7 +710,7 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       pushLog(
         makeLog(
           message.ok ? "info" : "warn",
-          `声音命令 ${message.ok ? "执行成功" : `执行失败：${message.reason ?? "未知原因"}`}${
+          `命令 ${message.ok ? "执行成功" : `执行失败：${message.reason ?? "未知原因"}`}${
             message.effects !== undefined && message.effects.length > 0
               ? `（${message.effects.join("，")}）`
               : ""
@@ -709,7 +718,58 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
         ),
       );
     },
+
+    /**
+     * WS 建立（含重连）之后：如果编辑器正处在运行态，就**补发**开闸声明与整份场景。
+     *
+     * 刷新页面会先断开关闸（前端被踢），重连后这两条让它恢复；前端本来就一直在重试，会自己连回来。
+     */
+    onOpen: () => {
+      if (get().mode !== "run") {
+        return;
+      }
+
+      runtimeClient.startRuntime();
+      pushSceneNow();
+    },
   });
+
+  /** 去抖推送：连续拖动 / 连续输入只推最后一次。 */
+  const pushScheduler = new ScenePushScheduler({
+    // 去抖到点后**重新读一次当前文档**（比排队时那份更新），再决定推不推
+    push: (_text) => {
+      const scene = currentSceneDoc();
+      const nextText = scenePayloadText(scene);
+      if (
+        !shouldPushScene({
+          mode: get().mode,
+          connected: runtimeClient.connected,
+          lastPushed: lastPushedSceneText,
+          next: nextText,
+        })
+      ) {
+        return;
+      }
+
+      // 文档模型与协议模型结构一致，只差 `RleRun` 的 readonly 标注（服务端还会用 zod 校验一遍）
+      runtimeClient.pushScene(scene as ScenePayload | null);
+      lastPushedSceneText = nextText;
+    },
+  });
+
+  /** 立刻推一份全量（进运行态、重连补发用）。 */
+  const pushSceneNow = (): void => {
+    pushScheduler.flush(scenePayloadText(currentSceneDoc()));
+  };
+
+  /** 文档变了就安排一次推送（运行态 + 连着服务端才有意义，由 shouldPushScene 判定）。 */
+  const scheduleRuntimePush = (): void => {
+    if (get().mode !== "run" || !runtimeClient.connected) {
+      return;
+    }
+
+    pushScheduler.schedule(scenePayloadText(currentSceneDoc()));
+  };
 
   /**
    * 把一条「这一层该播什么」**尽力**发给前端。
@@ -726,13 +786,18 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       return undefined;
     }
 
-    if (!get().runtime.clientConnected) {
+    if (get().runtime.client === null) {
       pushLog(makeLog("info", `已记录播放：${label}（${what}；前端未连接，等它连上后自动补发）`));
       return undefined;
     }
 
-    const requestId = runtimeClient.playSound(entry.objectId, entry.layer, entry.clips);
-    pushLog(makeLog("info", `下发播放：${label}（${what}）`));
+    // 命令里只带 objectId + layer：播哪一条由**前端从镜像里的那个对象读**（数据在场景里）
+    const requestId = runtimeClient.sendCommand({
+      kind: "play_sound",
+      objectId: entry.objectId,
+      layer: entry.layer,
+    });
+    pushLog(makeLog("info", `下发播放：${label}（${what}，请前端按它自己镜像里的选中项播）`));
     return requestId;
   };
 
@@ -789,6 +854,8 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
 
   sceneHistory.subscribe(() => {
     syncHistoryFlags();
+    // 运行态下文档一改就（去抖）把整份场景推给服务端 → 前端镜像跟着变
+    scheduleRuntimePush();
     if (dirtySceneNames().length === 0) {
       set({ sceneSaveState: "saved" });
       return;
@@ -859,8 +926,9 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
     runtime: {
       status: "idle",
       statusDetail: "",
-      clientConnected: false,
-      state: EMPTY_GAME_STATE,
+      runtimeActive: false,
+      client: null,
+      scene: null,
       logs: [],
       lastError: "",
     },
@@ -1014,10 +1082,24 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       }));
 
       if (mode === "run") {
+        // 连上服务端 → 声明运行态（服务端据此**开闸**：前端现在才连得上）→ 推整份场景
         get().connectRuntime();
-      } else {
-        get().disconnectRuntime();
+        if (runtimeClient.connected) {
+          runtimeClient.startRuntime();
+          get().pushRuntimeScene();
+        }
+
+        return;
       }
+
+      // 退出运行态：先声明关闸（服务端会踢掉前端），再断开自己的连接
+      pushScheduler.cancel();
+      lastPushedSceneText = null;
+      if (runtimeClient.connected) {
+        runtimeClient.stopRuntime();
+      }
+
+      get().disconnectRuntime();
     },
 
     connectRuntime() {
@@ -1028,15 +1110,8 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       runtimeClient.disconnect();
     },
 
-    invokeAction(objectId, actionId) {
-      if (!runtimeClient.connected) {
-        pushLog(makeLog("error", "未连接服务端，无法触发动作"));
-        return undefined;
-      }
-
-      const requestId = runtimeClient.invokeAction(objectId, actionId);
-      pushLog(makeLog("info", `触发动作 ${objectId}/${actionId}（${requestId}）`));
-      return requestId;
+    pushRuntimeScene() {
+      pushSceneNow();
     },
 
     // ---------------------------------------------------------------- 声音对象
@@ -1095,25 +1170,29 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
         return undefined;
       }
 
-      if (!get().runtime.clientConnected) {
+      if (get().runtime.client === null) {
         pushLog(makeLog("info", `已记录停止：${label}（前端未连接，等它连上后自动补发）`));
         return undefined;
       }
 
-      const requestId = runtimeClient.stopSound(layer);
+      const requestId = runtimeClient.sendCommand({ kind: "stop_sound", layer });
       pushLog(makeLog("info", `下发停止：${label}`));
       return requestId;
     },
 
     flushSoundPlayback() {
       const { runtime, soundPlayback } = get();
-      if (!runtimeClient.connected || !runtime.clientConnected) {
+      if (!runtimeClient.connected || runtime.client === null) {
         return 0;
       }
 
       const entries = Object.values(soundPlayback.layers);
       for (const entry of entries) {
-        runtimeClient.playSound(entry.objectId, entry.layer, entry.clips);
+        runtimeClient.sendCommand({
+          kind: "play_sound",
+          objectId: entry.objectId,
+          layer: entry.layer,
+        });
         pushLog(
           makeLog(
             "info",

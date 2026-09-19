@@ -161,6 +161,7 @@ export function MenuBar({ compact }: MenuBarProps): React.JSX.Element {
         ) : null}
 
         <ModeSwitch mode={mode} onChange={setMode} />
+        <ClientBadge />
       </div>
 
       <ProjectDialog mode={projectDialog} onClose={() => openProjectDialog(null)} />
@@ -238,6 +239,49 @@ function ToolbarToggle({
     >
       {children}
     </button>
+  );
+}
+
+/**
+ * 「前端连上了没」的徽标：只在对运行态时才出现。
+ *
+ * 放在模式开关旁边（而不是只在状态栏 / 运行面板里说），是因为「点了运行，前端到底连上没有」
+ * 是这个界面此刻最要紧的一件事——连上时绿灯**呼吸**一下，一眼就能看见。
+ */
+function ClientBadge(): React.JSX.Element | null {
+  const mode = useEditorStore((state) => state.mode);
+  const runtimeActive = useEditorStore((state) => state.runtime.runtimeActive);
+  const client = useEditorStore((state) => state.runtime.client);
+  const status = useEditorStore((state) => state.runtime.status);
+
+  if (mode !== "run") {
+    return null;
+  }
+
+  const connected = client !== null;
+  const label = connected
+    ? `前端已连接${client === null || client.version === "" ? "" : `（${client.name} v${client.version}）`}`
+    : status === "open" && runtimeActive
+      ? "等待前端连接"
+      : "正在连接服务端…";
+
+  return (
+    <span
+      data-testid="client-badge"
+      data-connected={connected ? "yes" : "no"}
+      title={label}
+      className="ml-1 flex items-center gap-1.5 rounded border px-1.5 py-0.5 text-[10px]"
+      style={{
+        borderColor: connected ? "var(--color-editor-ok)" : "var(--color-editor-border)",
+        color: connected ? "var(--color-editor-ok)" : "var(--color-editor-text-dim)",
+      }}
+    >
+      <span
+        className={`inline-block h-2 w-2 rounded-full ${connected ? "animate-pulse" : ""}`}
+        style={{ background: connected ? "var(--color-editor-ok)" : "var(--color-editor-warn)" }}
+      />
+      {connected ? "前端已连接" : "等待前端连接"}
+    </span>
   );
 }
 

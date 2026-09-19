@@ -3,7 +3,9 @@ import type { Server } from "node:http";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import {
-  parseServerToClient,
+  PROTOCOL_VERSION,
+  RUNTIME_STOPPED_CODE,
+  type ScenePayload,
   type ServerToClientMessage,
   type ServerToEditorMessage,
 } from "@dts/protocol";
@@ -13,10 +15,13 @@ import { FsResourceProvider } from "../src/resources/fs-provider";
 import { RuntimeHub } from "../src/ws/hub";
 
 /**
- * 运行态端到端测试：**编辑器触发动作 → 服务端中转 → 前端执行 → 回执回到编辑器**。
+ * 运行态端到端测试：**编辑器点运行 → 开闸 → 前端连上 → 场景整份镜像过去 → 命令能下发并回执**。
  *
- * 真实前端（Unity）尚未开放，这里用一个最小假前端实现 `/client` 协议，
- * 保证「如何告诉前端执行一个动作」这条链路是被测试锁住的，而不是靠人工点。
+ * 这里锁住四件事，都是人工点不出来的：
+ * 1. 门控：没点运行，前端**根本连不上**（HTTP 503 拒握手）；退出运行态，已连的前端被踢（4003）。
+ * 2. 缓存：先改场景、后开前端，前端一连上就拿到**全量** `scene_sync`。
+ * 3. 转发：运行中改场景，整份推给已连接的前端（激活 / 位置都在里面）。
+ * 4. 命令：只有开闸且前端连着才下发；未连接 / 未开闸都明确报错（不静默）。
  */
 
 /** 收消息的小工具：按谓词等待，带超时。 */
@@ -80,7 +85,60 @@ function send(socket: WebSocket, message: unknown): void {
   socket.send(JSON.stringify(message));
 }
 
-describe("运行态端到端（编辑器 → 服务端 → 前端）", () => {
+/** 未开闸时连接应当失败：把失败原因（HTTP 状态或错误文案）取回来。 */
+function connectExpectFailure(url: string): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    const socket = new WebSocket(url);
+    socket.on("open", () => {
+      socket.close();
+      reject(new Error("未开闸却连上了"));
+    });
+    socket.on("unexpected-response", (_request, response) => {
+      socket.terminate();
+      resolve(`HTTP ${response.statusCode ?? 0}`);
+    });
+    socket.on("error", (error: Error) => resolve(error.message));
+  });
+}
+
+const typeOf = (message: unknown): string => (message as { type?: string }).type ?? "";
+
+/** 一份最小场景：一个地图对象（激活）+ 一个精灵对象（激活状态可调）。 */
+function sampleScene(name: string, spriteActive: boolean): ScenePayload {
+  return {
+    name,
+    objects: [
+      {
+        id: "map_01",
+        name: "地图",
+        kind: "Map",
+        active: true,
+        sortingOrder: -10,
+        position: { x: 0, y: 0 },
+        rotation: 0,
+        scale: 1,
+        map: {
+          image: { id: "project:P/Assets/images/map.png", width: 1920, height: 1080 },
+          grid: { width: 64, height: 36 },
+          rowOrder: "bottom-up",
+          cells: { encoding: "rle", runs: [[0, 2304]] },
+        },
+      },
+      {
+        id: "sprite_01",
+        name: "木门",
+        kind: "SceneObject",
+        active: spriteActive,
+        sortingOrder: 0,
+        position: { x: -345, y: 118 },
+        rotation: 0,
+        scale: 1,
+      },
+    ],
+  };
+}
+
+describe("运行态：门控 + 场景镜像中继", () => {
   let server: Server;
   let hub: RuntimeHub;
   let baseUrl: string;
@@ -115,305 +173,263 @@ describe("运行态端到端（编辑器 → 服务端 → 前端）", () => {
     return connection;
   }
 
-  async function startEditor(): Promise<{ socket: WebSocket; inbox: Inbox }> {
+  async function startEditor(options: { running?: boolean } = {}): Promise<{ socket: WebSocket; inbox: Inbox }> {
     const connection = connect(`ws://${baseUrl}/editor`);
     sockets.push(connection.socket);
     await waitOpen(connection.socket);
+    send(connection.socket, { type: "editor_hello", protocolVersion: PROTOCOL_VERSION });
+
+    if (options.running !== false) {
+      send(connection.socket, { type: "runtime_start" });
+      await connection.inbox.waitFor<ServerToEditorMessage>(
+        (message) => typeOf(message) === "editor_state" && (message as { runtimeActive?: boolean }).runtimeActive === true,
+      );
+    }
+
     return connection;
   }
 
-  /** 最小假前端：注册两个可触发动作，并对 invoke_action 回执。 */
-  async function registerFakeClient(): Promise<{ socket: WebSocket; inbox: Inbox }> {
+  it("没点运行：前端连不上（握手就被 503 拒）", async () => {
+    expect(await connectExpectFailure(`ws://${baseUrl}/client`)).toMatch(/503/);
+    expect(hub.runtimeActive).toBe(false);
+  });
+
+  it("点运行后前端能连上，退出运行态被 4003 踢下线", async () => {
+    // 开闸前先确认连不上
+    expect(await connectExpectFailure(`ws://${baseUrl}/client`)).toMatch(/503/);
+
+    const editor = await startEditor();
+    expect(hub.runtimeActive).toBe(true);
+
     const client = await startClient();
-    send(client.socket, { type: "request_join" });
-    send(client.socket, {
-      type: "register_map_objects",
-      mapName: "Map001",
-      objects: [
-        {
-          id: "door_01",
-          name: "木门",
-          kind: "SceneObject",
-          position: { x: -345, y: 118 },
-          componentData: [{ component: "OptionValue", displayName: "状态", data: "{}" }],
-        },
-      ],
-    });
-    send(client.socket, {
-      type: "register_actions",
-      objectId: "door_01",
-      componentId: "OptionValue",
-      actions: [
-        { actionId: "act_open", type: "PlayVideo", displayName: "开门过场" },
-        { actionId: "act_show", type: "ShowHide", displayName: "开门显隐" },
-      ],
-    });
-
-    // 假前端：收到 invoke_action 就回执（未知动作回 ok:false）
-    const known = new Set(["act_open", "act_show"]);
-    client.socket.on("message", (data) => {
-      const message = parseServerToClient(JSON.parse(typeof data === "string" ? data : data.toString()));
-      if (message.type !== "invoke_action") {
-        return;
-      }
-
-      const ok = known.has(message.actionId);
-      send(client.socket, {
-        type: "action_result",
-        requestId: message.requestId,
-        objectId: message.objectId,
-        actionId: message.actionId,
-        ok,
-        ...(ok ? { effects: ["已执行（假前端）"] } : { reason: "该对象上没有这个动作" }),
-      });
-    });
-
-    return client;
-  }
-
-  it("编辑器订阅后能拿到含动作清单的快照", async () => {
-    await registerFakeClient();
-    const editor = await startEditor();
-    send(editor.socket, { type: "editor_subscribe" });
-
-    const snapshot = await editor.inbox.waitFor<ServerToEditorMessage>(
-      (message) => (message as { type?: string }).type === "editor_snapshot",
-    );
-
-    if (snapshot.type !== "editor_snapshot") {
+    const hello = await client.inbox.waitFor<ServerToClientMessage>((message) => typeOf(message) === "server_hello");
+    if (hello.type !== "server_hello") {
       throw new Error("类型不符");
     }
 
-    expect(snapshot.clientConnected).toBe(true);
-    expect(snapshot.state.currentMap).toBe("Map001");
-    expect(snapshot.state.objects.door_01?.actions?.map((action) => action.actionId)).toEqual([
-      "act_open",
-      "act_show",
-    ]);
-  });
+    expect(hello.protocolVersion).toBe(PROTOCOL_VERSION);
 
-  it("编辑器触发动作 → 前端执行 → 回执回到编辑器", async () => {
-    await registerFakeClient();
-    const editor = await startEditor();
-    send(editor.socket, { type: "editor_subscribe" });
-    await editor.inbox.waitFor((message) => (message as { type?: string }).type === "editor_snapshot");
-
-    send(editor.socket, {
-      type: "invoke_action",
-      requestId: "req-1",
-      objectId: "door_01",
-      actionId: "act_open",
-    });
-
-    const result = await editor.inbox.waitFor<ServerToEditorMessage>(
-      (message) => (message as { type?: string }).type === "action_result",
+    // 编辑器看到「前端已连接」
+    const online = await editor.inbox.waitFor<ServerToEditorMessage>(
+      (message) => typeOf(message) === "editor_state" && (message as { client?: unknown }).client !== null,
     );
-
-    if (result.type !== "action_result") {
+    if (online.type !== "editor_state") {
       throw new Error("类型不符");
     }
 
-    expect(result.requestId).toBe("req-1");
-    expect(result.actionId).toBe("act_open");
-    expect(result.ok).toBe(true);
-    expect(result.effects).toEqual(["已执行（假前端）"]);
-  });
+    expect(online.runtimeActive).toBe(true);
 
-  it("动作不存在时前端回执失败原因（不静默）", async () => {
-    await registerFakeClient();
-    const editor = await startEditor();
-    send(editor.socket, { type: "editor_subscribe" });
-    await editor.inbox.waitFor((message) => (message as { type?: string }).type === "editor_snapshot");
+    // 退出运行态：前端被踢，编辑器状态回到未开闸
+    const closed = new Promise<number>((resolve) => client.socket.once("close", (code) => resolve(code)));
+    send(editor.socket, { type: "runtime_stop" });
 
-    send(editor.socket, {
-      type: "invoke_action",
-      requestId: "req-2",
-      objectId: "door_01",
-      actionId: "act_missing",
-    });
-
-    const result = await editor.inbox.waitFor<ServerToEditorMessage>(
-      (message) => (message as { type?: string }).type === "action_result",
-    );
-
-    if (result.type !== "action_result") {
-      throw new Error("类型不符");
-    }
-
-    expect(result.ok).toBe(false);
-    expect(result.reason).toMatch(/没有这个动作/);
-  });
-
-  it("前端未连接时触发动作给出明确错误（不静默失败）", async () => {
-    const editor = await startEditor();
-    send(editor.socket, { type: "editor_subscribe" });
-    await editor.inbox.waitFor((message) => (message as { type?: string }).type === "editor_snapshot");
-
-    send(editor.socket, {
-      type: "invoke_action",
-      requestId: "req-3",
-      objectId: "door_01",
-      actionId: "act_open",
-    });
-
-    const error = await editor.inbox.waitFor<ServerToEditorMessage>(
-      (message) =>
-        (message as { type?: string }).type === "editor_error" &&
-        (message as { requestId?: string }).requestId === "req-3",
-    );
-
-    if (error.type !== "editor_error") {
-      throw new Error("类型不符");
-    }
-
-    expect(error.reason).toMatch(/前端未连接/);
-  });
-
-  it("前端断开后运行态清空（单客户端架构）", async () => {
-    const client = await registerFakeClient();
-    const editor = await startEditor();
-    send(editor.socket, { type: "editor_subscribe" });
-    await editor.inbox.waitFor((message) => (message as { type?: string }).type === "editor_snapshot");
-
-    client.socket.close();
+    expect(await closed).toBe(RUNTIME_STOPPED_CODE);
 
     const offline = await editor.inbox.waitFor<ServerToEditorMessage>(
-      (message) =>
-        (message as { type?: string }).type === "editor_snapshot" &&
-        (message as { clientConnected?: boolean }).clientConnected === false,
+      (message) => typeOf(message) === "editor_state" && (message as { runtimeActive?: boolean }).runtimeActive === false,
     );
-
-    if (offline.type !== "editor_snapshot") {
+    if (offline.type !== "editor_state") {
       throw new Error("类型不符");
     }
 
-    expect(offline.state.objects).toEqual({});
-    expect(offline.clientConnected).toBe(false);
+    expect(offline.client).toBeNull();
+    expect(hub.clientConnected).toBe(false);
   });
 
-  it("原子命令直通到前端（低层触发路径仍然可用）", async () => {
-    const client = await registerFakeClient();
+  it("先推场景、后开前端：连上立刻拿到全量镜像", async () => {
     const editor = await startEditor();
-    send(editor.socket, { type: "editor_subscribe" });
-    await editor.inbox.waitFor((message) => (message as { type?: string }).type === "editor_snapshot");
+    send(editor.socket, { type: "scene_push", scene: sampleScene("场景1", false) });
 
-    send(editor.socket, { type: "set_option", objectId: "door_01", option: "打开" });
-
-    const forwarded = await client.inbox.waitFor<ServerToClientMessage>(
-      (message) => (message as { type?: string }).type === "set_option",
+    await editor.inbox.waitFor<ServerToEditorMessage>(
+      (message) => typeOf(message) === "editor_state" && (message as { scene?: unknown }).scene !== null,
     );
 
-    if (forwarded.type !== "set_option") {
+    const client = await startClient();
+    const sync = await client.inbox.waitFor<ServerToClientMessage>((message) => typeOf(message) === "scene_sync");
+    if (sync.type !== "scene_sync") {
       throw new Error("类型不符");
     }
 
-    expect(forwarded.option).toBe("打开");
+    expect(sync.scene?.name).toBe("场景1");
+    expect(sync.scene?.objects).toHaveLength(2);
+    expect(sync.scene?.objects[1]?.active).toBe(false);
+    expect(sync.scene?.objects[1]?.position).toEqual({ x: -345, y: 118 });
   });
 
-  /**
-   * 声音命令：**后台把要播的东西整份推下去**（数据在后台、前端只是播放效果）。
-   *
-   * 假前端这里刻意「不认识」这个对象（它没有上报过 sound_1）：命令照样送到 —— 前端按
-   * 消息里的 clips + layer 播就行，不需要回头查数据。
-   */
-  it("播放命令带着 clips + layer 原样送到前端，回执回到编辑器", async () => {
-    const client = await startClient();
-    send(client.socket, { type: "request_join" });
+  it("运行中改场景：整份推给已连接的前端（激活 / 位置都跟着变）", async () => {
+    const editor = await startEditor();
+    send(editor.socket, { type: "scene_push", scene: sampleScene("场景1", false) });
 
-    // 假前端：收到 play_sound 就回执（把拿到的内容写进 effects，便于断言）
+    const client = await startClient();
+    await client.inbox.waitFor<ServerToClientMessage>((message) => typeOf(message) === "scene_sync");
+
+    // 编辑器把精灵对象激活、并挪个位置
+    const next = sampleScene("场景1", true);
+    next.objects[1]!.position = { x: 100, y: -50 };
+    send(editor.socket, { type: "scene_push", scene: next });
+
+    const updated = await client.inbox.waitFor<ServerToClientMessage>(
+      (message) =>
+        typeOf(message) === "scene_sync" &&
+        (message as { scene?: { objects?: Array<{ active?: boolean }> } }).scene?.objects?.[1]?.active === true,
+    );
+    if (updated.type !== "scene_sync") {
+      throw new Error("类型不符");
+    }
+
+    expect(updated.scene?.objects[1]?.position).toEqual({ x: 100, y: -50 });
+  });
+
+  it("编辑器状态里带上「镜像到哪了」的摘要与前端标识", async () => {
+    const editor = await startEditor();
+    send(editor.socket, { type: "scene_push", scene: sampleScene("场景1", true) });
+
+    const withScene = await editor.inbox.waitFor<ServerToEditorMessage>(
+      (message) => typeOf(message) === "editor_state" && (message as { scene?: unknown }).scene !== null,
+    );
+    if (withScene.type !== "editor_state") {
+      throw new Error("类型不符");
+    }
+
+    expect(withScene.scene?.name).toBe("场景1");
+    expect(withScene.scene?.objectCount).toBe(2);
+
+    const client = await startClient();
+    send(client.socket, { type: "client_hello", protocolVersion: PROTOCOL_VERSION, name: "DiceTale Unity", version: "1.0.0" });
+
+    const identified = await editor.inbox.waitFor<ServerToEditorMessage>(
+      (message) =>
+        typeOf(message) === "editor_state" &&
+        (message as { client?: { name?: string } }).client?.name === "DiceTale Unity",
+    );
+    if (identified.type !== "editor_state") {
+      throw new Error("类型不符");
+    }
+
+    expect(identified.client?.version).toBe("1.0.0");
+  });
+
+  it("命令：前端在 → 原样转发 + 回执回到编辑器 + 日志", async () => {
+    const editor = await startEditor();
+    const client = await startClient();
+    send(client.socket, { type: "client_hello", protocolVersion: PROTOCOL_VERSION, name: "Mock", version: "0.0.0" });
+
+    // 假前端：收到 command 就回执（命令里只有 objectId + layer，数据在场景里）
     client.socket.on("message", (data) => {
-      const message = parseServerToClient(JSON.parse(typeof data === "string" ? data : data.toString()));
-      if (message.type !== "play_sound") {
+      const parsed = JSON.parse(typeof data === "string" ? data : data.toString()) as {
+        type?: string;
+        requestId?: string;
+      };
+      if (parsed.type !== "command") {
         return;
       }
 
       send(client.socket, {
         type: "command_result",
-        requestId: message.requestId,
-        ok: true,
-        effects: [`播放 ${message.layer}: ${message.clips.join("|")}`],
+        requestId: parsed.requestId,
+        ok: false,
+        reason: "前端尚未实现 play_sound（下一步）",
       });
     });
 
-    const editor = await startEditor();
-    send(editor.socket, { type: "editor_subscribe" });
-    await editor.inbox.waitFor((message) => (message as { type?: string }).type === "editor_snapshot");
-
     send(editor.socket, {
-      type: "play_sound",
-      requestId: "snd-1",
-      objectId: "sound_1",
-      layer: "bgm",
-      clips: ["project:P/Assets/audio/a.mp3", "project:P/Assets/audio/b.mp3"],
+      type: "editor_command",
+      requestId: "cmd-1",
+      command: { kind: "play_sound", objectId: "sound_01", layer: "sfx" },
     });
 
-    const received = await client.inbox.waitFor<ServerToClientMessage>(
-      (message) => (message as { type?: string }).type === "play_sound",
-    );
-    if (received.type !== "play_sound") {
+    const forwarded = await client.inbox.waitFor<ServerToClientMessage>((message) => typeOf(message) === "command");
+    if (forwarded.type !== "command") {
       throw new Error("类型不符");
     }
 
-    expect(received.objectId).toBe("sound_1");
-    expect(received.layer).toBe("bgm");
-    expect(received.clips).toEqual(["project:P/Assets/audio/a.mp3", "project:P/Assets/audio/b.mp3"]);
+    expect(forwarded.requestId).toBe("cmd-1");
+    expect(forwarded.command).toEqual({ kind: "play_sound", objectId: "sound_01", layer: "sfx" });
 
     const result = await editor.inbox.waitFor<ServerToEditorMessage>(
-      (message) => (message as { type?: string }).type === "command_result",
+      (message) => typeOf(message) === "editor_command_result",
     );
-    if (result.type !== "command_result") {
+    if (result.type !== "editor_command_result") {
       throw new Error("类型不符");
     }
 
-    expect(result.requestId).toBe("snd-1");
-    expect(result.ok).toBe(true);
-    expect(result.effects).toEqual([
-      "播放 bgm: project:P/Assets/audio/a.mp3|project:P/Assets/audio/b.mp3",
-    ]);
-  });
+    expect(result.requestId).toBe("cmd-1");
+    expect(result.ok).toBe(false);
+    expect(result.reason).toMatch(/尚未实现/);
 
-  it("停止命令送达前端（按层级停）", async () => {
-    const client = await startClient();
-    const editor = await startEditor();
-    send(editor.socket, { type: "editor_subscribe" });
-    await editor.inbox.waitFor((message) => (message as { type?: string }).type === "editor_snapshot");
-
-    send(editor.socket, { type: "stop_sound", requestId: "snd-2", layer: "sfx" });
-
-    const received = await client.inbox.waitFor<ServerToClientMessage>(
-      (message) => (message as { type?: string }).type === "stop_sound",
+    // 编辑器日志里也有一条（界面上看得见，不用翻服务端控制台）
+    const logged = await editor.inbox.waitFor<ServerToEditorMessage>(
+      (message) =>
+        typeOf(message) === "editor_log" &&
+        (message as { message?: string }).message?.includes("执行失败") === true,
     );
-    if (received.type !== "stop_sound") {
-      throw new Error("类型不符");
-    }
-
-    expect(received.layer).toBe("sfx");
+    expect(typeOf(logged)).toBe("editor_log");
   });
 
-  it("前端未连接时下发声音命令给出明确错误（不静默失败）", async () => {
+  it("命令：前端不在 → 明确报错；未进入运行态 → 也明确报错", async () => {
     const editor = await startEditor();
-    send(editor.socket, { type: "editor_subscribe" });
-    await editor.inbox.waitFor((message) => (message as { type?: string }).type === "editor_snapshot");
 
     send(editor.socket, {
-      type: "play_sound",
-      requestId: "snd-3",
-      objectId: "sound_1",
-      layer: "sfx",
-      clips: ["project:P/Assets/audio/a.mp3"],
+      type: "editor_command",
+      requestId: "cmd-offline",
+      command: { kind: "stop_sound", layer: "sfx" },
     });
 
-    const error = await editor.inbox.waitFor<ServerToEditorMessage>(
+    const offline = await editor.inbox.waitFor<ServerToEditorMessage>(
       (message) =>
-        (message as { type?: string }).type === "editor_error" &&
-        (message as { requestId?: string }).requestId === "snd-3",
+        typeOf(message) === "editor_error" && (message as { requestId?: string }).requestId === "cmd-offline",
     );
-
-    if (error.type !== "editor_error") {
+    if (offline.type !== "editor_error") {
       throw new Error("类型不符");
     }
 
-    expect(error.reason).toMatch(/前端未连接/);
+    expect(offline.reason).toMatch(/前端未连接/);
+
+    // 关闸之后再发（编辑器还连着，但运行态没了）
+    send(editor.socket, { type: "runtime_stop" });
+    await editor.inbox.waitFor<ServerToEditorMessage>(
+      (message) => typeOf(message) === "editor_state" && (message as { runtimeActive?: boolean }).runtimeActive === false,
+    );
+
+    send(editor.socket, {
+      type: "editor_command",
+      requestId: "cmd-inactive",
+      command: { kind: "stop_sound", layer: "sfx" },
+    });
+
+    const inactive = await editor.inbox.waitFor<ServerToEditorMessage>(
+      (message) =>
+        typeOf(message) === "editor_error" && (message as { requestId?: string }).requestId === "cmd-inactive",
+    );
+    if (inactive.type !== "editor_error") {
+      throw new Error("类型不符");
+    }
+
+    expect(inactive.reason).toMatch(/未进入运行态/);
+  });
+
+  it("编辑器断开 = 关闸：前端被踢，且连不回来", async () => {
+    const editor = await startEditor();
+    const client = await startClient();
+    await client.inbox.waitFor<ServerToClientMessage>((message) => typeOf(message) === "server_hello");
+
+    const closed = new Promise<number>((resolve) => client.socket.once("close", (code) => resolve(code)));
+    editor.socket.close();
+
+    expect(await closed).toBe(RUNTIME_STOPPED_CODE);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(hub.runtimeActive).toBe(false);
+    expect(await connectExpectFailure(`ws://${baseUrl}/client`)).toMatch(/503/);
+  });
+
+  it("协议版本不一致：前端被 4002 断开", async () => {
+    await startEditor();
+    const client = await startClient();
+
+    const closed = new Promise<number>((resolve) => client.socket.once("close", (code) => resolve(code)));
+    send(client.socket, { type: "client_hello", protocolVersion: 99, name: "旧前端", version: "0.9" });
+
+    expect(await closed).toBe(4002);
   });
 });
 
@@ -438,12 +454,19 @@ describe("后端 HTTP 接口", () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   });
 
-  it("/api/health 返回连接状态", async () => {
+  it("/api/health 返回运行态与连接状态", async () => {
     const response = await fetch(`${baseUrl}/api/health`);
-    const body = (await response.json()) as { ok: boolean; clientConnected: boolean };
+    const body = (await response.json()) as {
+      ok: boolean;
+      runtimeActive: boolean;
+      clientConnected: boolean;
+      editorConnections: number;
+    };
     expect(response.status).toBe(200);
     expect(body.ok).toBe(true);
+    expect(body.runtimeActive).toBe(false);
     expect(body.clientConnected).toBe(false);
+    expect(body.editorConnections).toBe(0);
   });
 
   it("/api/config 使用资源目录配置（代码不硬编码目录）", async () => {
@@ -466,9 +489,9 @@ describe("后端 HTTP 接口", () => {
     expect(all.entries.some((entry) => entry.id === "config:app.json")).toBe(true);
     expect(all.entries.some((entry) => entry.id.endsWith(".gitkeep"))).toBe(false);
 
-    const configOnly = (await (
-      await fetch(`${baseUrl}/api/resources/index?kind=config`)
-    ).json()) as { entries: Array<{ kind: string }> };
+    const configOnly = (await (await fetch(`${baseUrl}/api/resources/index?kind=config`)).json()) as {
+      entries: Array<{ kind: string }>;
+    };
     expect(configOnly.entries.every((entry) => entry.kind === "config")).toBe(true);
   });
 
@@ -481,11 +504,19 @@ describe("后端 HTTP 接口", () => {
     expect(missing.status).toBe(404);
   });
 
-  it("/api/state 暴露运行态与可触发动作", async () => {
+  it("/api/state 暴露运行态摘要（前端是谁 / 镜像的是哪份场景）", async () => {
     const response = await fetch(`${baseUrl}/api/state`);
-    const body = (await response.json()) as { clientConnected: boolean; actions: unknown[] };
-    expect(body.clientConnected).toBe(false);
-    expect(body.actions).toEqual([]);
+    const body = (await response.json()) as {
+      runtimeActive: boolean;
+      client: unknown;
+      scene: unknown;
+      serverTime: number;
+    };
+
+    expect(body.runtimeActive).toBe(false);
+    expect(body.client).toBeNull();
+    expect(body.scene).toBeNull();
+    expect(typeof body.serverTime).toBe("number");
   });
 
   it("未构建前端时根路径给出可操作提示而不是报错", async () => {

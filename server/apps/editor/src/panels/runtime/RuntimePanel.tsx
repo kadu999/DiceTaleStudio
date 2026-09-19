@@ -1,19 +1,28 @@
 import { useEditorStore } from "../../state/editor-store";
+import { SOUND_LAYER_LABELS } from "@dts/document";
 
 /**
- * 运行态面板：连接状态、可触发动作、执行回执与日志。
+ * 运行态面板：**服务端连接 + 运行态开关 + 前端镜像 + 命令日志**。
  *
- * 运行态数据来自服务端镜像（`runtime` 切片），**不参与文档编辑、不进撤销栈**。
+ * 数据方向是单向的（编辑器/服务端 → 前端）：面板上要看的就三件事——
+ * 1. 我连上服务端了吗；
+ * 2. 开闸了吗（没开闸前端根本连不上）；
+ * 3. **镜像到哪了**：前端是谁、推下去的是哪个场景、几个对象。
+ *
+ * 「可触发动作」那张表已经删掉：前端不再上报动作（旧模型），能下发的命令就是声音那两条，
+ * 入口在声音对象的属性面板里。
  */
 export function RuntimePanel(): React.JSX.Element {
   const mode = useEditorStore((state) => state.mode);
   const runtime = useEditorStore((state) => state.runtime);
-  const invokeAction = useEditorStore((state) => state.invokeAction);
+  const scenes = useEditorStore((state) => state.scenes);
+  const activeSceneName = useEditorStore((state) => state.activeSceneName);
+  const pushRuntimeScene = useEditorStore((state) => state.pushRuntimeScene);
   const clearRuntimeLogs = useEditorStore((state) => state.clearRuntimeLogs);
 
-  const objects = Object.entries(runtime.state.objects).filter(
-    ([, object]) => (object.actions?.length ?? 0) > 0,
-  );
+  const activeScene = scenes.find((scene) => scene.name === activeSceneName) ?? null;
+  const clientConnected = runtime.client !== null;
+  const syncedAt = runtime.scene === null ? "" : new Date(runtime.scene.updatedAt).toLocaleTimeString("zh-CN", { hour12: false });
 
   return (
     <div className="flex h-full min-h-0 flex-col panel">
@@ -39,23 +48,71 @@ export function RuntimePanel(): React.JSX.Element {
 
       {mode === "edit" ? (
         <div className="px-2 py-3 text-[11px] leading-relaxed text-[var(--color-editor-text-dim)]">
-          当前为编辑状态。切换到「运行」后会连接服务端，并可触发对象上的动作。
+          当前为编辑状态。点「运行」后：服务端开闸（前端这时才连得上），并把当前场景整份推给前端。
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-auto">
-          <div className="flex items-center gap-3 border-b border-[var(--color-editor-border)] px-2 py-1 text-[11px]">
+          {/* 运行态 / 开闸 */}
+          <div className="flex items-center gap-2 border-b border-[var(--color-editor-border)] px-2 py-1 text-[11px]">
+            <span
+              className="inline-block h-2 w-2 flex-none rounded-full"
+              style={{
+                background: runtime.runtimeActive ? "var(--color-editor-ok)" : "var(--color-editor-warn)",
+              }}
+            />
+            <span>{runtime.runtimeActive ? "运行态已开闸" : "正在开闸…"}</span>
+            <span className="text-[var(--color-editor-text-dim)]">
+              {runtime.runtimeActive ? "（前端可以连接）" : ""}
+            </span>
+          </div>
+
+          {/* 前端镜像：连没连 + 镜像到哪了 */}
+          <div
+            data-testid="runtime-client"
+            data-connected={clientConnected ? "yes" : "no"}
+            className="flex flex-wrap items-center gap-x-3 gap-y-0.5 border-b border-[var(--color-editor-border)] px-2 py-1 text-[11px]"
+          >
+            <span className="flex items-center gap-1.5">
+              <span
+                className={`inline-block h-2 w-2 rounded-full ${clientConnected ? "animate-pulse" : ""}`}
+                style={{
+                  background: clientConnected ? "var(--color-editor-ok)" : "var(--color-editor-text-dim)",
+                }}
+              />
+              <span style={{ color: clientConnected ? "var(--color-editor-ok)" : "var(--color-editor-text-dim)" }}>
+                {clientConnected ? "前端已连接" : "等待前端连接"}
+              </span>
+            </span>
+            {clientConnected && runtime.client !== null ? (
+              <span className="text-[var(--color-editor-text-dim)]">
+                {runtime.client.name}
+                {runtime.client.version === "" ? "" : ` v${runtime.client.version}`}
+              </span>
+            ) : null}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 border-b border-[var(--color-editor-border)] px-2 py-1 text-[11px]">
             <span>
-              前端：
-              <span style={{ color: runtime.clientConnected ? "var(--color-editor-ok)" : "var(--color-editor-danger)" }}>
-                {runtime.clientConnected ? "已连接" : "未连接"}
+              镜像场景：
+              <span className="text-[var(--color-editor-text)]">
+                {runtime.scene?.name ?? (activeScene?.name ?? "—")}
               </span>
             </span>
             <span className="text-[var(--color-editor-text-dim)]">
-              当前地图 {runtime.state.currentMap || "—"}
+              对象 {runtime.scene?.objectCount ?? activeScene?.objects.length ?? 0}
             </span>
-            <span className="ml-auto text-[var(--color-editor-text-dim)]">
-              可触发对象 {objects.length}
-            </span>
+            {syncedAt === "" ? null : (
+              <span className="text-[var(--color-editor-text-dim)]">同步于 {syncedAt}</span>
+            )}
+            <button
+              type="button"
+              data-testid="runtime-resync"
+              className="toolbar-button ml-auto hover:toolbar-button-hover"
+              title="再把当前场景整份推一次（前端会自动重连并拿到全量）"
+              onClick={pushRuntimeScene}
+            >
+              重新同步
+            </button>
           </div>
 
           {runtime.lastError.length > 0 ? (
@@ -64,44 +121,19 @@ export function RuntimePanel(): React.JSX.Element {
             </div>
           ) : null}
 
-          <div className="p-1">
-            {objects.length === 0 ? (
-              <div className="px-2 py-3 text-[11px] leading-relaxed text-[var(--color-editor-text-dim)]">
-                还没有可触发的动作。前端连上后会通过 <code>register_actions</code> 上报每个对象上的动作清单；
-                本地调试可以运行 <code>pnpm --filter @dts/backend mock</code> 启动 Mock 前端。
-              </div>
-            ) : (
-              objects.map(([objectId, object]) => (
-                <div key={objectId} className="mb-2">
-                  <div className="flex items-center gap-2 px-1.5 py-0.5 text-[11px]">
-                    <span className="truncate">{object.name}</span>
-                    <span className="font-mono text-[10px] text-[var(--color-editor-text-dim)]">{objectId}</span>
-                  </div>
-                  <div className="pl-2">
-                    {(object.actions ?? []).map((action) => (
-                      <div
-                        key={action.actionId}
-                        className="flex items-center gap-2 rounded px-1.5 py-1 hover:bg-[var(--color-editor-panel-alt)]"
-                      >
-                        <span className="min-w-0 flex-1 truncate text-[11px]">
-                          {action.displayName ?? action.actionId}
-                        </span>
-                        <span className="font-mono text-[10px] text-[var(--color-editor-text-dim)]">
-                          {action.type}
-                        </span>
-                        <button
-                          type="button"
-                          className="toolbar-button hover:toolbar-button-hover"
-                          onClick={() => invokeAction(objectId, action.actionId)}
-                        >
-                          触发
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))
-            )}
+          <div className="px-2 py-2 text-[11px] leading-relaxed text-[var(--color-editor-text-dim)]">
+            <div>
+              声音对象在属性面板里点「播放 / 停止」：命令只带
+              <code> objectId + layer </code>
+              ，播哪一条由前端从它自己的镜像里读（
+              {Object.entries(SOUND_LAYER_LABELS)
+                .map(([slug, label]) => `${slug}=${label}`)
+                .join(" / ")}
+              ）。
+            </div>
+            <div className="mt-1">
+              本地调试：先切到运行态，再跑 <code>pnpm --filter @dts/backend mock</code>（它会自动重试到连上）。
+            </div>
           </div>
         </div>
       )}

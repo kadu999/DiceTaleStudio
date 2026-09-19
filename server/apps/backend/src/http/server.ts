@@ -136,6 +136,7 @@ export function createHttpServer(options: HttpServerOptions): Server {
       case "/api/health":
         sendJson(response, 200, {
           ok: true,
+          runtimeActive: hub.runtimeActive,
           clientConnected: hub.clientConnected,
           editorConnections: hub.editorCount,
         });
@@ -380,7 +381,8 @@ export function createHttpServer(options: HttpServerOptions): Server {
       }
 
       case "/api/state":
-        sendJson(response, 200, { ...hub.state.snapshot, actions: hub.state.listActions() });
+        // 运行态：开没开闸、前端是谁、当前镜像的是哪份场景（数据都在编辑器文档里，这里只有摘要）
+        sendJson(response, 200, { ...hub.session.snapshot, serverTime: Date.now() });
         return;
 
       default:

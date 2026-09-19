@@ -95,8 +95,12 @@ test.describe("编辑态 / 运行态", () => {
     // 宽屏下运行面板嵌在场景下方；平板下是抽屉——两种布局都应有「运行态」标题
     await expect(page.getByText("运行态").first()).toBeVisible();
 
+    // 运行态下顶上要有「前端连上了没」的徽标；e2e 里没有前端，所以是「等待前端连接」
+    await expect(page.getByTestId("client-badge")).toHaveAttribute("data-connected", "no");
+
     await page.getByTestId("mode-edit").click();
     await expect(page.getByTestId("status-mode")).toHaveAttribute("data-mode", "edit");
+    await expect(page.getByTestId("client-badge")).toHaveCount(0);
     expect(errors).toEqual([]);
   });
 

@@ -4,142 +4,146 @@ import { z } from "zod";
  * WebSocket 消息契约（编辑器 / 服务端 / 前端三端共用的唯一来源）。
  *
  * 通道划分：
- * - `/client`：前端（Unity 客户端）↔ 服务端
  * - `/editor`：编辑器 ↔ 服务端
+ * - `/client`：前端（Unity 客户端）↔ 服务端
  *
- * 命名沿用 DiceTale 既有协议（snake_case 的 `type`、`mapName`、`objectId` 等），
- * 新增消息只在末尾追加，**不修改既有消息语义**，保证老前端仍可工作。
+ * **模型：后台是唯一真源，前端是它的镜像 + 播放器。**
+ * 编辑器进入运行态后把**当前场景整份推下去**（`scene_push`），服务端缓存并转发成
+ * `scene_sync`；前端按对象 `id` 建 / 改 / 删自己的 GameObject。命令（`command`）只是
+ * 「什么时候播」这类触发器，**数据永远在场景里**，不在命令里。
+ *
+ * 旧模型（前端上报对象/动作、后端按 id 寻址、`register_*` / `report_*` / `invoke_action` /
+ * 原子命令 / `sync_state`）已整层删除：新方向下前端不拥有数据，也就没有东西可上报。
+ *
+ * 协议版本：`PROTOCOL_VERSION`。两端不一致时服务端以 close code `4002` 断开。
  */
 
-// ---------------------------------------------------------------- 公共结构
+/** 协议版本：任何不兼容改动都要 +1（前端在 `client_hello` 里报自己的版本）。 */
+export const PROTOCOL_VERSION = 1;
+
+/** 未进入运行态时拒绝 `/client` 升级的 HTTP 状态与原因头。 */
+export const RUNTIME_INACTIVE_STATUS = 503;
+export const RUNTIME_INACTIVE_REASON = "runtime-inactive";
+
+/** 关闸（退出运行态）时踢掉前端的 close code。 */
+export const RUNTIME_STOPPED_CODE = 4003;
+/** 协议版本不一致时踢掉前端的 close code。 */
+export const PROTOCOL_MISMATCH_CODE = 4002;
+
+// ---------------------------------------------------------------- 场景（文档模型的只读复刻）
 
 /**
- * **世界坐标**：原点 = 场景中心 `(0, 0)`，x 向右，**y 向上**，单位像素
- * （与文档里 `SceneObjectDoc.position`、`@dts/grid` 的 `world.ts` 完全一致）。
+ * 场景对象数据 = 编辑器文档模型里的 `SceneObjectDoc`（`@dts/document`）。
  *
- * 协议里**不再有第二套坐标**：前端上报对象 / 玩家位置、擦除笔画、传送落点都用这一套。
+ * 这里**复刻一份只读 schema**而不是 import `@dts/document`：`protocol` 是被三端共用的
+ * 最底层包，不该反过来依赖文档包。字段口径与文档严格一致，文档加字段时这里同步补。
  */
-export const positionSchema = z.object({
+export const worldPositionSchema = z.object({
   x: z.number(),
   y: z.number(),
 });
 
-/** 组件数据段：后端/GM 按 `component` 类型解析 `data`（JSON 字符串）。 */
-export const componentDataSchema = z.object({
-  component: z.string(),
-  displayName: z.string().optional(),
-  data: z.string(),
+/** 图片引用：资源逻辑 ID + 声明的宽高（世界像素；实际尺寸 = 声明尺寸 × 对象 scale）。 */
+export const imageRefSchema = z.object({
+  id: z.string().min(1),
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
 });
 
-/** 动作清单条目：前端上报「本对象上可被远程触发的动作」（新增能力）。 */
-export const actionSummarySchema = z.object({
-  actionId: z.string().min(1),
-  type: z.string().min(1),
-  displayName: z.string().optional(),
-  paramSummary: z.string().optional(),
-  conditionSummary: z.string().optional(),
+/** RLE 一段：`[掩码, 连续格数]`（掩码值与 `@dts/grid` 的 `CellMask` 一致）。 */
+export const rleRunSchema = z.tuple([z.number().int(), z.number().int()]);
+
+export const gridSpecSchema = z.object({
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
 });
 
-/** 对象状态快照（与既有 ObjectStateSnapshot 对齐）。 */
-export const objectStateSchema = z.object({
-  name: z.string(),
-  kind: z.string(),
-  mapName: z.string(),
-  position: positionSchema.nullable(),
-  componentData: z.array(componentDataSchema).optional(),
-  /** 新增：可触发的动作清单。 */
-  actions: z.array(actionSummarySchema).optional(),
+export const cellRunsSchema = z.object({
+  encoding: z.literal("rle"),
+  runs: z.array(rleRunSchema),
 });
 
-export const playerStateSchema = z.object({
-  name: z.string(),
-  position: positionSchema,
-  mapName: z.string(),
+export const mapFogSchema = z.object({
+  regions: z.array(z.number().int()),
 });
 
-export const gameStateSchema = z.object({
-  currentMap: z.string(),
-  players: z.record(z.string(), playerStateSchema),
-  objects: z.record(z.string(), objectStateSchema),
+/** 地图对象携带的数据（贴图 + 网格；`rowOrder` 固定 bottom-up）。 */
+export const mapDataSchema = z.object({
+  image: imageRefSchema,
+  grid: gridSpecSchema,
+  rowOrder: z.literal("bottom-up"),
+  cells: cellRunsSchema,
+  fog: mapFogSchema.optional(),
 });
 
-// 由 schema 推导的类型（编辑器与后端共用，保证"校验通过"与"类型正确"是同一件事）
-export type Position = z.infer<typeof positionSchema>;
-export type ComponentData = z.infer<typeof componentDataSchema>;
-export type ActionSummary = z.infer<typeof actionSummarySchema>;
-export type ObjectStateSnapshot = z.infer<typeof objectStateSchema>;
-export type PlayerStateSnapshot = z.infer<typeof playerStateSchema>;
-export type GameStateSnapshot = z.infer<typeof gameStateSchema>;
-export type InvokeActionMessage = z.infer<typeof invokeActionSchema>;
-export type ActionResultMessage = z.infer<typeof actionResultSchema>;
-export type PlaySoundMessage = z.infer<typeof playSoundSchema>;
-export type StopSoundMessage = z.infer<typeof stopSoundSchema>;
-export type CommandResultMessage = z.infer<typeof commandResultSchema>;
+/** 声音层级：固定四档（同层同时只响一条）。 */
+export const soundLayerSchema = z.enum(["bgm", "ambient", "sfx", "voice"]);
 
-/** 遮罩擦除笔画（既有协议）。 */
-export const eraseStrokeSchema = z.object({
-  points: z.array(positionSchema),
-  radius: z.number(),
-  softness: z.number(),
-  done: z.boolean().optional(),
-});
-
-// ---------------------------------------------------------------- 动作触发（核心新增）
-
-/** 触发某对象上的某个动作。编辑器 → 服务端 → 前端的核心语义命令。 */
-export const invokeActionSchema = z.object({
-  type: z.literal("invoke_action"),
-  requestId: z.string().min(1),
-  objectId: z.string().min(1),
-  actionId: z.string().min(1),
-  args: z.record(z.string(), z.unknown()).optional(),
-});
-
-/** 动作执行回执。前端 → 服务端 → 编辑器。 */
-export const actionResultSchema = z.object({
-  type: z.literal("action_result"),
-  requestId: z.string().min(1),
-  objectId: z.string().min(1),
-  actionId: z.string().min(1),
-  ok: z.boolean(),
-  reason: z.string().optional(),
-  effects: z.array(z.string()).optional(),
-});
-
-// ---------------------------------------------------------------- 后台下发命令（声音）
-
-/**
- * 播放声音：**后台把要播的东西整份推下去**。
- *
- * 与 `invoke_action` 的区别是**数据方向**：`invoke_action` 是「前端拥有动作、后台按 id 寻址」；
- * 这里是「数据在后台，前端只是播放效果」——命令里带着候选音频与层级，前端不去回头查数据。
- *
- * `clips` 是**备选**（每次播放挑一条，顺序没有语义）；`layer` 是**声道分组**，
- * 同层同时只响一条，后来的顶掉先前的。
- */
-export const playSoundSchema = z.object({
-  type: z.literal("play_sound"),
-  requestId: z.string().min(1),
-  /** 归属：日志与「同一对象」的排查用；播放本身由 clips + layer 决定。 */
-  objectId: z.string().min(1),
-  layer: z.string().min(1),
-  /** 候选音频（资源逻辑 ID）。空列表没有意义，所以至少一条。 */
-  clips: z.array(z.string().min(1)).min(1),
-});
-
-/** 停止声音：停掉**某一层**（同层只响一条，所以按层停就够，不需要对象 id）。 */
-export const stopSoundSchema = z.object({
-  type: z.literal("stop_sound"),
-  requestId: z.string().min(1),
-  layer: z.string().min(1),
+/** 声音对象的数据：加进来的音频 + 当前选中的那条 + 层级（前端播的就是 `picked`）。 */
+export const soundDataSchema = z.object({
+  clips: z.array(z.string()),
+  picked: z.string().optional(),
+  layer: soundLayerSchema,
 });
 
 /**
- * 命令回执：后端下发的命令，前端到底执行了没有。
+ * 场景对象（三端同构的那一个对象）。
  *
- * 与 `action_result` 分开是因为两者属于两套模型（动作寻址 / 后台推数据）；
- * 后续协议重构会把动作那一套收敛掉，这条通用回执留下。
+ * `kind`：`Map` / `SceneObject` / `Player` / `Item` / `Event` / `PlaySound`。
+ * 前端按需取用字段：`components`（编辑器侧的组件与动作，前端不执行）等字段会被忽略。
+ * `position` 为 null = 还没落位（前端不建可见物，与编辑器画布口径一致）。
  */
+export const sceneObjectSchema = z.object({
+  id: z.string().min(1),
+  name: z.string(),
+  kind: z.string().min(1),
+  active: z.boolean(),
+  locked: z.boolean().optional(),
+  sortingOrder: z.number().int(),
+  position: worldPositionSchema.nullable(),
+  rotation: z.number(),
+  scale: z.number(),
+  components: z.array(z.unknown()).optional(),
+  map: mapDataSchema.optional(),
+  sound: soundDataSchema.optional(),
+  image: imageRefSchema.optional(),
+});
+
+/** 场景 = 场景名（就是文件名）+ 对象列表；整份推送 / 整份镜像。 */
+export const sceneSchema = z.object({
+  name: z.string(),
+  objects: z.array(sceneObjectSchema),
+});
+
+export type ScenePayload = z.infer<typeof sceneSchema>;
+export type SceneObjectPayload = z.infer<typeof sceneObjectSchema>;
+export type SoundLayer = z.infer<typeof soundLayerSchema>;
+export type ClientInfo = z.infer<typeof clientInfoSchema>;
+export type SceneInfo = z.infer<typeof sceneInfoSchema>;
+
+// ---------------------------------------------------------------- 命令（触发器，不是数据）
+
+/**
+ * 后台 → 前端的命令。
+ *
+ * **载荷里不带数据**：`play_sound` 只说「让这个对象在它自己声明的层上播」，
+ * 前端从**镜像里的那个对象**读 `sound.picked`——数据在场景里，命令只是触发器。
+ */
+export const commandRequestSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("play_sound"),
+    objectId: z.string().min(1),
+    layer: soundLayerSchema,
+  }),
+  z.object({
+    kind: z.literal("stop_sound"),
+    layer: soundLayerSchema,
+  }),
+]);
+
+export type CommandRequest = z.infer<typeof commandRequestSchema>;
+
+/** 命令回执（前端 → 服务端 → 编辑器）。无论成功失败都必须回，不静默失败。 */
 export const commandResultSchema = z.object({
   type: z.literal("command_result"),
   requestId: z.string().min(1),
@@ -148,105 +152,40 @@ export const commandResultSchema = z.object({
   effects: z.array(z.string()).optional(),
 });
 
-// ---------------------------------------------------------------- 前端 → 服务端
+// ---------------------------------------------------------------- 公共结构
 
-export const registerMapObjectsSchema = z.object({
-  type: z.literal("register_map_objects"),
-  mapName: z.string(),
-  objects: z
-    .array(
-      z.object({
-        id: z.string(),
-        name: z.string().optional(),
-        kind: z.string().optional(),
-        mapName: z.string().optional(),
-        position: positionSchema.nullable().optional(),
-        componentData: z.array(componentDataSchema).optional(),
-      }),
-    )
-    .optional(),
+/** 前端信息（服务端在 `client_hello` 后广播给编辑器）。 */
+export const clientInfoSchema = z.object({
+  name: z.string(),
+  version: z.string(),
+  connectedAt: z.number().int(),
 });
 
-export const clientToServerSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("request_join") }),
-  registerMapObjectsSchema,
-  z.object({
-    type: z.literal("register_players"),
-    players: z.array(z.object({ id: z.string(), name: z.string() })),
-  }),
-  /** 新增：动作清单上报（可与 register_map_objects 合并，但独立消息便于前端分阶段实现）。 */
-  z.object({
-    type: z.literal("register_actions"),
-    objectId: z.string().min(1),
-    componentId: z.string().min(1),
-    actions: z.array(actionSummarySchema),
-  }),
-  z.object({
-    type: z.literal("request_teleport"),
-    mapName: z.string(),
-    spawnId: z.string(),
-  }),
-  z.object({
-    type: z.literal("report_player_position"),
-    playerId: z.string(),
-    position: positionSchema,
-    mapName: z.string(),
-  }),
-  z.object({
-    type: z.literal("report_object_position"),
-    objectId: z.string(),
-    position: positionSchema,
-    mapName: z.string(),
-  }),
-  actionResultSchema,
-  commandResultSchema,
-  z.object({ type: z.literal("heartbeat") }),
-]);
-
-export type ClientToServerMessage = z.infer<typeof clientToServerSchema>;
-
-// ---------------------------------------------------------------- 服务端 → 前端
-
-export const serverToClientSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("sync_state"), state: gameStateSchema }),
-  z.object({ type: z.literal("teleport_player"), mapName: z.string(), spawnId: z.string() }),
-  z.object({ type: z.literal("set_option"), objectId: z.string(), option: z.string() }),
-  z.object({ type: z.literal("set_object_items"), objectId: z.string(), items: z.array(z.string()) }),
-  z.object({ type: z.literal("set_mask_image"), objectId: z.string(), image: z.string() }),
-  z.object({ type: z.literal("erase_mask"), objectId: z.string(), stroke: eraseStrokeSchema }),
-  z.object({ type: z.literal("set_float"), objectId: z.string(), value: z.number() }),
-  z.object({ type: z.literal("set_int"), objectId: z.string(), value: z.number().int() }),
-  z.object({ type: z.literal("set_bool"), objectId: z.string(), value: z.boolean() }),
-  z.object({ type: z.literal("set_map"), mapName: z.string(), spawnId: z.string().optional() }),
-  /** 核心新增。 */
-  invokeActionSchema,
-  /** 后台下发的声音命令（数据在后台，前端只是播放效果）。 */
-  playSoundSchema,
-  stopSoundSchema,
-]);
-
-export type ServerToClientMessage = z.infer<typeof serverToClientSchema>;
+/** 运行态里那份场景的摘要（编辑器用它显示「镜像到哪了」）。 */
+export const sceneInfoSchema = z.object({
+  name: z.string(),
+  objectCount: z.number().int(),
+  updatedAt: z.number().int(),
+});
 
 // ---------------------------------------------------------------- 编辑器 → 服务端
 
-/** 编辑器运行态下的原子命令直通（低层，副作用由前端本地动作链产生）。 */
-export const atomicCommandSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("set_option"), objectId: z.string(), option: z.string() }),
-  z.object({ type: z.literal("set_bool"), objectId: z.string(), value: z.boolean() }),
-  z.object({ type: z.literal("set_int"), objectId: z.string(), value: z.number().int() }),
-  z.object({ type: z.literal("set_float"), objectId: z.string(), value: z.number() }),
-  z.object({ type: z.literal("set_object_items"), objectId: z.string(), items: z.array(z.string()) }),
-  z.object({ type: z.literal("teleport_player"), mapName: z.string(), spawnId: z.string() }),
-  /** 声音：后台编排的内容整份推给前端（前端只是播放效果）。 */
-  playSoundSchema,
-  stopSoundSchema,
-]);
-
 export const editorToServerSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("editor_subscribe") }),
+  z.object({ type: z.literal("editor_hello"), protocolVersion: z.number().int() }),
+  /** 进入运行态：服务端据此开闸（此后 `/client` 才连得上）。幂等。 */
+  z.object({ type: z.literal("runtime_start") }),
+  /** 退出运行态：关闸、踢前端、清场景缓存。 */
+  z.object({ type: z.literal("runtime_stop") }),
+  /** 推当前场景（整份）；`null` = 没有打开的场景（前端清空镜像）。 */
+  z.object({ type: z.literal("scene_push"), scene: sceneSchema.nullable() }),
+  /** 下发一条命令给前端。 */
+  z.object({
+    type: z.literal("editor_command"),
+    requestId: z.string().min(1),
+    command: commandRequestSchema,
+  }),
+  /** 要一份当前运行态（订阅也走它）。 */
   z.object({ type: z.literal("editor_refresh") }),
-  invokeActionSchema,
-  atomicCommandSchema,
 ]);
 
 export type EditorToServerMessage = z.infer<typeof editorToServerSchema>;
@@ -257,17 +196,18 @@ export const editorLogLevelSchema = z.enum(["info", "warn", "error"]);
 
 export const serverToEditorSchema = z.discriminatedUnion("type", [
   z.object({
-    type: z.literal("editor_snapshot"),
-    state: gameStateSchema,
-    clientConnected: z.boolean(),
-    editorConnected: z.boolean().default(true),
+    type: z.literal("editor_state"),
+    runtimeActive: z.boolean(),
+    client: clientInfoSchema.nullable(),
+    scene: sceneInfoSchema.nullable(),
+    serverTime: z.number().int(),
   }),
-  actionResultSchema,
-  commandResultSchema,
   z.object({
-    type: z.literal("editor_error"),
-    requestId: z.string().optional(),
-    reason: z.string(),
+    type: z.literal("editor_command_result"),
+    requestId: z.string().min(1),
+    ok: z.boolean(),
+    reason: z.string().optional(),
+    effects: z.array(z.string()).optional(),
   }),
   z.object({
     type: z.literal("editor_log"),
@@ -275,9 +215,52 @@ export const serverToEditorSchema = z.discriminatedUnion("type", [
     message: z.string(),
     time: z.string(),
   }),
+  z.object({
+    type: z.literal("editor_error"),
+    requestId: z.string().optional(),
+    reason: z.string(),
+  }),
 ]);
 
 export type ServerToEditorMessage = z.infer<typeof serverToEditorSchema>;
+
+// ---------------------------------------------------------------- 前端 → 服务端
+
+export const clientToServerSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("client_hello"),
+    protocolVersion: z.number().int(),
+    name: z.string(),
+    version: z.string(),
+  }),
+  commandResultSchema,
+  z.object({ type: z.literal("pong"), seq: z.number().int() }),
+]);
+
+export type ClientToServerMessage = z.infer<typeof clientToServerSchema>;
+
+// ---------------------------------------------------------------- 服务端 → 前端
+
+export const serverToClientSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("server_hello"),
+    protocolVersion: z.number().int(),
+    sessionId: z.string().min(1),
+    serverTime: z.number().int(),
+  }),
+  /** 全量场景：连上立刻给一份缓存，之后每次 `scene_push` 转发一份。 */
+  z.object({ type: z.literal("scene_sync"), scene: sceneSchema.nullable() }),
+  z.object({
+    type: z.literal("command"),
+    requestId: z.string().min(1),
+    command: commandRequestSchema,
+  }),
+  z.object({ type: z.literal("ping"), seq: z.number().int() }),
+]);
+
+export type ServerToClientMessage = z.infer<typeof serverToClientSchema>;
+export type CommandResultMessage = z.infer<typeof commandResultSchema>;
+export type EditorStateMessage = z.infer<typeof serverToEditorSchema>;
 
 // ---------------------------------------------------------------- 解析助手
 
@@ -318,7 +301,7 @@ export function parseJsonMessage(text: string): unknown {
   }
 }
 
-/** 生成请求 id（触发动作时用于关联回执）。 */
+/** 生成请求 id（命令回执关联用）。 */
 export function createRequestId(prefix = "req"): string {
   return `${prefix}-${Math.random().toString(36).slice(2, 10)}-${Date.now().toString(36)}`;
 }

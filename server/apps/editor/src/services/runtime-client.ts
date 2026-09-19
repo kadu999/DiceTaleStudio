@@ -1,9 +1,13 @@
 import {
+  PROTOCOL_VERSION,
   createRequestId,
   parseJsonMessage,
   parseServerToEditor,
+  type ClientInfo,
+  type CommandRequest,
   type EditorToServerMessage,
-  type GameStateSnapshot,
+  type SceneInfo,
+  type ScenePayload,
   type ServerToEditorMessage,
 } from "@dts/protocol";
 
@@ -11,7 +15,10 @@ import {
  * 编辑器 ↔ 服务端的运行态连接。
  *
  * 职责边界：**只负责协议与连接**，不碰文档、不改任何编辑态数据；
- * 收到的镜像数据交给上层（store）放进 `runtime` 切片。
+ * 收到的运行态交给上层（store）放进 `runtime` 切片。
+ *
+ * 新协议下编辑器只做三件事：声明运行态（开闸 / 关闸）、把**当前场景整份推下去**、下发命令。
+ * 前端 → 服务端 → 编辑器的回执与日志按 `onCommandResult` / `onServerLog` 抛给上层。
  */
 
 export type RuntimeStatus = "idle" | "connecting" | "open" | "closed" | "error";
@@ -23,13 +30,22 @@ export interface RuntimeLogEntry {
   readonly time: string;
 }
 
+/** 服务端推来的运行态快照（「前端连没连 / 镜像是哪份场景」）。 */
+export interface RuntimeStateSnapshot {
+  readonly runtimeActive: boolean;
+  readonly client: ClientInfo | null;
+  readonly scene: SceneInfo | null;
+}
+
 export interface RuntimeHandlers {
   onStatus(status: RuntimeStatus, detail?: string): void;
-  onSnapshot(state: GameStateSnapshot, clientConnected: boolean): void;
-  onActionResult(message: Extract<ServerToEditorMessage, { type: "action_result" }>): void;
-  /** 后台下发命令的回执（声音命令等）。 */
-  onCommandResult(message: Extract<ServerToEditorMessage, { type: "command_result" }>): void;
+  onState(snapshot: RuntimeStateSnapshot): void;
+  onCommandResult(message: { requestId: string; ok: boolean; reason?: string; effects?: string[] }): void;
+  /** 服务端写来的日志（前端连上 / 断开 / 拒连…），直接进运行日志列表。 */
+  onServerLog(entry: RuntimeLogEntry): void;
   onError(reason: string, requestId?: string): void;
+  /** WS 建立（含重连）之后调用一次：上层据此补发 `runtime_start` 与当前场景。 */
+  onOpen(): void;
 }
 
 /** 编辑器连接地址：与页面同源（开发期由 Vite 代理到后端）。 */
@@ -54,7 +70,10 @@ export class RuntimeClient {
   }
 
   connect(url: string = defaultEditorSocketUrl()): void {
-    if (this.socket !== null && (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)) {
+    if (
+      this.socket !== null &&
+      (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)
+    ) {
       return;
     }
 
@@ -76,7 +95,10 @@ export class RuntimeClient {
     socket.addEventListener("open", () => {
       this.reconnectAttempt = 0;
       this.handlers.onStatus("open", url);
-      this.send({ type: "editor_subscribe" });
+      this.send({ type: "editor_hello", protocolVersion: PROTOCOL_VERSION });
+      // 要一份当前运行态（重连时尤其重要：前端可能已经连/断过）
+      this.send({ type: "editor_refresh" });
+      this.handlers.onOpen();
     });
 
     socket.addEventListener("message", (event: MessageEvent<string>) => {
@@ -109,54 +131,30 @@ export class RuntimeClient {
     this.handlers.onStatus("idle");
   }
 
+  /** 进入运行态（服务端据此开闸：前端现在才连得上）。幂等。 */
+  startRuntime(): void {
+    this.send({ type: "runtime_start" });
+  }
+
+  /** 退出运行态：服务端关闸并踢掉前端。 */
+  stopRuntime(): void {
+    this.send({ type: "runtime_stop" });
+  }
+
+  /** 把当前场景整份推下去（`null` = 没有打开的场景）。 */
+  pushScene(scene: ScenePayload | null): void {
+    this.send({ type: "scene_push", scene });
+  }
+
   refresh(): void {
     this.send({ type: "editor_refresh" });
   }
 
-  /** 触发某对象上的某个动作（核心能力）。 */
-  invokeAction(objectId: string, actionId: string, args?: Record<string, unknown>): string {
-    const requestId = createRequestId("act");
-    this.send({
-      type: "invoke_action",
-      requestId,
-      objectId,
-      actionId,
-      ...(args === undefined ? {} : { args }),
-    });
-
+  /** 下发一条命令给前端（命令只是触发器，数据在推下去的场景里）。 */
+  sendCommand(command: CommandRequest): string {
+    const requestId = createRequestId(command.kind === "play_sound" ? "snd" : "cmd");
+    this.send({ type: "editor_command", requestId, command });
     return requestId;
-  }
-
-  /**
-   * 让前端**播放**一段声音：命令里带着要播的内容（候选音频 + 层级）。
-   *
-   * 这是「数据在后台、前端只是播放效果」那套方向：前端不回头查场景数据，按消息里的
-   * clips 挑一条、按 layer 占用声源（同层顶替）。编辑器本身不播放。
-   */
-  playSound(objectId: string, layer: string, clips: readonly string[]): string {
-    const requestId = createRequestId("snd");
-    this.send({ type: "play_sound", requestId, objectId, layer, clips: [...clips] });
-    return requestId;
-  }
-
-  /** 让前端**停止**某一层的声音（同层只响一条，所以按层停就够）。 */
-  stopSound(layer: string): string {
-    const requestId = createRequestId("snd");
-    this.send({ type: "stop_sound", requestId, layer });
-    return requestId;
-  }
-
-  /** 原子命令直通（低层：改组件值，副作用由前端本地动作链产生）。 */
-  sendAtomic(
-    command:
-      | { type: "set_option"; objectId: string; option: string }
-      | { type: "set_bool"; objectId: string; value: boolean }
-      | { type: "set_int"; objectId: string; value: number }
-      | { type: "set_float"; objectId: string; value: number }
-      | { type: "set_object_items"; objectId: string; items: string[] }
-      | { type: "teleport_player"; mapName: string; spawnId: string },
-  ): void {
-    this.send(command);
   }
 
   private onMessage(text: string): void {
@@ -169,16 +167,30 @@ export class RuntimeClient {
     }
 
     switch (message.type) {
-      case "editor_snapshot":
-        this.handlers.onSnapshot(message.state, message.clientConnected);
+      case "editor_state":
+        this.handlers.onState({
+          runtimeActive: message.runtimeActive,
+          client: message.client,
+          scene: message.scene,
+        });
         break;
 
-      case "action_result":
-        this.handlers.onActionResult(message);
+      case "editor_command_result":
+        this.handlers.onCommandResult({
+          requestId: message.requestId,
+          ok: message.ok,
+          ...(message.reason === undefined ? {} : { reason: message.reason }),
+          ...(message.effects === undefined ? {} : { effects: message.effects }),
+        });
         break;
 
-      case "command_result":
-        this.handlers.onCommandResult(message);
+      case "editor_log":
+        this.handlers.onServerLog({
+          id: createRequestId("log"),
+          level: message.level,
+          message: message.message,
+          time: message.time,
+        });
         break;
 
       case "editor_error":
@@ -186,9 +198,6 @@ export class RuntimeClient {
           message.reason,
           message.requestId === undefined ? undefined : message.requestId,
         );
-        break;
-
-      case "editor_log":
         break;
 
       default:

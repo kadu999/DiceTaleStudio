@@ -2,83 +2,11 @@ import { describe, expect, it } from "vitest";
 import { loadConfig } from "../src/config";
 import { createTempResourceRoot } from "./helpers/temp-root";
 import { FsResourceProvider } from "../src/resources/fs-provider";
-import { RunState } from "../src/ws/run-state";
 
 /**
- * 运行态内存状态与文件系统资源实现的单元测试。
- *
- * 重点：运行态镜像的合并语义，以及资源路径不会逃出资源根。
+ * 文件系统资源实现的单元测试（从旧的 `run-state.test.ts` 拆出来）：
+ * 资源路径不会逃出资源根，读写往返一致。
  */
-
-describe("RunState 合并语义", () => {
-  it("重新加载地图时保留已上报的动作清单（合并而不是覆盖）", () => {
-    const state = new RunState();
-    state.registerObjects("Map001", [{ id: "door", name: "木门", kind: "SceneObject", position: null }]);
-    state.registerActions("door", [{ actionId: "act_1", type: "ShowHide" }]);
-
-    // 模拟地图重载后的再次上报（对象数据里没有 actions 字段）
-    state.registerObjects("Map001", [
-      { id: "door", name: "木门", kind: "SceneObject", position: { x: -576, y: 216 } },
-    ]);
-
-    expect(state.snapshot.state.objects.door?.actions?.map((action) => action.actionId)).toEqual([
-      "act_1",
-    ]);
-    expect(state.snapshot.state.objects.door?.position).toEqual({ x: -576, y: 216 });
-  });
-
-  it("对未知对象上报动作清单返回 false（不静默创建幽灵对象）", () => {
-    const state = new RunState();
-    expect(state.registerActions("ghost", [{ actionId: "a", type: "ShowHide" }])).toBe(false);
-  });
-
-  it("findAction 用于触发前检查", () => {
-    const state = new RunState();
-    state.registerObjects("Map001", [{ id: "door" }]);
-    state.registerActions("door", [{ actionId: "act_1", type: "ShowHide" }]);
-
-    expect(state.findAction("door", "act_1")).toBe(true);
-    expect(state.findAction("door", "act_2")).toBe(false);
-    expect(state.findAction("ghost", "act_1")).toBe(false);
-  });
-
-  it("listActions 汇总全部可触发动作", () => {
-    const state = new RunState();
-    state.registerObjects("Map001", [{ id: "a" }, { id: "b" }]);
-    state.registerActions("a", [{ actionId: "a1", type: "ShowHide" }]);
-    state.registerActions("b", [{ actionId: "b1", type: "PlayVideo", displayName: "过场" }]);
-
-    expect(state.listActions()).toEqual([
-      { objectId: "a", actionId: "a1", type: "ShowHide" },
-      { objectId: "b", actionId: "b1", type: "PlayVideo", displayName: "过场" },
-    ]);
-  });
-
-  it("前端断开即清空（单客户端架构、无持久化）", () => {
-    const state = new RunState();
-    state.setClientConnected(true);
-    state.registerObjects("Map001", [{ id: "door" }]);
-    expect(Object.keys(state.snapshot.state.objects)).toHaveLength(1);
-
-    state.setClientConnected(false);
-    expect(state.snapshot.state.objects).toEqual({});
-    expect(state.snapshot.state.currentMap).toBe("");
-  });
-
-  it("玩家与对象位置按 id 更新（世界坐标）", () => {
-    const state = new RunState();
-    state.registerPlayers([{ id: "p1", name: "调查员" }], "Map001");
-    state.setPlayerPosition("p1", { x: -768, y: 216 }, "Map002");
-    expect(state.snapshot.state.players.p1).toEqual({
-      name: "调查员",
-      position: { x: -768, y: 216 },
-      mapName: "Map002",
-    });
-
-    state.setObjectPosition("door", { x: 0, y: 0 }, "Map001");
-    expect(state.snapshot.state.objects.door?.position).toEqual({ x: 0, y: 0 });
-  });
-});
 
 describe("文件系统资源实现", () => {
   /** 只读用例：直接读仓库里真实的 resources/。 */

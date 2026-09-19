@@ -17,7 +17,8 @@ export function StatusBar(): React.JSX.Element {
   const saveState = useEditorStore((state) => state.sceneSaveState);
   const selection = useEditorStore((state) => state.selectedObjectIds);
   const status = useEditorStore((state) => state.runtime.status);
-  const clientConnected = useEditorStore((state) => state.runtime.clientConnected);
+  const runtimeActive = useEditorStore((state) => state.runtime.runtimeActive);
+  const clientConnected = useEditorStore((state) => state.runtime.client !== null);
 
   const activeScene = scenes.find((scene) => scene.name === activeSceneName);
 
@@ -25,7 +26,9 @@ export function StatusBar(): React.JSX.Element {
     mode === "edit"
       ? "编辑状态"
       : status === "open"
-        ? `运行中 · 前端${clientConnected ? "已连接" : "未连接"}`
+        ? runtimeActive
+          ? `运行中 · 前端${clientConnected ? "已连接" : "等待连接"}`
+          : "运行中 · 正在开闸…"
         : status === "connecting"
           ? "运行中 · 连接中…"
           : "运行中 · 未连接";
