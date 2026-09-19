@@ -85,6 +85,13 @@ test.describe("画布视口交互", () => {
 });
 
 test.describe("编辑态 / 运行态", () => {
+  /*
+    运行态是**服务端状态**（全局一份），所以这个 describe 里的用例**串行跑**：
+    否则并行用例之间会互相开关运行态，断言看着像「偶发失败」。
+    其它文件不碰运行态（编辑器重启后的恢复由 backend 单测 runtime-hub 钉）。
+  */
+  test.describe.configure({ mode: "serial" });
+
   test("编辑 / 运行是服务端状态：切过去、切回来，状态栏与运行面板同步", async ({ page }) => {
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
@@ -108,6 +115,26 @@ test.describe("编辑态 / 运行态", () => {
     await expect(page.getByTestId("status-mode")).toHaveAttribute("data-mode", "edit");
     await expect(page.getByTestId("client-badge")).toHaveCount(0);
     expect(errors).toEqual([]);
+  });
+
+  test("刷新页面不退出运行态（运行态记在服务端）", async ({ page }) => {
+    await enterEditor(page);
+
+    await page.getByTestId("mode-run").click();
+    await expect(page.getByTestId("status-mode")).toHaveAttribute("data-mode", "run");
+
+    // 刷新：编辑器这只 WS 断了，但服务端还记着在运行
+    await page.reload();
+    await enterEditor(page);
+
+    // 界面自动回到运行态（不是「刷新就退出运行」），徽标还在
+    await expect(page.getByTestId("status-mode")).toHaveAttribute("data-mode", "run");
+    await expect(page.getByTestId("client-badge")).toBeVisible();
+
+    // 收尾：点「编辑」才真的关闸
+    await page.getByTestId("mode-edit").click();
+    await expect(page.getByTestId("status-mode")).toHaveAttribute("data-mode", "edit");
+    await expect(page.getByTestId("client-badge")).toHaveCount(0);
   });
 
   test("平板下场景默认铺满，左右面板收进抽屉（由菜单或工具条唤出）", async ({ page }, testInfo) => {
