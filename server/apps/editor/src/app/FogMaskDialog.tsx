@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { regionsToMask, type GridSize } from "@dts/grid";
+import {
+  ALL_MASK,
+  cellMaskRgba,
+  defaultCellMaskStyle,
+  regionsToMask,
+  visibleMaskBits,
+  type GridSize,
+} from "@dts/grid";
 import { assetRawUrl } from "../panels/asset-picker";
 import { decodeCellsCached } from "../panels/scene/grid-paint";
 import {
@@ -45,6 +52,7 @@ export function FogMaskDialog({
 }: FogMaskDialogProps): React.JSX.Element {
   const scenes = useEditorStore((state) => state.scenes);
   const activeSceneName = useEditorStore((state) => state.activeSceneName);
+  const colors = useEditorStore((state) => state.gridPaint.colors);
 
   // 目标对象现查一次：它可能已经被删掉（删了窗口就该关，这里只是兜底不崩）
   const object =
@@ -111,11 +119,25 @@ export function FogMaskDialog({
     }
 
     const imageData = context.createImageData(maskSize.width, maskSize.height);
-    fillFogMaskPixels(imageData.data, maskSize.width, maskSize.height, cells, grid, fogMask);
+    // 罩子按**区域颜色**画（编辑器里要一眼看出哪块是哪区）；运行时那边统一是黑的，
+    // 那是前端重构后的事——配色与画布上的「网格标注」共用同一份偏好
+    fillFogMaskPixels(
+      imageData.data,
+      maskSize.width,
+      maskSize.height,
+      cells,
+      grid,
+      fogMask,
+      (mask) =>
+        visibleMaskBits(mask, ALL_MASK & ~fogMask).map((bit) => {
+          const style = defaultCellMaskStyle(bit);
+          return cellMaskRgba(colors[bit] ?? style.hex, style.alpha);
+        }),
+    );
     context.putImageData(imageData, 0, 0);
     imageDataRef.current = imageData;
     lastPointRef.current = null;
-  }, [open, canvas, maskSize, grid, cells, fogMask]);
+  }, [open, canvas, maskSize, grid, cells, fogMask, colors]);
 
   const ready = open && maskSize !== undefined && grid !== undefined;
   const radius = maskSize === undefined ? 1 : maskSize.width * MASK_BRUSH_RATIO;

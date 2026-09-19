@@ -664,6 +664,7 @@ export function ScenePanel(): React.JSX.Element {
             map.grid,
             decodeCellsCached(map.cells.runs, map.grid.width * map.grid.height),
             fogMask,
+            gridPaint.colors,
           );
           if (overlay !== undefined) {
             layers.push(overlay);

@@ -167,17 +167,33 @@ export function defaultCellMaskColors(): Record<number, string> {
 }
 
 /**
+ * `#rrggbb` + 透明度 → **RGBA 分量**（各 0-255）。
+ *
+ * 要往 `ImageData` 里写像素的调用方用它（像素遮罩那种 raster）；canvas 上画矩形用
+ * `cellMaskCss`（同一份解析，只是拼成字符串）。透明度按 0-255 取整。
+ */
+export function cellMaskRgba(
+  hex: string,
+  alpha: number,
+): { r: number; g: number; b: number; a: number } {
+  const normalized = normalizeHex(hex);
+  return {
+    r: Number.parseInt(normalized.slice(1, 3), 16),
+    g: Number.parseInt(normalized.slice(3, 5), 16),
+    b: Number.parseInt(normalized.slice(5, 7), 16),
+    a: Math.round(Math.max(0, Math.min(1, alpha)) * 255),
+  };
+}
+
+/**
  * `#rrggbb` + 透明度 → canvas 认的 CSS 颜色。
  *
  * 颜色串只在这里拼一次：绘制端（`@dts/renderer`）拿到的就是最终颜色，
  * 它不需要知道「掩码那套东西还有透明度」。
  */
 export function cellMaskCss(hex: string, alpha: number): string {
-  const normalized = normalizeHex(hex);
-  const red = Number.parseInt(normalized.slice(1, 3), 16);
-  const green = Number.parseInt(normalized.slice(3, 5), 16);
-  const blue = Number.parseInt(normalized.slice(5, 7), 16);
-  return `rgba(${red},${green},${blue},${alpha})`;
+  const { r, g, b } = cellMaskRgba(hex, alpha);
+  return `rgba(${r},${g},${b},${alpha})`;
 }
 
 /** 是否为合法的 `#rrggbb`（取色器与偏好持久化都靠它挡脏数据）。 */

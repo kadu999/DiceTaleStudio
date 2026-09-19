@@ -96,10 +96,58 @@ export function applyEraseToPixels(
 }
 
 /**
- * 把「含已指定雾区位的格子」画成一张**不透明的黑罩**：未探索 = 黑色不透明，
- * 其它地方 = 全透明（露出底图）。
+ * 一个像素的颜色（各分量 0-255）。
  *
- * 这就是运行时的初始状态：`FogOfWar` 只给雾位格子 alpha=1，其余透明。
+ * 由调用方按**区域配色**给（编辑器里雾是按区域颜色显示的：一眼看出哪块是哪区）；
+ * 运行时那边统一是黑色，等前端重构完再说——`mask-math` 只认颜色，不认「该是什么色」。
+ */
+export interface MaskPixelColor {
+  readonly r: number;
+  readonly g: number;
+  readonly b: number;
+  readonly a: number;
+}
+
+/** 一格要盖的颜色：按绘制顺序给（先画的在下面），空数组 = 这一格不盖。 */
+export type MaskColorOf = (mask: number) => readonly MaskPixelColor[];
+
+/**
+ * 逐层 source-over 叠加（与画布上「高位先画、低位在上」同一套），返回 0-255 的分量。
+ *
+ * 一格可以同时属于多个雾区（`Fog1 | Fog2`，运行时的 `FogOfWar` 也把它当一个独立分组），
+ * 所以不能只取其中一位的颜色——那样画出来和实际数据对不上。
+ */
+function compositeOver(layers: readonly MaskPixelColor[]): readonly [number, number, number, number] {
+  let r = 0;
+  let g = 0;
+  let b = 0;
+  let a = 0;
+
+  for (const layer of layers) {
+    const sourceAlpha = layer.a / 255;
+    if (sourceAlpha <= 0) {
+      continue;
+    }
+
+    const outAlpha = sourceAlpha + a * (1 - sourceAlpha);
+    if (outAlpha <= 0) {
+      continue;
+    }
+
+    r = (layer.r * sourceAlpha + r * a * (1 - sourceAlpha)) / outAlpha;
+    g = (layer.g * sourceAlpha + g * a * (1 - sourceAlpha)) / outAlpha;
+    b = (layer.b * sourceAlpha + b * a * (1 - sourceAlpha)) / outAlpha;
+    a = outAlpha;
+  }
+
+  return [Math.round(r), Math.round(g), Math.round(b), Math.round(a * 255)];
+}
+
+/**
+ * 把「含已指定雾区位的格子」按**区域颜色**画到遮罩上：不入 `colorOf` 的地方保持透明
+ * （露出底图），于是擦除就是把这些颜色擦掉。
+ *
+ * 初始状态对应运行时的「未探索」：`FogOfWar` 只给雾位格子着色，其余透明。
  * 窗口每次打开都按当前文档重新画一遍——所以「擦了不保存、重开恢复原样」是自然结果。
  *
  * `pixels` 会被就地重写（`width × height × 4` 的 RGBA）。
@@ -111,6 +159,7 @@ export function fillFogMaskPixels(
   cells: Uint8Array,
   grid: GridSize,
   fogMask: number,
+  colorOf: MaskColorOf,
 ): void {
   pixels.fill(0);
 
@@ -124,19 +173,29 @@ export function fillFogMaskPixels(
         continue;
       }
 
+      const layers = colorOf(mask);
+      if (layers.length === 0) {
+        continue;
+      }
+
+      const [r, g, b, a] = compositeOver(layers);
+      if (a <= 0) {
+        continue;
+      }
+
       // 格子 (x, y) 的 y=0 是**图片最下面一行**，而像素数组的第 0 行是顶上：这里翻一次
-      const px0 = Math.floor(x * cellWidth);
+      const px0 = Math.max(0, Math.floor(x * cellWidth));
       const px1 = Math.min(width, Math.ceil((x + 1) * cellWidth));
-      const py0 = Math.floor(height - (y + 1) * cellHeight);
+      const py0 = Math.max(0, Math.floor(height - (y + 1) * cellHeight));
       const py1 = Math.min(height, Math.ceil(height - y * cellHeight));
 
-      for (let py = Math.max(0, py0); py < py1; py += 1) {
-        for (let px = Math.max(0, px0); px < px1; px += 1) {
+      for (let py = py0; py < py1; py += 1) {
+        for (let px = px0; px < px1; px += 1) {
           const index = (py * width + px) * 4;
-          pixels[index] = 0;
-          pixels[index + 1] = 0;
-          pixels[index + 2] = 0;
-          pixels[index + 3] = 255;
+          pixels[index] = r;
+          pixels[index + 1] = g;
+          pixels[index + 2] = b;
+          pixels[index + 3] = a;
         }
       }
     }

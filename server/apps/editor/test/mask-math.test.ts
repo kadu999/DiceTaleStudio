@@ -6,6 +6,8 @@ import {
   applyEraseToPixels,
   fillFogMaskPixels,
   interpolateStrokePoints,
+  type MaskColorOf,
+  type MaskPixelColor,
 } from "../src/services/mask-math";
 
 /**
@@ -117,45 +119,88 @@ describe("applyEraseToPixels", () => {
 });
 
 describe("fillFogMaskPixels", () => {
-  it("只有含已指定雾区位的格子是不透明黑，其余全透明", () => {
-    // 4×2 网格：格子 (0,0) 与 (3,1) 带雾位，另一个格子带**别的**区域位
+  /** 测试用的配色：区域1 = 红（alpha 153）、区域4 = 蓝（alpha 204）。 */
+  const COLOR_OF: MaskColorOf = (mask) => {
+    const layers: MaskPixelColor[] = [];
+    if ((mask & CellMask.Obstacle) !== 0) {
+      layers.push({ r: 255, g: 0, b: 0, a: 153 });
+    }
+    if ((mask & CellMask.Fog1) !== 0) {
+      layers.push({ r: 0, g: 0, b: 255, a: 204 });
+    }
+    return layers;
+  };
+
+  /** 读一个像素的 RGBA。 */
+  const pixelAt = (pixels: Uint8ClampedArray, width: number, x: number, y: number) => {
+    const index = (y * width + x) * 4;
+    return {
+      r: pixels[index] ?? -1,
+      g: pixels[index + 1] ?? -1,
+      b: pixels[index + 2] ?? -1,
+      a: pixels[index + 3] ?? -1,
+    };
+  };
+
+  it("只有含已指定雾区位的格子着色（按区域颜色），其余全透明", () => {
+    // 4×2 网格：格子 (0,0) 与 (3,1) 带雾位（区域4），另一个格子带**别的**区域位
     const cells = new Uint8Array([
       CellMask.Fog1, CellMask.Empty, CellMask.Obstacle, CellMask.Empty,
       CellMask.Empty, CellMask.Empty, CellMask.Empty, CellMask.Fog1,
     ]);
 
     const pixels = new Uint8ClampedArray(8 * 4 * 4);
-    fillFogMaskPixels(pixels, 8, 4, cells, GRID, CellMask.Fog1);
+    fillFogMaskPixels(pixels, 8, 4, cells, GRID, CellMask.Fog1, COLOR_OF);
 
     // 每个格子 2×2 像素：格子 (0,0) 在**左下角**（y=0 是图片最下面一行）
-    expect(alphaAt(pixels, 8, 1, 3)).toBe(255);
-    expect(alphaAt(pixels, 8, 1, 2)).toBe(255);
+    expect(pixelAt(pixels, 8, 1, 3)).toEqual({ r: 0, g: 0, b: 255, a: 204 });
+    expect(pixelAt(pixels, 8, 1, 2).a).toBe(204);
     // 格子 (3,1) 在右上角
-    expect(alphaAt(pixels, 8, 7, 0)).toBe(255);
-    // 只有区域1（位 1）的格子不是雾：透明
-    expect(alphaAt(pixels, 8, 5, 3)).toBe(0);
+    expect(pixelAt(pixels, 8, 7, 0).a).toBe(204);
+    // 只有区域1（位 1）的格子不是雾：透明（哪怕它在别的窗口里是红的）
+    expect(pixelAt(pixels, 8, 5, 3).a).toBe(0);
     // 空格子透明
-    expect(alphaAt(pixels, 8, 5, 1)).toBe(0);
+    expect(pixelAt(pixels, 8, 5, 1).a).toBe(0);
+  });
+
+  it("一格同时属于两个雾区时逐层叠加（不是只取其中一位）", () => {
+    const cells = new Uint8Array(GRID.width * GRID.height).fill(CellMask.Obstacle | CellMask.Fog1);
+    const pixels = new Uint8ClampedArray(8 * 4 * 4);
+    fillFogMaskPixels(
+      pixels,
+      8,
+      4,
+      cells,
+      GRID,
+      CellMask.Obstacle | CellMask.Fog1,
+      COLOR_OF,
+    );
+
+    // source-over：红(0.6) 在下、蓝(0.8) 在上 → 蓝占大头但红透出来一点
+    const pixel = pixelAt(pixels, 8, 1, 3);
+    expect(pixel.a).toBe(Math.round((0.8 + 0.6 * 0.2) * 255));
+    expect(pixel.b).toBeGreaterThan(pixel.r);
+    expect(pixel.r).toBeGreaterThan(0);
   });
 
   it("没指定雾区 / 没有雾格时整张罩子全透明", () => {
     const cells = new Uint8Array(GRID.width * GRID.height).fill(CellMask.Fog1);
     const pixels = new Uint8ClampedArray(8 * 4 * 4).fill(255);
 
-    fillFogMaskPixels(pixels, 8, 4, cells, GRID, 0);
+    fillFogMaskPixels(pixels, 8, 4, cells, GRID, 0, COLOR_OF);
     expect([...pixels].every((value) => value === 0)).toBe(true);
   });
 
   it("可重复调用：先擦过的罩子重画一遍就回到未探索的样子", () => {
     const cells = new Uint8Array(GRID.width * GRID.height).fill(CellMask.Fog1);
     const pixels = new Uint8ClampedArray(8 * 4 * 4);
-    fillFogMaskPixels(pixels, 8, 4, cells, GRID, CellMask.Fog1);
+    fillFogMaskPixels(pixels, 8, 4, cells, GRID, CellMask.Fog1, COLOR_OF);
 
     applyEraseToPixels(pixels, 8, 4, { x: 4, y: 2 }, 3, 1);
     expect(alphaAt(pixels, 8, 4, 2)).toBe(0);
 
     // 「关掉再打开」就是这个动作：按文档重新画一遍
-    fillFogMaskPixels(pixels, 8, 4, cells, GRID, CellMask.Fog1);
-    expect(alphaAt(pixels, 8, 4, 2)).toBe(255);
+    fillFogMaskPixels(pixels, 8, 4, cells, GRID, CellMask.Fog1, COLOR_OF);
+    expect(alphaAt(pixels, 8, 4, 2)).toBe(204);
   });
 });

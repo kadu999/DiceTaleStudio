@@ -17,11 +17,13 @@ import { canvasColorAt, cellPointInBox } from "./helpers/canvas";
 /**
  * 战争雾 Mask 窗口：**只有擦除**，擦的是遮罩这张图（不是格子），而且**不写文档**。
  *
- * 钉住四件事（都是参考实现那套运行时语义在编辑器里的样子）：
+ * 钉住五件事（都是参考实现那套运行时语义在编辑器里的样子）：
  * 1. 罩子只盖在**已指定雾区的格子**上（其余透明）——运行时的初始状态；
- * 2. 擦除让那块变透明（露出底图）；
- * 3. **场景文件一个字节都不动**（擦了不保存）；
- * 4. 关掉再打开就回到未探索的样子（每次打开按当前文档重画）。
+ * 2. 罩子按**区域颜色**画：编辑器里要一眼看出哪块是哪区（运行时那边统一是黑的，
+ *    等前端重构；配色与画布上的「网格标注」共用同一份偏好）；
+ * 3. 擦除让那块变透明（露出底图）；
+ * 4. **场景文件一个字节都不动**（擦了不保存）；
+ * 5. 关掉再打开就回到未探索的样子（每次打开按当前文档重画）。
  */
 
 const SCENE = "Map001";
@@ -46,10 +48,13 @@ async function persistedMask(
   return expandRuns(map.runs)[cell.y * GRID.width + cell.x] ?? -1;
 }
 
-/** 遮罩画布上某一格的**不透明度**：255 = 黑罩（未探索），0 = 透明（已揭示）。 */
-async function maskAlpha(page: Page, cell: { x: number; y: number }): Promise<number> {
+/** 遮罩画布上某一格的像素（罩子按区域配色画，所以看的是颜色而不只是 alpha）。 */
+async function maskPixel(
+  page: Page,
+  cell: { x: number; y: number },
+): Promise<{ r: number; g: number; b: number; a: number }> {
   const point = await cellPointInBox(page, CANVAS, GRID, cell);
-  return (await canvasColorAt(page, CANVAS, point, 2)).a;
+  return canvasColorAt(page, CANVAS, point, 2);
 }
 
 /** 在遮罩上按住拖一笔（模拟 GM 擦除）。 */
@@ -67,7 +72,7 @@ async function eraseAcross(
 }
 
 test.describe("战争雾 Mask 窗口", () => {
-  test("只盖雾区、只有擦除、擦了不落盘、重开恢复原样", async ({ page, request }) => {
+  test("只盖雾区、按区域颜色、只有擦除、擦了不落盘、重开恢复原样", async ({ page, request }) => {
     const project = await newProject(request);
     try {
       const mapDoc = mapObjectDoc(project, SCENE, "网格地图", MAP_SIZE, GRID);
@@ -80,7 +85,7 @@ test.describe("战争雾 Mask 窗口", () => {
       };
 
       await seedProjectDoc(request, project, [sceneDoc(SCENE, [mapDoc])]);
-      await uploadSceneImage(request, project, SCENE, solidPng(4, 4, [255, 255, 255]));
+      await uploadSceneImage(request, project, SCENE, solidPng(4, 4, [60, 60, 60]));
       await openFirstObject(page, project, "网格地图");
 
       const fog = page.locator('[data-group="fog"]');
@@ -102,34 +107,40 @@ test.describe("战争雾 Mask 窗口", () => {
       await expect(dialog.getByTestId("fog-mask-close")).toBeVisible();
       await expect(dialog.getByRole("button", { name: "全部清除" })).toHaveCount(0);
 
-      // 1) 罩子只盖在雾格上：雾格不透明，非雾格透明
-      await expect.poll(() => maskAlpha(page, { x: 1, y: 0 })).toBeGreaterThan(240);
-      await expect.poll(() => maskAlpha(page, { x: 1, y: 3 })).toBeLessThan(15);
+      // 1)+2) 罩子只盖在雾格上、且是**区域1 的默认红**（#ff0000，α0.6）；非雾格透明
+      await expect.poll(async () => (await maskPixel(page, { x: 1, y: 0 })).a).toBeGreaterThan(100);
+      await expect
+        .poll(async () => {
+          const pixel = await maskPixel(page, { x: 1, y: 0 });
+          return pixel.r > 200 && pixel.g < 60;
+        })
+        .toBe(true);
+      await expect.poll(async () => (await maskPixel(page, { x: 1, y: 3 })).a).toBeLessThan(15);
 
-      // 2)+3) 擦一笔：雾格变透明，而**场景文件一个字节都没动**
+      // 3)+4) 擦一笔：雾格变透明，而**场景文件一个字节都没动**
       await eraseAcross(page, { x: 0, y: 0 }, { x: 1, y: 0 });
-      await expect.poll(() => maskAlpha(page, { x: 1, y: 0 })).toBeLessThan(15);
+      await expect.poll(async () => (await maskPixel(page, { x: 1, y: 0 })).a).toBeLessThan(15);
 
       await page.waitForTimeout(1200); // 真有改动的话自动存早该写了
       expect(await readSceneMap(request, project, SCENE)).toEqual(fileBefore);
       expect(await persistedMask(request, project, { x: 0, y: 0 })).toBe(1);
 
-      // 4) 关掉再打开：回到未探索的样子
+      // 5) 关掉再打开：回到未探索的样子
       await dialog.getByTestId("fog-mask-close").click();
       await expect(page.getByTestId("fog-mask-dialog")).toHaveCount(0);
       await fog.getByTestId("fog-mask-open").click();
       await expect(page.getByTestId("fog-mask-dialog")).toBeVisible();
-      await expect.poll(() => maskAlpha(page, { x: 1, y: 0 })).toBeGreaterThan(240);
+      await expect.poll(async () => (await maskPixel(page, { x: 1, y: 0 })).a).toBeGreaterThan(100);
     } finally {
       await dropProject(request, project);
     }
   });
 
-  test("雾区指定变了：重开按新绑定重画", async ({ page, request }) => {
+  test("两个雾区各有各的颜色；绑定变了重开按新绑定画", async ({ page, request }) => {
     const project = await newProject(request);
     try {
       const mapDoc = mapObjectDoc(project, SCENE, "网格地图", MAP_SIZE, GRID);
-      // 第一格「区域1」、第二格「区域4」
+      // 第一格「区域1」（默认红）、第二格「区域4」（默认浅灰）
       (mapDoc.map as { cells: unknown }).cells = {
         encoding: "rle",
         runs: [
@@ -140,7 +151,7 @@ test.describe("战争雾 Mask 窗口", () => {
       };
 
       await seedProjectDoc(request, project, [sceneDoc(SCENE, [mapDoc])]);
-      await uploadSceneImage(request, project, SCENE, solidPng(4, 4, [255, 255, 255]));
+      await uploadSceneImage(request, project, SCENE, solidPng(4, 4, [60, 60, 60]));
       await openFirstObject(page, project, "网格地图");
 
       const fog = page.locator('[data-group="fog"]');
@@ -148,18 +159,22 @@ test.describe("战争雾 Mask 窗口", () => {
       await fog.getByTestId("fog-mask-open").click();
       await expect(page.getByTestId("fog-mask-dialog")).toBeVisible();
 
-      // 只指定区域1：区域4 那格不盖
-      await expect.poll(() => maskAlpha(page, { x: 0, y: 0 })).toBeGreaterThan(240);
-      await expect.poll(() => maskAlpha(page, { x: 1, y: 0 })).toBeLessThan(15);
+      // 只指定区域1：区域1 那格是红的，区域4 那格不盖
+      await expect.poll(async () => (await maskPixel(page, { x: 0, y: 0 })).r).toBeGreaterThan(200);
+      await expect.poll(async () => (await maskPixel(page, { x: 1, y: 0 })).a).toBeLessThan(15);
 
-      // 关窗、把区域4 也指定上、再开：两格都盖上
+      // 关窗、把区域4 也指定上、再开：两格都盖上，而且**颜色不一样**（浅灰 vs 红）
       await page.getByTestId("fog-mask-close").click();
       await fog.getByTestId("fog-region-8").click();
       await expect.poll(() => readSceneFogRegions(request, project, SCENE)).toEqual([1, 8]);
       await fog.getByTestId("fog-mask-open").click();
       await expect(page.getByTestId("fog-mask-dialog")).toBeVisible();
 
-      await expect.poll(() => maskAlpha(page, { x: 1, y: 0 })).toBeGreaterThan(240);
+      await expect.poll(async () => (await maskPixel(page, { x: 1, y: 0 })).r).toBeGreaterThan(180);
+      const red = await maskPixel(page, { x: 0, y: 0 });
+      const gray = await maskPixel(page, { x: 1, y: 0 });
+      expect(red.r - red.g).toBeGreaterThan(150); // 区域1：红
+      expect(Math.abs(gray.r - gray.b)).toBeLessThan(20); // 区域4：浅灰（三通道接近）
     } finally {
       await dropProject(request, project);
     }
