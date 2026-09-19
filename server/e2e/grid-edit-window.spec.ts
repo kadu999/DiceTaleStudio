@@ -56,7 +56,7 @@ test.describe("网格编辑窗口", () => {
       await uploadSceneImage(request, project, SCENE, solidPng(4, 4, [255, 255, 255]));
       await openFirstObject(page, project, "网格地图");
 
-      // 1) 从「编辑」组打开窗口：涂格子只在这一个地方做
+      // 1) 从「区域」组打开窗口：涂格子只在这一个地方做
       await page.getByTestId("grid-editor-open").click();
       const dialog = page.getByTestId("grid-editor-dialog");
       await expect(dialog).toBeVisible();
@@ -207,7 +207,7 @@ test.describe("网格编辑窗口", () => {
       await page.locator('[data-group="fog"]').getByTestId("fog-mask-open").click();
       await expect(page.getByTestId("fog-mask-dialog")).toBeVisible();
 
-      // 关掉 Mask 窗口再从「编辑」组打开网格编辑窗口
+      // 关掉 Mask 窗口再从「区域」组打开网格编辑窗口
       await page.getByTestId("fog-mask-close").click();
       await page.getByTestId("grid-editor-open").click();
       await expect(page.getByTestId("grid-editor-dialog")).toBeVisible();

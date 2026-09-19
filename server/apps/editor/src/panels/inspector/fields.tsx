@@ -42,7 +42,7 @@ export function FieldGroup({
     >
       {/*
         标题整条可点（箭头 + 文字）；箭头 `aria-hidden`，于是无障碍名字就是分组名，
-        测试也能直接按名字点：`getByRole("button", { name: "编辑" })`。
+        测试也能直接按名字点：`getByRole("button", { name: "区域" })`。
       */}
       <button
         type="button"

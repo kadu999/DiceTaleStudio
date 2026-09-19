@@ -5,11 +5,14 @@ import { InspectorPanel } from "../src/panels/inspector/InspectorPanel";
 import { sceneHistory, useEditorStore } from "../src/state/editor-store";
 
 /**
- * 属性面板的**分组**（可折叠）：地图对象分「基础 / 渲染 / 编辑 / 战争雾」四组，点标题收起 / 展开。
+ * 属性面板的**分组**（可折叠）：地图对象分「基础 / 渲染 / 区域 / 战争雾」四组，点标题收起 / 展开。
  *
  * 参考实现也是这套行为（Unity 组件头式的折叠分组）：默认全展开、点标题切换、
  * 切换对象时回到展开。所以这里钉住五件事：分组出现、能收起 / 展开、
  * 折叠只影响显示不影响数据、换对象时状态重置，以及**顺序**（渲染在基础下面、战争雾在最后）。
+ *
+ * 「区域」组（slug 仍是 `edit`）同时钉住**网格规格的归属**：列 · 行 / 每格 / 行序
+ * 以前挂在「基础」里，现在跟显示开关、标注入口一起归这一组。
  */
 
 const IMAGE = { id: "project:测试/Assets/images/Map001.png", width: 400, height: 300 };
@@ -60,8 +63,8 @@ function headerOf(slug: string): HTMLElement {
 /**
  * 有没有这个分组。
  *
- * 断言「没有编辑组」要用它而不是按名字找按钮：组内那个「编辑」按钮和分组标题同名，
- * 按名字找会撞车（而且这里想钉的本来就是**分组**在不在）。
+ * 断言「没有区域组」要用它而不是按名字找按钮：菜单栏里也有一个「编辑」菜单，
+ * 组内那个入口按钮同样叫「编辑」，按名字找会撞车（而且这里想钉的本来就是**分组**在不在）。
  */
 const hasGroup = (slug: string): boolean =>
   document.querySelector(`[data-group="${slug}"]`) !== null;
@@ -72,7 +75,7 @@ afterEach(() => {
   useEditorStore.setState({ scenes: [], activeSceneName: null, selectedObjectIds: [] });
 });
 
-describe("属性分组：基础 / 渲染 / 编辑 / 战争雾", () => {
+describe("属性分组：基础 / 渲染 / 区域 / 战争雾", () => {
   it("地图对象分四组；精灵只有基础 / 渲染", () => {
     seedScene([mapObject(), createSceneObject({ id: "sprite", name: "精灵" })], ["map-1"]);
     const { unmount } = render(<InspectorPanel />);
@@ -87,7 +90,7 @@ describe("属性分组：基础 / 渲染 / 编辑 / 战争雾", () => {
     expect(isOpen("fog")).toBe(true);
     expect(headerOf("render").getAttribute("aria-expanded")).toBe("true");
 
-    // 渲染**紧跟在基础后面**（在「编辑」之前）：换贴图属于「画成什么样」，与格子的编辑分开；
+    // 渲染**紧跟在基础后面**（在「区域」之前）：换贴图属于「画成什么样」，与格子的编辑分开；
     // 战争雾排在最后（同属地图专属，且它是随后才加的）
     expect(groupSlugs()).toEqual(["basic", "render", "edit", "fog"]);
 
@@ -97,11 +100,20 @@ describe("属性分组：基础 / 渲染 / 编辑 / 战争雾", () => {
     // 战争雾那一组只在有地图数据时出现
     expect(within(groupOf("fog")).getByTestId("fog-enable")).toBeDefined();
 
+    // 网格规格（列 · 行 / 每格 / 行序）在「区域」里，基础组里不再有它
+    expect(within(groupOf("edit")).getByTestId("inspector-grid-columns")).toBeDefined();
+    expect(within(groupOf("edit")).getByTestId("inspector-grid-rows")).toBeDefined();
+    expect(within(groupOf("edit")).getByText("每格")).toBeDefined();
+    expect(within(groupOf("edit")).getByText("行序")).toBeDefined();
+    expect(within(groupOf("basic")).queryByTestId("inspector-grid-columns")).toBeNull();
+    expect(within(groupOf("basic")).queryByText("每格")).toBeNull();
+    expect(within(groupOf("basic")).queryByText("行序")).toBeNull();
+
     unmount();
     seedScene([mapObject(), createSceneObject({ id: "sprite", name: "精灵" })], ["sprite"]);
     render(<InspectorPanel />);
 
-    // 精灵也有「渲染」（每个对象都能显示图片），但没有格子可编辑、也不是地图 → 没有编辑 / 战争雾
+    // 精灵也有「渲染」（每个对象都能显示图片），但没有格子可编辑、也不是地图 → 没有区域 / 战争雾
     expect(headerOf("basic")).toBeDefined();
     expect(headerOf("render")).toBeDefined();
     expect(groupSlugs()).toEqual(["basic", "render"]);
@@ -127,7 +139,7 @@ describe("属性分组：基础 / 渲染 / 编辑 / 战争雾", () => {
     expect(screen.getByTestId("pick-texture")).toBeDefined();
   });
 
-  it("点「编辑」标题收起内容，再点展开", () => {
+  it("点「区域」标题收起内容，再点展开", () => {
     seedScene([mapObject()], ["map-1"]);
     render(<InspectorPanel />);
 
@@ -174,7 +186,7 @@ describe("属性分组：基础 / 渲染 / 编辑 / 战争雾", () => {
     expect(isOpen("edit")).toBe(false);
     expect(isOpen("fog")).toBe(false);
 
-    // 换到精灵：分组是另一套（基础 + 渲染，没有编辑 / 战争雾）
+    // 换到精灵：分组是另一套（基础 + 渲染，没有区域 / 战争雾）
     act(() => useEditorStore.getState().setSelection(["sprite"]));
     expect(headerOf("basic")).toBeDefined();
     expect(headerOf("render")).toBeDefined();

@@ -13,7 +13,7 @@ import {
 } from "./helpers/editor";
 
 /**
- * 属性面板的**分组**（可折叠）：地图对象分「基础 / 渲染 / 编辑 / 战争雾」四组，点标题收起 / 展开。
+ * 属性面板的**分组**（可折叠）：地图对象分「基础 / 渲染 / 区域 / 战争雾」四组，点标题收起 / 展开。
  *
  * 这里只驱动真实界面（分组是纯 UI 行为，没有数据副作用），所以一条用例够了；
  * 「换对象时重置」「折叠不动数据」由 jsdom 那条 `inspector-groups.test.tsx` 覆盖。
@@ -22,7 +22,7 @@ import {
 const SCENE = "Map001";
 
 test.describe("属性分组", () => {
-  test("地图分「基础 / 渲染 / 编辑 / 战争雾」四组，点标题可收起 / 展开；精灵没有后两组", async ({
+  test("地图分「基础 / 渲染 / 区域 / 战争雾」四组，点标题可收起 / 展开；精灵没有后两组", async ({
     page,
     request,
   }) => {
@@ -57,6 +57,7 @@ test.describe("属性分组", () => {
       await expect(fog).toHaveAttribute("data-open", "true");
       await expect(basic).toContainText("名称");
       await expect(render).toContainText("贴图");
+      await expect(edit).toContainText("区域");
       await expect(edit).toContainText("网格标注");
       // 战争雾那一组关着时只有开关（打开才露出雾区设置，见 fog-mask.spec.ts）
       await expect(fog).toContainText("战争雾");
@@ -68,6 +69,14 @@ test.describe("属性分组", () => {
       // 「渲染」**排在「基础」下面**（贴图那一行搬进来了，基础组里不再有它）
       await expect(render.getByTestId("pick-texture")).toBeVisible();
       await expect(basic.getByTestId("pick-texture")).toHaveCount(0);
+      // 网格规格（列 · 行 / 每格 / 行序）搬进了「区域」：基础组里不再有它
+      await expect(edit.getByTestId("inspector-grid-columns")).toBeVisible();
+      await expect(edit.getByTestId("inspector-grid-rows")).toBeVisible();
+      await expect(edit).toContainText("每格");
+      await expect(edit).toContainText("行序");
+      await expect(basic.getByTestId("inspector-grid-columns")).toHaveCount(0);
+      await expect(basic).not.toContainText("每格");
+      await expect(basic).not.toContainText("行序");
       // 只在**对象属性**里数列（`data-group` 这种通用属性别人也在用，
       // 例如分栏容器 react-resizable-panels 就给自己的 div 挂了一个）
       const order = await page
@@ -89,11 +98,12 @@ test.describe("属性分组", () => {
       await expect(render.getByTestId("pick-texture")).toBeVisible();
 
       const editHeader = edit.getByTestId("field-group-header");
-      // 收起「编辑」：内容整块消失，但分组标题还在（还能再展开）
+      // 收起「区域」：内容整块消失，但分组标题还在（还能再展开）
       await editHeader.click();
       await expect(edit).toHaveAttribute("data-open", "false");
-      await expect(edit).toContainText("编辑");
+      await expect(edit).toContainText("区域");
       await expect(edit.getByTestId("grid-editor-open")).toHaveCount(0);
+      await expect(edit.getByTestId("inspector-grid-columns")).toHaveCount(0);
       // 另一个分组不受影响
       await expect(basic).toHaveAttribute("data-open", "true");
 
@@ -101,6 +111,7 @@ test.describe("属性分组", () => {
       await editHeader.click();
       await expect(edit).toHaveAttribute("data-open", "true");
       await expect(edit.getByTestId("grid-editor-open")).toBeVisible();
+      await expect(edit.getByTestId("inspector-grid-columns")).toBeVisible();
 
       // 收起「战争雾」：入口那行消失，标题还在
       const fogHeader = fog.getByTestId("field-group-header");
@@ -111,7 +122,7 @@ test.describe("属性分组", () => {
       await expect(fog).toHaveAttribute("data-open", "true");
       await expect(fog.getByTestId("fog-enable")).toBeVisible();
 
-      // 精灵：有「基础 / 渲染」（每个对象都能显示图片），没有「编辑 / 战争雾」（都是地图独有的）
+      // 精灵：有「基础 / 渲染」（每个对象都能显示图片），没有「区域 / 战争雾」（都是地图独有的）
       await selectObject(page, 1);
       await expect(page.locator('[data-group="basic"]')).toBeVisible();
       await expect(page.locator('[data-group="render"]')).toBeVisible();

@@ -64,13 +64,6 @@ export function InspectorPanel(): React.JSX.Element {
               <SortingOrderField object={selected} />
               <PositionFields object={selected} />
               <ScaleField object={selected} />
-              {selected.map !== undefined ? (
-                <>
-                  <GridFields object={selected} />
-                  <CellSizeField object={selected} />
-                  <Field label="行序" value={selected.map.rowOrder} mono />
-                </>
-              ) : null}
             </FieldGroup>
 
             {/*
@@ -83,9 +76,16 @@ export function InspectorPanel(): React.JSX.Element {
               <TextureField object={selected} />
             </FieldGroup>
 
-            {/* 「编辑」只对地图对象出现：格子是地图独有的东西 */}
+            {/*
+              「区域」只对地图对象出现：格子是地图独有的东西。网格规格（列 · 行 / 每格 / 行序）
+              也归这一组——「对象是什么」（名称 / 位置 / 缩放）与「它的格子长什么样」是两件事。
+              slug 沿用 `edit`：它只是测试与调试用的标识，改的是给人看的标题。
+            */}
             {selected.map !== undefined ? (
-              <FieldGroup title="编辑" group="edit">
+              <FieldGroup title="区域" group="edit">
+                <GridFields object={selected} />
+                <CellSizeField object={selected} />
+                <Field label="行序" value={selected.map.rowOrder} mono />
                 {/* 网格线 / 网格标注两个总开关：不进任何窗口也能用（想看清贴图就关掉） */}
                 <GridDisplayField />
                 <GridAnnotationFields object={selected} />

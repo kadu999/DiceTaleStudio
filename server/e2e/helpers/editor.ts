@@ -70,7 +70,7 @@ export async function enterEditor(page: Page): Promise<void> {
 /**
  * 点菜单栏上的一个一级菜单（工程 / 场景 / 编辑 / 视图 / 运行）。
  *
- * **限定在菜单栏里**：属性面板的分组标题与菜单同名（例如「场景」「编辑」），
+ * **限定在菜单栏里**：属性面板的分组标题与菜单同名（例如「场景」），
  * 全页按名字找会命中两个按钮（Playwright 的严格模式会直接失败）。
  */
 export async function openMenu(page: Page, label: string): Promise<void> {
