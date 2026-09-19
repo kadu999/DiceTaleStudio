@@ -4,7 +4,7 @@ using System.Globalization;
 using System.Text;
 using UnityEngine;
 
-namespace DiceTale.Server
+namespace DiceTale
 {
     /// <summary>
     /// 轻量 JSON 解析器。Unity 的 JsonUtility 不支持字典反序列化

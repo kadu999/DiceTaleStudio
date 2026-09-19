@@ -408,23 +408,26 @@ git -C E:\WorkSpace\DiceTaleStudio status --short server
 3. **资产引用**：被删脚本的 65 个 GUID 反查 `*.prefab` / `*.unity` / `*.asset` / `*.mat`
    → 只剩 7 个旧场景预置体（见 14.3），与 7.1 表一致。
 
-### 14.3 已知遗留（唯一一处）
+### 14.3 已知遗留（**已由用户自己解决**，见下方「后续变化」）
 
 `Resources/Scenes/{Map001,Map002,Map003,Scene000,Scene001,Scene002,Scene003}.prefab`
-仍挂着被删组件，Unity 打开时会显示 Missing Script。这是 **D1「载体未定」的直接后果**，
-处理方式二选一（等载体定了再做）：
+当时仍挂着被删组件（Unity 会在 Inspector 里显示 Missing Script），留给 D1 拍板后二选一处理。
 
-- **载体换成后台数据** → 这 7 个预置体随载体一起删（`git show 22407c4:<路径>` 可取回）；
-- **载体仍是预置体 + `.bytes`** → 在 Unity 里把这批 Missing 组件摘掉（手工或用一次性编辑器脚本），
-  保留 `GridMap` / `FogOfWar` / `MapMarker` / `SmartVideoPlayer` / `GroundSpriteRenderer` /
-  `DynamicObstacle` 与场景布局。
+> **后续变化（2026-09-19，用户自己提交）**：`bbf0eb6 删除没用资源` 把这批预置体连同
+> `Map001/Map002.bytes`、`Scenes.meta` 一起删了——**D1 的实际选择是「不要旧载体」**，
+> 本条遗留因此清零。同一批提交里还删掉了 `Assets/ProjectionAlignment/**`（295 个文件）、
+> `Assets/DMGameLibrary/**`、`Assets/DiceTale/Res/**`（音频/贴图/视频，含 Map00x.png）
+> 以及 `Resources/Characters/*.prefab`；代码侧把 `DevicePipeInputSource2.Sample` 整段注释掉、
+> 删掉了 `Editor/Tests/DevicePipeInputSourceTests.cs`，让工程重新可编译。
+> 详情与新的目录规范见 [`client/README.md`](../../README.md) 与本文第 15 节。
 
 与 7.1 / D2 的两处**有依据的偏差**：
 
-- `Resources/Characters/Character001..004.prefab` **保留**（7.1 表原把它列在 D2 里）：它们是纯美术的
-  嵌套预置体（PrefabInstance，零脚本、零 Missing Script），删了只会白白丢角色模型，留给新角色系统用。
-- `Resources/RealMap.prefab` 保留（不含被删脚本引用）。
-- `Server/JsonParser.cs` 保留但**暂时零调用方**（新协议要复用的通用 JSON 工具，刻意的）。
+- `Resources/Characters/Character001..004.prefab` 保留（7.1 表原把它列在 D2 里）：它们是纯美术的
+  嵌套预置体（PrefabInstance，零脚本、零 Missing Script）——**后由用户在 `bbf0eb6` 中删除**。
+- `Resources/RealMap.prefab` 保留（不含被删脚本引用）；现在位于 `DiceTale/Resources/RealMap.prefab`。
+- `Server/JsonParser.cs` 保留但**暂时零调用方**（新协议要复用的通用 JSON 工具，刻意的）；
+  现在位于 `DiceTale/Scripts/Networking/JsonParser.cs`。
 
 ### 14.4 复现编译验证的做法
 
@@ -439,5 +442,51 @@ Unity 开着、不能 `-batchmode` 抢工程目录时，可以复制 Unity 生�
 ### 14.5 还没做的
 
 - **Unity 自己的批处理编译**（第 10 节第 3 条）：需要先关掉正在运行的 Unity（本机 3 个 `Unity` 进程）。
-- 7 个旧场景预置体的 Missing Script 处理（等 D1）。
 - 服务端旧协议收敛（第 8 节，只登记）。
+- 死资源与停用代码的清理（用户 2026-09-19 明确要求「先不动」，见 `client/README.md` 的「当前状态」）。
+
+## 15. 目录整理（2026-09-19，清理之后做的）
+
+清理把「旧模型」删干净了，但目录本身还是混乱的（`Backend/` 与 `Server/` 只各剩一两个文件、
+`Core/` 是个大杂烩、`Res/` 与 `Resources/` 两个名字含混、`Scripts/Editor/` 混在运行时目录里，
+而且整个模块没有 asmdef）。本次按 **本仓库自己已有的模块规范**
+（原 `Assets/ProjectionAlignment/`：`Scripts/<功能子目录>` + 一个 asmdef + `Editor/` + `Tests/EditMode/`）
+把 `Assets/DiceTale` 重排成：
+
+```
+Assets/DiceTale/
+├─ Scripts/                 DiceTale.asmdef（rootNamespace: DiceTale）
+│  ├─ Core/ Networking/ Input/ Scene/ Map/ Media/ Rendering/ Effects/ UI/
+├─ Editor/                  DiceTale.Editor.asmdef（includePlatforms: [Editor]，引用 DiceTale）
+├─ Resources/Shaders/       运行时按名加载，必须留在 Resources 下
+├─ Resources/RealMap.prefab
+├─ Materials/               原 Res/Materials
+└─ Scenes/Demo.unity
+```
+
+### 15.1 路径对照（本文第 4~7 节里的旧写法 → 现在的位置）
+
+| 本文旧路径（相对 `client/Assets/DiceTale/`） | 现在的位置 |
+|---|---|
+| `Scripts/Backend/BackendManager.cs` | `Scripts/Networking/BackendManager.cs` |
+| `Scripts/Server/ServerConnection.cs` | `Scripts/Networking/ServerConnection.cs` |
+| `Scripts/Server/JsonParser.cs` | `Scripts/Networking/JsonParser.cs` |
+| `Scripts/Core/InputManager.cs`、`InputSource.cs`、`SimulatedTouchInputSource.cs`、`DevicePipeInputSource2.cs`、`InputConfigPrefs.cs`、`SimulatedTouchDebugUI.cs` | `Scripts/Input/…` |
+| `Scripts/Core/AudioPlayerManager.cs`、`SmartVideoPlayer.cs` | `Scripts/Media/…` |
+| `Scripts/Core/GroundSpriteRenderer.cs` | `Scripts/Rendering/GroundSpriteRenderer.cs` |
+| `Scripts/Core/Game.cs` | `Scripts/Core/Game.cs`（不变） |
+| `Scripts/Map/GameSceneManager.cs` | `Scripts/Scene/GameSceneManager.cs` |
+| `Scripts/Map/` 其余（GridMap / GridCellType / MapMarker / DynamicObstacle / FogOfWar / BirdWanderer） | 不变 |
+| `Scripts/Effects/PhotoClickGlow.cs`、`Scripts/UI/*` | 不变 |
+| `Scripts/Editor/GroundSpriteRendererMenu.cs`、`SetupMaps.cs` | `Editor/…`（移出 `Scripts/`） |
+| `Res/Materials/*.mat` | `Materials/*.mat` |
+| `Resources/Shaders/*`、`Resources/RealMap.prefab` | 不变（保留 `Resources/` 一层） |
+| `Scripts/Backend/`、`Scripts/Server/` 两个目录 | 删除（腾空） |
+
+同时做掉的：`namespace DiceTale.Server` → `namespace DiceTale`（模块内单一命名空间，与 `ProjectionAlignment`
+一致；`BackendManager` / `Game` 里的 `Server.ServerConnection` 一并改成 `ServerConnection`），
+新增 `Scripts/DiceTale.asmdef` 与 `Editor/DiceTale.Editor.asmdef`。
+**本次没删任何东西**（用户要求死资源与停用代码先留着）。
+
+验证：重排后用 14.4 的做法重新编译，`DiceTale`（24 个运行时脚本）与 `DiceTale.Editor`（2 个）
+都是 **0 error CS**；目录/文件 `.meta` 齐全，无孤儿 `.meta`。
