@@ -121,8 +121,8 @@ export function GridAnnotationFields({
         </button>
       </FieldRow>
 
-      {/* 画笔类型：子标题 + 9 行（橡皮擦 + 8 种类型） */}
-      <div className="border-b border-[var(--color-editor-border)] px-2 py-1 text-[10px] text-[var(--color-editor-text-dim)]">
+      {/* 画笔类型：子标题 + 9 行（橡皮擦 + 8 种类型）；子标题没有分隔线，用留白分组 */}
+      <div className="px-2 pb-1 pt-2 text-[10px] text-[var(--color-editor-text-dim)]">
         画笔类型：点击名字选画笔；左边的开关只影响显示（数据不动）
       </div>
 
@@ -172,6 +172,9 @@ interface TypeRowProps {
  *
  * 名字后带上掩码值（`障碍 (1)`），与 Unity 的 `Obstacle (1)` 同一个写法——
  * 掩码值是要和前端 / `.bytes` 对齐的那个数，看着它才不会把「障碍」和「雾1」记反。
+ *
+ * **没有行分隔线**：9 行靠勾选框 / 色块自身的节奏分开，选中的那一行整行高亮；
+ * 没有线以后 hover 也要看得见（否则不知道鼠标在哪一行）。
  */
 function TypeRow({
   bit,
@@ -188,7 +191,7 @@ function TypeRow({
     <div
       data-testid={`grid-type-row-${bit}`}
       data-selected={selected}
-      className={`flex items-center gap-1.5 border-b border-[var(--color-editor-border)] px-2 py-1 last:border-b-0 ${
+      className={`flex items-center gap-1.5 px-2 py-1 hover:bg-[var(--color-editor-panel-alt)] ${
         selected ? "bg-[var(--color-editor-accent-dim)]" : ""
       }`}
     >

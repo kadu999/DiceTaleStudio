@@ -10,6 +10,9 @@
   --color-editor-panel: #1b1e24;
   --color-editor-panel-alt: #20242b;
   --color-editor-border: #2c313a;
+  /* 分组表头（Unity 组件头那种「一条」）：比面板底色亮两档，hover 再亮一档 */
+  --color-editor-bar: #333945;
+  --color-editor-bar-hover: #3d4552;
   --color-editor-text: #dfe3ea;
   --color-editor-text-dim: #8d95a3;
   --color-editor-accent: #4f9cf9;

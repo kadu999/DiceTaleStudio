@@ -80,11 +80,15 @@ describe("属性分组：基础 / 编辑", () => {
     // 展开时看得见调色板的入口
     expect(screen.getByTestId("grid-paint-enter")).toBeDefined();
 
+    // 箭头是内联 SVG（不是 10px 的 `▾` / `▸` 字形）：收起时也还在，只是转了方向
+    expect(headerOf("edit").querySelector("svg")).not.toBeNull();
+
     fireEvent.click(screen.getByRole("button", { name: "编辑" }));
     expect(isOpen("edit")).toBe(false);
     expect(headerOf("edit").getAttribute("aria-expanded")).toBe("false");
     // 收起 = 内容不渲染（不是藏起来还留在 DOM 里）
     expect(within(groupOf("edit")).queryByTestId("grid-paint-enter")).toBeNull();
+    expect(headerOf("edit").querySelector("svg")).not.toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "编辑" }));
     expect(isOpen("edit")).toBe(true);
