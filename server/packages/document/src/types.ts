@@ -30,7 +30,7 @@ import type { RleRun } from "@dts/grid";
  *   （谁画在前面；大的盖住小的，相同则按场景里的先后顺序）。
  */
 
-export const DOCUMENT_FORMAT_VERSION = 7;
+export const DOCUMENT_FORMAT_VERSION = 8;
 
 /** 网格行序：`bottom-up` 表示 cells 第 0 行是图片最下面一行（与 Unity GridMap 一致）。 */
 export type RowOrder = "bottom-up";
@@ -123,14 +123,25 @@ export interface SceneObjectDoc {
   /** 世界坐标位置（场景中心为原点，y 向上）；未放置时为 null。 */
   readonly position: WorldPosition | null;
   readonly rotation: number;
+  /**
+   * **统一缩放**：`1` = 原始尺寸（每个对象都有这个参数，新建时就是 1）。
+   *
+   * 它放大的是对象**自己那块矩形**（`image` / `map.image` 声明的尺寸 × scale），
+   * 于是地图的贴图与**网格格子**、精灵的图片、拾取范围、选中框**一起**缩放——
+   * 这四件事共用同一个矩形（见编辑器的 `displayRectOf`）。
+   *
+   * 位置不受影响：`position` 始终是缩放**之后**那块矩形的中心。
+   * 只支持等比缩放（一个数），不做 X / Y 分开——需要非等比时再加字段。
+   */
+  readonly scale: number;
   readonly components: ComponentDoc[];
   /** 仅 `kind === "Map"` 的地图对象携带；其它对象没有。 */
   readonly map?: MapDataDoc;
   /**
    * 对象要显示的图片（**精灵**就靠它显示图片；地图的贴图在 `map.image` 里）。
    *
-   * 声明宽高就是它在世界里的尺寸（1 图片像素 = 1 世界像素，不额外缩放），
-   * 位置是它的中心——和地图贴图同一套规矩。没有图片的对象只画一个标记点。
+   * 声明宽高就是它在世界里的尺寸（1 图片像素 = 1 世界像素，再乘上 `scale`），
+   * 位置是它的中心——和地图贴图同一套规矩。没有图片的对象只有一块兜底矩形。
    */
   readonly image?: ImageRef;
 }

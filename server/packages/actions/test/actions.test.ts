@@ -136,11 +136,13 @@ describe("动作图校验", () => {
           id: "door",
           name: "门",
           kind: "SceneObject" as const,
-          // v7 起每个对象都显式带这两个字段（对齐 Unity 的激活勾选框与显示顺序）
+          // v7 起每个对象都显式带这两个字段（对齐 Unity 的激活勾选框与显示顺序），
+          // v8 起再加一个缩放（默认 1 = 原始尺寸）
           active: true,
           sortingOrder: 0,
           position: { x: -384, y: 216 },
           rotation: 0,
+          scale: 1,
           components: [
             {
               id: "cmp",

@@ -20,6 +20,7 @@ import {
   setObjectActive as setSceneObjectActive,
   setObjectImage as setSceneObjectImage,
   setObjectPosition as setSceneObjectPosition,
+  setObjectScale as setSceneObjectScale,
   setObjectSortingOrder as setSceneObjectSortingOrder,
   validateSceneName,
   type ImageRef,
@@ -291,6 +292,8 @@ export interface EditorStoreState {
   toggleObjectActive(id: string): boolean;
   /** 改对象的显示顺序（大的画在前面）；连续输入合并成一条撤销记录。 */
   setObjectSortingOrder(id: string, sortingOrder: number): boolean;
+  /** 改对象的**缩放**（1 = 原始尺寸；夹在 0.01 ~ 100）；连续输入合并成一条撤销记录。 */
+  setObjectScale(id: string, scale: number): boolean;
   /** 删除对象（不传 ids 则删当前选中）。 */
   deleteObjects(ids?: readonly string[]): boolean;
   /** 复制对象（不传 ids 则复制当前选中）：副本加「副本」后缀并偏移一点位置。 */
@@ -1503,6 +1506,25 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
         },
         // 连续敲数字 / 按住微调按钮合并成一条撤销记录
         { coalesceKey: `sorting:${id}` },
+      );
+    },
+
+    setObjectScale(id, scale) {
+      const sceneName = get().activeSceneName;
+      if (sceneName === null) {
+        return false;
+      }
+
+      return get().applyScenes(
+        "修改缩放",
+        (draft) => {
+          const scene = draft.find((item) => item.name === sceneName);
+          if (scene !== undefined) {
+            setSceneObjectScale(scene, id, scale);
+          }
+        },
+        // 连续输入合并成一条撤销记录（与显示顺序同一套做法）
+        { coalesceKey: `scale:${id}` },
       );
     },
 

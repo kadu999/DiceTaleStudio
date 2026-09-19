@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import { produce, type Draft } from "immer";
 import { CellMask, decodeRle, encodeRle } from "@dts/grid";
 import {
+  DEFAULT_OBJECT_SCALE,
+  MAX_OBJECT_SCALE,
+  MIN_OBJECT_SCALE,
   addAction,
   addComponent,
   addObject,
@@ -21,6 +24,7 @@ import {
   setObjectActive,
   setObjectImage,
   setObjectPosition,
+  setObjectScale,
   setObjectSortingOrder,
   updateAction,
   updateComponentData,
@@ -88,6 +92,7 @@ function plainObject(id: string, patch: Partial<SceneObjectDoc> = {}): SceneObje
     sortingOrder: 0,
     position: null,
     rotation: 0,
+    scale: 1,
     components: [],
     ...patch,
   };
@@ -519,8 +524,77 @@ describe("对象命令（都在场景上操作）", () => {
     expect(listMapObjects(scene).map((object) => object.id)).toEqual(["map-1"]);
   });
 
-  it("地图也参与摆放：setObjectPosition 对它生效（贴图中心跟着走）", () => {
+  it("缩放：每个对象都有，新建是 1；可以改，且不动位置", () => {
+    const scene = withObject(makeScene(), "door");
+    expect(scene.objects[0]?.scale).toBe(DEFAULT_OBJECT_SCALE);
+
+    const scaled = mutate(scene, (draft) => {
+      expect(setObjectScale(draft, "door", 2.5)).toBe(true);
+    });
+
+    expect(scaled.objects[0]?.scale).toBe(2.5);
+    // 缩放改的是「占多大」，矩形中心（位置）不动
+    expect(scaled.objects[0]?.position).toEqual(scene.objects[0]?.position);
+  });
+
+  it("缩放夹在 0.01 ~ 100：0 / 负数 / 超大值都不会原样写进文档", () => {
+    const scene = withObject(makeScene(), "door");
+
+    const tiny = mutate(scene, (draft) => {
+      setObjectScale(draft, "door", 0);
+    });
+    expect(tiny.objects[0]?.scale).toBe(MIN_OBJECT_SCALE);
+
+    const negative = mutate(scene, (draft) => {
+      setObjectScale(draft, "door", -3);
+    });
+    expect(negative.objects[0]?.scale).toBe(MIN_OBJECT_SCALE);
+
+    const huge = mutate(scene, (draft) => {
+      setObjectScale(draft, "door", 1e9);
+    });
+    expect(huge.objects[0]?.scale).toBe(MAX_OBJECT_SCALE);
+  });
+
+  it("缩放：NaN 直接拒绝，相同值也不产生变更", () => {
+    const scene = withObject(makeScene(), "door");
+    let changed = true;
+
+    const nan = mutate(scene, (draft) => {
+      changed = setObjectScale(draft, "door", Number.NaN);
+    });
+    expect(changed).toBe(false);
+    expect(nan).toBe(scene);
+
+    const same = mutate(scene, (draft) => {
+      changed = setObjectScale(draft, "door", DEFAULT_OBJECT_SCALE);
+    });
+    expect(changed).toBe(false);
+    expect(same).toBe(scene);
+  });
+
+  it("地图对象同样有缩放（贴图与网格一起缩放）", () => {
     const scene = withMapObject(makeScene());
+    expect(scene.objects[0]?.scale).toBe(DEFAULT_OBJECT_SCALE);
+
+    const scaled = mutate(scene, (draft) => {
+      expect(setObjectScale(draft, "map-1", 0.5)).toBe(true);
+    });
+    expect(scaled.objects[0]?.scale).toBe(0.5);
+  });
+
+  it("缩放不是正数时报错（坏数据不许悄悄留在文件里）", () => {
+    const scene = mutate(withObject(makeScene(), "door"), (draft) => {
+      // 命令夹得住，这里直接写坏值：只有手写文件才会这样
+      if (draft.objects[0] !== undefined) {
+        draft.objects[0].scale = 0;
+      }
+    });
+
+    expect(formatIssues(validateScene(scene))).toMatch(/缩放必须是正数/);
+  });
+
+  it("地图也参与摆放：setObjectPosition 对它生效（贴图中心跟着走）", () => {    const scene = withMapObject(makeScene());
 
     const next = mutate(scene, (draft) => {
       expect(setObjectPosition(draft, "map-1", { x: 100, y: 50 })).toBe(true);
@@ -1001,8 +1075,48 @@ describe("场景文件 schema", () => {
     expect(parsed.needsRewrite).toBe(true);
     expect(parsed.file.objects[0]?.active).toBe(true);
     expect(parsed.file.objects[0]?.sortingOrder).toBe(0);
+    // 缩放也是后来才有的字段，同样补成 1
+    expect(parsed.file.objects[0]?.scale).toBe(1);
     // 别的字段一个都不能动
     expect(parsed.file.objects[0]?.position).toEqual({ x: 10, y: 20 });
+  });
+
+  it("v7 场景文件：补上 scale 默认值 1，并要求回写一次", () => {
+    // v7 的文件里没有 scale（它是 v8 新增的），语义只能是 1 = 原始尺寸
+    const raw = {
+      formatVersion: 7,
+      objects: [
+        {
+          id: "door",
+          name: "木门",
+          kind: "SceneObject",
+          active: true,
+          sortingOrder: 0,
+          position: { x: 10, y: 20 },
+          rotation: 0,
+          components: [],
+        },
+      ],
+    };
+
+    const parsed = parseSceneFile(raw);
+    expect(parsed.needsRewrite).toBe(true);
+    expect(parsed.file.formatVersion).toBe(DOCUMENT_FORMAT_VERSION);
+    expect(parsed.file.objects[0]?.scale).toBe(1);
+    // 位置不做二次换算（v5 那条线只管归一化坐标）
+    expect(parsed.file.objects[0]?.position).toEqual({ x: 10, y: 20 });
+  });
+
+  it("当前版本：显式的 scale 原样读出来，不要求回写", () => {
+    const scene = withObject(makeScene(), "door");
+    const raw = {
+      formatVersion: DOCUMENT_FORMAT_VERSION,
+      objects: [{ ...scene.objects[0], scale: 3.5 }],
+    };
+
+    const parsed = parseSceneFile(raw);
+    expect(parsed.needsRewrite).toBe(false);
+    expect(parsed.file.objects[0]?.scale).toBe(3.5);
   });
 
   it("当前版本：显式的 active / sortingOrder 原样读出来，不要求回写", () => {

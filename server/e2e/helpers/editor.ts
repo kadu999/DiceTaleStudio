@@ -12,7 +12,7 @@ import { deflateSync } from "node:zlib";
 export type LeftTab = "assets" | "hierarchy";
 
 /** 场景文件的当前格式版本（与 `@dts/document` 的 `DOCUMENT_FORMAT_VERSION` 保持一致）。 */
-export const CURRENT_SCENE_FORMAT_VERSION = 7;
+export const CURRENT_SCENE_FORMAT_VERSION = 8;
 
 /** 用接口建一个真项目（含 `project.json`），返回项目名。 */
 export async function newProject(request: APIRequestContext): Promise<string> {
@@ -95,6 +95,32 @@ export async function openLeftTab(page: Page, tab: LeftTab): Promise<void> {
   }
 }
 
+/**
+ * 关掉所有抽屉（平板 / 触控档位下左右面板都是覆盖式抽屉，会盖住画布）。
+ *
+ * 桌面档位下面板是常驻分栏、没有「关闭」按钮，这里什么都不做。
+ * 需要在画布上点击（拾取、涂抹）而采样点又落在抽屉底下时，先调它。
+ */
+export async function closeDrawers(page: Page): Promise<void> {
+  const closers = page.getByRole("button", { name: "关闭", exact: true });
+  // 抽屉关掉即卸载，所以每次点剩下的第一个，直到一个不剩
+  for (let remaining = await closers.count(); remaining > 0; remaining -= 1) {
+    await closers.first().click();
+  }
+}
+
+/** 打开属性面板（平板下它是右抽屉；桌面下常驻，什么都不用做）。 */
+export async function openInspector(page: Page): Promise<void> {
+  if (await page.getByTestId("inspector-object-name").isVisible().catch(() => false)) {
+    return;
+  }
+
+  const toggle = page.getByRole("button", { name: "属性", exact: true });
+  if (await toggle.isVisible().catch(() => false)) {
+    await toggle.click();
+  }
+}
+
 /** 从「工程 → 打开项目」里打开指定项目。 */
 export async function openProject(page: Page, name: string): Promise<void> {
   await openMenu(page, "工程");
@@ -126,7 +152,8 @@ export function sceneDoc(
  * 造一个场景里的普通对象（形状与 `createSceneObject` 一致，无组件无动作）。
  *
  * `position` 是**世界坐标**（场景中心为原点，x 向右、y 向上，单位像素）；不传即未放置。
- * `active` / `sortingOrder` 是 v7 起的显式字段：默认「显示、顺序 0」。
+ * `active` / `sortingOrder` 是 v7 起的显式字段（默认「显示、顺序 0」）；
+ * `scale` 是 v8 起的显式字段（默认 1 = 原始尺寸）。
  */
 export function sceneObjectDoc(
   name: string,
@@ -142,6 +169,7 @@ export function sceneObjectDoc(
     sortingOrder: 0,
     position,
     rotation: 0,
+    scale: 1,
     components: [],
     ...patch,
   };

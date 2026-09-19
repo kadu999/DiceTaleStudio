@@ -49,16 +49,22 @@ const MIDDLE_BUTTON = 1;
 /**
  * 对象在画布上占据的世界矩形 —— 拾取（碰撞体）、选中框、贴图铺的那块**共用这一个**。
  *
- * 有图片就是「中心 + 图片尺寸」，没有图片（刚建出来的精灵）就退回 `COLLIDER_SIZE`：
+ * 尺寸 = 「贴图里声明的尺寸（没有图片就用 `COLLIDER_SIZE`）× **对象的缩放**」：
  * 三件事只要有一件用了别的尺寸，就会出现「看着在那儿、点不到」或「框和图片不重合」。
+ * 地图也是走这条路，所以**缩放地图 = 贴图与它的网格一起缩放**（格子尺寸是
+ * `贴图尺寸 ÷ 列数` 算出来的，矩形一变它跟着变）。
+ *
+ * 缩放值坏掉时（0 / 负数 / NaN，只可能来自手写文件）按 `1` 画：渲染不能因为一个坏数字
+ * 就把整块对象画没，那种数据由 `validateScene` 报错。
  */
 export function displayRectOf(object: SceneObjectDoc): WorldRect | undefined {
   if (object.position === null) {
     return undefined;
   }
 
-  const image = objectImage(object);
-  return worldRectOf(object.position, image ?? COLLIDER_SIZE);
+  const base = objectImage(object) ?? COLLIDER_SIZE;
+  const scale = Number.isFinite(object.scale) && object.scale > 0 ? object.scale : 1;
+  return worldRectOf(object.position, { width: base.width * scale, height: base.height * scale });
 }
 
 /**
@@ -86,13 +92,19 @@ const MAX_DPR = 2;
  * 于是「底纹的格子」和「地图的格子」分成同一套，拖动 / 缩放地图时底纹跟着走。
  * 没有地图（纯精灵场景 / 地图没激活）时退回世界原点——底纹总得有个相位。
  *
+ * 锚点取**显示矩形**（`displayRectOf`）而不是贴图声明的尺寸：地图被缩放过时，
+ * 画在画布上的那块（以及它的网格）已经跟着缩放了，底纹必须跟同一个矩形对齐。
+ *
  * `objects` 必须是**画布上的对象**（已按显示顺序排好、且只剩激活的）。
  */
 export function checkerOriginOf(objects: readonly SceneObjectDoc[]): WorldPosition {
   for (const object of objects) {
-    const image = objectImage(object);
-    if (object.kind === "Map" && image !== undefined && object.position !== null) {
-      const rect = worldRectOf(object.position, image);
+    if (object.kind !== "Map") {
+      continue;
+    }
+
+    const rect = displayRectOf(object);
+    if (rect !== undefined) {
       return { x: worldRectLeft(rect), y: worldRectBottom(rect) };
     }
   }

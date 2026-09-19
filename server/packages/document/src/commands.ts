@@ -45,6 +45,26 @@ export const MAP_DEFAULT_SORTING_ORDER = -10;
 /** `sortingOrder` 的取值范围：足够表达「垫底 / 顶层」，又不至于让界面上的数字失控。 */
 const SORTING_ORDER_LIMIT = 9999;
 
+/**
+ * 缩放的取值范围与默认值。
+ *
+ * `1` = 原始尺寸（新建对象就是这个值）。上下限是给**输入框**兜底的：0 会让对象
+ * 变成不可见 / 不可点的零面积矩形，极大值则会把贴图与网格算成天文数字；
+ * 夹在 `0.01 ~ 100`（1% ~ 100 倍）足够表达实际需求，也不至于把画布算坏。
+ */
+export const DEFAULT_OBJECT_SCALE = 1;
+export const MIN_OBJECT_SCALE = 0.01;
+export const MAX_OBJECT_SCALE = 100;
+
+/** 把一个缩放值夹到合法范围；非法数字（NaN / Infinity）返回 `undefined`。 */
+function clampScale(scale: number): number | undefined {
+  if (!Number.isFinite(scale)) {
+    return undefined;
+  }
+
+  return Math.min(MAX_OBJECT_SCALE, Math.max(MIN_OBJECT_SCALE, scale));
+}
+
 /** 生成稳定前缀 + 递增 + 随机后缀的 id（避免同毫秒内碰撞）。 */
 export function createId(prefix: string): string {
   idCounter += 1;
@@ -100,7 +120,9 @@ export interface CreateObjectInput {
   readonly id?: string;
 }
 
-/** 新建普通对象（地图对象请用工厂的 `createMapObject`，它要带地图数据）。 */
+/**
+ * 新建普通对象（地图对象请用工厂的 `createMapObject`，它要带地图数据）。
+ */
 export function createSceneObject(input: CreateObjectInput): SceneObjectDoc {
   return {
     id: input.id ?? createId("obj"),
@@ -110,6 +132,7 @@ export function createSceneObject(input: CreateObjectInput): SceneObjectDoc {
     sortingOrder: DEFAULT_SORTING_ORDER,
     position: input.position ?? null,
     rotation: 0,
+    scale: DEFAULT_OBJECT_SCALE,
     components: [],
   };
 }
@@ -230,6 +253,32 @@ export function setObjectSortingOrder(
   }
 
   object.sortingOrder = next;
+  return true;
+}
+
+/**
+ * 对象的**统一缩放**（`1` = 原始尺寸）。
+ *
+ * 与显示顺序一样「夹而不拒」：输入框里敲出 0 / 负数 / 超大值都夹到 `0.01 ~ 100`，
+ * 但落进文档的必须是有限正数——`NaN`（留空或敲了字母）直接拒绝，不写进文档。
+ * 缩放改的是「对象占多大」，位置（矩形中心）不动。
+ */
+export function setObjectScale(
+  scene: Draft<SceneDoc>,
+  objectId: string,
+  scale: number,
+): boolean {
+  const object = findObject(scene, objectId);
+  if (object === undefined) {
+    return false;
+  }
+
+  const next = clampScale(scale);
+  if (next === undefined || object.scale === next) {
+    return false;
+  }
+
+  object.scale = next;
   return true;
 }
 

@@ -5,6 +5,7 @@ import {
   expandRuns,
   mapObjectDoc,
   newProject,
+  openInspector,
   openProject,
   readSceneMap,
   sceneDoc,
@@ -97,18 +98,6 @@ async function persistedMask(
   }
 
   return expandRuns(map.runs)[cell.y * GRID.width + cell.x] ?? -1;
-}
-
-/** 属性面板：桌面下常驻；平板下是右抽屉，先唤出来（没有那个按钮就说明已经可见）。 */
-async function openInspector(page: Page): Promise<void> {
-  if (await page.getByTestId("grid-paint-enter").isVisible().catch(() => false)) {
-    return;
-  }
-
-  const toggle = page.getByRole("button", { name: "属性", exact: true });
-  if (await toggle.isVisible().catch(() => false)) {
-    await toggle.click();
-  }
 }
 
 /** 打开一个「只有一张小地图」的项目，选中地图并进入标注模式。 */

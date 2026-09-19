@@ -61,6 +61,7 @@ export function InspectorPanel(): React.JSX.Element {
               <ActiveField object={selected} />
               <SortingOrderField object={selected} />
               <PositionFields object={selected} />
+              <ScaleField object={selected} />
               {/* 每个对象都能显示一张图片（精灵就是靠它显示图片的） */}
               <TextureField object={selected} />
               {selected.map !== undefined ? (
@@ -269,6 +270,73 @@ function SortingOrderField({ object }: { readonly object: SceneObjectDoc }): Rea
       />
     </FieldRow>
   );
+}
+
+/**
+ * 对象的**缩放**：`1` = 原始尺寸（每个对象都有，默认就是 1）。
+ *
+ * 与显示顺序同一套提交方式（各自提交、失焦 / 回车生效、连续输入合并成一条撤销记录），
+ * 区别只有一点：允许小数（`0.5`、`1.5` 都是常用值），所以用 `parseFloat` 而不是 `parseInt`。
+ * 输入非法（留空 / 敲了字母）就退回当前值，不把 NaN 写进文档；越界（0 / 负数 / 超大）
+ * 交给文档命令夹到 `0.01 ~ 100`，框里回填**夹取后**的值。
+ *
+ * 缩放是**等比**的：地图的贴图与网格、精灵的图片、拾取范围、选中框一起缩放。
+ */
+function ScaleField({ object }: { readonly object: SceneObjectDoc }): React.JSX.Element {
+  const setObjectScale = useEditorStore((state) => state.setObjectScale);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [draft, setDraft] = useState(formatScale(object.scale));
+
+  useEffect(() => {
+    // 正在输入的框不被 store 回灌（否则提交后触发的同步会把刚敲的值冲掉）
+    if (document.activeElement !== inputRef.current) {
+      setDraft(formatScale(object.scale));
+    }
+  }, [object.id, object.scale]);
+
+  const commit = (): void => {
+    const parsed = Number.parseFloat(draft);
+    // 非法值（留空 / 敲了字母）退回当前值，不要把 NaN 写进文档；
+    // 0 / 负数 / 超大值照常交给命令，由它夹到 0.01 ~ 100
+    const next = Number.isFinite(parsed) ? parsed : object.scale;
+    setObjectScale(object.id, next);
+    // 提交后回到**文档里实际采用的值**（会被夹取），否则框里留着用户敲的原始文本
+    setDraft(formatScale(next));
+  };
+
+  return (
+    <FieldRow label="缩放">
+      <input
+        ref={inputRef}
+        value={draft}
+        data-testid="inspector-object-scale"
+        aria-label="缩放"
+        inputMode="decimal"
+        type="number"
+        step="0.1"
+        min="0"
+        title="1 = 原始尺寸；等比缩放（贴图与地图网格一起缩放），范围 0.01 ~ 100"
+        className="min-w-0 flex-1 rounded border border-[var(--color-editor-border)] bg-black/30 px-1 py-0.5 font-mono text-[11px] outline-none"
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            commit();
+            event.currentTarget.blur();
+          } else if (event.key === "Escape") {
+            setDraft(formatScale(object.scale));
+          }
+        }}
+      />
+    </FieldRow>
+  );
+}
+
+/**
+ * 缩放输入框里的文本：去掉浮点噪声（`0.30000000000000004` 这种）与无意义的小数零。
+ */
+function formatScale(value: number): string {
+  return String(Math.round(value * 1000) / 1000);
 }
 
 /**

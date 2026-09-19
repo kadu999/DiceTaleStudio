@@ -75,6 +75,9 @@ export const sceneObjectSchema = z.object({
   sortingOrder: z.number().int().default(0),
   position: worldPositionSchema.nullable(),
   rotation: z.number(),
+  // v8 起：统一缩放。同样给默认值（v7 及更早的文件没有它，语义只能是 1 = 原始尺寸）；
+  // 0 / 负数 / NaN 这类坏值不在这里硬拒（读不开比画不出来更糟），由 `validateScene` 报错
+  scale: z.number().default(1),
   components: z.array(componentSchema),
   map: mapDataSchema.optional(),
   // 对象要显示的图片（精灵用；地图的贴图在 map.image 里）
@@ -190,13 +193,14 @@ export interface SceneSizeHint {
 }
 
 /**
- * 给对象补上 v7 新增的 `active` / `sortingOrder`，并给**没有位置的地图**补上世界原点。
+ * 给对象补上 v7 的 `active` / `sortingOrder`、v8 的 `scale`，并给**没有位置的地图**补上世界原点。
  *
  * - 地图是摆在世界里的对象，必须有位置才能渲染（`position: null` 的地图没有地方可画）。
  *   旧文件里确实可能是 `null`（v1→v2 升级时造的地图对象、或手写文件），补成 `(0, 0)`
  *   正好是它以前被隐式绘制的那个位置（世界原点为中心），画面不变。
- * - `active` / `sortingOrder` 是 v7 新增的**显式**字段：老文件里没有，语义只能是「显示、顺序 0」。
- *   补进内存后要求调用方回写一次，否则会出现「内存里已补全、磁盘上还是缺字段」的长期不一致。
+ * - `active` / `sortingOrder` / `scale` 是后来新增的**显式**字段：老文件里没有，
+ *   语义只能是「显示、顺序 0、缩放 1」。补进内存后要求调用方回写一次，
+ *   否则会出现「内存里已补全、磁盘上还是缺字段」的长期不一致。
  *
  * 返回是否补过：补了就要求调用方回写一次文件。
  */
@@ -220,6 +224,11 @@ function withFilledObjectFields(raw: Record<string, unknown>): {
 
     if (typeof filled.sortingOrder !== "number") {
       filled = { ...filled, sortingOrder: 0 };
+      changed = true;
+    }
+
+    if (typeof filled.scale !== "number") {
+      filled = { ...filled, scale: 1 };
       changed = true;
     }
 

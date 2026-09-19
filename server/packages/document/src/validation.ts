@@ -39,6 +39,16 @@ function validateObject(object: SceneObjectDoc, path: string, issues: Validation
     checkPosition(object.position, `${path}/position`, issues);
   }
 
+  // 缩放：画布按「矩形尺寸 × scale」画，0 / 负数 / NaN 都画不出来（渲染端会退回 1，
+  // 但那是兜底，不是数据正确——所以这里明确报错，别让坏数据悄悄留在文件里）
+  if (!Number.isFinite(object.scale) || object.scale <= 0) {
+    issues.push({
+      level: "error",
+      path: `${path}/scale`,
+      message: `缩放必须是正数（现在 ${String(object.scale)}）`,
+    });
+  }
+
   // 地图对象：数据必须完整（没有数据的「地图对象」在场景里就是个空壳）
   if (object.kind === "Map") {
     if (object.map === undefined) {

@@ -1,4 +1,4 @@
-import { MAP_DEFAULT_SORTING_ORDER, createId } from "./commands";
+import { DEFAULT_OBJECT_SCALE, MAP_DEFAULT_SORTING_ORDER, createId } from "./commands";
 import {
   DOCUMENT_FORMAT_VERSION,
   type GridSpec,
@@ -61,6 +61,7 @@ export function createMapObject(input: {
     sortingOrder: MAP_DEFAULT_SORTING_ORDER,
     position: input.position ?? { x: 0, y: 0 },
     rotation: 0,
+    scale: DEFAULT_OBJECT_SCALE,
     components: [],
     map,
   };
