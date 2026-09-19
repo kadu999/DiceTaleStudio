@@ -11,11 +11,13 @@ import {
 import { assetRawUrl } from "../panels/asset-picker";
 import { decodeCellsCached } from "../panels/scene/grid-paint";
 import {
-  MASK_BRUSH_RADIUS,
   MASK_BRUSH_SOFTNESS,
+  MASK_PREVIEW_WIDTH,
   applyEraseToPixels,
+  brushRadiusFor,
   fillFogMaskPixels,
   interpolateStrokePoints,
+  previewMaskSizeFor,
   type MaskPoint,
 } from "../services/mask-math";
 import { useEditorStore } from "../state/editor-store";
@@ -23,14 +25,16 @@ import { useEditorStore } from "../state/editor-store";
 /**
  * 「战争雾 Mask 窗口」：**只有擦除**，而且擦的是**遮罩这张图**，不是格子。
  *
- * 对照参考实现（`backend_diceTale` 的 `MaskEditorDialog.vue` + `composables/useMaskEditor.ts`：
- * 贴图铺底、黑色遮罩、按住擦、软边圆刷；后端把 `erase_mask` 笔画转给前端，
- * 前端 `MaskImage` 用同一套公式在 GPU 上擦）——这块遮罩是**运行时**的东西，
- * 编辑器里这份只是**预览**：
+ * 对照参考实现（`backend_diceTale` 的 `MaskEditorDialog.vue` + `composables/useMaskEditor.ts` +
+ * `services/maskMath.ts`：贴图铺底、遮罩、按住擦、软边圆刷；后端把 `erase_mask` 笔画转给前端，
+ * 前端 `MaskImage` 用同一套公式在 GPU 上擦）——这块遮罩是**运行时**的东西，编辑器里这份是**预览**：
  *
- * - 初始状态 = 运行时那份：**已指定雾区的格子不透明黑**，其余透明（`fillFogMaskPixels`）；
+ * - 初始状态 = 运行时那份：**已指定雾区的格子**盖着颜色，其余透明（`fillFogMaskPixels`）；
+ *   运行时那边雾是黑的，编辑器里**按区域配色**（一眼看出哪块是哪区）——前端重构后再对齐；
  * - 擦除只改遮罩的 alpha（软边圆刷、`min` 幂等），**不碰 `map.cells`、不进撤销栈、不落盘**；
  * - 每次打开都按当前文档重画一遍，所以**关掉再打开就恢复原样**；
+ * - 遮罩纹理 **960 宽**（参考实现的默认遮罩宽度）、高度按贴图比例推；笔刷 48 texel
+ *   ——于是归一化半径 = 宽度 5%，正是参考实现下发给前端的值（详见 `previewMaskSizeFor`）；
  * - 没有「画笔 / 画回去 / 全部清除」：运行时那边也只有擦除（雾只会被揭示，不会被重新盖上）。
  *
  * 雾区格子（哪几个区域算雾）在属性面板指定，涂格子走「编辑 → 打开编辑窗口…」。
@@ -42,8 +46,6 @@ interface FogMaskDialogProps {
   readonly onClose: () => void;
 }
 
-/** 遮罩纹理的像素上限（长边）：再大只是白占内存，反正是预览。 */
-const MAX_MASK_EDGE = 2048;
 
 export function FogMaskDialog({
   open,
@@ -68,22 +70,16 @@ export function FogMaskDialog({
   const fogMask = regionsToMask(regions);
 
   /**
-   * 遮罩纹理的尺寸：按贴图声明的像素尺寸，长边超过 `MAX_MASK_EDGE` 时等比缩一下。
+   * 遮罩纹理的尺寸：**960 宽**（参考实现的默认遮罩宽度）、高度按贴图比例推。
    *
    * 用**像素**尺寸而不是格数：运行时那块遮罩就是一张纹理，GM 擦的是软边圆刷
-   * （用格数会把擦除变成「擦格子」）。缩放在预览里看不出来，只省内存。
+   * （用格数会把擦除变成「擦格子」）。宽度钉在 960 是为了让 48 texel 的笔刷重新等于
+   * 「宽度的 5%」——参考实现下发给前端的归一化半径（详见 `previewMaskSizeFor`）。
    */
-  const maskSize = useMemo(() => {
-    if (imageRef === undefined) {
-      return undefined;
-    }
-
-    const scale = Math.min(1, MAX_MASK_EDGE / Math.max(imageRef.width, imageRef.height));
-    return {
-      width: Math.max(1, Math.round(imageRef.width * scale)),
-      height: Math.max(1, Math.round(imageRef.height * scale)),
-    };
-  }, [imageRef?.id, imageRef?.width, imageRef?.height]);
+  const maskSize = useMemo(
+    () => (imageRef === undefined ? undefined : previewMaskSizeFor(imageRef)),
+    [imageRef?.id, imageRef?.width, imageRef?.height],
+  );
 
   const imageDataRef = useRef<ImageData | null>(null);
   const lastPointRef = useRef<MaskPoint | null>(null);
@@ -140,9 +136,10 @@ export function FogMaskDialog({
   }, [open, canvas, maskSize, grid, cells, fogMask, colors]);
 
   const ready = open && maskSize !== undefined && grid !== undefined;
-  // 与参考实现一致：半径是**固定 48 纹理像素**（不是比例）。补点的步长按宽度归一化后再除以 2
-  // ——`interpolateStrokePoints` 吃的是归一化坐标，而距离在纹理像素上算，所以非正方形纹理上也是正圆
-  const radius = MASK_BRUSH_RADIUS;
+  // 笔刷半径：参考实现是 960 宽遮罩上的 48 texel（= 宽度 5%），宽度变了按比例缩。
+  // 补点的步长按宽度归一化后再除以 2——`interpolateStrokePoints` 吃的是归一化坐标，
+  // 而距离在纹理像素上算，所以非正方形纹理上也是正圆（与 shader 里那句注释同一个意思）
+  const radius = brushRadiusFor(maskSize?.width ?? MASK_PREVIEW_WIDTH);
 
   /** 指针位置 → 遮罩上的归一化坐标（左上原点、y 向下，与参考实现一致）。 */
   const toNormalized = (event: React.PointerEvent<HTMLCanvasElement>): MaskPoint => {

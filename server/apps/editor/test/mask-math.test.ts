@@ -3,9 +3,12 @@ import { CellMask } from "@dts/grid";
 import {
   MASK_BRUSH_RADIUS,
   MASK_BRUSH_SOFTNESS,
+  MASK_PREVIEW_WIDTH,
   applyEraseToPixels,
+  brushRadiusFor,
   fillFogMaskPixels,
   interpolateStrokePoints,
+  previewMaskSizeFor,
   type MaskColorOf,
   type MaskPixelColor,
 } from "../src/services/mask-math";
@@ -112,10 +115,52 @@ describe("applyEraseToPixels", () => {
     expect(alphaAt(pixels, 4, 2, 2)).toBe(255);
   });
 
-  it("笔刷参数与参考实现一致：半径固定 48 纹理像素、软边 1", () => {
-    // 参考实现 `useMaskEditor.ts` 的 `const brushRadius = 48`（与遮罩尺寸无关，不是比例）
+  it("笔刷参数与参考实现一致：半径 48 texel、软边 1、遮罩 960 宽", () => {
+    // 参考实现 `useMaskEditor.ts` 的 `const brushRadius = 48`，而它那块遮罩的默认尺寸是
+    // 960×540（`MaskImage.maskWidth/maskHeight`、shader 的 `_MaskSize`）——两者一起决定了
+    // 「归一化半径 = 宽度的 5%」，也就是它真正下发给前端的那个数
     expect(MASK_BRUSH_RADIUS).toBe(48);
+    expect(MASK_PREVIEW_WIDTH).toBe(960);
     expect(MASK_BRUSH_SOFTNESS).toBe(1);
+  });
+});
+
+describe("previewMaskSizeFor / brushRadiusFor", () => {
+  it("宽钉在 960、高度按贴图比例推（圆刷显示不变形）", () => {
+    // 16:9 的贴图 → 正好是参考实现那块默认遮罩的尺寸
+    expect(previewMaskSizeFor({ width: 1920, height: 1080 })).toEqual({ width: 960, height: 540 });
+    // 4:3 / 1:1 / 竖图都保住比例
+    expect(previewMaskSizeFor({ width: 400, height: 300 })).toEqual({ width: 960, height: 720 });
+    expect(previewMaskSizeFor({ width: 512, height: 512 })).toEqual({ width: 960, height: 960 });
+    expect(previewMaskSizeFor({ width: 600, height: 1200 })).toEqual({ width: 960, height: 1920 });
+  });
+
+  it("极端长宽比等比缩到上限（不是只裁一边）", () => {
+    const size = previewMaskSizeFor({ width: 100, height: 2000 }); // 1:20
+    expect(Math.max(size.width, size.height)).toBe(2048);
+    // 等比：宽高比仍是 1:20（±1px 取整误差）
+    expect(size.width / size.height).toBeCloseTo(100 / 2000, 2);
+  });
+
+  it("尺寸坏掉（0 / 负数）时不炸：至少 1 像素、长边不超上限", () => {
+    for (const broken of [
+      { width: 0, height: 0 },
+      { width: 0, height: 100 },
+      { width: -10, height: -10 },
+      { width: 100, height: 0 },
+    ]) {
+      const size = previewMaskSizeFor(broken);
+      expect(size.width).toBeGreaterThanOrEqual(1);
+      expect(size.height).toBeGreaterThanOrEqual(1);
+      expect(Math.max(size.width, size.height)).toBeLessThanOrEqual(2048);
+    }
+  });
+
+  it("半径：960 宽时就是参考实现的 48；遮罩宽度变了按同一比例缩", () => {
+    expect(brushRadiusFor(960)).toBe(48);
+    // 缩过的遮罩（极端长宽比）也保持「宽度的 5%」这个归一化半径
+    expect(brushRadiusFor(480)).toBe(24);
+    expect(brushRadiusFor(960) / 960).toBeCloseTo(brushRadiusFor(480) / 480, 10);
   });
 });
 

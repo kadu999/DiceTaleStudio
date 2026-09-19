@@ -27,11 +27,59 @@ import type { GridSize } from "@dts/grid";
  * 另外补了两处防御：`radius <= 0` 直接返回、`step <= 0` 返回起点（理由见各自函数上）。
  */
 
-/** 擦除笔刷半径：**固定 48 纹理像素**（与参考实现 `useMaskEditor.ts` 的 `brushRadius` 一致）。 */
+/**
+ * 预览遮罩的宽度：**与参考实现的默认遮罩一致**（`MaskImage.maskWidth` 与 shader 的
+ * `_MaskSize` 默认都是 960×540）。它同时决定了「48 纹理像素」占多宽——见 `brushRadiusFor`。
+ */
+export const MASK_PREVIEW_WIDTH = 960;
+
+/**
+ * 预览遮罩长边的上限：极端长宽比（例如 1:10）时等比缩一下，
+ * 别为一张预览图吃掉几十 MB。缩放是**等比**的，所以圆刷在屏幕上不会被拉成椭圆。
+ */
+const MAX_PREVIEW_EDGE = 2048;
+
+/** 擦除笔刷半径：参考实现 `useMaskEditor.ts` 的 `brushRadius = 48`（纹理像素）。 */
 export const MASK_BRUSH_RADIUS = 48;
 
 /** 笔刷软边比例（0 = 硬边，1 = 全程衰减）；参考实现的 GM 笔刷固定用 1。 */
 export const MASK_BRUSH_SOFTNESS = 1;
+
+/**
+ * 预览遮罩的纹理尺寸：**960 宽**、高度按贴图比例推。
+ *
+ * 为什么高度跟着贴图走：遮罩要铺在贴图上显示，比例不一致的话圆刷在屏幕上会变成椭圆。
+ * 宽度钉在 960 是因为**参考实现就是这么大**——它的笔刷固定 48 纹理像素，
+ * 于是归一化半径（它真正下发给前端的那个数）正好是 `48/960 = 宽度 5%`。
+ * 我们原来把遮罩做成贴图的像素尺寸，同样 48 texel 在小图上偏大、在 1920 宽的大图上只有 2.5%，
+ * 屏幕上比参考实现小一半以上。
+ */
+export function previewMaskSizeFor(image: {
+  readonly width: number;
+  readonly height: number;
+}): { width: number; height: number } {
+  const aspect = image.height / Math.max(1, image.width);
+  let width = MASK_PREVIEW_WIDTH;
+  let height = Math.max(1, Math.round(width * aspect));
+
+  const longest = Math.max(width, height);
+  if (longest > MAX_PREVIEW_EDGE) {
+    const scale = MAX_PREVIEW_EDGE / longest;
+    width = Math.max(1, Math.round(width * scale));
+    height = Math.max(1, Math.round(height * scale));
+  }
+
+  return { width, height };
+}
+
+/**
+ * 这张遮罩上的笔刷半径（纹理像素）：参考实现的 48 texel 是按 960 宽的遮罩定的，
+ * 所以遮罩宽度一变就按同一比例缩——**保持的始终是「宽度的 5%」这个归一化半径**，
+ * 也就是参考实现下发给前端的那个数。
+ */
+export function brushRadiusFor(maskWidth: number): number {
+  return (MASK_BRUSH_RADIUS * maskWidth) / MASK_PREVIEW_WIDTH;
+}
 
 export interface MaskPoint {
   readonly x: number;
