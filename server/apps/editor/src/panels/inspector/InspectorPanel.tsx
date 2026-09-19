@@ -86,7 +86,7 @@ export function InspectorPanel(): React.JSX.Element {
             {/* 「编辑」只对地图对象出现：格子是地图独有的东西 */}
             {selected.map !== undefined ? (
               <FieldGroup title="编辑" group="edit">
-                {/* 网格线 / 网格标注两个总开关：不进入标注模式也能用（想看清贴图就关掉） */}
+                {/* 网格线 / 网格标注两个总开关：不进任何窗口也能用（想看清贴图就关掉） */}
                 <GridDisplayField />
                 <GridAnnotationFields object={selected} />
               </FieldGroup>

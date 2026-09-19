@@ -14,11 +14,10 @@ import {
 import { fittedCellPoint } from "./helpers/canvas";
 
 /**
- * 网格编辑窗口：**不进标注模式**，在窗口里按区域涂 / 擦格子。
+ * 网格编辑窗口：**唯一的**涂格子入口（落笔 → 落盘 → 撤销都在这里）。
  *
- * 与 `grid-annotate.spec.ts` 覆盖的是同一份数据、同一套 store 动作，区别只在落笔的地方：
- * 标注那条走**场景画布**（要先进标注模式、落点按世界坐标算），这条走**窗口自己的画布**
- * （贴图铺满窗口，落点按窗口视口算）。
+ * 窗口自带视口（贴图铺满窗口），所以落点按窗口视口算（`fittedCellPoint`），
+ * 与场景画布那套世界坐标无关；画布怎么把格子画出来见 `grid-annotate.spec.ts`。
  */
 
 const SCENE = "Map001";
@@ -48,7 +47,7 @@ async function clickCell(page: Page, cell: { x: number; y: number }): Promise<vo
 }
 
 test.describe("网格编辑窗口", () => {
-  test("不进标注模式：选区域涂 / 擦 / 清空 → 落盘 → 撤销", async ({ page, request }) => {
+  test("选区域涂 / 擦 / 清空 → 落盘 → 撤销", async ({ page, request }) => {
     const project = await newProject(request);
     try {
       await seedProjectDoc(request, project, [
@@ -57,11 +56,10 @@ test.describe("网格编辑窗口", () => {
       await uploadSceneImage(request, project, SCENE, solidPng(4, 4, [255, 255, 255]));
       await openFirstObject(page, project, "网格地图");
 
-      // 1) 从「编辑」组打开窗口：**不用**先「开始标注」，画布也不进标注模式
+      // 1) 从「编辑」组打开窗口：涂格子只在这一个地方做
       await page.getByTestId("grid-editor-open").click();
       const dialog = page.getByTestId("grid-editor-dialog");
       await expect(dialog).toBeVisible();
-      await expect(page.getByTestId("scene-viewport")).toHaveAttribute("data-grid-paint", "false");
 
       // 画笔是 8 个区域 + 橡皮擦（与战争雾窗口「只列已绑定的雾区」不同）
       await expect(dialog.getByTestId("grid-editor-brush-0")).toBeVisible();
@@ -98,7 +96,7 @@ test.describe("网格编辑窗口", () => {
       // 第一格不受影响：撤销只回退这一笔
       await expect.poll(() => persistedMask(request, project, first)).toBe(2);
 
-      // 4) 换「区域4」（位 8）涂同一格：按位叠加（与画布标注同一套语义）
+      // 4) 换「区域4」（位 8）涂同一格：按位叠加
       await dialog.getByTestId("grid-editor-brush-8").click();
       await clickCell(page, first);
       await expect.poll(() => persistedMask(request, project, first)).toBe(2 | 8);
@@ -125,7 +123,7 @@ test.describe("网格编辑窗口", () => {
     }
   });
 
-  test("画笔与画布标注共用同一套偏好；两个窗口互斥", async ({ page, request }) => {
+  test("画笔偏好留在窗口里：关掉再开还是那一套", async ({ page, request }) => {
     const project = await newProject(request);
     try {
       await seedProjectDoc(request, project, [
@@ -134,24 +132,79 @@ test.describe("网格编辑窗口", () => {
       await uploadSceneImage(request, project, SCENE, solidPng(4, 4, [255, 255, 255]));
       await openFirstObject(page, project, "网格地图");
 
-      // 在窗口里选「区域3」、把画笔调到 3 号
+      // 选「区域3」、把画笔调到 3 号
       await page.getByTestId("grid-editor-open").click();
       const dialog = page.getByTestId("grid-editor-dialog");
       await dialog.getByTestId("grid-editor-brush-4").click();
       await dialog.getByTestId("grid-editor-brush-size").fill("3");
       await expect(dialog.getByTestId("grid-editor-brush-size-label")).toContainText("3×3");
 
-      // 关掉窗口后进标注模式：调色板里的画笔就是刚选的那个（同一套偏好）
+      // 关掉再开：画笔与大小都还是刚才那个（偏好写在浏览器本地）
       await dialog.getByTestId("grid-editor-close").click();
-      await page.getByTestId("grid-paint-enter").click();
-      await expect(page.getByTestId("grid-type-4")).toHaveAttribute("data-active", "true");
-      await expect(page.getByTestId("grid-brush-size")).toHaveValue("3");
-      await page.getByTestId("grid-paint-exit-panel").click();
+      await expect(page.getByTestId("grid-editor-dialog")).toHaveCount(0);
+      await page.getByTestId("grid-editor-open").click();
+      const again = page.getByTestId("grid-editor-dialog");
+      await expect(again.getByTestId("grid-editor-brush-4")).toHaveAttribute("data-active", "true");
+      await expect(again.getByTestId("grid-editor-brush-size")).toHaveValue("3");
 
-      // 互斥：开着 Mask 窗口时点「打开编辑窗口」不该叠出第二层模态
+      // 而且真的按它落笔：3 号画笔 = 3×3 格，中心在 (4,3) 时整片都被标成区域3
+      await clickCell(page, { x: 4, y: 3 });
+      for (const [x, y] of [
+        [3, 2],
+        [4, 3],
+        [5, 4],
+      ] as const) {
+        await expect.poll(() => persistedMask(request, project, { x, y })).toBe(4);
+      }
+    } finally {
+      await dropProject(request, project);
+    }
+  });
+
+  test("每类的显示开关：关掉只是不画，照样能画它", async ({ page, request }) => {
+    const project = await newProject(request);
+    try {
+      await seedProjectDoc(request, project, [
+        sceneDoc(SCENE, [mapObjectDoc(project, SCENE, "网格地图", MAP_SIZE, GRID)]),
+      ]);
+      await uploadSceneImage(request, project, SCENE, solidPng(4, 4, [255, 255, 255]));
+      await openFirstObject(page, project, "网格地图");
+
+      await page.getByTestId("grid-editor-open").click();
+      const dialog = page.getByTestId("grid-editor-dialog");
+
+      // 关掉「区域1」的显示
+      await expect(dialog.getByTestId("grid-editor-visible-1")).toBeChecked();
+      await dialog.getByTestId("grid-editor-visible-1").uncheck();
+      await expect(dialog.getByTestId("grid-editor-visible-1")).not.toBeChecked();
+
+      // 关掉的是「画」：数据照样写得进去（同 Unity）
+      await dialog.getByTestId("grid-editor-brush-1").click();
+      const cell = { x: 6, y: 1 };
+      await clickCell(page, cell);
+      await expect.poll(() => persistedMask(request, project, cell)).toBe(1);
+
+      // 再打开就看得见（开关状态也留着）
+      await dialog.getByTestId("grid-editor-visible-1").check();
+      await expect(dialog.getByTestId("grid-editor-visible-1")).toBeChecked();
+    } finally {
+      await dropProject(request, project);
+    }
+  });
+
+  test("两个窗口互斥：开一个另一个自动关", async ({ page, request }) => {
+    const project = await newProject(request);
+    try {
+      await seedProjectDoc(request, project, [
+        sceneDoc(SCENE, [mapObjectDoc(project, SCENE, "网格地图", MAP_SIZE, GRID)]),
+      ]);
+      await uploadSceneImage(request, project, SCENE, solidPng(4, 4, [255, 255, 255]));
+      await openFirstObject(page, project, "网格地图");
+
       await page.locator('[data-group="fog"]').getByTestId("fog-region-8").click();
       await page.locator('[data-group="fog"]').getByTestId("fog-mask-open").click();
       await expect(page.getByTestId("fog-mask-dialog")).toBeVisible();
+
       // 关掉 Mask 窗口再从「编辑」组打开网格编辑窗口
       await page.getByTestId("fog-mask-close").click();
       await page.getByTestId("grid-editor-open").click();

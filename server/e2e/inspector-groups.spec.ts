@@ -91,14 +91,14 @@ test.describe("属性分组", () => {
       await editHeader.click();
       await expect(edit).toHaveAttribute("data-open", "false");
       await expect(edit).toContainText("编辑");
-      await expect(edit.getByTestId("grid-paint-enter")).toHaveCount(0);
+      await expect(edit.getByTestId("grid-editor-open")).toHaveCount(0);
       // 另一个分组不受影响
       await expect(basic).toHaveAttribute("data-open", "true");
 
       // 再点一下展开
       await editHeader.click();
       await expect(edit).toHaveAttribute("data-open", "true");
-      await expect(edit.getByTestId("grid-paint-enter")).toBeVisible();
+      await expect(edit.getByTestId("grid-editor-open")).toBeVisible();
 
       // 收起「战争雾」：入口那行消失，标题还在
       const fogHeader = fog.getByTestId("field-group-header");

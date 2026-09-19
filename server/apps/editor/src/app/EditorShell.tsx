@@ -32,7 +32,6 @@ export function EditorShell(): React.JSX.Element {
   const undo = useEditorStore((state) => state.undo);
   const redo = useEditorStore((state) => state.redo);
   const openObjectDialog = useEditorStore((state) => state.openObjectDialog);
-  const exitGridPaint = useEditorStore((state) => state.exitGridPaint);
   const imagePicker = useEditorStore((state) => state.imagePicker);
   const imagePickerTarget = useEditorStore((state) => state.imagePickerTarget);
   const openImagePicker = useEditorStore((state) => state.openImagePicker);
@@ -65,8 +64,6 @@ export function EditorShell(): React.JSX.Element {
    *
    * 平板没有键盘，所以每一项都能从菜单/按钮触发；这里只是让桌面顺手：
    * **输入框里打字时不拦截**（除 Ctrl+S），否则 Enter/退格都会被吃掉。
-   * 标注模式另有一条**减法**：`Delete` 不再删对象——那时选中的正是正在标注的地图，
-   * 一手滑就把刚画的东西连同地图一起删了。
    */
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
@@ -95,15 +92,6 @@ export function EditorShell(): React.JSX.Element {
         return;
       }
 
-      const painting = useEditorStore.getState().gridPaint.active;
-
-      // Esc：退出标注（面板上也有「退出标注」，平板靠它）
-      if (event.key === "Escape" && painting) {
-        event.preventDefault();
-        exitGridPaint();
-        return;
-      }
-
       if (modifier && event.key.toLowerCase() === "d") {
         event.preventDefault();
         duplicateObjects();
@@ -127,8 +115,7 @@ export function EditorShell(): React.JSX.Element {
         return;
       }
 
-      // 标注时 `Delete` 不再删对象（正在标的就是选中的那张地图）
-      if (!painting && (event.key === "Delete" || event.key === "Backspace")) {
+      if (event.key === "Delete" || event.key === "Backspace") {
         event.preventDefault();
         deleteObjects();
       }
@@ -138,7 +125,7 @@ export function EditorShell(): React.JSX.Element {
     return () => {
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [deleteObjects, duplicateObjects, exitGridPaint, openObjectDialog, redo, saveSceneNow, undo]);
+  }, [deleteObjects, duplicateObjects, openObjectDialog, redo, saveSceneNow, undo]);
 
   // 跨越断点（窗口缩放 / 接上触屏）时重置面板开合，避免平板下三栏互相挤压
   const previousCompact = useRef<boolean | null>(null);

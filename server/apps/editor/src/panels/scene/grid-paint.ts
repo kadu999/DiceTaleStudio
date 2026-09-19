@@ -1,15 +1,10 @@
 import {
   ALL_MASK,
-  brushCells,
   cellMaskCss,
-  cellPixelSize,
   decodeRle,
   defaultCellMaskStyle,
-  gridCornerToWorld,
   hasMask,
   visibleMaskBits,
-  worldRectOf,
-  type GridPoint,
   type GridSize,
   type RleRun,
   type WorldRect,
@@ -69,66 +64,6 @@ export function decodeCellsCached(runs: readonly RleRun[], count: number): Uint8
 
   decodedCells.set(runs, cells);
   return cells;
-}
-
-/** 预览用的两种颜色：整片画笔覆盖，以及指针下那一格（亮一点，看得出落点）。 */
-const PREVIEW_COVER = "rgba(255,255,255,0.22)";
-const PREVIEW_CELL = "rgba(255,255,255,0.5)";
-
-/** 预览图层里「指针下那一格」的掩码值（渲染器只把它当作一个普通掩码丢给颜色函数）。 */
-const PREVIEW_CELL_MASK = 2;
-
-/**
- * 画笔预览：把指针下这一格、以及整个画笔会覆盖到的范围画成半透明白色。
- *
- * 做法是**复用 `SceneLayer`**（一张只有格子着色、没有图、不画网格线的「图片」）：
- * 外框取被覆盖格子的最小外接矩形，小网格里逐格打上标记，于是格子边界与地图的网格**严丝合缝**
- * （坐标全走 `@dts/grid` 的同一套换算）——不需要给渲染器加任何新概念。
- *
- * 返回 `undefined` 表示没什么可画（画笔整片都在网格外）。
- */
-export function brushPreviewLayer(
-  grid: GridSize,
-  rect: WorldRect,
-  center: GridPoint,
-  brushSize: number,
-): SceneLayer | undefined {
-  const cells = brushCells(center, grid, brushSize);
-  if (cells.length === 0) {
-    return undefined;
-  }
-
-  let minX = center.x;
-  let maxX = center.x;
-  let minY = center.y;
-  let maxY = center.y;
-  for (const cell of cells) {
-    minX = Math.min(minX, cell.x);
-    maxX = Math.max(maxX, cell.x);
-    minY = Math.min(minY, cell.y);
-    maxY = Math.max(maxY, cell.y);
-  }
-
-  const width = maxX - minX + 1;
-  const height = maxY - minY + 1;
-  const mask = new Uint8Array(width * height);
-  for (const cell of cells) {
-    const isCenter = cell.x === center.x && cell.y === center.y;
-    mask[(cell.y - minY) * width + (cell.x - minX)] = isCenter ? PREVIEW_CELL_MASK : 1;
-  }
-
-  // 外接矩形：中心 = 左下角格子的角点 + 半个外框尺寸（与地图格子同一套锚点）
-  const size = cellPixelSize(grid, rect.size);
-  const corner = gridCornerToWorld({ x: minX, y: minY }, grid, rect);
-  return {
-    rect: worldRectOf(
-      { x: corner.x + (width * size.x) / 2, y: corner.y + (height * size.y) / 2 },
-      { width: width * size.x, height: height * size.y },
-    ),
-    grid: { width, height },
-    cells: mask,
-    cellColors: (value) => [value === PREVIEW_CELL_MASK ? PREVIEW_CELL : PREVIEW_COVER],
-  };
 }
 
 /**

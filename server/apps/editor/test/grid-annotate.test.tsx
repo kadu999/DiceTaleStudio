@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen, act } from "@testing-library/react";
-import { CellMask, PAINTABLE_MASKS, decodeRle, maskToLabel, type RleRun } from "@dts/grid";
+import {
+  CellMask,
+  PAINTABLE_MASKS,
+  brushEffectiveSize,
+  decodeRle,
+  maskToLabel,
+  type RleRun,
+} from "@dts/grid";
 import { createMapObject, createSceneObject, type SceneObjectDoc } from "@dts/document";
 import { InspectorPanel } from "../src/panels/inspector/InspectorPanel";
 import { cellColorsOf } from "../src/panels/scene/grid-paint";
@@ -9,10 +16,11 @@ import { sceneHistory, useEditorStore } from "../src/state/editor-store";
 /**
  * 「网格标注」在**属性面板 + store** 两侧的行为。
  *
- * 画布本身不好在这里驱动（要 rAF、要真画布），所以这里钉住的是三件最容易出错的：
- * 1. 开关进入标注模式、调色板把画笔 / 显示 / 颜色写进 store；
- * 2. 涂抹真的把掩码写进地图的 RLE（并且整笔可撤销）；
- * 3. 显示开关只影响颜色，不影响数据。
+ * 涂格子只在「编辑窗口」（`GridEditDialog`）里做，窗口要真 canvas（jsdom 里
+ * `getContext("2d")` 返回 null），所以那边由 e2e 覆盖；这里钉住的是三件最容易出错的：
+ * 1. 属性面板只留一个入口，点它开窗口（不碰画笔、也不进任何模式）；
+ * 2. 画笔 / 每类显示 / 颜色写进 store 与浏览器本地偏好；
+ * 3. 涂抹真的把掩码写进地图的 RLE（整笔一条撤销记录），显示开关只影响颜色。
  *
  * 点击一律用 `fireEvent`（内部包了 `act`）：zustand 的更新要等 React 冲刷完，
  * 直接 `.click()` 之后立刻查 DOM 会读到还没重渲染的旧树。
@@ -60,8 +68,6 @@ afterEach(() => {
     activeSceneName: null,
     selectedObjectIds: [],
     gridPaint: {
-      active: false,
-      mapObjectId: null,
       mask: CellMask.Obstacle,
       brushSize: 1,
       hiddenMask: 0,
@@ -71,46 +77,22 @@ afterEach(() => {
       showFog: false,
     },
   });
+  window.localStorage.clear();
 });
 
-describe("属性面板：标注开关", () => {
-  it("地图对象有「开始标注」，精灵没有", () => {
+describe("属性面板：编辑窗口入口", () => {
+  it("地图对象有「编辑」入口，精灵没有", () => {
     seedScene([mapObject(), createSceneObject({ id: "sprite", name: "精灵" })], ["map-1"]);
     const { unmount } = render(<InspectorPanel />);
-    expect(screen.getByTestId("grid-paint-enter")).toBeDefined();
+    expect(screen.getByTestId("grid-editor-open")).toBeDefined();
     unmount();
 
     seedScene([mapObject(), createSceneObject({ id: "sprite", name: "精灵" })], ["sprite"]);
     render(<InspectorPanel />);
-    expect(screen.queryByTestId("grid-paint-enter")).toBeNull();
+    expect(screen.queryByTestId("grid-editor-open")).toBeNull();
   });
 
-  it("点「开始标注」把目标地图写进 store，并露出调色板", () => {
-    seedScene([mapObject()], ["map-1"]);
-    render(<InspectorPanel />);
-
-    fireEvent.click(screen.getByTestId("grid-paint-enter"));
-
-    expect(useEditorStore.getState().gridPaint.active).toBe(true);
-    expect(useEditorStore.getState().gridPaint.mapObjectId).toBe("map-1");
-    // 调色板：画笔大小 + 橡皮擦 + 8 种类型
-    expect(screen.getByTestId("grid-brush-size")).toBeDefined();
-    expect(screen.getByTestId(`grid-type-${CellMask.Empty}`)).toBeDefined();
-    for (const bit of [1, 2, 4, 8, 16, 32, 64, 128]) {
-      expect(screen.getByTestId(`grid-type-${bit}`)).toBeDefined();
-    }
-  });
-
-  it("隐藏的地图不让标注（画布上根本点不到它）", () => {
-    seedScene([{ ...mapObject(), active: false }], ["map-1"]);
-    render(<InspectorPanel />);
-
-    const enter = screen.getByTestId("grid-paint-enter") as HTMLButtonElement;
-    expect(enter.disabled).toBe(true);
-    expect(screen.getByText(/对象已隐藏/)).toBeDefined();
-  });
-
-  it("「打开编辑窗口…」只写窗口状态，不进标注模式", () => {
+  it("点「编辑」把目标地图写进 store，画笔偏好一个都不动", () => {
     seedScene([mapObject()], ["map-1"]);
     render(<InspectorPanel />);
 
@@ -118,12 +100,12 @@ describe("属性面板：标注开关", () => {
 
     expect(useEditorStore.getState().gridEditor).toBe(true);
     expect(useEditorStore.getState().gridEditorTarget).toBe("map-1");
-    // 窗口与画布标注是两条路：画布没有进入标注模式
-    expect(useEditorStore.getState().gridPaint.active).toBe(false);
 
-    useEditorStore.getState().openGridEditor(null);
-    expect(useEditorStore.getState().gridEditor).toBe(false);
-    expect(useEditorStore.getState().gridEditorTarget).toBeNull();
+    // 涂格子只在窗口里做：点入口不该顺手改画笔 / 显示偏好
+    const paint = useEditorStore.getState().gridPaint;
+    expect(paint.mask).toBe(CellMask.Obstacle);
+    expect(paint.brushSize).toBe(1);
+    expect(paint.hiddenMask).toBe(0);
   });
 
   it("隐藏 / 未放置的地图也能开编辑窗口（窗口自带视口，不靠拾取）", () => {
@@ -167,101 +149,96 @@ describe("属性面板：标注开关", () => {
   });
 });
 
-describe("调色板：画笔 / 显示 / 颜色", () => {
-  function enter(): void {
-    seedScene([mapObject()], ["map-1"]);
-    render(<InspectorPanel />);
-    fireEvent.click(screen.getByTestId("grid-paint-enter"));
-  }
+describe("画笔偏好：写进 store 也写进浏览器本地", () => {
+  const prefs = (): Record<string, unknown> =>
+    JSON.parse(window.localStorage.getItem("dts.editor.gridPaint") ?? "{}") as Record<
+      string,
+      unknown
+    >;
 
   it("默认是区域1 画笔、1 号画笔、全部显示", () => {
-    enter();
     const paint = useEditorStore.getState().gridPaint;
     expect(paint.mask).toBe(CellMask.Obstacle);
     expect(paint.brushSize).toBe(1);
     expect(paint.hiddenMask).toBe(0);
   });
 
-  it("类型名按顺序显示成区域1–8，后面跟着掩码值", () => {
-    enter();
-
-    // 编号是**序号**（区域1–8），括号里是**位值**（1/2/4/8…）——两者故意不是一回事，
-    // 所以这里两个都钉住：只改一个（例如把编号写成位值）就会被这条用例拦住
-    for (const [index, bit] of PAINTABLE_MASKS.entries()) {
-      expect(screen.getByTestId(`grid-type-${bit}`).textContent).toBe(`区域${index + 1} (${bit})`);
+  it("选画笔只认橡皮擦 + 8 个区域，别的值一律忽略", () => {
+    for (const bit of PAINTABLE_MASKS) {
+      useEditorStore.getState().setGridBrush(bit);
+      expect(useEditorStore.getState().gridPaint.mask).toBe(bit);
     }
 
-    // 橡皮擦照旧是 0，不在「区域」编号里
-    expect(screen.getByTestId(`grid-type-${CellMask.Empty}`).textContent).toBe("橡皮擦 (0)");
-  });
+    useEditorStore.getState().setGridBrush(CellMask.Empty);
+    expect(useEditorStore.getState().gridPaint.mask).toBe(CellMask.Empty);
 
-  it("点类型名换画笔，点橡皮擦回到 0", () => {
-    enter();
-
-    fireEvent.click(screen.getByTestId(`grid-type-${CellMask.Fog3}`));
-    expect(useEditorStore.getState().gridPaint.mask).toBe(CellMask.Fog3);
-    expect(screen.getByTestId(`grid-type-${CellMask.Fog3}`).getAttribute("data-active")).toBe(
-      "true",
-    );
-
-    fireEvent.click(screen.getByTestId(`grid-type-${CellMask.Empty}`));
+    useEditorStore.getState().setGridBrush(3);
     expect(useEditorStore.getState().gridPaint.mask).toBe(CellMask.Empty);
   });
 
-  it("画笔大小写进 store，并换算成实际覆盖边长（1/3/5 号 → 1/3/5 格）", () => {
-    enter();
-
+  it("画笔大小夹到 1..5，并换算成实际覆盖边长（1/3/5 号 → 1/3/5 格）", () => {
     for (const [input, effective] of [
-      [3, "3×3"],
-      [5, "5×5"],
-      [2, "1×1"],
+      [3, 3],
+      [5, 5],
+      [2, 1],
+      [9, 5], // 越界往上夹
+      [0, 1], // 越界往下夹
     ] as const) {
-      fireEvent.change(screen.getByTestId("grid-brush-size"), { target: { value: String(input) } });
-      expect(useEditorStore.getState().gridPaint.brushSize).toBe(input);
-      expect(screen.getByTestId("grid-brush-size-label").textContent).toContain(effective);
+      useEditorStore.getState().setGridBrushSize(input);
+      const size = useEditorStore.getState().gridPaint.brushSize;
+      expect(brushEffectiveSize(size)).toBe(effective);
     }
+
+    // 坏值（NaN）不写：滑杆抖动不该把偏好改成 NaN
+    useEditorStore.getState().setGridBrushSize(Number.NaN);
+    expect(useEditorStore.getState().gridPaint.brushSize).toBe(1);
   });
 
-  it("显示开关只改 hiddenMask（数据不动）", () => {
-    enter();
-
-    fireEvent.click(screen.getByTestId(`grid-type-visible-${CellMask.Obstacle}`));
+  it("每类的显示开关只翻 hiddenMask 的那一位", () => {
+    useEditorStore.getState().toggleGridTypeVisible(CellMask.Obstacle);
     expect(useEditorStore.getState().gridPaint.hiddenMask).toBe(CellMask.Obstacle);
 
+    useEditorStore.getState().toggleGridTypeVisible(CellMask.Fog5);
+    expect(useEditorStore.getState().gridPaint.hiddenMask).toBe(
+      CellMask.Obstacle | CellMask.Fog5,
+    );
+
     // 再点一下恢复显示
-    fireEvent.click(screen.getByTestId(`grid-type-visible-${CellMask.Obstacle}`));
-    expect(useEditorStore.getState().gridPaint.hiddenMask).toBe(0);
+    useEditorStore.getState().toggleGridTypeVisible(CellMask.Obstacle);
+    expect(useEditorStore.getState().gridPaint.hiddenMask).toBe(CellMask.Fog5);
+
+    // 橡皮擦没有「显示」可言（它不是一条类型位）
+    useEditorStore.getState().toggleGridTypeVisible(CellMask.Empty);
+    expect(useEditorStore.getState().gridPaint.hiddenMask).toBe(CellMask.Fog5);
   });
 
-  it("改颜色写进 store（只收 #rrggbb）", () => {
-    enter();
-
-    fireEvent.change(screen.getByTestId(`grid-type-color-${CellMask.Water}`), {
-      target: { value: "#112233" },
-    });
+  it("改颜色只收 #rrggbb", () => {
+    useEditorStore.getState().setGridTypeColor(CellMask.Water, "#112233");
     expect(useEditorStore.getState().gridPaint.colors[CellMask.Water]).toBe("#112233");
 
-    // 脏值（不是 #rrggbb）一律忽略，不要写进画笔偏好
+    // 脏值一律忽略，不要写进画笔偏好
     useEditorStore.getState().setGridTypeColor(CellMask.Water, "red");
     expect(useEditorStore.getState().gridPaint.colors[CellMask.Water]).toBe("#112233");
   });
 
-  it("退出标注后调色板收起（画笔偏好留着）", () => {
-    enter();
-    fireEvent.click(screen.getByTestId("grid-type-128"));
-    fireEvent.click(screen.getByTestId("grid-paint-exit-panel"));
+  it("画笔 / 大小 / 显示 / 颜色都落盘（下次打开还是这个样子）", () => {
+    useEditorStore.getState().setGridBrush(CellMask.Fog1);
+    useEditorStore.getState().setGridBrushSize(4);
+    useEditorStore.getState().toggleGridTypeVisible(CellMask.Water);
+    useEditorStore.getState().setGridTypeColor(CellMask.Water, "#112233");
 
-    expect(useEditorStore.getState().gridPaint.active).toBe(false);
-    expect(useEditorStore.getState().gridPaint.mapObjectId).toBeNull();
-    expect(useEditorStore.getState().gridPaint.mask).toBe(CellMask.Fog5);
-    expect(screen.getByTestId("grid-paint-enter")).toBeDefined();
+    expect(prefs()).toMatchObject({
+      mask: CellMask.Fog1,
+      brushSize: 4,
+      hiddenMask: CellMask.Water,
+      colors: { [CellMask.Water]: "#112233" },
+    });
   });
 });
 
 describe("涂抹：写进 RLE，整笔可撤销", () => {
   it("一笔刷到直线经过的每一格", () => {
     seedScene([mapObject()], ["map-1"]);
-    useEditorStore.getState().enterGridPaint("map-1");
 
     const changed = useEditorStore
       .getState()
@@ -278,7 +255,6 @@ describe("涂抹：写进 RLE，整笔可撤销", () => {
 
   it("整笔只留一条撤销记录：撤销回到全空，重做又回来", () => {
     seedScene([mapObject()], ["map-1"]);
-    useEditorStore.getState().enterGridPaint("map-1");
 
     // 模拟一次拖动：按下 + 若干次 pointermove
     useEditorStore.getState().paintGridStroke("map-1", null, { x: 0, y: 0 });
@@ -298,7 +274,6 @@ describe("涂抹：写进 RLE，整笔可撤销", () => {
 
   it("换画笔后画上去的是新的类型位（叠加不清除旧的）", () => {
     seedScene([mapObject()], ["map-1"]);
-    useEditorStore.getState().enterGridPaint("map-1");
 
     useEditorStore.getState().setGridBrush(CellMask.Fog1);
     useEditorStore.getState().paintGridStroke("map-1", null, { x: 2, y: 2 });
@@ -310,7 +285,6 @@ describe("涂抹：写进 RLE，整笔可撤销", () => {
 
   it("橡皮擦整格清零", () => {
     seedScene([mapObject()], ["map-1"]);
-    useEditorStore.getState().enterGridPaint("map-1");
 
     useEditorStore.getState().setGridBrush(CellMask.Obstacle);
     useEditorStore.getState().paintGridStroke("map-1", null, { x: 2, y: 2 });
@@ -323,7 +297,6 @@ describe("涂抹：写进 RLE，整笔可撤销", () => {
 
   it("落笔在网格外什么都不做（不夹到边缘格）", () => {
     seedScene([mapObject()], ["map-1"]);
-    useEditorStore.getState().enterGridPaint("map-1");
 
     const changed = useEditorStore
       .getState()
@@ -333,18 +306,8 @@ describe("涂抹：写进 RLE，整笔可撤销", () => {
     expect(mapRuns()).toEqual([[0, GRID.width * GRID.height]]);
   });
 
-  it("换选中对象就退出标注（目标必须一直选中）", () => {
-    seedScene([mapObject(), createSceneObject({ id: "sprite", name: "精灵" })], ["map-1"]);
-    useEditorStore.getState().enterGridPaint("map-1");
-    expect(useEditorStore.getState().gridPaint.active).toBe(true);
-
-    useEditorStore.getState().setSelection(["sprite"]);
-    expect(useEditorStore.getState().gridPaint.active).toBe(false);
-  });
-
   it("「清空」把整张网格恢复成空游程（仍可撤销）", () => {
     seedScene([mapObject()], ["map-1"]);
-    useEditorStore.getState().enterGridPaint("map-1");
     useEditorStore.getState().paintGridStroke("map-1", null, { x: 1, y: 1 });
 
     expect(useEditorStore.getState().clearGrid("map-1")).toBe(true);
@@ -365,15 +328,15 @@ describe("显示开关：网格线与网格标注", () => {
     expect((screen.getByTestId("grid-annotations-toggle") as HTMLInputElement).checked).toBe(true);
   });
 
-  it("不标注时也能关（想看清贴图就关掉网格线）", () => {
+  it("想看清贴图就关掉网格线（关的是显示，画笔偏好不动）", () => {
     seedScene([mapObject()], ["map-1"]);
     render(<InspectorPanel />);
 
     fireEvent.click(screen.getByTestId("grid-lines-toggle"));
     expect(useEditorStore.getState().gridPaint.showGridLines).toBe(false);
-    // 关掉的是「显示」：没进标注模式，画笔也没被改
-    expect(useEditorStore.getState().gridPaint.active).toBe(false);
+    // 关掉的是「显示」：格子数据与画笔都没被改
     expect(useEditorStore.getState().gridPaint.mask).toBe(CellMask.Obstacle);
+    expect([...mapCells()].every((mask) => mask === 0)).toBe(true);
   });
 
   it("两个开关都写进偏好（下次打开还是这个样子）", () => {
@@ -397,6 +360,7 @@ describe("显示开关：网格线与网格标注", () => {
     expect(screen.queryByTestId("grid-annotations-toggle")).toBeNull();
   });
 });
+
 describe("格子颜色：只画可见的类型位，按低位在上叠加", () => {
   const colors = { [CellMask.Obstacle]: "#ff0000", [CellMask.Fog1]: "#d9d9d9" };
 
@@ -422,7 +386,7 @@ describe("格子颜色：只画可见的类型位，按低位在上叠加", () =
     expect(cellColorsOf(CellMask.Water, 0, {})).toEqual(["rgba(0,128,255,0.6)"]);
   });
 
-  it("类型名字与掩码值一起给（调色板行的文案）", () => {
+  it("类型名字与掩码值一起给（右侧面板行的文案）", () => {
     expect(maskToLabel(CellMask.Fog5)).toBe("区域8");
   });
 });

@@ -1,37 +1,33 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import {
   dropProject,
-  enterEditor,
   expandRuns,
   mapObjectDoc,
   newProject,
-  openInspector,
-  openProject,
+  openFirstObject,
   readSceneMap,
   sceneDoc,
   seedProjectDoc,
   solidPng,
   uploadSceneImage,
 } from "./helpers/editor";
-import {
-  canvasAverageColor,
-  canvasPixelSum,
-  canvasPointReachable,
-  findEmptyCanvasPoint,
-  worldSamplePoint,
-} from "./helpers/canvas";
+import { canvasAverageColor, canvasPixelSum, fittedCellPoint, worldSamplePoint } from "./helpers/canvas";
 
 /**
- * 网格标注（地图编辑）：选中地图 → 属性面板开标注 → 在画布上涂抹 → 落进场景文件的 RLE。
+ * 网格标注的**显示**那一半。
+ *
+ * 涂格子只在「网格编辑窗口」里做（落笔、落盘、撤销见 `grid-edit-window.spec.ts`）；
+ * 这里管的是画布怎么把格子画出来：按区域颜色着色、三个显示开关，
+ * 以及「显示开关只动看得见的东西，不动数据」。
  *
  * 种出来的地图刻意小：贴图声明 400×300、网格 8×6 → 每格 50×50px，
- * 屏幕上的落点好算、格子边界也离得开网格线（采样不会被线干扰）。
  * 默认视口是 1:1 且世界原点在画布正中，所以「世界坐标 → 屏幕点」只有一步（见 helpers/canvas）。
  */
 
 const SCENE = "Map001";
 const MAP_SIZE = { width: 400, height: 300 };
 const GRID = { width: 8, height: 6 };
+const CANVAS = "grid-editor-canvas";
 
 /** 表格格心（默认视口：世界原点 = 贴图中心）。 */
 function cellCenter(cell: { x: number; y: number }): { x: number; y: number } {
@@ -41,47 +37,10 @@ function cellCenter(cell: { x: number; y: number }): { x: number; y: number } {
   };
 }
 
-interface ReachableCell {
-  readonly cell: { x: number; y: number };
-  readonly point: { x: number; y: number };
-}
-
-/**
- * 找出**点得到**的格子（从正中往外扫，最多 `wanted` 个）。
- *
- * 平板下右半边被属性抽屉盖住，「中间那一格」不一定点得到——所以不猜，直接按格心换算出
- * 屏幕点再验证（`elementFromPoint` 真的落在画布上）。
- */
-async function reachableCells(page: Page, wanted = 1): Promise<ReachableCell[]> {
-  const found: ReachableCell[] = [];
-  const center = { x: Math.floor(GRID.width / 2), y: Math.floor(GRID.height / 2) };
-  const limit = Math.max(GRID.width, GRID.height);
-
-  for (let radius = 0; radius <= limit && found.length < wanted; radius += 1) {
-    for (let dy = -radius; dy <= radius && found.length < wanted; dy += 1) {
-      for (let dx = -radius; dx <= radius && found.length < wanted; dx += 1) {
-        const cell = { x: center.x + dx, y: center.y + dy };
-        if (cell.x < 0 || cell.x >= GRID.width || cell.y < 0 || cell.y >= GRID.height) {
-          continue;
-        }
-
-        const point = await worldSamplePoint(page, cellCenter(cell));
-        if (await canvasPointReachable(page, point)) {
-          found.push({ cell, point });
-        }
-      }
-    }
-  }
-
-  if (found.length < wanted) {
-    throw new Error(`只找到 ${found.length} 个可点击的格子（需要 ${wanted} 个）`);
-  }
-
-  return found;
-}
-
-/** 画布上这个点的「红度」：贴图是纯白，标注上区域1（红，α0.6）后 r 远大于 g。 */
+/** 画布上这个点的「红度」：贴图是纯白，标上区域1（红，α0.6）后 r 远大于 g。 */
 async function redness(page: Page, point: { x: number; y: number }): Promise<number> {
+  // `canvasAverageColor` 采的是**页面上第一块画布**（场景画布）：窗口开着时它排在
+  // 对话框那几块画布前面，所以这里的采样始终是画布本身，不是窗口
   const color = await canvasAverageColor(page, point);
   return color.r - color.g;
 }
@@ -100,154 +59,71 @@ async function persistedMask(
   return expandRuns(map.runs)[cell.y * GRID.width + cell.x] ?? -1;
 }
 
-/** 打开一个「只有一张小地图」的项目，选中地图并进入标注模式。 */
-async function enterAnnotating(page: Page, request: APIRequestContext, project: string): Promise<void> {
-  await enterEditor(page);
-  await openProject(page, project);
-
-  // 选中地图：世界原点就是贴图中心，点画布正中即命中（地图是唯一的对象）
-  const center = await worldSamplePoint(page, { x: 0, y: 0 });
-  await page.mouse.click(center.x, center.y);
-  await openInspector(page);
-
-  await expect(page.getByTestId("inspector-object-name")).toHaveValue("网格地图");
-  await page.getByTestId("grid-paint-enter").click();
-  await expect(page.getByTestId("scene-viewport")).toHaveAttribute("data-grid-paint", "true");
-  await expect(page.getByTestId("grid-paint-badge")).toBeVisible();
+/** 开一个「只有一张小地图」的项目，选中地图、露出属性面板。 */
+async function seedAndOpen(
+  page: Page,
+  request: APIRequestContext,
+  project: string,
+): Promise<void> {
+  await seedProjectDoc(request, project, [
+    sceneDoc(SCENE, [mapObjectDoc(project, SCENE, "网格地图", MAP_SIZE, GRID)]),
+  ]);
+  await uploadSceneImage(request, project, SCENE, solidPng(4, 4, [255, 255, 255]));
+  await openFirstObject(page, project, "网格地图");
 }
 
-test.describe("网格标注", () => {
-  test("标注一格：画布着色 → 落盘 → 撤销/重做 → 清空", async ({ page, request }) => {
+test.describe("网格标注：画布显示", () => {
+  test("编辑窗口里涂一格：画布按区域颜色着色，并且落盘", async ({ page, request }) => {
     const project = await newProject(request);
     try {
-      await seedProjectDoc(request, project, [
-        sceneDoc(SCENE, [mapObjectDoc(project, SCENE, "网格地图", MAP_SIZE, GRID)]),
-      ]);
-      await uploadSceneImage(request, project, SCENE, solidPng(4, 4, [255, 255, 255]));
+      await seedAndOpen(page, request, project);
 
-      await enterAnnotating(page, request, project);
+      const cell = { x: 2, y: 3 };
+      // 落点先算好：窗口一开，页面上就有两块画布，画布尺寸得在这之前量
+      const point = await worldSamplePoint(page, cellCenter(cell));
+      await expect.poll(() => redness(page, point)).toBeLessThan(40);
 
-      // 类型名是中性占位「区域1–8」：**编号是顺序、括号里才是位值**（1/2/4/8…）
-      await expect(page.getByTestId("grid-type-0")).toHaveText("橡皮擦 (0)");
-      await expect(page.getByTestId("grid-type-1")).toHaveText("区域1 (1)");
-      await expect(page.getByTestId("grid-type-8")).toHaveText("区域4 (8)");
-      await expect(page.getByTestId("grid-type-128")).toHaveText("区域8 (128)");
+      await page.getByTestId("grid-editor-open").click();
+      const dialog = page.getByTestId("grid-editor-dialog");
+      await expect(dialog).toBeVisible();
 
-      const [target] = await reachableCells(page);
-      expect(target).toBeDefined();
-      const cell = target!.cell;
-
-      // 点一下 = 一格（默认画笔是区域1、1 号画笔）
-      await page.mouse.click(target!.point.x, target!.point.y);
-      // 挪开指针：画布上的画笔预览会垫一层半透明白，采样要看画上去的颜色本身
-      await page.mouse.move(4, 4);
-
-      await expect.poll(() => redness(page, target!.point)).toBeGreaterThan(60);
+      const at = await fittedCellPoint(page, CANVAS, MAP_SIZE, GRID, cell);
+      await page.mouse.click(at.x, at.y);
       await expect.poll(() => persistedMask(request, project, cell)).toBe(1);
 
-      // 一整笔 = 一条撤销记录：Ctrl+Z 回到全空，Ctrl+Shift+Z 又回来
-      await page.keyboard.press("Control+z");
-      await expect.poll(() => persistedMask(request, project, cell)).toBe(0);
-      await expect.poll(() => redness(page, target!.point)).toBeLessThan(40);
+      // 关掉窗口再看画布：着色来自文档里的格子，不是窗口里的临时状态
+      await dialog.getByTestId("grid-editor-close").click();
+      await expect(page.getByTestId("grid-editor-dialog")).toHaveCount(0);
+      await expect.poll(() => redness(page, point)).toBeGreaterThan(60);
+    } finally {
+      await dropProject(request, project);
+    }
+  });
 
-      await page.keyboard.press("Control+Shift+z");
+  test("每类的显示开关：关掉就不着色，数据还在", async ({ page, request }) => {
+    const project = await newProject(request);
+    try {
+      await seedAndOpen(page, request, project);
+
+      const cell = { x: 4, y: 2 };
+      const point = await worldSamplePoint(page, cellCenter(cell));
+
+      await page.getByTestId("grid-editor-open").click();
+      const dialog = page.getByTestId("grid-editor-dialog");
+      const at = await fittedCellPoint(page, CANVAS, MAP_SIZE, GRID, cell);
+      await page.mouse.click(at.x, at.y);
       await expect.poll(() => persistedMask(request, project, cell)).toBe(1);
-
-      // 清空：格子回到空游程（铺满整张网格，不是空数组）
-      await page.getByTestId("grid-clear").click();
-      await expect
-        .poll(async () => (await readSceneMap(request, project, SCENE))?.runs)
-        .toEqual([[0, GRID.width * GRID.height]]);
-      await expect(page.getByTestId("grid-annotated-count")).toHaveText("0 格");
-    } finally {
-      await dropProject(request, project);
-    }
-  });
-
-  test("拖一笔：直线经过的格子连成一片（中间不落空）", async ({ page, request }) => {
-    const project = await newProject(request);
-    try {
-      await seedProjectDoc(request, project, [
-        sceneDoc(SCENE, [mapObjectDoc(project, SCENE, "网格地图", MAP_SIZE, GRID)]),
-      ]);
-      await uploadSceneImage(request, project, SCENE, solidPng(4, 4, [255, 255, 255]));
-
-      await enterAnnotating(page, request, project);
-
-      const [from, to] = await reachableCells(page, 2);
-      expect(from).toBeDefined();
-      expect(to).toBeDefined();
-
-      await page.mouse.move(from!.point.x, from!.point.y);
-      await page.mouse.down();
-      await page.mouse.move(to!.point.x, to!.point.y, { steps: 8 });
-      await page.mouse.up();
-      await page.mouse.move(4, 4);
-
-      // 两端一定被画到（中间的格子由「补齐直线」负责，见 @dts/grid 的 strokeCenters）
-      await expect.poll(() => persistedMask(request, project, from!.cell)).toBe(1);
-      await expect.poll(() => persistedMask(request, project, to!.cell)).toBe(1);
-
-      // 整笔画了不止一格，而且都落进了同一条 RLE（数据合法：格数 = 列 × 行）
-      const map = await readSceneMap(request, project, SCENE);
-      const cells = expandRuns(map?.runs ?? []);
-      expect(cells).toHaveLength(GRID.width * GRID.height);
-      expect(cells.filter((mask) => mask !== 0).length).toBeGreaterThan(1);
-    } finally {
-      await dropProject(request, project);
-    }
-  });
-
-  test("网格外点击不画（也不会取消选中）", async ({ page, request }) => {
-    const project = await newProject(request);
-    try {
-      await seedProjectDoc(request, project, [
-        sceneDoc(SCENE, [mapObjectDoc(project, SCENE, "网格地图", MAP_SIZE, GRID)]),
-      ]);
-      await uploadSceneImage(request, project, SCENE, solidPng(4, 4, [255, 255, 255]));
-
-      await enterAnnotating(page, request, project);
-
-      // 地图之外、但仍在画布上的一点（贴图只占 400×300）
-      const blank = await findEmptyCanvasPoint(page);
-      await page.mouse.click(blank.x, blank.y);
-      await page.mouse.move(4, 4);
-
-      // 什么都没画，而且还在标注模式（点网格外不该把地图取消选中、把调色板收掉）
-      await expect
-        .poll(async () => (await readSceneMap(request, project, SCENE))?.runs)
-        .toEqual([[0, GRID.width * GRID.height]]);
-      await expect(page.getByTestId("scene-viewport")).toHaveAttribute("data-grid-paint", "true");
-      await expect(page.getByTestId("grid-brush-size")).toBeVisible();
-    } finally {
-      await dropProject(request, project);
-    }
-  });
-
-  test("显示开关只影响画布，不影响数据", async ({ page, request }) => {
-    const project = await newProject(request);
-    try {
-      await seedProjectDoc(request, project, [
-        sceneDoc(SCENE, [mapObjectDoc(project, SCENE, "网格地图", MAP_SIZE, GRID)]),
-      ]);
-      await uploadSceneImage(request, project, SCENE, solidPng(4, 4, [255, 255, 255]));
-
-      await enterAnnotating(page, request, project);
-
-      const [target] = await reachableCells(page);
-      await page.mouse.click(target!.point.x, target!.point.y);
-      await page.mouse.move(4, 4);
-      await expect.poll(() => redness(page, target!.point)).toBeGreaterThan(60);
+      await expect.poll(() => redness(page, point)).toBeGreaterThan(60);
 
       // 关掉「区域1」的显示：画布不再着色……
-      await page.getByTestId("grid-type-visible-1").uncheck();
-      await expect.poll(() => redness(page, target!.point)).toBeLessThan(40);
-      // ……但格子的数据还在（自动存有 800ms 防抖，所以这里也要等落盘）
-      await expect.poll(() => persistedMask(request, project, target!.cell)).toBe(1);
+      await dialog.getByTestId("grid-editor-visible-1").uncheck();
+      await expect.poll(() => redness(page, point)).toBeLessThan(40);
+      // ……但格子的数据还在（自动存有防抖，所以这里也要等落盘）
+      await expect.poll(() => persistedMask(request, project, cell)).toBe(1);
 
       // 再打开就回来
-      await page.getByTestId("grid-type-visible-1").check();
-      await expect.poll(() => redness(page, target!.point)).toBeGreaterThan(60);
+      await dialog.getByTestId("grid-editor-visible-1").check();
+      await expect.poll(() => redness(page, point)).toBeGreaterThan(60);
     } finally {
       await dropProject(request, project);
     }
@@ -261,15 +137,7 @@ test.describe("网格标注", () => {
       ]);
       // 深色贴图：网格线是白的（α0.12），压在深色上才量得出来
       await uploadSceneImage(request, project, SCENE, solidPng(4, 4, [20, 20, 20]));
-
-      await enterEditor(page);
-      await openProject(page, project);
-
-      // 选中地图就够：这两个开关**不进入标注模式**也能用（想看清贴图时随手关）
-      const center = await worldSamplePoint(page, { x: 0, y: 0 });
-      await page.mouse.click(center.x, center.y);
-      await openInspector(page);
-      await expect(page.getByTestId("inspector-object-name")).toHaveValue("网格地图");
+      await openFirstObject(page, project, "网格地图");
       await page.mouse.move(4, 4);
 
       const withLines = await canvasPixelSum(page);
@@ -280,48 +148,36 @@ test.describe("网格标注", () => {
 
       await page.getByTestId("grid-lines-toggle").check();
       await expect.poll(() => canvasPixelSum(page)).toBeGreaterThanOrEqual(withLines);
-
-      // 只是显示开关：自始至终没进标注模式
-      await expect(page.getByTestId("scene-viewport")).toHaveAttribute("data-grid-paint", "false");
     } finally {
       await dropProject(request, project);
     }
   });
 
-  test("网格标注总开关：关掉就不着色，但画笔照样能画", async ({ page, request }) => {
+  test("网格标注总开关：关掉就不着色，数据不动", async ({ page, request }) => {
     const project = await newProject(request);
     try {
-      await seedProjectDoc(request, project, [
-        sceneDoc(SCENE, [mapObjectDoc(project, SCENE, "网格地图", MAP_SIZE, GRID)]),
-      ]);
-      await uploadSceneImage(request, project, SCENE, solidPng(4, 4, [255, 255, 255]));
+      await seedAndOpen(page, request, project);
 
-      await enterAnnotating(page, request, project);
+      const cell = { x: 5, y: 4 };
+      const point = await worldSamplePoint(page, cellCenter(cell));
 
-      const [first, second] = await reachableCells(page, 2);
-      expect(first).toBeDefined();
-      expect(second).toBeDefined();
+      await page.getByTestId("grid-editor-open").click();
+      const dialog = page.getByTestId("grid-editor-dialog");
+      const at = await fittedCellPoint(page, CANVAS, MAP_SIZE, GRID, cell);
+      await page.mouse.click(at.x, at.y);
+      await expect.poll(() => persistedMask(request, project, cell)).toBe(1);
+      await dialog.getByTestId("grid-editor-close").click();
 
-      // 先在看得见的时候画一格
-      await page.mouse.click(first!.point.x, first!.point.y);
-      await page.mouse.move(4, 4);
-      await expect.poll(() => redness(page, first!.point)).toBeGreaterThan(60);
+      await expect.poll(() => redness(page, point)).toBeGreaterThan(60);
 
       // 关掉总开关：画布不再着色，数据还在
       await page.getByTestId("grid-annotations-toggle").uncheck();
-      await expect.poll(() => redness(page, first!.point)).toBeLessThan(40);
-      await expect.poll(() => persistedMask(request, project, first!.cell)).toBe(1);
+      await expect.poll(() => redness(page, point)).toBeLessThan(40);
+      await expect.poll(() => persistedMask(request, project, cell)).toBe(1);
 
-      // 关着也能画（只是看不见色）：换一格再涂一笔
-      await page.mouse.click(second!.point.x, second!.point.y);
-      await page.mouse.move(4, 4);
-      await expect.poll(() => persistedMask(request, project, second!.cell)).toBe(1);
-      await expect.poll(() => redness(page, second!.point)).toBeLessThan(40);
-
-      // 打开总开关：两格立刻都看得见
+      // 打开总开关：立刻又看得见
       await page.getByTestId("grid-annotations-toggle").check();
-      await expect.poll(() => redness(page, first!.point)).toBeGreaterThan(60);
-      await expect.poll(() => redness(page, second!.point)).toBeGreaterThan(60);
+      await expect.poll(() => redness(page, point)).toBeGreaterThan(60);
     } finally {
       await dropProject(request, project);
     }

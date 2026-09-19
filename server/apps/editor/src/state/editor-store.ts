@@ -133,18 +133,14 @@ export type SceneSaveState = "saved" | "pending" | "saving" | "error";
 /**
  * 网格标注（地图编辑）状态。
  *
- * 「怎么看 / 怎么画」那一半（画笔类型 / 大小 / 每类的显示与颜色 / 网格线与标注两个总开关）
- * 是**编辑器偏好**，会写进浏览器本地（对齐 Unity 把这几项存在编辑窗口的序列化字段里）；
- * 「画到哪儿」那一半（目标地图、是否在标注中）是**会话状态**，不进文档也不持久化。
+ * 「怎么画 / 怎么显示」那一半（画笔类型 / 大小 / 每类的显示与颜色 / 网格线、网格标注、战争雾三个总开关）
+ * 是**编辑器偏好**，会写进浏览器本地（对齐 Unity 把这几项存在编辑窗口的序列化字段里）。
+ * 落笔的地方只有**编辑窗口**（`GridEditDialog`）——画布上不再有「标注模式」。
  *
  * 画笔类型直接用格子掩码位表示，`CellMask.Empty`(=0) 就是橡皮擦——与 Unity 的
  * 「橡皮擦 (0)」是同一件事，不必再造一个布尔字段。
  */
 export interface GridPaintState {
-  /** 是否在标注模式：画布上的左键从此是画笔，不再是拾取 / 拖动对象。 */
-  readonly active: boolean;
-  /** 正在标注的地图对象 id；null 表示没有目标。 */
-  readonly mapObjectId: string | null;
   /** 画笔：格子掩码位；0 = 橡皮擦。 */
   readonly mask: number;
   readonly brushSize: number;
@@ -203,7 +199,7 @@ export interface EditorStoreState {
   /** 场景文件的保存状态（自动存与手动保存共用） */
   readonly sceneSaveState: SceneSaveState;
   readonly sceneSaveError: string;
-  /** 网格标注（画笔）状态：属性面板的调色板与画布的涂抹都读它。 */
+  /** 网格标注（画笔）状态：编辑窗口的涂 / 擦与画布的着色都读它。 */
   readonly gridPaint: GridPaintState;
 
   /** 场景编辑（对象增删改）统一走这里：进撤销栈，并触发自动落盘。 */
@@ -326,15 +322,6 @@ export interface EditorStoreState {
   /** 改地图网格的列数 / 行数（格子按新尺寸重建，重叠部分保留）。 */
   setMapGrid(mapObjectId: string, grid: GridSize): boolean;
 
-  /**
-   * 进入网格标注：目标地图由属性面板的开关传入。
-   *
-   * 进入后画布上的**左键 = 画笔**（中键照样平移、滚轮照样缩放），
-   * 直到退出（面板上的「退出标注」/ `Esc` / 选中别的东西 / 换场景）。
-   */
-  enterGridPaint(mapObjectId: string): void;
-  /** 退出网格标注（断开撤销合并，免得下一笔并进上一条记录）。 */
-  exitGridPaint(): void;
   /** 换画笔：可绘制的类型位，或 `CellMask.Empty`（0）= 橡皮擦；其他值忽略。 */
   setGridBrush(mask: number): void;
   /** 改画笔大小（夹到 1..5，与 Unity 一致）。 */
@@ -362,7 +349,7 @@ export interface EditorStoreState {
    * 打开 / 关闭「战争雾 Mask 窗口」（`null` = 关闭）。
    *
    * 与「选择贴图」一样由属性面板的按钮唤出：窗口是模态层，所以**不动**画布上的
-   * 标注模式与选中（关掉窗口就回到原样）。两个格子编辑窗口**互斥**——同时开两层
+   * 选中（关掉窗口就回到原样）。两个格子编辑窗口**互斥**——同时开两层
    * 模态遮罩谁也点不到，所以开一个就把另一个关掉。
    */
   openFogMask(objectId: string | null): void;
@@ -700,23 +687,6 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
     writeGridPaintPrefs(prefs);
   };
 
-  /**
-   * 选中变了就退出标注：标注的目标必须一直是选中的那张地图。
-   *
-   * 不做「扫描全场景找目标」那种兜底——目标被别人删掉时，`paintGridStroke` 里
-   * 找不到对象自然什么都不做；而「换选中 = 换编辑对象」是用户看得见的意图，必须立刻生效。
-   */
-  const exitGridPaintIfDeselected = (selectedObjectIds: readonly string[]): void => {
-    const state = get();
-    if (!state.gridPaint.active || state.gridPaint.mapObjectId === null) {
-      return;
-    }
-
-    if (!selectedObjectIds.includes(state.gridPaint.mapObjectId)) {
-      state.exitGridPaint();
-    }
-  };
-
   const storedGridPaint = readGridPaintPrefs();
 
   return {
@@ -747,9 +717,6 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
     sceneSaveState: "saved",
     sceneSaveError: "",
     gridPaint: {
-      // 「画到哪儿」不进偏好：每次打开都从「没在标注」开始，目标由选中决定
-      active: false,
-      mapObjectId: null,
       mask: storedGridPaint.mask,
       brushSize: storedGridPaint.brushSize,
       hiddenMask: storedGridPaint.hiddenMask,
@@ -784,7 +751,7 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       savedScenes.clear();
       // 订阅里会把 scenes 清空、撤销栈清掉，并把保存状态置回 saved
       sceneHistory.reset([]);
-      set((state) => ({
+      set({
         doc,
         canUndo: false,
         canRedo: false,
@@ -797,28 +764,26 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
         activeSceneName: null,
         sceneSaveState: "saved",
         sceneSaveError: "",
-        // 换了文档：标注目标必然失效（偏好留着，下个项目接着用）
-        gridPaint: { ...state.gridPaint, active: false, mapObjectId: null },
+        // 换了文档：两个格子编辑窗口盯着的地图对象必然失效（偏好留着，下个项目接着用）
         // 两个格子编辑窗口同理：它们指向的地图对象已经不存在了
         fogMask: false,
         fogMaskTarget: null,
         gridEditor: false,
         gridEditorTarget: null,
-      }));
+      });
     },
 
     setActiveScene(name) {
       // 切场景前先把手上未保存的改动写回（写入谁由内容差异决定，所以不会写错场景）
       void get().flushSceneSave();
-      set((state) => ({
+      set({
         activeSceneName: name,
         selectedObjectIds: [],
-        gridPaint: { ...state.gridPaint, active: false, mapObjectId: null },
         fogMask: false,
         fogMaskTarget: null,
         gridEditor: false,
         gridEditorTarget: null,
-      }));
+      });
     },
 
     openScene(name) {
@@ -828,16 +793,15 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
 
       void get().flushSceneSave();
       // 打开场景 = 切到它并清掉别的选中：属性面板接着显示这个场景
-      set((state) => ({
+      set({
         activeSceneName: name,
         selectedObjectIds: [],
         selectedAssetId: null,
-        gridPaint: { ...state.gridPaint, active: false, mapObjectId: null },
         fogMask: false,
         fogMaskTarget: null,
         gridEditor: false,
         gridEditorTarget: null,
-      }));
+      });
       pushLog(makeLog("info", `已切换到场景：${name}`));
     },
 
@@ -845,13 +809,10 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       const next = [...objectIds];
       // 选中对象就取消资源选中：属性面板一次只显示一样东西
       set({ selectedObjectIds: next, selectedAssetId: null });
-      // 标注的目标必须一直选中（选中别的东西 = 换编辑对象，标注模式随之退出）
-      exitGridPaintIfDeselected(next);
     },
 
     selectAsset(id) {
       set({ selectedAssetId: id, selectedObjectIds: [] });
-      exitGridPaintIfDeselected([]);
     },
 
     setViewport(viewport) {
@@ -1305,18 +1266,16 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
         // 忘了这一步的话 `applyScenes` 会在空数组里找场景、永远「没产生变更」。
         // 场景级操作（增删改名 / 重新打开项目）不入撤销栈，所以这里直接 reset。
         sceneHistory.reset(scenes);
-        set((state) => ({
+        set({
           scenes,
           activeSceneName: keep ? previous : (scenes[0]?.name ?? null),
           selectedObjectIds: [],
-          // 场景重新装载过：对象 id 可能全换了，标注目标不再可信
-          gridPaint: { ...state.gridPaint, active: false, mapObjectId: null },
-          // Mask 窗口同理：它盯着的那个对象 id 也未必还存在
+          // 场景重新装载过：对象 id 可能全换了，两个格子编辑窗口盯着的对象 id 也未必还存在
           fogMask: false,
           fogMaskTarget: null,
           gridEditor: false,
           gridEditorTarget: null,
-        }));
+        });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         set((state) => ({ project: { ...state.project, error: message } }));
@@ -1652,9 +1611,6 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
 
       if (changed) {
         set({ selectedObjectIds: [] });
-        // 正在标注的那张地图被删了：退出标注（否则「标注中」的界面指向一个不存在的对象）
-        exitGridPaintIfDeselected([]);
-
         // 两个格子编辑窗口同理：它们盯着的那张地图没了就把窗口关掉（否则窗口里是一张画不出来的图）
         const fogTarget = get().fogMaskTarget;
         if (fogTarget !== null && targetIds.includes(fogTarget)) {
@@ -1790,32 +1746,6 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
     },
 
     // ------------------------------------------------------------ 网格标注
-
-    enterGridPaint(mapObjectId) {
-      const state = get();
-      // 换目标时先把上一笔的合并断开：不然新旧两笔可能并进同一条撤销记录
-      if (state.gridPaint.mapObjectId !== mapObjectId) {
-        sceneHistory.endCoalescing();
-      }
-
-      set({
-        gridPaint: { ...state.gridPaint, active: true, mapObjectId },
-        // 标注只作用于选中的那张地图：把选中对齐到目标，属性面板才会显示它的调色板
-        selectedObjectIds: [mapObjectId],
-        selectedAssetId: null,
-      });
-    },
-
-    exitGridPaint() {
-      const state = get();
-      if (!state.gridPaint.active && state.gridPaint.mapObjectId === null) {
-        return;
-      }
-
-      // 断开合并：退出后再进来的一笔不该并进上一次的记录
-      sceneHistory.endCoalescing();
-      set({ gridPaint: { ...state.gridPaint, active: false, mapObjectId: null } });
-    },
 
     setGridBrush(mask) {
       const paintable = mask === CellMask.Empty || PAINTABLE_MASKS.some((bit) => bit === mask);

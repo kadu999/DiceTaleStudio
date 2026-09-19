@@ -7,6 +7,7 @@ import {
   MIN_BRUSH_SIZE,
   PAINTABLE_MASKS,
   brushEffectiveSize,
+  hasMask,
   isInsideGrid,
   maskToLabel,
   worldRectOf,
@@ -30,17 +31,19 @@ import { cellColorsOf, countCellsWithMask, decodeCellsCached } from "../panels/s
 /**
  * 「网格编辑窗口」：在贴图上**按区域**涂 / 擦格子。
  *
- * 与画布上的标注模式是**同一份数据、同一套工具状态**（画笔类型 / 大小 / 配色都取
- * `gridPaint`，也就是那套浏览器本地偏好），区别只在你说的地方：
- * 不用进标注模式、不用在地图上对准格子——窗口把这张地图装满，落笔就落在格子上。
+ * 这是**唯一**的格子编辑入口（画布上那套标注模式已经去掉）。工具状态（画笔类型 / 大小 /
+ * 配色 / 每类显示开关）仍然是那套浏览器本地偏好（`gridPaint`，见
+ * `services/grid-paint-prefs`），文档里只落 `map.cells`。好处是不用在地图上对准格子——
+ * 窗口把这张地图装满，落笔就落在格子上。
  *
  * 几件事是刻意的：
- * - **格子级**：落笔吸附到格子上（与画布标注、Unity 的 `GridMapEditorWindow` 同一套），
+ * - **格子级**：落笔吸附到格子上（与 Unity 的 `GridMapEditorWindow` 同一套），
  *   所以这里的画布用与场景同一个渲染器（`@dts/renderer`），屏幕 → 格子走
  *   `screenToWorld` → `worldToGridPoint`；网格外落笔不画。**软边像素遮罩是另一件事**——
  *   那是运行时的「战争雾 Mask 窗口」。
- * - **编辑视图**：8 个区域一律着色（不受「每类的显示开关」影响——那两个开关管的是画布怎么显示）；
- *   每个区域名字前是它的颜色，点一下即可改。
+ * - **每类一个显示开关**：与画布**共用**同一份偏好，关掉只是不画这一层——
+ *   数据不动，画笔也照样能画它（同 Unity）。
+ * - 每个区域名字前是它的颜色（点一下即可改；透明度跟类型绑定，与 Unity 的 `ColorField` 一致）。
  * - 窗口自带视口（`fitViewport` 把这张地图装满），所以**不要求地图已激活 / 已落位**。
  * - 指针捕获 + 补齐两个事件点之间的格子（快拖不断线），一整笔一条撤销记录。
  *
@@ -73,6 +76,7 @@ export function GridEditDialog({
   const gridPaint = useEditorStore((state) => state.gridPaint);
   const setGridBrush = useEditorStore((state) => state.setGridBrush);
   const setGridBrushSize = useEditorStore((state) => state.setGridBrushSize);
+  const toggleGridTypeVisible = useEditorStore((state) => state.toggleGridTypeVisible);
   const setGridTypeColor = useEditorStore((state) => state.setGridTypeColor);
   const paintGridStroke = useEditorStore((state) => state.paintGridStroke);
   const endGridStroke = useEditorStore((state) => state.endGridStroke);
@@ -203,7 +207,8 @@ export function GridEditDialog({
       rect,
       grid,
       cells: decodeCellsCached(map.cells.runs, grid.width * grid.height),
-      cellColors: (mask) => cellColorsOf(mask, 0, colors),
+      // 关掉的那几类不画（只影响显示：数据与画笔都不受影响）
+      cellColors: (mask) => cellColorsOf(mask, gridPaint.hiddenMask, colors),
       // 窗口里要看清自己在改哪一格，网格线一直画（不受画布上那个显示开关影响）
       showGrid: true,
     };
@@ -214,11 +219,11 @@ export function GridEditDialog({
       cssHeight: size.height,
       layers: [layer],
     });
-    // map / colors 每次文档或配色变化都是新对象，正好触发重画；
+    // map / gridPaint 每次文档或偏好变化都是新对象，正好触发重画；
     // canvas 进依赖是为了「窗口内容刚挂上」那一次也能画出来（渲染器在更早的 effect 里建好）
-  }, [map, grid, rect, colors, size, image, imageReady, canvas]);
+  }, [map, grid, rect, gridPaint, colors, size, image, imageReady, canvas]);
 
-  /** 指针落在哪一格；在网格外返回 `undefined`（与画布标注同一条规矩：外面点一下不画）。 */
+  /** 指针落在哪一格；在网格外返回 `undefined`（与 Unity 同一条规矩：外面点一下不画）。 */
   const cellAt = (event: React.PointerEvent<HTMLCanvasElement>): GridPoint | undefined => {
     const viewport = viewportRef.current;
     if (canvas === null || viewport === null || grid === undefined || rect === undefined) {
@@ -239,7 +244,7 @@ export function GridEditDialog({
       return;
     }
 
-    // 画笔与大小在 store 里取：与画布标注共用同一套偏好，两边随时保持一致
+    // 画笔与大小在 store 里取：就是右侧面板里选中的那一套
     paintGridStroke(objectId, from, to);
   };
 
@@ -337,7 +342,7 @@ export function GridEditDialog({
 
                   {/* 橡皮擦：对齐 Unity 的「橡皮擦 (0)」——掩码 0 就是把整格清掉 */}
                   <div className="flex items-center gap-1">
-                    {/* 与下面的类型行对齐：色块位置留空 */}
+                    {/* 与下面的类型行对齐：色块与显示开关的位置都留空 */}
                     <span aria-hidden="true" className="h-5 w-6 flex-none" />
                     <button
                       type="button"
@@ -353,10 +358,13 @@ export function GridEditDialog({
                     >
                       橡皮擦
                     </button>
+                    <span aria-hidden="true" className="h-3.5 w-3.5 flex-none" />
                   </div>
 
                   {PAINTABLE_MASKS.map((bit) => {
                     const selected = gridPaint.mask === bit;
+                    // 显示开关与画布共用：关掉的那类在这里也不画（数据与画笔不受影响）
+                    const visible = !hasMask(gridPaint.hiddenMask, bit);
                     return (
                       <div key={bit} className="flex items-center gap-1">
                         <input
@@ -382,6 +390,16 @@ export function GridEditDialog({
                         >
                           {maskToLabel(bit)}
                         </button>
+                        {/* 显示开关：只影响画（本窗口与画布一起），数据不动、也照样能画它 */}
+                        <input
+                          type="checkbox"
+                          data-testid={`grid-editor-visible-${bit}`}
+                          aria-label={`显示${maskToLabel(bit)}`}
+                          title={`${visible ? "不再显示" : "显示"}${maskToLabel(bit)}（只影响显示，数据不动）`}
+                          checked={visible}
+                          className="h-3.5 w-3.5 flex-none accent-[var(--color-editor-accent)]"
+                          onChange={() => toggleGridTypeVisible(bit)}
+                        />
                       </div>
                     );
                   })}
