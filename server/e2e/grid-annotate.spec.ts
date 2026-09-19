@@ -80,7 +80,7 @@ async function reachableCells(page: Page, wanted = 1): Promise<ReachableCell[]> 
   return found;
 }
 
-/** 画布上这个点的「红度」：贴图是纯白，标注上障碍（红，α0.6）后 r 远大于 g。 */
+/** 画布上这个点的「红度」：贴图是纯白，标注上区域1（红，α0.6）后 r 远大于 g。 */
 async function redness(page: Page, point: { x: number; y: number }): Promise<number> {
   const color = await canvasAverageColor(page, point);
   return color.r - color.g;
@@ -127,11 +127,17 @@ test.describe("网格标注", () => {
 
       await enterAnnotating(page, request, project);
 
+      // 类型名是中性占位「区域1–8」：**编号是顺序、括号里才是位值**（1/2/4/8…）
+      await expect(page.getByTestId("grid-type-0")).toHaveText("橡皮擦 (0)");
+      await expect(page.getByTestId("grid-type-1")).toHaveText("区域1 (1)");
+      await expect(page.getByTestId("grid-type-8")).toHaveText("区域4 (8)");
+      await expect(page.getByTestId("grid-type-128")).toHaveText("区域8 (128)");
+
       const [target] = await reachableCells(page);
       expect(target).toBeDefined();
       const cell = target!.cell;
 
-      // 点一下 = 一格（默认画笔是障碍、1 号画笔）
+      // 点一下 = 一格（默认画笔是区域1、1 号画笔）
       await page.mouse.click(target!.point.x, target!.point.y);
       // 挪开指针：画布上的画笔预览会垫一层半透明白，采样要看画上去的颜色本身
       await page.mouse.move(4, 4);
@@ -233,7 +239,7 @@ test.describe("网格标注", () => {
       await page.mouse.move(4, 4);
       await expect.poll(() => redness(page, target!.point)).toBeGreaterThan(60);
 
-      // 关掉「障碍」的显示：画布不再着色……
+      // 关掉「区域1」的显示：画布不再着色……
       await page.getByTestId("grid-type-visible-1").uncheck();
       await expect.poll(() => redness(page, target!.point)).toBeLessThan(40);
       // ……但格子的数据还在（自动存有 800ms 防抖，所以这里也要等落盘）

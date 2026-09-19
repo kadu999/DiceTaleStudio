@@ -30,7 +30,7 @@ import type { RleRun } from "@dts/grid";
  *   （谁画在前面；大的盖住小的，相同则按场景里的先后顺序）。
  */
 
-export const DOCUMENT_FORMAT_VERSION = 9;
+export const DOCUMENT_FORMAT_VERSION = 10;
 
 /** 网格行序：`bottom-up` 表示 cells 第 0 行是图片最下面一行（与 Unity GridMap 一致）。 */
 export type RowOrder = "bottom-up";
@@ -103,6 +103,23 @@ export interface MapDataDoc {
   readonly grid: GridSpec;
   readonly rowOrder: RowOrder;
   readonly cells: CellRuns;
+  /**
+   * 战争雾配置（v10 起）。
+   *
+   * 格子上的 8 个类型位是**中性的「区域」**（面板上叫区域1–区域8），不与任何玩法绑定——
+   * 哪个区域算雾区由这里**手动指定**。指定的区域里那些格子就是战争雾：运行时
+   * （`Scripts/Map/FogOfWar.cs`）按「玩家进入某区域 → 揭示整片区域」处理。
+   *
+   * 缺省（字段不存在）= 一个雾区都没指定，与 `{ regions: [] }` 同义；没指定时**不写这个字段**，
+   * 免得文件里留一个空壳。
+   */
+  readonly fog?: MapFogDoc;
+}
+
+/** 战争雾：把哪些「区域」当成雾区（区域位取自 `@dts/grid` 的可绘制位）。 */
+export interface MapFogDoc {
+  /** 指定的雾区位（如 `[8, 16]` = 区域4 + 区域5）；空数组 = 一个都没指定。 */
+  readonly regions: number[];
 }
 
 export interface SceneObjectDoc {

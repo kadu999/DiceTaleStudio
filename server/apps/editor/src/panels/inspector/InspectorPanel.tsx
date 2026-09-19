@@ -7,6 +7,7 @@ import { assetDisplayPath, findAssetById } from "../asset-picker";
 import { assetKindLabel, assetPreviewKind, formatSize } from "../asset-info";
 import { EmptyState } from "../EmptyState";
 import { Field, FieldGroup, FieldRow } from "./fields";
+import { FogFields } from "./FogFields";
 import { GridAnnotationFields } from "./GridAnnotationFields";
 
 /** 右侧属性面板：当前选中对象 / 场景 / **资源文件**的属性。编辑能力在 M2/M3 接入。 */
@@ -63,8 +64,6 @@ export function InspectorPanel(): React.JSX.Element {
               <SortingOrderField object={selected} />
               <PositionFields object={selected} />
               <ScaleField object={selected} />
-              {/* 每个对象都能显示一张图片（精灵就是靠它显示图片的） */}
-              <TextureField object={selected} />
               {selected.map !== undefined ? (
                 <>
                   <GridFields object={selected} />
@@ -74,12 +73,32 @@ export function InspectorPanel(): React.JSX.Element {
               ) : null}
             </FieldGroup>
 
+            {/*
+              「渲染」= **这个对象画出来是什么样**：现在只有「贴图」一行（每个对象都能显示一张
+              图片，精灵就是靠它显示图片的；地图的贴图也是同一个字段，只是存在 `map.image` 里）。
+              暂时只支持**替换图片**，后面要加的「怎么画」（着色、混合、动画…）都往这一组里放，
+              不再塞回「基础」——「对象是什么」与「对象画成什么样」是两件事。
+            */}
+            <FieldGroup title="渲染" group="render">
+              <TextureField object={selected} />
+            </FieldGroup>
+
             {/* 「编辑」只对地图对象出现：格子是地图独有的东西 */}
             {selected.map !== undefined ? (
               <FieldGroup title="编辑" group="edit">
                 {/* 网格线 / 网格标注两个总开关：不进入标注模式也能用（想看清贴图就关掉） */}
                 <GridDisplayField />
                 <GridAnnotationFields object={selected} />
+              </FieldGroup>
+            ) : null}
+
+            {/*
+              「战争雾」也只对地图对象出现：8 个区域位是中性的，哪些算雾区要在这里手动指定，
+              真正的编辑在 Mask 窗口里做。
+            */}
+            {selected.map !== undefined ? (
+              <FieldGroup title="战争雾" group="fog">
+                <FogFields object={selected} />
               </FieldGroup>
             ) : null}
           </div>
@@ -205,6 +224,9 @@ function LockedField({ object }: { readonly object: SceneObjectDoc }): React.JSX
 /**
  * 对象要显示的图片（**精灵**就靠它显示图片；地图的贴图也是这个字段，只是存在 `map.image` 里）：
  * 显示**项目内相对路径**（`images/Map001.png`），后面跟一个「选择」按钮。
+ *
+ * 这是**「渲染」分组目前唯一的一行**：现阶段渲染只做到「换一张图片」，后面加进来的
+ * 渲染选项（着色、混合、动画…）都归到这一组。
  *
  * 按钮唤出的是「选择图片」弹框（对齐 Unity 的 Object Picker）——素材由外部提交到
  * `Assets/images/`，编辑器不导入，所以这里只负责从已有图片里挑。没有图片的对象

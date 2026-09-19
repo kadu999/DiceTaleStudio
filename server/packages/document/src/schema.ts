@@ -36,11 +36,24 @@ export const cellRunsSchema = z.object({
   runs: z.array(z.tuple([z.number().int().min(0).max(255), z.number().int().nonnegative()])),
 });
 
+/**
+ * 战争雾（v10 起）：指定哪些区域算雾区。
+ *
+ * `regions` 给默认值 `[]` 是有意的（与 v7 的 `active` 同理）：**字段在、内容空**和
+ * 「字段整个不在」在语义上是一回事（没指定任何雾区），给默认值省掉一处三元判断。
+ * 位值范围只挡到 1–255（与格子掩码同一个口径）；「必须是已知的可绘制位」属于语义校验，
+ * 由 `validateScene` 报 warning——手写文件里的越界位要在界面上看得见，而不是读不开文件。
+ */
+export const mapFogSchema = z.object({
+  regions: z.array(z.number().int().min(1).max(255)).default([]),
+});
+
 export const mapDataSchema = z.object({
   image: imageRefSchema,
   grid: gridSpecSchema,
   rowOrder: z.literal("bottom-up"),
   cells: cellRunsSchema,
+  fog: mapFogSchema.optional(),
 });
 
 export const conditionSchema = z.object({

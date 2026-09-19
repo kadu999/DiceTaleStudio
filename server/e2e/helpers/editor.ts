@@ -12,7 +12,7 @@ import { deflateSync } from "node:zlib";
 export type LeftTab = "assets" | "hierarchy";
 
 /** 场景文件的当前格式版本（与 `@dts/document` 的 `DOCUMENT_FORMAT_VERSION` 保持一致）。 */
-export const CURRENT_SCENE_FORMAT_VERSION = 9;
+export const CURRENT_SCENE_FORMAT_VERSION = 10;
 
 /** 用接口建一个真项目（含 `project.json`），返回项目名。 */
 export async function newProject(request: APIRequestContext): Promise<string> {
@@ -152,8 +152,8 @@ export function sceneDoc(
  * 造一个场景里的普通对象（形状与 `createSceneObject` 一致，无组件无动作）。
  *
  * `position` 是**世界坐标**（场景中心为原点，x 向右、y 向上，单位像素）；不传即未放置。
- * `active` / `sortingOrder` 是 v7 起、`scale` 是 v8 起、`locked` 是 v9 起的显式字段
- * （默认「显示、顺序 0、缩放 1、不锁」）。
+ * `active` / `sortingOrder` 是 v7 起、`scale` 是 v8 起、`locked` 是 v9 起、地图的 `map.fog`（战争雾）
+ * 是 v10 起的显式字段（默认「显示、顺序 0、缩放 1、不锁、没指定雾区」）。
  */
 export function sceneObjectDoc(
   name: string,
@@ -394,6 +394,30 @@ export async function readSceneMap(
   }
 
   return { grid: map.grid, runs: map.cells.runs };
+}
+
+/**
+ * 读场景文件里地图对象的**战争雾绑定**（指定的雾区位）。
+ *
+ * 没指定过雾区就是 `undefined`——「没指定」在文件里是**没有 `map.fog` 这个字段**，
+ * 不是 `{ regions: [] }`（见 `setMapFogRegions`）。
+ */
+export async function readSceneFogRegions(
+  request: APIRequestContext,
+  project: string,
+  sceneName: string,
+): Promise<readonly number[] | undefined> {
+  const id = `project:${project}/Assets/scenes/${sceneName}.json`;
+  const response = await request.get(`/api/resources/text?id=${encodeURIComponent(id)}`);
+  if (!response.ok()) {
+    return undefined;
+  }
+
+  const file = JSON.parse(await response.text()) as {
+    objects?: Array<{ kind?: string; map?: { fog?: { regions?: number[] } } }>;
+  };
+
+  return file.objects?.find((object) => object.kind === "Map")?.map?.fog?.regions;
 }
 
 /** 把 RLE 游程展开成掩码数组（断言某一格画上了什么）。 */

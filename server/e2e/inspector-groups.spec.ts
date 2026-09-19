@@ -13,7 +13,7 @@ import {
 } from "./helpers/editor";
 
 /**
- * 属性面板的**分组**（可折叠）：地图对象分「基础 / 编辑」，点标题收起 / 展开。
+ * 属性面板的**分组**（可折叠）：地图对象分「基础 / 渲染 / 编辑 / 战争雾」四组，点标题收起 / 展开。
  *
  * 这里只驱动真实界面（分组是纯 UI 行为，没有数据副作用），所以一条用例够了；
  * 「换对象时重置」「折叠不动数据」由 jsdom 那条 `inspector-groups.test.tsx` 覆盖。
@@ -22,7 +22,10 @@ import {
 const SCENE = "Map001";
 
 test.describe("属性分组", () => {
-  test("地图分「基础 / 编辑」两组，点标题可收起 / 展开；精灵没有编辑组", async ({ page, request }) => {
+  test("地图分「基础 / 渲染 / 编辑 / 战争雾」四组，点标题可收起 / 展开；精灵没有后两组", async ({
+    page,
+    request,
+  }) => {
     const project = await newProject(request);
     try {
       await seedProjectDoc(request, project, [
@@ -36,22 +39,54 @@ test.describe("属性分组", () => {
       await openProject(page, project);
       await openLeftTab(page, "hierarchy");
 
-      // 选中地图（列表第一行）→ 属性面板应有两个分组
+      // 选中地图（列表第一行）→ 属性面板应有四个分组
       await selectObject(page, 0);
 
       const basic = page.locator('[data-group="basic"]');
+      const render = page.locator('[data-group="render"]');
       const edit = page.locator('[data-group="edit"]');
+      const fog = page.locator('[data-group="fog"]');
       await expect(basic).toBeVisible();
+      await expect(render).toBeVisible();
       await expect(edit).toBeVisible();
+      await expect(fog).toBeVisible();
       // 默认都展开
       await expect(basic).toHaveAttribute("data-open", "true");
+      await expect(render).toHaveAttribute("data-open", "true");
       await expect(edit).toHaveAttribute("data-open", "true");
+      await expect(fog).toHaveAttribute("data-open", "true");
       await expect(basic).toContainText("名称");
+      await expect(render).toContainText("贴图");
       await expect(edit).toContainText("网格标注");
+      await expect(fog).toContainText("指定雾区");
+
+      const renderHeader = render.getByTestId("field-group-header");
+      await expect(renderHeader).toHaveAttribute("aria-expanded", "true");
+
+      // 「渲染」**排在「基础」下面**（贴图那一行搬进来了，基础组里不再有它）
+      await expect(render.getByTestId("pick-texture")).toBeVisible();
+      await expect(basic.getByTestId("pick-texture")).toHaveCount(0);
+      // 只在**对象属性**里数列（`data-group` 这种通用属性别人也在用，
+      // 例如分栏容器 react-resizable-panels 就给自己的 div 挂了一个）
+      const order = await page
+        .locator('[data-testid="object-properties"] [data-group]')
+        .evaluateAll((sections) => sections.map((section) => section.getAttribute("data-group")));
+      expect(order).toEqual(["basic", "render", "edit", "fog"]);
+
+      // 收起「渲染」：内容整块消失，但分组标题还在（还能再展开）
+      await renderHeader.click();
+      await expect(render).toHaveAttribute("data-open", "false");
+      await expect(render).toContainText("渲染");
+      await expect(render.getByTestId("pick-texture")).toHaveCount(0);
+      // 其它分组不受影响
+      await expect(basic).toHaveAttribute("data-open", "true");
+
+      // 再点一下展开
+      await renderHeader.click();
+      await expect(render).toHaveAttribute("data-open", "true");
+      await expect(render.getByTestId("pick-texture")).toBeVisible();
 
       const editHeader = edit.getByTestId("field-group-header");
-      await expect(editHeader).toHaveAttribute("aria-expanded", "true");
-
       // 收起「编辑」：内容整块消失，但分组标题还在（还能再展开）
       await editHeader.click();
       await expect(edit).toHaveAttribute("data-open", "false");
@@ -65,10 +100,21 @@ test.describe("属性分组", () => {
       await expect(edit).toHaveAttribute("data-open", "true");
       await expect(edit.getByTestId("grid-paint-enter")).toBeVisible();
 
-      // 精灵：只有「基础」，没有「编辑」（格子是地图独有的）
+      // 收起「战争雾」：入口那行消失，标题还在
+      const fogHeader = fog.getByTestId("field-group-header");
+      await fogHeader.click();
+      await expect(fog).toHaveAttribute("data-open", "false");
+      await expect(fog.getByTestId("fog-mask-open")).toHaveCount(0);
+      await fogHeader.click();
+      await expect(fog).toHaveAttribute("data-open", "true");
+      await expect(fog.getByTestId("fog-mask-open")).toBeVisible();
+
+      // 精灵：有「基础 / 渲染」（每个对象都能显示图片），没有「编辑 / 战争雾」（都是地图独有的）
       await selectObject(page, 1);
       await expect(page.locator('[data-group="basic"]')).toBeVisible();
+      await expect(page.locator('[data-group="render"]')).toBeVisible();
       await expect(page.locator('[data-group="edit"]')).toHaveCount(0);
+      await expect(page.locator('[data-group="fog"]')).toHaveCount(0);
     } finally {
       await dropProject(request, project);
     }

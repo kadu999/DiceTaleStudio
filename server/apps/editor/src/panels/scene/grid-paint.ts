@@ -5,6 +5,7 @@ import {
   decodeRle,
   defaultCellMaskStyle,
   gridCornerToWorld,
+  hasMask,
   visibleMaskBits,
   worldRectOf,
   type GridPoint,
@@ -126,5 +127,54 @@ export function brushPreviewLayer(
     grid: { width, height },
     cells: mask,
     cellColors: (value) => [value === PREVIEW_CELL_MASK ? PREVIEW_CELL : PREVIEW_COVER],
+  };
+}
+
+/**
+ * 战争雾预览的雾罩颜色：RGB 取自运行时 `FogOfWar` 的 `fogColor (0.85, 0.88, 0.92)`。
+ *
+ * **透明度是 0.85，不是运行时的 1**：运行时靠 GPU 羽化把边缘化开，编辑器这边没有模糊
+ * （2D 渲染器只画硬边格子），照搬不透明会把底图完全盖住、反而看不出自己在改哪一格。
+ * 这是**预览**：要看「玩家看到的最终样子」以运行时的模糊结果为准。
+ */
+const FOG_PREVIEW_CSS = "rgba(217,224,235,0.85)";
+
+/**
+ * 战争雾预览图层：把「含任意已指定雾区位的格子」盖一层雾罩。
+ *
+ * 与标注着色是**两张图层、两套说法**，这是刻意的：
+ * - **画布上的雾罩**（这里）回答「玩家会看到什么」——所有雾区一视同仁，按运行时的样子盖一层；
+ * - **Mask 窗口里的按区域配色**回答「哪一格属于哪个雾区」——那是编辑视图。
+ *
+ * 复用 `SceneLayer`（无贴图、只有格子着色）而不是给渲染器加概念：与画笔预览同一个套路。
+ * 没有指定雾区、或一个雾格都没有时返回 `undefined`（调用方直接不追加这一层）。
+ */
+export function fogPreviewLayer(
+  rect: WorldRect,
+  grid: GridSize,
+  cells: Uint8Array,
+  fogMask: number,
+): SceneLayer | undefined {
+  if (fogMask === 0) {
+    return undefined;
+  }
+
+  let covered = false;
+  for (const mask of cells) {
+    if (hasMask(mask, fogMask)) {
+      covered = true;
+      break;
+    }
+  }
+
+  if (!covered) {
+    return undefined;
+  }
+
+  return {
+    rect,
+    grid,
+    cells,
+    cellColors: (mask) => (hasMask(mask, fogMask) ? [FOG_PREVIEW_CSS] : []),
   };
 }

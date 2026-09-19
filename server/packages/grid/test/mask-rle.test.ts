@@ -10,6 +10,8 @@ import {
   isFogMask,
   isValidMask,
   maskToLabel,
+  normalizeRegions,
+  regionsToMask,
   removeMask,
 } from "../src/mask";
 import { decodeRle, encodeRle } from "../src/rle";
@@ -64,8 +66,39 @@ describe("掩码位运算", () => {
 
   it("maskToLabel 可读化", () => {
     expect(maskToLabel(0)).toBe("空");
-    expect(maskToLabel(CellMask.Obstacle)).toBe("障碍");
-    expect(maskToLabel(CellMask.Obstacle | CellMask.Fog1)).toBe("障碍+雾1");
+    expect(maskToLabel(CellMask.Obstacle)).toBe("区域1");
+    expect(maskToLabel(CellMask.Obstacle | CellMask.Fog1)).toBe("区域1+区域4");
+  });
+
+  it("类型的显示名是按可绘制顺序编号的「区域1–8」（与位值无关）", () => {
+    // 位值是 1/2/4/8/…（2 的幂），编号是 1..8 的序号——两者故意不是一回事
+    expect(PAINTABLE_MASKS.map((bit) => maskToLabel(bit))).toEqual([
+      "区域1",
+      "区域2",
+      "区域3",
+      "区域4",
+      "区域5",
+      "区域6",
+      "区域7",
+      "区域8",
+    ]);
+    // 越界位仍然如实报出来，不假装它是某个区域
+    expect(maskToLabel(256)).toBe("未知(256)");
+  });
+
+  it("normalizeRegions / regionsToMask：只留可绘制位、去重、升序", () => {
+    // 0 = 橡皮擦（不是区域）、3 = 两个位的和（不是单个位）、256 = 越界，全部丢掉
+    expect(normalizeRegions([16, 1, 16, 0, 3, 256])).toEqual([1, 16]);
+    expect(normalizeRegions([])).toEqual([]);
+    // 规范化后的顺序与位值大小一致（低位在前），于是「指定雾区」写进文件时是稳定的
+    expect(normalizeRegions([CellMask.Fog5, CellMask.Obstacle, CellMask.Fog1])).toEqual([1, 8, 128]);
+
+    expect(regionsToMask([16, 1, 16])).toBe(17);
+    expect(regionsToMask([0, 3])).toBe(0);
+    expect(regionsToMask([])).toBe(0);
+    // 合并后的掩码要能直接拿去判「这一格算不算」——这正是它存在的理由
+    expect(hasMask(CellMask.Obstacle | CellMask.Fog3, regionsToMask([8, 32]))).toBe(true);
+    expect(hasMask(CellMask.Difficult, regionsToMask([8, 32]))).toBe(false);
   });
 });
 
@@ -101,7 +134,7 @@ describe("RLE 游程编码", () => {
     expect(() => decodeRle([[1, 1.5]])).toThrow(/非法/);
   });
 
-  it("真实尺寸数据往返一致（64x36 全障碍）", () => {
+  it("真实尺寸数据往返一致（64x36 全是区域1）", () => {
     const cells = new Uint8Array(64 * 36).fill(CellMask.Obstacle);
     const runs = encodeRle(cells);
     expect(runs).toEqual([[CellMask.Obstacle, 64 * 36]]);

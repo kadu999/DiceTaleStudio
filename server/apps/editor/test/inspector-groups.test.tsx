@@ -5,11 +5,11 @@ import { InspectorPanel } from "../src/panels/inspector/InspectorPanel";
 import { sceneHistory, useEditorStore } from "../src/state/editor-store";
 
 /**
- * 属性面板的**分组**（可折叠）：地图对象分「基础 / 编辑」两组，点标题收起 / 展开。
+ * 属性面板的**分组**（可折叠）：地图对象分「基础 / 渲染 / 编辑 / 战争雾」四组，点标题收起 / 展开。
  *
  * 参考实现也是这套行为（Unity 组件头式的折叠分组）：默认全展开、点标题切换、
- * 切换对象时回到展开。所以这里钉住四件事：分组出现、能收起 / 展开、
- * 折叠只影响显示不影响数据、换对象时状态重置。
+ * 切换对象时回到展开。所以这里钉住五件事：分组出现、能收起 / 展开、
+ * 折叠只影响显示不影响数据、换对象时状态重置，以及**顺序**（渲染在基础下面、战争雾在最后）。
  */
 
 const IMAGE = { id: "project:测试/Assets/images/Map001.png", width: 400, height: 300 };
@@ -43,6 +43,16 @@ function groupOf(slug: string): HTMLElement {
 
 const isOpen = (slug: string): boolean => groupOf(slug).getAttribute("data-open") === "true";
 
+/**
+ * 面板上分组的**先后**（按 DOM 顺序）——「渲染排在基础下面」这类位置约束靠它钉住。
+ *
+ * 只在**对象属性**里数：`data-group` 是通用属性，别的组件（分栏容器之类）也会挂。
+ */
+const groupSlugs = (): (string | null)[] =>
+  Array.from(document.querySelectorAll('[data-testid="object-properties"] [data-group]')).map(
+    (section) => section.getAttribute("data-group"),
+  );
+
 function headerOf(slug: string): HTMLElement {
   return within(groupOf(slug)).getByTestId("field-group-header");
 }
@@ -53,24 +63,59 @@ afterEach(() => {
   useEditorStore.setState({ scenes: [], activeSceneName: null, selectedObjectIds: [] });
 });
 
-describe("属性分组：基础 / 编辑", () => {
-  it("地图对象分两组，默认都展开；精灵只有「基础」", () => {
+describe("属性分组：基础 / 渲染 / 编辑 / 战争雾", () => {
+  it("地图对象分四组；精灵只有基础 / 渲染", () => {
     seedScene([mapObject(), createSceneObject({ id: "sprite", name: "精灵" })], ["map-1"]);
     const { unmount } = render(<InspectorPanel />);
 
     expect(screen.getByRole("button", { name: "基础" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "渲染" })).toBeDefined();
     expect(screen.getByRole("button", { name: "编辑" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "战争雾" })).toBeDefined();
     expect(isOpen("basic")).toBe(true);
+    expect(isOpen("render")).toBe(true);
     expect(isOpen("edit")).toBe(true);
-    expect(headerOf("edit").getAttribute("aria-expanded")).toBe("true");
+    expect(isOpen("fog")).toBe(true);
+    expect(headerOf("render").getAttribute("aria-expanded")).toBe("true");
+
+    // 渲染**紧跟在基础后面**（在「编辑」之前）：换贴图属于「画成什么样」，与格子的编辑分开；
+    // 战争雾排在最后（同属地图专属，且它是随后才加的）
+    expect(groupSlugs()).toEqual(["basic", "render", "edit", "fog"]);
+
+    // 贴图那一行搬进了「渲染」：基础组里不再有它
+    expect(within(groupOf("render")).getByTestId("pick-texture")).toBeDefined();
+    expect(within(groupOf("basic")).queryByTestId("pick-texture")).toBeNull();
+    // 战争雾那一组只在有地图数据时出现
+    expect(within(groupOf("fog")).getByTestId("fog-mask-open")).toBeDefined();
 
     unmount();
     seedScene([mapObject(), createSceneObject({ id: "sprite", name: "精灵" })], ["sprite"]);
     render(<InspectorPanel />);
 
-    // 精灵没有格子可编辑：不该有「编辑」组（也不该空着一块）
+    // 精灵也有「渲染」（每个对象都能显示图片），但没有格子可编辑、也不是地图 → 没有编辑 / 战争雾
     expect(screen.getByRole("button", { name: "基础" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "渲染" })).toBeDefined();
+    expect(groupSlugs()).toEqual(["basic", "render"]);
     expect(screen.queryByRole("button", { name: "编辑" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "战争雾" })).toBeNull();
+  });
+
+  it("点「渲染」标题收起内容，再点展开", () => {
+    seedScene([mapObject()], ["map-1"]);
+    render(<InspectorPanel />);
+
+    // 展开时看得见贴图那一行（「选择」按钮就是换图入口）
+    expect(screen.getByTestId("pick-texture")).toBeDefined();
+
+    fireEvent.click(screen.getByRole("button", { name: "渲染" }));
+    expect(isOpen("render")).toBe(false);
+    expect(headerOf("render").getAttribute("aria-expanded")).toBe("false");
+    // 收起 = 内容不渲染（不是藏起来还留在 DOM 里）
+    expect(within(groupOf("render")).queryByTestId("pick-texture")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "渲染" }));
+    expect(isOpen("render")).toBe(true);
+    expect(screen.getByTestId("pick-texture")).toBeDefined();
   });
 
   it("点「编辑」标题收起内容，再点展开", () => {
@@ -113,18 +158,26 @@ describe("属性分组：基础 / 编辑", () => {
     seedScene([mapObject(), createSceneObject({ id: "sprite", name: "精灵" })], ["map-1"]);
     render(<InspectorPanel />);
 
+    fireEvent.click(screen.getByRole("button", { name: "渲染" }));
     fireEvent.click(screen.getByRole("button", { name: "编辑" }));
+    fireEvent.click(screen.getByRole("button", { name: "战争雾" }));
+    expect(isOpen("render")).toBe(false);
     expect(isOpen("edit")).toBe(false);
+    expect(isOpen("fog")).toBe(false);
 
-    // 换到精灵：分组是另一套（只有基础）
+    // 换到精灵：分组是另一套（基础 + 渲染，没有编辑 / 战争雾）
     act(() => useEditorStore.getState().setSelection(["sprite"]));
     expect(screen.getByRole("button", { name: "基础" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "渲染" })).toBeDefined();
     expect(screen.queryByRole("button", { name: "编辑" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "战争雾" })).toBeNull();
 
-    // 再回到地图：编辑组是**展开**的
+    // 再回到地图：三个组都是**展开**的
     act(() => useEditorStore.getState().setSelection(["map-1"]));
     expect(isOpen("basic")).toBe(true);
+    expect(isOpen("render")).toBe(true);
     expect(isOpen("edit")).toBe(true);
+    expect(isOpen("fog")).toBe(true);
   });
 
   it("场景 / 资源 / 项目视图也走同一套可折叠分组", () => {

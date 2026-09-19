@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  mapFogMask,
   objectImage,
   objectsInDrawOrder,
   type SceneDoc,
@@ -25,7 +26,7 @@ import {
 import { sceneImage, sceneImageError, subscribeSceneImage } from "../../services/scene-image";
 import { useEditorStore } from "../../state/editor-store";
 import { EmptyState } from "../EmptyState";
-import { brushPreviewLayer, cellColorsOf, decodeCellsCached } from "./grid-paint";
+import { brushPreviewLayer, cellColorsOf, decodeCellsCached, fogPreviewLayer } from "./grid-paint";
 
 /**
  * 没有图片的对象（刚建出来的精灵）的**碰撞体**尺寸：世界里的一块 64×64。
@@ -641,6 +642,34 @@ export function ScenePanel(): React.JSX.Element {
           },
         ];
       });
+
+      // 战争雾预览：**盖在自己那张地图的图层之后**（运行时也是雾压在贴图之上），
+      // 但排在画笔预览之前。每张地图各追加一层，一张场景有多张地图时互不干扰。
+      // 「显示 → 战争雾」是纯显示开关：关了就不加这一层，格子数据与画笔都不受影响。
+      if (gridPaint.showFog) {
+        for (const object of drawOrder) {
+          const map = object.map;
+          const rect = displayRectOf(object);
+          if (map === undefined || rect === undefined) {
+            continue;
+          }
+
+          const fogMask = mapFogMask(map);
+          if (fogMask === 0) {
+            continue;
+          }
+
+          const overlay = fogPreviewLayer(
+            rect,
+            map.grid,
+            decodeCellsCached(map.cells.runs, map.grid.width * map.grid.height),
+            fogMask,
+          );
+          if (overlay !== undefined) {
+            layers.push(overlay);
+          }
+        }
+      }
 
       // 画笔预览：画在**所有图片之后**（盖在贴图上），用与地图格子完全同一套坐标
       const previewTarget = drawOrder.find((object) => object.id === gridPaint.mapObjectId);

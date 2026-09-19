@@ -1,4 +1,4 @@
-import { decodeRle } from "@dts/grid";
+import { PAINTABLE_MASKS, decodeRle } from "@dts/grid";
 import { findComponentType, isKnownComponentType } from "./components";
 import { collectActionIds } from "./commands";
 import type { ProjectDoc, SceneDoc, SceneObjectDoc } from "./types";
@@ -66,6 +66,18 @@ function validateObject(object: SceneObjectDoc, path: string, issues: Validation
 
       if (object.map.image.id.trim().length === 0) {
         issues.push({ level: "warning", path: `${path}/map/image`, message: "地图贴图未指定" });
+      }
+
+      // 战争雾指定的雾区位必须是可绘制的区域位：手写文件里写了别的值（0、3、256…），
+      // 编辑器会把它丢掉，所以这里得说出来——不然「明明指定了却不生效」无从排查
+      const fogRegions = object.map.fog?.regions ?? [];
+      const unknownRegions = fogRegions.filter((bit) => !PAINTABLE_MASKS.some((value) => value === bit));
+      if (unknownRegions.length > 0) {
+        issues.push({
+          level: "warning",
+          path: `${path}/map/fog/regions`,
+          message: `战争雾指定的 ${unknownRegions.join(", ")} 不是可绘制的区域位（会被忽略）`,
+        });
       }
     }
 

@@ -4,18 +4,21 @@ import {
   DocumentHistory,
   addObject,
   clearMapCells,
+  clearMapFog,
   createEmptyProject,
   createEmptyScene,
   createId,
   createMapObject,
   createSceneObject,
   isSceneNameTaken,
+  mapFogMask,
   nextObjectName,
   paintMapCells,
   parseProjectFile,
   parseSceneFile,
   removeObject as removeSceneObject,
   renameObject as renameSceneObject,
+  setMapFogRegions as setSceneMapFogRegions,
   setMapGrid as setSceneMapGrid,
   setObjectActive as setSceneObjectActive,
   setObjectImage as setSceneObjectImage,
@@ -155,6 +158,8 @@ export interface GridPaintState {
   readonly showGridLines: boolean;
   /** 画布上是否给格子着色（所有地图；纯显示）。 */
   readonly showAnnotations: boolean;
+  /** 画布上是否按运行时的样子预览战争雾（所有地图；纯显示）。 */
+  readonly showFog: boolean;
 }
 
 export interface EditorStoreState {
@@ -189,6 +194,10 @@ export interface EditorStoreState {
   readonly imagePicker: boolean;
   /** 正在换贴图的地图对象 id；null 表示弹框没打开 */
   readonly imagePickerTarget: string | null;
+  /** 「战争雾 Mask 窗口」是否打开（属性面板的按钮唤出） */
+  readonly fogMask: boolean;
+  /** Mask 窗口正在编辑哪张地图；null 表示窗口没打开 */
+  readonly fogMaskTarget: string | null;
   /** 场景文件的保存状态（自动存与手动保存共用） */
   readonly sceneSaveState: SceneSaveState;
   readonly sceneSaveError: string;
@@ -346,6 +355,39 @@ export interface EditorStoreState {
   endGridStroke(): void;
   /** 清空整张网格（可撤销）。 */
   clearGrid(mapObjectId: string): boolean;
+
+  /**
+   * 打开 / 关闭「战争雾 Mask 窗口」（`null` = 关闭）。
+   *
+   * 与「选择贴图」一样由属性面板的按钮唤出：窗口是模态层，所以**不动**画布上的
+   * 标注模式与选中（关掉窗口就回到原样）。
+   */
+  openFogMask(objectId: string | null): void;
+  /**
+   * 指定哪些区域算战争雾（只改绑定，不动格子数据）。
+   *
+   * 传进来的位先规范化（只留可绘制位、去重、升序）；一个都不指定 = 删掉这个配置。
+   */
+  setFogRegions(mapObjectId: string, regions: readonly number[]): boolean;
+  /** 画布上是否按运行时的样子预览战争雾（所有地图；纯显示，写进编辑器偏好）。 */
+  setFogPreviewVisible(visible: boolean): void;
+  /**
+   * Mask 窗口里的一笔：`from → to`（含两端）经过的格子按 `mask` 对应的雾区刷一遍。
+   *
+   * 与标注的画笔是同一条路（同一套叠加 / 越界 / 补格语义），只有一处不同：
+   * **橡皮（`mask === 0`）只清掉已指定的雾区位**，不整格清零——一格可能同时是别的区域。
+   * 连续调用合并成一条撤销记录。
+   */
+  paintFogStroke(
+    mapObjectId: string,
+    from: GridPoint | null,
+    to: GridPoint,
+    options: { readonly mask: number; readonly brushSize: number },
+  ): boolean;
+  /** 一笔结束：断开撤销合并，使下一笔成为独立记录。 */
+  endFogStroke(): void;
+  /** 清空战争雾（只清已指定的雾区位，可撤销）。 */
+  clearFog(mapObjectId: string): boolean;
 }
 
 const EMPTY_GAME_STATE: GameStateSnapshot = {
@@ -665,6 +707,7 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       colors: gridPaint.colors,
       showGridLines: gridPaint.showGridLines,
       showAnnotations: gridPaint.showAnnotations,
+      showFog: gridPaint.showFog,
     };
     writeGridPaintPrefs(prefs);
   };
@@ -709,6 +752,8 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
     objectDialog: false,
     imagePicker: false,
     imagePickerTarget: null,
+    fogMask: false,
+    fogMaskTarget: null,
     sceneSaveState: "saved",
     sceneSaveError: "",
     gridPaint: {
@@ -721,6 +766,7 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       colors: storedGridPaint.colors,
       showGridLines: storedGridPaint.showGridLines,
       showAnnotations: storedGridPaint.showAnnotations,
+      showFog: storedGridPaint.showFog,
     },
     runtime: {
       status: "idle",
@@ -763,6 +809,9 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
         sceneSaveError: "",
         // 换了文档：标注目标必然失效（偏好留着，下个项目接着用）
         gridPaint: { ...state.gridPaint, active: false, mapObjectId: null },
+        // Mask 窗口同理：它指向的地图对象已经不存在了
+        fogMask: false,
+        fogMaskTarget: null,
       }));
     },
 
@@ -773,6 +822,8 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
         activeSceneName: name,
         selectedObjectIds: [],
         gridPaint: { ...state.gridPaint, active: false, mapObjectId: null },
+        fogMask: false,
+        fogMaskTarget: null,
       }));
     },
 
@@ -788,6 +839,8 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
         selectedObjectIds: [],
         selectedAssetId: null,
         gridPaint: { ...state.gridPaint, active: false, mapObjectId: null },
+        fogMask: false,
+        fogMaskTarget: null,
       }));
       pushLog(makeLog("info", `已切换到场景：${name}`));
     },
@@ -1262,6 +1315,9 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
           selectedObjectIds: [],
           // 场景重新装载过：对象 id 可能全换了，标注目标不再可信
           gridPaint: { ...state.gridPaint, active: false, mapObjectId: null },
+          // Mask 窗口同理：它盯着的那个对象 id 也未必还存在
+          fogMask: false,
+          fogMaskTarget: null,
         }));
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -1600,6 +1656,12 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
         set({ selectedObjectIds: [] });
         // 正在标注的那张地图被删了：退出标注（否则「标注中」的界面指向一个不存在的对象）
         exitGridPaintIfDeselected([]);
+
+        // Mask 窗口同理：它盯着的那张地图没了就把窗口关掉（否则窗口里是一张画不出来的图）
+        const fogTarget = get().fogMaskTarget;
+        if (fogTarget !== null && targetIds.includes(fogTarget)) {
+          set({ fogMask: false, fogMaskTarget: null });
+        }
       }
 
       return changed;
@@ -1858,6 +1920,88 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
 
       if (changed) {
         pushLog(makeLog("info", "已清空网格标注"));
+      }
+
+      return changed;
+    },
+
+    // ------------------------------------------------------------ 战争雾（Mask 窗口）
+
+    openFogMask(objectId) {
+      set({ fogMask: objectId !== null, fogMaskTarget: objectId });
+    },
+
+    setFogRegions(mapObjectId, regions) {
+      const sceneName = get().activeSceneName;
+      if (sceneName === null) {
+        return false;
+      }
+
+      return get().applyScenes("指定雾区", (draft) => {
+        const scene = draft.find((item) => item.name === sceneName);
+        if (scene !== undefined) {
+          // 规范化与「没变更」的判断都在命令里，这里只负责找到场景
+          setSceneMapFogRegions(scene, mapObjectId, regions);
+        }
+      });
+    },
+
+    setFogPreviewVisible(visible) {
+      const gridPaint: GridPaintState = { ...get().gridPaint, showFog: visible };
+      set({ gridPaint });
+      persistGridPaint(gridPaint);
+    },
+
+    paintFogStroke(mapObjectId, from, to, options) {
+      const sceneName = get().activeSceneName;
+      if (sceneName === null) {
+        return false;
+      }
+
+      const start = from ?? to;
+      const erasing = options.mask === CellMask.Empty;
+
+      return get().applyScenes(
+        erasing ? "擦除战争雾" : "绘制战争雾",
+        (draft) => {
+          const scene = draft.find((item) => item.name === sceneName);
+          const map = scene?.objects.find((object) => object.id === mapObjectId)?.map;
+          if (scene === undefined || map === undefined) {
+            return;
+          }
+
+          paintMapCells(scene, mapObjectId, start, to, {
+            mask: options.mask,
+            brushSize: options.brushSize,
+            // 橡皮**只清已指定的雾区位**：同格的其它区域位是别人画的，不能一起抹掉。
+            // 擦除范围在调用瞬间从文档读——绑定刚改过就按新的算
+            ...(erasing ? { eraseMask: mapFogMask(map) } : {}),
+          });
+        },
+        // 一整笔合并成一条撤销记录（与标注的 paintGridStroke 同一套做法）
+        { coalesceKey: `fog:${mapObjectId}` },
+      );
+    },
+
+    endFogStroke() {
+      sceneHistory.endCoalescing();
+    },
+
+    clearFog(mapObjectId) {
+      const sceneName = get().activeSceneName;
+      if (sceneName === null) {
+        return false;
+      }
+
+      const changed = get().applyScenes("清空战争雾", (draft) => {
+        const scene = draft.find((item) => item.name === sceneName);
+        if (scene !== undefined) {
+          clearMapFog(scene, mapObjectId);
+        }
+      });
+
+      if (changed) {
+        pushLog(makeLog("info", "已清空战争雾"));
       }
 
       return changed;

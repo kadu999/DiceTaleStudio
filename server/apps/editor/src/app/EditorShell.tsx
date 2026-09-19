@@ -7,6 +7,7 @@ import { LeftPanel } from "../panels/LeftPanel";
 import { InspectorPanel } from "../panels/inspector/InspectorPanel";
 import { RuntimePanel } from "../panels/runtime/RuntimePanel";
 import { ScenePanel } from "../panels/scene/ScenePanel";
+import { FogMaskDialog } from "./FogMaskDialog";
 import { ImagePickerDialog } from "./ImagePickerDialog";
 import { MenuBar } from "./MenuBar";
 import { StatusBar } from "./StatusBar";
@@ -34,6 +35,9 @@ export function EditorShell(): React.JSX.Element {
   const imagePicker = useEditorStore((state) => state.imagePicker);
   const imagePickerTarget = useEditorStore((state) => state.imagePickerTarget);
   const openImagePicker = useEditorStore((state) => state.openImagePicker);
+  const fogMask = useEditorStore((state) => state.fogMask);
+  const fogMaskTarget = useEditorStore((state) => state.fogMaskTarget);
+  const openFogMask = useEditorStore((state) => state.openFogMask);
   const setObjectImage = useEditorStore((state) => state.setObjectImage);
   const scenes = useEditorStore((state) => state.scenes);
   const activeSceneName = useEditorStore((state) => state.activeSceneName);
@@ -223,6 +227,13 @@ export function EditorShell(): React.JSX.Element {
 
           openImagePicker(null);
         }}
+      />
+
+      {/* 战争雾 Mask 窗口：在贴图上按雾区涂 / 擦（目标地图由属性面板指定） */}
+      <FogMaskDialog
+        open={fogMask && fogMaskTarget !== null}
+        objectId={fogMaskTarget}
+        onClose={() => openFogMask(null)}
       />
     </div>
   );

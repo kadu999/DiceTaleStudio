@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { CellMask, decodeRle, maskToLabel, type RleRun } from "@dts/grid";
+import { CellMask, PAINTABLE_MASKS, decodeRle, maskToLabel, type RleRun } from "@dts/grid";
 import { createMapObject, createSceneObject, type SceneObjectDoc } from "@dts/document";
 import { InspectorPanel } from "../src/panels/inspector/InspectorPanel";
 import { cellColorsOf } from "../src/panels/scene/grid-paint";
@@ -68,6 +68,7 @@ afterEach(() => {
       colors: {},
       showGridLines: true,
       showAnnotations: true,
+      showFog: false,
     },
   });
 });
@@ -117,12 +118,25 @@ describe("调色板：画笔 / 显示 / 颜色", () => {
     fireEvent.click(screen.getByTestId("grid-paint-enter"));
   }
 
-  it("默认是障碍画笔、1 号画笔、全部显示", () => {
+  it("默认是区域1 画笔、1 号画笔、全部显示", () => {
     enter();
     const paint = useEditorStore.getState().gridPaint;
     expect(paint.mask).toBe(CellMask.Obstacle);
     expect(paint.brushSize).toBe(1);
     expect(paint.hiddenMask).toBe(0);
+  });
+
+  it("类型名按顺序显示成区域1–8，后面跟着掩码值", () => {
+    enter();
+
+    // 编号是**序号**（区域1–8），括号里是**位值**（1/2/4/8…）——两者故意不是一回事，
+    // 所以这里两个都钉住：只改一个（例如把编号写成位值）就会被这条用例拦住
+    for (const [index, bit] of PAINTABLE_MASKS.entries()) {
+      expect(screen.getByTestId(`grid-type-${bit}`).textContent).toBe(`区域${index + 1} (${bit})`);
+    }
+
+    // 橡皮擦照旧是 0，不在「区域」编号里
+    expect(screen.getByTestId(`grid-type-${CellMask.Empty}`).textContent).toBe("橡皮擦 (0)");
   });
 
   it("点类型名换画笔，点橡皮擦回到 0", () => {
@@ -353,6 +367,6 @@ describe("格子颜色：只画可见的类型位，按低位在上叠加", () =
   });
 
   it("类型名字与掩码值一起给（调色板行的文案）", () => {
-    expect(maskToLabel(CellMask.Fog5)).toBe("雾5");
+    expect(maskToLabel(CellMask.Fog5)).toBe("区域8");
   });
 });

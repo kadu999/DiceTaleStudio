@@ -9,10 +9,12 @@ import {
   addComponent,
   addObject,
   clearMapCells,
+  clearMapFog,
   collectActionIds,
   createSceneObject,
   findMapObject,
   listMapObjects,
+  mapFogMask,
   objectImage,
   moveAction,
   objectsInDrawOrder,
@@ -20,6 +22,7 @@ import {
   removeAction,
   removeObject,
   setMapCells,
+  setMapFogRegions,
   setMapGrid,
   setObjectActive,
   setObjectImage,
@@ -348,7 +351,7 @@ describe("对象命令（都在场景上操作）", () => {
     expect(hasErrors(validateScene(painted))).toBe(false);
   });
 
-  it("标注是**按位叠加**：同一格先画障碍再画雾，两个位都在", () => {
+  it("标注是**按位叠加**：同一格先画区域1 再画区域4，两个位都在", () => {
     const painted = mutate(withMapObject(makeScene()), (draft) => {
       paintMapCells(draft, "map-1", { x: 2, y: 2 }, { x: 2, y: 2 }, {
         mask: CellMask.Obstacle,
@@ -451,7 +454,7 @@ describe("对象命令（都在场景上操作）", () => {
   });
 
   it("改网格尺寸：格子按新规格重建，重叠部分保留、多出来的格子是空", () => {
-    // (0,0) 放障碍、(1,1) 放水
+    // (0,0) 放区域1、(1,1) 放区域3
     const scene = mutate(withMapObject(makeScene()), (draft) => {
       const cells = new Uint8Array(GRID.width * GRID.height);
       cells[0] = CellMask.Obstacle;
@@ -755,6 +758,132 @@ describe("对象命令（都在场景上操作）", () => {
   });
 });
 
+describe("战争雾：手动指定雾区", () => {
+  /** 场景里那张地图的 cells（断言用）。 */
+  function mapCells(scene: SceneDoc): Uint8Array {
+    const map = scene.objects[0]?.map;
+    if (map === undefined) {
+      throw new Error("场景里没有地图对象");
+    }
+
+    return decodeRle(map.cells.runs, map.grid.width * map.grid.height);
+  }
+
+  it("指定雾区：写进 map.fog.regions，规范化后落盘", () => {
+    let scene = withMapObject(makeScene());
+
+    // 16 / 重复的 16 / 0（橡皮擦位，不是区域）/ 3（不是单个位）/ 256（越界）都该被丢掉
+    scene = mutate(scene, (draft) => {
+      setMapFogRegions(draft, "map-1", [16, 8, 16, 0, 3, 256]);
+    });
+    expect(scene.objects[0]?.map?.fog?.regions).toEqual([8, 16]);
+
+    // 同一个选择再写一次 = 没变更（不进撤销栈）
+    expect(
+      mutate(scene, (draft) => {
+        setMapFogRegions(draft, "map-1", [8, 16]);
+      }),
+    ).toBe(scene);
+    // 顺序不同但集合相同也算没变
+    expect(
+      mutate(scene, (draft) => {
+        setMapFogRegions(draft, "map-1", [16, 8]);
+      }),
+    ).toBe(scene);
+  });
+
+  it("解除绑定：字段整个删掉，但格子数据不动", () => {
+    let scene = withMapObject(makeScene());
+    scene = mutate(scene, (draft) => {
+      setMapFogRegions(draft, "map-1", [8]);
+      paintMapCells(draft, "map-1", { x: 1, y: 1 }, { x: 1, y: 1 }, { mask: CellMask.Fog1, brushSize: 1 });
+    });
+    expect(scene.objects[0]?.map?.fog?.regions).toEqual([8]);
+
+    scene = mutate(scene, (draft) => {
+      setMapFogRegions(draft, "map-1", []);
+    });
+    // 「没指定任何雾区」在文件里就是**没有这个字段**，不留空壳
+    expect(scene.objects[0]?.map?.fog).toBeUndefined();
+    // 解除绑定 ≠ 清数据：画好的雾格子还在，重新绑定就回来
+    expect(mapCells(scene)[1 * GRID.width + 1]).toBe(CellMask.Fog1);
+  });
+
+  it("mapFogMask：没指定是 0，指定后是各位置的并集", () => {
+    const scene = withMapObject(makeScene());
+    const map = scene.objects[0]?.map;
+    if (map === undefined) {
+      throw new Error("场景里没有地图对象");
+    }
+
+    expect(mapFogMask(map)).toBe(0);
+    expect(mapFogMask({ ...map, fog: { regions: [8, 32] } })).toBe(40);
+  });
+
+  it("清空战争雾：只清绑定位，其它区域位保留", () => {
+    let scene = withMapObject(makeScene());
+    scene = mutate(scene, (draft) => {
+      setMapFogRegions(draft, "map-1", [CellMask.Fog1]);
+      // 一格「区域1 + 区域4」、另一格只有区域1
+      paintMapCells(draft, "map-1", { x: 0, y: 0 }, { x: 0, y: 0 }, { mask: CellMask.Obstacle, brushSize: 1 });
+      paintMapCells(draft, "map-1", { x: 0, y: 0 }, { x: 0, y: 0 }, { mask: CellMask.Fog1, brushSize: 1 });
+      paintMapCells(draft, "map-1", { x: 1, y: 0 }, { x: 1, y: 0 }, { mask: CellMask.Obstacle, brushSize: 1 });
+    });
+
+    scene = mutate(scene, (draft) => {
+      expect(clearMapFog(draft, "map-1")).toBe(true);
+    });
+
+    expect(mapCells(scene)[0]).toBe(CellMask.Obstacle);
+    expect(mapCells(scene)[1]).toBe(CellMask.Obstacle);
+  });
+
+  it("清空战争雾：没指定雾区、或本来就没有雾格时都不产生变更", () => {
+    const scene = withMapObject(makeScene());
+    expect(
+      mutate(scene, (draft) => {
+        clearMapFog(draft, "map-1");
+      }),
+    ).toBe(scene);
+
+    const bound = mutate(scene, (draft) => {
+      setMapFogRegions(draft, "map-1", [CellMask.Fog1]);
+    });
+    // 指定了雾区，但一个雾格都没画
+    expect(
+      mutate(bound, (draft) => {
+        clearMapFog(draft, "map-1");
+      }),
+    ).toBe(bound);
+  });
+
+  it("橡皮擦只清指定位（eraseMask），不传时仍是整格清零", () => {
+    const painted = mutate(withMapObject(makeScene()), (draft) => {
+      paintMapCells(draft, "map-1", { x: 2, y: 2 }, { x: 2, y: 2 }, { mask: CellMask.Obstacle, brushSize: 1 });
+      paintMapCells(draft, "map-1", { x: 2, y: 2 }, { x: 2, y: 2 }, { mask: CellMask.Fog1, brushSize: 1 });
+    });
+
+    // 只擦区域4（位 8）：区域1（位 1）保住
+    const partial = mutate(painted, (draft) => {
+      paintMapCells(draft, "map-1", { x: 2, y: 2 }, { x: 2, y: 2 }, {
+        mask: CellMask.Empty,
+        brushSize: 1,
+        eraseMask: CellMask.Fog1,
+      });
+    });
+    expect(mapCells(partial)[2 * GRID.width + 2]).toBe(CellMask.Obstacle);
+
+    // 不传 eraseMask = 整格清零（标注调色板的橡皮，行为不变）
+    const whole = mutate(painted, (draft) => {
+      paintMapCells(draft, "map-1", { x: 2, y: 2 }, { x: 2, y: 2 }, {
+        mask: CellMask.Empty,
+        brushSize: 1,
+      });
+    });
+    expect(mapCells(whole)[2 * GRID.width + 2]).toBe(0);
+  });
+});
+
 describe("文档校验", () => {
   it("干净的项目没有错误", () => {
     expect(hasErrors(validateProject(makeProject()))).toBe(false);
@@ -763,6 +892,20 @@ describe("文档校验", () => {
   it("没有地图对象的场景也是合法的（对象挂在场景上，不依赖地图）", () => {
     const scene = withObject(makeScene(), "door", "BoolValue");
     expect(hasErrors(validateScene(scene))).toBe(false);
+  });
+
+  it("战争雾指定的不是可绘制区域位时给警告（会被编辑器丢掉）", () => {
+    const scene = mutate(withMapObject(makeScene()), (draft) => {
+      const map = draft.objects[0]?.map;
+      if (map !== undefined) {
+        // 3 = 两位之和、256 = 越界：手写文件里可能出现，编辑器读取时会被 normalizeRegions 丢掉
+        map.fog = { regions: [8, 3, 256] };
+      }
+    });
+
+    // 只是警告：读得开、画得出，别把文件判成读不了
+    expect(hasErrors(validateScene(scene))).toBe(false);
+    expect(formatIssues(validateScene(scene))).toMatch(/战争雾指定的 3, 256 不是可绘制的区域位/);
   });
 
   it("地图对象缺少地图数据时报错", () => {
@@ -1173,6 +1316,71 @@ describe("场景文件 schema", () => {
     // 已经有的字段一个都不能动
     expect(parsed.file.objects[0]?.scale).toBe(1);
     expect(parsed.file.objects[0]?.position).toEqual({ x: 10, y: 20 });
+  });
+
+  it("v9 场景文件：升到当前版本并回写一次，地图的 fog 缺省 = 没指定雾区", () => {
+    // v9 的文件里没有 map.fog（它是 v10 新增的），语义只能是「一个雾区都没指定」
+    const raw = {
+      formatVersion: 9,
+      objects: [
+        {
+          id: "map-1",
+          name: "地图",
+          kind: "Map",
+          active: true,
+          sortingOrder: -10,
+          locked: false,
+          position: { x: 0, y: 0 },
+          rotation: 0,
+          scale: 1,
+          components: [],
+          map: {
+            image: IMAGE,
+            grid: GRID,
+            rowOrder: "bottom-up",
+            cells: { encoding: "rle", runs: [[0, GRID.width * GRID.height]] },
+          },
+        },
+      ],
+    };
+
+    const parsed = parseSceneFile(raw);
+    expect(parsed.needsRewrite).toBe(true);
+    expect(parsed.file.formatVersion).toBe(DOCUMENT_FORMAT_VERSION);
+    // 不补一个 `fog: { regions: [] }` 出来：没指定就是没有这个字段
+    expect(parsed.file.objects[0]?.map?.fog).toBeUndefined();
+    // 格子数据原样保留
+    expect(parsed.file.objects[0]?.map?.cells.runs).toEqual([[0, GRID.width * GRID.height]]);
+  });
+
+  it("当前版本：显式的 fog.regions 原样读出来，不要求回写", () => {
+    const parsed = parseSceneFile({
+      formatVersion: DOCUMENT_FORMAT_VERSION,
+      objects: [
+        {
+          id: "map-1",
+          name: "地图",
+          kind: "Map",
+          active: true,
+          sortingOrder: -10,
+          locked: false,
+          position: { x: 0, y: 0 },
+          rotation: 0,
+          scale: 1,
+          components: [],
+          map: {
+            image: IMAGE,
+            grid: GRID,
+            rowOrder: "bottom-up",
+            cells: { encoding: "rle", runs: [[0, GRID.width * GRID.height]] },
+            fog: { regions: [8, 32] },
+          },
+        },
+      ],
+    });
+
+    expect(parsed.needsRewrite).toBe(false);
+    expect(parsed.file.objects[0]?.map?.fog?.regions).toEqual([8, 32]);
   });
 
   it("当前版本：显式的 scale / locked 原样读出来，不要求回写", () => {

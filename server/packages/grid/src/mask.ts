@@ -4,6 +4,9 @@
  * 数值与 Unity 端 `DiceTale.GridCellType` 严格一致（枚举值即掩码值，可直接 (int) 转换），
  * 以保证导出的 `.bytes` 与运行时 `GridMap.LoadData` 位精确兼容。
  * 一个格子可同时拥有多个位（例如 Obstacle | Fog1）。
+ *
+ * **编辑器里不给这些位起业务名字**：面板上按可绘制顺序显示成「区域1–区域8」（见 `MASK_LABELS`）。
+ * 枚举名（`Obstacle` / `Fog1`…）是**兼容面**，只为对齐 Unity 与 `.bytes` 而留着，不代表当前语义。
  */
 export const CellMask = {
   Empty: 0,
@@ -29,22 +32,29 @@ export const PAINTABLE_MASKS = [
   CellMask.Fog5,
 ] as const;
 
-/** 全部雾位（含任意雾位即为雾格子，可与障碍等位组合）。 */
+/** 高 5 位的并集（面板上叫「区域4–8」；Unity 枚举里是 `Fog1`–`Fog5`，可与低位组合）。 */
 export const FOG_MASK =
   CellMask.Fog1 | CellMask.Fog2 | CellMask.Fog3 | CellMask.Fog4 | CellMask.Fog5;
 
 /** 全部已知位的并集，用于校验。 */
 export const ALL_MASK = CellMask.Obstacle | CellMask.Difficult | CellMask.Water | FOG_MASK;
 
+/**
+ * 类型位的**显示名**：按可绘制顺序编号，`区域1` … `区域8`（低位是 1 号）。
+ *
+ * 名字是**中性占位**：这些位在游戏里各自代表什么（障碍 / 地形 / 迷雾…）还没定下来，
+ * 先用编号，免得编辑的人被一个已经不作数的名字带偏。所以**不要**在这里写业务含义——
+ * 要改就整批改，别让「区域4」这种编号和某个具体玩法绑死。
+ */
 const MASK_LABELS: ReadonlyArray<readonly [number, string]> = [
-  [CellMask.Obstacle, "障碍"],
-  [CellMask.Difficult, "困难"],
-  [CellMask.Water, "水"],
-  [CellMask.Fog1, "雾1"],
-  [CellMask.Fog2, "雾2"],
-  [CellMask.Fog3, "雾3"],
-  [CellMask.Fog4, "雾4"],
-  [CellMask.Fog5, "雾5"],
+  [CellMask.Obstacle, "区域1"],
+  [CellMask.Difficult, "区域2"],
+  [CellMask.Water, "区域3"],
+  [CellMask.Fog1, "区域4"],
+  [CellMask.Fog2, "区域5"],
+  [CellMask.Fog3, "区域6"],
+  [CellMask.Fog4, "区域7"],
+  [CellMask.Fog5, "区域8"],
 ];
 
 /** 是否含指定位。 */
@@ -67,17 +77,22 @@ export function isEmptyMask(mask: number): boolean {
   return mask === 0;
 }
 
-/** 是否含任意雾位。 */
+/** 是否含高 5 位中的任意一位（面板上的「区域4–8」）。 */
 export function isFogMask(mask: number): boolean {
   return (mask & FOG_MASK) !== 0;
 }
 
-/** 不可通行：含 Obstacle 位即不可通行（允许与其他位组合）。 */
+/**
+ * 含 `Obstacle` 位即视为不可通行（允许与其他位组合）。
+ *
+ * 这是**跟着 Unity 枚举来的语义**（`GridCellType.Obstacle`），面板上那个位显示成「区域1」——
+ * 游戏是否真的拿它当障碍由运行时决定，编辑器这边不认名字、只认位。
+ */
 export function isBlocked(mask: number): boolean {
   return hasMask(mask, CellMask.Obstacle);
 }
 
-/** 掩码的可读文本（用于 UI 与日志），例如 `Obstacle|Fog1`。 */
+/** 掩码的可读文本（用于 UI 与日志），例如 `区域1+区域4`。 */
 export function maskToLabel(mask: number): string {
   if (mask === 0) {
     return "空";
@@ -85,6 +100,28 @@ export function maskToLabel(mask: number): string {
 
   const parts = MASK_LABELS.filter(([bit]) => hasMask(mask, bit)).map(([, label]) => label);
   return parts.length > 0 ? parts.join("+") : `未知(${mask})`;
+}
+
+/**
+ * 规范化一组「区域位」。
+ *
+ * 区域位是**功能绑定**的取值（例如地图的战争雾指定了哪几个区域）：只认可绘制的位，
+ * 去重并升序。`0`、未知位（手写文件里的脏数据）一律丢掉——留着它们只会在
+ * 「数雾格」「画预览」时凭空多出一个谁也不知道是什么的区域。
+ */
+export function normalizeRegions(regions: readonly number[]): number[] {
+  const kept = regions.filter((bit) => PAINTABLE_MASKS.some((value) => value === bit));
+  return [...new Set(kept)].sort((a, b) => a - b);
+}
+
+/**
+ * 一组区域位 → 一个掩码（按位或）。
+ *
+ * 与 `normalizeRegions` 是同一件事的两面：判断「这一格算不算这个功能」时，永远拿
+ * **合并后的掩码**做一次 `hasMask`，不要在调用处写循环——那样每多一个功能就多一处实现。
+ */
+export function regionsToMask(regions: readonly number[]): number {
+  return normalizeRegions(regions).reduce((mask, bit) => mask | bit, 0);
 }
 
 /**

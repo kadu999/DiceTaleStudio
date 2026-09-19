@@ -5,6 +5,9 @@ import {
   decodeRle,
   encodeRle,
   isInsideGrid,
+  normalizeRegions,
+  regionsToMask,
+  removeMask,
   type GridPoint,
   type RleRun,
 } from "@dts/grid";
@@ -601,17 +604,115 @@ export function clearMapCells(scene: Draft<SceneDoc>, mapObjectId: string): bool
   return setMapCells(scene, mapObjectId, [[CellMask.Empty, map.grid.width * map.grid.height]]);
 }
 
+// ---------------------------------------------------------------- 战争雾（地图）
+
+/**
+ * 地图指定的雾区 → 掩码（`0` = 一个雾区都没指定）。
+ *
+ * 「这一格算不算雾」只有这一个判断入口：绘制预览、数雾格、擦除范围全走它，
+ * 免得每处各写一遍「遍历 regions 再看有没有这一位」。
+ */
+export function mapFogMask(map: MapDataDoc): number {
+  return regionsToMask(map.fog?.regions ?? []);
+}
+
+/**
+ * 指定哪些区域算战争雾。
+ *
+ * 格子上的类型位是**中性区域**，所以「哪个区域是雾」是地图自己的配置，不是类型自带的语义。
+ * 写入前先规范化（只留可绘制位、去重、升序），保证同一份选择永远写出同一个文件内容；
+ * 规范化后为空就把 `fog` 字段整个删掉——文件里不留 `{ regions: [] }` 这种空壳
+ * （读出来与「没有这个字段」同义）。
+ *
+ * **只改绑定，不动格子数据**：解除绑定不会连带清掉已经画好的雾格子，改回来还在。
+ *
+ * 返回 `false` 表示没有变更（不是地图对象、或绑定没变）。
+ */
+export function setMapFogRegions(
+  scene: Draft<SceneDoc>,
+  mapObjectId: string,
+  regions: readonly number[],
+): boolean {
+  const map = findObject(scene, mapObjectId)?.map;
+  if (map === undefined) {
+    return false;
+  }
+
+  const next = normalizeRegions(regions);
+  const current = normalizeRegions(map.fog?.regions ?? []);
+  if (next.length === current.length && next.every((bit, index) => bit === current[index])) {
+    return false;
+  }
+
+  if (next.length === 0) {
+    delete map.fog;
+    return true;
+  }
+
+  map.fog = { regions: next };
+  return true;
+}
+
+/**
+ * 清空战争雾：只清掉**已指定的雾区位**，其它区域位原样保留。
+ *
+ * 与 `clearMapCells` 的区别就是「只清绑定位」：一格若是「区域1 + 区域4」而只指定了区域4，
+ * 清雾之后它仍是区域1 的格子。没指定任何雾区时什么都不做（返回 `false`）。
+ */
+export function clearMapFog(scene: Draft<SceneDoc>, mapObjectId: string): boolean {
+  const map = findObject(scene, mapObjectId)?.map;
+  if (map === undefined) {
+    return false;
+  }
+
+  const fogMask = mapFogMask(map);
+  if (fogMask === 0) {
+    return false;
+  }
+
+  let cells: Uint8Array;
+  try {
+    cells = decodeRle(map.cells.runs, map.grid.width * map.grid.height);
+  } catch {
+    // 与 paintMapCells 同一条规矩：坏数据不拿来当基底，也不顺手「修」成正常网格
+    return false;
+  }
+
+  const next = cells.slice();
+  let changed = false;
+  for (let index = 0; index < next.length; index += 1) {
+    const existing = next[index] ?? CellMask.Empty;
+    const cleared = removeMask(existing, fogMask);
+    if (cleared !== existing) {
+      next[index] = cleared;
+      changed = true;
+    }
+  }
+
+  return changed && setMapCells(scene, mapObjectId, encodeRle(next));
+}
+
 export interface PaintCellsOptions {
   /** 要叠加的类型位；`0` 表示橡皮擦（整格清零，对齐 Unity 的「橡皮擦 (0)」）。 */
   readonly mask: number;
   readonly brushSize: number;
+  /**
+   * 橡皮**只清哪些位**；缺省（不传）= 整格清零（标注调色板的橡皮就是这一档）。
+   *
+   * 战争雾的橡皮必须传「已指定的雾区位」：一格可能同时是「区域1 + 区域4」，
+   * 擦雾只该擦掉区域4，不能顺手把区域1 也抹了。
+   *
+   * 注意与 `erase` 的取值约定配套：只有 `mask === 0` 时才会走到它，
+   * 且传 `undefined` 与传 `0` 含义不同（后者 = 一位都不清），所以别用 `?? 0` 兜底。
+   */
+  readonly eraseMask?: number;
 }
 
 /**
  * 标注一笔：把 `from → to`（含两端）经过的格子按画笔刷一遍。
  *
  * 与 Unity `GridMapEditorState.ApplyBrush` 同一套语义：类型位**按位叠加**，
- * 橡皮（`mask === 0`）**整格清零**；越界的格子由画笔自己裁掉。
+ * 橡皮（`mask === 0`）**整格清零**（给了 `eraseMask` 时只清指定位）；越界的格子由画笔自己裁掉。
  * 两条约束是刻意的：
  * - **落笔点必须在网格内**才动手（Unity 的 `HandleInput` 也是先判在不在网格里）——
  *   否则「在地图外面点一下」会被量化到边缘格，凭空画上一笔；
@@ -641,10 +742,13 @@ export function paintMapCells(
     return false;
   }
 
+  const erase = options.mask === CellMask.Empty;
   const next = applyBrushStroke(cells, map.grid, from, to, {
     mask: options.mask,
     brushSize: options.brushSize,
-    erase: options.mask === CellMask.Empty,
+    erase,
+    // 只在擦除时带上「只清这些位」；`undefined` = 整格清零
+    ...(erase && options.eraseMask !== undefined ? { eraseMask: options.eraseMask } : {}),
   });
 
   // 相同的掩码写回去时 setMapCells 会判为「无变更」并返回 false，所以重复涂抹不进撤销栈
