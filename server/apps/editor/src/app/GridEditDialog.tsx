@@ -1,3 +1,5 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import * as Dialog from "@radix-ui/react-dialog";
 import {
   ALL_MASK,
   CellMask,
@@ -5,11 +7,24 @@ import {
   MIN_BRUSH_SIZE,
   PAINTABLE_MASKS,
   brushEffectiveSize,
+  isInsideGrid,
   maskToLabel,
+  worldRectOf,
+  worldToGridPoint,
+  type GridPoint,
+  type WorldRect,
 } from "@dts/grid";
+import {
+  createCanvasSceneRenderer,
+  fitViewport,
+  screenToWorld,
+  type SceneLayer,
+  type SceneRenderer,
+  type Viewport,
+} from "@dts/renderer";
+import { sceneImage, sceneImageError, subscribeSceneImage } from "../services/scene-image";
 import { useEditorStore } from "../state/editor-store";
-import { countCellsWithMask, decodeCellsCached } from "../panels/scene/grid-paint";
-import { CellPaintDialog } from "./CellPaintDialog";
+import { cellColorsOf, countCellsWithMask, decodeCellsCached } from "../panels/scene/grid-paint";
 
 /**
  * 「网格编辑窗口」：在贴图上**按区域**涂 / 擦格子。
@@ -18,14 +33,26 @@ import { CellPaintDialog } from "./CellPaintDialog";
  * `gridPaint`，也就是那套浏览器本地偏好），区别只在你说的地方：
  * 不用进标注模式、不用在地图上对准格子——窗口把这张地图装满，落笔就落在格子上。
  *
- * 与「战争雾 Mask 窗口」共用 `CellPaintDialog`（画布 / 视口 / 指针那套机器），
- * 差别在工具条与橡皮语义：
- * - 画笔是**全部 8 个区域 + 橡皮擦**（雾窗口只列已绑定的雾区）；
- * - 橡皮**整格清零**（与画布标注、Unity 的「橡皮擦 (0)」一致）；雾窗口的橡皮只擦绑定位。
+ * 几件事是刻意的：
+ * - **格子级**：落笔吸附到格子上（与画布标注、Unity 的 `GridMapEditorWindow` 同一套），
+ *   所以这里的画布用与场景同一个渲染器（`@dts/renderer`），屏幕 → 格子走
+ *   `screenToWorld` → `worldToGridPoint`；网格外落笔不画。**软边像素遮罩是另一件事**——
+ *   那是运行时的「战争雾 Mask 窗口」。
+ * - **编辑视图**：8 个区域一律着色（不受「每类的显示开关」影响——那两个开关管的是画布怎么显示）；
+ *   每个区域名字前是它的颜色，点一下即可改。
+ * - 窗口自带视口（`fitViewport` 把这张地图装满），所以**不要求地图已激活 / 已落位**。
+ * - 指针捕获 + 补齐两个事件点之间的格子（快拖不断线），一整笔一条撤销记录。
  *
- * 窗口是**编辑视图**：8 个区域一律着色（不受「每类的显示开关」影响——那两个开关管的是
- * 画布怎么显示）；每个区域的名字前是它的颜色，点一下颜色即可改（与调色板同一个偏好）。
+ * 渲染器与尺寸**按节点驱动**（callback ref + state），不依赖 `open`——窗口内容由 Radix 在
+ * `open` 变真的**下一次提交**才挂上来，依赖 `open` 的 effect 跑起来时 ref 还是 null。
  */
+
+/** 设备像素比上限，与场景画布一致（再高只是白烧 GPU）。 */
+const MAX_DPR = 2;
+
+/** 视口四周留的边距（CSS 像素）：别让地图贴着窗口边。 */
+const VIEW_PADDING = 12;
+
 interface GridEditDialogProps {
   readonly open: boolean;
   /** 正在编辑的地图对象 id；null 表示窗口没打开 */
@@ -40,6 +67,7 @@ export function GridEditDialog({
 }: GridEditDialogProps): React.JSX.Element {
   const scenes = useEditorStore((state) => state.scenes);
   const activeSceneName = useEditorStore((state) => state.activeSceneName);
+  const colors = useEditorStore((state) => state.gridPaint.colors);
   const gridPaint = useEditorStore((state) => state.gridPaint);
   const setGridBrush = useEditorStore((state) => state.setGridBrush);
   const setGridBrushSize = useEditorStore((state) => state.setGridBrushSize);
@@ -48,13 +76,30 @@ export function GridEditDialog({
   const endGridStroke = useEditorStore((state) => state.endGridStroke);
   const clearGrid = useEditorStore((state) => state.clearGrid);
 
-  // 目标对象现查一次：已标注格数看它（对象可能已经被删掉，共用外壳会给出提示）
-  const map =
+  // 目标对象现查一次：它可能已经被删掉（删了窗口就该关，这里只是兜底不崩）
+  const object =
     objectId === null
       ? undefined
       : scenes
           .find((scene) => scene.name === activeSceneName)
-          ?.objects.find((item) => item.id === objectId)?.map;
+          ?.objects.find((item) => item.id === objectId);
+  const map = object?.map;
+  const grid = map?.grid;
+  const imageRef = map?.image;
+
+  /**
+   * 窗口自己的世界矩形：以贴图尺寸为基准、中心在世界原点。
+   *
+   * 故意**不用**对象在场景里的位置与缩放——窗口是这张地图的独立视图，视口由 `fitViewport`
+   * 自己算（贴图铺满窗口）。绘制与「指针 → 格子」用**同一个矩形**，所以两者永远对得上。
+   */
+  const rect = useMemo<WorldRect | undefined>(
+    () =>
+      imageRef === undefined
+        ? undefined
+        : worldRectOf({ x: 0, y: 0 }, { width: imageRef.width, height: imageRef.height }),
+    [imageRef?.id, imageRef?.width, imageRef?.height],
+  );
 
   const annotated =
     map === undefined
@@ -64,98 +109,317 @@ export function GridEditDialog({
           ALL_MASK,
         );
 
-  return (
-    <CellPaintDialog
-      open={open}
-      objectId={objectId}
-      onClose={onClose}
-      slug="grid-editor"
-      title="网格编辑"
-      // 编辑视图：8 个区域都着色（画布上那两个显示开关只管画布）
-      visibleMask={ALL_MASK}
-      clearDisabled={annotated === 0}
-      hint="左键涂抹、拖动连成一片；橡皮整格清零（与画布标注同一条规矩）"
-      onClear={() => objectId !== null && clearGrid(objectId)}
-      onStroke={(from, to) => {
-        if (objectId === null) {
+  const rendererRef = useRef<SceneRenderer | null>(null);
+  const viewportRef = useRef<Viewport | null>(null);
+  /** 这一笔的上一格：用来把两次 pointermove 之间的格子补齐（快拖不断线）。 */
+  const strokeFromRef = useRef<GridPoint | null>(null);
+
+  /** 画布 / 容器节点（callback ref 存 state，见文件头最后一条）。 */
+  const [canvas, setCanvas] = useState<HTMLCanvasElement | null>(null);
+  const [container, setContainer] = useState<HTMLDivElement | null>(null);
+  const [size, setSize] = useState({ width: 0, height: 0 });
+  const [imageReady, setImageReady] = useState(false);
+
+  /** 渲染器 + 尺寸：两者都要有节点才谈得上（一个 canvas 一个渲染器，卸载时释放）。 */
+  useEffect(() => {
+    if (canvas === null) {
+      rendererRef.current = null;
+      viewportRef.current = null;
+      return;
+    }
+
+    const renderer = createCanvasSceneRenderer(canvas);
+    rendererRef.current = renderer;
+
+    const apply = (width: number, height: number): void => {
+      const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
+      renderer.resize(width, height, dpr);
+      setSize({ width, height });
+    };
+
+    // 尺寸只从容器量（画布撑满容器）；容器还没挂上时留到下一次 effect
+    let observer: ResizeObserver | null = null;
+    if (container !== null) {
+      observer = new ResizeObserver((entries) => {
+        const entry = entries[0];
+        if (entry === undefined) {
           return;
         }
 
-        // 画笔与大小在 store 里取：与画布标注共用同一套偏好，两边随时保持一致
-        paintGridStroke(objectId, from, to);
-      }}
-      onStrokeEnd={endGridStroke}
-      toolbar={
-        <div className="mb-2 flex flex-none flex-wrap items-center gap-1.5 rounded border border-[var(--color-editor-border)] bg-[var(--color-editor-panel-alt)] px-2 py-1 text-[11px]">
-          <span className="text-[var(--color-editor-text-dim)]">画笔</span>
+        apply(entry.contentRect.width, entry.contentRect.height);
+      });
+      observer.observe(container);
+      apply(container.clientWidth, container.clientHeight);
+    }
 
-          {/* 橡皮擦：对齐 Unity 的「橡皮擦 (0)」——掩码 0 就是把整格清掉 */}
-          <button
-            type="button"
-            data-testid={`grid-editor-brush-${CellMask.Empty}`}
-            data-active={gridPaint.mask === CellMask.Empty}
-            aria-pressed={gridPaint.mask === CellMask.Empty}
-            className={`rounded border px-1.5 py-0.5 ${
-              gridPaint.mask === CellMask.Empty
-                ? "border-[var(--color-editor-accent)] bg-[var(--color-editor-accent-dim)] text-white"
-                : "border-[var(--color-editor-border)] hover:bg-[var(--color-editor-panel)]"
-            }`}
-            onClick={() => setGridBrush(CellMask.Empty)}
-          >
-            橡皮擦
-          </button>
+    return () => {
+      observer?.disconnect();
+      renderer.dispose();
+      rendererRef.current = null;
+      viewportRef.current = null;
+      // 卸载时把尺寸归零：下次打开别拿上一次的尺寸算视口
+      setSize({ width: 0, height: 0 });
+    };
+  }, [canvas, container]);
 
-          {PAINTABLE_MASKS.map((bit) => {
-            const selected = gridPaint.mask === bit;
-            return (
-              <span key={bit} className="flex items-center gap-1">
-                <input
-                  type="color"
-                  data-testid={`grid-editor-color-${bit}`}
-                  aria-label={`${maskToLabel(bit)}颜色`}
-                  title={`${maskToLabel(bit)}的颜色（透明度由类型决定）`}
-                  value={gridPaint.colors[bit] ?? "#ffffff"}
-                  className="h-5 w-6 flex-none rounded border border-[var(--color-editor-border)] bg-transparent"
-                  onChange={(event) => setGridTypeColor(bit, event.target.value)}
-                />
+  // 贴图是异步加载的：加载完成（或失败）要主动重画一次
+  useEffect(() => {
+    if (imageRef === undefined) {
+      setImageReady(false);
+      return;
+    }
+
+    return subscribeSceneImage(imageRef.id, () => setImageReady(true));
+  }, [imageRef?.id]);
+
+  const image = imageRef === undefined ? null : sceneImage(imageRef.id);
+  const imageError = imageRef === undefined ? undefined : sceneImageError(imageRef.id);
+
+  // 绘制：贴图 + 网格线 + 8 个区域的着色
+  useEffect(() => {
+    const renderer = rendererRef.current;
+    if (renderer === null || size.width <= 0 || size.height <= 0) {
+      return;
+    }
+
+    if (map === undefined || grid === undefined || rect === undefined) {
+      viewportRef.current = null;
+      renderer.draw({
+        viewport: { scale: 1, tx: 0, ty: 0 },
+        cssWidth: size.width,
+        cssHeight: size.height,
+        layers: [],
+      });
+      return;
+    }
+
+    const viewport = fitViewport([rect], { width: size.width, height: size.height }, VIEW_PADDING);
+    viewportRef.current = viewport;
+
+    const layer: SceneLayer = {
+      image,
+      rect,
+      grid,
+      cells: decodeCellsCached(map.cells.runs, grid.width * grid.height),
+      cellColors: (mask) => cellColorsOf(mask, 0, colors),
+      // 窗口里要看清自己在改哪一格，网格线一直画（不受画布上那个显示开关影响）
+      showGrid: true,
+    };
+
+    renderer.draw({
+      viewport,
+      cssWidth: size.width,
+      cssHeight: size.height,
+      layers: [layer],
+    });
+    // map / colors 每次文档或配色变化都是新对象，正好触发重画；
+    // canvas 进依赖是为了「窗口内容刚挂上」那一次也能画出来（渲染器在更早的 effect 里建好）
+  }, [map, grid, rect, colors, size, image, imageReady, canvas]);
+
+  /** 指针落在哪一格；在网格外返回 `undefined`（与画布标注同一条规矩：外面点一下不画）。 */
+  const cellAt = (event: React.PointerEvent<HTMLCanvasElement>): GridPoint | undefined => {
+    const viewport = viewportRef.current;
+    if (canvas === null || viewport === null || grid === undefined || rect === undefined) {
+      return undefined;
+    }
+
+    const box = canvas.getBoundingClientRect();
+    const cell = worldToGridPoint(
+      screenToWorld(viewport, { x: event.clientX - box.left, y: event.clientY - box.top }),
+      grid,
+      rect,
+    );
+    return isInsideGrid(cell, grid) ? cell : undefined;
+  };
+
+  const onStroke = (from: GridPoint | null, to: GridPoint): void => {
+    if (objectId === null) {
+      return;
+    }
+
+    // 画笔与大小在 store 里取：与画布标注共用同一套偏好，两边随时保持一致
+    paintGridStroke(objectId, from, to);
+  };
+
+  const onPointerDown = (event: React.PointerEvent<HTMLCanvasElement>): void => {
+    // 只认主键：右键留给将来的上下文菜单（与画布上的约定一致）
+    if (event.button !== 0) {
+      return;
+    }
+
+    const cell = cellAt(event);
+    if (cell === undefined) {
+      return;
+    }
+
+    // 捕获指针：拖出画布也照样收得到 move / up，一笔不会断
+    event.currentTarget.setPointerCapture(event.pointerId);
+    strokeFromRef.current = cell;
+    onStroke(cell, cell);
+  };
+
+  const onPointerMove = (event: React.PointerEvent<HTMLCanvasElement>): void => {
+    const from = strokeFromRef.current;
+    if (from === null) {
+      return;
+    }
+
+    // 划出网格的那些事件跳过，但这一笔继续（回到网格里接着画）
+    const cell = cellAt(event);
+    if (cell === undefined) {
+      return;
+    }
+
+    onStroke(from, cell);
+    strokeFromRef.current = cell;
+  };
+
+  const onPointerEnd = (): void => {
+    if (strokeFromRef.current === null) {
+      return;
+    }
+
+    strokeFromRef.current = null;
+    // 断开撤销合并：下一笔才是新的一条记录
+    endGridStroke();
+  };
+
+  return (
+    <Dialog.Root open={open} onOpenChange={(next) => (next ? undefined : onClose())}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/60" />
+        <Dialog.Content
+          data-testid="grid-editor-dialog"
+          className="fixed left-1/2 top-1/2 z-50 flex h-[560px] w-[820px] max-h-[92vh] max-w-[92vw] -translate-x-1/2 -translate-y-1/2 flex-col rounded border border-[var(--color-editor-border)] bg-[var(--color-editor-panel)] p-3 shadow-2xl"
+        >
+          <Dialog.Title className="mb-2 flex-none text-[13px] font-semibold">网格编辑</Dialog.Title>
+
+          {map === undefined || grid === undefined ? (
+            <div
+              data-testid="grid-editor-missing"
+              className="flex min-h-0 flex-1 items-center justify-center rounded border border-dashed border-[var(--color-editor-border)] text-[11px] text-[var(--color-editor-text-dim)]"
+            >
+              找不到这张地图（可能已经被删掉了）
+            </div>
+          ) : (
+            <>
+              {/* 画笔工具条：橡皮擦 + 8 个区域（名字前是它的颜色，点一下即可改） */}
+              <div className="mb-2 flex flex-none flex-wrap items-center gap-1.5 rounded border border-[var(--color-editor-border)] bg-[var(--color-editor-panel-alt)] px-2 py-1 text-[11px]">
+                <span className="text-[var(--color-editor-text-dim)]">画笔</span>
+
+                {/* 橡皮擦：对齐 Unity 的「橡皮擦 (0)」——掩码 0 就是把整格清掉 */}
                 <button
                   type="button"
-                  data-testid={`grid-editor-brush-${bit}`}
-                  data-active={selected}
-                  aria-pressed={selected}
+                  data-testid={`grid-editor-brush-${CellMask.Empty}`}
+                  data-active={gridPaint.mask === CellMask.Empty}
+                  aria-pressed={gridPaint.mask === CellMask.Empty}
                   className={`rounded border px-1.5 py-0.5 ${
-                    selected
+                    gridPaint.mask === CellMask.Empty
                       ? "border-[var(--color-editor-accent)] bg-[var(--color-editor-accent-dim)] text-white"
                       : "border-[var(--color-editor-border)] hover:bg-[var(--color-editor-panel)]"
                   }`}
-                  onClick={() => setGridBrush(bit)}
+                  onClick={() => setGridBrush(CellMask.Empty)}
                 >
-                  {maskToLabel(bit)}
+                  橡皮擦
                 </button>
-              </span>
-            );
-          })}
 
-          <span className="ml-auto flex items-center gap-1.5">
-            <span className="text-[var(--color-editor-text-dim)]">大小</span>
-            <input
-              type="range"
-              data-testid="grid-editor-brush-size"
-              aria-label="画笔大小"
-              min={MIN_BRUSH_SIZE}
-              max={MAX_BRUSH_SIZE}
-              step={1}
-              value={gridPaint.brushSize}
-              className="w-24 accent-[var(--color-editor-accent)]"
-              onChange={(event) => setGridBrushSize(Number(event.target.value))}
-            />
-            <span className="font-mono" data-testid="grid-editor-brush-size-label">
-              {gridPaint.brushSize}（{brushEffectiveSize(gridPaint.brushSize)}×
-              {brushEffectiveSize(gridPaint.brushSize)} 格）
-            </span>
-          </span>
-        </div>
-      }
-    />
+                {PAINTABLE_MASKS.map((bit) => {
+                  const selected = gridPaint.mask === bit;
+                  return (
+                    <span key={bit} className="flex items-center gap-1">
+                      <input
+                        type="color"
+                        data-testid={`grid-editor-color-${bit}`}
+                        aria-label={`${maskToLabel(bit)}颜色`}
+                        title={`${maskToLabel(bit)}的颜色（透明度由类型决定）`}
+                        value={colors[bit] ?? "#ffffff"}
+                        className="h-5 w-6 flex-none rounded border border-[var(--color-editor-border)] bg-transparent"
+                        onChange={(event) => setGridTypeColor(bit, event.target.value)}
+                      />
+                      <button
+                        type="button"
+                        data-testid={`grid-editor-brush-${bit}`}
+                        data-active={selected}
+                        aria-pressed={selected}
+                        className={`rounded border px-1.5 py-0.5 ${
+                          selected
+                            ? "border-[var(--color-editor-accent)] bg-[var(--color-editor-accent-dim)] text-white"
+                            : "border-[var(--color-editor-border)] hover:bg-[var(--color-editor-panel)]"
+                        }`}
+                        onClick={() => setGridBrush(bit)}
+                      >
+                        {maskToLabel(bit)}
+                      </button>
+                    </span>
+                  );
+                })}
+
+                <span className="ml-auto flex items-center gap-1.5">
+                  <span className="text-[var(--color-editor-text-dim)]">大小</span>
+                  <input
+                    type="range"
+                    data-testid="grid-editor-brush-size"
+                    aria-label="画笔大小"
+                    min={MIN_BRUSH_SIZE}
+                    max={MAX_BRUSH_SIZE}
+                    step={1}
+                    value={gridPaint.brushSize}
+                    className="w-24 accent-[var(--color-editor-accent)]"
+                    onChange={(event) => setGridBrushSize(Number(event.target.value))}
+                  />
+                  <span className="font-mono" data-testid="grid-editor-brush-size-label">
+                    {gridPaint.brushSize}（{brushEffectiveSize(gridPaint.brushSize)}×
+                    {brushEffectiveSize(gridPaint.brushSize)} 格）
+                  </span>
+                </span>
+              </div>
+
+              <div ref={setContainer} className="relative min-h-0 flex-1 rounded bg-black/30">
+                <canvas
+                  ref={setCanvas}
+                  data-testid="grid-editor-canvas"
+                  className="h-full w-full touch-none"
+                  onPointerDown={onPointerDown}
+                  onPointerMove={onPointerMove}
+                  onPointerUp={onPointerEnd}
+                  onPointerCancel={onPointerEnd}
+                />
+                {imageError === undefined ? null : (
+                  <div
+                    data-testid="grid-editor-image-error"
+                    className="pointer-events-none absolute left-2 top-2 rounded bg-black/70 px-2 py-1 font-mono text-[10px] text-[var(--color-editor-warn)]"
+                  >
+                    {imageError}
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-2 flex flex-none items-center gap-2 text-[10px] text-[var(--color-editor-text-dim)]">
+                <span>左键涂抹、拖动连成一片；橡皮整格清零（与画布标注同一条规矩）</span>
+                <button
+                  type="button"
+                  data-testid="grid-editor-clear"
+                  disabled={annotated === 0}
+                  title="清空这张地图的格子（可撤销）"
+                  className="toolbar-button ml-auto flex-none hover:toolbar-button-hover disabled:opacity-40"
+                  onClick={() => objectId !== null && clearGrid(objectId)}
+                >
+                  全部清除
+                </button>
+                <Dialog.Close asChild>
+                  <button
+                    type="button"
+                    data-testid="grid-editor-close"
+                    className="toolbar-button flex-none hover:toolbar-button-hover"
+                  >
+                    关闭
+                  </button>
+                </Dialog.Close>
+              </div>
+            </>
+          )}
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
 }

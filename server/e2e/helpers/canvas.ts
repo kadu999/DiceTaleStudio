@@ -83,22 +83,29 @@ export async function worldSamplePoint(
 }
 
 /**
- * 取画布上某个屏幕点周围 `radius` 像素的**平均颜色**（按 DPR 换算到后备缓冲像素）。
+ * 取某个画布上某个屏幕点周围 `radius` 像素的**平均颜色**（按 DPR 换算到后备缓冲像素）。
+ *
+ * `canvasTestId` 用 `undefined` 表示「页面上第一块画布」（场景画布）；窗口里那几块
+ * （网格编辑 / 战争雾遮罩）要按 testid 指定——同时挂在 DOM 里时第一块永远是场景画布。
  *
  * 取平均而不是单点：网格线 / 原点十字 / 画笔预览随时可能正好压在被采样的那个像素上，
  * 单点会读到它们的颜色。一片纯色贴图的平均值仍然明显偏它自己的颜色。
  */
-export async function canvasAverageColor(
+export async function canvasColorAt(
   page: Page,
+  canvasTestId: string | undefined,
   point: { x: number; y: number },
   radius = 4,
-): Promise<{ r: number; g: number; b: number }> {
+): Promise<{ r: number; g: number; b: number; a: number }> {
   return page.evaluate(
-    ({ x, y, radius }) => {
-      const canvas = document.querySelector("canvas");
-      const context = canvas?.getContext("2d") ?? null;
+    ({ testId, x, y, radius }) => {
+      const canvas =
+        testId === null
+          ? document.querySelector("canvas")
+          : document.querySelector(`[data-testid="${testId}"]`);
+      const context = canvas instanceof HTMLCanvasElement ? canvas.getContext("2d") : null;
       if (canvas === null || context === null) {
-        return { r: -1, g: -1, b: -1 };
+        return { r: -1, g: -1, b: -1, a: -1 };
       }
 
       const rect = canvas.getBoundingClientRect();
@@ -111,18 +118,59 @@ export async function canvasAverageColor(
       let r = 0;
       let g = 0;
       let b = 0;
+      let a = 0;
       const pixels = data.length / 4;
       for (let i = 0; i < data.length; i += 4) {
         r += data[i] ?? 0;
         g += data[i + 1] ?? 0;
         b += data[i + 2] ?? 0;
+        a += data[i + 3] ?? 0;
       }
 
-      return { r: r / pixels, g: g / pixels, b: b / pixels };
+      return { r: r / pixels, g: g / pixels, b: b / pixels, a: a / pixels };
     },
-    { x: point.x, y: point.y, radius },
+    { testId: canvasTestId ?? null, x: point.x, y: point.y, radius },
   );
 }
+
+/**
+ * 场景画布上某个屏幕点的平均颜色（不传 testid = 页面上第一块画布）。
+ *
+ * 采样的含义见 `canvasColorAt`。
+ */
+export async function canvasAverageColor(
+  page: Page,
+  point: { x: number; y: number },
+  radius = 4,
+): Promise<{ r: number; g: number; b: number; a: number }> {
+  return canvasColorAt(page, undefined, point, radius);
+}
+
+/**
+ * **「画布就是这块地图」**的窗口（战争雾 Mask 窗口：贴图与遮罩绝对定位铺满长宽比盒子）
+ * 上，某一格的屏幕点。
+ *
+ * 与 `fittedCellPoint` 的区别：那边是 `SceneLayer` 渲染的窗口（视口按 `fitViewport`
+ * 算、有边距），这边画布 == 地图矩形，所以只有一步等比换算；**y 要翻**——
+ * 格子 `(x, 0)` 是图片最下面一行。
+ */
+export async function cellPointInBox(
+  page: Page,
+  canvasTestId: string,
+  grid: { width: number; height: number },
+  cell: { x: number; y: number },
+): Promise<{ x: number; y: number }> {
+  const box = await page.getByTestId(canvasTestId).boundingBox();
+  if (box === null) {
+    throw new Error(`拿不到 ${canvasTestId} 的尺寸`);
+  }
+
+  return {
+    x: box.x + ((cell.x + 0.5) * box.width) / grid.width,
+    y: box.y + ((grid.height - 1 - cell.y + 0.5) * box.height) / grid.height,
+  };
+}
+
 
 /** 这个屏幕点正下方真的是画布吗（抽屉 / 面板会盖在上面，点不到画布）。 */
 export async function canvasPointReachable(

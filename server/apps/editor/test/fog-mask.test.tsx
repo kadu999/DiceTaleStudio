@@ -1,20 +1,21 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen, act } from "@testing-library/react";
-import { CellMask, decodeRle, regionsToMask, worldRectOf } from "@dts/grid";
+import { CellMask, regionsToMask, worldRectOf } from "@dts/grid";
 import { createMapObject, createSceneObject, type SceneObjectDoc } from "@dts/document";
 import { InspectorPanel } from "../src/panels/inspector/InspectorPanel";
 import { fogPreviewLayer } from "../src/panels/scene/grid-paint";
 import { sceneHistory, useEditorStore } from "../src/state/editor-store";
 
 /**
- * 战争雾：**属性面板的「指定雾区 / 显示」+ store 的涂抹**。
+ * 战争雾：**属性面板的「指定雾区 / 显示」**（雾区是文档数据，预览是编辑器偏好）。
  *
- * Mask 窗口本身（画布 + 指针）不在这里驱动：它要真画布（jsdom 的
- * `getContext("2d")` 返回 null，渲染器会直接抛「无法获取 2D 绘图上下文」），
- * 与场景画布一样由 e2e 覆盖。这里钉住的是三件最容易出错的：
+ * Mask 窗口本身不在这里驱动：它是**像素级**的（真 canvas + ImageData），jsdom 里
+ * `getContext("2d")` 返回 null，与场景画布一样由 e2e 覆盖；它用到的那几个纯函数
+ * （补点 / 软边擦除 / 把雾格画成黑罩）在 `mask-math.test.ts` 里钉。
  *
+ * 这里钉住三件事：
  * 1. 「指定雾区」把哪几个区域写进文档（规范化、可撤销、解除绑定不删数据）；
- * 2. 涂抹 / 擦除的**位运算语义**（叠加、橡皮只清已指定的雾区位、清空只清绑定位）；
+ * 2. 「已覆盖」数的是含绑定位的格子；
  * 3. 画布预览层（纯函数）与「显示」开关的偏好落盘。
  */
 
@@ -47,14 +48,6 @@ function seedScene(objects: SceneObjectDoc[], selected: readonly string[]): void
 const mapFog = (): readonly number[] =>
   useEditorStore.getState().scenes[0]?.objects.find((item) => item.id === "map-1")?.map?.fog
     ?.regions ?? [];
-
-const mapCells = (): Uint8Array => {
-  const object = useEditorStore.getState().scenes[0]?.objects.find((item) => item.id === "map-1");
-  return decodeRle(object?.map?.cells.runs ?? [], GRID.width * GRID.height);
-};
-
-/** 一格的掩码（格坐标）。 */
-const cellAt = (x: number, y: number): number => mapCells()[y * GRID.width + x] ?? -1;
 
 afterEach(() => {
   cleanup();
@@ -113,21 +106,32 @@ describe("属性面板：指定雾区", () => {
   });
 
   it("已覆盖：数的是含任意已指定雾区位的格子", () => {
-    seedScene([mapObject()], ["map-1"]);
+    // 首格「区域1 + 区域4」、次格只有「区域1」：只有含绑定位（区域4）的那一格算雾
+    const base = mapObject();
+    const painted: SceneObjectDoc = {
+      ...base,
+      map: {
+        ...base.map!,
+        cells: {
+          encoding: "rle",
+          runs: [
+            [CellMask.Obstacle | CellMask.Fog1, 1],
+            [CellMask.Obstacle, 1],
+            [CellMask.Empty, GRID.width * GRID.height - 2],
+          ],
+        },
+      },
+    };
+
+    seedScene([painted], ["map-1"]);
     render(<InspectorPanel />);
 
     expect(screen.getByTestId("fog-cell-count").textContent).toBe("0 格");
 
     // 直接改 store 也要裹 `act`：属性面板是**重新渲染**后才数出新格数的
-    act(() => {
-      useEditorStore.getState().setFogRegions("map-1", [CellMask.Fog1]);
-      useEditorStore.getState().paintFogStroke("map-1", { x: 0, y: 0 }, { x: 1, y: 0 }, {
-        mask: CellMask.Fog1,
-        brushSize: 1,
-      });
-    });
+    act(() => useEditorStore.getState().setFogRegions("map-1", [CellMask.Fog1]));
 
-    expect(screen.getByTestId("fog-cell-count").textContent).toBe("2 格");
+    expect(screen.getByTestId("fog-cell-count").textContent).toBe("1 格");
   });
 
   it("「打开 Mask 窗口…」把目标地图写进 store", () => {
@@ -160,112 +164,6 @@ describe("属性面板：指定雾区", () => {
     };
     expect(stored.showFog).toBe(true);
     expect(useEditorStore.getState().canUndo).toBe(false);
-  });
-});
-
-describe("战争雾：涂抹与擦除的位运算", () => {
-  /** 指定雾区 + 进一笔。 */
-  function begin(regions: readonly number[]): void {
-    seedScene([mapObject()], ["map-1"]);
-    useEditorStore.getState().setFogRegions("map-1", regions);
-  }
-
-  it("涂抹按位叠加：同一格可以是两个雾区", () => {
-    begin([CellMask.Fog1, CellMask.Fog2]);
-
-    useEditorStore.getState().paintFogStroke("map-1", { x: 2, y: 2 }, { x: 2, y: 2 }, {
-      mask: CellMask.Fog1,
-      brushSize: 1,
-    });
-    useEditorStore.getState().paintFogStroke("map-1", { x: 2, y: 2 }, { x: 2, y: 2 }, {
-      mask: CellMask.Fog2,
-      brushSize: 1,
-    });
-
-    expect(cellAt(2, 2)).toBe(CellMask.Fog1 | CellMask.Fog2);
-  });
-
-  it("橡皮只清已指定的雾区位：同格的其它区域位保留", () => {
-    begin([CellMask.Fog1]);
-
-    // 一格「区域1 + 区域4」，但只指定了区域4
-    useEditorStore.setState((state) => ({
-      scenes: [
-        {
-          name: "Map001",
-          objects: [
-            {
-              ...state.scenes[0]!.objects[0]!,
-              map: {
-                ...state.scenes[0]!.objects[0]!.map!,
-                cells: { encoding: "rle", runs: [[CellMask.Obstacle | CellMask.Fog1, GRID.width * GRID.height]] },
-              },
-            },
-          ],
-        },
-      ],
-    }));
-
-    // 起点用当前文档重新喂给历史容器，避免 store 与历史容器脱节
-    sceneHistory.reset(useEditorStore.getState().scenes);
-    useEditorStore.getState().paintFogStroke("map-1", { x: 0, y: 0 }, { x: 0, y: 0 }, {
-      mask: CellMask.Empty,
-      brushSize: 1,
-    });
-
-    // 区域4 被擦掉，区域1 还在（这就是「不整格清零」与标注橡皮的区别）
-    expect(cellAt(0, 0)).toBe(CellMask.Obstacle);
-  });
-
-  it("没指定雾区时擦除什么都不做（要擦的范围是空的）", () => {
-    seedScene([mapObject()], ["map-1"]);
-    // 先画一格区域1，再在没有指定雾区的情况下擦
-    useEditorStore.getState().paintFogStroke("map-1", { x: 0, y: 0 }, { x: 0, y: 0 }, {
-      mask: CellMask.Obstacle,
-      brushSize: 1,
-    });
-
-    const changed = useEditorStore.getState().paintFogStroke("map-1", { x: 0, y: 0 }, { x: 0, y: 0 }, {
-      mask: CellMask.Empty,
-      brushSize: 1,
-    });
-
-    // eraseMask = 0 = 一位都不清，所以「没变更」
-    expect(changed).toBe(false);
-    expect(cellAt(0, 0)).toBe(CellMask.Obstacle);
-  });
-
-  it("一整笔合并成一条撤销记录；清空只清绑定位", () => {
-    begin([CellMask.Fog1]);
-
-    // 落笔 → 拖 → 抬手 = 一条记录
-    useEditorStore.getState().paintFogStroke("map-1", { x: 0, y: 0 }, { x: 1, y: 0 }, {
-      mask: CellMask.Fog1,
-      brushSize: 1,
-    });
-    useEditorStore.getState().paintFogStroke("map-1", { x: 1, y: 0 }, { x: 3, y: 0 }, {
-      mask: CellMask.Fog1,
-      brushSize: 1,
-    });
-    useEditorStore.getState().endFogStroke();
-    expect(cellAt(0, 0)).toBe(CellMask.Fog1);
-    expect(cellAt(3, 0)).toBe(CellMask.Fog1);
-
-    // 另一格里放一个**别的**区域位（不在绑定里，清空不该动它）
-    useEditorStore.getState().setFogRegions("map-1", [CellMask.Fog1]);
-    useEditorStore.getState().paintFogStroke("map-1", { x: 5, y: 5 }, { x: 5, y: 5 }, {
-      mask: CellMask.Difficult,
-      brushSize: 1,
-    });
-    // 再绑定区域2 并给它也画一笔，然后只解除区域2
-    useEditorStore.getState().setFogRegions("map-1", [CellMask.Fog1, CellMask.Difficult]);
-    useEditorStore.getState().clearFog("map-1");
-
-    expect(cellAt(0, 0)).toBe(0);
-    expect(cellAt(5, 5)).toBe(0);
-    // 绑定还在（清空雾是清数据，不是解除绑定）
-    expect(mapFog()).toEqual([CellMask.Difficult, CellMask.Fog1]);
-    expect(useEditorStore.getState().undoLabel).toBe("清空战争雾");
   });
 });
 

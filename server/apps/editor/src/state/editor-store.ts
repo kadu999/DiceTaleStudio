@@ -4,14 +4,12 @@ import {
   DocumentHistory,
   addObject,
   clearMapCells,
-  clearMapFog,
   createEmptyProject,
   createEmptyScene,
   createId,
   createMapObject,
   createSceneObject,
   isSceneNameTaken,
-  mapFogMask,
   nextObjectName,
   paintMapCells,
   parseProjectFile,
@@ -378,23 +376,6 @@ export interface EditorStoreState {
   setFogRegions(mapObjectId: string, regions: readonly number[]): boolean;
   /** 画布上是否按运行时的样子预览战争雾（所有地图；纯显示，写进编辑器偏好）。 */
   setFogPreviewVisible(visible: boolean): void;
-  /**
-   * Mask 窗口里的一笔：`from → to`（含两端）经过的格子按 `mask` 对应的雾区刷一遍。
-   *
-   * 与标注的画笔是同一条路（同一套叠加 / 越界 / 补格语义），只有一处不同：
-   * **橡皮（`mask === 0`）只清掉已指定的雾区位**，不整格清零——一格可能同时是别的区域。
-   * 连续调用合并成一条撤销记录。
-   */
-  paintFogStroke(
-    mapObjectId: string,
-    from: GridPoint | null,
-    to: GridPoint,
-    options: { readonly mask: number; readonly brushSize: number },
-  ): boolean;
-  /** 一笔结束：断开撤销合并，使下一笔成为独立记录。 */
-  endFogStroke(): void;
-  /** 清空战争雾（只清已指定的雾区位，可撤销）。 */
-  clearFog(mapObjectId: string): boolean;
 }
 
 const EMPTY_GAME_STATE: GameStateSnapshot = {
@@ -1985,61 +1966,6 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       const gridPaint: GridPaintState = { ...get().gridPaint, showFog: visible };
       set({ gridPaint });
       persistGridPaint(gridPaint);
-    },
-
-    paintFogStroke(mapObjectId, from, to, options) {
-      const sceneName = get().activeSceneName;
-      if (sceneName === null) {
-        return false;
-      }
-
-      const start = from ?? to;
-      const erasing = options.mask === CellMask.Empty;
-
-      return get().applyScenes(
-        erasing ? "擦除战争雾" : "绘制战争雾",
-        (draft) => {
-          const scene = draft.find((item) => item.name === sceneName);
-          const map = scene?.objects.find((object) => object.id === mapObjectId)?.map;
-          if (scene === undefined || map === undefined) {
-            return;
-          }
-
-          paintMapCells(scene, mapObjectId, start, to, {
-            mask: options.mask,
-            brushSize: options.brushSize,
-            // 橡皮**只清已指定的雾区位**：同格的其它区域位是别人画的，不能一起抹掉。
-            // 擦除范围在调用瞬间从文档读——绑定刚改过就按新的算
-            ...(erasing ? { eraseMask: mapFogMask(map) } : {}),
-          });
-        },
-        // 一整笔合并成一条撤销记录（与标注的 paintGridStroke 同一套做法）
-        { coalesceKey: `fog:${mapObjectId}` },
-      );
-    },
-
-    endFogStroke() {
-      sceneHistory.endCoalescing();
-    },
-
-    clearFog(mapObjectId) {
-      const sceneName = get().activeSceneName;
-      if (sceneName === null) {
-        return false;
-      }
-
-      const changed = get().applyScenes("清空战争雾", (draft) => {
-        const scene = draft.find((item) => item.name === sceneName);
-        if (scene !== undefined) {
-          clearMapFog(scene, mapObjectId);
-        }
-      });
-
-      if (changed) {
-        pushLog(makeLog("info", "已清空战争雾"));
-      }
-
-      return changed;
     },
   };
 });
