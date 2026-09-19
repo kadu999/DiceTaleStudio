@@ -95,7 +95,7 @@ describe("属性分组：基础 / 渲染 / 编辑 / 战争雾", () => {
     expect(within(groupOf("render")).getByTestId("pick-texture")).toBeDefined();
     expect(within(groupOf("basic")).queryByTestId("pick-texture")).toBeNull();
     // 战争雾那一组只在有地图数据时出现
-    expect(within(groupOf("fog")).getByTestId("fog-mask-open")).toBeDefined();
+    expect(within(groupOf("fog")).getByTestId("fog-enable")).toBeDefined();
 
     unmount();
     seedScene([mapObject(), createSceneObject({ id: "sprite", name: "精灵" })], ["sprite"]);

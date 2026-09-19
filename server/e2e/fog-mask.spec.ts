@@ -72,6 +72,34 @@ async function eraseAcross(
 }
 
 test.describe("战争雾 Mask 窗口", () => {
+  test("开关：关着只有开关，打开才露出雾区设置", async ({ page, request }) => {
+    const project = await newProject(request);
+    try {
+      await seedProjectDoc(request, project, [
+        sceneDoc(SCENE, [mapObjectDoc(project, SCENE, "网格地图", MAP_SIZE, GRID)]),
+      ]);
+      await uploadSceneImage(request, project, SCENE, solidPng(4, 4, [60, 60, 60]));
+      await openFirstObject(page, project, "网格地图");
+
+      const fog = page.locator('[data-group="fog"]');
+      await expect(fog.getByTestId("fog-enable")).not.toBeChecked();
+      await expect(fog.getByTestId("fog-region-1")).toHaveCount(0);
+      await expect(fog.getByTestId("fog-mask-open")).toHaveCount(0);
+
+      // 打开以后才露出「指定雾区」与编辑入口
+      await fog.getByTestId("fog-enable").check();
+      await expect(fog.getByTestId("fog-region-1")).toBeVisible();
+      await expect(fog.getByTestId("fog-mask-open")).toBeVisible();
+
+      // 关掉又收起来（绑的是编辑器偏好，文档里那套配置一个字节不动）
+      await fog.getByTestId("fog-enable").uncheck();
+      await expect(fog.getByTestId("fog-region-1")).toHaveCount(0);
+      await expect(fog.getByTestId("fog-mask-open")).toHaveCount(0);
+    } finally {
+      await dropProject(request, project);
+    }
+  });
+
   test("只盖雾区、按区域颜色、只有擦除、擦了不落盘、重开恢复原样", async ({ page, request }) => {
     const project = await newProject(request);
     try {
@@ -90,13 +118,15 @@ test.describe("战争雾 Mask 窗口", () => {
 
       const fog = page.locator('[data-group="fog"]');
 
+      // 先打开战争雾：关着时连雾区设置都不显示（见上面那条用例）
+      await fog.getByTestId("fog-enable").check();
+
       // 没指定雾区：窗口打不开（罩子会是全透明，没什么可擦的）
       await expect(fog.getByTestId("fog-mask-open")).toBeDisabled();
 
       // 指定「区域1」→ 那 4 格成为雾区
       await fog.getByTestId("fog-region-1").click();
       await expect.poll(() => readSceneFogRegions(request, project, SCENE)).toEqual([1]);
-      await expect(fog.getByTestId("fog-cell-count")).toHaveText(`${FOG_CELLS} 格`);
 
       const fileBefore = await readSceneMap(request, project, SCENE);
 
@@ -155,6 +185,7 @@ test.describe("战争雾 Mask 窗口", () => {
       await openFirstObject(page, project, "网格地图");
 
       const fog = page.locator('[data-group="fog"]');
+      await fog.getByTestId("fog-enable").check();
       await fog.getByTestId("fog-region-1").click();
       await fog.getByTestId("fog-region-8").click();
       await expect.poll(() => readSceneFogRegions(request, project, SCENE)).toEqual([1, 8]);
@@ -219,6 +250,7 @@ test.describe("战争雾 Mask 窗口", () => {
       await openFirstObject(page, project, "网格地图");
 
       const fog = page.locator('[data-group="fog"]');
+      await fog.getByTestId("fog-enable").check();
       await fog.getByTestId("fog-region-1").click();
       await fog.getByTestId("fog-mask-open").click();
       await expect(page.getByTestId("fog-mask-dialog")).toBeVisible();

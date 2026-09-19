@@ -7,16 +7,16 @@ import { fogPreviewLayer } from "../src/panels/scene/grid-paint";
 import { sceneHistory, useEditorStore } from "../src/state/editor-store";
 
 /**
- * 战争雾：**属性面板的「指定雾区 / 显示」**（雾区是文档数据，预览是编辑器偏好）。
+ * 战争雾：**属性面板的开关 / 指定雾区**（雾区是文档数据，开关是编辑器偏好）。
  *
  * Mask 窗口本身不在这里驱动：它是**像素级**的（真 canvas + ImageData），jsdom 里
  * `getContext("2d")` 返回 null，与场景画布一样由 e2e 覆盖；它用到的那几个纯函数
  * （补点 / 软边擦除 / 把雾格画成黑罩）在 `mask-math.test.ts` 里钉。
  *
  * 这里钉住三件事：
- * 1. 「指定雾区」把哪几个区域写进文档（规范化、可撤销、解除绑定不删数据）；
- * 2. 「已覆盖」数的是含绑定位的格子；
- * 3. 画布预览层（纯函数）与「显示」开关的偏好落盘。
+ * 1. 「战争雾」开关是整组的闸门（关着时雾区设置与编辑入口都不显示），并且写进编辑器偏好；
+ * 2. 「指定雾区」把哪几个区域写进文档（规范化、可撤销、解除绑定不删数据）；
+ * 3. 画布预览层是纯函数（按区域颜色、只画雾格）。
  */
 
 const IMAGE = { id: "project:测试/Assets/images/Map001.png", width: 400, height: 300 };
@@ -57,32 +57,72 @@ afterEach(() => {
     activeSceneName: null,
     selectedObjectIds: [],
     selectedAssetId: null,
+    // 开关也是**编辑器偏好**，会跨用例留着：每个用例都从「没开战争雾」开始
+    gridPaint: {
+      mask: CellMask.Obstacle,
+      brushSize: 1,
+      hiddenMask: 0,
+      colors: {},
+      showGridLines: true,
+      showAnnotations: true,
+      showFog: false,
+    },
     fogMask: false,
     fogMaskTarget: null,
   });
   window.localStorage.clear();
 });
 
-describe("属性面板：指定雾区", () => {
-  it("地图对象有「战争雾」的入口，精灵没有", () => {
+describe("属性面板：战争雾开关与雾区", () => {
+  it("地图对象有「战争雾」的开关，精灵没有", () => {
     seedScene([mapObject(), createSceneObject({ id: "sprite", name: "精灵" })], ["map-1"]);
     const { unmount } = render(<InspectorPanel />);
 
-    expect(screen.getByTestId("fog-mask-open")).toBeDefined();
-    expect(screen.getByTestId("fog-cell-count")).toBeDefined();
+    expect(screen.getByTestId("fog-enable")).toBeDefined();
+    // 关着时只留这一个开关：雾区设置与编辑入口都还没露面
+    expect(screen.queryByTestId("fog-region-1")).toBeNull();
+    expect(screen.queryByTestId("fog-mask-open")).toBeNull();
 
     unmount();
     seedScene([mapObject(), createSceneObject({ id: "sprite", name: "精灵" })], ["sprite"]);
     render(<InspectorPanel />);
 
-    expect(screen.queryByTestId("fog-mask-open")).toBeNull();
+    expect(screen.queryByTestId("fog-enable")).toBeNull();
+  });
+
+  it("打开开关才露出雾区设置；关掉又收起来（偏好落盘、不动文档）", () => {
+    seedScene([mapObject()], ["map-1"]);
+    render(<InspectorPanel />);
+
+    expect(useEditorStore.getState().gridPaint.showFog).toBe(false);
+    fireEvent.click(screen.getByTestId("fog-enable"));
+
+    expect(useEditorStore.getState().gridPaint.showFog).toBe(true);
+    expect(screen.getByTestId("fog-region-1")).toBeDefined();
+    expect(screen.getByTestId("fog-mask-open")).toBeDefined();
+
+    // 偏好落在浏览器本地：不改文档，也不进撤销栈
+    const stored = JSON.parse(window.localStorage.getItem("dts.editor.gridPaint") ?? "{}") as {
+      showFog?: boolean;
+    };
+    expect(stored.showFog).toBe(true);
+    expect(useEditorStore.getState().canUndo).toBe(false);
+
+    // 关掉：设置收起来，但文档里那套绑定一个字节不动（偏好不是文档数据）
+    act(() => useEditorStore.getState().setFogRegions("map-1", [CellMask.Fog1]));
+    fireEvent.click(screen.getByTestId("fog-enable"));
+    expect(screen.queryByTestId("fog-region-1")).toBeNull();
+    expect(mapFog()).toEqual([CellMask.Fog1]);
   });
 
   it("点区域按钮指定 / 取消雾区，并写进文档（可撤销）", () => {
     seedScene([mapObject()], ["map-1"]);
     render(<InspectorPanel />);
 
-    // 一开始一个都没指定：窗口打不开，也数不出雾格
+    // 先打开战争雾：关着时连雾区设置都不显示
+    fireEvent.click(screen.getByTestId("fog-enable"));
+
+    // 一开始一个都没指定：窗口打不开
     expect(mapFog()).toEqual([]);
     expect(screen.getByTestId("fog-mask-open").hasAttribute("disabled")).toBe(true);
 
@@ -105,39 +145,11 @@ describe("属性面板：指定雾区", () => {
     expect(mapFog()).toEqual([]);
   });
 
-  it("已覆盖：数的是含任意已指定雾区位的格子", () => {
-    // 首格「区域1 + 区域4」、次格只有「区域1」：只有含绑定位（区域4）的那一格算雾
-    const base = mapObject();
-    const painted: SceneObjectDoc = {
-      ...base,
-      map: {
-        ...base.map!,
-        cells: {
-          encoding: "rle",
-          runs: [
-            [CellMask.Obstacle | CellMask.Fog1, 1],
-            [CellMask.Obstacle, 1],
-            [CellMask.Empty, GRID.width * GRID.height - 2],
-          ],
-        },
-      },
-    };
-
-    seedScene([painted], ["map-1"]);
-    render(<InspectorPanel />);
-
-    expect(screen.getByTestId("fog-cell-count").textContent).toBe("0 格");
-
-    // 直接改 store 也要裹 `act`：属性面板是**重新渲染**后才数出新格数的
-    act(() => useEditorStore.getState().setFogRegions("map-1", [CellMask.Fog1]));
-
-    expect(screen.getByTestId("fog-cell-count").textContent).toBe("1 格");
-  });
-
-  it("「打开 Mask 窗口…」把目标地图写进 store", () => {
+  it("「编辑」把目标地图写进 store（Mask 窗口）", () => {
     seedScene([mapObject()], ["map-1"]);
     render(<InspectorPanel />);
 
+    fireEvent.click(screen.getByTestId("fog-enable"));
     act(() => useEditorStore.getState().setFogRegions("map-1", [CellMask.Fog1]));
     fireEvent.click(screen.getByTestId("fog-mask-open"));
 
@@ -150,21 +162,6 @@ describe("属性面板：指定雾区", () => {
     expect(useEditorStore.getState().fogMaskTarget).toBeNull();
   });
 
-  it("显示开关写进编辑器偏好（不动文档）", () => {
-    seedScene([mapObject()], ["map-1"]);
-    render(<InspectorPanel />);
-
-    expect(useEditorStore.getState().gridPaint.showFog).toBe(false);
-    fireEvent.click(screen.getByTestId("fog-preview-toggle"));
-
-    expect(useEditorStore.getState().gridPaint.showFog).toBe(true);
-    // 偏好落在浏览器本地：不改文档，也不进撤销栈
-    const stored = JSON.parse(window.localStorage.getItem("dts.editor.gridPaint") ?? "{}") as {
-      showFog?: boolean;
-    };
-    expect(stored.showFog).toBe(true);
-    expect(useEditorStore.getState().canUndo).toBe(false);
-  });
 });
 
 describe("画布预览层：fogPreviewLayer", () => {

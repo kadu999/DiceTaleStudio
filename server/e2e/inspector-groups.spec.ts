@@ -58,7 +58,9 @@ test.describe("属性分组", () => {
       await expect(basic).toContainText("名称");
       await expect(render).toContainText("贴图");
       await expect(edit).toContainText("网格标注");
-      await expect(fog).toContainText("指定雾区");
+      // 战争雾那一组关着时只有开关（打开才露出雾区设置，见 fog-mask.spec.ts）
+      await expect(fog).toContainText("战争雾");
+      await expect(fog).toContainText("启用");
 
       const renderHeader = render.getByTestId("field-group-header");
       await expect(renderHeader).toHaveAttribute("aria-expanded", "true");
@@ -104,10 +106,10 @@ test.describe("属性分组", () => {
       const fogHeader = fog.getByTestId("field-group-header");
       await fogHeader.click();
       await expect(fog).toHaveAttribute("data-open", "false");
-      await expect(fog.getByTestId("fog-mask-open")).toHaveCount(0);
+      await expect(fog.getByTestId("fog-enable")).toHaveCount(0);
       await fogHeader.click();
       await expect(fog).toHaveAttribute("data-open", "true");
-      await expect(fog.getByTestId("fog-mask-open")).toBeVisible();
+      await expect(fog.getByTestId("fog-enable")).toBeVisible();
 
       // 精灵：有「基础 / 渲染」（每个对象都能显示图片），没有「编辑 / 战争雾」（都是地图独有的）
       await selectObject(page, 1);

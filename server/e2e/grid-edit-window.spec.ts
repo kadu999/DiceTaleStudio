@@ -201,6 +201,8 @@ test.describe("网格编辑窗口", () => {
       await uploadSceneImage(request, project, SCENE, solidPng(4, 4, [255, 255, 255]));
       await openFirstObject(page, project, "网格地图");
 
+      // 先打开战争雾（关着时雾区设置不显示），再指定一个雾区
+      await page.locator('[data-group="fog"]').getByTestId("fog-enable").check();
       await page.locator('[data-group="fog"]').getByTestId("fog-region-8").click();
       await page.locator('[data-group="fog"]').getByTestId("fog-mask-open").click();
       await expect(page.getByTestId("fog-mask-dialog")).toBeVisible();
