@@ -161,6 +161,48 @@ export async function canvasPixelSum(page: Page): Promise<number> {
 }
 
 /**
+ * **格子编辑窗口**（`CellPaintDialog`：战争雾 / 网格编辑共用）画布上，某一格的屏幕点。
+ *
+ * 窗口用 `fitViewport([贴图矩形], 画布尺寸, padding)` 把这张地图装满，而贴图矩形的中心
+ * **就是世界原点**（窗口是这张地图的独立视图），所以世界原点落在画布正中、换算只有一步：
+ *
+ * ```
+ * screen = 画布中心 + 世界坐标 × scale
+ * ```
+ *
+ * `scale` 取「可用宽 / 贴图宽」与「可用高 / 贴图高」的较小值——与 `fitViewport` 同一算式。
+ * 这里手写一遍是有意的：断言看的是**真点之后落进文件的那一格**，而不是「点了某个像素」。
+ */
+export async function fittedCellPoint(
+  page: Page,
+  canvasTestId: string,
+  mapSize: { width: number; height: number },
+  grid: { width: number; height: number },
+  cell: { x: number; y: number },
+  padding = 12,
+): Promise<{ x: number; y: number }> {
+  const box = await page.getByTestId(canvasTestId).boundingBox();
+  if (box === null) {
+    throw new Error(`拿不到 ${canvasTestId} 的尺寸`);
+  }
+
+  const scale = Math.min(
+    (box.width - padding * 2) / mapSize.width,
+    (box.height - padding * 2) / mapSize.height,
+  );
+  const cellSize = { x: mapSize.width / grid.width, y: mapSize.height / grid.height };
+  const world = {
+    x: (cell.x + 0.5) * cellSize.x - mapSize.width / 2,
+    y: (cell.y + 0.5) * cellSize.y - mapSize.height / 2,
+  };
+
+  return {
+    x: box.x + box.width / 2 + world.x * scale,
+    y: box.y + box.height / 2 - world.y * scale,
+  };
+}
+
+/**
  * 找一个**真正点得到**的空白屏幕点：屏幕坐标在「抽屉右边 / 画布里面」，
  * 而且正下方就是画布（不是别的面板）。
  *

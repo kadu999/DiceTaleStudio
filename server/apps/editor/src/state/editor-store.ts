@@ -198,6 +198,10 @@ export interface EditorStoreState {
   readonly fogMask: boolean;
   /** Mask 窗口正在编辑哪张地图；null 表示窗口没打开 */
   readonly fogMaskTarget: string | null;
+  /** 「网格编辑窗口」是否打开（属性面板的按钮唤出；与 Mask 窗口**互斥**） */
+  readonly gridEditor: boolean;
+  /** 网格编辑窗口正在编辑哪张地图；null 表示窗口没打开 */
+  readonly gridEditorTarget: string | null;
   /** 场景文件的保存状态（自动存与手动保存共用） */
   readonly sceneSaveState: SceneSaveState;
   readonly sceneSaveError: string;
@@ -360,9 +364,12 @@ export interface EditorStoreState {
    * 打开 / 关闭「战争雾 Mask 窗口」（`null` = 关闭）。
    *
    * 与「选择贴图」一样由属性面板的按钮唤出：窗口是模态层，所以**不动**画布上的
-   * 标注模式与选中（关掉窗口就回到原样）。
+   * 标注模式与选中（关掉窗口就回到原样）。两个格子编辑窗口**互斥**——同时开两层
+   * 模态遮罩谁也点不到，所以开一个就把另一个关掉。
    */
   openFogMask(objectId: string | null): void;
+  /** 打开 / 关闭「网格编辑窗口」（`null` = 关闭）；与 Mask 窗口互斥。 */
+  openGridEditor(objectId: string | null): void;
   /**
    * 指定哪些区域算战争雾（只改绑定，不动格子数据）。
    *
@@ -754,6 +761,8 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
     imagePickerTarget: null,
     fogMask: false,
     fogMaskTarget: null,
+    gridEditor: false,
+    gridEditorTarget: null,
     sceneSaveState: "saved",
     sceneSaveError: "",
     gridPaint: {
@@ -809,9 +818,11 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
         sceneSaveError: "",
         // 换了文档：标注目标必然失效（偏好留着，下个项目接着用）
         gridPaint: { ...state.gridPaint, active: false, mapObjectId: null },
-        // Mask 窗口同理：它指向的地图对象已经不存在了
+        // 两个格子编辑窗口同理：它们指向的地图对象已经不存在了
         fogMask: false,
         fogMaskTarget: null,
+        gridEditor: false,
+        gridEditorTarget: null,
       }));
     },
 
@@ -824,6 +835,8 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
         gridPaint: { ...state.gridPaint, active: false, mapObjectId: null },
         fogMask: false,
         fogMaskTarget: null,
+        gridEditor: false,
+        gridEditorTarget: null,
       }));
     },
 
@@ -841,6 +854,8 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
         gridPaint: { ...state.gridPaint, active: false, mapObjectId: null },
         fogMask: false,
         fogMaskTarget: null,
+        gridEditor: false,
+        gridEditorTarget: null,
       }));
       pushLog(makeLog("info", `已切换到场景：${name}`));
     },
@@ -1318,6 +1333,8 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
           // Mask 窗口同理：它盯着的那个对象 id 也未必还存在
           fogMask: false,
           fogMaskTarget: null,
+          gridEditor: false,
+          gridEditorTarget: null,
         }));
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -1657,10 +1674,15 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
         // 正在标注的那张地图被删了：退出标注（否则「标注中」的界面指向一个不存在的对象）
         exitGridPaintIfDeselected([]);
 
-        // Mask 窗口同理：它盯着的那张地图没了就把窗口关掉（否则窗口里是一张画不出来的图）
+        // 两个格子编辑窗口同理：它们盯着的那张地图没了就把窗口关掉（否则窗口里是一张画不出来的图）
         const fogTarget = get().fogMaskTarget;
         if (fogTarget !== null && targetIds.includes(fogTarget)) {
           set({ fogMask: false, fogMaskTarget: null });
+        }
+
+        const editTarget = get().gridEditorTarget;
+        if (editTarget !== null && targetIds.includes(editTarget)) {
+          set({ gridEditor: false, gridEditorTarget: null });
         }
       }
 
@@ -1928,7 +1950,20 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
     // ------------------------------------------------------------ 战争雾（Mask 窗口）
 
     openFogMask(objectId) {
-      set({ fogMask: objectId !== null, fogMaskTarget: objectId });
+      set({
+        fogMask: objectId !== null,
+        fogMaskTarget: objectId,
+        // 两个格子编辑窗口互斥：同时开两层模态遮罩，谁也别想点
+        ...(objectId === null ? {} : { gridEditor: false, gridEditorTarget: null }),
+      });
+    },
+
+    openGridEditor(objectId) {
+      set({
+        gridEditor: objectId !== null,
+        gridEditorTarget: objectId,
+        ...(objectId === null ? {} : { fogMask: false, fogMaskTarget: null }),
+      });
     },
 
     setFogRegions(mapObjectId, regions) {

@@ -1,4 +1,5 @@
 import {
+  ALL_MASK,
   CellMask,
   MAX_BRUSH_SIZE,
   MIN_BRUSH_SIZE,
@@ -9,7 +10,7 @@ import {
 } from "@dts/grid";
 import type { SceneObjectDoc } from "@dts/document";
 import { useEditorStore } from "../../state/editor-store";
-import { decodeCellsCached } from "../scene/grid-paint";
+import { countCellsWithMask, decodeCellsCached } from "../scene/grid-paint";
 import { FieldRow } from "./fields";
 
 /**
@@ -36,6 +37,7 @@ export function GridAnnotationFields({
   const gridPaint = useEditorStore((state) => state.gridPaint);
   const enterGridPaint = useEditorStore((state) => state.enterGridPaint);
   const exitGridPaint = useEditorStore((state) => state.exitGridPaint);
+  const openGridEditor = useEditorStore((state) => state.openGridEditor);
   const setGridBrush = useEditorStore((state) => state.setGridBrush);
   const setGridBrushSize = useEditorStore((state) => state.setGridBrushSize);
   const toggleGridTypeVisible = useEditorStore((state) => state.toggleGridTypeVisible);
@@ -51,27 +53,38 @@ export function GridAnnotationFields({
 
   if (!editing) {
     // 不能标注的两种情况都写出来：隐身的图与没落位的图在画布上根本点不到
+    // （编辑窗口不看这两件事：它自带视口，不靠拾取）
     const blocked = !object.active
-      ? "对象已隐藏：先激活它才能在画布上标注"
+      ? "对象已隐藏：画布上标注要先激活它（编辑窗口不受影响）"
       : object.position === null
-        ? "地图未放置：先给它一个世界坐标"
+        ? "地图未放置：画布上标注要先给它一个世界坐标（编辑窗口不受影响）"
         : "画布上左键涂抹、中键平移；Esc 退出";
 
     return (
-      <FieldRow label="网格标注">
-        <button
-          type="button"
-          data-testid="grid-paint-enter"
-          disabled={!object.active || object.position === null}
-          className="toolbar-button flex-none hover:toolbar-button-hover disabled:opacity-40"
-          onClick={() => enterGridPaint(object.id)}
-        >
-          开始标注
-        </button>
-        <span className="min-w-0 flex-1 text-[10px] text-[var(--color-editor-text-dim)]">
-          {blocked}
-        </span>
-      </FieldRow>
+      <>
+        <FieldRow label="网格标注">
+          <button
+            type="button"
+            data-testid="grid-paint-enter"
+            disabled={!object.active || object.position === null}
+            className="toolbar-button flex-none hover:toolbar-button-hover disabled:opacity-40"
+            onClick={() => enterGridPaint(object.id)}
+          >
+            开始标注
+          </button>
+          {/* 不想在画布上对准格子时走这条：贴图铺满窗口，落笔就是格子 */}
+          <button
+            type="button"
+            data-testid="grid-editor-open"
+            title="在贴图上按区域涂 / 擦（不用先进入标注模式，也不用在地图上对准格子）"
+            className="toolbar-button min-w-0 flex-1 truncate hover:toolbar-button-hover"
+            onClick={() => openGridEditor(object.id)}
+          >
+            打开编辑窗口…
+          </button>
+        </FieldRow>
+        <div className="px-2 pb-1 text-[10px] text-[var(--color-editor-text-dim)]">{blocked}</div>
+      </>
     );
   }
 
@@ -258,12 +271,5 @@ function annotatedCellCount(object: SceneObjectDoc): number {
   }
 
   const cells = decodeCellsCached(map.cells.runs, map.grid.width * map.grid.height);
-  let count = 0;
-  for (const mask of cells) {
-    if (mask !== CellMask.Empty) {
-      count += 1;
-    }
-  }
-
-  return count;
+  return countCellsWithMask(cells, ALL_MASK);
 }

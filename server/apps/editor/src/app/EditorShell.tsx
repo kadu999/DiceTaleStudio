@@ -8,6 +8,7 @@ import { InspectorPanel } from "../panels/inspector/InspectorPanel";
 import { RuntimePanel } from "../panels/runtime/RuntimePanel";
 import { ScenePanel } from "../panels/scene/ScenePanel";
 import { FogMaskDialog } from "./FogMaskDialog";
+import { GridEditDialog } from "./GridEditDialog";
 import { ImagePickerDialog } from "./ImagePickerDialog";
 import { MenuBar } from "./MenuBar";
 import { StatusBar } from "./StatusBar";
@@ -38,6 +39,9 @@ export function EditorShell(): React.JSX.Element {
   const fogMask = useEditorStore((state) => state.fogMask);
   const fogMaskTarget = useEditorStore((state) => state.fogMaskTarget);
   const openFogMask = useEditorStore((state) => state.openFogMask);
+  const gridEditor = useEditorStore((state) => state.gridEditor);
+  const gridEditorTarget = useEditorStore((state) => state.gridEditorTarget);
+  const openGridEditor = useEditorStore((state) => state.openGridEditor);
   const setObjectImage = useEditorStore((state) => state.setObjectImage);
   const scenes = useEditorStore((state) => state.scenes);
   const activeSceneName = useEditorStore((state) => state.activeSceneName);
@@ -234,6 +238,13 @@ export function EditorShell(): React.JSX.Element {
         open={fogMask && fogMaskTarget !== null}
         objectId={fogMaskTarget}
         onClose={() => openFogMask(null)}
+      />
+
+      {/* 网格编辑窗口：同一套窗户，画笔换成 8 个区域 + 橡皮（不用在地图上对准格子） */}
+      <GridEditDialog
+        open={gridEditor && gridEditorTarget !== null}
+        objectId={gridEditorTarget}
+        onClose={() => openGridEditor(null)}
       />
     </div>
   );

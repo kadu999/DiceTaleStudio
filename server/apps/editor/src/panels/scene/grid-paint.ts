@@ -131,6 +131,26 @@ export function brushPreviewLayer(
 }
 
 /**
+ * 含任意给定位的格子数（「已标注 / 已覆盖」共用）。
+ *
+ * 坏数据（展开格数与网格对不上）在回调那边返回空数组，所以这里自然是 0。
+ */
+export function countCellsWithMask(cells: Uint8Array, mask: number): number {
+  if (mask === 0) {
+    return 0;
+  }
+
+  let count = 0;
+  for (const value of cells) {
+    if (hasMask(value, mask)) {
+      count += 1;
+    }
+  }
+
+  return count;
+}
+
+/**
  * 战争雾预览的雾罩颜色：RGB 取自运行时 `FogOfWar` 的 `fogColor (0.85, 0.88, 0.92)`。
  *
  * **透明度是 0.85，不是运行时的 1**：运行时靠 GPU 羽化把边缘化开，编辑器这边没有模糊

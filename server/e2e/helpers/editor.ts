@@ -464,3 +464,20 @@ export async function selectObject(page: Page, index = 0): Promise<void> {
     await page.getByRole("button", { name: "属性", exact: true }).click();
   }
 }
+
+/**
+ * 「打开项目 → 选中第一个对象 → 露出属性面板」这套开场（属性相关的用例都这么起手）。
+ *
+ * 顺带把选中对象的**名字**钉住：选中偏了（列表顺序变了、场景没起来）时立刻失败，
+ * 而不是等到后面某条断言给出一个莫名其妙的数字。
+ */
+export async function openFirstObject(
+  page: Page,
+  project: string,
+  expectedName: string,
+): Promise<void> {
+  await enterEditor(page);
+  await openProject(page, project);
+  await selectObject(page, 0);
+  await expect(page.getByTestId("inspector-object-name")).toHaveValue(expectedName);
+}

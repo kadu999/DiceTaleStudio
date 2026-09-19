@@ -1,36 +1,31 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import {
   dropProject,
-  enterEditor,
   expandRuns,
   mapObjectDoc,
   newProject,
-  openInspector,
-  openLeftTab,
-  openProject,
+  openFirstObject,
   readSceneFogRegions,
   readSceneMap,
   sceneDoc,
   seedProjectDoc,
-  selectObject,
   solidPng,
   uploadSceneImage,
 } from "./helpers/editor";
-import { canvasPixelSum } from "./helpers/canvas";
+import { canvasPixelSum, fittedCellPoint } from "./helpers/canvas";
 
 /**
  * 战争雾：属性面板指定雾区 → Mask 窗口在贴图上按雾区涂 / 擦 → 落进场景文件的 RLE。
  *
  * 与 `grid-annotate.spec.ts` 同一个套路（种一张小地图、真点画布、断言落盘），差别只有一点：
- * 涂抹发生在**对话框自己的画布**上，所以坐标要按对话框的视口算（见 `fogCellPoint`）。
+ * 涂抹发生在**对话框自己的画布**上，所以坐标按窗口的视口算（`fittedCellPoint`）。
  */
 
 const SCENE = "Map001";
 const MAP_SIZE = { width: 400, height: 300 };
 const GRID = { width: 8, height: 6 };
 
-/** Mask 窗口视口四周的边距，与 `FogMaskDialog` 里的 `VIEW_PADDING` 一致。 */
-const VIEW_PADDING = 12;
+const CANVAS = "fog-mask-canvas";
 
 /** 场景里某个格子的掩码（还没落盘时按 -1 处理，便于 poll 时区分「还没写」）。 */
 async function persistedMask(
@@ -46,62 +41,10 @@ async function persistedMask(
   return expandRuns(map.runs)[cell.y * GRID.width + cell.x] ?? -1;
 }
 
-/**
- * Mask 窗口画布上，某一格的屏幕点。
- *
- * 对话框的视口由 `fitViewport([贴图矩形], 画布尺寸, 12)` 算出来，而**贴图矩形的中心就是
- * 世界原点**（窗口是这张地图的独立视图），所以世界原点落在画布正中，换算只有一步：
- *
- * ```
- * screen = 画布中心 + 世界坐标 × scale
- * ```
- *
- * `scale` 取「可用宽 / 贴图宽」与「可用高 / 贴图高」的较小值——与 `fitViewport` 同一算式。
- * 这里手写一遍是有意的：断言看的是**真点之后落进文件的那一格**，而不是「点了某个像素」。
- */
-async function fogCellPoint(
-  page: Page,
-  cell: { x: number; y: number },
-): Promise<{ x: number; y: number }> {
-  const box = await page.getByTestId("fog-mask-canvas").boundingBox();
-  if (box === null) {
-    throw new Error("拿不到 Mask 窗口画布尺寸");
-  }
-
-  const scale = Math.min(
-    (box.width - VIEW_PADDING * 2) / MAP_SIZE.width,
-    (box.height - VIEW_PADDING * 2) / MAP_SIZE.height,
-  );
-  const cellSize = { x: MAP_SIZE.width / GRID.width, y: MAP_SIZE.height / GRID.height };
-  const world = {
-    x: (cell.x + 0.5) * cellSize.x - MAP_SIZE.width / 2,
-    y: (cell.y + 0.5) * cellSize.y - MAP_SIZE.height / 2,
-  };
-
-  return {
-    x: box.x + box.width / 2 + world.x * scale,
-    y: box.y + box.height / 2 - world.y * scale,
-  };
-}
-
 /** 在 Mask 窗口里点某一格（一下 = 一格，对齐画笔大小 1 的默认值）。 */
 async function clickFogCell(page: Page, cell: { x: number; y: number }): Promise<void> {
-  const point = await fogCellPoint(page, cell);
+  const point = await fittedCellPoint(page, CANVAS, MAP_SIZE, GRID, cell);
   await page.mouse.click(point.x, point.y);
-}
-
-/** 打开项目、选中地图并露出属性面板。 */
-async function openMapPage(
-  page: Page,
-  request: APIRequestContext,
-  project: string,
-): Promise<void> {
-  await enterEditor(page);
-  await openProject(page, project);
-  await openLeftTab(page, "hierarchy");
-  await selectObject(page, 0);
-  await openInspector(page);
-  await expect(page.getByTestId("inspector-object-name")).toHaveValue("网格地图");
 }
 
 test.describe("战争雾", () => {
@@ -124,7 +67,7 @@ test.describe("战争雾", () => {
 
       await seedProjectDoc(request, project, [sceneDoc(SCENE, [mapDoc])]);
       await uploadSceneImage(request, project, SCENE, solidPng(4, 4, [255, 255, 255]));
-      await openMapPage(page, request, project);
+      await openFirstObject(page, project, "网格地图");
 
       const fog = page.locator('[data-group="fog"]');
 
@@ -161,8 +104,8 @@ test.describe("战争雾", () => {
         { x: 3, y: 2 },
         { x: 4, y: 2 },
       ];
-      const from = await fogCellPoint(page, stroke[0] as { x: number; y: number });
-      const to = await fogCellPoint(page, stroke[2] as { x: number; y: number });
+      const from = await fittedCellPoint(page, CANVAS, MAP_SIZE, GRID, stroke[0] as { x: number; y: number });
+      const to = await fittedCellPoint(page, CANVAS, MAP_SIZE, GRID, stroke[2] as { x: number; y: number });
       await page.mouse.move(from.x, from.y);
       await page.mouse.down();
       await page.mouse.move(to.x, to.y, { steps: 8 });
@@ -183,7 +126,7 @@ test.describe("战争雾", () => {
       const second = { x: 2, y: 2 };
       await clickFogCell(page, second);
       await expect.poll(() => persistedMask(request, project, second)).toBe(8);
-      await dialog.getByTestId("fog-clear").click();
+      await dialog.getByTestId("fog-mask-clear").click();
       await expect.poll(() => persistedMask(request, project, second)).toBe(0);
       await expect.poll(() => readSceneFogRegions(request, project, SCENE)).toEqual([8]);
 
@@ -203,7 +146,7 @@ test.describe("战争雾", () => {
         sceneDoc(SCENE, [mapObjectDoc(project, SCENE, "网格地图", MAP_SIZE, GRID)]),
       ]);
       await uploadSceneImage(request, project, SCENE, solidPng(4, 4, [20, 20, 20]));
-      await openMapPage(page, request, project);
+      await openFirstObject(page, project, "网格地图");
 
       const fog = page.locator('[data-group="fog"]');
       await fog.getByTestId("fog-region-1").click();

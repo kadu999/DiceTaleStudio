@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, act } from "@testing-library/react";
 import { CellMask, PAINTABLE_MASKS, decodeRle, maskToLabel, type RleRun } from "@dts/grid";
 import { createMapObject, createSceneObject, type SceneObjectDoc } from "@dts/document";
 import { InspectorPanel } from "../src/panels/inspector/InspectorPanel";
@@ -108,6 +108,62 @@ describe("属性面板：标注开关", () => {
     const enter = screen.getByTestId("grid-paint-enter") as HTMLButtonElement;
     expect(enter.disabled).toBe(true);
     expect(screen.getByText(/对象已隐藏/)).toBeDefined();
+  });
+
+  it("「打开编辑窗口…」只写窗口状态，不进标注模式", () => {
+    seedScene([mapObject()], ["map-1"]);
+    render(<InspectorPanel />);
+
+    fireEvent.click(screen.getByTestId("grid-editor-open"));
+
+    expect(useEditorStore.getState().gridEditor).toBe(true);
+    expect(useEditorStore.getState().gridEditorTarget).toBe("map-1");
+    // 窗口与画布标注是两条路：画布没有进入标注模式
+    expect(useEditorStore.getState().gridPaint.active).toBe(false);
+
+    useEditorStore.getState().openGridEditor(null);
+    expect(useEditorStore.getState().gridEditor).toBe(false);
+    expect(useEditorStore.getState().gridEditorTarget).toBeNull();
+  });
+
+  it("隐藏 / 未放置的地图也能开编辑窗口（窗口自带视口，不靠拾取）", () => {
+    seedScene([{ ...mapObject(), active: false }], ["map-1"]);
+    render(<InspectorPanel />);
+
+    const open = screen.getByTestId("grid-editor-open") as HTMLButtonElement;
+    expect(open.disabled).toBe(false);
+    fireEvent.click(open);
+    expect(useEditorStore.getState().gridEditorTarget).toBe("map-1");
+  });
+
+  it("两个格子编辑窗口互斥：开一个就把另一个关掉", () => {
+    seedScene([mapObject()], ["map-1"]);
+    render(<InspectorPanel />);
+
+    useEditorStore.getState().openFogMask("map-1");
+    expect(useEditorStore.getState().fogMask).toBe(true);
+
+    useEditorStore.getState().openGridEditor("map-1");
+    expect(useEditorStore.getState().gridEditor).toBe(true);
+    // 同时开两层模态遮罩谁也点不到，所以开网格窗口时 Mask 窗口自动关掉
+    expect(useEditorStore.getState().fogMask).toBe(false);
+    expect(useEditorStore.getState().fogMaskTarget).toBeNull();
+
+    useEditorStore.getState().openFogMask("map-1");
+    expect(useEditorStore.getState().fogMask).toBe(true);
+    expect(useEditorStore.getState().gridEditor).toBe(false);
+    expect(useEditorStore.getState().gridEditorTarget).toBeNull();
+  });
+
+  it("地图被删掉时编辑窗口跟着关（别留一个指向不存在对象的窗口）", () => {
+    seedScene([mapObject()], ["map-1"]);
+    useEditorStore.getState().openGridEditor("map-1");
+    expect(useEditorStore.getState().gridEditor).toBe(true);
+
+    act(() => useEditorStore.getState().deleteObjects(["map-1"]));
+
+    expect(useEditorStore.getState().gridEditor).toBe(false);
+    expect(useEditorStore.getState().gridEditorTarget).toBeNull();
   });
 });
 

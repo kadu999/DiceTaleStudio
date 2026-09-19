@@ -1,7 +1,7 @@
-import { PAINTABLE_MASKS, maskToLabel, regionsToMask, hasMask } from "@dts/grid";
+import { PAINTABLE_MASKS, maskToLabel, regionsToMask } from "@dts/grid";
 import type { SceneObjectDoc } from "@dts/document";
 import { useEditorStore } from "../../state/editor-store";
-import { decodeCellsCached } from "../scene/grid-paint";
+import { countCellsWithMask, decodeCellsCached } from "../scene/grid-paint";
 import { FieldRow } from "./fields";
 
 /**
@@ -127,17 +127,10 @@ export function FogFields({ object }: { readonly object: SceneObjectDoc }): Reac
  */
 function fogCellCount(object: SceneObjectDoc, fogMask: number): number {
   const map = object.map;
-  if (map === undefined || fogMask === 0) {
+  if (map === undefined) {
     return 0;
   }
 
   const cells = decodeCellsCached(map.cells.runs, map.grid.width * map.grid.height);
-  let count = 0;
-  for (const mask of cells) {
-    if (hasMask(mask, fogMask)) {
-      count += 1;
-    }
-  }
-
-  return count;
+  return countCellsWithMask(cells, fogMask);
 }
