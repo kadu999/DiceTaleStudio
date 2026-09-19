@@ -57,6 +57,12 @@ export class FsResourceProvider implements ResourceProvider {
           continue;
         }
 
+        // 写入用的临时文件（写完立刻 rename 掉）：万一进程在中间崩了留下一个，也别让它
+        // 出现在资源树里冒充用户的素材
+        if (path.endsWith(TEMP_SUFFIX)) {
+          continue;
+        }
+
         // 目录也要列（编辑器里刚建的空目录必须可见）
         if (info.isDirectory()) {
           entries.push({
@@ -107,15 +113,11 @@ export class FsResourceProvider implements ResourceProvider {
   }
 
   async writeText(id: string, text: string): Promise<void> {
-    const path = this.pathFor(id);
-    await mkdir(dirname(path), { recursive: true });
-    await writeFile(path, text, "utf8");
+    await writeAtomically(this.pathFor(id), text);
   }
 
   async writeBinary(id: string, data: ArrayBuffer): Promise<void> {
-    const path = this.pathFor(id);
-    await mkdir(dirname(path), { recursive: true });
-    await writeFile(path, Buffer.from(data));
+    await writeAtomically(this.pathFor(id), Buffer.from(data));
   }
 
   async ensureFolder(id: string): Promise<void> {
@@ -184,6 +186,71 @@ export class FsResourceProvider implements ResourceProvider {
       if (resolved !== this.root && !resolved.startsWith(prefix)) {
         throw new Error(`资源配置目录越出资源根: ${kind} = ${dir}`);
       }
+    }
+  }
+}
+
+/**
+ * 写入临时文件用的后缀：写完立刻 `rename` 掉（`list()` 会跳过它们）。
+ *
+ * 为什么绕这一下：`writeFile` 是「先截断、再写」的，**并发读的人会看到空文件或半截 JSON**。
+ * 而场景文件是「随时随地自动存」的，编辑器、e2e 用例、外部工具都可能在写的同时读它——
+ * 读到半截就会出现「JSON 解析失败」这种看起来毫不相干的偶发错误。
+ * `rename` 是原子的（Windows 上 Node 用 MoveFileEx 覆盖目标），所以读的人要么看到旧内容、
+ * 要么看到新内容，绝不会看到写了一半的。代价是进程在两步之间崩掉会留一个 `.dts-tmp` 文件——
+ * 它不会被列进资源树，也不会被误当成素材。
+ */
+const TEMP_SUFFIX = ".dts-tmp";
+
+/**
+ * 原子写入：同目录临时文件 + rename（必须同卷才能 rename）。
+ *
+ * 临时文件名**每次都不一样**：同一个文件可能被并发写（自动存与手动保存撞在一起），
+ * 共用一个临时名会让先写的那次 `rename` 找不到文件（已经被后写的 rename 走了）。
+ */
+async function writeAtomically(path: string, data: string | Buffer): Promise<void> {
+  await mkdir(dirname(path), { recursive: true });
+  const temp = `${path}.${process.pid.toString(36)}-${(tempSeq += 1).toString(36)}-${Math.random()
+    .toString(36)
+    .slice(2, 6)}${TEMP_SUFFIX}`;
+  await writeFile(temp, data);
+
+  try {
+    await renameWithRetry(temp, path);
+  } catch (error) {
+    // 失败就别留垃圾（临时文件本来也不会被列进资源树，但磁盘上干净点好）
+    await rm(temp, { force: true });
+    throw error;
+  }
+}
+
+/** 临时文件名里的自增序号（同一进程内不重名）。 */
+let tempSeq = 0;
+
+/** rename 重试次数与间隔：Windows 上「目标正被别人打开」是可等的（对方读完就放）。 */
+const RENAME_ATTEMPTS = 5;
+const RENAME_RETRY_MS = 5;
+
+/**
+ * `rename` 带重试。
+ *
+ * Windows 上替换一个**正被读取方打开**的文件会失败（`EPERM` / `EACCES` / `EBUSY`，
+ * 底下是 MoveFileEx 撞上共享冲突）。读取方（HTTP 接口、e2e 用例）都是短命操作，
+ * 等几毫秒再试就好——比「写失败」或「把半截文件暴露出去」都强。
+ */
+async function renameWithRetry(from: string, to: string): Promise<void> {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      await rename(from, to);
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      const retryable = code === "EPERM" || code === "EACCES" || code === "EBUSY";
+      if (!retryable || attempt >= RENAME_ATTEMPTS) {
+        throw error;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, RENAME_RETRY_MS));
     }
   }
 }

@@ -246,10 +246,18 @@ test.describe("场景数据", () => {
             return null;
           }
 
-          const file = JSON.parse(await response.text()) as {
+          // 迁移回写与这次读可能撞在一起（万一正好读到写入中间态）：让 poll 再试一轮，
+          // 别在这里 JSON.parse 抛错——那会变成和本用例毫不相干的偶发失败
+          let file: {
             formatVersion: number;
             objects: Array<{ position: { x: number; y: number } | null }>;
           };
+          try {
+            file = JSON.parse(await response.text()) as typeof file;
+          } catch {
+            return null;
+          }
+
           return { version: file.formatVersion, position: file.objects[0]?.position };
         })
         .toEqual({ version: CURRENT_SCENE_FORMAT_VERSION, position: { x: -480, y: 270 } });
