@@ -449,15 +449,16 @@ Unity 开着、不能 `-batchmode` 抢工程目录时，可以复制 Unity 生�
 
 清理把「旧模型」删干净了，但目录本身还是混乱的（`Backend/` 与 `Server/` 只各剩一两个文件、
 `Core/` 是个大杂烩、`Res/` 与 `Resources/` 两个名字含混、`Scripts/Editor/` 混在运行时目录里，
-而且整个模块没有 asmdef）。整理分两轮，**最终形态是「数据层 / 逻辑层 / 表现层」**：
+而且整个模块没有 asmdef）。整理分三轮，**最终形态是「数据层 / 网络层 / 逻辑层 / 表现层」**：
 
 ```
 Assets/DiceTale/
 ├─ Scripts/                     DiceTale.asmdef（rootNamespace: DiceTale）
-│  ├─ Data/         （3）        GridCellType · MapMarker · JsonParser
-│  ├─ Logic/        （10）       Game · ServerConnection · BackendManager · InputManager ·
-│  │                            InputSource · SimulatedTouchInputSource · DevicePipeInputSource2 ·
-│  │                            InputConfigPrefs · GameSceneManager · DynamicObstacle
+│  ├─ Data/         （2）        GridCellType · MapMarker
+│  ├─ Network/      （3）        ServerConnection · BackendManager · JsonParser
+│  ├─ Logic/        （8）        Game · InputManager · InputSource · SimulatedTouchInputSource ·
+│  │                            DevicePipeInputSource2 · InputConfigPrefs · GameSceneManager ·
+│  │                            DynamicObstacle
 │  └─ Presentation/ （12）       GridMap · FogOfWar · BirdWanderer · GroundSpriteRenderer ·
 │                               PhotoClickGlow · AudioPlayerManager · SmartVideoPlayer ·
 │                               UIManager · UIWindow · SceneFadeUI · SubtitleWindow ·
@@ -477,15 +478,18 @@ Assets/DiceTale/
   `Map` 被拆到三层（`GridCellType`/`MapMarker` → Data，`DynamicObstacle` → Logic，
   `GridMap`/`FogOfWar`/`BirdWanderer` → Presentation），
   `Media` + `Rendering` + `Effects` + `Scene` + `UI` 全部并进 Presentation。
+- **第 3 轮**（用户补一句「还有网络层」）：**网络层独立成层**——`ServerConnection` / `BackendManager`
+  从 Logic 抽出、`JsonParser` 从 Data 抽出，合成 `Network/`（与后端通信的一切：连接、装配、报文解析）。
+  依赖方向变成 **表现 → 逻辑 → 网络**，数据层不依赖任何层（已核实：Data 与 Network 都零外部代码依赖）。
   分层规则、依赖方向与 4 处「逻辑层碰表现层」的既成事实，见 [`client/README.md`](../../README.md)。
 
 ### 15.1 路径对照（本文第 4~7 节里的旧写法 → 最终位置）
 
 | 本文旧路径（相对 `client/Assets/DiceTale/`） | 最终位置 |
 |---|---|
-| `Scripts/Backend/BackendManager.cs` | `Scripts/Logic/BackendManager.cs` |
-| `Scripts/Server/ServerConnection.cs` | `Scripts/Logic/ServerConnection.cs` |
-| `Scripts/Server/JsonParser.cs` | `Scripts/Data/JsonParser.cs` |
+| `Scripts/Backend/BackendManager.cs` | `Scripts/Network/BackendManager.cs` |
+| `Scripts/Server/ServerConnection.cs` | `Scripts/Network/ServerConnection.cs` |
+| `Scripts/Server/JsonParser.cs` | `Scripts/Network/JsonParser.cs` |
 | `Scripts/Core/Game.cs` | `Scripts/Logic/Game.cs` |
 | `Scripts/Core/InputManager.cs`、`InputSource.cs`、`SimulatedTouchInputSource.cs`、`DevicePipeInputSource2.cs`、`InputConfigPrefs.cs` | `Scripts/Logic/…` |
 | `Scripts/Core/SimulatedTouchDebugUI.cs` | `Scripts/Presentation/SimulatedTouchDebugUI.cs` |
@@ -499,7 +503,7 @@ Assets/DiceTale/
 | `Scripts/Editor/GroundSpriteRendererMenu.cs`、`SetupMaps.cs` | `Editor/…`（移出 `Scripts/`） |
 | `Res/Materials/*.mat` | `Materials/*.mat` |
 | `Resources/Shaders/*`、`Resources/RealMap.prefab` | 不变（保留 `Resources/` 一层） |
-| `Scripts/Backend/`、`Scripts/Server/` 等 9 个子目录 | 删除（合并成 Data / Logic / Presentation） |
+| `Scripts/Backend/`、`Scripts/Server/` 等 9 个子目录 | 删除（合并成 Data / Network / Logic / Presentation 四层） |
 
 同时做掉的：`namespace DiceTale.Server` → `namespace DiceTale`（模块内单一命名空间，与 `ProjectionAlignment`
 一致；`BackendManager` / `Game` 里的 `Server.ServerConnection` 一并改成 `ServerConnection`），

@@ -3,11 +3,13 @@ using UnityEngine;
 namespace DiceTale
 {
     /// <summary>
-    /// 地图位置标记：挂在地图上标记一个位置（传送目标、事件点等）。
-    /// 用 <see cref="Id"/> 在运行时查找（同一地图内唯一），
-    /// 传送动作（<see cref="TeleportAction"/> / <see cref="TeleportZoneAction"/>）
-    /// 通过 targetMapName + targetMarkerId 定位目标位置。
+    /// 地图位置标记：挂在场景里标记一个位置（传送落点、事件点等）。
+    /// 用 <see cref="Id"/> 在运行时查找（同一地图内唯一）。
     /// </summary>
+    /// <remarks>
+    /// 旧模型里由传送动作（`TeleportAction` / `TeleportZoneAction`，已删除）按
+    /// targetMapName + targetMarkerId 定位；新方向下「传到哪个标记」由后端下发的命令决定。
+    /// </remarks>
     public class MapMarker : MonoBehaviour
     {
         [SerializeField, Tooltip("标记 ID（同一地图内唯一，供传送目标查找）")]

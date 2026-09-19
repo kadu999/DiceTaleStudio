@@ -11,14 +11,15 @@ Unity 客户端（Unity **6000.3.19f1**）。方向已反转：**数据在后端
 Assets/
 ├─ DiceTale/                          ← 本客户端唯一的游戏模块
 │  ├─ Scripts/                        DiceTale.asmdef（rootNamespace: DiceTale）
-│  │  ├─ Data/          （3）         数据层：纯数据结构 / 枚举 / 序列化
+│  │  ├─ Data/          （2）         数据层：纯数据结构 / 枚举
 │  │  │                 GridCellType.cs          网格类型位掩码（区域 / 障碍 / 雾位）
-│  │  │                 MapMarker.cs             场景标记点（id + 世界坐标，传送落点用）
-│  │  │                 JsonParser.cs            JSON 解析（新协议的报文用）
-│  │  ├─ Logic/         （10）        逻辑层：通信 / 输入 / 流程，不直接画东西
-│  │  │                 Game.cs                  宿主 + 组合根：装配全部管理器、交互锁
+│  │  │                 MapMarker.cs             场景标记点（id + 世界坐标，落点用）
+│  │  ├─ Network/       （3）         网络层：与后端通信的一切（不认识游戏逻辑，也不碰显示）
 │  │  │                 ServerConnection.cs      WebSocket 连接（接收队列 / 重连，不认识协议）
 │  │  │                 BackendManager.cs        连接装配
+│  │  │                 JsonParser.cs            报文 JSON 解析（新协议用）
+│  │  ├─ Logic/         （8）         逻辑层：输入 / 流程 / 状态，不直接画东西
+│  │  │                 Game.cs                  宿主 + 组合根：装配全部管理器、交互锁
 │  │  │                 InputManager.cs          消费输入帧 + 对外统一状态快照
 │  │  │                 InputSource.cs           输入源抽象 / PointerId / InputFrame
 │  │  │                 SimulatedTouchInputSource.cs  开发用模拟触摸源（鼠标 + 数字键）
@@ -52,21 +53,26 @@ Assets/
 
 ## 分层约定
 
+**依赖方向：表现 → 逻辑（→ 网络）；数据不依赖任何层，各层都可以用。**
+
 | 层 | 放什么 | 不放什么 |
 |---|---|---|
-| **Data** | 数据结构、枚举、可序列化模型、编解码（JSON）、本地持久化的**数据形态** | 不引用另外两层（当前 Data 零外部引用） |
-| **Logic** | 通信、输入消费、流程与状态驱动、运行时改数据 | 不直接操作渲染器 / Canvas / AudioSource |
+| **Data** | 数据结构、枚举、可序列化模型 | 不引用另外三层（当前 Data 零外部引用） |
+| **Network** | 与后端通信的一切：连接、连接装配、报文解析 | 不认识游戏逻辑、不碰显示（当前 Network 零外部代码依赖，注释里提到 `Game` 不算） |
+| **Logic** | 输入消费、流程与状态驱动、运行时改数据 | 不直接操作渲染器 / Canvas / AudioSource |
 | **Presentation** | 直接画 / 播 / 显示：MeshRenderer、Texture、Canvas、AudioSource、VideoPlayer、Light | 不做协议、不拥有业务状态（数据在后端） |
 
-**客户端几乎没有自己的数据**（数据都在后端），所以 Data 现在很薄——这是对的，不是没写完。
-以后从后端收到的场景 / 对象 / 声音等模型，都放 `Data/`。
+**客户端几乎没有自己的数据**（数据都在后端），所以 Data 现在只有「网格类型枚举 + 场景标记」两个文件
+——这是对的，不是没写完。以后从后端收到的场景 / 对象 / 声音等模型，都放 `Data/`。
+**网络层也一样薄**：旧协议整层删除后，它只剩「连接 + 装配 + 报文解析」，新协议落地时
+报文类型与分发也放这里（`Logic/Game` 只负责把它装配起来）。
 
 **已知的「逻辑层碰表现层」4 处**（不是随手写的，是现状：真要让方向绝对干净，得先把 `GridMap` 拆成
 「格子数据 + 渲染」两个东西，那是新功能落地时的事）：
 
 | 位置 | 碰了什么 | 说明 |
 |---|---|---|
-| `Logic/Game.cs` | 全部表现层管理器 | **组合根**：装配入口本来就得认识所有管理器，这处是允许的 |
+| `Logic/Game.cs` | 网络层 + 全部表现层管理器 | **组合根**：装配入口本来就得认识所有管理器，这处是允许的 |
 | `Logic/GameSceneManager.cs` | `UIManager` → `SceneFadeUI` | 切场景的淡入淡出属于流程的一部分 |
 | `Logic/InputManager.cs` | uGUI 命中判定 + `PhotoClickGlow` | UI 点击豁免与拍照点光 |
 | `Logic/DynamicObstacle.cs` | `GridMap` | 它只跟 `GridMap` 打交道，而 `GridMap` 目前同时持有格子数据与渲染 |
@@ -75,7 +81,7 @@ Assets/
 
 1. **模块 = 目录 + asmdef**：`Scripts/DiceTale.asmdef`（`rootNamespace: DiceTale`）、
    `Editor/DiceTale.Editor.asmdef`（`includePlatforms: [Editor]`，引用 `DiceTale`）。
-   **加脚本只往 Data / Logic / Presentation 里放，不要再建 asmdef、也不要再往下切子目录**
+   **加脚本只往 Data / Network / Logic / Presentation 里放，不要再建 asmdef、也不要再往下切子目录**
    （真觉得某一层太挤时再谈：比如表现层的 UI 窗口可能值得 `Presentation/UI/`）。
 2. **namespace 与模块同名**：运行时代码一律 `namespace DiceTale`（子目录不细分），编辑器代码
    `DiceTale.Editor` —— 与（已删除的）`ProjectionAlignment` 模块同一套写法。
