@@ -8,6 +8,7 @@ import {
   applyEraseToPixels,
   brushRadiusFor,
   fillFogMaskPixels,
+  paintRegionPixels,
   previewMaskSizeFor,
   strokeStampCenters,
   type MaskColorOf,
@@ -171,6 +172,75 @@ describe("applyEraseToPixels（与 MaskEraseStamp.shader 同式）", () => {
   });
 });
 
+describe("paintRegionPixels（整区开 / 关）", () => {
+  /**
+   * 4×2 网格、8×4 遮罩（每格 2×2 纹素）：
+   * 格 0 = 区域1 + 区域4（组合格）、格 1 = 区域4、格 2 = 区域1。
+   */
+  const cells = new Uint8Array([
+    CellMask.Obstacle | CellMask.Fog1, CellMask.Fog1, CellMask.Obstacle, CellMask.Empty,
+    CellMask.Empty, CellMask.Empty, CellMask.Empty, CellMask.Empty,
+  ]);
+  const COLOR_OF: MaskColorOf = (mask) => {
+    const layers: MaskPixelColor[] = [];
+    if ((mask & CellMask.Obstacle) !== 0) {
+      layers.push({ r: 255, g: 0, b: 0, a: 153 });
+    }
+    if ((mask & CellMask.Fog1) !== 0) {
+      layers.push({ r: 0, g: 0, b: 255, a: 204 });
+    }
+    return layers;
+  };
+  /** 格 (x, 0) 的中心纹素：8×4 遮罩、每格 2×2 → 格 x 的纹素中心是 (2x + 0.5, 3.5)。 */
+  const pixelAt = (pixels: Uint8ClampedArray, cellIndex: number) => {
+    const index = (3 * 8 + cellIndex * 2) * 4;
+    return {
+      r: pixels[index] ?? -1,
+      g: pixels[index + 1] ?? -1,
+      b: pixels[index + 2] ?? -1,
+      a: pixels[index + 3] ?? -1,
+    };
+  };
+  /** 铺一遍初始遮罩（两个区域都指定上）。 */
+  const withMask = (): Uint8ClampedArray => {
+    const pixels = new Uint8ClampedArray(8 * 4 * 4);
+    fillFogMaskPixels(pixels, 8, 4, cells, GRID, CellMask.Obstacle | CellMask.Fog1, COLOR_OF);
+    return pixels;
+  };
+
+  it("打开某区：含这一位的格子整块揭示，别的区照旧", () => {
+    const pixels = withMask();
+    // 初始：格 1 是区域4 的蓝
+    expect(pixelAt(pixels, 1)).toEqual({ r: 0, g: 0, b: 255, a: 204 });
+
+    paintRegionPixels(pixels, 8, 4, cells, GRID, CellMask.Fog1, COLOR_OF, true);
+
+    expect(pixelAt(pixels, 1).a).toBe(0); // 区域4 的格子揭示
+    expect(pixelAt(pixels, 0).a).toBe(0); // 组合格（区域1+区域4）也整块揭示
+    expect(pixelAt(pixels, 2).r).toBe(255); // 只属于区域1 的格子**不动**
+  });
+
+  it("关闭某区：按区域配色整块盖回去（组合格是两层叠加）", () => {
+    const pixels = withMask();
+    paintRegionPixels(pixels, 8, 4, cells, GRID, CellMask.Fog1, COLOR_OF, true);
+    paintRegionPixels(pixels, 8, 4, cells, GRID, CellMask.Fog1, COLOR_OF, false);
+
+    expect(pixelAt(pixels, 1)).toEqual({ r: 0, g: 0, b: 255, a: 204 });
+    // 组合格：红蓝叠加，两层都在
+    const combined = pixelAt(pixels, 0);
+    expect(combined.a).toBeGreaterThan(200);
+    expect(combined.r).toBeGreaterThan(0);
+    expect(combined.b).toBeGreaterThan(0);
+  });
+
+  it("开一个区不影响另一个区的格子（区域1 ↔ 区域4 互不干扰）", () => {
+    const pixels = withMask();
+    paintRegionPixels(pixels, 8, 4, cells, GRID, CellMask.Obstacle, COLOR_OF, true);
+
+    expect(pixelAt(pixels, 2).a).toBe(0); // 区域1 的格子揭示
+    expect(pixelAt(pixels, 1).a).toBe(204); // 只属于区域4 的格子原样
+  });
+});
 describe("previewMaskSizeFor / brushRadiusFor", () => {
   it("宽钉在 960、高度按贴图比例推（圆刷显示不变形）", () => {
     // 16:9 的贴图 → 正好是参考实现那块默认遮罩的尺寸

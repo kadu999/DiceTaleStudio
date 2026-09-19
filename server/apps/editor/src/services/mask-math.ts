@@ -253,9 +253,6 @@ export function fillFogMaskPixels(
 ): void {
   pixels.fill(0);
 
-  const cellWidth = width / grid.width;
-  const cellHeight = height / grid.height;
-
   for (let y = 0; y < grid.height; y += 1) {
     for (let x = 0; x < grid.width; x += 1) {
       const mask = cells[y * grid.width + x] ?? 0;
@@ -263,31 +260,94 @@ export function fillFogMaskPixels(
         continue;
       }
 
-      const layers = colorOf(mask);
-      if (layers.length === 0) {
+      fillCellTexels(pixels, width, height, grid, x, y, cellColorOf(mask, colorOf));
+    }
+  }
+}
+
+/**
+ * 「**整区开 / 关**」：把含指定位的格子那几块纹素一次性**揭示**（清成透明）或**盖回去**
+ * （按区域配色重画）。
+ *
+ * 与前端 `FogOfWar.ClearAreaCells` 是同一个意思（玩家进区 → 整片揭示），差别只有一处：
+ * 它按「雾位组合」分组（`Obstacle|Fog1` 归 Fog1 那组，`Fog1|Fog2` 自成一组），
+ * 这里按**单个位**——所以一格同时属于两个雾区时会被**整块**揭示。像素遮罩一格只有一块纹素，
+ * 分不出「只擦掉其中一位的那一半」，这一点写在 README 里。
+ *
+ * `pixels` 会被就地改动（`width × height × 4` 的 RGBA）。
+ */
+export function paintRegionPixels(
+  pixels: Uint8ClampedArray,
+  width: number,
+  height: number,
+  cells: Uint8Array,
+  grid: GridSize,
+  bit: number,
+  colorOf: MaskColorOf,
+  revealed: boolean,
+): void {
+  for (let y = 0; y < grid.height; y += 1) {
+    for (let x = 0; x < grid.width; x += 1) {
+      const mask = cells[y * grid.width + x] ?? 0;
+      if ((mask & bit) === 0) {
         continue;
       }
 
-      const [r, g, b, a] = compositeOver(layers);
-      if (a <= 0) {
-        continue;
-      }
+      fillCellTexels(
+        pixels,
+        width,
+        height,
+        grid,
+        x,
+        y,
+        revealed ? undefined : cellColorOf(mask, colorOf),
+      );
+    }
+  }
+}
 
-      // 格子 (x, y) 的 y=0 是**图片最下面一行**，而遮罩行序是 y 向下（第 0 行在顶上）：这里翻一次
-      const px0 = Math.max(0, Math.floor(x * cellWidth));
-      const px1 = Math.min(width, Math.ceil((x + 1) * cellWidth));
-      const py0 = Math.max(0, Math.floor(height - (y + 1) * cellHeight));
-      const py1 = Math.min(height, Math.ceil(height - y * cellHeight));
+/** 一格要盖的 RGBA（按区域配色逐层叠加）；没有可画的层时返回 `undefined`。 */
+function cellColorOf(
+  mask: number,
+  colorOf: MaskColorOf,
+): readonly [number, number, number, number] | undefined {
+  const layers = colorOf(mask);
+  if (layers.length === 0) {
+    return undefined;
+  }
 
-      for (let py = py0; py < py1; py += 1) {
-        for (let px = px0; px < px1; px += 1) {
-          const index = (py * width + px) * 4;
-          pixels[index] = r;
-          pixels[index + 1] = g;
-          pixels[index + 2] = b;
-          pixels[index + 3] = a;
-        }
-      }
+  const rgba = compositeOver(layers);
+  return rgba[3] <= 0 ? undefined : rgba;
+}
+
+/**
+ * 把格子 `(x, y)` 对应的那块纹素填成一个颜色；`rgba === undefined` = 清成透明。
+ *
+ * 格子 `(x, y)` 的 y=0 是**图片最下面一行**，而遮罩行序是 y 向下（第 0 行在顶上）：这里翻一次。
+ */
+function fillCellTexels(
+  pixels: Uint8ClampedArray,
+  width: number,
+  height: number,
+  grid: GridSize,
+  x: number,
+  y: number,
+  rgba: readonly [number, number, number, number] | undefined,
+): void {
+  const cellWidth = width / grid.width;
+  const cellHeight = height / grid.height;
+  const px0 = Math.max(0, Math.floor(x * cellWidth));
+  const px1 = Math.min(width, Math.ceil((x + 1) * cellWidth));
+  const py0 = Math.max(0, Math.floor(height - (y + 1) * cellHeight));
+  const py1 = Math.min(height, Math.ceil(height - y * cellHeight));
+
+  for (let py = py0; py < py1; py += 1) {
+    for (let px = px0; px < px1; px += 1) {
+      const index = (py * width + px) * 4;
+      pixels[index] = rgba?.[0] ?? 0;
+      pixels[index + 1] = rgba?.[1] ?? 0;
+      pixels[index + 2] = rgba?.[2] ?? 0;
+      pixels[index + 3] = rgba?.[3] ?? 0;
     }
   }
 }

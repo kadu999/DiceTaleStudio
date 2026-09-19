@@ -136,6 +136,70 @@ test.describe("战争雾 Mask 窗口", () => {
     }
   });
 
+  test("整区开关：打开 = 整片揭示、关闭 = 整片盖回去（不写文档）", async ({ page, request }) => {
+    const project = await newProject(request);
+    try {
+      const mapDoc = mapObjectDoc(project, SCENE, "网格地图", MAP_SIZE, GRID);
+      // 左下角 4 格区域1、接着 4 格区域4
+      (mapDoc.map as { cells: unknown }).cells = {
+        encoding: "rle",
+        runs: [
+          [1, FOG_CELLS],
+          [8, FOG_CELLS],
+          [0, GRID.width * GRID.height - FOG_CELLS * 2],
+        ],
+      };
+
+      await seedProjectDoc(request, project, [sceneDoc(SCENE, [mapDoc])]);
+      await uploadSceneImage(request, project, SCENE, solidPng(4, 4, [60, 60, 60]));
+      await openFirstObject(page, project, "网格地图");
+
+      const fog = page.locator('[data-group="fog"]');
+      await fog.getByTestId("fog-region-1").click();
+      await fog.getByTestId("fog-region-8").click();
+      await expect.poll(() => readSceneFogRegions(request, project, SCENE)).toEqual([1, 8]);
+
+      const fileBefore = await readSceneMap(request, project, SCENE);
+      await fog.getByTestId("fog-mask-open").click();
+      const dialog = page.getByTestId("fog-mask-dialog");
+      await expect(dialog).toBeVisible();
+
+      const region1Cell = { x: 0, y: 0 };
+      const region4Cell = { x: FOG_CELLS, y: 0 };
+
+      // 初始：两区都有罩子（区域1 红、区域4 浅灰）
+      await expect.poll(async () => (await maskPixel(page, region1Cell)).a).toBeGreaterThan(100);
+      await expect.poll(async () => (await maskPixel(page, region4Cell)).a).toBeGreaterThan(100);
+
+      // 打开区域1：4 格一起揭示，区域4 那 4 格不动
+      await dialog.getByTestId("fog-region-toggle-1").check();
+      await expect.poll(async () => (await maskPixel(page, region1Cell)).a).toBeLessThan(15);
+      await expect.poll(async () => (await maskPixel(page, { x: 3, y: 0 })).a).toBeLessThan(15);
+      await expect.poll(async () => (await maskPixel(page, region4Cell)).a).toBeGreaterThan(100);
+
+      // 关闭区域1：整片盖回去
+      await dialog.getByTestId("fog-region-toggle-1").uncheck();
+      await expect.poll(async () => (await maskPixel(page, region1Cell)).a).toBeGreaterThan(100);
+
+      // 打开区域4：只有它那 4 格揭示
+      await dialog.getByTestId("fog-region-toggle-8").check();
+      await expect.poll(async () => (await maskPixel(page, region4Cell)).a).toBeLessThan(15);
+      await expect.poll(async () => (await maskPixel(page, region1Cell)).a).toBeGreaterThan(100);
+
+      // 擦了不保存：整区开关只是预览，场景文件一个字节不动
+      await page.waitForTimeout(1200);
+      expect(await readSceneMap(request, project, SCENE)).toEqual(fileBefore);
+
+      // 关掉重开：开关复位、罩子回到未探索
+      await dialog.getByTestId("fog-mask-close").click();
+      await fog.getByTestId("fog-mask-open").click();
+      await expect(page.getByTestId("fog-mask-dialog")).toBeVisible();
+      await expect(page.getByTestId("fog-region-toggle-8")).not.toBeChecked();
+      await expect.poll(async () => (await maskPixel(page, region4Cell)).a).toBeGreaterThan(100);
+    } finally {
+      await dropProject(request, project);
+    }
+  });
   test("两个雾区各有各的颜色；绑定变了重开按新绑定画", async ({ page, request }) => {
     const project = await newProject(request);
     try {

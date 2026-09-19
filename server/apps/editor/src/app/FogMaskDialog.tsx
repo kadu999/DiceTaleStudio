@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import {
   ALL_MASK,
   cellMaskRgba,
   defaultCellMaskStyle,
+  maskToLabel,
   regionsToMask,
   visibleMaskBits,
   type GridSize,
@@ -16,8 +17,10 @@ import {
   applyEraseToPixels,
   brushRadiusFor,
   fillFogMaskPixels,
+  paintRegionPixels,
   previewMaskSizeFor,
   strokeStampCenters,
+  type MaskColorOf,
   type MaskPoint,
 } from "../services/mask-math";
 import { useEditorStore } from "../state/editor-store";
@@ -93,6 +96,8 @@ export function FogMaskDialog({
    * 于是「关掉再打开就回到未探索的样子」也就是同一件事。
    */
   const [canvas, setCanvas] = useState<HTMLCanvasElement | null>(null);
+  /** 已打开的雾区（整区开关）：只在本窗口里有效，关掉重开就复位。 */
+  const [revealedRegions, setRevealedRegions] = useState<readonly number[]>([]);
 
   const grid: GridSize | undefined = map?.grid;
   const cells =
@@ -100,7 +105,16 @@ export function FogMaskDialog({
       ? undefined
       : decodeCellsCached(map.cells.runs, grid.width * grid.height);
 
-  // 初始化遮罩像素：只有已指定雾区的格子是不透明黑，其余全透明
+  /** 一格的区域配色（只算**已指定雾区**的位，按位逐层叠加）——初始化与整区开关共用。 */
+  const colorOf = useCallback<MaskColorOf>(
+    (mask) =>
+      visibleMaskBits(mask, ALL_MASK & ~fogMask).map((bit) => {
+        const style = defaultCellMaskStyle(bit);
+        return cellMaskRgba(colors[bit] ?? style.hex, style.alpha);
+      }),
+    [colors, fogMask],
+  );
+  // 初始化遮罩像素：只给**已指定雾区**的格子按区域配色上色，其余全透明
   useEffect(() => {
     if (!open || canvas === null || maskSize === undefined || grid === undefined || cells === undefined) {
       return;
@@ -117,23 +131,14 @@ export function FogMaskDialog({
     const imageData = context.createImageData(maskSize.width, maskSize.height);
     // 罩子按**区域颜色**画（编辑器里要一眼看出哪块是哪区）；运行时那边统一是黑的，
     // 那是前端重构后的事——配色与画布上的「网格标注」共用同一份偏好
-    fillFogMaskPixels(
-      imageData.data,
-      maskSize.width,
-      maskSize.height,
-      cells,
-      grid,
-      fogMask,
-      (mask) =>
-        visibleMaskBits(mask, ALL_MASK & ~fogMask).map((bit) => {
-          const style = defaultCellMaskStyle(bit);
-          return cellMaskRgba(colors[bit] ?? style.hex, style.alpha);
-        }),
-    );
+    fillFogMaskPixels(imageData.data, maskSize.width, maskSize.height, cells, grid, fogMask, colorOf);
     context.putImageData(imageData, 0, 0);
     imageDataRef.current = imageData;
     lastPointRef.current = null;
-  }, [open, canvas, maskSize, grid, cells, fogMask, colors]);
+    // 遮罩重画了 → 整区开关也回到「都没打开」
+    setRevealedRegions([]);
+  }, [open, canvas, maskSize, grid, cells, fogMask, colorOf]);
+
 
   const ready = open && maskSize !== undefined && grid !== undefined;
   // 笔刷半径（纹理像素）：与前端 `ApplyEraseStroke` 的 `radiusTex` 同式（归一化半径 × 遮罩宽）
@@ -198,6 +203,41 @@ export function FogMaskDialog({
     lastPointRef.current = null;
   };
 
+  /**
+   * 整区开 / 关：把这一区的格子一次性揭示或盖回去（与前端「玩家进区 → 整片揭示」同一个意思）。
+   *
+   * 只改这一窗口里的遮罩：不写文档、不进撤销栈；关掉重开回到未探索的样子。
+   * 手动擦掉的零散部分**不会**让开关跟着变——开关管的是「整区」，不是「擦过没有」。
+   */
+  const toggleRegion = (bit: number, revealed: boolean): void => {
+    const imageData = imageDataRef.current;
+    const context = canvas?.getContext("2d") ?? null;
+    if (
+      imageData === null ||
+      context === null ||
+      maskSize === undefined ||
+      grid === undefined ||
+      cells === undefined
+    ) {
+      return;
+    }
+
+    paintRegionPixels(
+      imageData.data,
+      maskSize.width,
+      maskSize.height,
+      cells,
+      grid,
+      bit,
+      colorOf,
+      revealed,
+    );
+    context.putImageData(imageData, 0, 0);
+    setRevealedRegions((previous) =>
+      revealed ? [...previous, bit] : previous.filter((value) => value !== bit),
+    );
+  };
+
   return (
     <Dialog.Root open={open} onOpenChange={(next) => (next ? undefined : onClose())}>
       <Dialog.Portal>
@@ -209,7 +249,7 @@ export function FogMaskDialog({
           className="fixed left-1/2 top-1/2 z-50 flex max-h-[92vh] w-[820px] max-w-[92vw] -translate-x-1/2 -translate-y-1/2 flex-col rounded border border-[var(--color-editor-border)] bg-[var(--color-editor-panel)] p-3 shadow-2xl"
         >
           <Dialog.Title className="mb-2 flex-none text-[13px] font-semibold">
-            战争雾 Mask（擦除预览）
+            战争雾 Mask
           </Dialog.Title>
 
           {map === undefined || imageRef === undefined || grid === undefined ? (
@@ -221,32 +261,70 @@ export function FogMaskDialog({
             </div>
           ) : (
             <>
-              <div className="min-h-0 flex-1 overflow-auto">
-                {/* 长宽比盒子：贴图与遮罩都绝对定位铺满，于是两块永远严丝合缝 */}
+              <div className="flex min-h-0 flex-1 gap-2">
+                <div className="min-h-0 flex-1 overflow-auto">
+                  {/* 长宽比盒子：贴图与遮罩都绝对定位铺满，于是两块永远严丝合缝 */}
+                  <div
+                    className="relative w-full bg-black"
+                    style={{ paddingTop: `${(imageRef.height / imageRef.width) * 100}%` }}
+                  >
+                    <img
+                      src={assetRawUrl(imageRef.id)}
+                      alt="地图"
+                      className="absolute left-0 top-0 h-full w-full object-contain"
+                    />
+                    <canvas
+                      ref={setCanvas}
+                      data-testid="fog-mask-canvas"
+                      className="absolute left-0 top-0 h-full w-full touch-none"
+                      onPointerDown={onPointerDown}
+                      onPointerMove={onPointerMove}
+                      onPointerUp={onPointerEnd}
+                      onPointerCancel={onPointerEnd}
+                    />
+                  </div>
+                </div>
+
+                {/* 右侧：**整区开关**——一区一个，打开 = 整片揭示、关闭 = 整片盖回去 */}
                 <div
-                  className="relative w-full bg-black"
-                  style={{ paddingTop: `${(imageRef.height / imageRef.width) * 100}%` }}
+                  data-testid="fog-region-panel"
+                  className="flex w-40 flex-none flex-col gap-1 overflow-auto rounded border border-[var(--color-editor-border)] bg-[var(--color-editor-panel-alt)] p-2"
                 >
-                  <img
-                    src={assetRawUrl(imageRef.id)}
-                    alt="地图"
-                    className="absolute left-0 top-0 h-full w-full object-contain"
-                  />
-                  <canvas
-                    ref={setCanvas}
-                    data-testid="fog-mask-canvas"
-                    className="absolute left-0 top-0 h-full w-full touch-none"
-                    onPointerDown={onPointerDown}
-                    onPointerMove={onPointerMove}
-                    onPointerUp={onPointerEnd}
-                    onPointerCancel={onPointerEnd}
-                  />
+                  <span className="text-[10px] text-[var(--color-editor-text-dim)]">整区开关</span>
+                  {regions.length === 0 ? (
+                    <span className="text-[10px] text-[var(--color-editor-warn)]">还没有指定雾区</span>
+                  ) : (
+                    regions.map((bit) => (
+                      <label
+                        key={bit}
+                        className="flex items-center gap-1.5 text-[11px]"
+                        title={`${maskToLabel(bit)}：打开 = 整区揭示，关闭 = 整片盖回去（只在本窗口里，不写文档）`}
+                      >
+                        <input
+                          type="checkbox"
+                          data-testid={`fog-region-toggle-${bit}`}
+                          checked={revealedRegions.includes(bit)}
+                          className="h-3.5 w-3.5 flex-none accent-[var(--color-editor-accent)]"
+                          onChange={(event) => toggleRegion(bit, event.target.checked)}
+                        />
+                        <span
+                          aria-hidden="true"
+                          className="h-2.5 w-2.5 flex-none rounded-sm border border-black/40"
+                          style={{ background: colors[bit] ?? "#ffffff" }}
+                        />
+                        <span className="truncate">{maskToLabel(bit)}</span>
+                      </label>
+                    ))
+                  )}
+                  <span className="mt-auto text-[10px] leading-relaxed text-[var(--color-editor-text-dim)]">
+                    开关只管整区；手动擦的零散部分不跟着变
+                  </span>
                 </div>
               </div>
 
               <div className="mt-2 flex flex-none items-center gap-2 text-[10px] text-[var(--color-editor-text-dim)]">
                 <span>
-                  只有擦除：按住涂抹 = 模拟运行时揭示（软边圆刷）；**不写文档**，关掉重开就回到未探索的样子
+                  擦除（软边圆刷）或右侧整区开关 = 模拟运行时揭示；**不写文档**，关掉重开就回到未探索的样子
                 </span>
                 <Dialog.Close asChild>
                   <button
