@@ -3,7 +3,7 @@
   "objects": [
     {
       "id": "map_mu6uln3x1l7fg",
-      "name": "2D地图",
+      "name": "地图",
       "kind": "Map",
       "active": true,
       "sortingOrder": 0,
@@ -346,6 +346,35 @@
         "id": "project:测试项目/Assets/images/Baseballbat_weapon.png",
         "width": 74,
         "height": 74
+      }
+    },
+    {
+      "id": "sound_mu7z5bqp15o91",
+      "name": "播放声音",
+      "kind": "PlaySound",
+      "active": true,
+      "sortingOrder": 0,
+      "locked": false,
+      "position": {
+        "x": -650.7071719912242,
+        "y": -143.0721777032979
+      },
+      "rotation": 0,
+      "scale": 1,
+      "components": [],
+      "sound": {
+        "clips": [
+          "project:测试项目/Assets/audio/freesound_community-fire-burning-loop-6135.mp3",
+          "project:测试项目/Assets/audio/mixkit-cinematic-thunder-hit-1280.wav",
+          "project:测试项目/Assets/audio/thunderstorm-30s-high.wav"
+        ],
+        "picked": "project:测试项目/Assets/audio/freesound_community-fire-burning-loop-6135.mp3",
+        "names": {
+          "project:测试项目/Assets/audio/freesound_community-fire-burning-loop-6135.mp3": "背景音乐1",
+          "project:测试项目/Assets/audio/mixkit-cinematic-thunder-hit-1280.wav": "背景音乐2",
+          "project:测试项目/Assets/audio/thunderstorm-30s-high.wav": "背景音乐3"
+        },
+        "layer": "bgm"
       }
     }
   ]
