@@ -52,13 +52,14 @@ export function GridAnnotationFields({
   const editing = gridPaint.active && gridPaint.mapObjectId === object.id;
 
   if (!editing) {
-    // 不能标注的两种情况都写出来：隐身的图与没落位的图在画布上根本点不到
+    // 只有**真的点不动**时才解释原因（隐身的图与没落位的图在画布上根本点不到）；
+    // 能点的时候不再写「怎么用」——那种说明占地方又没人读
     // （编辑窗口不看这两件事：它自带视口，不靠拾取）
     const blocked = !object.active
-      ? "对象已隐藏：画布上标注要先激活它（编辑窗口不受影响）"
+      ? "对象已隐藏：先激活它才能标注"
       : object.position === null
-        ? "地图未放置：画布上标注要先给它一个世界坐标（编辑窗口不受影响）"
-        : "画布上左键涂抹、中键平移；Esc 退出";
+        ? "地图未放置：先给它一个世界坐标"
+        : undefined;
 
     return (
       <>
@@ -67,23 +68,26 @@ export function GridAnnotationFields({
             type="button"
             data-testid="grid-paint-enter"
             disabled={!object.active || object.position === null}
+            title="进入标注模式，在画布上直接涂格子"
             className="toolbar-button flex-none hover:toolbar-button-hover disabled:opacity-40"
             onClick={() => enterGridPaint(object.id)}
           >
             开始标注
           </button>
-          {/* 不想在画布上对准格子时走这条：贴图铺满窗口，落笔就是格子 */}
+          {/* 在贴图窗口里改：落笔就是格子，不用在画布上对准 */}
           <button
             type="button"
             data-testid="grid-editor-open"
             title="在贴图上按区域涂 / 擦（不用先进入标注模式，也不用在地图上对准格子）"
-            className="toolbar-button min-w-0 flex-1 truncate hover:toolbar-button-hover"
+            className="flex-none rounded bg-[var(--color-editor-accent)] px-2 py-0.5 text-[11px] text-black hover:opacity-90"
             onClick={() => openGridEditor(object.id)}
           >
-            打开编辑窗口…
+            编辑
           </button>
         </FieldRow>
-        <div className="px-2 pb-1 text-[10px] text-[var(--color-editor-text-dim)]">{blocked}</div>
+        {blocked === undefined ? null : (
+          <div className="px-2 pb-1 text-[10px] text-[var(--color-editor-warn)]">{blocked}</div>
+        )}
       </>
     );
   }

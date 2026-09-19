@@ -12,7 +12,7 @@ import { FieldRow } from "./fields";
  * 这里**手动指定**。指定之后：
  *
  * - 「已覆盖」数出这些区域的格子（也就是画布上会盖雾罩的那些）；
- * - 「打开 Mask 窗口…」在贴图上按雾区涂/擦（真正的编辑在那里做，这里只负责指定与统计）；
+ * - 「编辑」打开战争雾 Mask 窗口：擦除 / 整区开合（真正的编辑在那里做，这里只负责指定与统计）；
  * - 「显示 → 战争雾」按运行时的样子在画布上预览（纯显示，不动数据）。
  *
  * 未指定任何雾区时，Mask 窗口与预览都没有意义，所以按钮禁用并写明原因——
@@ -88,11 +88,11 @@ export function FogFields({ object }: { readonly object: SceneObjectDoc }): Reac
           type="button"
           data-testid="fog-mask-open"
           disabled={fogMask === 0}
-          title={fogMask === 0 ? "先指定至少一个雾区" : "在贴图上按雾区涂 / 擦"}
-          className="toolbar-button flex-none hover:toolbar-button-hover disabled:opacity-40"
+          title={fogMask === 0 ? "先指定至少一个雾区" : "打开战争雾 Mask 窗口：擦除 / 整区开合"}
+          className="flex-none rounded bg-[var(--color-editor-accent)] px-2 py-0.5 text-[11px] text-black hover:opacity-90 disabled:opacity-40"
           onClick={() => openFogMask(object.id)}
         >
-          打开 Mask 窗口…
+          编辑
         </button>
       </FieldRow>
 

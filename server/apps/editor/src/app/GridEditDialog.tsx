@@ -408,7 +408,6 @@ export function GridEditDialog({
               </div>
 
               <div className="mt-2 flex flex-none items-center gap-2 text-[10px] text-[var(--color-editor-text-dim)]">
-                <span>左键涂抹、拖动连成一片；橡皮整格清零（与画布标注同一条规矩）</span>
                 <button
                   type="button"
                   data-testid="grid-editor-clear"

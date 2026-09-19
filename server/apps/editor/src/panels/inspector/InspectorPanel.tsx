@@ -176,19 +176,16 @@ function ActiveField({ object }: { readonly object: SceneObjectDoc }): React.JSX
 
   return (
     <FieldRow label="激活">
-      <label className="flex min-w-0 flex-1 items-center gap-1.5 text-[11px]">
-        <input
-          type="checkbox"
-          checked={object.active}
-          data-testid="inspector-object-active"
-          aria-label="激活（显示）"
-          className="h-3.5 w-3.5 flex-none accent-[var(--color-editor-accent)]"
-          onChange={(event) => setObjectActive(object.id, event.target.checked)}
-        />
-        <span className="truncate text-[var(--color-editor-text-dim)]">
-          {object.active ? "显示在场景里" : "已隐藏（不画、也点不到）"}
-        </span>
-      </label>
+      {/* 行名已经说明功能，勾选框右边不再写一遍说明（占地方又没人读） */}
+      <input
+        type="checkbox"
+        checked={object.active}
+        data-testid="inspector-object-active"
+        aria-label="激活（显示）"
+        title={object.active ? "显示在场景里" : "已隐藏（不画、也点不到）"}
+        className="h-3.5 w-3.5 flex-none accent-[var(--color-editor-accent)]"
+        onChange={(event) => setObjectActive(object.id, event.target.checked)}
+      />
     </FieldRow>
   );
 }
@@ -204,19 +201,16 @@ function LockedField({ object }: { readonly object: SceneObjectDoc }): React.JSX
 
   return (
     <FieldRow label="锁定">
-      <label className="flex min-w-0 flex-1 items-center gap-1.5 text-[11px]">
-        <input
-          type="checkbox"
-          checked={object.locked}
-          data-testid="inspector-object-locked"
-          aria-label="锁定（不能移动）"
-          className="h-3.5 w-3.5 flex-none accent-[var(--color-editor-accent)]"
-          onChange={(event) => setObjectLocked(object.id, event.target.checked)}
-        />
-        <span className="truncate text-[var(--color-editor-text-dim)]">
-          {object.locked ? "已锁定（拖不动、坐标也改不了）" : "未锁定（可以在画布上拖动）"}
-        </span>
-      </label>
+      {/* 同上：说明收进 title，行里只留勾选框 */}
+      <input
+        type="checkbox"
+        checked={object.locked}
+        data-testid="inspector-object-locked"
+        aria-label="锁定（不能移动）"
+        title={object.locked ? "已锁定（拖不动、坐标也改不了）" : "未锁定（可以在画布上拖动）"}
+        className="h-3.5 w-3.5 flex-none accent-[var(--color-editor-accent)]"
+        onChange={(event) => setObjectLocked(object.id, event.target.checked)}
+      />
     </FieldRow>
   );
 }

@@ -363,9 +363,8 @@ export function FogMaskDialog({
               </div>
 
               <div className="mt-2 flex flex-none items-center gap-2 text-[10px] text-[var(--color-editor-text-dim)]">
-                <span>
-                  擦除（软边圆刷）或右侧整区开关 = 模拟运行时揭示；**不写文档**，关掉重开就回到未探索的样子
-                </span>
+                {/* 用法不写（软边圆刷 / 整区开关一眼就懂），只留这条会让人意外的语义 */}
+                <span>擦了不写文档：关掉重开就回到未探索的样子</span>
                 <Dialog.Close asChild>
                   <button
                     type="button"

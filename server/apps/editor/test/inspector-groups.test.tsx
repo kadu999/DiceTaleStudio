@@ -57,6 +57,15 @@ function headerOf(slug: string): HTMLElement {
   return within(groupOf(slug)).getByTestId("field-group-header");
 }
 
+/**
+ * 有没有这个分组。
+ *
+ * 断言「没有编辑组」要用它而不是按名字找按钮：组内那个「编辑」按钮和分组标题同名，
+ * 按名字找会撞车（而且这里想钉的本来就是**分组**在不在）。
+ */
+const hasGroup = (slug: string): boolean =>
+  document.querySelector(`[data-group="${slug}"]`) !== null;
+
 afterEach(() => {
   cleanup();
   sceneHistory.reset([]);
@@ -68,10 +77,10 @@ describe("属性分组：基础 / 渲染 / 编辑 / 战争雾", () => {
     seedScene([mapObject(), createSceneObject({ id: "sprite", name: "精灵" })], ["map-1"]);
     const { unmount } = render(<InspectorPanel />);
 
-    expect(screen.getByRole("button", { name: "基础" })).toBeDefined();
-    expect(screen.getByRole("button", { name: "渲染" })).toBeDefined();
-    expect(screen.getByRole("button", { name: "编辑" })).toBeDefined();
-    expect(screen.getByRole("button", { name: "战争雾" })).toBeDefined();
+    expect(headerOf("basic")).toBeDefined();
+    expect(headerOf("render")).toBeDefined();
+    expect(headerOf("edit")).toBeDefined();
+    expect(headerOf("fog")).toBeDefined();
     expect(isOpen("basic")).toBe(true);
     expect(isOpen("render")).toBe(true);
     expect(isOpen("edit")).toBe(true);
@@ -93,11 +102,11 @@ describe("属性分组：基础 / 渲染 / 编辑 / 战争雾", () => {
     render(<InspectorPanel />);
 
     // 精灵也有「渲染」（每个对象都能显示图片），但没有格子可编辑、也不是地图 → 没有编辑 / 战争雾
-    expect(screen.getByRole("button", { name: "基础" })).toBeDefined();
-    expect(screen.getByRole("button", { name: "渲染" })).toBeDefined();
+    expect(headerOf("basic")).toBeDefined();
+    expect(headerOf("render")).toBeDefined();
     expect(groupSlugs()).toEqual(["basic", "render"]);
-    expect(screen.queryByRole("button", { name: "编辑" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "战争雾" })).toBeNull();
+    expect(hasGroup("edit")).toBe(false);
+    expect(hasGroup("fog")).toBe(false);
   });
 
   it("点「渲染」标题收起内容，再点展开", () => {
@@ -107,13 +116,13 @@ describe("属性分组：基础 / 渲染 / 编辑 / 战争雾", () => {
     // 展开时看得见贴图那一行（「选择」按钮就是换图入口）
     expect(screen.getByTestId("pick-texture")).toBeDefined();
 
-    fireEvent.click(screen.getByRole("button", { name: "渲染" }));
+    fireEvent.click(headerOf("render"));
     expect(isOpen("render")).toBe(false);
     expect(headerOf("render").getAttribute("aria-expanded")).toBe("false");
     // 收起 = 内容不渲染（不是藏起来还留在 DOM 里）
     expect(within(groupOf("render")).queryByTestId("pick-texture")).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "渲染" }));
+    fireEvent.click(headerOf("render"));
     expect(isOpen("render")).toBe(true);
     expect(screen.getByTestId("pick-texture")).toBeDefined();
   });
@@ -128,14 +137,14 @@ describe("属性分组：基础 / 渲染 / 编辑 / 战争雾", () => {
     // 箭头是内联 SVG（不是 10px 的 `▾` / `▸` 字形）：收起时也还在，只是转了方向
     expect(headerOf("edit").querySelector("svg")).not.toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
+    fireEvent.click(headerOf("edit"));
     expect(isOpen("edit")).toBe(false);
     expect(headerOf("edit").getAttribute("aria-expanded")).toBe("false");
     // 收起 = 内容不渲染（不是藏起来还留在 DOM 里）
     expect(within(groupOf("edit")).queryByTestId("grid-paint-enter")).toBeNull();
     expect(headerOf("edit").querySelector("svg")).not.toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
+    fireEvent.click(headerOf("edit"));
     expect(isOpen("edit")).toBe(true);
     expect(screen.getByTestId("grid-paint-enter")).toBeDefined();
   });
@@ -145,7 +154,7 @@ describe("属性分组：基础 / 渲染 / 编辑 / 战争雾", () => {
     useEditorStore.getState().setGridBrush(128);
     render(<InspectorPanel />);
 
-    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
+    fireEvent.click(headerOf("edit"));
 
     expect(isOpen("edit")).toBe(false);
     expect(useEditorStore.getState().gridPaint.mask).toBe(128);
@@ -158,19 +167,19 @@ describe("属性分组：基础 / 渲染 / 编辑 / 战争雾", () => {
     seedScene([mapObject(), createSceneObject({ id: "sprite", name: "精灵" })], ["map-1"]);
     render(<InspectorPanel />);
 
-    fireEvent.click(screen.getByRole("button", { name: "渲染" }));
-    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
-    fireEvent.click(screen.getByRole("button", { name: "战争雾" }));
+    fireEvent.click(headerOf("render"));
+    fireEvent.click(headerOf("edit"));
+    fireEvent.click(headerOf("fog"));
     expect(isOpen("render")).toBe(false);
     expect(isOpen("edit")).toBe(false);
     expect(isOpen("fog")).toBe(false);
 
     // 换到精灵：分组是另一套（基础 + 渲染，没有编辑 / 战争雾）
     act(() => useEditorStore.getState().setSelection(["sprite"]));
-    expect(screen.getByRole("button", { name: "基础" })).toBeDefined();
-    expect(screen.getByRole("button", { name: "渲染" })).toBeDefined();
-    expect(screen.queryByRole("button", { name: "编辑" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "战争雾" })).toBeNull();
+    expect(headerOf("basic")).toBeDefined();
+    expect(headerOf("render")).toBeDefined();
+    expect(hasGroup("edit")).toBe(false);
+    expect(hasGroup("fog")).toBe(false);
 
     // 再回到地图：三个组都是**展开**的
     act(() => useEditorStore.getState().setSelection(["map-1"]));
