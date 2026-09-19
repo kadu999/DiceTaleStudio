@@ -6,24 +6,6 @@ EditorBuildSettings:
   serializedVersion: 2
   m_Scenes:
   - enabled: 1
-    path: Assets/Scenes/DMGameLibrary.unity
-    guid: 543521a78ab64094aa72667cca7de824
-  - enabled: 1
-    path: Assets/Scenes/SampleScene.unity
-    guid: 99c9720ab356a0642a771bea13969a05
-  - enabled: 1
-    path: Assets/ProjectionAlignment/Scenes/ProjectionAlignmentDemo.unity
-    guid: 8decfa0ddadd4004e89804e8a2a7ebcd
-  - enabled: 1
-    path: Assets/ProjectionAlignment/Scenes/DMGameLibraryProjection.unity
-    guid: 2d36414b2d44e4d388a280c8e7b9c934
-  - enabled: 1
-    path: Assets/Scenes/DarkwaterM0.unity
-    guid: f4f88356520a44b8fa803137d87f15d2
-  - enabled: 1
-    path: Assets/TableBand/Scenes/TableBandGamePlay.unity
-    guid: d536c8a77b06a55478c4ae31d1700dde
-  - enabled: 1
     path: Assets/DiceTale/Scenes/Demo.unity
     guid: 300da1e570dab44458576c52732ac396
   m_configObjects:

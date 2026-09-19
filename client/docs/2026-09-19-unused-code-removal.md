@@ -449,44 +449,62 @@ Unity 开着、不能 `-batchmode` 抢工程目录时，可以复制 Unity 生�
 
 清理把「旧模型」删干净了，但目录本身还是混乱的（`Backend/` 与 `Server/` 只各剩一两个文件、
 `Core/` 是个大杂烩、`Res/` 与 `Resources/` 两个名字含混、`Scripts/Editor/` 混在运行时目录里，
-而且整个模块没有 asmdef）。本次按 **本仓库自己已有的模块规范**
-（原 `Assets/ProjectionAlignment/`：`Scripts/<功能子目录>` + 一个 asmdef + `Editor/` + `Tests/EditMode/`）
-把 `Assets/DiceTale` 重排成：
+而且整个模块没有 asmdef）。整理分两轮，**最终形态是「数据层 / 逻辑层 / 表现层」**：
 
 ```
 Assets/DiceTale/
-├─ Scripts/                 DiceTale.asmdef（rootNamespace: DiceTale）
-│  ├─ Core/ Networking/ Input/ Scene/ Map/ Media/ Rendering/ Effects/ UI/
-├─ Editor/                  DiceTale.Editor.asmdef（includePlatforms: [Editor]，引用 DiceTale）
-├─ Resources/Shaders/       运行时按名加载，必须留在 Resources 下
+├─ Scripts/                     DiceTale.asmdef（rootNamespace: DiceTale）
+│  ├─ Data/         （3）        GridCellType · MapMarker · JsonParser
+│  ├─ Logic/        （10）       Game · ServerConnection · BackendManager · InputManager ·
+│  │                            InputSource · SimulatedTouchInputSource · DevicePipeInputSource2 ·
+│  │                            InputConfigPrefs · GameSceneManager · DynamicObstacle
+│  └─ Presentation/ （12）       GridMap · FogOfWar · BirdWanderer · GroundSpriteRenderer ·
+│                               PhotoClickGlow · AudioPlayerManager · SmartVideoPlayer ·
+│                               UIManager · UIWindow · SceneFadeUI · SubtitleWindow ·
+│                               SimulatedTouchDebugUI
+├─ Editor/                      DiceTale.Editor.asmdef（includePlatforms: [Editor]，引用 DiceTale）
+├─ Resources/Shaders/           运行时按名加载，必须留在 Resources 下
 ├─ Resources/RealMap.prefab
-├─ Materials/               原 Res/Materials
+├─ Materials/                   原 Res/Materials
 └─ Scenes/Demo.unity
 ```
 
-### 15.1 路径对照（本文第 4~7 节里的旧写法 → 现在的位置）
+- **第 1 轮**：按模块规范把文件从「一个类一个目录」里解放出来（当时是
+  `Core / Networking / Input / Scene / Map / Media / Rendering / Effects / UI` 九个目录），
+  同时加 asmdef、把 `Scripts/Editor/` 提到模块根、`Res/Materials` 改名 `Materials`。
+- **第 2 轮**（用户反馈「Media / Networking / Rendering / Map / Effects 很多是重复功能」）：
+  改成 **数据层 / 逻辑层 / 表现层** 三层。9 个目录 → 3 个；
+  `Map` 被拆到三层（`GridCellType`/`MapMarker` → Data，`DynamicObstacle` → Logic，
+  `GridMap`/`FogOfWar`/`BirdWanderer` → Presentation），
+  `Media` + `Rendering` + `Effects` + `Scene` + `UI` 全部并进 Presentation。
+  分层规则、依赖方向与 4 处「逻辑层碰表现层」的既成事实，见 [`client/README.md`](../../README.md)。
 
-| 本文旧路径（相对 `client/Assets/DiceTale/`） | 现在的位置 |
+### 15.1 路径对照（本文第 4~7 节里的旧写法 → 最终位置）
+
+| 本文旧路径（相对 `client/Assets/DiceTale/`） | 最终位置 |
 |---|---|
-| `Scripts/Backend/BackendManager.cs` | `Scripts/Networking/BackendManager.cs` |
-| `Scripts/Server/ServerConnection.cs` | `Scripts/Networking/ServerConnection.cs` |
-| `Scripts/Server/JsonParser.cs` | `Scripts/Networking/JsonParser.cs` |
-| `Scripts/Core/InputManager.cs`、`InputSource.cs`、`SimulatedTouchInputSource.cs`、`DevicePipeInputSource2.cs`、`InputConfigPrefs.cs`、`SimulatedTouchDebugUI.cs` | `Scripts/Input/…` |
-| `Scripts/Core/AudioPlayerManager.cs`、`SmartVideoPlayer.cs` | `Scripts/Media/…` |
-| `Scripts/Core/GroundSpriteRenderer.cs` | `Scripts/Rendering/GroundSpriteRenderer.cs` |
-| `Scripts/Core/Game.cs` | `Scripts/Core/Game.cs`（不变） |
-| `Scripts/Map/GameSceneManager.cs` | `Scripts/Scene/GameSceneManager.cs` |
-| `Scripts/Map/` 其余（GridMap / GridCellType / MapMarker / DynamicObstacle / FogOfWar / BirdWanderer） | 不变 |
-| `Scripts/Effects/PhotoClickGlow.cs`、`Scripts/UI/*` | 不变 |
+| `Scripts/Backend/BackendManager.cs` | `Scripts/Logic/BackendManager.cs` |
+| `Scripts/Server/ServerConnection.cs` | `Scripts/Logic/ServerConnection.cs` |
+| `Scripts/Server/JsonParser.cs` | `Scripts/Data/JsonParser.cs` |
+| `Scripts/Core/Game.cs` | `Scripts/Logic/Game.cs` |
+| `Scripts/Core/InputManager.cs`、`InputSource.cs`、`SimulatedTouchInputSource.cs`、`DevicePipeInputSource2.cs`、`InputConfigPrefs.cs` | `Scripts/Logic/…` |
+| `Scripts/Core/SimulatedTouchDebugUI.cs` | `Scripts/Presentation/SimulatedTouchDebugUI.cs` |
+| `Scripts/Core/AudioPlayerManager.cs`、`SmartVideoPlayer.cs` | `Scripts/Presentation/…` |
+| `Scripts/Core/GroundSpriteRenderer.cs` | `Scripts/Presentation/GroundSpriteRenderer.cs` |
+| `Scripts/Map/GameSceneManager.cs` | `Scripts/Logic/GameSceneManager.cs` |
+| `Scripts/Map/GridCellType.cs`、`MapMarker.cs` | `Scripts/Data/…` |
+| `Scripts/Map/DynamicObstacle.cs` | `Scripts/Logic/DynamicObstacle.cs` |
+| `Scripts/Map/GridMap.cs`、`FogOfWar.cs`、`BirdWanderer.cs` | `Scripts/Presentation/…` |
+| `Scripts/Effects/PhotoClickGlow.cs`、`Scripts/UI/*` | `Scripts/Presentation/…` |
 | `Scripts/Editor/GroundSpriteRendererMenu.cs`、`SetupMaps.cs` | `Editor/…`（移出 `Scripts/`） |
 | `Res/Materials/*.mat` | `Materials/*.mat` |
 | `Resources/Shaders/*`、`Resources/RealMap.prefab` | 不变（保留 `Resources/` 一层） |
-| `Scripts/Backend/`、`Scripts/Server/` 两个目录 | 删除（腾空） |
+| `Scripts/Backend/`、`Scripts/Server/` 等 9 个子目录 | 删除（合并成 Data / Logic / Presentation） |
 
 同时做掉的：`namespace DiceTale.Server` → `namespace DiceTale`（模块内单一命名空间，与 `ProjectionAlignment`
 一致；`BackendManager` / `Game` 里的 `Server.ServerConnection` 一并改成 `ServerConnection`），
 新增 `Scripts/DiceTale.asmdef` 与 `Editor/DiceTale.Editor.asmdef`。
-**本次没删任何东西**（用户要求死资源与停用代码先留着）。
+**整理过程没删任何东西**（用户要求死资源与停用代码先留着）。
 
-验证：重排后用 14.4 的做法重新编译，`DiceTale`（24 个运行时脚本）与 `DiceTale.Editor`（2 个）
-都是 **0 error CS**；目录/文件 `.meta` 齐全，无孤儿 `.meta`。
+验证：每次重排后用 14.4 的做法重新编译，`DiceTale`（25 个运行时脚本）与 `DiceTale.Editor`（2 个）
+都是 **0 error CS**；目录/文件 `.meta` 齐全、无孤儿 `.meta`；Data 层对另外两层零引用。
