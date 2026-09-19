@@ -1,16 +1,32 @@
 import type { GridSize } from "@dts/grid";
 
 /**
- * 遮罩擦除的**像素运算**（移植自参考实现 `backend_diceTale` 的
- * `frontend/src/services/maskMath.ts`，与 Unity `MaskImage` 的 shader 同一套公式）。
+ * 遮罩擦除的**像素运算**。
+ *
+ * **出处（逐行移植）**：`backend_diceTale/frontend/src/services/maskMath.ts` 的
+ * `interpolateStrokePoints` 与 `applyEraseToPixels`——连 `softness + 0.001` 这种
+ * 「避开 `pow(0, 0)`」的小把戏都照搬。并与 Unity `DiceTale/Shaders/MaskEraseStamp.shader`
+ * 对齐：在 **softness = 1**（参考实现唯一用到的取值，`MaskEditorDialog.vue` 里写死 1）下，
+ * 着色器的 `min(1, d/r)` 与这里的 `1 - (1 - d/r)^1.001` 是同一条曲线，差 0.1% 量级。
+ * ⚠️ softness 换成别的值时**两者并不等价**（着色器是「核 + 线性带」，这里是幂曲线）——
+ * 哪天把 softness 做成可调，两边得一起改。
  *
  * 为什么是像素而不是格子：运行时那块遮罩是一张**纹理**（MaskImage 的 RenderTexture /
  * 战争雾的雾层），GM 在图上擦的是软边圆刷；格子掩码是**另一件事**（雾区绑定、`.bytes` 里那套），
  * 两者的编辑方式与生命周期都不一样。所以这里只做「把 alpha 擦小」。
  *
  * 两条约定与参考实现严格一致，改任何一条都会和前端画出来的结果对不上：
- * - **只改 alpha**：RGB 不动（遮罩是黑色的，alpha 才是「盖多厚」）；
+ * - **只改 alpha**：RGB 不动（遮罩是黑的，alpha 才是「盖多厚」）；
  * - **幂等**：`min` 取小——同一处擦 N 次 = 擦 1 次，渐变带不会被叠加抹平。
+ *
+ * **有意与参考实现不同的三处**（写在这里，免得日后被当成 bug）：
+ * 1. **笔刷半径**：参考实现是**固定 48 纹理像素**；这里取**宽度的 5%**（960 宽时与它重合）。
+ *    本项目的遮罩纹理跟着贴图走（400~2048），固定像素在大图上小得没法用；
+ * 2. **初值**：参考实现是整张全黑；这里只把「已指定雾区的格子」按区域配色画上
+ *    （见 `fillFogMaskPixels`）——编辑器要的是「雾盖在哪」而不是「盖满整张图」；
+ * 3. **只做本地预览**：参考实现擦完会把笔画发给前端（`erase_mask`）；这里还没接
+ *    （前端 `FogOfWar` 也还没有消费方）。
+ * 另外补了两处防御：`radius <= 0` 直接返回、`step <= 0` 返回起点（理由见各自函数上）。
  */
 
 /** 擦除笔刷的半径：占遮罩宽度的比例（参考实现是 960 宽画布上的固定 48px ≈ 5%）。 */
@@ -29,6 +45,9 @@ export interface MaskPoint {
  *
  * 指针事件之间会跳格：鼠标一帧能移动几十像素，只按事件位置打点会擦成一串断开的圆。
  * 两点重合时返回起点本身（调用方照常打一个圆）。
+ *
+ * `step <= 0` 也返回起点：参考实现没挡这个，而 `ceil(dist / 0)` 是 `Infinity`，
+ * 循环会直接卡死（`step` 由调用方按半径算，半径算错时不该把页面拖死）。
  */
 export function interpolateStrokePoints(
   a: MaskPoint,
@@ -57,6 +76,9 @@ export function interpolateStrokePoints(
  *
  * 擦除强度：`alpha = (1 - d / radius) ^ softness`——圆心处全擦（alpha 变 0），
  * 边缘处几乎不擦；`softness = 0` 是硬边（参考实现里 `+0.001` 是为了避开 `pow(0, 0)`）。
+ *
+ * `radius <= 0` 直接返回：参考实现没挡这个，而 `d / 0` 会算出 `NaN`，
+ * 那一圈像素的 alpha 会被写成一个「看起来全擦掉」的 0——宁可什么都不做。
  */
 export function applyEraseToPixels(
   pixels: Uint8ClampedArray,
