@@ -150,7 +150,7 @@ export type ProjectDialogMode = "create" | "open" | null;
 export type SceneDialogMode = "create" | "rename" | null;
 
 /** 场景文件的保存状态：已保存 / 有未保存改动 / 正在写 / 写失败。 */
-export type SceneSaveState = "saved" | "pending" | "saving" | "error";
+export type SceneSaveState = "saved" | "pending" | "saving" | "error" | "runtime";
 
 /**
  * 网格标注（地图编辑）状态。
@@ -653,6 +653,14 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
   /** 上次**真的推出去**的场景文本（去重与「补发全量」都靠它）。 */
   let lastPushedSceneText: string | null = null;
 
+  /**
+   * 用户点过「运行」、但那一刻还没连上服务端（服务端在重启 / 网线刚插上）。
+   *
+   * `runtime_start` 要等连接可用才能发，所以先把这份**意图**记下来、`onOpen` 消费一次——
+   * 不记的话日志里答应过的「连上后自动进入运行态」永远等不到。
+   */
+  let pendingRunRequest = false;
+
   const runtimeClient = new RuntimeClient({
     onStatus: (status, detail) => {
       set((state) => ({
@@ -661,8 +669,10 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
           status,
           statusDetail: detail ?? "",
           // 自己没连着服务端时「前端在不在」无从得知：别留一个过期的「已连接」，
-          // 也让「前端刚连上 → 补发」这条判断只在真的连上之后成立
-          ...(status === "open" ? {} : { client: null, scene: null, runtimeActive: false }),
+          // 也让「前端刚连上 → 补发」这条判断只在真的连上之后成立。
+          // **运行态不动**：它是服务端的门控状态，断线不等于关闸——清零会让「运行中的改动不保存」
+          // 当场失效（运行期间的改动会被当成编辑态的改动写进文件），退出运行的还原也丢了。
+          ...(status === "open" ? {} : { client: null, scene: null }),
         },
       }));
 
@@ -693,11 +703,21 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
         },
       }));
 
-      // 刚开闸（或刷新后重新连上、服务端还在运行）→ 把当前场景整份补过去。
+      // 服务端开着运行态，手上却没有基线（连上时它就已经开着）→ 现在这份文档就是「运行前的样子」
+      if (snapshot.runtimeActive && runBaseline === null) {
+        rememberRunBaseline();
+      }
+
+      // 刚开闸（真的从「编辑」切过来）→ 把当前场景整份补过去。
       // 只在「false → true」这一跳推，避免 scene_push 引发的状态广播把自己推进死循环
       // （内容没变的第二次推送会被 shouldPushScene 去重掉）。
       if (snapshot.runtimeActive && !wasRuntimeActive) {
         get().pushRuntimeScene();
+      }
+
+      // 关闸 → 还原到进入运行前的样子（对齐 Unity：退出播放模式丢掉运行期间的改动）
+      if (!snapshot.runtimeActive && wasRuntimeActive) {
+        restoreRunBaseline();
       }
 
       // 前端刚连上：把记着的期望播放状态补发一遍（「点的时候前端不在」也不会丢）
@@ -734,9 +754,11 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
     },
 
     onOpen: () => {
-      // 重连之后如果本地记着「用户点过运行」而服务端还没开闸，补发一次声明
+      // 补发一次声明：用户点过「运行」但当时没连上（`pendingRunRequest`），
+      // 或者本地记着「用户点过运行」而服务端还没开闸
       // （服务端已经开着的话，`editor_state` 会让界面自动回到运行态，不用重复发）
-      if (get().mode === "run" && !get().runtime.runtimeActive) {
+      if (pendingRunRequest || (get().mode === "run" && !get().runtime.runtimeActive)) {
+        pendingRunRequest = false;
         runtimeClient.startRuntime();
       }
     },
@@ -819,6 +841,67 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
     });
   };
 
+  /**
+   * 进入运行前的文档快照（对齐 Unity 的播放模式：**运行中的改动不保存、退出即还原**）。
+   *
+   * 运行态里允许随便改（改激活、拖位置、涂格子…）——那些改动会推给前端看效果，但既不写盘也不留历史；
+   * 退出运行时把整个文档换回这份快照。immer 的文档是不可变的，所以这里存引用就够（每次 apply 都是新对象）。
+   */
+  let runBaseline: { readonly scenes: readonly SceneDoc[]; readonly activeSceneName: string | null } | null = null;
+
+  /** 拍下当前文档作为运行基线（不动状态、不记日志）。 */
+  const snapshotRunBaseline = (): void => {
+    runBaseline = { scenes: get().scenes, activeSceneName: get().activeSceneName };
+  };
+
+  /** 进入运行态：记下快照，并让底栏显示「运行中（不保存）」。 */
+  const rememberRunBaseline = (): void => {
+    snapshotRunBaseline();
+    set({ sceneSaveState: "runtime" });
+    pushLog(makeLog("info", "进入运行态：**运行中的改动不会保存**，点「编辑」会还原到现在的样子"));
+  };
+
+  /**
+   * 文档被**整份换掉**（打开 / 关闭项目、重新装载场景）时把运行基线跟着换。
+   *
+   * 编辑器完全可能在服务端**已经开着运行态**的时候才拿到文档：刷新页面后接回去、开第二个窗口、
+   * 运行中打开另一个项目——这些情况下手上的文档跟原基线已经对不上了。不跟着换，退出运行就会把
+   * 文档还原成**别的项目**（或者一片空白）。
+   */
+  const refreshRunBaseline = (): void => {
+    if (get().runtime.runtimeActive) {
+      snapshotRunBaseline();
+      // 文档刚装载完，落盘状态是「已保存」——运行态下底栏要说「运行中（不保存）」，
+      // 否则会被读成「刚才那些运行中的改动已经存好了」
+      set({ sceneSaveState: "runtime" });
+    }
+  };
+
+  /** 退出运行态：整体还原到进入运行前的样子（撤销栈一并清空——运行期间的编辑不入历史）。 */
+  const restoreRunBaseline = (): void => {
+    const baseline = runBaseline;
+    runBaseline = null;
+    if (baseline === null) {
+      return;
+    }
+
+    sceneHistory.reset(baseline.scenes);
+
+    const restoredNames = new Set(baseline.scenes.map((scene) => scene.name));
+    set((state) => ({
+      activeSceneName:
+        baseline.activeSceneName !== null && restoredNames.has(baseline.activeSceneName)
+          ? baseline.activeSceneName
+          : (baseline.scenes[0]?.name ?? null),
+      // 选中的对象可能已经被还原掉了：清掉不在场景里的 id，免得属性面板指着不存在的东西
+      selectedObjectIds: state.selectedObjectIds.filter((id) =>
+        baseline.scenes.some((scene) => scene.objects.some((object) => object.id === id)),
+      ),
+    }));
+
+    pushLog(makeLog("info", "已退出运行态：文档已还原到进入运行前的样子（运行期间的改动与撤销栈都已丢弃）"));
+  };
+
   /** 启动引导是否正在跑（同步占位，挡住 StrictMode 的第二次 effect）。 */
   let bootstrapping = false;
   /**
@@ -849,6 +932,13 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       return;
     }
 
+    // 运行态下的改动**不落盘**（对齐 Unity 的播放模式）：退出运行时会整体还原，
+    // 写盘只会把「临时试出来的样子」留在文件里
+    if (get().runtime.runtimeActive) {
+      set({ sceneSaveState: "runtime" });
+      return;
+    }
+
     set({ sceneSaveState: "pending" });
     if (saveTimer !== null) {
       window.clearTimeout(saveTimer);
@@ -864,6 +954,12 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
     syncHistoryFlags();
     // 运行态下文档一改就（去抖）把整份场景推给服务端 → 前端镜像跟着变
     scheduleRuntimePush();
+
+    if (get().runtime.runtimeActive) {
+      set({ sceneSaveState: "runtime" });
+      return;
+    }
+
     if (dirtySceneNames().length === 0) {
       set({ sceneSaveState: "saved" });
       return;
@@ -980,6 +1076,10 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
         // 换了文档：记着的「哪一层该播什么」盯的是上一个项目的对象，清掉
         soundPlayback: emptySoundPlayback(),
       });
+
+      // 文档整份换掉了（关项目 / 换文档）：运行中的话基线要跟着换，否则退出运行会把
+      // 上一个项目的场景还原回来
+      refreshRunBaseline();
     },
 
     setActiveScene(name) {
@@ -1093,7 +1193,8 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
         set((state) => ({ ui: { ...state.ui, runtimeOpen: true } }));
 
         if (!runtimeClient.connected) {
-          // 还没连上服务端：先把连接踢一脚，连上之后 onOpen 会补发 runtime_start
+          // 还没连上服务端：先记下「用户要运行」，把连接踢一脚，连上后 `onOpen` 补发
+          pendingRunRequest = true;
           get().connectRuntime();
           pushLog(makeLog("info", "正在连接服务端…连上后自动进入运行态"));
           return;
@@ -1106,6 +1207,7 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       }
 
       // 退出运行态：服务端关闸并踢掉前端。连接保留（编辑态也要知道服务端状态）
+      pendingRunRequest = false;
       pushScheduler.cancel();
       lastPushedSceneText = null;
       if (runtimeClient.connected) {
@@ -1478,6 +1580,18 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
         return false;
       }
 
+      // 运行态下不写盘：这些改动退出运行时会被整体还原（对齐 Unity 的播放模式）
+      if (get().runtime.runtimeActive) {
+        if (saveTimer !== null) {
+          window.clearTimeout(saveTimer);
+          saveTimer = null;
+        }
+
+        set({ sceneSaveState: "runtime" });
+        pushLog(makeLog("info", "运行态：改动不会保存（点「编辑」退出运行会还原到进入运行前的样子）"));
+        return false;
+      }
+
       if (saveTimer !== null) {
         window.clearTimeout(saveTimer);
         saveTimer = null;
@@ -1527,6 +1641,8 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       const project = get().project.current;
       if (project === null) {
         set({ scenes: [], activeSceneName: null });
+        // 文档整份被换掉（这里是被清空）：运行中的话，基线要跟着换
+        refreshRunBaseline();
         return;
       }
 
@@ -1592,6 +1708,9 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
           gridEditor: false,
           gridEditorTarget: null,
         });
+
+        // 文档整份换掉了（打开 / 重新装载项目、增删改名场景后重读）：运行中的话基线要跟着换
+        refreshRunBaseline();
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         set((state) => ({ project: { ...state.project, error: message } }));
@@ -1611,6 +1730,12 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       const project = get().project.current;
       if (project === null) {
         return "还没有打开项目";
+      }
+
+      // 场景的增 / 删 / 改名是**文件操作**（立刻落盘），运行态下不允许：
+      // 那种改动退出运行时还原不回来（文件已经建/删了），所以干脆挡在这里
+      if (get().runtime.runtimeActive) {
+        return "运行态下不能新建场景，先点「编辑」退出运行";
       }
 
       // 先把手上的改动写回，免得紧接着的 loadScenes 把它们冲掉
@@ -1649,6 +1774,10 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       const current = get().activeSceneName;
       if (project === null || current === null) {
         return "还没有可以重命名的场景";
+      }
+
+      if (get().runtime.runtimeActive) {
+        return "运行态下不能重命名场景，先点「编辑」退出运行";
       }
 
       // 先写回：改名只搬文件，待保存的改动必须落进被搬的那个文件里
@@ -1703,6 +1832,12 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       const current = get().activeSceneName;
       if (project === null || current === null) {
         return "还没有可以删除的场景";
+      }
+
+      // 运行态的判断放在「还剩几个场景」前面：运行中一律先请用户退出运行，
+      // 不然同一个动作在「最后一个场景」上给出的理由会看不出跟运行态有关
+      if (get().runtime.runtimeActive) {
+        return "运行态下不能删除场景，先点「编辑」退出运行";
       }
 
       if (get().scenes.length <= 1) {

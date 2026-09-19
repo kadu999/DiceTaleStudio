@@ -13,8 +13,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint .",
-    "e2e": "playwright test",
-    "e2e:fast": "playwright test --project=desktop-chrome",
+    "e2e": "playwright test --grep-invert @runtime && playwright test --grep @runtime --workers=1",
+    "e2e:fast": "playwright test --project=desktop-chrome --grep-invert @runtime && playwright test --project=desktop-chrome --grep @runtime --workers=1",
     "check": "pnpm typecheck && pnpm test && pnpm lint"
   },
   "devDependencies": {

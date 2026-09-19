@@ -122,6 +122,10 @@ export function RuntimePanel(): React.JSX.Element {
           ) : null}
 
           <div className="px-2 py-2 text-[11px] leading-relaxed text-[var(--color-editor-text-dim)]">
+            <div className="mb-1 text-[var(--color-editor-warn)]">
+              运行中的改动<span className="font-medium">不会保存</span>，也不会进撤销栈：点「编辑」退出运行会把文档
+              还原到进入运行前的样子（对齐 Unity 的运行模式）。
+            </div>
             <div>
               声音对象在属性面板里点「播放 / 停止」：命令只带
               <code> objectId + layer </code>

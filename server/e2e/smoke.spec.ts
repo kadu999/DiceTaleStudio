@@ -1,5 +1,13 @@
-import { expect, test } from "@playwright/test";
-import { enterEditor } from "./helpers/editor";
+import { expect, test, type APIRequestContext, type TestInfo } from "@playwright/test";
+import {
+  dropProject,
+  enterEditor,
+  newProject,
+  openFirstObject,
+  sceneDoc,
+  sceneObjectDoc,
+  seedProjectDoc,
+} from "./helpers/editor";
 
 /**
  * E2E 冒烟：四区布局、平板抽屉、画布交互、运行态切换。
@@ -84,15 +92,87 @@ test.describe("画布视口交互", () => {
   });
 });
 
-test.describe("编辑态 / 运行态", () => {
+/** 运行态用例的场景与对象名（只有这个 describe 用得到）。 */
+const RUN_SCENE = "Map001";
+const RUN_OBJECT = "木门";
+
+/**
+ * 场景文件里那个对象**落盘**的样子（`active` / `position`）。
+ *
+ * 直接读文件、不经过编辑器：这是「运行中的改动有没有写进文件」唯一的硬证据。
+ */
+async function persistedObject(
+  request: APIRequestContext,
+  project: string,
+): Promise<{ active?: boolean; position?: { x: number; y: number } | null } | undefined> {
+  const id = `project:${project}/Assets/scenes/${RUN_SCENE}.json`;
+  const response = await request.get(`/api/resources/text?id=${encodeURIComponent(id)}`);
+  expect(response.ok()).toBeTruthy();
+
+  const raw = (await response.json()) as {
+    objects?: Array<{ name?: string; active?: boolean; position?: { x: number; y: number } | null }>;
+  };
+  return raw.objects?.find((object) => object.name === RUN_OBJECT);
+}
+
+/**
+ * 运行态用例**只在一个档位上跑**。
+ *
+ * 运行态是服务端**全局单例**：三个档位（桌面 + 两个平板）是并行 worker，同一份用例会同时开三份，
+ * 互相开关运行态、也会互相把对面刚连上的前端踢下线——断言就成了「偶尔失败」。
+ * 桌面档位足够量这套语义（`serial` 只管得住同一档位内部，档位之间靠这个函数）。
+ */
+function skipOutsideDesktop(testInfo: TestInfo): void {
+  test.skip(
+    !testInfo.project.name.startsWith("desktop"),
+    "运行态是全局状态：只在一个档位跑，免得并行档位互相开关",
+  );
+}
+
+test.describe("平板紧凑布局", () => {
+  test("平板下场景默认铺满，左右面板收进抽屉（由菜单或工具条唤出）", async ({
+    page,
+  }, testInfo) => {
+    test.skip(!testInfo.project.name.startsWith("tablet"), "只在平板档位验证紧凑布局");
+
+    await enterEditor(page);
+
+    const viewport = page.getByTestId("scene-viewport");
+    const box = await viewport.boundingBox();
+    expect(box).not.toBeNull();
+
+    // 视口应当占据接近整屏宽度（触控/窄屏下默认不并排三栏）
+    const viewportWidth = page.viewportSize()?.width ?? 0;
+    if (box !== null && viewportWidth > 0) {
+      expect(box.width).toBeGreaterThan(viewportWidth * 0.8);
+    }
+  });
+});
+
+/*
+  `@runtime` 标记：这一组开关的是**服务端全局单例**，所以 `pnpm e2e` 分两趟跑——
+  第一趟并行跑其它用例并把这组排除在外（`--grep-invert @runtime`），
+  第二趟把这组单独跑、只用一个 worker（`--grep @runtime --workers=1`）。
+
+  为什么非得这样：运行态开着的时候，**任何一个刚打开的编辑器都会跟着进入运行态**，
+  于是「运行中的改动不保存」对那个编辑器也生效（它的落盘断言会超时），
+  而别人关闸时它还会被还原掉——两条都是这个功能的正确行为，但对并行的邻居是破坏性的。
+  多个档位同时跑同一份运行态用例同样会互相开关（`serial` 只管得住同一档位内部）。
+*/
+test.describe("编辑态 / 运行态", { tag: "@runtime" }, () => {
   /*
-    运行态是**服务端状态**（全局一份），所以这个 describe 里的用例**串行跑**：
-    否则并行用例之间会互相开关运行态，断言看着像「偶发失败」。
+    运行态是**服务端状态**（全局一份）：它是全局单例，所以这一组用例
+    ① 在档位内串行跑（`serial`），② 只在一个档位上跑（`skipOutsideDesktop`），
+    ③ 整组被 `@runtime` 隔离出来单独跑（见上）。
     其它文件不碰运行态（编辑器重启后的恢复由 backend 单测 runtime-hub 钉）。
   */
   test.describe.configure({ mode: "serial" });
 
-  test("编辑 / 运行是服务端状态：切过去、切回来，状态栏与运行面板同步", async ({ page }) => {
+  test("编辑 / 运行是服务端状态：切过去、切回来，状态栏与运行面板同步", async ({
+    page,
+  }, testInfo) => {
+    skipOutsideDesktop(testInfo);
+
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
 
@@ -117,7 +197,9 @@ test.describe("编辑态 / 运行态", () => {
     expect(errors).toEqual([]);
   });
 
-  test("刷新页面不退出运行态（运行态记在服务端）", async ({ page }) => {
+  test("刷新页面不退出运行态（运行态记在服务端）", async ({ page }, testInfo) => {
+    skipOutsideDesktop(testInfo);
+
     await enterEditor(page);
 
     await page.getByTestId("mode-run").click();
@@ -137,19 +219,54 @@ test.describe("编辑态 / 运行态", () => {
     await expect(page.getByTestId("client-badge")).toHaveCount(0);
   });
 
-  test("平板下场景默认铺满，左右面板收进抽屉（由菜单或工具条唤出）", async ({ page }, testInfo) => {
-    test.skip(!testInfo.project.name.startsWith("tablet"), "只在平板档位验证紧凑布局");
+  /*
+    运行中的改动**不保存、退出即还原**（对齐 Unity 的播放模式）。
 
-    await enterEditor(page);
+    用「木门」这种小对象来量：运行中把它**隐藏 + 挪到 x=500**，读文件确认一个字节没写；
+    点「编辑」退出运行后，界面与文件都必须回到进入运行前的样子（显示、世界原点）。
+  */
+  test("运行中的改动不落盘：退出运行后隐藏与位置都还原", async ({ page, request }, testInfo) => {
+    skipOutsideDesktop(testInfo);
 
-    const viewport = page.getByTestId("scene-viewport");
-    const box = await viewport.boundingBox();
-    expect(box).not.toBeNull();
+    const project = await newProject(request);
+    try {
+      await seedProjectDoc(request, project, [
+        sceneDoc(RUN_SCENE, [sceneObjectDoc(RUN_OBJECT, "SceneObject", { x: 0, y: 0 })]),
+      ]);
+      await openFirstObject(page, project, RUN_OBJECT);
 
-    // 视口应当占据接近整屏宽度（触控/窄屏下默认不并排三栏）
-    const viewportWidth = page.viewportSize()?.width ?? 0;
-    if (box !== null && viewportWidth > 0) {
-      expect(box.width).toBeGreaterThan(viewportWidth * 0.8);
+      // 基线：显示着、在世界原点
+      await expect(page.getByTestId("inspector-object-active")).toBeChecked();
+      await expect(page.getByTestId("inspector-object-x")).toHaveValue("0");
+
+      await page.getByTestId("mode-run").click();
+      await expect(page.getByTestId("status-mode")).toHaveAttribute("data-mode", "run");
+
+      // 运行中：隐藏 + 挪走（界面上确实生效——运行中的改动只是不保存，不是不能改）
+      await page.getByTestId("inspector-object-active").uncheck();
+      await page.getByTestId("inspector-object-x").fill("500");
+      await page.getByTestId("inspector-object-x").press("Enter");
+
+      await expect(page.getByTestId("inspector-object-active")).not.toBeChecked();
+      await expect(page.getByTestId("inspector-object-x")).toHaveValue("500");
+
+      // 场景文件**一点没动**：运行中改的是临时状态
+      expect(await persistedObject(request, project)).toMatchObject({
+        active: true,
+        position: { x: 0, y: 0 },
+      });
+
+      // 退出运行 = 停止播放：隐藏和位置原样还回来
+      await page.getByTestId("mode-edit").click();
+      await expect(page.getByTestId("status-mode")).toHaveAttribute("data-mode", "edit");
+      await expect(page.getByTestId("inspector-object-active")).toBeChecked();
+      await expect(page.getByTestId("inspector-object-x")).toHaveValue("0");
+      expect(await persistedObject(request, project)).toMatchObject({
+        active: true,
+        position: { x: 0, y: 0 },
+      });
+    } finally {
+      await dropProject(request, project);
     }
   });
 });

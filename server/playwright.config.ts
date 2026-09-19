@@ -18,6 +18,12 @@ import { defineConfig, devices } from "@playwright/test";
  * 1. **每个用例自建自删项目**（`newProject()` 里带时间戳 + 随机后缀），不共用固定名字；
  * 2. **每个用例用自己的 page**（Playwright 默认），不共享 localStorage / 视口状态。
  * 项目名之间不会撞车，所以并行时后端也不会有跨用例的写冲突。
+ *
+ * 还有一条纪律在**脚本**层面：碰运行态的用例（`@runtime`）**不跟别的用例同时跑**。
+ * 运行态是服务端的全局单例，它开着的时候任何刚打开的编辑器都会跟着进入运行态（于是
+ * 「运行中的改动不保存」对它也生效），关闸时那一边又会被还原——对这个功能的邻居是破坏性的。
+ * 所以 `pnpm e2e` 分两趟：先并行跑其余用例（`--grep-invert @runtime`），
+ * 再把这组单独、串行跑（`--grep @runtime --workers=1`）。
  */
 
 const PORT = Number(process.env.E2E_PORT ?? 1421);

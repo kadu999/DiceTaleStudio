@@ -29,6 +29,8 @@ export function MenuBar({ compact }: MenuBarProps): React.JSX.Element {
   const deleteObjects = useEditorStore((state) => state.deleteObjects);
   const saveSceneNow = useEditorStore((state) => state.saveSceneNow);
   const saveState = useEditorStore((state) => state.sceneSaveState);
+  // 运行态下不写盘：保存入口要挡住（改动退出运行时会整体还原）
+  const runtimeActive = useEditorStore((state) => state.runtime.runtimeActive);
   const objectDialog = useEditorStore((state) => state.objectDialog);
   const openObjectDialog = useEditorStore((state) => state.openObjectDialog);
   const closeProject = useEditorStore((state) => state.closeProject);
@@ -112,8 +114,8 @@ export function MenuBar({ compact }: MenuBarProps): React.JSX.Element {
         />
         <MenuSeparator />
         <MenuItem
-          label="保存场景"
-          disabled={activeSceneName === null || saveState === "saved"}
+          label={runtimeActive ? "运行中不保存" : "保存场景"}
+          disabled={runtimeActive || activeSceneName === null || saveState === "saved"}
           onSelect={() => void saveSceneNow()}
         />
       </Menu>

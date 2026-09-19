@@ -7,6 +7,8 @@ const SAVE_STATE_LABELS: Record<SceneSaveState, string> = {
   pending: "未保存",
   saving: "保存中…",
   error: "保存失败",
+  // 运行态下不写盘（退出运行会整体还原），所以这里不是「未保存」而是「不保存」
+  runtime: "运行中（不保存）",
 };
 
 export function StatusBar(): React.JSX.Element {
