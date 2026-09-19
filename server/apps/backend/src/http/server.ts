@@ -401,7 +401,20 @@ export function createHttpServer(options: HttpServerOptions): Server {
 
     const file = await resolveExisting(target);
     if (file === undefined) {
-      // SPA 回退：未知路径交给前端路由；但若编辑器尚未构建，给出可操作的提示
+      // 产物文件缺失：**必须 404，绝不能回 index.html**。
+      //
+      // 构建产物是**带内容哈希**的（`index-ejQGu__r.js`）：每跑一次 `pnpm build` 就换一批文件名、
+      // 旧的那批立刻不存在了。而**在构建前打开着的页面**手里还攥着旧文件名，一刷新就会来要它——
+      // 要是这时回一个 `text/html` 的 index.html（还带 200），浏览器会拿 HTML 当 ES 模块解析，
+      // 页面直接白屏卡死（控制台报 MIME type / `Unexpected token '<'`）。
+      // 返回 404 才对：浏览器知道这个文件没了，重新拿到 `no-store` 的 index.html，一切照旧。
+      if (relative !== "index.html" && looksLikeFile(relative)) {
+        sendJson(response, 404, { error: `静态资源不存在: ${relative}` });
+        return;
+      }
+
+      // SPA 回退：其余「像前端路由」的未知路径交给前端（编辑器自己没有路由，留着以备将来）；
+      // 若编辑器尚未构建，给出可操作的提示
       const index = await resolveExisting(join(EDITOR_DIST, "index.html"));
       if (index === undefined) {
         response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
@@ -416,7 +429,7 @@ export function createHttpServer(options: HttpServerOptions): Server {
         return;
       }
 
-      response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      response.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
       response.end(await readFile(index));
       return;
     }
@@ -436,4 +449,15 @@ async function resolveExisting(path: string): Promise<string | undefined> {
   } catch {
     return undefined;
   }
+}
+
+/**
+ * 这个请求要的是**一个产物文件**，还是**一个前端路由**？
+ *
+ * 判据两条：落在 `assets/` 下，或者**带扩展名**。两类都说明请求方要的是文件——
+ * 缺了就该 404，回 index.html 会让浏览器把 HTML 当 JS / CSS 解析（页面白屏卡死）。
+ * 没有扩展名的路径（`/settings` 这种）才当成前端路由，交给 SPA 回退。
+ */
+function looksLikeFile(relative: string): boolean {
+  return relative.startsWith("assets/") || /\.[a-z0-9]+$/i.test(relative);
 }

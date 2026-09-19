@@ -23,6 +23,8 @@ pnpm --filter @dts/backend mock   # 另开一个终端：启动 Mock 前端
 
 - 编辑器（开发）：<http://localhost:5173>（`/api` 与 `/editor`、`/client` 由 Vite 代理到后端）
 - 编辑器（生产）：`pnpm build` 后由后端同源托管 <http://localhost:1420>
+  （产物文件名带内容哈希，所以**重新构建之后手头开着的页面要刷新一次**；后端对缺失的产物文件
+  返回 404 而不是把 `index.html` 塞回去——否则浏览器会拿 HTML 当 JS 模块解析，页面直接白屏卡死）
 - 后端接口：`/api/projects`（列表 / 新建 / 删除）、`/api/projects/tree`、`/api/projects/folder`、
   `/api/projects/reveal`（在服务端那台机器上用文件管理器打开项目目录）、
   `/api/health`、`/api/config`、`/api/resources/index`、`/api/resources/raw?id=...`、`/api/resources/text?id=...`、
