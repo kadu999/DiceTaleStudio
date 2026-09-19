@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  mapFogMask,
   objectImage,
   objectsInDrawOrder,
   type SceneDoc,
@@ -23,7 +22,7 @@ import {
 import { sceneImage, sceneImageError, subscribeSceneImage } from "../../services/scene-image";
 import { useEditorStore } from "../../state/editor-store";
 import { EmptyState } from "../EmptyState";
-import { cellColorsOf, decodeCellsCached, fogPreviewLayer } from "./grid-paint";
+import { cellColorsOf, decodeCellsCached } from "./grid-paint";
 
 /**
  * 没有图片的对象（刚建出来的精灵）的**碰撞体**尺寸：世界里的一块 64×64。
@@ -490,7 +489,10 @@ export function ScenePanel(): React.JSX.Element {
       // 每张图片各画各的：地图的贴图（带网格）与精灵的图片走同一条路。
       // **每个对象都要出一层**（哪怕没有图片）：没有图片的对象只画选中框 + 当碰撞体，
       // 否则「刚建出来的精灵」在画布上就既看不见也点不到。
-      // 显式标注成 `SceneLayer[]`：地图图层之后还要追加战争雾预览层（它也是同一张「图层」）
+      //
+      // **画布上只有「区域」这一套格子着色**（`map.cells` 的 8 个区域位）：战争雾用的是
+      // 同一份区域数据（`map.fog.regions` 只是「哪几个区域算雾」的绑定），所以这里**不再**
+      // 追加什么雾罩图层——雾的呈现全在它自己的 Mask 窗口里（见 `app/FogMaskDialog.tsx`）。
       const layers = drawOrder.flatMap<SceneLayer>((object) => {
         const rect = displayRectOf(object);
         if (rect === undefined) {
@@ -537,35 +539,6 @@ export function ScenePanel(): React.JSX.Element {
           },
         ];
       });
-
-      // 战争雾预览：**盖在自己那张地图的图层之后**（运行时也是雾压在贴图之上）。
-      // 每张地图各追加一层，一张场景有多张地图时互不干扰。
-      // 「显示 → 战争雾」是纯显示开关：关了就不加这一层，格子数据不动。
-      if (gridPaint.showFog) {
-        for (const object of drawOrder) {
-          const map = object.map;
-          const rect = displayRectOf(object);
-          if (map === undefined || rect === undefined) {
-            continue;
-          }
-
-          const fogMask = mapFogMask(map);
-          if (fogMask === 0) {
-            continue;
-          }
-
-          const overlay = fogPreviewLayer(
-            rect,
-            map.grid,
-            decodeCellsCached(map.cells.runs, map.grid.width * map.grid.height),
-            fogMask,
-            gridPaint.colors,
-          );
-          if (overlay !== undefined) {
-            layers.push(overlay);
-          }
-        }
-      }
 
       renderer.draw({
         viewport,

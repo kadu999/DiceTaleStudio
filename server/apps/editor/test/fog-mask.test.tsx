@@ -1,9 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen, act } from "@testing-library/react";
-import { CellMask, defaultCellMaskColors, regionsToMask, worldRectOf } from "@dts/grid";
+import { CellMask } from "@dts/grid";
 import { createMapObject, createSceneObject, type SceneObjectDoc } from "@dts/document";
 import { InspectorPanel } from "../src/panels/inspector/InspectorPanel";
-import { fogPreviewLayer } from "../src/panels/scene/grid-paint";
 import { sceneHistory, useEditorStore } from "../src/state/editor-store";
 
 /**
@@ -11,12 +10,14 @@ import { sceneHistory, useEditorStore } from "../src/state/editor-store";
  *
  * Mask 窗口本身不在这里驱动：它是**像素级**的（真 canvas + ImageData），jsdom 里
  * `getContext("2d")` 返回 null，与场景画布一样由 e2e 覆盖；它用到的那几个纯函数
- * （补点 / 软边擦除 / 把雾格画成黑罩）在 `mask-math.test.ts` 里钉。
+ * （补点 / 软边擦除 / 把雾格画成区域色）在 `mask-math.test.ts` 里钉。
  *
- * 这里钉住三件事：
+ * 这里钉住两件事：
  * 1. 「战争雾」开关是整组的闸门（关着时雾区设置与编辑入口都不显示），并且写进编辑器偏好；
- * 2. 「指定雾区」把哪几个区域写进文档（规范化、可撤销、解除绑定不删数据）；
- * 3. 画布预览层是纯函数（按区域颜色、只画雾格）。
+ * 2. 「指定雾区」把哪几个区域写进文档（规范化、可撤销、解除绑定不删数据）。
+ *
+ * **画布与战争雾无关**：雾用的是区域数据（`map.cells` 的 8 个区域位），画布上只画区域着色，
+ * 雾只在它自己的 Mask 窗口里看——所以这里没有「雾罩图层」可钉（见 `ScenePanel`）。
  */
 
 const IMAGE = { id: "project:测试/Assets/images/Map001.png", width: 400, height: 300 };
@@ -162,57 +163,4 @@ describe("属性面板：战争雾开关与雾区", () => {
     expect(useEditorStore.getState().fogMaskTarget).toBeNull();
   });
 
-});
-
-describe("画布预览层：fogPreviewLayer", () => {
-  const RECT = worldRectOf({ x: 0, y: 0 }, { width: 400, height: 300 });
-  /** 与调色板同一份偏好的配色（默认色就够用）。 */
-  const COLORS = defaultCellMaskColors();
-
-  it("没指定雾区 / 一个雾格都没有时返回 undefined（不追加这一层）", () => {
-    const cells = new Uint8Array(GRID.width * GRID.height).fill(CellMask.Fog1);
-    expect(fogPreviewLayer(RECT, GRID, cells, 0, COLORS)).toBeUndefined();
-    expect(
-      fogPreviewLayer(RECT, GRID, new Uint8Array(GRID.width * GRID.height), CellMask.Fog1, COLORS),
-    ).toBeUndefined();
-  });
-
-  it("雾格按**区域自己的颜色**画，别的区域位与空格子都不画", () => {
-    const cells = new Uint8Array(GRID.width * GRID.height);
-    cells[0] = CellMask.Fog1;
-    cells[1] = CellMask.Difficult;
-
-    const layer = fogPreviewLayer(RECT, GRID, cells, regionsToMask([CellMask.Fog1]), COLORS);
-    expect(layer).toBeDefined();
-
-    // 区域4 的默认色是 #d9d9d9（α0.55）：按区域配色画，而不是统一的雾色
-    expect(layer?.cellColors?.(CellMask.Fog1)).toEqual(["rgba(217,217,217,0.55)"]);
-    // 没被指定为雾区的区域位（区域2）与空格子都不画
-    expect(layer?.cellColors?.(CellMask.Difficult)).toEqual([]);
-    expect(layer?.cellColors?.(CellMask.Empty)).toEqual([]);
-    // 网格线与格子共用同一块矩形
-    expect(layer?.rect).toEqual(RECT);
-    expect(layer?.grid).toEqual(GRID);
-  });
-
-  it("两个雾区各有各的颜色（编辑时看得出哪块是哪区）", () => {
-    // 至少要有雾格，这一层才会被追加（见上一条）
-    const cells = new Uint8Array(GRID.width * GRID.height).fill(CellMask.Fog1);
-    const layer = fogPreviewLayer(
-      RECT,
-      GRID,
-      cells,
-      regionsToMask([CellMask.Fog1, CellMask.Fog2]),
-      COLORS,
-    );
-
-    const first = layer?.cellColors?.(CellMask.Fog1) ?? [];
-    const second = layer?.cellColors?.(CellMask.Fog2) ?? [];
-    expect(first).toHaveLength(1);
-    expect(second).toHaveLength(1);
-    expect(first[0]).not.toBe(second[0]);
-
-    // 一格同时属于两个雾区：两层颜色都画（高位先画、低位在上）
-    expect(layer?.cellColors?.(CellMask.Fog1 | CellMask.Fog2)).toHaveLength(2);
-  });
 });

@@ -7,10 +7,12 @@ import { FieldRow } from "./fields";
  * 战争雾的**编辑区**：放进属性面板的「战争雾」分组里（分组标题由外面给，这里只出行）。
  *
  * 整组由**第一行的开关**管着：关着时只留那一个开关，打开以后才露出雾区设置——
- * 「没开战争雾的地图」不该摆着一排用不上的按钮。同一个开关也决定画布上有没有雾罩
- * （它就是「在画布上按运行时的样子预览」那个开关）。它是**编辑器偏好**
- * （`services/grid-paint-prefs` 的 `showFog`：作用于画布上的所有地图、不进文档），
+ * 「没开战争雾的地图」不该摆着一排用不上的按钮。它是**编辑器偏好**
+ * （`services/grid-paint-prefs` 的 `showFog`：与网格线 / 网格标注同一份本地偏好、不进文档），
  * 而这张地图到底有没有雾由文档里的 `map.fog.regions` 说了算。
+ *
+ * **雾不在画布上画**：战争雾用的就是区域数据（`map.cells` 的 8 个区域位），画布上只有
+ * 「区域」那一套着色；雾的呈现（未探索的罩子 + 擦除）全在它自己的 Mask 窗口里。
  *
  * 打开以后解决的是「**哪些区域算雾**」：格子上的 8 个类型位是中性的「区域」（面板上叫区域1–区域8），
  * 不与玩法绑定，所以雾区要在这里**手动指定**；指定之后才能在 Mask 窗口里擦除 / 整区开合
@@ -20,7 +22,7 @@ export function FogFields({ object }: { readonly object: SceneObjectDoc }): Reac
   const setFogRegions = useEditorStore((state) => state.setFogRegions);
   const openFogMask = useEditorStore((state) => state.openFogMask);
   const showFog = useEditorStore((state) => state.gridPaint.showFog);
-  const setFogPreviewVisible = useEditorStore((state) => state.setFogPreviewVisible);
+  const setFogVisible = useEditorStore((state) => state.setFogVisible);
 
   const map = object.map;
   if (map === undefined) {
@@ -40,12 +42,12 @@ export function FogFields({ object }: { readonly object: SceneObjectDoc }): Reac
 
   // 关着就只留开关：没开战争雾的地图不该摆一排用不上的按钮
   if (!showFog) {
-    return <FogSwitch checked={false} onChange={setFogPreviewVisible} />;
+    return <FogSwitch checked={false} onChange={setFogVisible} />;
   }
 
   return (
     <>
-      <FogSwitch checked onChange={setFogPreviewVisible} />
+      <FogSwitch checked onChange={setFogVisible} />
 
       <FieldRow label="指定雾区">
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
@@ -98,10 +100,10 @@ export function FogFields({ object }: { readonly object: SceneObjectDoc }): Reac
 }
 
 /**
- * 「战争雾」开关：整组的闸门，同时也是画布上的雾罩预览开关。
+ * 「战争雾」开关：整组的闸门。
  *
- * 两件事是一个开关是刻意的——「打开战争雾」在编辑器里就是**看得见雾罩 + 能改雾区设置**，
- * 分成两个开关只会让人猜「为什么属性在、画布上没有」。
+ * 只决定**这一组设置露不露面**——雾罩本身不画在画布上（画布只有区域着色），
+ * 要看雾就打开 Mask 窗口。它是编辑器偏好，不进文档。
  */
 function FogSwitch({
   checked,
@@ -114,7 +116,7 @@ function FogSwitch({
     <FieldRow label="战争雾">
       <label
         className="flex min-w-0 flex-1 items-center gap-1.5 text-[11px]"
-        title="打开以后才显示雾区设置，并在画布上按运行时的样子盖一层雾罩（只影响编辑器显示，不动数据）"
+        title="打开以后才显示雾区设置（雾本身在 Mask 窗口里看，画布上不画；只影响编辑器显示，不动数据）"
       >
         <input
           type="checkbox"

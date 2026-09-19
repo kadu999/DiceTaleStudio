@@ -1,21 +1,21 @@
 import {
-  ALL_MASK,
   cellMaskCss,
   decodeRle,
   defaultCellMaskStyle,
   hasMask,
   visibleMaskBits,
-  type GridSize,
   type RleRun,
-  type WorldRect,
 } from "@dts/grid";
-import type { SceneLayer } from "@dts/renderer";
 
 /**
  * 网格标注的**绘制侧**纯工具：把「文档里的 RLE + 编辑器偏好」翻译成渲染器要的颜色与图层。
  *
  * 放在场景面板旁边而不是 store 里，是因为这些函数只被绘制循环用；
  * 它们也不依赖 store（页面每秒跑 60 次，能少一层间接就少一层）。
+ *
+ * **画布上只有「区域」这一套**：战争雾用的是同一份区域数据（`map.fog.regions` 只是
+ * 「哪几个区域算雾」的绑定），所以这里**没有**「雾罩图层」这种东西——雾只在它自己的
+ * Mask 窗口里画（见 `app/FogMaskDialog.tsx`）。
  */
 
 /**
@@ -67,7 +67,7 @@ export function decodeCellsCached(runs: readonly RleRun[], count: number): Uint8
 }
 
 /**
- * 含任意给定位的格子数（「已标注 / 已覆盖」共用）。
+ * 含任意给定位的格子数（网格编辑窗口的「已标注」）。
  *
  * 坏数据（展开格数与网格对不上）在回调那边返回空数组，所以这里自然是 0。
  */
@@ -84,46 +84,4 @@ export function countCellsWithMask(cells: Uint8Array, mask: number): number {
   }
 
   return count;
-}
-
-/**
- * 战争雾预览图层：把「含任意已指定雾区位的格子」按**区域颜色**盖一层。
- *
- * 配色与「网格标注」共用同一份偏好（`colors`），只是**只画已指定的雾区位**——
- * 别的区域位不是这一层的事。运行时那边雾是统一的黑色/雾色（`FogOfWar` 的 `fogColor`），
- * 但那是前端的呈现，编辑器里按区域颜色显示才看得出哪块是哪区。
- *
- * 复用 `SceneLayer`（无贴图、只有格子着色）而不是给渲染器加概念：与画笔预览同一个套路。
- * 没有指定雾区、或一个雾格都没有时返回 `undefined`（调用方直接不追加这一层）。
- */
-export function fogPreviewLayer(
-  rect: WorldRect,
-  grid: GridSize,
-  cells: Uint8Array,
-  fogMask: number,
-  colors: Readonly<Record<number, string>>,
-): SceneLayer | undefined {
-  if (fogMask === 0) {
-    return undefined;
-  }
-
-  let covered = false;
-  for (const mask of cells) {
-    if (hasMask(mask, fogMask)) {
-      covered = true;
-      break;
-    }
-  }
-
-  if (!covered) {
-    return undefined;
-  }
-
-  return {
-    rect,
-    grid,
-    cells,
-    // 藏掉所有**没指定**的区域位：只留雾区那一层，各按自己的颜色画
-    cellColors: (mask) => cellColorsOf(mask, ALL_MASK & ~fogMask, colors),
-  };
 }

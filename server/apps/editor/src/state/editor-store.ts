@@ -152,7 +152,7 @@ export interface GridPaintState {
   readonly showGridLines: boolean;
   /** 画布上是否给格子着色（所有地图；纯显示）。 */
   readonly showAnnotations: boolean;
-  /** 画布上是否按运行时的样子预览战争雾（所有地图；纯显示）。 */
+  /** 战争雾那一组设置是否露出来（编辑器偏好；画布上不画雾，要看雾去 Mask 窗口）。 */
   readonly showFog: boolean;
 }
 
@@ -361,8 +361,8 @@ export interface EditorStoreState {
    * 传进来的位先规范化（只留可绘制位、去重、升序）；一个都不指定 = 删掉这个配置。
    */
   setFogRegions(mapObjectId: string, regions: readonly number[]): boolean;
-  /** 画布上是否按运行时的样子预览战争雾（所有地图；纯显示，写进编辑器偏好）。 */
-  setFogPreviewVisible(visible: boolean): void;
+  /** 战争雾那一组设置是否露出来（编辑器偏好；纯界面，不动文档、也不画到画布上）。 */
+  setFogVisible(visible: boolean): void;
 }
 
 const EMPTY_GAME_STATE: GameStateSnapshot = {
@@ -1892,7 +1892,7 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       });
     },
 
-    setFogPreviewVisible(visible) {
+    setFogVisible(visible) {
       const gridPaint: GridPaintState = { ...get().gridPaint, showFog: visible };
       set({ gridPaint });
       persistGridPaint(gridPaint);

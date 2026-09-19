@@ -11,10 +11,10 @@ import {
  * 网格标注的**编辑器偏好**（浏览器本地）。
  *
  * 这里存的是「怎么看、怎么画」，不是「画了什么」：画笔类型 / 画笔大小 / 每个类型的显示开关与颜色，
- * 以及画布上**网格线**、**网格标注**与**战争雾预览**三个总开关（都是所有地图一起生效的纯显示项）。
- * 它们**不进文档**——对齐 Unity：那几项存在 `GridMapEditorWindow` 的序列化字段里
- * （每个编辑窗口自己记着），而地图数据（格子掩码）才进 `.bytes` / 场景文件。
- * 所以换个项目、甚至重开浏览器，显示方式与配色都还在。
+ * 以及画布上**网格线**、**网格标注**两个总开关和**战争雾那一组设置**露不露面
+ * （都是所有地图一起生效的纯显示项）。它们**不进文档**——对齐 Unity：那几项存在
+ * `GridMapEditorWindow` 的序列化字段里（每个编辑窗口自己记着），而地图数据（格子掩码）
+ * 才进 `.bytes` / 场景文件。所以换个项目、甚至重开浏览器，显示方式与配色都还在。
  *
  * 读写一律吞掉异常：隐私模式 / 禁用站点存储时，记不住也不该让编辑器打不开（同 `session.ts`）。
  */
@@ -32,17 +32,17 @@ export interface GridPaintPrefs {
   /** 画布上是否给格子着色（所有地图；纯显示，不影响数据）。 */
   readonly showAnnotations: boolean;
   /**
-   * 画布上是否按运行时的样子预览**战争雾**（所有地图；纯显示，不影响数据）。
+   * 战争雾那一组设置是否露出来（所有地图共用的界面偏好，不影响数据）。
    *
-   * 默认 **false**：这是后来才加的预览，没开之前画布的样子与以前一致
-   * （雾位本来就会按区域配色显示出来，只是不像运行时那样盖一层雾罩）。
+   * 默认 **false**：这是后来才加的一组，没开之前属性面板的样子与以前一致。
+   * 它与画布无关——画布只画「区域」着色，雾的呈现全在 Mask 窗口里。
    */
   readonly showFog: boolean;
 }
 
 const GRID_PAINT_KEY = "dts.editor.gridPaint";
 
-/** 默认偏好：区域1 画笔、1 号画笔、全部显示、Unity 的默认配色；网格线与标注都画、战争雾预览关着。 */
+/** 默认偏好：区域1 画笔、1 号画笔、全部显示、Unity 的默认配色；网格线与标注都画、战争雾那组收着。 */
 export function defaultGridPaintPrefs(): GridPaintPrefs {
   return {
     // 与 Unity `GridMapEditorState.selectedType` 的初值一致
@@ -118,7 +118,7 @@ export function parseGridPaintPrefs(raw: unknown): GridPaintPrefs {
     showGridLines: typeof record.showGridLines === "boolean" ? record.showGridLines : fallback.showGridLines,
     showAnnotations:
       typeof record.showAnnotations === "boolean" ? record.showAnnotations : fallback.showAnnotations,
-    // 战争雾预览是更后来的：没有记录 → 默认关闭（画布保持原样）
+    // 战争雾那一组是更后来的：没有记录 → 默认收着（属性面板保持原样）
     showFog: typeof record.showFog === "boolean" ? record.showFog : fallback.showFog,
   };
 }

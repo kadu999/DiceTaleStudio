@@ -182,4 +182,45 @@ test.describe("网格标注：画布显示", () => {
       await dropProject(request, project);
     }
   });
+
+  test("战争雾是区域数据、不在画布上再画一层：开「战争雾」画面一个像素都不变", async ({
+    page,
+    request,
+  }) => {
+    const project = await newProject(request);
+    try {
+      const mapDoc = mapObjectDoc(project, SCENE, "网格地图", MAP_SIZE, GRID);
+      // 整张网格涂「区域1」（掩码 1），并把区域1 指定成雾区：
+      // 画布若给雾另加一层覆盖，同一格会被画第二遍（红 α0.6 叠两次 → 绿通道 102 掉到 41）
+      (mapDoc.map as { cells: unknown }).cells = {
+        encoding: "rle",
+        runs: [[1, GRID.width * GRID.height]],
+      };
+      (mapDoc.map as { fog?: unknown }).fog = { regions: [1] };
+
+      await seedProjectDoc(request, project, [sceneDoc(SCENE, [mapDoc])]);
+      await uploadSceneImage(request, project, SCENE, solidPng(4, 4, [255, 255, 255]));
+      await openFirstObject(page, project, "网格地图");
+
+      const cell = { x: 2, y: 3 };
+      const point = await worldSamplePoint(page, cellCenter(cell));
+
+      // 区域层画出来的红：白底上叠一次 α0.6 → 绿通道约 102
+      await expect.poll(async () => (await canvasAverageColor(page, point)).g).toBeLessThan(150);
+      const before = await canvasAverageColor(page, point);
+      expect(before.g).toBeGreaterThan(90);
+
+      // 打开战争雾：画布上**不该**多出任何一层（雾只在 Mask 窗口里看）
+      await page.getByTestId("fog-enable").check();
+      await expect(page.getByTestId("fog-region-1")).toBeVisible(); // 等界面稳住再采样
+      const after = await canvasAverageColor(page, point);
+      expect(Math.abs(after.g - before.g)).toBeLessThanOrEqual(2);
+
+      // 关掉「网格标注」总开关：区域层不画了，战争雾那一组照样不往画布上补
+      await page.getByTestId("grid-annotations-toggle").uncheck();
+      await expect.poll(async () => (await canvasAverageColor(page, point)).g).toBeGreaterThan(250);
+    } finally {
+      await dropProject(request, project);
+    }
+  });
 });
