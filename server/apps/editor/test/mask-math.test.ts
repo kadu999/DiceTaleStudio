@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { CellMask } from "@dts/grid";
 import {
-  MASK_BRUSH_RATIO,
+  MASK_BRUSH_RADIUS,
   MASK_BRUSH_SOFTNESS,
   applyEraseToPixels,
   fillFogMaskPixels,
@@ -112,8 +112,9 @@ describe("applyEraseToPixels", () => {
     expect(alphaAt(pixels, 4, 2, 2)).toBe(255);
   });
 
-  it("默认笔刷半径是宽度的 5%（与参考实现的 960 画布上 48px 同比例）", () => {
-    expect(MASK_BRUSH_RATIO).toBeCloseTo(0.05, 6);
+  it("笔刷参数与参考实现一致：半径固定 48 纹理像素、软边 1", () => {
+    // 参考实现 `useMaskEditor.ts` 的 `const brushRadius = 48`（与遮罩尺寸无关，不是比例）
+    expect(MASK_BRUSH_RADIUS).toBe(48);
     expect(MASK_BRUSH_SOFTNESS).toBe(1);
   });
 });

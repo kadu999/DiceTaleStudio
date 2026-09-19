@@ -11,7 +11,7 @@ import {
 import { assetRawUrl } from "../panels/asset-picker";
 import { decodeCellsCached } from "../panels/scene/grid-paint";
 import {
-  MASK_BRUSH_RATIO,
+  MASK_BRUSH_RADIUS,
   MASK_BRUSH_SOFTNESS,
   applyEraseToPixels,
   fillFogMaskPixels,
@@ -140,7 +140,9 @@ export function FogMaskDialog({
   }, [open, canvas, maskSize, grid, cells, fogMask, colors]);
 
   const ready = open && maskSize !== undefined && grid !== undefined;
-  const radius = maskSize === undefined ? 1 : maskSize.width * MASK_BRUSH_RATIO;
+  // 与参考实现一致：半径是**固定 48 纹理像素**（不是比例）。补点的步长按宽度归一化后再除以 2
+  // ——`interpolateStrokePoints` 吃的是归一化坐标，而距离在纹理像素上算，所以非正方形纹理上也是正圆
+  const radius = MASK_BRUSH_RADIUS;
 
   /** 指针位置 → 遮罩上的归一化坐标（左上原点、y 向下，与参考实现一致）。 */
   const toNormalized = (event: React.PointerEvent<HTMLCanvasElement>): MaskPoint => {
