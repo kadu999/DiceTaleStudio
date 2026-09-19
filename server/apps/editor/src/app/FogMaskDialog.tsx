@@ -24,6 +24,7 @@ import {
   type MaskPoint,
 } from "../services/mask-math";
 import { useEditorStore } from "../state/editor-store";
+import { fitBox, useDialogSize } from "./dialog-size";
 
 /**
  * 「战争雾 Mask 窗口」：**只有擦除**，而且擦的是**遮罩这张图**，不是格子。
@@ -55,6 +56,7 @@ export function FogMaskDialog({
   objectId,
   onClose,
 }: FogMaskDialogProps): React.JSX.Element {
+  const dialogSize = useDialogSize();
   const scenes = useEditorStore((state) => state.scenes);
   const activeSceneName = useEditorStore((state) => state.activeSceneName);
   const colors = useEditorStore((state) => state.gridPaint.colors);
@@ -85,6 +87,7 @@ export function FogMaskDialog({
   );
 
   const imageDataRef = useRef<ImageData | null>(null);
+  const stageObserverRef = useRef<ResizeObserver | null>(null);
   const lastPointRef = useRef<MaskPoint | null>(null);
 
   /**
@@ -96,6 +99,8 @@ export function FogMaskDialog({
    * 于是「关掉再打开就回到未探索的样子」也就是同一件事。
    */
   const [canvas, setCanvas] = useState<HTMLCanvasElement | null>(null);
+  /** 左侧画布区的实测尺寸：贴图那块长宽比盒子按它等比装（见 `fitBox`）。 */
+  const [stage, setStage] = useState({ width: 0, height: 0 });
   /** 已打开的雾区（整区开关）：只在本窗口里有效，关掉重开就复位。 */
   const [revealedRegions, setRevealedRegions] = useState<readonly number[]>([]);
 
@@ -140,9 +145,36 @@ export function FogMaskDialog({
   }, [open, canvas, maskSize, grid, cells, fogMask, colorOf]);
 
 
+  // 贴图那块长宽比盒子的实际尺寸：等比装进左侧可用区域（窗口大小一变就重算）
+  const stageBox =
+    imageRef === undefined
+      ? { width: 0, height: 0 }
+      : fitBox(stage, imageRef.width / Math.max(1, imageRef.height));
+
   const ready = open && maskSize !== undefined && grid !== undefined;
   // 笔刷半径（纹理像素）：与前端 `ApplyEraseStroke` 的 `radiusTex` 同式（归一化半径 × 遮罩宽）
   const radius = brushRadiusFor(maskSize?.width ?? MASK_PREVIEW_WIDTH);
+
+  /** 左侧画布区的节点（callback ref 存 state：窗口一挂上/变尺寸就重新量，见 `fitBox`）。 */
+  const setStageNode = useCallback((node: HTMLDivElement | null) => {
+    stageObserverRef.current?.disconnect();
+    stageObserverRef.current = null;
+    if (node === null) {
+      setStage({ width: 0, height: 0 });
+      return;
+    }
+
+    const apply = (width: number, height: number): void => setStage({ width, height });
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry !== undefined) {
+        apply(entry.contentRect.width, entry.contentRect.height);
+      }
+    });
+    observer.observe(node);
+    stageObserverRef.current = observer;
+    apply(node.clientWidth, node.clientHeight);
+  }, []);
 
   /** 指针位置 → 遮罩的**纹理像素坐标**（左上原点、y 向下；前端收到后再翻转 y）。 */
   const toTexelPoint = (event: React.PointerEvent<HTMLCanvasElement>): MaskPoint => {
@@ -244,9 +276,9 @@ export function FogMaskDialog({
         <Dialog.Overlay className="fixed inset-0 z-40 bg-black/60" />
         <Dialog.Content
           data-testid="fog-mask-dialog"
-          // 高度**跟着内容走**（和参考实现的卡片一样）：贴图的长宽比盒子撑多高就是多高。
-          // 给死高度会把画布下部挤出窗口，那部分既看不见也点不到。
-          className="fixed left-1/2 top-1/2 z-50 flex max-h-[92vh] w-[820px] max-w-[92vw] -translate-x-1/2 -translate-y-1/2 flex-col rounded border border-[var(--color-editor-border)] bg-[var(--color-editor-panel)] p-3 shadow-2xl"
+          // 尺寸按主窗口比例算（见 `dialog-size.ts`），画布那块再按**实测可用区域**等比装进去
+          style={dialogSize}
+          className="fixed left-1/2 top-1/2 z-50 flex max-h-[92vh] max-w-[92vw] -translate-x-1/2 -translate-y-1/2 flex-col rounded border border-[var(--color-editor-border)] bg-[var(--color-editor-panel)] p-3 shadow-2xl"
         >
           <Dialog.Title className="mb-2 flex-none text-[13px] font-semibold">
             战争雾 Mask
@@ -262,11 +294,19 @@ export function FogMaskDialog({
           ) : (
             <>
               <div className="flex min-h-0 flex-1 gap-2">
-                <div className="min-h-0 flex-1 overflow-auto">
-                  {/* 长宽比盒子：贴图与遮罩都绝对定位铺满，于是两块永远严丝合缝 */}
+                <div
+                  ref={setStageNode}
+                  className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden"
+                >
+                  {/*
+                    长宽比盒子：尺寸由 JS 按**可用区域**算（`fitBox`），所以窗口变大变小时
+                    既铺得开、又不会被挤出可视区（挤出的话那部分既看不见也点不到）。
+                    贴图与遮罩都铺满它，两块永远严丝合缝——落点换算也才准。
+                  */}
                   <div
-                    className="relative w-full bg-black"
-                    style={{ paddingTop: `${(imageRef.height / imageRef.width) * 100}%` }}
+                    data-testid="fog-mask-stage"
+                    className="relative bg-black"
+                    style={{ width: stageBox.width, height: stageBox.height }}
                   >
                     <img
                       src={assetRawUrl(imageRef.id)}

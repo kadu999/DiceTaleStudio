@@ -23,6 +23,7 @@ import {
   type Viewport,
 } from "@dts/renderer";
 import { sceneImage, sceneImageError, subscribeSceneImage } from "../services/scene-image";
+import { useDialogSize } from "./dialog-size";
 import { useEditorStore } from "../state/editor-store";
 import { cellColorsOf, countCellsWithMask, decodeCellsCached } from "../panels/scene/grid-paint";
 
@@ -65,6 +66,7 @@ export function GridEditDialog({
   objectId,
   onClose,
 }: GridEditDialogProps): React.JSX.Element {
+  const dialogSize = useDialogSize();
   const scenes = useEditorStore((state) => state.scenes);
   const activeSceneName = useEditorStore((state) => state.activeSceneName);
   const colors = useEditorStore((state) => state.gridPaint.colors);
@@ -290,7 +292,9 @@ export function GridEditDialog({
         <Dialog.Overlay className="fixed inset-0 z-40 bg-black/60" />
         <Dialog.Content
           data-testid="grid-editor-dialog"
-          className="fixed left-1/2 top-1/2 z-50 flex h-[560px] w-[820px] max-h-[92vh] max-w-[92vw] -translate-x-1/2 -translate-y-1/2 flex-col rounded border border-[var(--color-editor-border)] bg-[var(--color-editor-panel)] p-3 shadow-2xl"
+          // 尺寸按主窗口比例算（见 `dialog-size.ts`）：写死 820×560 在宽屏上太小，白瞎画布
+          style={dialogSize}
+          className="fixed left-1/2 top-1/2 z-50 flex max-h-[92vh] max-w-[92vw] -translate-x-1/2 -translate-y-1/2 flex-col rounded border border-[var(--color-editor-border)] bg-[var(--color-editor-panel)] p-3 shadow-2xl"
         >
           <Dialog.Title className="mb-2 flex-none text-[13px] font-semibold">网格编辑</Dialog.Title>
 
