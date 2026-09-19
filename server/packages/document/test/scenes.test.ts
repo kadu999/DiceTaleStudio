@@ -72,6 +72,7 @@ describe("场景内容命令", () => {
         position: { x: -288, y: 108 },
         rotation: 0,
         scale: 1,
+        locked: false,
         components: [],
       });
     });
@@ -102,6 +103,7 @@ describe("对象命名（连续创建与复制共用）", () => {
         position: null,
         rotation: 0,
         scale: 1,
+        locked: false,
         components: [],
       })),
     };

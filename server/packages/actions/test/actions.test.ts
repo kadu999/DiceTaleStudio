@@ -143,6 +143,7 @@ describe("动作图校验", () => {
           position: { x: -384, y: 216 },
           rotation: 0,
           scale: 1,
+          locked: false,
           components: [
             {
               id: "cmp",

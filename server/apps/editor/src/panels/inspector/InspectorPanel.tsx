@@ -59,6 +59,7 @@ export function InspectorPanel(): React.JSX.Element {
               <NameField object={selected} />
               <Field label="类型" value={selected.kind} />
               <ActiveField object={selected} />
+              <LockedField object={selected} />
               <SortingOrderField object={selected} />
               <PositionFields object={selected} />
               <ScaleField object={selected} />
@@ -167,6 +168,34 @@ function ActiveField({ object }: { readonly object: SceneObjectDoc }): React.JSX
         />
         <span className="truncate text-[var(--color-editor-text-dim)]">
           {object.active ? "显示在场景里" : "已隐藏（不画、也点不到）"}
+        </span>
+      </label>
+    </FieldRow>
+  );
+}
+
+/**
+ * 是否**锁定**：锁上就**不能被移动**（画布上拖不动、世界坐标输入框也禁用）。
+ *
+ * 只锁「位置」这一件事：改名 / 显示顺序 / 缩放 / 激活 / 换贴图、以及地图的网格标注都照常改。
+ * 摆场景时最容易被误拖的就是铺满视口的底图，所以这个开关虽然简单，但要和「激活」一样显眼。
+ */
+function LockedField({ object }: { readonly object: SceneObjectDoc }): React.JSX.Element {
+  const setObjectLocked = useEditorStore((state) => state.setObjectLocked);
+
+  return (
+    <FieldRow label="锁定">
+      <label className="flex min-w-0 flex-1 items-center gap-1.5 text-[11px]">
+        <input
+          type="checkbox"
+          checked={object.locked}
+          data-testid="inspector-object-locked"
+          aria-label="锁定（不能移动）"
+          className="h-3.5 w-3.5 flex-none accent-[var(--color-editor-accent)]"
+          onChange={(event) => setObjectLocked(object.id, event.target.checked)}
+        />
+        <span className="truncate text-[var(--color-editor-text-dim)]">
+          {object.locked ? "已锁定（拖不动、坐标也改不了）" : "未锁定（可以在画布上拖动）"}
         </span>
       </label>
     </FieldRow>
@@ -352,6 +381,9 @@ function formatScale(value: number): string {
  *    否则「改完 x 再去改 y」时，x 的失焦提交会带上还没敲完的 y；
  * 2. **正在输入的框不被 store 回灌**，否则提交后触发的同步会把用户刚敲的值冲掉。
  *    留空或非法值按世界原点处理（手写文件里 `position: null` 的对象也能一键落位）。
+ *
+ * **锁定的对象禁用这两个框**：锁上就是「不能被移动」，留一个还能改坐标的入口等于没锁
+ * （store 的 `moveObject` 也会拒掉，那是第二道保险）。
  */
 function PositionFields({ object }: { readonly object: SceneObjectDoc }): React.JSX.Element {
   const moveObject = useEditorStore((state) => state.moveObject);
@@ -397,6 +429,8 @@ function PositionFields({ object }: { readonly object: SceneObjectDoc }): React.
           onChange={setX}
           onCommit={commitX}
           placeholder={String(WORLD_ORIGIN_FALLBACK)}
+          disabled={object.locked}
+          title={object.locked ? "对象已锁定：先解锁才能改坐标" : undefined}
         />
         <NumberInput
           prefix="Y"
@@ -408,6 +442,8 @@ function PositionFields({ object }: { readonly object: SceneObjectDoc }): React.
           onChange={setY}
           onCommit={commitY}
           placeholder={String(WORLD_ORIGIN_FALLBACK)}
+          disabled={object.locked}
+          title={object.locked ? "对象已锁定：先解锁才能改坐标" : undefined}
         />
       </div>
     </FieldRow>
@@ -427,6 +463,9 @@ interface NumberInputProps {
   readonly onChange: (value: string) => void;
   readonly onCommit: () => void;
   readonly placeholder?: string;
+  /** 锁定对象时禁用（禁用后仍显示当前值，只是改不了）。 */
+  readonly disabled?: boolean;
+  readonly title?: string;
 }
 
 /** 带前缀的数字输入：两三个这样的框在一行里**等分**整行剩下的宽度（好读也好改）。 */
@@ -440,6 +479,8 @@ function NumberInput({
   onChange,
   onCommit,
   placeholder,
+  disabled = false,
+  title,
 }: NumberInputProps): React.JSX.Element {
   return (
     // 用 label 包住：点前缀也能聚焦到输入框；无障碍名字由 aria-label 给
@@ -456,7 +497,9 @@ function NumberInput({
         type="number"
         step="1"
         placeholder={placeholder}
-        className="min-w-0 flex-1 rounded border border-[var(--color-editor-border)] bg-black/30 px-1 py-0.5 font-mono text-[11px] outline-none"
+        disabled={disabled}
+        title={title}
+        className="min-w-0 flex-1 rounded border border-[var(--color-editor-border)] bg-black/30 px-1 py-0.5 font-mono text-[11px] outline-none disabled:opacity-50"
         onChange={(event) => onChange(event.target.value)}
         onBlur={onCommit}
         onKeyDown={(event) => {

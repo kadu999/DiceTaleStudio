@@ -26,6 +26,7 @@ export function HierarchyPanel(): React.JSX.Element {
   const deleteObjects = useEditorStore((state) => state.deleteObjects);
   const duplicateObjects = useEditorStore((state) => state.duplicateObjects);
   const toggleObjectActive = useEditorStore((state) => state.toggleObjectActive);
+  const toggleObjectLocked = useEditorStore((state) => state.toggleObjectLocked);
   const saveSceneNow = useEditorStore((state) => state.saveSceneNow);
   const saveState = useEditorStore((state) => state.sceneSaveState);
   const saveError = useEditorStore((state) => state.sceneSaveError);
@@ -176,6 +177,7 @@ export function HierarchyPanel(): React.JSX.Element {
               }}
               onCancelRename={() => setRenamingId(null)}
               onToggleActive={() => toggleObjectActive(object.id)}
+              onToggleLocked={() => toggleObjectLocked(object.id)}
               onDelete={() => deleteObjects([object.id])}
             />
           ))
@@ -227,6 +229,8 @@ interface ObjectRowProps {
   readonly onCancelRename: () => void;
   /** 切换「显示 / 隐藏」（对齐 Unity 行首那只眼睛）。 */
   readonly onToggleActive: () => void;
+  /** 切换「锁定 / 解锁」（锁上就拖不动）。 */
+  readonly onToggleLocked: () => void;
   readonly onDelete: () => void;
 }
 
@@ -241,6 +245,7 @@ function ObjectRow({
   onCommitRename,
   onCancelRename,
   onToggleActive,
+  onToggleLocked,
   onDelete,
 }: ObjectRowProps): React.JSX.Element {
   // 只有地图有值得写在列表里的额外信息（网格尺寸）；其它对象不再显示「0 组件」这类噪声。
@@ -277,6 +282,22 @@ function ObjectRow({
         onClick={onToggleActive}
       >
         {object.active ? "👁" : "🚫"}
+      </button>
+
+      {/* 锁定按钮：锁上就拖不动了（摆场景时最容易被误拖的正是底图） */}
+      <button
+        type="button"
+        data-testid="object-lock-toggle"
+        data-locked={object.locked}
+        aria-pressed={object.locked}
+        title={object.locked ? `解锁 ${object.name}（现在拖不动）` : `锁定 ${object.name}（不再能被拖动）`}
+        aria-label={object.locked ? `解锁 ${object.name}` : `锁定 ${object.name}`}
+        className={`flex h-5 w-5 flex-none items-center justify-center rounded text-[11px] leading-none hover:bg-[var(--color-editor-panel-alt)] ${
+          object.locked ? "" : "opacity-50"
+        }`}
+        onClick={onToggleLocked}
+      >
+        {object.locked ? "🔒" : "🔓"}
       </button>
       {renaming ? (
         <input

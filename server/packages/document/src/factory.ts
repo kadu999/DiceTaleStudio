@@ -62,6 +62,8 @@ export function createMapObject(input: {
     position: input.position ?? { x: 0, y: 0 },
     rotation: 0,
     scale: DEFAULT_OBJECT_SCALE,
+    // 新建出来的对象都不锁：锁是「摆好之后别再被拖走」，不是默认状态
+    locked: false,
     components: [],
     map,
   };

@@ -59,6 +59,12 @@ export interface SceneLayer {
    * （见 `hitTestRect`）——两者的旋转与缩放必然一致，不会出现「框在左、点不到」。
    */
   readonly selected?: boolean;
+  /**
+   * 对象被**锁住**（拖不动）：选中框画成灰色。
+   *
+   * 画布上「为什么拖不动」总得有个说法——锁不改对象长什么样，换个框的颜色就能一眼看出来。
+   */
+  readonly locked?: boolean;
 }
 
 export interface SceneRenderInput {
@@ -229,7 +235,7 @@ export function createCanvasSceneRenderer(canvas: HTMLCanvasElement): SceneRende
       // 选中框画在**所有图层之后**：被别的图片盖住的对象也要看得见自己的框
       for (const layer of input.layers ?? []) {
         if (layer.selected === true) {
-          drawSelectionFrame(context, layer.rect, viewport);
+          drawSelectionFrame(context, layer.rect, viewport, layer.locked === true);
         }
       }
 
@@ -481,6 +487,8 @@ function drawGridLines(
 
 /** 选中框的配色与尺寸（屏幕像素）。 */
 const SELECTION_COLOR = "#4f9cf9";
+/** 锁住的对象：框用灰的（「拖不动」的提示，见 `SceneLayer.locked`）。 */
+const SELECTION_LOCKED_COLOR = "#8d95a3";
 const SELECTION_HANDLE_SIZE = 7;
 const SELECTION_DASH: readonly [number, number] = [4, 3];
 
@@ -489,15 +497,18 @@ const SELECTION_DASH: readonly [number, number] = [4, 3];
  *
  * 刻意**不画中心点**：中心点会被误读成「对象就长这个点」，而对象其实铺满整块矩形。
  * 手柄用实心方块 + 细描边（Unity 那套），在任何贴图上都看得清。
+ * `locked` 为真时整框换成灰色：锁住的对象拖不动，画布上得看得出「为什么」。
  */
 function drawSelectionFrame(
   context: CanvasRenderingContext2D,
   rect: WorldRect,
   viewport: Viewport,
+  locked = false,
 ): void {
   const topLeft = worldToScreen(viewport, worldRectTopLeft(rect));
   const width = rect.size.width * viewport.scale;
   const height = rect.size.height * viewport.scale;
+  const color = locked ? SELECTION_LOCKED_COLOR : SELECTION_COLOR;
 
   // 太小的矩形（缩得很远）只画框、不画手柄：手柄会比框还大，糊成一团
   const half = SELECTION_HANDLE_SIZE / 2;
@@ -514,7 +525,7 @@ function drawSelectionFrame(
 
   context.save();
   context.lineWidth = 1;
-  context.strokeStyle = SELECTION_COLOR;
+  context.strokeStyle = color;
 
   // 虚线描边容易被当成「对象的一部分」，但它能把带旋转的框也画得清清楚楚
   context.setLineDash([...SELECTION_DASH]);
@@ -523,7 +534,7 @@ function drawSelectionFrame(
 
   if (width >= SELECTION_HANDLE_SIZE * 2 && height >= SELECTION_HANDLE_SIZE * 2) {
     for (const handle of handles) {
-      context.fillStyle = SELECTION_COLOR;
+      context.fillStyle = color;
       context.fillRect(
         Math.round(handle.x - half),
         Math.round(handle.y - half),

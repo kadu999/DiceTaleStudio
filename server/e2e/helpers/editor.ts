@@ -12,7 +12,7 @@ import { deflateSync } from "node:zlib";
 export type LeftTab = "assets" | "hierarchy";
 
 /** 场景文件的当前格式版本（与 `@dts/document` 的 `DOCUMENT_FORMAT_VERSION` 保持一致）。 */
-export const CURRENT_SCENE_FORMAT_VERSION = 8;
+export const CURRENT_SCENE_FORMAT_VERSION = 9;
 
 /** 用接口建一个真项目（含 `project.json`），返回项目名。 */
 export async function newProject(request: APIRequestContext): Promise<string> {
@@ -152,8 +152,8 @@ export function sceneDoc(
  * 造一个场景里的普通对象（形状与 `createSceneObject` 一致，无组件无动作）。
  *
  * `position` 是**世界坐标**（场景中心为原点，x 向右、y 向上，单位像素）；不传即未放置。
- * `active` / `sortingOrder` 是 v7 起的显式字段（默认「显示、顺序 0」）；
- * `scale` 是 v8 起的显式字段（默认 1 = 原始尺寸）。
+ * `active` / `sortingOrder` 是 v7 起、`scale` 是 v8 起、`locked` 是 v9 起的显式字段
+ * （默认「显示、顺序 0、缩放 1、不锁」）。
  */
 export function sceneObjectDoc(
   name: string,
@@ -170,6 +170,7 @@ export function sceneObjectDoc(
     position,
     rotation: 0,
     scale: 1,
+    locked: false,
     components: [],
     ...patch,
   };

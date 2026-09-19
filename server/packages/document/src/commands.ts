@@ -133,6 +133,7 @@ export function createSceneObject(input: CreateObjectInput): SceneObjectDoc {
     position: input.position ?? null,
     rotation: 0,
     scale: DEFAULT_OBJECT_SCALE,
+    locked: false,
     components: [],
   };
 }
@@ -203,6 +204,26 @@ export function setObjectPosition(
   }
 
   object.position = position;
+  return true;
+}
+
+/**
+ * 锁定 / 解锁对象。
+ *
+ * 锁上的对象**不能被移动**（画布上拖不动、世界坐标输入框也禁用），别的照常可改。
+ * 命令层只负责改这个标记；「不能移动」的拦截在编辑器的 `moveObject` 里（唯一的移动入口）。
+ */
+export function setObjectLocked(
+  scene: Draft<SceneDoc>,
+  objectId: string,
+  locked: boolean,
+): boolean {
+  const object = findObject(scene, objectId);
+  if (object === undefined || object.locked === locked) {
+    return false;
+  }
+
+  object.locked = locked;
   return true;
 }
 

@@ -390,6 +390,17 @@ export function ScenePanel(): React.JSX.Element {
         useEditorStore
           .getState()
           .setSelection(additive ? toggleSelection(currentSelection(), hit) : [hit]);
+
+        // 锁定的对象**点得到、选得中，就是拖不走**：不进拖动状态。
+        // 按住它拖动 = 平移画布（和从空白处拖一样），于是手势仍然有用、
+        // 也不会因为「点在对象上」而变成什么都不发生。
+        const target = currentScene()?.objects.find((item) => item.id === hit);
+        if (target?.locked === true) {
+          container.setPointerCapture(event.pointerId);
+          pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+          return;
+        }
+
         dragging = { pointerId: event.pointerId, objectId: hit };
         container.setPointerCapture(event.pointerId);
         return;
@@ -623,8 +634,10 @@ export function ScenePanel(): React.JSX.Element {
             cellColors: colored
               ? (mask: number) => cellColorsOf(mask, gridPaint.hiddenMask, gridPaint.colors)
               : undefined,
-            // 选中 = 在这块矩形上画框（4 个角点 + 4 条边中点，没有中心点）
+            // 选中 = 在这块矩形上画框（4 个角点 + 4 条边中点，没有中心点）；
+            // 锁住的对象用灰框：一眼看出「为什么拖不动」
             selected: selectedObjectIds.includes(object.id),
+            locked: object.locked,
           },
         ];
       });

@@ -20,6 +20,7 @@ import {
   setObjectActive as setSceneObjectActive,
   setObjectImage as setSceneObjectImage,
   setObjectPosition as setSceneObjectPosition,
+  setObjectLocked as setSceneObjectLocked,
   setObjectScale as setSceneObjectScale,
   setObjectSortingOrder as setSceneObjectSortingOrder,
   validateSceneName,
@@ -290,6 +291,13 @@ export interface EditorStoreState {
   setObjectActive(id: string, active: boolean): boolean;
   /** 翻转激活状态（列表里那只眼睛）。**目标值由 store 现算**，不交给界面上的旧值。 */
   toggleObjectActive(id: string): boolean;
+  /**
+   * 锁定 / 解锁对象（对齐列表里那把锁）：锁上就**不能移动**——画布上拖不动，
+   * 世界坐标也改不了（`moveObject` 会直接拒掉）。别的照常可改，也不影响选中 / 删除。
+   */
+  setObjectLocked(id: string, locked: boolean): boolean;
+  /** 翻转锁定状态（列表里那把锁）。**目标值由 store 现算**。 */
+  toggleObjectLocked(id: string): boolean;
   /** 改对象的显示顺序（大的画在前面）；连续输入合并成一条撤销记录。 */
   setObjectSortingOrder(id: string, sortingOrder: number): boolean;
   /** 改对象的**缩放**（1 = 原始尺寸；夹在 0.01 ~ 100）；连续输入合并成一条撤销记录。 */
@@ -1490,6 +1498,45 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       return get().setObjectActive(id, !object.active);
     },
 
+    setObjectLocked(id, locked) {
+      const sceneName = get().activeSceneName;
+      if (sceneName === null) {
+        return false;
+      }
+
+      const object = findSceneByName(get().scenes, sceneName)?.objects.find((item) => item.id === id);
+      if (object === undefined || object.locked === locked) {
+        return false;
+      }
+
+      const changed = get().applyScenes(
+        locked ? `锁定 ${object.name}` : `解锁 ${object.name}`,
+        (draft) => {
+          const target = draft.find((item) => item.name === sceneName);
+          if (target !== undefined) {
+            setSceneObjectLocked(target, id, locked);
+          }
+        },
+      );
+
+      if (changed) {
+        pushLog(makeLog("info", `${locked ? "已锁定" : "已解锁"}对象：${object.name}`));
+      }
+
+      return changed;
+    },
+
+    toggleObjectLocked(id) {
+      const object = findSceneByName(get().scenes, get().activeSceneName)?.objects.find(
+        (item) => item.id === id,
+      );
+      if (object === undefined) {
+        return false;
+      }
+
+      return get().setObjectLocked(id, !object.locked);
+    },
+
     setObjectSortingOrder(id, sortingOrder) {
       const sceneName = get().activeSceneName;
       if (sceneName === null) {
@@ -1609,6 +1656,13 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
     moveObject(id, position) {
       const sceneName = get().activeSceneName;
       if (sceneName === null) {
+        return;
+      }
+
+      // **锁定 = 不能移动**：这里是全项目唯一的移动入口（画布拖动、属性面板改坐标都走它），
+      // 所以护栏放在这一处就够——画布那边还会先判一次（免得白进一次拖动状态）
+      const object = findSceneByName(get().scenes, sceneName)?.objects.find((item) => item.id === id);
+      if (object === undefined || object.locked) {
         return;
       }
 

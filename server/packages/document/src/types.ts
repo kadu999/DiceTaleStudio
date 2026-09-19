@@ -30,7 +30,7 @@ import type { RleRun } from "@dts/grid";
  *   （谁画在前面；大的盖住小的，相同则按场景里的先后顺序）。
  */
 
-export const DOCUMENT_FORMAT_VERSION = 8;
+export const DOCUMENT_FORMAT_VERSION = 9;
 
 /** 网格行序：`bottom-up` 表示 cells 第 0 行是图片最下面一行（与 Unity GridMap 一致）。 */
 export type RowOrder = "bottom-up";
@@ -114,6 +114,14 @@ export interface SceneObjectDoc {
    * 也不参与画布上的点选与拖动——但**对象还在场景里**，属性面板照样能改。
    */
   readonly active: boolean;
+  /**
+   * 是否**锁定**：锁住的对象**不能被移动**——画布上拖它不会动，世界坐标输入框也禁用。
+   *
+   * 只锁「位置」这一件事：改名 / 显示顺序 / 缩放 / 激活 / 换贴图，以及地图的网格标注
+   * 都照常可改（那些都得显式操作，不会「点一下就被拖走」）。
+   * 它也不阻止**选中**与**删除**——锁是为了摆场景时别误拖底图，不是为了禁用它。
+   */
+  readonly locked: boolean;
   /**
    * 显示顺序：**大的画在前面**（后画 = 盖在上面），相同则按场景文件里的先后顺序。
    *

@@ -87,14 +87,14 @@ test.describe("场景菜单", () => {
 
       // 没有地图对象 → 没有贴图引用要同步。
       // **不再比对整个文件**：打开旧版本文件时它已被升到当前版本并补上新增字段
-      // （`active` / `sortingOrder` / `scale`），所以「一字不动」只对**对象内容**成立。
+      // （`active` / `sortingOrder` / `scale` / `locked`），所以「一字不动」只对**对象内容**成立。
       const after = await readSceneFile(request, project, "大厅");
       expect(after.formatVersion).toBe(CURRENT_SCENE_FORMAT_VERSION);
 
       const door = (file: Record<string, unknown>): Record<string, unknown> =>
         (file.objects as Record<string, unknown>[] | undefined)?.[0] ?? {};
       // 除新增字段外，其余字段逐字一致（id / 名字 / 类型 / 位置 / 旋转 / 组件）
-      const NEW_OBJECT_FIELDS = ["active", "sortingOrder", "scale"];
+      const NEW_OBJECT_FIELDS = ["active", "sortingOrder", "scale", "locked"];
       const withoutNewFields = (object: Record<string, unknown>): Record<string, unknown> =>
         Object.fromEntries(
           Object.entries(object).filter(([key]) => !NEW_OBJECT_FIELDS.includes(key)),

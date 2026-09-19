@@ -73,6 +73,8 @@ export const sceneObjectSchema = z.object({
   // 「没写」只能是「显示、顺序 0」；写成必填会让所有旧文件直接读不开。
   active: z.boolean().default(true),
   sortingOrder: z.number().int().default(0),
+  // v9 起：是否锁定（不能被移动）。同样是「老文件里没有 = 默认值」，默认不锁
+  locked: z.boolean().default(false),
   position: worldPositionSchema.nullable(),
   rotation: z.number(),
   // v8 起：统一缩放。同样给默认值（v7 及更早的文件没有它，语义只能是 1 = 原始尺寸）；
@@ -193,13 +195,14 @@ export interface SceneSizeHint {
 }
 
 /**
- * 给对象补上 v7 的 `active` / `sortingOrder`、v8 的 `scale`，并给**没有位置的地图**补上世界原点。
+ * 给对象补上 v7 的 `active` / `sortingOrder`、v8 的 `scale`、v9 的 `locked`，
+ * 并给**没有位置的地图**补上世界原点。
  *
  * - 地图是摆在世界里的对象，必须有位置才能渲染（`position: null` 的地图没有地方可画）。
  *   旧文件里确实可能是 `null`（v1→v2 升级时造的地图对象、或手写文件），补成 `(0, 0)`
  *   正好是它以前被隐式绘制的那个位置（世界原点为中心），画面不变。
- * - `active` / `sortingOrder` / `scale` 是后来新增的**显式**字段：老文件里没有，
- *   语义只能是「显示、顺序 0、缩放 1」。补进内存后要求调用方回写一次，
+ * - `active` / `sortingOrder` / `scale` / `locked` 是后来新增的**显式**字段：老文件里没有，
+ *   语义只能是「显示、顺序 0、缩放 1、不锁」。补进内存后要求调用方回写一次，
  *   否则会出现「内存里已补全、磁盘上还是缺字段」的长期不一致。
  *
  * 返回是否补过：补了就要求调用方回写一次文件。
@@ -229,6 +232,11 @@ function withFilledObjectFields(raw: Record<string, unknown>): {
 
     if (typeof filled.scale !== "number") {
       filled = { ...filled, scale: 1 };
+      changed = true;
+    }
+
+    if (typeof filled.locked !== "boolean") {
+      filled = { ...filled, locked: false };
       changed = true;
     }
 

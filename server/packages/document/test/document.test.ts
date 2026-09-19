@@ -23,6 +23,7 @@ import {
   setMapGrid,
   setObjectActive,
   setObjectImage,
+  setObjectLocked,
   setObjectPosition,
   setObjectScale,
   setObjectSortingOrder,
@@ -93,6 +94,7 @@ function plainObject(id: string, patch: Partial<SceneObjectDoc> = {}): SceneObje
     position: null,
     rotation: 0,
     scale: 1,
+    locked: false,
     components: [],
     ...patch,
   };
@@ -592,6 +594,44 @@ describe("对象命令（都在场景上操作）", () => {
     });
 
     expect(formatIssues(validateScene(scene))).toMatch(/缩放必须是正数/);
+  });
+
+  it("锁定：新建默认不锁；setObjectLocked 只改这一个标记", () => {
+    const scene = withObject(makeScene(), "door");
+    expect(scene.objects[0]?.locked).toBe(false);
+
+    const locked = mutate(scene, (draft) => {
+      expect(setObjectLocked(draft, "door", true)).toBe(true);
+    });
+
+    expect(locked.objects[0]?.locked).toBe(true);
+    // 锁只改标记：位置 / 缩放 / 激活都不动（「不能移动」的拦截在编辑器的 moveObject 里）
+    expect(locked.objects[0]?.position).toEqual(scene.objects[0]?.position);
+    expect(locked.objects[0]?.scale).toBe(scene.objects[0]?.scale);
+    expect(locked.objects[0]?.active).toBe(true);
+
+    // 相同值不产生变更
+    let changed = true;
+    const same = mutate(locked, (draft) => {
+      changed = setObjectLocked(draft, "door", true);
+    });
+    expect(changed).toBe(false);
+    expect(same).toBe(locked);
+
+    const unlocked = mutate(locked, (draft) => {
+      expect(setObjectLocked(draft, "door", false)).toBe(true);
+    });
+    expect(unlocked.objects[0]?.locked).toBe(false);
+  });
+
+  it("锁定：地图对象同样有（底图最容易被误拖）", () => {
+    const scene = withMapObject(makeScene());
+    expect(scene.objects[0]?.locked).toBe(false);
+
+    const locked = mutate(scene, (draft) => {
+      expect(setObjectLocked(draft, "map-1", true)).toBe(true);
+    });
+    expect(locked.objects[0]?.locked).toBe(true);
   });
 
   it("地图也参与摆放：setObjectPosition 对它生效（贴图中心跟着走）", () => {    const scene = withMapObject(makeScene());
@@ -1107,16 +1147,45 @@ describe("场景文件 schema", () => {
     expect(parsed.file.objects[0]?.position).toEqual({ x: 10, y: 20 });
   });
 
-  it("当前版本：显式的 scale 原样读出来，不要求回写", () => {
+  it("v8 场景文件：补上 locked 默认值 false，并要求回写一次", () => {
+    // v8 的文件里没有 locked（它是 v9 新增的），语义只能是「不锁」
+    const raw = {
+      formatVersion: 8,
+      objects: [
+        {
+          id: "door",
+          name: "木门",
+          kind: "SceneObject",
+          active: true,
+          sortingOrder: 0,
+          position: { x: 10, y: 20 },
+          rotation: 0,
+          scale: 1,
+          components: [],
+        },
+      ],
+    };
+
+    const parsed = parseSceneFile(raw);
+    expect(parsed.needsRewrite).toBe(true);
+    expect(parsed.file.formatVersion).toBe(DOCUMENT_FORMAT_VERSION);
+    expect(parsed.file.objects[0]?.locked).toBe(false);
+    // 已经有的字段一个都不能动
+    expect(parsed.file.objects[0]?.scale).toBe(1);
+    expect(parsed.file.objects[0]?.position).toEqual({ x: 10, y: 20 });
+  });
+
+  it("当前版本：显式的 scale / locked 原样读出来，不要求回写", () => {
     const scene = withObject(makeScene(), "door");
     const raw = {
       formatVersion: DOCUMENT_FORMAT_VERSION,
-      objects: [{ ...scene.objects[0], scale: 3.5 }],
+      objects: [{ ...scene.objects[0], scale: 3.5, locked: true }],
     };
 
     const parsed = parseSceneFile(raw);
     expect(parsed.needsRewrite).toBe(false);
     expect(parsed.file.objects[0]?.scale).toBe(3.5);
+    expect(parsed.file.objects[0]?.locked).toBe(true);
   });
 
   it("当前版本：显式的 active / sortingOrder 原样读出来，不要求回写", () => {
