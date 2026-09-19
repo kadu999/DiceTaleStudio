@@ -25,10 +25,6 @@ const COMMAND_RESULT_TIMEOUT_MS = 5000;
 const CLIENT_PING_INTERVAL_MS = 15000;
 const CLIENT_MAX_MISSED_PINGS = 2;
 
-interface EditorSession {
-  running: boolean;
-}
-
 interface ClientSession {
   readonly ws: WebSocket;
   readonly address: string;
@@ -45,15 +41,19 @@ interface PendingCommand {
  * 运行态 WebSocket 中枢（**中继 + 缓存**，不拥有数据）。
  *
  * - `/editor`：编辑器。`runtime_start` 开闸 / `runtime_stop` 关闸；`scene_push` 推当前场景（整份）；
- *   `editor_command` 下发命令给前端。开闸状态按「编辑器会话是否声明了运行态」记账。
+ *   `editor_command` 下发命令给前端。
  * - `/client`：前端（Unity）。**只有开闸后才接受升级**；连上立刻收到 `server_hello` +
  *   一份缓存的 `scene_sync`（所以「先改场景、后开前端」也能拿到全量）。
+ *
+ * **运行态是服务端状态**（`RuntimeSession.runtimeActive`）：只由 `runtime_start` / `runtime_stop` 改，
+ * 编辑器刷新页面 / 断线 / 临时掉线都**不影响**它——否则「刷新一下就退出运行、前端被踢」，
+ * 而服务端本来该记得「现在是在运行」。只有服务端重启才会清掉（那时要重新点一次「运行」）。
  *
  * 数据方向是单向的：编辑器 / 服务端 → 前端。前端只回 `client_hello`、`command_result`、`pong`。
  */
 export class RuntimeHub {
   private readonly wss = new WebSocketServer({ noServer: true });
-  private readonly editors = new Map<WebSocket, EditorSession>();
+  private readonly editors = new Set<WebSocket>();
   private client: ClientSession | undefined;
   private readonly pending = new Map<string, PendingCommand>();
   /** 「未开闸时被前端敲过门」只记一次日志，免得前端每 3 秒重试就刷屏。 */
@@ -321,7 +321,7 @@ export class RuntimeHub {
   // ------------------------------------------------------------ 编辑器
 
   private acceptEditor(ws: WebSocket): void {
-    this.editors.set(ws, { running: false });
+    this.editors.add(ws);
     this.log("info", `编辑器已连接（当前 ${this.editors.size} 个）`);
     this.sendEditorState(ws);
 
@@ -330,14 +330,10 @@ export class RuntimeHub {
     });
 
     ws.on("close", () => {
-      const editor = this.editors.get(ws);
       this.editors.delete(ws);
-      this.log("info", "编辑器已断开");
-
-      // 编辑器断开 = 它声明的那份运行态没了；没人声明了就关闸、踢前端
-      if (editor?.running === true) {
-        this.recomputeRuntime();
-      }
+      // 编辑器断开**不影响运行态**：刷新页面 / 关掉编辑器，前端照样连着、镜像也还在。
+      // 要关闸只有两条路：有人点「编辑」（runtime_stop），或服务端重启。
+      this.log("info", `编辑器已断开（运行态不受影响，当前 ${this.editors.size} 个编辑器）`);
     });
 
     ws.on("error", (error: Error) => {
@@ -369,11 +365,7 @@ export class RuntimeHub {
       }
 
       case "runtime_start": {
-        const editor = this.editors.get(ws);
-        if (editor !== undefined) {
-          editor.running = true;
-        }
-
+        // 幂等：服务端只记「现在在运行」，重复点不会重置场景缓存
         if (!this.session.runtimeActive) {
           this.session.start();
           this.rejectedWhileInactive = false;
@@ -385,12 +377,14 @@ export class RuntimeHub {
       }
 
       case "runtime_stop": {
-        const editor = this.editors.get(ws);
-        if (editor !== undefined) {
-          editor.running = false;
+        if (this.session.runtimeActive) {
+          this.session.stop();
+          this.kickClient("编辑器已退出运行态");
+          this.log("info", "退出运行态：已关闸（前端会被断开，且连不回来直到再次点运行）");
+          this.logToEditors("warn", "已退出运行态：前端连接已关闭");
         }
 
-        this.recomputeRuntime();
+        this.broadcastEditorState();
         return;
       }
 
@@ -451,24 +445,6 @@ export class RuntimeHub {
       default:
         return;
     }
-  }
-
-  /**
-   * 重新算开闸状态：任一编辑器声明了运行态就算开；都没声明就关闸并踢前端。
-   *
-   * 「编辑器断开 = 关闸」是刻意的：运行态跟着编辑器活着，不留一个没人管的「已连接」。
-   * 编辑器刷新页面会踢一次前端，前端会自动重连（它本来就一直重试）。
-   */
-  private recomputeRuntime(): void {
-    const anyRunning = [...this.editors.values()].some((editor) => editor.running);
-    if (!anyRunning && this.session.runtimeActive) {
-      this.session.stop();
-      this.kickClient("编辑器已退出运行态");
-      this.log("info", "退出运行态：已关闸（前端会被断开，且连不回来直到再次点运行）");
-      this.logToEditors("warn", "已退出运行态：前端连接已关闭");
-    }
-
-    this.broadcastEditorState();
   }
 
   /**

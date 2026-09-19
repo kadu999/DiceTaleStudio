@@ -38,7 +38,10 @@ test.describe("编辑器外壳", () => {
   test("底部状态栏显示文档与运行态信息", async ({ page }) => {
     await enterEditor(page);
     await expect(page.getByTestId("status-scenes")).toHaveText(/场景 \d+/);
-    await expect(page.getByTestId("status-mode")).toHaveAttribute("data-mode", "edit");
+    // 运行态是**服务端状态**，所以这里只断言状态栏在说人话（编辑状态 / 运行中），
+    // 不断言「一定是编辑」——并行的用例可能正开着运行态
+    await expect(page.getByTestId("status-mode")).toHaveAttribute("data-mode", /^(edit|run)$/);
+    await expect(page.getByTestId("status-mode")).toContainText(/编辑状态|运行中/);
     await expect(page.getByTestId("status-selection")).toHaveText("已选 0");
   });
 
@@ -82,11 +85,14 @@ test.describe("画布视口交互", () => {
 });
 
 test.describe("编辑态 / 运行态", () => {
-  test("切到运行态后状态栏与运行面板同步更新", async ({ page }) => {
+  test("编辑 / 运行是服务端状态：切过去、切回来，状态栏与运行面板同步", async ({ page }) => {
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
 
     await enterEditor(page);
+
+    // 先确保处于编辑态（运行态是服务端状态，别的并行用例可能正开着）
+    await page.getByTestId("mode-edit").click();
     await expect(page.getByTestId("status-mode")).toHaveAttribute("data-mode", "edit");
 
     await page.getByTestId("mode-run").click();

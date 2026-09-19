@@ -387,7 +387,14 @@ describe("编辑声音窗口（store 侧）：加 / 删 / 起名字", () => {
 function seedRuntime(input: { status: RuntimeStatus; clientConnected: boolean }): void {
   useEditorStore.setState((state) => ({
     mode: "run",
-    runtime: { ...state.runtime, status: input.status, clientConnected: input.clientConnected },
+    runtime: {
+      ...state.runtime,
+      status: input.status,
+      // 运行态切片里「前端在不在」就是 client 是不是 null
+      client: input.clientConnected
+        ? { name: "DiceTale Unity", version: "1.0.0", connectedAt: 0 }
+        : null,
+    },
   }));
 }
 

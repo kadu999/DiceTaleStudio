@@ -411,18 +411,11 @@ test.describe("动作对象：播放声音", () => {
       await expect(page.getByTestId("sound-status")).toHaveAttribute("data-state", "idle");
       await expect(page.getByTestId("sound-status")).toHaveText("本层没在播");
 
-      // 切到运行态（还没有前端）：照样点得动，title 换成「前端未连接，等它连上补发」。
-      // 这里**不再点**：平板档位下「运行态」抽屉压着「属性」抽屉（两个都是右侧抽屉），点不到；
-      // 「点下去确实会记账」这条由 jsdom 单测钉（store 的记账与日志）。
-      await page.getByTestId("mode-run").click();
-      await expect(page.getByTestId("status-mode")).toHaveAttribute("data-mode", "run");
-      await selectObject(page, 0);
-
-      await expect(page.getByTestId("sound-play")).toBeEnabled();
-      await expect(page.getByTestId("sound-play")).toHaveAttribute(
-        "title",
-        /已记录：前端（Unity）未连接/,
-      );
+      /*
+        「切到运行态、前端还没连 → 照样点得动，title 换成『前端未连接，等它连上补发』」这条
+        **不在这里点**：运行态是**服务端状态**（全局），e2e 并行用例会互相影响；
+        它由 jsdom 单测钉（`apps/editor/test/sound-object.test.tsx` 的「运行态但前端没连」）。
+      */
     } finally {
       await dropProject(request, project);
     }

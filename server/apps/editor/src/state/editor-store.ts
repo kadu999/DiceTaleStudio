@@ -258,8 +258,8 @@ export interface EditorStoreState {
   setViewportSize(size: { width: number; height: number }): void;
   setUi(patch: Partial<EditorUiState>): void;
   setMode(mode: EditorMode): void;
+  /** 连上服务端（页面加载时就连：编辑态也要知道服务端在不在运行）。 */
   connectRuntime(): void;
-  disconnectRuntime(): void;
   /**
    * 把**当前场景整份**推给服务端（运行态才推，内容没变不推）。
    *
@@ -677,7 +677,14 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
 
     onState: (snapshot: RuntimeStateSnapshot) => {
       const wasClientConnected = get().runtime.client !== null;
+      const wasRuntimeActive = get().runtime.runtimeActive;
+
+      // **运行态由服务端说了算**：界面上的编辑/运行跟着它走（刷新页面后服务端还记着在运行，
+      // 这里就会自动切回运行态，而不是把前端踢掉）。
+      // 注意**不**在这里展开运行面板：面板展开会改变布局，而这是「跟着服务端状态走」的被动同步；
+      // 主动点「运行」时才展开（见 setMode）。
       set((state) => ({
+        mode: snapshot.runtimeActive ? "run" : "edit",
         runtime: {
           ...state.runtime,
           runtimeActive: snapshot.runtimeActive,
@@ -685,6 +692,13 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
           scene: snapshot.scene,
         },
       }));
+
+      // 刚开闸（或刷新后重新连上、服务端还在运行）→ 把当前场景整份补过去。
+      // 只在「false → true」这一跳推，避免 scene_push 引发的状态广播把自己推进死循环
+      // （内容没变的第二次推送会被 shouldPushScene 去重掉）。
+      if (snapshot.runtimeActive && !wasRuntimeActive) {
+        get().pushRuntimeScene();
+      }
 
       // 前端刚连上：把记着的期望播放状态补发一遍（「点的时候前端不在」也不会丢）
       const plan = soundPlaybackResendPlan({
@@ -719,18 +733,12 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       );
     },
 
-    /**
-     * WS 建立（含重连）之后：如果编辑器正处在运行态，就**补发**开闸声明与整份场景。
-     *
-     * 刷新页面会先断开关闸（前端被踢），重连后这两条让它恢复；前端本来就一直在重试，会自己连回来。
-     */
     onOpen: () => {
-      if (get().mode !== "run") {
-        return;
+      // 重连之后如果本地记着「用户点过运行」而服务端还没开闸，补发一次声明
+      // （服务端已经开着的话，`editor_state` 会让界面自动回到运行态，不用重复发）
+      if (get().mode === "run" && !get().runtime.runtimeActive) {
+        runtimeClient.startRuntime();
       }
-
-      runtimeClient.startRuntime();
-      pushSceneNow();
     },
   });
 
@@ -1075,39 +1083,41 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
     },
 
     setMode(mode) {
-      // 进入运行态时自动展开运行面板：否则「切到运行」后界面毫无反馈，功能不可发现
-      set((state) => ({
-        mode,
-        ui: mode === "run" ? { ...state.ui, runtimeOpen: true } : state.ui,
-      }));
-
+      /*
+        编辑 / 运行是**服务端的状态**（`runtimeActive`），这里只负责「请服务端改一下」，
+        界面等 `editor_state` 回来再跟着变——所以刷新页面不会退出运行态，也不会把前端踢掉。
+        连接是页面加载就连上的（bootstrapEditor），编辑态也连着，这样随时知道服务端在不在运行。
+      */
       if (mode === "run") {
-        // 连上服务端 → 声明运行态（服务端据此**开闸**：前端现在才连得上）→ 推整份场景
-        get().connectRuntime();
-        if (runtimeClient.connected) {
-          runtimeClient.startRuntime();
-          get().pushRuntimeScene();
+        // 用户主动点「运行」：顺手展开运行面板，否则切过去界面毫无反馈、功能不可发现
+        set((state) => ({ ui: { ...state.ui, runtimeOpen: true } }));
+
+        if (!runtimeClient.connected) {
+          // 还没连上服务端：先把连接踢一脚，连上之后 onOpen 会补发 runtime_start
+          get().connectRuntime();
+          pushLog(makeLog("info", "正在连接服务端…连上后自动进入运行态"));
+          return;
         }
 
+        runtimeClient.startRuntime();
+        // 立刻推一份全量：不等 editor_state 回来，前端能更早拿到场景
+        get().pushRuntimeScene();
         return;
       }
 
-      // 退出运行态：先声明关闸（服务端会踢掉前端），再断开自己的连接
+      // 退出运行态：服务端关闸并踢掉前端。连接保留（编辑态也要知道服务端状态）
       pushScheduler.cancel();
       lastPushedSceneText = null;
       if (runtimeClient.connected) {
         runtimeClient.stopRuntime();
+        return;
       }
 
-      get().disconnectRuntime();
+      pushLog(makeLog("warn", "与服务端断开，连上后自动同步运行态"));
     },
 
     connectRuntime() {
       runtimeClient.connect();
-    },
-
-    disconnectRuntime() {
-      runtimeClient.disconnect();
     },
 
     pushRuntimeScene() {
@@ -1221,6 +1231,11 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
 
       // 同步占位：StrictMode 下 effect 会跑两次，不能弹两次对话框
       bootstrapping = true;
+
+      // 页面加载就连服务端：**运行态存在服务端**，连上才知道「现在是在运行还是编辑」
+      // （刷新页面后如果服务端还在运行，editor_state 会把界面切回运行态，前端不会被踢）
+      get().connectRuntime();
+
       try {
         await get().refreshProjects();
 

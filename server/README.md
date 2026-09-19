@@ -610,8 +610,9 @@ Playwright 跑在临时资源根上（见 `playwright.config.ts` 的 `DTS_RESOUR
 | 命令（如播放声音） | 只是**触发器**：`play_sound{objectId, layer}` 里没有音频路径，前端从**自己的镜像**读 `sound.picked` |
 
 **没点「运行」时前端根本连不上**：`/client` 的 WebSocket 升级会被以 **HTTP 503** 拒绝（`x-dts-reason: runtime-inactive`），
-而不是「连上再被踢」。退出运行态（点「编辑」、编辑器刷新或断开）会**关闸并踢掉前端**（close `4003`）——
-运行态跟着编辑器会话活着，不留没人管的「已连接」。
+而不是「连上再被踢」。**运行态记在服务端**：编辑器刷新页面 / 关掉页面 / 断线都**不影响**它——
+前端照旧连着、镜像还在；只有点「编辑」（`runtime_stop`）或服务端重启才关闸（关闸踢前端，close `4003`）。
+编辑器页面加载时就连服务端要一份状态，所以刷新后如果服务端还在运行，界面会自动回到运行态。
 
 协议定义以 `packages/protocol` 为唯一来源（编辑器与后端共用，入站消息全部经过 zod 校验），
 字段口径与门控细节见 [`docs/specs/2026-09-19-runtime-mirror-protocol.md`](docs/specs/2026-09-19-runtime-mirror-protocol.md)。

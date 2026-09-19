@@ -408,13 +408,37 @@ describe("运行态：门控 + 场景镜像中继", () => {
     expect(inactive.reason).toMatch(/未进入运行态/);
   });
 
-  it("编辑器断开 = 关闸：前端被踢，且连不回来", async () => {
+  it("编辑器刷新 / 断开**不影响**运行态：前端还在，重连后还看到在运行", async () => {
+    const editor = await startEditor();
+    const client = await startClient();
+    await client.inbox.waitFor<ServerToClientMessage>((message) => typeOf(message) === "server_hello");
+
+    // 模拟刷新页面：编辑器那只 WS 断开
+    editor.socket.close();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    // 运行态还在：前端没被踢，新连接照样连得上
+    expect(hub.runtimeActive).toBe(true);
+    expect(client.socket.readyState).toBe(WebSocket.OPEN);
+
+    const reopened = await startEditor({ running: false });
+    const state = await reopened.inbox.waitFor<ServerToEditorMessage>(
+      (message) => typeOf(message) === "editor_state",
+    );
+    if (state.type !== "editor_state") {
+      throw new Error("类型不符");
+    }
+
+    expect(state.runtimeActive).toBe(true);
+  });
+
+  it("只有点「编辑」才关闸：前端被踢，且连不回来", async () => {
     const editor = await startEditor();
     const client = await startClient();
     await client.inbox.waitFor<ServerToClientMessage>((message) => typeOf(message) === "server_hello");
 
     const closed = new Promise<number>((resolve) => client.socket.once("close", (code) => resolve(code)));
-    editor.socket.close();
+    send(editor.socket, { type: "runtime_stop" });
 
     expect(await closed).toBe(RUNTIME_STOPPED_CODE);
     await new Promise((resolve) => setTimeout(resolve, 50));
