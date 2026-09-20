@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -6,42 +7,100 @@ namespace DiceTale
     /// <summary>
     /// 场景镜像：**后台有什么对象，前端就有什么对象**。
     ///
+    /// **层级按场景分**——每个场景在宿主下有一棵**以场景名命名的子树**：
+    ///
+    /// <code>
+    /// Game
+    /// └─ 场景（容器，只负责把各个场景归在一起）
+    ///    ├─ 场景1        ← 一个场景 = 一个 GameObject，名字就是场景名
+    ///    │  ├─ 地图（map_…）
+    ///    │  └─ 精灵（obj_…）
+    ///    └─ 场景2        ← 只是隐藏，**不销毁**
+    /// </code>
+    ///
+    /// **切换场景 = 切可见性，不是删除**：一次运行里可能同时存在多个场景（玩家可能在场景1 做完事
+    /// 再切到场景2），所以离开一个场景只是把它 `SetActive(false)` 藏起来，对象、贴图、状态都留着；
+    /// 再切回去直接把整棵子树显示出来即可，不必重建。
+    ///
     /// 收到 `scene_sync`（整份场景）后：
-    /// - 场景名变了 → 整场景换（旧对象全销毁）；
-    /// - 否则按 `id` **增 / 改 / 删**：新 id 建视图、老 id 更新属性、名单里没有的销毁；
-    /// - 属性逐项同步（位置 / 旋转 / 缩放 / **激活** / 显示顺序 / 名字），有图就去取图。
+    /// - 这份场景第一次出现 → 建一棵以它命名的子树；
+    /// - 同一个场景再来 → 按 `id` **增 / 改 / 删**（新 id 建视图、老 id 更新属性、名单里没有的销毁）；
+    /// - **其他场景不动**（只把它们藏起来）；
+    /// - 场景名变了 → 隐藏旧的、显示新的。
     ///
-    /// 同时把这份模型留一份（<see cref="Find"/>），因为命令是**触发器**：比如播放声音时，
-    /// 前端要能读出那个对象自己声明的 `sound.picked`——数据在镜像里，不在命令里。
-    ///
-    /// 视图都挂在镜像根节点下（`mirrorRoot`），层级里一眼能看出「这些是后台推下来的对象」。
+    /// 同时把每份场景的模型都留一份（<see cref="Find"/> 会在**所有场景**里找），因为命令是**触发器**：
+    /// 比如播放声音时，前端要读出那个对象自己声明的 `sound.picked`——数据在镜像里，不在命令里。
     /// </summary>
     public class SceneMirror : MonoBehaviour
     {
-        private readonly Dictionary<string, SceneObjectView> views = new Dictionary<string, SceneObjectView>();
-        private readonly Dictionary<string, MirrorObject> objects = new Dictionary<string, MirrorObject>();
+        /// <summary>等资源包最多等多久（秒）——到点照常载入，不让画面空着。</summary>
+        private const float SceneWaitTimeoutSeconds = 30f;
 
-        private Transform mirrorRoot;
+        /// <summary>场景容器名：把各个场景归在一起，免得和对象视图混在同一层。</summary>
+        private const string ContainerName = "场景";
+
+        /// <summary>每个场景一棵子树：场景名 → 该场景的根节点。</summary>
+        private readonly Dictionary<string, Transform> sceneRoots = new Dictionary<string, Transform>();
+
+        /// <summary>每个场景自己的视图表（场景名 → 对象 id → 视图）。</summary>
+        private readonly Dictionary<string, Dictionary<string, SceneObjectView>> sceneViews =
+            new Dictionary<string, Dictionary<string, SceneObjectView>>();
+
+        /// <summary>每个场景自己的模型表（场景名 → 对象 id → 模型）；命令要在这里取数据。</summary>
+        private readonly Dictionary<string, Dictionary<string, MirrorObject>> sceneObjects =
+            new Dictionary<string, Dictionary<string, MirrorObject>>();
+
+        private Transform container;
         private ResourceImageLoader imageLoader;
+        private ResourceBundleCache bundleCache;
         private ClientSession session;
 
-        /// <summary>当前镜像的场景名（null = 还没镜像任何场景）。</summary>
+        /// <summary>等资源包期间挂起的那份场景（只留最新一份）。</summary>
+        private MirrorScene pendingScene;
+        private string pendingProject;
+        private Coroutine pendingTimer;
+
+        /// <summary>当前**显示中**的场景名（null = 还没镜像任何场景）。其余场景只是被隐藏。</summary>
         public string SceneName { get; private set; }
 
-        /// <summary>镜像里的对象数。</summary>
-        public int ObjectCount => objects.Count;
+        /// <summary>已经在镜像里的场景名（含被隐藏的），按首次出现顺序。</summary>
+        public IReadOnlyCollection<string> SceneNames => sceneRoots.Keys;
+
+        /// <summary>当前显示的那个场景里的对象数（所有场景合计见 <see cref="TotalObjectCount"/>）。</summary>
+        public int ObjectCount => ObjectsOf(SceneName).Count;
+
+        /// <summary>所有场景加起来的对象数。</summary>
+        public int TotalObjectCount
+        {
+            get
+            {
+                var total = 0;
+                foreach (var table in sceneObjects.Values)
+                {
+                    total += table.Count;
+                }
+
+                return total;
+            }
+        }
 
         /// <summary>接上会话（由 <see cref="BackendManager"/> 调用一次）。</summary>
-        public void Initialize(ClientSession clientSession, ResourceImageLoader loader)
+        public void Initialize(ClientSession clientSession, ResourceImageLoader loader, ResourceBundleCache cache = null)
         {
             session = clientSession;
             imageLoader = loader;
+            bundleCache = cache;
 
-            var root = new GameObject("镜像场景");
+            var root = new GameObject(ContainerName);
             root.transform.SetParent(transform, false);
-            mirrorRoot = root.transform;
+            container = root.transform;
 
             session.SceneReceived += Apply;
+
+            if (bundleCache != null)
+            {
+                bundleCache.Completed += OnResourcesCompleted;
+            }
         }
 
         private void OnDestroy()
@@ -50,51 +109,96 @@ namespace DiceTale
             {
                 session.SceneReceived -= Apply;
             }
+
+            if (bundleCache != null)
+            {
+                bundleCache.Completed -= OnResourcesCompleted;
+            }
         }
 
-        /// <summary>按 id 找到镜像里的对象（命令要用它取数据）；没有返回 null。</summary>
+        /// <summary>按 id 找到镜像里的对象（命令要用它取数据）；**所有场景**里找，没有返回 null。</summary>
         public MirrorObject Find(string objectId)
         {
-            return objectId != null && objects.TryGetValue(objectId, out var found) ? found : null;
+            if (string.IsNullOrEmpty(objectId))
+            {
+                return null;
+            }
+
+            foreach (var table in sceneObjects.Values)
+            {
+                if (table.TryGetValue(objectId, out var found))
+                {
+                    return found;
+                }
+            }
+
+            return null;
         }
 
-        /// <summary>应用一份场景（`null` = 编辑器没有打开的场景 → 清空镜像）。</summary>
+        /// <summary>应用一份场景（`null` = 编辑器没有打开的场景 → 把当前场景藏起来，但**不销毁**）。</summary>
         public void Apply(MirrorScene scene)
         {
             if (scene == null)
             {
-                ClearAll();
+                pendingScene = null;
+                HideAll();
                 SceneName = null;
-                Debug.Log("[镜像] 场景已清空（编辑器没有打开的场景）");
+                Debug.Log("[镜像] 编辑器没有打开场景：已隐藏全部场景（对象与状态都留着）");
                 return;
             }
 
-            if (SceneName != null && SceneName != scene.name)
+            // **顺序要求：先下资源、再载入场景。** 资源包还没处理完就把这份场景挂起，
+            // 等 ResourceBundleCache 报完成（成功或失败都算）再落地——
+            // 否则会先按远程逐张取图建一遍视图，等包下完再全部重来一次。
+            var project = ProjectOf(scene);
+            if (!string.IsNullOrEmpty(project) && bundleCache != null && !bundleCache.IsFinishedFor(project))
             {
-                // 换场景：整场景重来，避免两个场景的对象混在一起
-                ClearAll();
+                if (pendingScene == null)
+                {
+                    Debug.Log($"[镜像] 场景「{scene.name}」先挂起：等「{project}」的资源包处理完再载入");
+                }
+                else
+                {
+                    Debug.Log($"[镜像] 用更新的场景「{scene.name}」替换挂起中的那一份");
+                }
+
+                pendingScene = scene;
+                pendingProject = project;
+                if (pendingTimer == null)
+                {
+                    pendingTimer = StartCoroutine(ApplyPendingAfterTimeout());
+                }
+
+                return;
             }
 
-            SceneName = scene.name;
+            ApplyNow(scene);
+        }
+
+        private void ApplyNow(MirrorScene scene)
+        {
+            var viewTable = ViewsOf(scene.name);
+            var objectTable = ObjectsOf(scene.name);
+            var sceneRoot = RootOf(scene.name);
 
             var present = new HashSet<string>();
             foreach (var obj in scene.objects)
             {
                 present.Add(obj.id);
-                objects[obj.id] = obj;
+                objectTable[obj.id] = obj;
 
-                if (!views.TryGetValue(obj.id, out var view))
+                if (!viewTable.TryGetValue(obj.id, out var view) || view == null)
                 {
-                    view = SceneObjectView.Create(obj, mirrorRoot, imageLoader);
-                    views[obj.id] = view;
+                    view = SceneObjectView.Create(obj, sceneRoot, imageLoader);
+                    viewTable[obj.id] = view;
                 }
 
                 view.Apply(obj);
             }
 
-            // 名单里没有的 → 前端也不该有（删除 / 复制后改名都走这里）
+            // 名单里没有的 → 这个场景里不该有（删除 / 复制后改名都走这里）
             var removed = new List<string>();
-            foreach (var id in views.Keys)
+            foreach (var id in viewTable.Keys)
             {
                 if (!present.Contains(id))
                 {
@@ -104,33 +208,215 @@ namespace DiceTale
 
             foreach (var id in removed)
             {
-                var view = views[id];
+                var view = viewTable[id];
                 if (view != null)
                 {
                     Destroy(view.gameObject);
                 }
 
-                views.Remove(id);
-                objects.Remove(id);
+                viewTable.Remove(id);
+                objectTable.Remove(id);
             }
+
+            // **切换 = 只切可见性**：显示这份场景，其他场景藏起来（不销毁）
+            var switched = SceneName != null && SceneName != scene.name;
+            SceneName = scene.name;
+            ShowOnly(scene.name);
 
             Debug.Log(
-                $"[镜像] 场景「{scene.name}」：{objects.Count} 个对象" +
-                (removed.Count > 0 ? $"，移除 {removed.Count} 个" : ""));
+                $"[镜像] 场景「{scene.name}」：{objectTable.Count} 个对象" +
+                (removed.Count > 0 ? $"，移除 {removed.Count} 个" : "") +
+                (switched || sceneRoots.Count > 1 ? $"（镜像里共 {sceneRoots.Count} 个场景，隐藏的不销毁）" : ""));
         }
 
-        private void ClearAll()
+        /// <summary>资源包处理完了（成功或失败）→ 把挂起的场景放行。</summary>
+        private void OnResourcesCompleted(ResourceBundleCache cache)
         {
-            foreach (var view in views.Values)
+            if (pendingScene == null)
             {
-                if (view != null)
+                return;
+            }
+
+            StopPendingTimer();
+            var scene = pendingScene;
+            pendingScene = null;
+            pendingProject = null;
+            ApplyNow(scene);
+        }
+
+        /// <summary>
+        /// 兜底：等资源包等太久就别再等了。
+        ///
+        /// 资源包是**优化**，不是载入场景的前提——服务端没实现、素材超大、网络卡住时都不该让画面空着。
+        /// 到点照常载入（图片回落逐文件远程取），并说明原因。
+        /// </summary>
+        private IEnumerator ApplyPendingAfterTimeout()
+        {
+            yield return new WaitForSeconds(SceneWaitTimeoutSeconds);
+            pendingTimer = null;
+
+            if (pendingScene == null)
+            {
+                yield break;
+            }
+
+            var scene = pendingScene;
+            var project = pendingProject;
+            pendingScene = null;
+            pendingProject = null;
+
+            Debug.LogWarning(
+                $"[镜像] 等「{project}」的资源包超过 {SceneWaitTimeoutSeconds} 秒，先载入场景「{scene.name}」；" +
+                "图片回落逐文件远程取（资源包就绪后新图会走本地）");
+            ApplyNow(scene);
+        }
+
+        /// <summary>
+        /// 从一份场景里推出它属于哪个项目。
+        ///
+        /// 走的还是逻辑 ID 本身（`project:测试项目/Assets/…`），与后端 `projectNameFromId` 同口径。
+        /// 服务端会在 `resources_prepare` 里提前告知项目名，所以这条路主要用于兜底
+        /// （服务端还不知道项目、或老服务端不发那条消息时）。取第一个带 `project:` 前缀的资源即可
+        /// ——同一场景必属同一项目，顺序无关。
+        /// </summary>
+        private static string ProjectOf(MirrorScene scene)
+        {
+            foreach (var obj in scene.objects)
+            {
+                var project = LocalResourceStore.ProjectNameOf(ResourceIdOf(obj));
+                if (!string.IsNullOrEmpty(project))
                 {
-                    Destroy(view.gameObject);
+                    return project;
                 }
             }
 
-            views.Clear();
-            objects.Clear();
+            return null;
+        }
+
+        /// <summary>取一个对象身上第一个资源逻辑 ID（贴图 → 地图贴图 → 声音），没有则返回 null。</summary>
+        private static string ResourceIdOf(MirrorObject obj)
+        {
+            var display = obj.DisplayImage;
+            if (display != null && !string.IsNullOrEmpty(display.id))
+            {
+                return display.id;
+            }
+
+            foreach (var clip in obj.sound != null ? obj.sound.clips : null)
+            {
+                if (!string.IsNullOrEmpty(clip))
+                {
+                    return clip;
+                }
+            }
+
+            return null;
+        }
+
+        // ---------------------------------------------------------------- 场景子树的建立与显隐
+
+        /// <summary>取（必要时建）某个场景的根节点——**以场景名命名**，直接看出这是哪个场景。</summary>
+        private Transform RootOf(string sceneName)
+        {
+            if (sceneRoots.TryGetValue(sceneName, out var existing) && existing != null)
+            {
+                return existing;
+            }
+
+            var go = new GameObject(sceneName);
+            go.transform.SetParent(container, false);
+            sceneRoots[sceneName] = go.transform;
+            return go.transform;
+        }
+
+        private Dictionary<string, SceneObjectView> ViewsOf(string sceneName)
+        {
+            if (!sceneViews.TryGetValue(sceneName, out var table))
+            {
+                table = new Dictionary<string, SceneObjectView>();
+                sceneViews[sceneName] = table;
+            }
+
+            return table;
+        }
+
+        private Dictionary<string, MirrorObject> ObjectsOf(string sceneName)
+        {
+            if (sceneName == null)
+            {
+                return new Dictionary<string, MirrorObject>();
+            }
+
+            if (!sceneObjects.TryGetValue(sceneName, out var table))
+            {
+                table = new Dictionary<string, MirrorObject>();
+                sceneObjects[sceneName] = table;
+            }
+
+            return table;
+        }
+
+        private void StopPendingTimer()
+        {
+            if (pendingTimer != null)
+            {
+                StopCoroutine(pendingTimer);
+                pendingTimer = null;
+            }
+        }
+
+        /// <summary>只显示指定场景，其余全部隐藏（**不销毁**）。</summary>
+        private void ShowOnly(string sceneName)
+        {
+            foreach (var pair in sceneRoots)
+            {
+                if (pair.Value != null)
+                {
+                    pair.Value.gameObject.SetActive(pair.Key == sceneName);
+                }
+            }
+        }
+
+        /// <summary>把全部场景藏起来（编辑器没有打开场景时）。</summary>
+        private void HideAll()
+        {
+            foreach (var root in sceneRoots.Values)
+            {
+                if (root != null)
+                {
+                    root.gameObject.SetActive(false);
+                }
+            }
+        }
+
+        /// <summary>
+        /// 彻底丢掉一个场景（节点、视图、模型全删）。
+        ///
+        /// **默认不做这件事**——切场景只隐藏。这个方法留给「确实不会再回去」的场合
+        /// （例如玩家长时间离开、需要回收内存时由玩法层显式调用）。
+        /// </summary>
+        public void DestroyScene(string sceneName)
+        {
+            if (string.IsNullOrEmpty(sceneName))
+            {
+                return;
+            }
+
+            if (sceneRoots.TryGetValue(sceneName, out var root) && root != null)
+            {
+                Destroy(root.gameObject);
+            }
+
+            sceneRoots.Remove(sceneName);
+            sceneViews.Remove(sceneName);
+            sceneObjects.Remove(sceneName);
+
+            if (SceneName == sceneName)
+            {
+                SceneName = null;
+            }
+
+            Debug.Log($"[镜像] 已丢弃场景「{sceneName}」（显式调用；平时切场景只隐藏）");
         }
     }
 }
