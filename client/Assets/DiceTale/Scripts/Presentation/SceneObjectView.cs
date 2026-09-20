@@ -99,7 +99,12 @@ namespace DiceTale
             // y（离地抬升）是**世界单位**，不参与缩放。
             var scale = GlobalScale;
             transform.localPosition = new Vector3(obj.x * scale, 0f, obj.y * scale);
-            transform.localRotation = Quaternion.Euler(0f, -obj.rotation, 0f);
+
+            // 角度：文档里存的是**弧度**（编辑器的 `SceneObject.rotation` 与参考实现同一套），
+            // 而 `Quaternion.Euler` 收的是**度**——必须 `Rad2Deg` 换算，
+            // 否则 30° 会被当成 0.52°（弧度值直接当度用）。
+            // 符号与 Unity 一致（文档正角 = Unity 里正的 Y 轴旋转），所以不取反。
+            transform.localRotation = Quaternion.Euler(0f, obj.rotation * Mathf.Rad2Deg, 0f);
 
             var image = obj.DisplayImage;
             currentWidth = (image != null && image.width > 0 ? image.width : FallbackSize) * obj.scale;

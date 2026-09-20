@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { objectImage, type SceneObjectDoc } from "@dts/document";
+import { normalizeDegrees, objectImage, type SceneObjectDoc } from "@dts/document";
 import { cellPixelSize } from "@dts/grid";
 import type { ResourceTreeNode } from "../../services/project-api";
 import { findResourceNode, useEditorStore } from "../../state/editor-store";
@@ -65,6 +65,7 @@ export function InspectorPanel(): React.JSX.Element {
               <SortingOrderField object={selected} />
               <PositionFields object={selected} />
               <ScaleField object={selected} />
+              <RotationField object={selected} />
             </FieldGroup>
 
             {/*
@@ -393,6 +394,69 @@ function ScaleField({ object }: { readonly object: SceneObjectDoc }): React.JSX.
  */
 function formatScale(value: number): string {
   return String(Math.round(value * 1000) / 1000);
+}
+
+/**
+ * 对象的**角度**（绕竖轴旋转，单位**度**）。
+ *
+ * 与缩放同一套提交方式（失焦 / 回车生效、连续输入合并成一条撤销记录、Esc 还原）。
+ * 文档里存的是**弧度**（`SceneObjectDoc.rotation`），这里只做度 ↔ 弧度的换算，
+ * 因为 Unity 的 Inspector 也是度数——两边对着看才不会算错。
+ *
+ * **符号与 Unity 一致**：这里填 `30`，Unity 里就是 `Quaternion.Euler(0, 30, 0)`。
+ * 越界（超过半圈）先归一化到 `(-180, 180]`，框里回填归一化后的值。
+ */
+function RotationField({ object }: { readonly object: SceneObjectDoc }): React.JSX.Element {
+  const setObjectRotation = useEditorStore((state) => state.setObjectRotation);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [draft, setDraft] = useState(formatDegrees(object.rotation));
+
+  useEffect(() => {
+    // 正在输入的框不被 store 回灌（否则提交后触发的同步会把刚敲的值冲掉）
+    if (document.activeElement !== inputRef.current) {
+      setDraft(formatDegrees(object.rotation));
+    }
+  }, [object.id, object.rotation]);
+
+  const commit = (): void => {
+    const parsed = Number.parseFloat(draft);
+    // 非法值（留空 / 敲了字母）退回当前值，不要把 NaN 写进文档
+    const degrees = Number.isFinite(parsed) ? parsed : (object.rotation * 180) / Math.PI;
+    setObjectRotation(object.id, (degrees * Math.PI) / 180);
+    // 提交后回到**文档里实际采用的值**（会被归一化），否则框里留着用户敲的原始文本
+    setDraft(String(normalizeDegrees(degrees)));
+  };
+
+  return (
+    <FieldRow label="角度">
+      <input
+        ref={inputRef}
+        value={draft}
+        data-testid="inspector-object-rotation"
+        aria-label="角度"
+        inputMode="decimal"
+        type="number"
+        step="15"
+        title="绕竖轴旋转，单位度，与 Unity 的 Transform 一致（正值 = Unity 里正的 Y 轴旋转）；超过半圈会归一化到 -180 ~ 180"
+        className="min-w-0 flex-1 rounded border border-[var(--color-editor-border)] bg-black/30 px-1 py-0.5 font-mono text-[11px] outline-none"
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            commit();
+            event.currentTarget.blur();
+          } else if (event.key === "Escape") {
+            setDraft(formatDegrees(object.rotation));
+          }
+        }}
+      />
+    </FieldRow>
+  );
+}
+
+/** 弧度 → 度数文本（去掉浮点噪声）。 */
+function formatDegrees(rotationRadians: number): string {
+  return String(Math.round(((rotationRadians * 180) / Math.PI) * 100) / 100);
 }
 
 /**

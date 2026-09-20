@@ -38,6 +38,14 @@ export interface SceneLayer {
   readonly image?: CanvasImageSource | null;
   /** 这张图片占据的世界矩形（贴图铺满它，网格锚在它上面）。 */
   readonly rect: WorldRect;
+  /**
+   * 绕**矩形中心**的旋转（弧度，与文档的 `SceneObject.rotation` 同一套）。
+   *
+   * 贴图、格子、网格线、选中框**一起转**——它们本来就画在同一块矩形上，
+   * 而拾取走 `hitTestRect(point, rect, rotation)`，所以「看到的框」与「点得到的范围」
+   * 仍然完全一致。省略 = 不转。
+   */
+  readonly rotation?: number;
   readonly grid?: GridSize;
   /** 行主序 `y*width+x`，y=0 为图片最下面一行（= 世界 y 最小的一行）。 */
   readonly cells?: Uint8Array;
@@ -257,10 +265,11 @@ export function createCanvasSceneRenderer(canvas: HTMLCanvasElement): SceneRende
         drawLayer(context, layer, viewport, visible, view, input.animationTimeMs ?? 0);
       }
 
-      // 选中框画在**所有图层之后**：被别的图片盖住的对象也要看得见自己的框
+      // 选中框画在**所有图层之后**：被别的图片盖住的对象也要看得见自己的框。
+      // 框同样要绕矩形中心旋转——否则「转过的对象」配上「正着的框」，看着就错位了
       for (const layer of input.layers ?? []) {
         if (layer.selected === true) {
-          drawSelectionFrame(context, layer.rect, viewport, layer.locked === true);
+          drawRotatedSelectionFrame(context, layer, viewport);
         }
       }
 
@@ -354,6 +363,16 @@ function drawLayer(
     return;
   }
 
+  // 旋转：绕矩形中心转，**在裁剪之前**做——裁剪框跟着一起转，
+  // 于是贴图 / 格子 / 网格线 / 选中框全在这块转过的矩形里，和拾取用的那块完全一致
+  const rotation = layer.rotation ?? 0;
+  if (rotation !== 0) {
+    context.save();
+    context.translate((box.left + box.right) / 2, (box.top + box.bottom) / 2);
+    context.rotate(rotation);
+    context.translate(-(box.left + box.right) / 2, -(box.top + box.bottom) / 2);
+  }
+
   // 内置图标（声音对象）**不裁剪**：正在播时那几圈声波要扩到矩形外面去，裁剪会把它切掉；
   // 这块矩形里本来也没有别的东西（图标与贴图互斥），所以挪到裁剪之外画不影响别人
   const badgeOnly = layer.image == null && layer.icon === "audio";
@@ -384,6 +403,11 @@ function drawLayer(
     context.restore();
   } else {
     drawAudioBadge(context, box, { playing: layer.playing === true, timeMs: animationTimeMs });
+  }
+
+  // 收掉旋转那层 save（与上面 `rotation !== 0` 的 save 配对）
+  if (rotation !== 0) {
+    context.restore();
   }
 }
 
@@ -713,6 +737,26 @@ const SELECTION_DASH: readonly [number, number] = [4, 3];
  * 手柄用实心方块 + 细描边（Unity 那套），在任何贴图上都看得清。
  * `locked` 为真时整框换成灰色：锁住的对象拖不动，画布上得看得出「为什么」。
  */
+function drawRotatedSelectionFrame(
+  context: CanvasRenderingContext2D,
+  layer: SceneLayer,
+  viewport: Viewport,
+): void {
+  const rotation = layer.rotation ?? 0;
+  if (rotation === 0) {
+    drawSelectionFrame(context, layer.rect, viewport, layer.locked === true);
+    return;
+  }
+
+  const box = screenBoxOf(layer.rect, viewport);
+  context.save();
+  context.translate((box.left + box.right) / 2, (box.top + box.bottom) / 2);
+  context.rotate(rotation);
+  context.translate(-(box.left + box.right) / 2, -(box.top + box.bottom) / 2);
+  drawSelectionFrame(context, layer.rect, viewport, layer.locked === true);
+  context.restore();
+}
+
 function drawSelectionFrame(
   context: CanvasRenderingContext2D,
   rect: WorldRect,

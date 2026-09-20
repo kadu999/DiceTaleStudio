@@ -548,6 +548,9 @@ export function ScenePanel(): React.JSX.Element {
           {
             image,
             rect,
+            // 角度（弧度）：绘制绕矩形中心旋转，与拾取（`hitTestRect(point, rect, rotation)`）
+            // 用同一个值，所以「看到的」与「点得到的」始终是同一块
+            rotation: object.rotation,
             grid,
             // 声音对象画**内置的音频徽标**（固定图标，不能换）：有它在，场景里才看得见、
             // 点得到、拖得动；正在播时徽标会动（一圈圈声波 + 喇叭呼吸）

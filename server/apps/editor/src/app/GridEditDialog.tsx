@@ -205,6 +205,9 @@ export function GridEditDialog({
     const layer: SceneLayer = {
       image,
       rect,
+      // 窗口**不转**：这里的坐标是「第几列第几行」，转起来落笔就得跟着换算，
+      // 而这扇窗只服务「涂格子」这一件事。画布上的地图按它的角度正常显示。
+      rotation: 0,
       grid,
       cells: decodeCellsCached(map.cells.runs, grid.width * grid.height),
       // 关掉的那几类不画（只影响显示：数据与画笔都不受影响）

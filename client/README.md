@@ -212,6 +212,12 @@ Assets/
   （`GridMap.GridOrigin` 用 `transform.position`、`WorldToGrid` 取 `transform.position.y`），
   它们目前还没接进镜像（`map.cells` 是解析了但没人消费的死数据），
   等要用「缩放后的场景」做格子交互时，这几处得改成按场景根节点换算。
+- **角度与编辑器同一套口径（2026-09-20）**：文档里的 `SceneObject.rotation` 存**弧度**，
+  Unity 侧必须 `Rad2Deg` 再喂给 `Quaternion.Euler`（**不能直接把弧度当度用**，否则 30° 变成 0.52°），
+  且**符号不取反**——编辑器面板里填 `30`，Unity 里就是正的 30° Y 轴旋转。
+  实测：文档 30° / -60° → Unity `localRotation.eulerAngles.y` = 30.00° / -60.00°。
+  编辑器画布也按同一个值旋转绘制（贴图 / 格子 / 网格线 / 选中框一起转），
+  与拾取 `hitTestRect(point, rect, rotation)` 共用同一个角度，所以「看到的」与「点得到的」始终一致。
 - **贴图真正画上去了（2026-09-20 修）**：`SceneObjectView` 原来只在收到场景推送时才重画面片，
   而取图是**异步**的——首帧必然拿占位色，且命中缓存的那次推送根本不回调这个视图，于是出现
   「纹理已经在 `ResourceImageLoader` 缓存里、`MeshRenderer` 上却还是占位色」（地图对象最明显）。

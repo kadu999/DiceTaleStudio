@@ -26,6 +26,7 @@ import {
   setObjectPosition as setSceneObjectPosition,
   setObjectLocked as setSceneObjectLocked,
   setObjectScale as setSceneObjectScale,
+  setObjectRotation as setSceneObjectRotation,
   setObjectSortingOrder as setSceneObjectSortingOrder,
   setSoundClips as setSceneSoundClips,
   setSoundLayer as setSceneSoundLayer,
@@ -364,6 +365,11 @@ export interface EditorStoreState {
   setObjectSortingOrder(id: string, sortingOrder: number): boolean;
   /** 改对象的**缩放**（1 = 原始尺寸；夹在 0.01 ~ 100）；连续输入合并成一条撤销记录。 */
   setObjectScale(id: string, scale: number): boolean;
+  /**
+   * 改对象的**角度**（绕竖轴，单位**弧度**；与 Unity 的 Y 轴旋转同一套符号）。
+   * 面板按度编辑，这里收弧度；归一化到 `(-180°, 180°]`；连续输入合并成一条撤销记录。
+   */
+  setObjectRotation(id: string, rotationRadians: number): boolean;
   /** 删除对象（不传 ids 则删当前选中）。 */
   deleteObjects(ids?: readonly string[]): boolean;
   /** 复制对象（不传 ids 则复制当前选中）：副本加「副本」后缀并偏移一点位置。 */
@@ -2044,6 +2050,25 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
         },
         // 连续输入合并成一条撤销记录（与显示顺序同一套做法）
         { coalesceKey: `scale:${id}` },
+      );
+    },
+
+    setObjectRotation(id, rotationRadians) {
+      const sceneName = get().activeSceneName;
+      if (sceneName === null) {
+        return false;
+      }
+
+      return get().applyScenes(
+        "修改角度",
+        (draft) => {
+          const scene = draft.find((item) => item.name === sceneName);
+          if (scene !== undefined) {
+            setSceneObjectRotation(scene, id, rotationRadians);
+          }
+        },
+        // 连续输入合并成一条撤销记录
+        { coalesceKey: `rotation:${id}` },
       );
     },
 

@@ -28,6 +28,7 @@ import {
   setObjectImage,
   setObjectLocked,
   setObjectPosition,
+  setObjectRotation,
   setObjectScale,
   setObjectSortingOrder,
   updateAction,
@@ -540,6 +541,67 @@ describe("对象命令（都在场景上操作）", () => {
     expect(scaled.objects[0]?.scale).toBe(2.5);
     // 缩放改的是「占多大」，矩形中心（位置）不动
     expect(scaled.objects[0]?.position).toEqual(scene.objects[0]?.position);
+  });
+
+  it("角度：新建是 0；存弧度，可以改，且不动位置与缩放", () => {
+    const scene = withObject(makeScene(), "door");
+    expect(scene.objects[0]?.rotation).toBe(0);
+
+    const rotated = mutate(scene, (draft) => {
+      // 30° = π/6
+      expect(setObjectRotation(draft, "door", Math.PI / 6)).toBe(true);
+    });
+
+    expect(rotated.objects[0]?.rotation).toBeCloseTo(Math.PI / 6, 10);
+    expect(rotated.objects[0]?.position).toEqual(scene.objects[0]?.position);
+    expect(rotated.objects[0]?.scale).toBe(scene.objects[0]?.scale);
+  });
+
+  it("角度归一化到 (-180°, 180°]：转 370° 与转 10° 是同一个姿态", () => {
+    const scene = withObject(makeScene(), "door");
+
+    // 370° 应存成 10°
+    const wrapped = mutate(scene, (draft) => {
+      setObjectRotation(draft, "door", (370 * Math.PI) / 180);
+    });
+    expect((wrapped.objects[0]!.rotation * 180) / Math.PI).toBeCloseTo(10, 6);
+
+    // -180° 应存成 180°（正半圈，不变成负的）
+    const half = mutate(scene, (draft) => {
+      setObjectRotation(draft, "door", -Math.PI);
+    });
+    expect((half.objects[0]!.rotation * 180) / Math.PI).toBeCloseTo(180, 6);
+
+    // 负角度保留负号（符号与 Unity 一致，不能被吃掉）
+    const negative = mutate(scene, (draft) => {
+      setObjectRotation(draft, "door", (-45 * Math.PI) / 180);
+    });
+    expect((negative.objects[0]!.rotation * 180) / Math.PI).toBeCloseTo(-45, 6);
+  });
+
+  it("角度：NaN / Infinity 直接拒绝，不写进文档", () => {
+    const scene = withObject(makeScene(), "door");
+
+    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      let changed = true;
+      const next = mutate(scene, (draft) => {
+        changed = setObjectRotation(draft, "door", bad);
+      });
+
+      expect(changed).toBe(false);
+      expect(next.objects[0]?.rotation).toBe(0);
+    }
+  });
+
+  it("角度：同值不产生改动（撤销栈里不留空记录）", () => {
+    const scene = withObject(makeScene(), "door");
+    let changed = true;
+    const next = mutate(scene, (draft) => {
+      changed = setObjectRotation(draft, "door", 0);
+    });
+
+    expect(changed).toBe(false);
+    expect(next.objects[0]?.rotation).toBe(0);
   });
 
   it("缩放夹在 0.01 ~ 100：0 / 负数 / 超大值都不会原样写进文档", () => {

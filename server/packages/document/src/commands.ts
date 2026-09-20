@@ -78,6 +78,16 @@ function clampScale(scale: number): number | undefined {
   return Math.min(MAX_OBJECT_SCALE, Math.max(MIN_OBJECT_SCALE, scale));
 }
 
+/**
+ * 角度的归一化区间：`(-180, 180]`（**度**）。
+ *
+ * 文档里存的是**弧度**（`SceneObjectDoc.rotation`），面板上按**度**编辑——
+ * Unity 的 Inspector 也是度数，策划对着两边看才不会算错。
+ * 转 370° 和转 10° 是同一个姿态，归一化后数字才不会失控。
+ */
+export const MIN_OBJECT_ROTATION_DEGREES = -180;
+export const MAX_OBJECT_ROTATION_DEGREES = 180;
+
 /** 生成稳定前缀 + 递增 + 随机后缀的 id（避免同毫秒内碰撞）。 */
 export function createId(prefix: string): string {
   idCounter += 1;
@@ -314,6 +324,51 @@ export function setObjectScale(
 
   object.scale = next;
   return true;
+}
+
+/**
+ * 对象的**绕竖轴旋转**（文档里存**弧度**，与 Unity 的 `Transform.rotation.y` 同一套）。
+ *
+ * 与缩放一样「夹而不拒」：输入框敲出 NaN / Infinity 直接拒绝（不写文档），
+ * 其余先归一化到 `(-180°, 180°]` 再转成弧度落盘——转 370° 与转 10° 是同一个姿态，
+ * 存 370° 只会让数字失控。
+ *
+ * 符号约定：**文档里的正角度 = Unity 里正的 Y 轴旋转**，
+ * 所以 Unity 侧直接用 `Quaternion.Euler(0, 角度, 0)`（不要再取反）。
+ */
+export function setObjectRotation(
+  scene: Draft<SceneDoc>,
+  objectId: string,
+  rotationRadians: number,
+): boolean {
+  const object = findObject(scene, objectId);
+  if (object === undefined || !Number.isFinite(rotationRadians)) {
+    return false;
+  }
+
+  const degrees = (rotationRadians * 180) / Math.PI;
+  const normalized = normalizeDegrees(degrees);
+  const next = (normalized * Math.PI) / 180;
+  if (object.rotation === next) {
+    return false;
+  }
+
+  object.rotation = next;
+  return true;
+}
+
+/** 把度数归一化到 `(-180, 180]`；`180` 保留为 `180`（不变成 `-180`）。 */
+export function normalizeDegrees(degrees: number): number {
+  const wrapped = degrees % 360;
+  if (wrapped > 180) {
+    return wrapped - 360;
+  }
+
+  if (wrapped <= -180) {
+    return wrapped + 360;
+  }
+
+  return wrapped;
 }
 
 /**
