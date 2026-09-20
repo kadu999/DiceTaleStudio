@@ -53,7 +53,7 @@ Assets/
 │  │                    GridMap.cs               地图格子数据 + 网格渲染（+ .bytes 读取）
 │  │                    FogOfWar.cs              战争雾（按 map.fog.regions/cells 建遮罩、GPU 羽化、按后台轨迹揭示）
 │  │                    BirdWanderer.cs          装饰物区域随机游荡
-│  │                    GroundTextureRenderer.cs 贴地面的纹理面片（**只认运行时纹理**）
+│  │                    TextureRenderer.cs 贴地面的纹理面片（**只认运行时纹理**）
 │  │                    PhotoClickGlow.cs        拍照指针点地时的点光
 │  │                    AudioPlayerManager.cs    分层音频（4 层，同层顶替）+ 字幕
 │  │                    SmartVideoPlayer.cs      视频播放 / 播完回调 / 淡入淡出
@@ -64,9 +64,9 @@ Assets/
 │  │                    SimulatedTouchDebugUI.cs 触点调试圆点
 │  ├─ Editor/           （2）         编辑器工具（DiceTale.Editor.asmdef）
 │  │                    SetupMaps.cs                  一次性脚本：把 Demo 场景重建成「只有 Game 宿主」
-│  │                    GroundTextureRendererEditor.cs 只读 Inspector：面片实际生效的 sortingOrder 与纹理长宽
+│  │                    TextureRendererEditor.cs 只读 Inspector：面片实际生效的 sortingOrder 与纹理长宽
 │  ├─ Resources/                      ← **运行时按名加载的资产必须留在这里**
-│  │  ├─ Shaders/                     DiceTale/*.shader（GroundSprite / VideoFade / FogBlur 在用）
+│  │  ├─ Shaders/                     DiceTale/*.shader（TextureRenderer / VideoFade / FogBlur 在用）
 │  │  └─ RealMap.prefab
 │  ├─ Materials/                      材质（原 `Res/Materials`）
 │  └─ Scenes/Demo.unity               唯一的场景
@@ -226,7 +226,7 @@ Assets/
   揭示状态**只在前端**（不写文档）：切场景 / 重连（视图不销毁）都保留，Unity 重启回到未探索；
   地图数据一变（换绑定 / 涂格子）就「重填初始态 + 按顺序重放操作」，已揭示的部分不丢。
   Unity 里选中地图或 `FogOverlay`，Inspector 上就能看到这一层**实际生效的 `sortingOrder`
-  与长宽**（只读，见 `Editor/GroundTextureRendererEditor.cs`）——层叠关系不对时先看那里。
+  与长宽**（只读，见 `Editor/TextureRendererEditor.cs`）——层叠关系不对时先看那里。
   ⚠️ **`GridMap` / `DynamicObstacle` 仍按世界坐标算格子**，而且运行时不建 `GridMap`
   （它只服务 `.bytes` 那套旧资产，`map.cells` 现在由战争雾那层消费）；
   以后要用「缩放后的场景」做格子交互时，这两处得改成按场景根节点换算。
@@ -234,7 +234,7 @@ Assets/
   **可选**的 `scaleX` / `scaleY`（编辑器里拖缩放手柄的**边**、或关掉属性面板的等比锁后改单轴时会写）。
   客户端目前**按 `scale` 等比渲染**——`SceneObjectView` 把它们忽略掉是**正确**的（协议里它们是可选字段，
   老前端本来就不认）。要看到非等比，是独立的一次改动：读这两个字段后传给
-  `GroundTextureRenderer.Apply(w, h)`（渲染器本来就吃两个尺寸参数，尺寸仍烘进网格顶点）。
+  `TextureRenderer.Apply(w, h)`（渲染器本来就吃两个尺寸参数，尺寸仍烘进网格顶点）。
   规格与折叠规则见 `server/README.md` 的 v11 迁移一节。
 - **角度与编辑器同一套口径（2026-09-20）**：文档里的 `SceneObject.rotation` 存**弧度**，
   Unity 侧必须 `Rad2Deg` 再喂给 `Quaternion.Euler`（**不能直接把弧度当度用**，否则 30° 变成 0.52°），
@@ -246,11 +246,11 @@ Assets/
   而取图是**异步**的——首帧必然拿占位色，且命中缓存的那次推送根本不回调这个视图，于是出现
   「纹理已经在 `ResourceImageLoader` 缓存里、`MeshRenderer` 上却还是占位色」（地图对象最明显）。
   现在取图回调里会自己调一次 `ApplyVisual()` 重画。
-- **`GroundSpriteRenderer` → `GroundTextureRenderer`（2026-09-20）**：前者是给 Inspector 用的
+- **`GroundSpriteRenderer` → `TextureRenderer`（2026-09-20，2026-09-21 由 `GroundTextureRenderer` 缩短成现名）**：前者是给 Inspector 用的
   （`Sprite` 字段 + `OnValidate` 预览 + 序列化资源管理），而镜像的图来自后台推下来的资源 ID、
   运行时才拿到，根本没有「拖图」这回事。新类**只认 `Texture2D`**，没有 `Sprite` 字段、
   没有序列化字段、没有编辑器预览；连同它的菜单入口 `GroundSpriteRendererMenu` 一起删掉
-  （Shader `DiceTale/GroundSprite` 保留，新类继续用）。
+  （Shader 也一起改名：`DiceTale/TextureRenderer`，与类同名）。
 - **尺寸烘进网格顶点，不再靠 Transform 缩放（2026-09-20）**：`Apply(texture, width, height, tint, order, lift)`
   收的是世界单位下的宽高，顶点摆在 `±宽/2` / `±高/2`，`transform.localScale` 由渲染器校正为
   `(1,1,1)`（`SceneObjectView` 不再设 `localScale`）。这样「对象多大」只有一处来源——网格自己，

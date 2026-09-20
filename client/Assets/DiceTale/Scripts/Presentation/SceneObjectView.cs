@@ -11,14 +11,14 @@ namespace DiceTale
     ///   所以根节点可以自由平移 / 旋转 / **缩放**，整棵场景一起变，不用逐个改世界坐标；
     /// - 大小 = 声明尺寸（`image` / `map.image`）× `scale` × **<see cref="GlobalScale"/>**
     ///   ——后者是「文档像素 → 世界单位」的全局换算，位置也乘它；
-    ///   尺寸由 <see cref="GroundTextureRenderer"/> 烘进网格顶点，本组件**不碰 `localScale`**
+    ///   尺寸由 <see cref="TextureRenderer"/> 烘进网格顶点，本组件**不碰 `localScale`**
     ///   （保持 1，这样根节点的缩放才是唯一影响整体大小的因素）；
     /// - `active` = 是否显示（编辑器那个勾选框一改，这里就出现 / 消失）；
     /// - `sortingOrder` = 遮挡顺序（大的盖在上面）；
     /// - 有图就去取图贴上（本地资源包优先）；没图（或还没取回来）先用按 `kind` 区分的底色占位，
     ///   **保证每个对象都看得见**。
     ///
-    /// 面片本身由 <see cref="GroundTextureRenderer"/> 画——它只认运行时纹理，
+    /// 面片本身由 <see cref="TextureRenderer"/> 画——它只认运行时纹理，
     /// 因为镜像的图来自后台推下来的资源 ID，不是 Inspector 里拖的 Sprite。
     ///
     /// **动作对象不建视图**：`PlaySound` / `Teleport` 只是「一条给前端的指令」（要播哪条声音、
@@ -72,7 +72,7 @@ namespace DiceTale
         /// </summary>
         private const float FogLift = 0.002f;
 
-        private GroundTextureRenderer quad;
+        private TextureRenderer quad;
         private ResourceImageLoader imageLoader;
 
         /// <summary>这张对象的地图数据（仅 `Map`；`map.fog.regions` 非空时才会建雾层）。</summary>
@@ -118,7 +118,7 @@ namespace DiceTale
             go.transform.SetParent(parent, false);
             var view = go.AddComponent<SceneObjectView>();
             view.imageLoader = loader;
-            view.quad = go.AddComponent<GroundTextureRenderer>();
+            view.quad = go.AddComponent<TextureRenderer>();
             return view;
         }
 

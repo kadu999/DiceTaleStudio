@@ -8,7 +8,7 @@ namespace DiceTale
     ///
     /// 这一层与地图**同级**（`SceneObjectView` 建的 `FogOverlay`，和地图一起挂在场景根节点下，
     /// 不是地图的子物体）：位置与角度由那边按**地图同一份数值**摆一遍，尺寸交给
-    /// <see cref="GroundTextureRenderer"/> 烘进网格（与地图面片同一套口径）；
+    /// <see cref="TextureRenderer"/> 烘进网格（与地图面片同一套口径）；
     /// 显示顺序的调用方会给**最前面**——未探索的地方连地图上的对象一起盖住。
     ///
     /// **雾是哪几格**：`map.fog.regions` 指定了哪些「区域位」算雾区（区域位就是 `map.cells` 里那些位，
@@ -40,7 +40,7 @@ namespace DiceTale
     /// 一份新场景就丢。切场景 / 重连（视图不销毁）都保留，Unity 重启才回到未探索。
     /// </summary>
     [DisallowMultipleComponent]
-    [RequireComponent(typeof(GroundTextureRenderer))]
+    [RequireComponent(typeof(TextureRenderer))]
     public class FogOfWar : MonoBehaviour
     {
         /// <summary>雾色（默认黑不透明：未探索 = 完全看不见底图）。编辑器预览按区域配色，前端是统一的雾色。</summary>
@@ -117,13 +117,13 @@ namespace DiceTale
         private int blurWidth;
         private int blurHeight;
 
-        private GroundTextureRenderer overlayRenderer;
+        private TextureRenderer overlayRenderer;
 
         private static readonly Color32 Transparent = new Color32(0, 0, 0, 0);
 
         private void Awake()
         {
-            overlayRenderer = GetComponent<GroundTextureRenderer>();
+            overlayRenderer = GetComponent<TextureRenderer>();
         }
 
         private void OnDestroy()
@@ -161,7 +161,7 @@ namespace DiceTale
 
             if (overlayRenderer == null)
             {
-                overlayRenderer = GetComponent<GroundTextureRenderer>();
+                overlayRenderer = GetComponent<TextureRenderer>();
             }
 
             if (overlayRenderer != null)

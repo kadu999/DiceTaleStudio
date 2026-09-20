@@ -1,10 +1,10 @@
-// 地面贴图面片 Shader:与地面平行的 4 顶点面片(GroundTextureRenderer 专用)。
-// 片元 = 纹理 × 顶点色;顶点色由组件写入 mesh.colors(GroundTextureRenderer 的染色参数),
+// 地面贴图面片 Shader:与地面平行的 4 顶点面片(TextureRenderer 专用)。
+// 片元 = 纹理 × 顶点色;顶点色由组件写入 mesh.colors(TextureRenderer 的染色参数),
 // 因此染色不依赖材质 _Color —— legacy built-in Unlit/Transparent 的 constantColor 染色
 // 在 URP 下不生效,而顶点色这条路径在 built-in / URP 下都稳定(与 SpriteRenderer 同路线)。
 // _Color 默认白色仅作备用额外染色口,组件不使用它。
 // straight alpha 混合(Blend SrcAlpha OneMinusSrcAlpha),支持带透明通道的 PNG。
-Shader "DiceTale/GroundSprite"
+Shader "DiceTale/TextureRenderer"
 {
     Properties
     {

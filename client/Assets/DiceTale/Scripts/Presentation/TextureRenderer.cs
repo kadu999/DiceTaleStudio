@@ -15,7 +15,7 @@ namespace DiceTale
     ///
     /// **但 Inspector 里要能看见**：尺寸 / 显示顺序全是 `Apply(...)` 传进来的，而 `MeshRenderer`
     /// 的 Inspector 看不到 Sorting Layer / Order in Layer——所以另有一个只读的 Inspector
-    /// （`Editor/GroundTextureRendererEditor.cs`）把实际生效的 `sortingOrder` 与长宽显示出来。
+    /// （`Editor/TextureRendererEditor.cs`）把实际生效的 `sortingOrder` 与长宽显示出来。
     ///
     /// 尺寸口径：**宽高直接烘进网格顶点，不靠 Transform 缩放**。调用方给的就是世界单位下的
     /// 宽与高（文档像素到世界单位的换算在 <see cref="SceneObjectView.GlobalScale"/>，
@@ -27,7 +27,7 @@ namespace DiceTale
     /// 地面网格**不用内置 Quad**：它原生躺在 XY 平面、要贴地面必须旋转；这里代码自建 XZ 网格
     /// （法线朝上 +Y、无需旋转），俯视相机看到正面。战争雾那层也用本组件、同一套网格，
     /// 所以「地图」与「盖在地图上的雾」永远严丝合缝。
-    /// 材质用项目自建 Shader `DiceTale/GroundSprite`（纹理 × 顶点色、straight alpha），
+    /// 材质用项目自建 Shader `DiceTale/TextureRenderer`（纹理 × 顶点色、straight alpha），
     /// 支持带透明通道的 PNG，不受场景光照影响；染色走**顶点色**（与 `SpriteRenderer` 同路线）。
     ///
     /// 生命周期：自建的 Mesh / Material 归本组件所有（换尺寸重建、销毁旧对象，`HideFlags.DontSave` 不入库），
@@ -37,10 +37,10 @@ namespace DiceTale
     [DisallowMultipleComponent]
     [RequireComponent(typeof(MeshFilter))]
     [RequireComponent(typeof(MeshRenderer))]
-    public class GroundTextureRenderer : MonoBehaviour
+    public class TextureRenderer : MonoBehaviour
     {
         private const string MeshName = "GroundTexturePlane";
-        private const string ShaderName = "DiceTale/GroundSprite";
+        private const string ShaderName = "DiceTale/TextureRenderer";
 
         private Mesh ownedMesh;
         private Material ownedMaterial;

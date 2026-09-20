@@ -4,16 +4,16 @@ using UnityEngine;
 namespace DiceTale.Editor
 {
     /// <summary>
-    /// Read-only Inspector for <see cref="GroundTextureRenderer"/>: the component has no serialized
+    /// Read-only Inspector for <see cref="TextureRenderer"/>: the component has no serialized
     /// fields (size / tint / order all come from `Apply`), and `MeshRenderer` does not expose
     /// Sorting Layer or Order in Layer — so this shows what is actually applied.
     /// </summary>
-    [CustomEditor(typeof(GroundTextureRenderer))]
-    public class GroundTextureRendererEditor : UnityEditor.Editor
+    [CustomEditor(typeof(TextureRenderer))]
+    public class TextureRendererEditor : UnityEditor.Editor
     {
         public override void OnInspectorGUI()
         {
-            var component = (GroundTextureRenderer)target;
+            var component = (TextureRenderer)target;
             var meshRenderer = component.GetComponent<MeshRenderer>();
             if (meshRenderer == null)
             {
