@@ -51,7 +51,7 @@ Assets/
 │  │                    SceneObjectView.cs       **一个镜像对象 = 一块贴地面片**（位置/缩放/激活/顺序/取图）
 │  │                    ResourceImageLoader.cs   按资源逻辑 ID 取图（缓存 / 去重 / 失败记忆）
 │  │                    GridMap.cs               地图格子数据 + 网格渲染（+ .bytes 读取）
-│  │                    FogOfWar.cs              战争雾（GPU 羽化 + 右键擦除）
+│  │                    FogOfWar.cs              战争雾（按 map.fog.regions/cells 建遮罩，按后台轨迹揭示）
 │  │                    BirdWanderer.cs          装饰物区域随机游荡
 │  │                    GroundTextureRenderer.cs 贴地面的纹理面片（**只认运行时纹理**）
 │  │                    PhotoClickGlow.cs        拍照指针点地时的点光
@@ -65,7 +65,7 @@ Assets/
 │  ├─ Editor/           （1）         编辑器工具（DiceTale.Editor.asmdef）
 │  │                    SetupMaps.cs                  一次性脚本：把 Demo 场景重建成「只有 Game 宿主」
 │  ├─ Resources/                      ← **运行时按名加载的资产必须留在这里**
-│  │  ├─ Shaders/                     DiceTale/*.shader（FogBlur / GroundSprite / VideoFade 在用）
+│  │  ├─ Shaders/                     DiceTale/*.shader（GroundSprite / VideoFade 在用）
 │  │  └─ RealMap.prefab
 │  ├─ Materials/                      材质（原 `Res/Materials`）
 │  └─ Scenes/Demo.unity               唯一的场景
@@ -209,10 +209,17 @@ Assets/
   否则对象会被摆到远超自身尺寸的地方）。
   默认 `0.01` → 地图 19.2×10.8 单位、精灵 2.56×2.56 单位；改成 `0.02` → 全部翻倍（实测确认）。
   想连格子、连雾一起缩放请改**场景根节点**的 Transform（那是另一层，`localPosition` 会跟着走）。
-  ⚠️ **`GridMap` / `FogOfWar` / `DynamicObstacle` 仍按世界坐标算格子**
-  （`GridMap.GridOrigin` 用 `transform.position`、`WorldToGrid` 取 `transform.position.y`），
-  它们目前还没接进镜像（`map.cells` 是解析了但没人消费的死数据），
-  等要用「缩放后的场景」做格子交互时，这几处得改成按场景根节点换算。
+- **战争雾已实现（2026-09-21）**：地图上绑了雾区（`map.fog.regions`）就多一层 `FogOverlay`
+  子物体（`Presentation/FogOfWar.cs`），按 `map.cells` 里含这些区域位的格子生成一张像素遮罩
+  （**与编辑器 Mask 窗口同一张尺寸**：960 宽、高按贴图比例推）盖在地图上；后台发来的
+  `erase_mask`（**只发鼠标轨迹**）+ `reveal_fog_region`（整区开合）把它揭示掉。
+  擦除公式与编辑器逐字对齐（归一化半径 × 遮罩宽、沿线段按半径一半补点、按纹素中心算软边、
+  `min` 幂等），所以**同一笔在两边擦出的是同一片纹素**；雾色统一（默认黑不透明）。
+  揭示状态**只在前端**（不写文档）：切场景 / 重连（视图不销毁）都保留，Unity 重启回到未探索；
+  地图数据一变（换绑定 / 涂格子）就「重填初始态 + 按顺序重放操作」，已揭示的部分不丢。
+  ⚠️ **`GridMap` / `DynamicObstacle` 仍按世界坐标算格子**，而且运行时不建 `GridMap`
+  （它只服务 `.bytes` 那套旧资产，`map.cells` 现在由战争雾那层消费）；
+  以后要用「缩放后的场景」做格子交互时，这两处得改成按场景根节点换算。
 - **缩放：`scale` 是等比，单轴字段可选（2026-09-20）**：文档 v11 起，对象上可能多出
   **可选**的 `scaleX` / `scaleY`（编辑器里拖缩放手柄的**边**、或关掉属性面板的等比锁后改单轴时会写）。
   客户端目前**按 `scale` 等比渲染**——`SceneObjectView` 把它们忽略掉是**正确**的（协议里它们是可选字段，
@@ -255,7 +262,8 @@ Assets/
   `Scene prefab not found`。**`SceneFadeUI` 保留**（它不依赖那个类，是自包含的全屏遮罩），
   但**目前没有调用方**——等真正需要黑屏过渡的功能来调，或确认用不上就删。
 - **已停用但未删**（你要求先不动）：`DevicePipeInputSource2`（`Sample` 整段注释——若在 Game 里把
-  输入方案选成 `PipeSource`，输入会**静默失效**）、`InputConfigPrefs`、14 个无人引用的 shader、
+  输入方案选成 `PipeSource`，输入会**静默失效**）、`InputConfigPrefs`、15 个无人引用的 shader
+  （战争雾改成 CPU 算遮罩后，`FogBlur` / `MaskEraseStamp` 也不再有人用）、
   6 个孤儿材质、`Resources/RealMap.prefab`、`Assets/Readme.asset`。要清时按清理文档的口径来
   （都能从 git 取回）。
 - **待办（关掉 Unity 后再改，否则会被编辑器内存里的旧值覆盖）**：

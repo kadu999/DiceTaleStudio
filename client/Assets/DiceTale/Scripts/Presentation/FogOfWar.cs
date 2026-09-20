@@ -4,339 +4,566 @@ using UnityEngine;
 namespace DiceTale
 {
     /// <summary>
-    /// 迷雾区域（探索揭示，GPU 渲染，单层）：
-    /// 所有雾标记（Fog1~Fog5）合成一块整体雾，边缘统一 GPU 羽化（有雾就光滑）。
+    /// 战争雾（镜像驱动）：**把地图数据里那些雾格画成一层雾，再按后台发来的鼠标轨迹把它擦掉**。
     ///
-    /// **渲染与「怎么揭示」是两件事**：旧模型里「玩家走进某区域 → 该区域整片清除」是客户端自己判的
-    /// （读 `CharacterManager.Players`），已随旧模型删除；现在只保留雾的渲染与**按住鼠标右键逐格擦除**
-    /// （自包含鼠标采样，不依赖 InputManager 组件；屏幕→世界坐标投影复用 <see cref="GridMap.ScreenToPlane"/>），
-    /// 方便单独看效果。新方向下「哪个区域揭示」应由后台下发的命令驱动（服务端 README 里规划的
-    /// `erase_mask` / 区域揭示命令），接线时在这里加一个公开方法即可。
-    /// 需要与 <see cref="GridMap"/> 同物体。
+    /// 这一层是**地图视图的子物体**（<see cref="SceneObjectView"/> 建的 `FogOverlay`），所以它天然跟着
+    /// 地图的位置 / 旋转走；尺寸交给 <see cref="GroundTextureRenderer"/> 烘进网格（与地图面片同一套口径）。
+    ///
+    /// **雾是哪几格**：`map.fog.regions` 指定了哪些「区域位」算雾区（区域位就是 `map.cells` 里那些位，
+    /// 与 `@dts/grid` 的 `CellMask` / <see cref="GridCellType"/> 同一套值）。一格只要含其中任意一位
+    /// 就是雾格——**不写死 `Fog1..Fog5`**：编辑器里可以指定任意可绘制区域位
+    /// （例如区域1/2/3 = 位 `1|2|4`，旧实现一格都不会盖）。
+    ///
+    /// **怎么揭示**：后台只发**轨迹**（`erase_mask`：归一化点 + 归一化半径 + 软边比例），前端照轨迹擦；
+    /// 「整区开关」发 `reveal_fog_region`。擦除公式与编辑器 Mask 窗口**逐字对齐**
+    /// （`apps/editor/src/services/mask-math.ts`，也就是参考实现 `MaskImage.ApplyEraseStroke`
+    /// + `MaskEraseStamp.shader` 那一套，只是这里用 CPU 算）：
+    /// 半径纹素 = 归一化半径 × 遮罩宽；沿线段按 `半径 / 2` 补点、两端各打一个圆；
+    /// 每个落点按**纹素中心**距离算软边（核内全擦、核外线性收尾）、`min` 幂等（同一处擦 N 次 = 一次）、
+    /// 只改 alpha。所以**同一笔在编辑器预览与投影上覆盖同一片图像区域**。
+    ///
+    /// **遮罩与编辑器预览是同一张**（`mask-math.ts` 的 `previewMaskSizeFor`：960 宽、高按贴图比例推、
+    /// 长边超 2048 等比缩）——两边像素级对齐，而不是「归一化范围大致一致」。
+    /// 两个常量（<see cref="MaskPreviewWidth"/> / <see cref="MaxPreviewEdge"/>）**必须与编辑器同步改**。
+    ///
+    /// **揭示状态只在前端**（不写文档、也不随场景推送回来）：组件里留一份 CPU 遮罩 + 一份**有序的
+    /// 操作记录**，地图数据一变（换了雾区 / 涂了格子 / 网格尺寸变了）就「重填初始态 + 按顺序重放」——
+    /// 于是「整区盖回」能按顺序盖掉它之前的笔画（与编辑器预览一致），已揭示的部分也不会因为后台推了
+    /// 一份新场景就丢。切场景 / 重连（视图不销毁）都保留，Unity 重启才回到未探索。
     /// </summary>
-    [RequireComponent(typeof(GridMap))]
+    [DisallowMultipleComponent]
+    [RequireComponent(typeof(GroundTextureRenderer))]
     public class FogOfWar : MonoBehaviour
     {
+        /// <summary>雾色（默认黑不透明：未探索 = 完全看不见底图）。编辑器预览按区域配色，前端是统一的雾色。</summary>
         [SerializeField]
-        private Color fogColor = new Color(0.85f, 0.88f, 0.92f, 1f);
+        private Color fogColor = new Color(0f, 0f, 0f, 1f);
 
-        [SerializeField]
-        private int fogSortingOrder = 1;
+        /// <summary>预览遮罩的宽度（`mask-math.ts` 的 `MASK_PREVIEW_WIDTH`）：与编辑器**必须一致**。</summary>
+        private const int MaskPreviewWidth = 960;
 
-        [Tooltip("允许按住鼠标右键擦除鼠标所指的雾（逐格擦除）")]
-        [SerializeField]
-        private bool allowRightClickErase = true;
+        /// <summary>预览遮罩长边的上限（`mask-math.ts` 的 `MAX_PREVIEW_EDGE`）：极端长宽比等比缩一下。</summary>
+        private const int MaxPreviewEdge = 2048;
 
-        [Tooltip("雾边缘羽化强度（GPU 模糊次数）")]
-        [SerializeField]
-        private int blurPasses = 2;
+        /// <summary>可绘制的 8 个区域位（区域1..区域8 = 位 1|2|4|8|16|32|64|128）：绑定里的脏位丢掉。</summary>
+        private const int PaintableMask = 0xFF;
 
-        /// <summary>所有雾位掩码（Fog1|Fog2|Fog3|Fog4|Fog5），用于提取格子的雾分量。</summary>
-        private const GridCellType FogMask =
-            GridCellType.Fog1 | GridCellType.Fog2 | GridCellType.Fog3 | GridCellType.Fog4 | GridCellType.Fog5;
+        /// <summary>贴图缺失时的兜底遮罩比例（16:9，与参考实现 `MaskImage` 的默认 960×540 同一张）。</summary>
+        private const int FallbackMaskHeight = 540;
 
-        private const string BlurShaderName = "DiceTale/FogBlur";
-        private const string GridSizeProperty = "_GridSize";
+        // ---------------------------------------------------------------- 地图数据（Apply 传进来）
 
-        private GridMap gridMap;
+        /// <summary>这张地图的格子掩码（`rowOrder: bottom-up`，`gridWidth * gridHeight` 个）。</summary>
+        private int[] cells = new int[0];
+        private int gridWidth;
+        private int gridHeight;
 
-        // 单层雾状态（格子级）：alpha=1 雾存在，0 已揭示/擦除
-        private Texture2D fogState;
-        private int width;
-        private int height;
+        /// <summary>已指定雾区的区域位并集（0 = 没绑雾区，这一层不该存在）。</summary>
+        private int fogMask;
 
-        // 代码生成的雾地面网格（XZ 平面，法线朝上），随物体销毁
-        private Mesh groundMesh;
+        /// <summary>已指定雾区的区域位（原样保留，`reveal_fog_region` 要按它校验）。</summary>
+        private readonly List<int> fogRegions = new List<int>();
 
-        // GPU 羽化链
-        private RenderTexture[] blurRTs;
-        private Material blurMaterial;
-        private Material displayMaterial;
+        /// <summary>地图数据的指纹（网格 / 雾区 / 格子 / 遮罩尺寸）：变了就重建遮罩。</summary>
+        private string signature = "";
 
-        private readonly Dictionary<GridCellType, List<int>> cellsByType = new Dictionary<GridCellType, List<int>>();
+        /// <summary>数据不全的提示只打一次（每次推送都刷会把控制台淹掉）。</summary>
+        private bool warnedMissingData;
 
-        private void Start()
+        // ---------------------------------------------------------------- 遮罩（CPU 是真源，纹理是显示副本）
+
+        private Color32[] pixels = new Color32[0];
+        private Texture2D texture;
+        private int maskWidth;
+        private int maskHeight;
+
+        /// <summary>有序的操作记录：地图数据变了要「重填初始态 + 重放」。**顺序有意义**——盖回要盖掉之前的笔画。</summary>
+        private readonly List<MaskOp> ops = new List<MaskOp>();
+
+        private GroundTextureRenderer renderer;
+
+        private static readonly Color32 Transparent = new Color32(0, 0, 0, 0);
+
+        private void Awake()
         {
-            gridMap = GetComponent<GridMap>();
-            BuildFog();
-        }
-
-        private void Update()
-        {
-            HandleRightClickErase();
+            renderer = GetComponent<GroundTextureRenderer>();
         }
 
         private void OnDestroy()
         {
-            if (fogState != null)
+            if (texture != null)
             {
-                Destroy(fogState);
+                Release(texture);
+                texture = null;
+            }
+        }
+
+        // ---------------------------------------------------------------- 每份场景推送
+
+        /// <summary>
+        /// 按一份地图数据刷新雾层（每次收到场景推送都会调）。
+        ///
+        /// `worldWidth` / `worldHeight` 是**地图面片的世界尺寸**（调用方已经乘过
+        /// <see cref="SceneObjectView.GlobalScale"/>），雾层与它同大小、同位置、略高一点；
+        /// `sortingOrder` / `lift` 也由调用方算好（盖在自己那张地图之上）。
+        /// </summary>
+        public void Apply(MirrorMap mapData, float worldWidth, float worldHeight, int sortingOrder, float lift)
+        {
+            if (!Adopt(mapData))
+            {
+                return;
             }
 
-            if (groundMesh != null)
+            if (renderer == null)
             {
-                Destroy(groundMesh);
+                renderer = GetComponent<GroundTextureRenderer>();
             }
 
-            if (blurRTs != null)
+            if (renderer != null)
             {
-                for (int i = 0; i < blurRTs.Length; i++)
+                // 白色染色 = 原样显示遮罩（雾色已经在遮罩里了）
+                renderer.Apply(texture, worldWidth, worldHeight, Color.white, sortingOrder, lift);
+            }
+        }
+
+        // ---------------------------------------------------------------- 后台命令
+
+        /// <summary>
+        /// 擦一笔（`erase_mask`）：沿轨迹打软边擦除圆。
+        ///
+        /// `points` 是归一化点（`[0,1]`、**y 向下**，与编辑器画布一致；越界点夹到边界），
+        /// `radius` 是**半径 / 遮罩宽**（编辑器固定 `0.05`），`softness` 是软边带比例（编辑器固定 `1`）。
+        /// 单点也接受（在那一处打一个圆）。遮罩还没建好时返回 false（命令路由会如实回失败）。
+        /// </summary>
+        public bool EraseStroke(IReadOnlyList<Vector2> points, float radius, float softness)
+        {
+            if (points == null || points.Count == 0 || texture == null)
+            {
+                return false;
+            }
+
+            var op = new MaskOp
+            {
+                kind = MaskOpKind.Stroke,
+                radius = Mathf.Max(0f, radius),
+                softness = Mathf.Clamp01(softness),
+                points = new List<Vector2>(points),
+            };
+
+            ops.Add(op);
+            ApplyOp(op);
+            Upload();
+            return true;
+        }
+
+        /// <summary>
+        /// 整片揭示 / 整片盖回某个雾区（`reveal_fog_region`）。
+        ///
+        /// 「含该位的**每个**格子」一起变——与编辑器 Mask 窗口右侧那个开关同一口径，
+        /// 所以**盖回会连带盖掉这一区里手动擦掉的部分**。该位不是这张地图的雾区时返回 false。
+        /// </summary>
+        public bool RevealRegion(int region, bool revealed)
+        {
+            if (texture == null || !fogRegions.Contains(region))
+            {
+                return false;
+            }
+
+            var op = new MaskOp { kind = MaskOpKind.Region, region = region, revealed = revealed };
+            ops.Add(op);
+            ApplyOp(op);
+            Upload();
+            return true;
+        }
+
+        // ---------------------------------------------------------------- 收下数据 / 重建
+
+        /// <summary>
+        /// 收下这份地图数据；**数据变了才重建**（网格 / 雾区 / 格子 / 遮罩尺寸任一变化）。
+        ///
+        /// 重建 = 重填初始态（雾格盖满）+ 按顺序重放操作，所以已揭示的部分不会丢；
+        /// 数据没变时只是把引用换成最新那份（同一份内容，抓着旧数组没意义）。
+        /// </summary>
+        private bool Adopt(MirrorMap mapData)
+        {
+            if (mapData == null)
+            {
+                return false;
+            }
+
+            var nextFogMask = RegionsToMask(mapData.fogRegions);
+            if (nextFogMask == 0)
+            {
+                WarnOnce($"「{name}」的地图数据里没指定雾区，这一层先不画");
+                return false;
+            }
+
+            if (mapData.gridWidth <= 0 || mapData.gridHeight <= 0 ||
+                mapData.cells == null || mapData.cells.Length < mapData.gridWidth * mapData.gridHeight)
+            {
+                WarnOnce($"「{name}」的地图数据不全（网格 / 格子），这一层先不画");
+                return false;
+            }
+
+            var size = MaskSizeFor(mapData.image);
+            var next = string.Format(
+                "{0}x{1}|{2}|{3}x{4}|{5}",
+                mapData.gridWidth,
+                mapData.gridHeight,
+                nextFogMask,
+                size.x,
+                size.y,
+                HashCells(mapData.cells, mapData.gridWidth * mapData.gridHeight)
+            );
+
+            if (next == signature)
+            {
+                cells = mapData.cells;
+                return true;
+            }
+
+            signature = next;
+            gridWidth = mapData.gridWidth;
+            gridHeight = mapData.gridHeight;
+            fogMask = nextFogMask;
+            cells = mapData.cells;
+            maskWidth = size.x;
+            maskHeight = size.y;
+
+            // 绑定位也留一份（`reveal_fog_region` 要按它校验；只认可绘制的位、去重）
+            fogRegions.Clear();
+            if (mapData.fogRegions != null)
+            {
+                for (int i = 0; i < mapData.fogRegions.Length; i++)
                 {
-                    if (blurRTs[i] != null)
+                    var bit = mapData.fogRegions[i] & PaintableMask;
+                    if (bit != 0 && !fogRegions.Contains(bit))
                     {
-                        blurRTs[i].Release();
-                        Destroy(blurRTs[i]);
+                        fogRegions.Add(bit);
                     }
                 }
             }
 
-            // 释放本组件自己 new 出来的运行时材质（勿动外部指定/共享材质）
-            if (blurMaterial != null)
-            {
-                Destroy(blurMaterial);
-            }
-
-            if (displayMaterial != null)
-            {
-                Destroy(displayMaterial);
-            }
+            // 绑定 / 格子 / 尺寸都变了：旧的操作记录是按旧数据算的，重放它没有意义
+            ops.Clear();
+            Rebuild();
+            return true;
         }
 
-        // ---------------------------------------------------------------- 构建
-
-        private void BuildFog()
+        /// <summary>重填遮罩 = 初始态（雾格盖满、其余透明）+ 按顺序重放操作，再推给纹理。</summary>
+        private void Rebuild()
         {
-            if (!TryInitGrid(out var gridWidth, out var gridHeight))
+            EnsureBuffers();
+            FillInitial();
+
+            for (int i = 0; i < ops.Count; i++)
+            {
+                ApplyOp(ops[i]);
+            }
+
+            Upload();
+        }
+
+        /// <summary>建 / 换 CPU 遮罩与纹理（尺寸变了就重建；旧纹理自己释放）。</summary>
+        private void EnsureBuffers()
+        {
+            var count = Mathf.Max(1, maskWidth * maskHeight);
+            if (pixels.Length != count)
+            {
+                pixels = new Color32[count];
+            }
+
+            if (texture != null && texture.width == maskWidth && texture.height == maskHeight)
             {
                 return;
             }
 
-            if (!CreateBlurMaterial())
+            if (texture != null)
             {
-                return;
+                Release(texture);
             }
 
-            CreateFogState();
-            CreateBlurChain();
-            CreateDisplayObject(gridWidth, gridHeight);
-            BlurFog(); // 初始羽化一次
-
-            Debug.Log($"[FogOfWar] {name}: fog cells={CountFogCells()}, single layer");
+            texture = new Texture2D(maskWidth, maskHeight, TextureFormat.RGBA32, false)
+            {
+                name = "FogMask",
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp,
+                hideFlags = HideFlags.DontSave,
+            };
         }
 
-        private bool TryInitGrid(out float gridWidth, out float gridHeight)
+        /// <summary>初始态：只给**含已指定雾区位**的格子盖色，其余透明（与编辑器预览同一形状）。</summary>
+        private void FillInitial()
         {
-            gridWidth = 0f;
-            gridHeight = 0f;
-
-            if (gridMap == null)
+            for (int i = 0; i < pixels.Length; i++)
             {
-                Debug.LogWarning("[FogOfWar] GridMap missing on " + name);
-                return false;
+                pixels[i] = Transparent;
             }
 
-            var gridSize = gridMap.GridSize;
-            if (gridSize.x <= 0 || gridSize.y <= 0 || gridMap.CellGrid == null)
+            var fog = (Color32)fogColor;
+            for (int y = 0; y < gridHeight; y++)
             {
-                Debug.LogWarning("[FogOfWar] Grid data not ready on " + name);
-                return false;
-            }
-
-            width = gridSize.x;
-            height = gridSize.y;
-            gridWidth = gridMap.GridWidth;
-            gridHeight = gridMap.GridHeight;
-            return true;
-        }
-
-        private bool CreateBlurMaterial()
-        {
-            var blurShader = Shader.Find(BlurShaderName);
-            if (blurShader == null)
-            {
-                Debug.LogError($"[FogOfWar] Shader '{BlurShaderName}' not found!");
-                return false;
-            }
-
-            blurMaterial = new Material(blurShader);
-            blurMaterial.SetVector(GridSizeProperty, new Vector4(width, height, 0f, 0f));
-            return true;
-        }
-
-        /// <summary>单层雾状态：所有雾标记格子 alpha=1，并记录每区域格子。</summary>
-        private void CreateFogState()
-        {
-            fogState = new Texture2D(width, height, TextureFormat.RGBA32, false);
-            fogState.filterMode = FilterMode.Point;
-            fogState.wrapMode = TextureWrapMode.Clamp;
-            fogState.name = "FogState";
-
-            var colors = new Color[width * height];
-            cellsByType.Clear();
-
-            var cellGrid = gridMap.CellGrid;
-            for (int y = 0; y < height; y++)
-            {
-                for (int x = 0; x < width; x++)
+                for (int x = 0; x < gridWidth; x++)
                 {
-                    // 只取雾位分量：格子可能是 Obstacle|Fog1 等组合掩码，
-                    // 分组/揭示一律按雾类型（Fog1~Fog5）归属，避免组合掩码把雾区拆散
-                    var fogType = cellGrid[x, y] & FogMask;
-                    if (fogType == GridCellType.Empty)
+                    if ((cells[y * gridWidth + x] & fogMask) == 0)
                     {
                         continue;
                     }
 
-                    // 地面网格 UV V=0 在 -Z 侧，与格子第 0 行同侧，行序无需翻转（列方向同理）
-                    var index = y * width + x;
-                    colors[index] = new Color(fogColor.r, fogColor.g, fogColor.b, 1f);
-
-                    if (!cellsByType.TryGetValue(fogType, out var list))
-                    {
-                        list = new List<int>();
-                        cellsByType[fogType] = list;
-                    }
-
-                    list.Add(index);
+                    PaintCell(x, y, fog);
                 }
             }
-
-            fogState.SetPixels(colors);
-            fogState.Apply();
         }
 
-        private int CountFogCells()
+        // ---------------------------------------------------------------- 操作
+
+        /// <summary>做一次操作（首次、重放、命令都走它，保证三条路的结果一模一样）。</summary>
+        private void ApplyOp(MaskOp op)
         {
-            var count = 0;
-            foreach (var list in cellsByType.Values)
+            if (op.kind == MaskOpKind.Region)
             {
-                count += list.Count;
+                var color = op.revealed ? Transparent : (Color32)fogColor;
+                for (int y = 0; y < gridHeight; y++)
+                {
+                    for (int x = 0; x < gridWidth; x++)
+                    {
+                        if ((cells[y * gridWidth + x] & op.region) != 0)
+                        {
+                            PaintCell(x, y, color);
+                        }
+                    }
+                }
+
+                return;
             }
 
-            return count;
-        }
-
-        private void CreateBlurChain()
-        {
-            blurRTs = new RenderTexture[Mathf.Max(1, blurPasses)];
-            for (int i = 0; i < blurRTs.Length; i++)
+            var points = op.points;
+            if (points == null || points.Count == 0)
             {
-                blurRTs[i] = new RenderTexture(width * 2, height * 2, 0, RenderTextureFormat.ARGB32);
-                blurRTs[i].filterMode = FilterMode.Bilinear;
-                blurRTs[i].wrapMode = TextureWrapMode.Clamp;
+                return;
             }
-        }
 
-        private void CreateDisplayObject(float gridWidth, float gridHeight)
-        {
-            displayMaterial = new Material(Shader.Find("Unlit/Transparent"));
+            var radiusTex = Mathf.Max(1f, op.radius * maskWidth);
+            if (points.Count == 1)
+            {
+                // 单点（单击 / 笔画尾巴）：只打一个擦除圆
+                Stamp(ToTexel(points[0]), radiusTex, op.softness);
+                return;
+            }
 
-            var go = new GameObject("FogOverlay");
-            go.transform.SetParent(transform, false);
-            go.transform.localPosition = new Vector3(0, 0.2f, 0);
-            // 战争雾平铺在 XZ 地面：不用内置 Quad（其原生朝向是 2D 的 XY 平面，需旋转），
-            // 也不用内置 Plane（UV 方向有已知坑），改为代码生成的地面网格：
-            // 法线朝上 +Y、无需旋转，UV 与格子行列一一对应（V=0 在 -Z 侧）。
-            go.transform.localRotation = Quaternion.identity;
-            go.transform.localScale = new Vector3(gridWidth, 1f, gridHeight);
+            // 与编辑器同式：step = max(1, 半径 / 2)，两端各打一个圆（快拖也不断线）
+            var step = Mathf.Max(1f, radiusTex * 0.5f);
+            for (int i = 0; i < points.Count - 1; i++)
+            {
+                var from = ToTexel(points[i]);
+                var to = ToTexel(points[i + 1]);
+                var distance = (to - from).magnitude;
+                var samples = Mathf.Max(1, Mathf.CeilToInt(distance / step));
 
-            var meshFilter = go.AddComponent<MeshFilter>();
-            meshFilter.mesh = CreateGroundMesh();
-
-            var meshRenderer = go.AddComponent<MeshRenderer>();
-            meshRenderer.material = displayMaterial;
-            meshRenderer.sortingOrder = fogSortingOrder;
+                for (int s = 0; s <= samples; s++)
+                {
+                    Stamp(Vector2.Lerp(from, to, s / (float)samples), radiusTex, op.softness);
+                }
+            }
         }
 
         /// <summary>
-        /// 生成 1×1 的 XZ 地面网格：法线朝上 +Y，UV(0,0) 在 (-0.5, 0, -0.5)（-Z 侧）。
-        /// 缩放 (gridWidth, 1, gridHeight) 后与网格范围一致，纹理行/列与格子行列一一对应。
+        /// 在遮罩的某个纹素位置打一个软边擦除圆：核内全擦、核外到半径处线性收尾。
+        ///
+        /// 与编辑器 `applyEraseToPixels` / `MaskEraseStamp.shader` 同式：距离从**纹素中心**量起
+        /// （`x + 0.5`），`min` 取小（同一处擦多次 = 擦一次，渐变带不被叠加抹平），**只改 alpha**。
         /// </summary>
-        private Mesh CreateGroundMesh()
+        private void Stamp(Vector2 center, float radius, float softness)
         {
-            groundMesh = new Mesh
+            var core = radius * (1f - Mathf.Clamp01(softness));
+            var band = Mathf.Max(radius - core, 1e-5f);
+
+            var x0 = Mathf.Max(0, Mathf.FloorToInt(center.x - radius));
+            var x1 = Mathf.Min(maskWidth - 1, Mathf.CeilToInt(center.x + radius));
+            var y0 = Mathf.Max(0, Mathf.FloorToInt(center.y - radius));
+            var y1 = Mathf.Min(maskHeight - 1, Mathf.CeilToInt(center.y + radius));
+
+            for (int y = y0; y <= y1; y++)
             {
-                name = "FogGroundPlane",
-                vertices = new[]
+                for (int x = x0; x <= x1; x++)
                 {
-                    new Vector3(-0.5f, 0f, -0.5f), // uv (0,0)：-Z 侧，对应格子第 0 行
-                    new Vector3(0.5f, 0f, -0.5f),  // uv (1,0)
-                    new Vector3(-0.5f, 0f, 0.5f),  // uv (0,1)：+Z 侧
-                    new Vector3(0.5f, 0f, 0.5f),   // uv (1,1)
-                },
-                uv = new[]
+                    var dx = x + 0.5f - center.x;
+                    var dy = y + 0.5f - center.y;
+                    var distance = Mathf.Sqrt(dx * dx + dy * dy);
+                    if (distance > radius)
+                    {
+                        // 半径之外算出来也是「不动」，直接跳过（等价，快得多）
+                        continue;
+                    }
+
+                    var erased = (byte)Mathf.RoundToInt(Mathf.Clamp01((distance - core) / band) * 255f);
+                    var index = y * maskWidth + x;
+                    var current = pixels[index];
+                    if (erased < current.a)
+                    {
+                        pixels[index] = new Color32(current.r, current.g, current.b, erased);
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// 把一格对应的那块纹素刷成一个颜色。
+        ///
+        /// 格子 `y = 0` 是**贴图最下一行**（协议 `rowOrder: bottom-up`），而 Unity 的像素数组本来就是
+        /// 自下而上（`SetPixels32` 的第 0 行在底部、shader 的 `uv.y = 0` 也在底部），所以**不用翻**；
+        /// 块边界与编辑器 `fillCellTexels` 同一套取整。
+        /// </summary>
+        private void PaintCell(int cellX, int cellY, Color32 color)
+        {
+            var cellWidth = maskWidth / (float)gridWidth;
+            var cellHeight = maskHeight / (float)gridHeight;
+
+            var x0 = Mathf.Max(0, Mathf.FloorToInt(cellX * cellWidth));
+            var x1 = Mathf.Min(maskWidth, Mathf.CeilToInt((cellX + 1) * cellWidth));
+            var y0 = Mathf.Max(0, Mathf.FloorToInt(cellY * cellHeight));
+            var y1 = Mathf.Min(maskHeight, Mathf.CeilToInt((cellY + 1) * cellHeight));
+
+            for (int y = y0; y < y1; y++)
+            {
+                var row = y * maskWidth;
+                for (int x = x0; x < x1; x++)
                 {
-                    new Vector2(0f, 0f),
-                    new Vector2(1f, 0f),
-                    new Vector2(0f, 1f),
-                    new Vector2(1f, 1f),
-                },
-                triangles = new[] { 0, 2, 1, 1, 2, 3 } // 绕序保证法线朝 +Y
-            };
-            groundMesh.RecalculateNormals();
-            groundMesh.RecalculateBounds();
-            return groundMesh;
+                    pixels[row + x] = color;
+                }
+            }
         }
 
-        // ---------------------------------------------------------------- 每帧渲染
+        // ---------------------------------------------------------------- 坐标与工具
 
-        /// <summary>单层雾 GPU 羽化（每帧从状态重算，剩余雾边缘始终光滑）。</summary>
-        private void BlurFog()
+        /// <summary>
+        /// 归一化点（左上原点、**y 向下**）→ 遮罩纹素坐标。
+        ///
+        /// 纹理数组是自下而上的，所以 y 翻一次（`(1 - y) × 高`）——与参考实现
+        /// `MaskImage.ApplyEraseStroke` 的 `(1f - y) * maskRT.height` 同一行。
+        /// </summary>
+        private Vector2 ToTexel(Vector2 point)
         {
-            if (fogState == null || blurRTs == null || blurRTs.Length == 0 || blurMaterial == null)
-            {
-                return;
-            }
-
-            Graphics.Blit(fogState, blurRTs[0], blurMaterial);
-            for (int i = 1; i < blurRTs.Length; i++)
-            {
-                Graphics.Blit(blurRTs[i - 1], blurRTs[i], blurMaterial);
-            }
-
-            displayMaterial.mainTexture = blurRTs[blurRTs.Length - 1];
+            return new Vector2(
+                Mathf.Clamp01(point.x) * maskWidth,
+                (1f - Mathf.Clamp01(point.y)) * maskHeight
+            );
         }
 
-        // ---------------------------------------------------------------- 右键擦除
-
-        private void HandleRightClickErase()
+        /// <summary>
+        /// 遮罩尺寸：**与编辑器预览同一张**（`mask-math.ts` 的 `previewMaskSizeFor`）——
+        /// 960 宽、高按贴图比例推（圆刷在屏幕上不变形），长边超 2048 等比缩一下。
+        /// </summary>
+        private static Vector2Int MaskSizeFor(MirrorImage image)
         {
-            if (!allowRightClickErase || gridMap == null || fogState == null)
+            if (image == null)
             {
-                return;
+                return new Vector2Int(MaskPreviewWidth, FallbackMaskHeight);
             }
 
-            // 输入统一经 InputManager 查询（右键按住 + 世界坐标；挂起时自动返回 false，与点击同一门控）
-            var input = Game.Instance != null ? Game.Instance.InputManager : null;
-            if (input == null || !input.TryGetRightMouseWorldPosition(out var worldPosition))
+            var imageWidth = Mathf.Max(1, image.width);
+            var aspect = Mathf.Max(1, image.height) / (float)imageWidth;
+            var width = MaskPreviewWidth;
+            var height = Mathf.Max(1, Mathf.RoundToInt(width * aspect));
+
+            var longest = Mathf.Max(width, height);
+            if (longest > MaxPreviewEdge)
             {
-                return;
+                var scale = MaxPreviewEdge / (float)longest;
+                width = Mathf.Max(1, Mathf.RoundToInt(width * scale));
+                height = Mathf.Max(1, Mathf.RoundToInt(height * scale));
             }
 
-            // 世界坐标（网格平面）→ 格
-            var gridPos = gridMap.WorldToGrid(worldPosition);
-            var index = gridPos.y * width + gridPos.x;
-            if (index < 0 || index >= width * height)
-            {
-                return;
-            }
-
-            ClearCell(index);
-            BlurFog(); // 状态变化后重新羽化一次
+            return new Vector2Int(width, height);
         }
 
-        // ---------------------------------------------------------------- 格子操作
-
-        private void ClearCell(int index)
+        /// <summary>把「哪几个区域算雾区」并成一个掩码；只认可绘制的 8 个位（手写文件里的脏位丢掉）。</summary>
+        private static int RegionsToMask(int[] regions)
         {
-            var color = fogState.GetPixel(index % width, index / width);
-            if (color.a <= 0f)
+            if (regions == null)
+            {
+                return 0;
+            }
+
+            var mask = 0;
+            for (int i = 0; i < regions.Length; i++)
+            {
+                mask |= regions[i] & PaintableMask;
+            }
+
+            return mask;
+        }
+
+        /// <summary>格子数据的廉价指纹（FNV-1a）：涂了格子 / 换了绑定才重建，没变就别白干。</summary>
+        private static uint HashCells(int[] cells, int count)
+        {
+            unchecked
+            {
+                var hash = 2166136261u;
+                for (int i = 0; i < count; i++)
+                {
+                    hash = (hash ^ (uint)cells[i]) * 16777619u;
+                }
+
+                return hash;
+            }
+        }
+
+        /// <summary>把 CPU 遮罩推给纹理（整张上传：960×540 这个量级一次几毫秒，一条命令一次，够用）。</summary>
+        private void Upload()
+        {
+            if (texture == null)
             {
                 return;
             }
 
-            fogState.SetPixel(index % width, index / width, new Color(color.r, color.g, color.b, 0f));
-            fogState.Apply();
+            texture.SetPixels32(pixels);
+            texture.Apply(false);
+        }
+
+        private void WarnOnce(string message)
+        {
+            if (warnedMissingData)
+            {
+                return;
+            }
+
+            warnedMissingData = true;
+            Debug.LogWarning($"[战争雾] {message}");
+        }
+
+        /// <summary>释放自建的 Unity 对象：运行时用 `Destroy`，编辑器（退出播放的收尾）用 `DestroyImmediate`。</summary>
+        private static void Release(UnityEngine.Object owned)
+        {
+            if (Application.isPlaying)
+            {
+                Destroy(owned);
+            }
+            else
+            {
+                DestroyImmediate(owned);
+            }
+        }
+
+        /// <summary>一次揭示操作：擦一笔，或整区开合。</summary>
+        private struct MaskOp
+        {
+            public MaskOpKind kind;
+
+            /// <summary>整区操作：区域位 + 是揭示还是盖回。</summary>
+            public int region;
+            public bool revealed;
+
+            /// <summary>笔画：归一化半径 / 软边比例 / 归一化轨迹点（y 向下）。</summary>
+            public float radius;
+            public float softness;
+            public List<Vector2> points;
+        }
+
+        private enum MaskOpKind
+        {
+            Stroke,
+            Region,
         }
     }
 }

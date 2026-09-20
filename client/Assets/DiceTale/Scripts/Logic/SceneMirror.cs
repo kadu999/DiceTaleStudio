@@ -123,6 +123,29 @@ namespace DiceTale
             return null;
         }
 
+        /// <summary>
+        /// 按 id 找到镜像里的**视图**（命令要动视图本身时用，例如战争雾层挂在视图的子物体上）；
+        /// **所有场景**里找，没有返回 null。动作对象只有模型、没有视图，所以这里自然是 null
+        /// （要它的数据用 <see cref="Find"/>）。
+        /// </summary>
+        public SceneObjectView FindView(string objectId)
+        {
+            if (string.IsNullOrEmpty(objectId))
+            {
+                return null;
+            }
+
+            foreach (var table in sceneViews.Values)
+            {
+                if (table.TryGetValue(objectId, out var found) && found != null)
+                {
+                    return found;
+                }
+            }
+
+            return null;
+        }
+
         /// <summary>应用一份场景（`null` = 编辑器没有打开的场景 → 把当前场景藏起来，但**不销毁**）。</summary>
         public void Apply(MirrorScene scene)
         {

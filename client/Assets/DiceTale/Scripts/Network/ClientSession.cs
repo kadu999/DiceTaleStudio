@@ -204,6 +204,13 @@ namespace DiceTale
             connection.Send(message);
         }
 
+        /// <summary>
+        /// 把 `command` 节点解析成 <see cref="CommandRequest"/>。
+        ///
+        /// 只认**协议里写过**的那几个字段（`objectId` / `layer` / `stroke` / `region` / `revealed`），
+        /// 缺的留空值——再由 <see cref="CommandRouter"/> 判断这条命令能不能执行
+        /// （读不出来的东西一律如实回失败，不假装成功）。
+        /// </summary>
         private static CommandRequest ParseCommand(Dictionary<string, object> message)
         {
             var command = new CommandRequest
@@ -220,6 +227,30 @@ namespace DiceTale
             command.kind = JsonParser.GetString(node, "kind") ?? "";
             command.objectId = JsonParser.GetString(node, "objectId") ?? "";
             command.layer = JsonParser.GetString(node, "layer") ?? "";
+            command.region = (int)JsonParser.GetNumber(node, "region");
+            command.revealed = JsonParser.GetBool(node, "revealed");
+
+            var stroke = JsonParser.GetObject(node, "stroke");
+            if (stroke != null)
+            {
+                command.radius = (float)JsonParser.GetNumber(stroke, "radius");
+                command.softness = (float)JsonParser.GetNumber(stroke, "softness", 1);
+
+                var rawPoints = JsonParser.GetArray(stroke, "points");
+                if (rawPoints != null)
+                {
+                    foreach (var raw in rawPoints)
+                    {
+                        if (raw is Dictionary<string, object> point)
+                        {
+                            command.points.Add(new Vector2(
+                                (float)JsonParser.GetNumber(point, "x"),
+                                (float)JsonParser.GetNumber(point, "y")));
+                        }
+                    }
+                }
+            }
+
             return command;
         }
 

@@ -7,7 +7,7 @@ namespace DiceTale
 {
     /// <summary>
     /// 输入逻辑管理器：消费 <see cref="InputSource"/> 产出的统一输入帧（<see cref="InputFrame"/>），
-    /// 对外提供统一状态（<see cref="PressedWorldPositions"/> / 右键）供 FogOfWar 等查询。
+    /// 对外提供统一状态（<see cref="PressedWorldPositions"/> / 右键）供各系统查询。
     /// **输入采集与逻辑分离**：本类不直接采样设备（触摸/鼠标/键盘都在输入源里），
     /// 后续接入其它输入方案只需实现 <see cref="InputSource"/> 并 <see cref="SetInputSource"/>。
     ///
@@ -37,7 +37,8 @@ namespace DiceTale
         /// （玩家编号/拍照；调试圆点标注等经此读取）。</summary>
         public static IReadOnlyList<PointerId> PressedIds => pressedIds;
 
-        /// <summary>鼠标右键是否按住（迷雾右键擦除等系统经此查询；只认鼠标）。挂起时恒假。</summary>
+        /// <summary>鼠标右键是否按住（只认鼠标）。挂起时恒假。
+        /// 战争雾已经改成由后台命令驱动（不再有本地的右键擦除），这里只作为通用输入快照留着。</summary>
         public static bool IsRightMouseHeld => rightMouseHeld;
 
         [SerializeField]

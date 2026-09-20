@@ -25,6 +25,9 @@ namespace DiceTale
     /// 要换到哪张图），编辑器画布上那两枚徽标是**编辑器**的画法，前端按自己的表现来。
     /// 它们的数据留在镜像里就够了，所以 <see cref="SceneMirror"/> 根本不会为它们调
     /// <see cref="Create"/>（见 <see cref="NeedsView"/>）——这里的每一行都假定「自己是个实体」。
+    ///
+    /// **绑了雾区的地图多一个子物体**：`FogOverlay`（<see cref="FogOfWar"/>），跟着地图走、
+    /// 尺寸与地图面片同大、略高一点；没绑雾区的地图不会有它（见 <see cref="ApplyFog"/>）。
     /// </summary>
     public class SceneObjectView : MonoBehaviour
     {
@@ -47,8 +50,25 @@ namespace DiceTale
         /// <summary>没声明尺寸时的兜底边长（**文档像素**，与编辑器画布上那块兜底矩形同口径）。</summary>
         private const float FallbackSize = 64f;
 
+        /// <summary>雾层子物体的名字（一眼看出层级里多出来的这一块是什么）。</summary>
+        private const string FogOverlayName = "FogOverlay";
+
+        /// <summary>
+        /// 雾层比自己那张地图高多少（**世界单位**）：只求比地图抬升高一档、别被地图盖住。
+        ///
+        /// 地图自己的抬升按 `sortingOrder` 每档差 `0.0005`（见 <see cref="LiftFor"/>），
+        /// 所以这里给 `0.002` 就够——高了会在斜视角下看起来「浮起来」。
+        /// </summary>
+        private const float FogLift = 0.002f;
+
         private GroundTextureRenderer quad;
         private ResourceImageLoader imageLoader;
+
+        /// <summary>这张对象的地图数据（仅 `Map`；`map.fog.regions` 非空时才会建雾层）。</summary>
+        private MirrorMap currentMap;
+
+        /// <summary>雾层（仅绑了雾区的地图有）；命令路由经 <see cref="Fog"/> 找到它。</summary>
+        private FogOfWar fog;
 
         private string currentImageId = "";
         private string currentTextureId = "";
@@ -122,6 +142,7 @@ namespace DiceTale
             currentImageId = image != null ? image.id : "";
             currentKindColor = KindColor(obj.kind);
             currentSortingOrder = obj.sortingOrder;
+            currentMap = obj.map;
 
             ApplyVisual();
 
@@ -160,14 +181,62 @@ namespace DiceTale
             // 声明尺寸（× 对象 scale）先乘全局缩放折成世界单位，再交给渲染器**烘进网格顶点**——
             // 这里不碰 transform.localScale（尺寸只有一个来源，网格自己）。
             var scale = GlobalScale;
+            var lift = LiftFor(currentSortingOrder);
             quad.Apply(
                 hasTexture ? currentTexture : null,
                 currentWidth * scale,
                 currentHeight * scale,
                 hasTexture ? Color.white : currentKindColor,
                 currentSortingOrder,
-                LiftFor(currentSortingOrder));
+                lift);
+
+            ApplyFog(lift);
         }
+
+        /// <summary>
+        /// 雾层：**这张地图绑了雾区就建 / 刷，没绑就把旧的拆掉**（每次重画都会走这里）。
+        ///
+        /// 雾层是子物体，所以位置 / 旋转自动跟着地图走；这里只给它**世界单位的尺寸**（与地图面片
+        /// 同一份算法：声明尺寸 × scale × <see cref="GlobalScale"/>）、盖住地图的显示顺序、
+        /// 比地图高一点的抬升。
+        ///
+        /// **谁算雾、怎么揭示**由 <see cref="FogOfWar"/> 自己管（后台命令驱动），这里只负责摆放。
+        /// </summary>
+        private void ApplyFog(float mapLift)
+        {
+            var map = currentMap;
+            var hasFog = map != null && map.fogRegions != null && map.fogRegions.Length > 0;
+
+            if (!hasFog)
+            {
+                if (fog != null)
+                {
+                    // 绑定被解开了（或本来就不是地图）：把雾层拆掉，别留一块盖着旧遮罩的面片
+                    Destroy(fog.gameObject);
+                    fog = null;
+                }
+
+                return;
+            }
+
+            if (fog == null)
+            {
+                var go = new GameObject(FogOverlayName);
+                go.transform.SetParent(transform, false);
+                fog = go.AddComponent<FogOfWar>();
+            }
+
+            var scale = GlobalScale;
+            fog.Apply(
+                map,
+                currentWidth * scale,
+                currentHeight * scale,
+                currentSortingOrder + 1,
+                mapLift + FogLift);
+        }
+
+        /// <summary>这一层的雾（没绑雾区的地图返回 null）；命令路由用它执行 `erase_mask` / `reveal_fog_region`。</summary>
+        public FogOfWar Fog => fog;
 
         /// <summary>按显示顺序错开离地高度：大的略高一点，避免同平面共面闪烁（真正的遮挡靠 sortingOrder）。</summary>
         private static float LiftFor(int sortingOrder)

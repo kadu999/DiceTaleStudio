@@ -1,3 +1,6 @@
+using System.Collections.Generic;
+using UnityEngine;
+
 namespace DiceTale
 {
     /// <summary>
@@ -41,6 +44,10 @@ namespace DiceTale
         // 命令种类
         public const string CommandPlaySound = "play_sound";
         public const string CommandStopSound = "stop_sound";
+        /// <summary>战争雾：沿一笔轨迹擦掉地图对象上的雾（载荷是**轨迹**，不是整张遮罩）。</summary>
+        public const string CommandEraseMask = "erase_mask";
+        /// <summary>战争雾：整片揭示 / 整片盖回某个区域（区域位取自 `map.fog.regions`）。</summary>
+        public const string CommandRevealFogRegion = "reveal_fog_region";
 
         /// <summary>关闸（编辑器退出运行态）时服务端用的 close code。</summary>
         public const int CloseRuntimeStopped = 4003;
@@ -115,12 +122,32 @@ namespace DiceTale
         }
     }
 
-    /// <summary>服务端下发的命令（触发器：数据不在命令里，在前端自己的镜像里）。</summary>
+    /// <summary>
+    /// 服务端下发的命令（触发器：数据不在命令里，在前端自己的镜像里）。
+    ///
+    /// 字段是**扁平的多用途**：一条命令只填自己那几个（`play_sound` 用 `objectId + layer`；
+    /// `erase_mask` 用 `objectId + stroke`；`reveal_fog_region` 用 `objectId + region + revealed`）。
+    /// </summary>
     public class CommandRequest
     {
         public string requestId = "";
         public string kind = "";
         public string objectId = "";
         public string layer = "";
+
+        /// <summary>`erase_mask`：归一化笔刷半径（**半径 / 遮罩宽**，编辑器固定 `48/960 = 0.05`）。</summary>
+        public float radius;
+
+        /// <summary>`erase_mask`：软边带比例（0=硬边、1=全程衰减；编辑器固定 1）。</summary>
+        public float softness;
+
+        /// <summary>`erase_mask`：鼠标拖过的**归一化轨迹点**（`[0,1]`、y 向下）。</summary>
+        public readonly List<Vector2> points = new List<Vector2>();
+
+        /// <summary>`reveal_fog_region`：区域位（与 `map.fog.regions` 里的值同一套）。</summary>
+        public int region;
+
+        /// <summary>`reveal_fog_region`：`true` = 整片揭示、`false` = 整片盖回。</summary>
+        public bool revealed;
     }
 }

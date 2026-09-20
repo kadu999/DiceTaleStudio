@@ -257,8 +257,8 @@ namespace DiceTale
         }
 
         /// <summary>把屏幕坐标投射到本网格所在的 XZ 平面（Y 取网格自身高度）。
-        /// 供点击移动（InputManager）、迷雾右键擦除（FogOfWar）等「屏幕→世界」换算复用，
-        /// 避免各模块重复实现投射逻辑或相互引用。</summary>
+        /// 供「屏幕→世界」换算复用，避免各模块重复实现投射逻辑。
+        /// （战争雾不走这里：它按后台下发的**归一化轨迹**在遮罩上擦，与格子无关。）</summary>
         public Vector3 ScreenToPlane(Camera camera, Vector2 screenPosition)
         {
             if (camera == null)
@@ -390,7 +390,7 @@ namespace DiceTale
                 for (int y = 0; y < gridSize.y; y++)
                 {
                     var type = cellGrid[x, y];
-                    // 雾格子由 FogOfWar 按区域控制显示，Gizmos 不画雾，避免 Scene 视图误判
+                    // 雾格子由战争雾那一层自己画（前端按地图数据建遮罩），Gizmos 不画雾，避免 Scene 视图误判
                     if (type == GridCellType.Empty || IsFogType(type))
                     {
                         continue;

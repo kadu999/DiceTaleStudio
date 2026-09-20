@@ -19,7 +19,7 @@ namespace DiceTale
     ///
     /// 数字键在本源用于选指针位（非切玩家）；每帧触点按指针位编号序输出，Id = f+1（见 <see cref="PointerId"/>：
     /// 1..5 = 玩家编号、6 = 拍照指针），供"按 Id → 玩家"的多点移动消费。
-    /// 右键默认同 Unity 设备输入透传（迷雾右键擦除等；<see cref="RightMousePassThrough"/> 可关以模拟压板无右键）。
+    /// 右键默认同 Unity 设备输入透传（<see cref="RightMousePassThrough"/> 可关以模拟压板无右键）。
     /// 本类只管输入；指针圆点等调试显示由 SimulatedTouchDebugUI 经 InputManager 的通用触点快照
     /// （<c>PressedScreenPositions</c>）绘制，也可读 <see cref="IsFingerDown"/> 等状态自行绘制。
     /// </summary>
@@ -32,7 +32,7 @@ namespace DiceTale
         /// 压板源生产真实归一化压力，要对照压板口径时把本值改为压板 0..1 内的常量即可。</summary>
         public float Pressure = 1f;
 
-        /// <summary>是否透传鼠标右键（迷雾右键擦除等）。默认开 = 与 Unity 设备输入一致（开发便利）；
+        /// <summary>是否透传鼠标右键。默认开 = 与 Unity 设备输入一致（开发便利）；
         /// 关 = 模拟压板真机（压板恒无右键）。</summary>
         public bool RightMousePassThrough = true;
 
@@ -144,7 +144,7 @@ namespace DiceTale
                 fingerWasDown[f] = true;
             }
 
-            // 4) 鼠标右键透传（迷雾右键擦除等系统经 InputManager 查询；同设备源）。
+            // 4) 鼠标右键透传（经 InputManager 的通用输入快照查询；同设备源）。
             //    默认开（开发便利）；关 = 模拟压板源的"无右键"（真机恒无，见 RightMousePassThrough）
             if (RightMousePassThrough)
             {
