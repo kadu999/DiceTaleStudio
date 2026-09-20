@@ -13,9 +13,11 @@ namespace DiceTale
     /// 没有 `Sprite` 字段、没有序列化字段、没有编辑器预览逻辑。
     ///
     /// 尺寸口径：**宽高直接烘进网格顶点，不靠 Transform 缩放**。调用方给的就是世界单位下的
-    /// 宽与高，顶点摆在 `±宽/2` / `±高/2`，因此 `transform.localScale` 应当保持 `(1,1,1)`
-    /// （<see cref="Apply"/> 会把它校正回 1）。这样「对象多大」只有一处来源——网格自己，
-    /// 不会出现「网格比例 × 缩放」两处都能改大小、改错一个就变形的问题。
+    /// 宽与高（文档像素到世界单位的换算在 <see cref="SceneObjectView.GlobalScale"/>，
+    /// 那是唯一的那根"缩放指针"），顶点摆在 `±宽/2` / `±高/2`，
+    /// 因此 `transform.localScale` 应当保持 `(1,1,1)`（<see cref="Apply"/> 会把它校正回 1）。
+    /// 这样「对象多大」只有一处来源——网格自己，不会出现「网格比例 × 缩放」两处都能改大小、
+    /// 改错一个就变形的问题。
     ///
     /// 地面网格**不用内置 Quad**：它原生躺在 XY 平面、要贴地面必须旋转；这里代码自建 XZ 网格
     /// （法线朝上 +Y、无需旋转），绕序与 `FogOfWar` 的地面网格一致（俯视相机看到正面）。
@@ -37,7 +39,7 @@ namespace DiceTale
         private Mesh ownedMesh;
         private Material ownedMaterial;
 
-        /// <summary>当前网格烘进去的尺寸与染色（变了才重建 / 重刷）。</summary>
+        /// <summary>当前网格烘进去的尺寸（世界单位）与染色（变了才重建 / 重刷）。</summary>
         private float builtWidth = -1f;
         private float builtHeight = -1f;
         private Color builtTint = new Color(-1f, -1f, -1f, -1f);
@@ -51,13 +53,14 @@ namespace DiceTale
         ///   直接烘进网格顶点；`&lt;= 0` 按 1 处理；
         /// - <paramref name="tint"/>：染色（有图时给白色 = 原图）；
         /// - <paramref name="order"/>：`MeshRenderer.sortingOrder`（决定谁盖谁）；
-        /// - <paramref name="lift"/>：离地高度（避免与地图底图共面闪烁）。
+        /// - <paramref name="lift"/>：离地高度（**世界单位**，略抬离地面避免与地图底图共面闪烁）。
         ///
         /// 顺带把 `localScale` 校正回 `(1,1,1)`：尺寸已经由网格决定，缩放再参与进来只会让
         /// 「实际多大」变成两个来源相乘。摆位置与旋转仍由调用方负责（本组件不碰）。
         /// </summary>
         public void Apply(Texture2D texture, float width, float height, Color tint, int order, float lift)
         {
+            // 给进来的就是世界单位（文档像素 → 世界单位在 SceneObjectView.GlobalScale 做掉了）
             var safeWidth = width <= 0f ? 1f : width;
             var safeHeight = height <= 0f ? 1f : height;
 
@@ -76,7 +79,7 @@ namespace DiceTale
                 transform.localScale = Vector3.one;
             }
 
-            // y 只用来离地，x/z 保持外面摆的位置（镜像用 world position 摆对象）
+            // y 只用来离地（世界单位），x/z 保持外面摆的局部位置
             var position = transform.localPosition;
             transform.localPosition = new Vector3(position.x, lift, position.z);
         }

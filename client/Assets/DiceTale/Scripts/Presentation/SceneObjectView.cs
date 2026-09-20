@@ -9,8 +9,9 @@ namespace DiceTale
     /// - 位置 = `position`（文档世界坐标 x/y 向上 → 客户端 x/z + 离地抬升）；
     ///   写的是 **`localPosition` / `localRotation`**——相对所在**场景的根节点**，
     ///   所以根节点可以自由平移 / 旋转 / **缩放**，整棵场景一起变，不用逐个改世界坐标；
-    /// - 大小 = 声明尺寸（`image` / `map.image`）× `scale`；尺寸由
-    ///   <see cref="GroundTextureRenderer"/> 烘进网格顶点，本组件**不碰 `localScale`**
+    /// - 大小 = 声明尺寸（`image` / `map.image`）× `scale` × **<see cref="GlobalScale"/>**
+    ///   ——后者是「文档像素 → 世界单位」的全局换算，位置也乘它；
+    ///   尺寸由 <see cref="GroundTextureRenderer"/> 烘进网格顶点，本组件**不碰 `localScale`**
     ///   （保持 1，这样根节点的缩放才是唯一影响整体大小的因素）；
     /// - `active` = 是否显示（编辑器那个勾选框一改，这里就出现 / 消失）；
     /// - `sortingOrder` = 遮挡顺序（大的盖在上面）；
@@ -25,7 +26,23 @@ namespace DiceTale
     /// </summary>
     public class SceneObjectView : MonoBehaviour
     {
-        /// <summary>没声明尺寸时的兜底边长（与编辑器画布上那块兜底矩形同口径）。</summary>
+        /// <summary>
+        /// **全局缩放**：文档像素 → 世界单位的唯一那根指针。想改整体大小就改它。
+        ///
+        /// 文档里的尺寸与坐标都是**像素**（那张地图 1920×1080、精灵 256×256、
+        /// 位置像 `(-108.74, -56.60)`），直接当世界单位用会大得离谱，所以统一乘这个系数：
+        /// **尺寸**（声明尺寸 × 对象 scale）与**位置**都乘它——两者必须同一个系数，
+        /// 否则对象会被摆到远超自身尺寸的地方。
+        ///
+        /// 默认 `0.01`：1920×1080 的地图 → 19.2×10.8 个单位，256×256 的精灵 → 2.56×2.56 个单位。
+        /// 运行时也能改（下一帧推送或下一次 `ApplyVisual` 生效）。
+        ///
+        /// 想**整场景**一起缩放（连格子、连雾一起）请改场景根节点的 Transform——
+        /// 那是另一层，`localPosition` 会跟着根节点走。
+        /// </summary>
+        public static float GlobalScale = 0.01f;
+
+        /// <summary>没声明尺寸时的兜底边长（**文档像素**，与编辑器画布上那块兜底矩形同口径）。</summary>
         private const float FallbackSize = 64f;
 
         private GroundTextureRenderer quad;
@@ -77,7 +94,11 @@ namespace DiceTale
             // 这样整棵场景可以被根节点平移、旋转、**缩放**（比如把场景缩到 0.5 倍看全局），
             // 里面的对象跟着一起变，而不用逐个改世界坐标。
             // 文档 y 向上 → 客户端 +Z（与 GridMap.WorldToGrid 同口径）；y 只用来避免共面闪烁。
-            transform.localPosition = new Vector3(obj.x, 0f, obj.y);
+            //
+            // 位置是**文档像素**，乘同一个 GlobalScale（与尺寸同系数，否则会被摆到离谱的地方）；
+            // y（离地抬升）是**世界单位**，不参与缩放。
+            var scale = GlobalScale;
+            transform.localPosition = new Vector3(obj.x * scale, 0f, obj.y * scale);
             transform.localRotation = Quaternion.Euler(0f, -obj.rotation, 0f);
 
             var image = obj.DisplayImage;
@@ -121,12 +142,13 @@ namespace DiceTale
         {
             var hasTexture = currentTexture != null && currentImageId.Length > 0 && currentTextureId == currentImageId;
 
-            // 声明尺寸（× 对象 scale）直接交给渲染器**烘进网格顶点**——
+            // 声明尺寸（× 对象 scale）先乘全局缩放折成世界单位，再交给渲染器**烘进网格顶点**——
             // 这里不碰 transform.localScale（尺寸只有一个来源，网格自己）。
+            var scale = GlobalScale;
             quad.Apply(
                 hasTexture ? currentTexture : null,
-                currentWidth,
-                currentHeight,
+                currentWidth * scale,
+                currentHeight * scale,
                 hasTexture ? Color.white : currentKindColor,
                 currentSortingOrder,
                 LiftFor(currentSortingOrder));
