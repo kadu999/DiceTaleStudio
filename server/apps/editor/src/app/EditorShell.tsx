@@ -48,16 +48,21 @@ export function EditorShell(): React.JSX.Element {
   const setObjectImage = useEditorStore((state) => state.setObjectImage);
   const setTool = useEditorStore((state) => state.setTool);
   const cancelObjectTransform = useEditorStore((state) => state.cancelObjectTransform);
-  const scenes = useEditorStore((state) => state.scenes);
-  const activeSceneName = useEditorStore((state) => state.activeSceneName);
 
-  /** 弹框要换图片的那个对象（对象可能已被删掉，所以现查一次）。 */
-  const pickerTarget =
-    imagePickerTarget === null
-      ? undefined
-      : scenes
-          .find((scene) => scene.name === activeSceneName)
-          ?.objects.find((object) => object.id === imagePickerTarget);
+  /**
+   * 弹框要换图片的那个对象（对象可能已被删掉，所以现查一次）。
+   *
+   * **只在图片选择器开着时才订阅场景**：拖手柄时文档每帧都在变，若这里订阅了 `scenes`，
+   * 每帧都会重渲染整个外壳（菜单栏 + 三栏 + 状态栏）。关着时返回恒定的 `undefined`，
+   * `Object.is` 一比就跳过。
+   */
+  const pickerTarget = useEditorStore((state) =>
+    state.imagePicker && state.imagePickerTarget !== null
+      ? state.scenes
+          .find((scene) => scene.name === state.activeSceneName)
+          ?.objects.find((object) => object.id === state.imagePickerTarget)
+      : undefined,
+  );
 
   // 启动引导：自动打开上次的项目 / 一个项目都没有时弹新建 / 有项目但没记录时弹打开列表。
   // store 内部有幂等保护，StrictMode 下重复调用不会弹两次。

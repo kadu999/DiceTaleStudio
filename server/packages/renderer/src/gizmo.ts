@@ -20,8 +20,10 @@ import { worldToScreen, type Point, type Viewport } from "./viewport";
 /**
  * 当前变换工具。
  *
- * - `none`：**默认**，不显示任何手柄——拖动对象本体是「跟手移动」，视口照常用空白 / 中键平移；
- * - `move` / `rotate` / `scale`：显示对应的手柄，对象本体的拖动让位给手柄（对齐 Unity）。
+ * - `none`：**默认**，不显示任何手柄——拖动对象本体也不改它，只选中 / 平移画布；
+ * - `move`：显示移动轴，**拖对象本体 = 自由移动**（两个轴一起走，这是摆位置最顺手的一条路）；
+ * - `rotate` / `scale`：显示对应的手柄，对象本体的拖动让位给「平移画布」——
+ *   这两个工具下「拖本体」更可能的意思是想换个视角，而不是把对象碰歪。
  */
 export type TransformTool = "none" | "move" | "rotate" | "scale";
 
@@ -66,11 +68,21 @@ export const SCALE_HANDLES: readonly GizmoHandle[] = [
   "scale-left",
 ];
 
-/** 手柄的配色与尺寸（屏幕像素），与选中框同一套口径。 */
-export const GIZMO_HANDLE_SIZE = 7;
+/**
+ * 手柄的配色与尺寸（屏幕像素），与选中框同一套口径。
+ *
+ * 尺寸与命中容差都是**屏幕像素**，视口缩到 0.05 或放到 16 倍时手柄的大小不变——
+ * 于是它永远是一枚「手指 / 光标量级」的目标，不会随缩放变得点不中。
+ */
+export const GIZMO_HANDLE_SIZE = 9;
 
-/** 命中容差：手柄是 7px 的小方块，触摸下需要**更大**的可点范围（上下左右各 6px）。 */
-export const GIZMO_HANDLE_HIT_SIZE = 6;
+/**
+ * 命中容差：手柄是 9px 的小方块，**可点范围要往外再放一大圈**（上下左右各 10px）。
+ *
+ * 画出来的方块只是「中心在哪」的记号；真正的目标是「我想拖那个角」这件事本身。
+ * 容差给足了才不会出现「明明点在手柄上却没反应」——那是这一块最常见的抱怨。
+ */
+export const GIZMO_HANDLE_HIT_SIZE = 10;
 
 /**
  * 屏幕手柄的间距（**都是屏幕像素**，而且都从对象的外框往外量）。
@@ -82,14 +94,14 @@ export const GIZMO_AXIS_GAP = 45;
 export const GIZMO_AXIS_LENGTH = 40;
 export const GIZMO_RING_GAP = 22;
 
-/** 轴条的命中半宽（屏幕像素）：轴是 1.5px 的线，容差要按手指算。 */
-export const GIZMO_AXIS_HIT_WIDTH = 5;
+/** 轴条的命中半宽（屏幕像素）：轴是 2px 的线，容差按手指算（18px 宽的一条带子）。 */
+export const GIZMO_AXIS_HIT_WIDTH = 9;
 
-/** 旋转环的命中半宽。 */
-export const GIZMO_RING_HIT_WIDTH = 6;
+/** 旋转环的命中半宽（20px 宽的一圈带子）。 */
+export const GIZMO_RING_HIT_WIDTH = 10;
 
 /** 矩形小于这个屏幕尺寸就只画框、不画手柄（手柄会比框还大，糊成一团）。 */
-const MIN_FRAME_SIZE = GIZMO_HANDLE_SIZE * 2;
+const MIN_FRAME_SIZE = GIZMO_HANDLE_SIZE * 3;
 
 /**
  * 这块矩形在屏幕上够不够大、能不能画手柄。
@@ -245,7 +257,11 @@ export function scaleAxisOf(handle: GizmoHandle): "x" | "y" | undefined {
  */
 export interface GizmoScreenHandles {
   readonly center: Point;
-  /** 对象外框在屏幕上的极值（含旋转后的外接矩形），三套手柄都由它派生。 */
+  /**
+   * 矩形**自己的**半宽 / 半高（屏幕像素，不含旋转），三套手柄都由它派生。
+   *
+   * 刻意不用「旋转后四角的极值」：那个值随角度变化，会让环半径与轴条间距在旋转时呼吸。
+   */
   readonly bounds: { readonly halfWidth: number; readonly halfHeight: number };
   /** 外框四角在屏幕上的位置（给测 e2e 精确点手柄用；绘制走 `scale`）。 */
   readonly corners: readonly Point[];
@@ -275,6 +291,10 @@ export interface GizmoHandlePointScreen {
  *
  * 参数里带 `rotation` 是有意的：手柄要跟着对象转（对齐 Unity——旋转过的对象，
  * 它的缩放柄也转过去了），而拾取矩形用的仍是同一个 `rotation`。
+ *
+ * **间距与环半径从「矩形自己的半尺寸」量起**（不是旋转后四角的极值）：否则正方形转过
+ * 45° 时外框极值会比半边长出 41%，旋转环与移动轴条在拖拽旋转的过程中会一会儿大一会儿小。
+ * 环半径取半边对角线，于是它在**任何角度**下都包得住对象。
  */
 export function gizmoScreenGeometry(
   rect: WorldRect,
@@ -283,7 +303,10 @@ export function gizmoScreenGeometry(
 ): GizmoScreenHandles {
   const center = worldToScreen(viewport, rect.center);
   const corners = rectCorners(rect, rotation).map((corner) => worldToScreen(viewport, corner));
-  const bounds = screenBoundsOf(corners, center);
+  const bounds = {
+    halfWidth: (rect.size.width / 2) * viewport.scale,
+    halfHeight: (rect.size.height / 2) * viewport.scale,
+  };
 
   // 轴条从对象外框外 GAP 处起、再向外 LENGTH：于是它贴着对象长，不随对象大小飘
   const axes: GizmoAxisScreen[] = (["move-x", "move-y"] as const).map((handle) => {
@@ -306,22 +329,6 @@ export function gizmoScreenGeometry(
     })),
     drawable: isDrawableFrame(rect, viewport),
   };
-}
-
-/** 外框在屏幕上的半宽 / 半高（旋转后取极值，于是它是真正的「贴住对象」的外接矩形）。 */
-function screenBoundsOf(
-  corners: readonly Point[],
-  center: Point,
-): { readonly halfWidth: number; readonly halfHeight: number } {
-  let halfWidth = 0;
-  let halfHeight = 0;
-
-  for (const corner of corners) {
-    halfWidth = Math.max(halfWidth, Math.abs(corner.x - center.x));
-    halfHeight = Math.max(halfHeight, Math.abs(corner.y - center.y));
-  }
-
-  return { halfWidth, halfHeight };
 }
 
 /** 点到线段的最短距离（命中轴条用）。 */

@@ -141,6 +141,18 @@ describe("displayRectOf：显示 / 拾取 / 选中框共用的矩形", () => {
     }
   });
 
+  it("旋转不改这块矩形：`rotation` 由绘制 / 拾取 / 手柄各自带上", () => {
+    // 曾经返回的是**旋转后的外框**：非正方形对象转过角度后，贴图会被画成外框的形状
+    // （1920×1080 的地图转 45° 就变成 2121×2121 的方块），而且绘制用的手柄几何（外框）
+    // 与命中测试用的几何（局部矩形）对不上——「看得见的柄点不中」
+    for (const rotation of [Math.PI / 6, Math.PI / 4, Math.PI / 2, -1]) {
+      expect(displayRectOf({ ...sprite(1), rotation })).toEqual({
+        center: { x: 100, y: 50 },
+        size: { width: 120, height: 80 },
+      });
+    }
+  });
+
   it("没有位置的对象没有矩形（不画也点不到）", () => {
     expect(displayRectOf(sprite())).toBeDefined();
     const unplaced = createSceneObject({ id: "x", name: "未放置" });

@@ -426,12 +426,19 @@ test.describe("创建与编辑场景对象", () => {
       await page.mouse.move(drop.x, drop.y, { steps: 8 });
       await page.mouse.up();
 
+      // 落盘是**去抖**的（800ms），所以这里要等到文件里出现**这一拖之后**的样子：
+      // x 已经走够**且** y 停在按下时的值。只等 x 会被骗——还没保存的旧值（0,0）单看 x
+      // 也满足「比起点大 100 以上」，于是断言立刻读到旧值，y 就成了 0
       await expect
         .poll(async () => {
           const position = (await readSceneObjects(request, project, SCENE_A))[0]?.position ?? null;
-          return position === null ? 0 : position.x - probed.world.x;
+          return (
+            position !== null &&
+            position.x - probed.world.x > 100 &&
+            Math.abs(position.y - probed.world.y) < 2
+          );
         })
-        .toBeGreaterThan(100);
+        .toBe(true);
 
       const moved = (await readSceneObjects(request, project, SCENE_A))[0]?.position ?? null;
       // 轴约束：只有 x 变，y 保持按下时的值

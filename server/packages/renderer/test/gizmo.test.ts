@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import { worldRectOf } from "@dts/grid";
 import {
   GIZMO_AXIS_GAP,
+  GIZMO_AXIS_HIT_WIDTH,
   GIZMO_AXIS_LENGTH,
   GIZMO_HANDLE_HIT_SIZE,
+  GIZMO_HANDLE_SIZE,
   GIZMO_RING_GAP,
+  GIZMO_RING_HIT_WIDTH,
   SCALE_HANDLES,
   angleAround,
   gizmoScreenGeometry,
@@ -184,12 +187,32 @@ describe("屏幕几何", () => {
     expect(geometry.ringRadius).toBeCloseTo(Math.hypot(50, 30) + GIZMO_RING_GAP, 6);
   });
 
-  it("外框半宽半高按旋转后的极值算（旋转时手柄仍然贴住对象）", () => {
-    const rotated = gizmoScreenGeometry(RECT, Math.PI / 2, VIEW);
+  it("间距与环半径用矩形**自己的**半尺寸：转过角度也不会跟着呼吸", () => {
+    const upright = gizmoScreenGeometry(RECT, 0, VIEW);
+    const tilted = gizmoScreenGeometry(RECT, Math.PI / 4, VIEW);
 
-    // 转 90° 后外框变成 60×100 → 半宽半高互换
-    expect(rotated.bounds.halfWidth).toBeCloseTo(30, 6);
-    expect(rotated.bounds.halfHeight).toBeCloseTo(50, 6);
+    // 100×60 的矩形：半尺寸恒为 50 / 30，不随角度变成「旋转后四角的极值」（那会是 56.6）
+    expect(tilted.bounds.halfWidth).toBeCloseTo(50, 6);
+    expect(tilted.bounds.halfHeight).toBeCloseTo(30, 6);
+    expect(tilted.ringRadius).toBeCloseTo(upright.ringRadius, 6);
+    expect(tilted.axes).toEqual(upright.axes);
+  });
+
+  it("转过 45°：画出来的手柄与点得中的手柄仍是同一份坐标", () => {
+    const geometry = gizmoScreenGeometry(RECT, Math.PI / 4, VIEW);
+
+    // 绘制侧用的就是 geometry.scale / geometry.axes，命中侧用的也是它——
+    // 「看得见的柄点不中」只可能来自两处各算一套几何（曾经发生过：绘制用外框、命中用局部矩形）
+    for (const entry of geometry.scale) {
+      expect(hitTestGizmoHandles(entry.point, "scale", geometry), entry.handle).toBe(entry.handle);
+    }
+
+    for (const axis of geometry.axes) {
+      expect(hitTestGizmoHandles(axis.tip, "move", geometry), axis.handle).toBe(axis.handle);
+    }
+
+    const onRing = { x: geometry.center.x + geometry.ringRadius, y: geometry.center.y };
+    expect(hitTestGizmoHandles(onRing, "rotate", geometry)).toBe("rotate");
   });
 });
 
@@ -229,6 +252,45 @@ describe("命中测试", () => {
         geometry,
       ),
     ).toBeUndefined();
+  });
+
+  it("缩放手柄的**可点范围比画出来的方块大一圈**（手指 / 触控板也点得中）", () => {
+    const corner = geometry.scale.find((entry) => entry.handle === "scale-top-left");
+    const point = corner?.point ?? { x: 0, y: 0 };
+
+    // 画出来只有 GIZMO_HANDLE_SIZE 见方，但偏出它一个整边长仍然点得中：
+    // 「明明点在手柄边上却没反应」是这块最常见的抱怨，容差必须留足
+    expect(GIZMO_HANDLE_HIT_SIZE).toBeGreaterThan(GIZMO_HANDLE_SIZE / 2);
+    expect(
+      hitTestGizmoHandles({ x: point.x + GIZMO_HANDLE_SIZE, y: point.y }, "scale", geometry),
+    ).toBe("scale-top-left");
+  });
+
+  it("旋转环与移动轴的容差也是**一条带子**：偏出几个像素仍命中，再远就不认", () => {
+    const axis = geometry.axes.find((entry) => entry.handle === "move-x");
+    const mid = axis === undefined ? { x: 0, y: 0 } : {
+      x: (axis.root.x + axis.tip.x) / 2,
+      y: (axis.root.y + axis.tip.y) / 2,
+    };
+
+    expect(
+      hitTestGizmoHandles({ x: mid.x, y: mid.y + GIZMO_AXIS_HIT_WIDTH - 1 }, "move", geometry),
+    ).toBe("move-x");
+    expect(
+      hitTestGizmoHandles({ x: mid.x, y: mid.y + GIZMO_AXIS_HIT_WIDTH + 2 }, "move", geometry),
+    ).toBeUndefined();
+
+    const beside = {
+      x: geometry.center.x + geometry.ringRadius + GIZMO_RING_HIT_WIDTH - 1,
+      y: geometry.center.y,
+    };
+    const outside = {
+      x: geometry.center.x + geometry.ringRadius + GIZMO_RING_HIT_WIDTH + 2,
+      y: geometry.center.y,
+    };
+
+    expect(hitTestGizmoHandles(beside, "rotate", geometry)).toBe("rotate");
+    expect(hitTestGizmoHandles(outside, "rotate", geometry)).toBeUndefined();
   });
 
   it("旋转环：环上命中、环内与环外都不命中", () => {

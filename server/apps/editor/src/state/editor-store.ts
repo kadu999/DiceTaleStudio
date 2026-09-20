@@ -101,7 +101,7 @@ import {
   type GridPaintPrefs,
 } from "../services/grid-paint-prefs";
 import { readEditorPrefs, writeEditorPrefs } from "../services/editor-prefs";
-import { angleAround, resolveTransform, type TransformStart } from "../panels/scene/transform";
+import { resolveTransform, type TransformStart } from "../panels/scene/transform";
 import { clearSceneImageCache } from "../services/scene-image";
 import {
   emptySoundPlayback,
@@ -406,13 +406,22 @@ export interface EditorStoreState {
   /** 换变换工具（移动 / 旋转 / 缩放）；写进浏览器本地偏好，不进文档。 */
   setTool(tool: TransformTool): void;
   /**
-   * 开始一次手柄拖拽：把当前状态拍成快照（世界中心、角度、两轴有效缩放、
-   * 显示矩形半宽半高、指针方位角、缩放锚点）。
+   * 开始一次变换拖拽：把当前状态拍成快照（世界中心、角度、两轴有效缩放、
+   * 按下时的指针位置、缩放锚点）。
+   *
+   * `handle` 传 `null` = **拖的是对象本体**（「移动」工具下的自由移动，没有手柄也就没有轴约束
+   * 与缩放锚点）；传手柄名则按手柄决定轴约束（移动柄）或锚点 / 角与边（缩放柄）。
    *
    * 返回 `undefined` = 这次不进入变换：对象不存在 / 没落位 / **锁定**（锁的语义是
    * 「不能被移动」，旋转缩放当然也算移动它）/ 正在拖别的。
    */
-  beginObjectTransform(id: string, handle: GizmoHandle, pointer: WorldPosition, halfWidth: number, halfHeight: number): TransformStart | undefined;
+  beginObjectTransform(
+    id: string,
+    handle: GizmoHandle | null,
+    pointer: WorldPosition,
+    halfWidth: number,
+    halfHeight: number,
+  ): TransformStart | undefined;
   /**
    * 拖拽中：按快照算出新值并写进文档（连续调用合并成一条撤销记录）。
    *
@@ -672,14 +681,28 @@ const TRANSFORM_LABELS: Record<TransformTool, string> = {
  * 写出去之前每个对象都过一遍 `collapseScale`：两轴相等的缩放**只写等比 `scale`**。
  * 少了这一步，用角手柄拖出来的（或单轴拖回等比的）对象会带着 `scaleX` / `scaleY` 落盘，
  * 而那两个字段 Unity 客户端还不认——等比场景本来不需要它们。
+ *
+ * **按场景对象引用缓存结果**（`WeakMap`）：拖手柄时每一帧都要拿它比对「有没有未保存的改动」，
+ * 而一个项目里通常只有一个场景在变——没变的那些场景不该被反复 `JSON.stringify`。
+ * 缓存成立的前提是**文档不可变**（immer 每次修改都产出新对象，只有真改过的场景才换引用），
+ * 所以拿引用当键不会读到脏文本。
  */
-function serializeSceneFile(scene: SceneDoc): string {
+const serializedScenes = new WeakMap<SceneDoc, string>();
+
+export function serializeSceneFile(scene: SceneDoc): string {
+  const cached = serializedScenes.get(scene);
+  if (cached !== undefined) {
+    return cached;
+  }
+
   const file: SceneFileDoc = {
     formatVersion: DOCUMENT_FORMAT_VERSION,
     objects: scene.objects.map(collapseScale),
   };
 
-  return `${JSON.stringify(file, null, 2)}\n`;
+  const text = `${JSON.stringify(file, null, 2)}\n`;
+  serializedScenes.set(scene, text);
+  return text;
 }
 
 /** 在资源树里按条件找节点（找场景目录、按 id 找选中的资源文件）。 */
@@ -2266,7 +2289,7 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
     },
 
     beginObjectTransform(id, handle, pointer, halfWidth, halfHeight) {
-      // 「拖动」模式没有手柄，也就没有变换拖拽：护栏放在这里，任何调用方都进不来
+      // 「拖动」模式既没有手柄、也不吃对象本体的拖动：护栏放在这里，任何调用方都进不来
       const tool = get().ui.tool;
       if (tool === "none") {
         return undefined;
@@ -2280,9 +2303,14 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       }
 
       const center = { x: object.position.x, y: object.position.y };
-      const rect = worldRectOf(center, { width: halfWidth, height: halfHeight });
+      // **锚点矩形要用整宽整高**：`halfWidth` / `halfHeight` 是半尺寸，而 `worldRectOf`
+      // 收的是整尺寸。传半尺寸会把固定点放到「中心与对角的中点」上——按下缩放的一瞬间
+      // 对象就跳到 1.5 倍。命中测试那边同一件事写的就是 `half.width * 2`。
+      const rect = worldRectOf(center, { width: halfWidth * 2, height: halfHeight * 2 });
+      // 拖对象本体（`handle === null`）没有手柄：既没有轴约束，也没有缩放锚点 / 角边之分
+      const scaleHandle = tool === "scale" && handle !== null ? handle : null;
       // 边手柄管哪一轴：拖它是「只改这一轴」，`resolveTransform` 靠它把另一轴按住不动
-      const scaleAxis = scaleAxisOf(handle);
+      const scaleAxis = scaleHandle === null ? undefined : scaleAxisOf(scaleHandle);
 
       const start: TransformStart = {
         id,
@@ -2291,14 +2319,16 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
         rotation: object.rotation,
         scaleX: effectiveScaleX(object),
         scaleY: effectiveScaleY(object),
-        halfWidth,
-        halfHeight,
-        // 旋转按「指针方位角的变化量」算，所以起始方位角必须在**按下这一刻**记下来
-        pointerAngle: angleAround(pointer, center),
+        // 移动按「指针位移」、旋转按「指针方位角增量」、缩放按「指针相对锚点的偏移比例」——
+        // 三者都要**按下这一刻的真实指针位置**当基准（见 transform.ts 顶部说明）
+        pointer,
         center,
         // 移动与旋转用不到锚点；缩放拖拽的固定点是对角 / 对边中点（与 Unity 一致）
-        anchor: get().ui.tool === "scale" ? (scaleAnchorFor(handle, rect, object.rotation) ?? center) : center,
-        corner: isCornerScaleHandle(handle),
+        anchor:
+          scaleHandle === null
+            ? center
+            : (scaleAnchorFor(scaleHandle, rect, object.rotation) ?? center),
+        corner: scaleHandle !== null && isCornerScaleHandle(scaleHandle),
         ...(scaleAxis === undefined ? {} : { axis: scaleAxis }),
       };
 

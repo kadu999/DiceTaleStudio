@@ -23,16 +23,18 @@ const TOOL_LABELS: Record<TransformTool, string> = {
 export function StatusBar(): React.JSX.Element {
   const mode = useEditorStore((state) => state.mode);
   const doc = useEditorStore((state) => state.doc);
-  const scenes = useEditorStore((state) => state.scenes);
-  const activeSceneName = useEditorStore((state) => state.activeSceneName);
+  // 只要「有几个场景」这个数：订阅整个 `scenes` 会让状态栏在每次拖手柄时都跟着重渲染
+  const sceneCount = useEditorStore((state) => state.scenes.length);
+  // 当前场景名（字符串原始值）：同样不必订阅整个场景列表
+  const activeSceneName = useEditorStore(
+    (state) => state.scenes.find((scene) => scene.name === state.activeSceneName)?.name ?? "—",
+  );
   const saveState = useEditorStore((state) => state.sceneSaveState);
   const selection = useEditorStore((state) => state.selectedObjectIds);
   const status = useEditorStore((state) => state.runtime.status);
   const runtimeActive = useEditorStore((state) => state.runtime.runtimeActive);
   const clientConnected = useEditorStore((state) => state.runtime.client !== null);
   const tool = useEditorStore((state) => state.ui.tool);
-
-  const activeScene = scenes.find((scene) => scene.name === activeSceneName);
 
   const runtimeLabel =
     mode === "edit"
@@ -48,7 +50,7 @@ export function StatusBar(): React.JSX.Element {
   return (
     <footer className="flex h-6 flex-none items-center gap-4 border-t border-[var(--color-editor-border)] bg-[var(--color-editor-panel-alt)] px-2 text-[11px] text-[var(--color-editor-text-dim)]">
       <span data-testid="status-doc">{doc.name}</span>
-      <span data-testid="status-scenes">场景 {scenes.length}</span>
+      <span data-testid="status-scenes">场景 {sceneCount}</span>
       <span
         data-testid="status-scene-save"
         data-state={saveState}
@@ -56,7 +58,7 @@ export function StatusBar(): React.JSX.Element {
       >
         {SAVE_STATE_LABELS[saveState]}
       </span>
-      <span data-testid="status-active-scene">当前场景 {activeScene?.name ?? "—"}</span>
+      <span data-testid="status-active-scene">当前场景 {activeSceneName}</span>
       <span data-testid="status-selection">已选 {selection.length}</span>
       {/* 当前变换工具：与场景面板上的开关同一个值。放状态栏是为了**一眼确认**
           「现在拖动是摆位置还是转角度」——切错了工具却不知道，是最容易白费功夫的一种错 */}

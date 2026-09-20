@@ -87,6 +87,11 @@ async function openSprite(page: Page, request: APIRequestContext): Promise<strin
  *
  * 视口从 DOM 上读（面板把它写在 `[data-testid=scene-viewport]` 上），于是用例与画布对
  * 「世界原点落在屏幕哪儿」的看法必然一致。
+ *
+ * **轴距与环半径按矩形自己的半尺寸算**（不取旋转后四角的极值）：手柄的间距要贴着对象，
+ * 但不该随角度一会儿大一会儿小——画布那边是这么算的，用例照着复述。
+ * 缩放手柄与其**对侧锚点**同在 `scale` 里按同一套「对角 / 对边」映射配对：拖拽时锚点不动，
+ * 所以「尺寸翻倍」= 把指针拖到 `锚点 + 2×(把手 − 锚点)`（与画布那边的倍率定义同一套）。
  */
 async function gizmoOf(page: Page, object: PersistedObject) {
   const viewport = await sceneViewport(page);
@@ -111,25 +116,20 @@ async function gizmoOf(page: Page, object: PersistedObject) {
   const at = (local: { x: number; y: number }): { x: number; y: number } => toScreen(rotate(local));
 
   const screenCenter = toScreen(center);
-  // 外框半宽半高（旋转后取极值）——三套手柄都由它派生
-  const cornersLocal = [
-    { x: -half.x, y: half.y },
-    { x: half.x, y: half.y },
-    { x: half.x, y: -half.y },
-    { x: -half.x, y: -half.y },
-  ];
-  const corners = cornersLocal.map(at);
-  const boundX = Math.max(...corners.map((corner) => Math.abs(corner.x - screenCenter.x)));
-  const boundY = Math.max(...corners.map((corner) => Math.abs(corner.y - screenCenter.y)));
+  // 手柄间距从**半尺寸**量起（`gizmoScreenGeometry` 的口径）：转过角度的正方形也是 60 而不是 84.85
+  const bound = {
+    x: half.x * viewport.scale,
+    y: half.y * viewport.scale,
+  };
 
   const axisDistance = {
-    x: boundX + GIZMO_AXIS_GAP,
-    y: boundY + GIZMO_AXIS_GAP,
+    x: bound.x + GIZMO_AXIS_GAP,
+    y: bound.y + GIZMO_AXIS_GAP,
   };
 
   return {
     center: screenCenter,
-    ringRadius: Math.hypot(boundX, boundY) + GIZMO_RING_GAP,
+    ringRadius: Math.hypot(bound.x, bound.y) + GIZMO_RING_GAP,
     axes: [
       {
         handle: "move-x" as const,
@@ -153,6 +153,44 @@ async function gizmoOf(page: Page, object: PersistedObject) {
       { handle: "scale-bottom" as const, point: at({ x: 0, y: -half.y }) },
       { handle: "scale-left" as const, point: at({ x: -half.x, y: 0 }) },
     ],
+  };
+}
+
+/** 缩放块的对侧锚点（就是对角 / 对边中点，与画布 `scaleAnchorFor` 同一套映射）。 */
+const SCALE_ANCHORS: Readonly<Record<string, string>> = {
+  "scale-top-left": "scale-bottom-right",
+  "scale-top-right": "scale-bottom-left",
+  "scale-bottom-right": "scale-top-left",
+  "scale-bottom-left": "scale-top-right",
+  "scale-top": "scale-bottom",
+  "scale-right": "scale-left",
+  "scale-bottom": "scale-top",
+  "scale-left": "scale-right",
+};
+
+/** 某个缩放块在屏幕上的位置与它的对侧锚点（拿不到就抛，用例都建立在「有手柄」之上）。 */
+function scaleHandleOf(
+  geometry: Awaited<ReturnType<typeof gizmoOf>>,
+  handle: string,
+): { point: { x: number; y: number }; anchor: { x: number; y: number } } {
+  const point = geometry.scale.find((entry) => entry.handle === handle)?.point;
+  const target = SCALE_ANCHORS[handle];
+  const anchor = geometry.scale.find((entry) => entry.handle === target)?.point;
+  if (point === undefined || anchor === undefined) {
+    throw new Error(`拿不到 ${handle} 的缩放块 / 锚点几何`);
+  }
+
+  return { point, anchor };
+}
+
+/** 把缩放块拖到「锚点之外 `factor` 倍」——倍率就是 `factor`（锚点固定不动）。 */
+function scaleTarget(
+  handle: { point: { x: number; y: number }; anchor: { x: number; y: number } },
+  factor: number,
+): { x: number; y: number } {
+  return {
+    x: handle.anchor.x + (handle.point.x - handle.anchor.x) * factor,
+    y: handle.anchor.y + (handle.point.y - handle.anchor.y) * factor,
   };
 }
 
@@ -213,31 +251,71 @@ test.describe("场景变换手柄", () => {
     }
   });
 
-  test("四种工具下，点对象都只是选中、不会把它拖走", async ({ page, request }) => {
+  test("拖对象本体：只有「移动」工具会挪动它，其余三个工具只平移画布", async ({ page, request }) => {
     const project = await openSprite(page, request);
     try {
-      for (const tool of ["none", "move", "rotate", "scale"] as const) {
+      // 「移动」工具：拖本体 = 自由移动（两个轴一起走，不必先对准箭头）
+      await page.getByTestId("tool-move").click();
+      await expect(page.getByTestId("status-tool")).toHaveAttribute("data-tool", "move");
+      await closeDrawers(page);
+
+      await dragWorld(page, { x: 0, y: 0 }, { x: 140, y: 110 });
+      await expect
+        .poll(async () => (await currentObject(request, project)).position?.x ?? 0)
+        .toBeCloseTo(140, 0);
+      const dragged = await currentObject(request, project);
+      expect(dragged.position?.y ?? 0).toBeCloseTo(110, 0);
+      // 自由移动只挪位置：角度与缩放不碰
+      expect(dragged.rotation ?? 0).toBe(0);
+      expect(dragged.scale ?? 1).toBe(1);
+
+      // 其余三个工具：本体这一下什么也不改（旋转 / 缩放下「顺手把对象碰歪」最烦人）。
+      // 每次先复位视口：上一轮拖本体是**平移画布**，不复位的话落点会一轮轮被挤出画面
+      for (const tool of ["none", "rotate", "scale"] as const) {
+        await page.getByTestId("reset-viewport").click();
         await page.getByTestId(`tool-${tool}`).click();
         await expect(page.getByTestId("status-tool")).toHaveAttribute("data-tool", tool);
         await closeDrawers(page);
 
-        // 从对象中心往外拖：只有手柄能改对象，本体这一下什么也不该改
-        await dragWorld(page, { x: 0, y: 0 }, { x: 140, y: 110 });
+        await dragWorld(page, { x: 140, y: 110 }, { x: 60, y: 40 });
         await page.waitForTimeout(900);
 
         const object = await currentObject(request, project);
-        expect(object.position?.x ?? 0, `${tool} 模式下对象被拖走了`).toBe(0);
-        expect(object.position?.y ?? 0, `${tool} 模式下对象被拖走了`).toBe(0);
+        expect(object.position?.x ?? 0, `${tool} 模式下对象被拖走了`).toBeCloseTo(140, 0);
+        expect(object.position?.y ?? 0, `${tool} 模式下对象被拖走了`).toBeCloseTo(110, 0);
         expect(object.rotation ?? 0, `${tool} 模式下角度被改了`).toBe(0);
         expect(object.scale ?? 1, `${tool} 模式下缩放被改了`).toBe(1);
 
         // 点一下仍然选中它（点对象 = 选中，不是取消选中）
         await page.getByTestId("reset-viewport").click();
-        const center = await scenePoint(page, 0, 0);
+        const center = await scenePoint(page, 140, 110);
         await page.mouse.click(center.x, center.y);
         await page.waitForTimeout(200);
         await expect(page.getByTestId("status-selection")).toHaveText("已选 1");
       }
+    } finally {
+      await dropProject(request, project);
+    }
+  });
+
+  test("拖对象本体：按一下不动就抬手，位置一分不改（只有真的拖了才写文档）", async ({
+    page,
+    request,
+  }) => {
+    const project = await openSprite(page, request);
+    try {
+      await page.getByTestId("tool-move").click();
+      await closeDrawers(page);
+
+      const center = await scenePoint(page, 0, 0);
+      await page.mouse.move(center.x, center.y);
+      await page.mouse.down();
+      await page.mouse.up();
+      await page.waitForTimeout(400);
+
+      const object = await currentObject(request, project);
+      expect(object.position?.x ?? 0).toBe(0);
+      expect(object.position?.y ?? 0).toBe(0);
     } finally {
       await dropProject(request, project);
     }
@@ -292,7 +370,9 @@ test.describe("场景变换手柄", () => {
   test("旋转 / 缩放：本体不参与，抓手柄才动对象", async ({ page, request }) => {
     const project = await openSprite(page, request);
     try {
-      // 旋转：从环上按角度拖，角度确实变了
+      // 旋转：从环上按角度拖，角度确实变了。
+      // **往屏幕上方拖 = 对象在屏幕上逆时针转 = 文档里 -90°**：画布 y 向下、世界 y 向上，
+      // 两者差一个负号（数值的含义与属性面板那个输入框都不变，只有手势映射反号）
       await page.getByTestId("tool-rotate").click();
       const before = await currentObject(request, project);
       const rotateGeometry = await gizmoOf(page, before);
@@ -308,8 +388,7 @@ test.describe("场景变换手柄", () => {
           const rotation = (await currentObject(request, project)).rotation;
           return rotation === undefined ? 0 : Math.round((rotation * 180) / Math.PI);
         })
-        .toBe(90);
-      // 只是转，没有移动
+        .toBe(-90);
       const rotated = await currentObject(request, project);
       expect(rotated.position?.x ?? 0).toBeCloseTo(0, 3);
       expect(rotated.position?.y ?? 0).toBeCloseTo(0, 3);
@@ -317,13 +396,8 @@ test.describe("场景变换手柄", () => {
       // 缩放：拖角手柄，尺寸确实变了
       await page.getByTestId("tool-scale").click();
       const scaleGeometry = await gizmoOf(page, rotated);
-      const corner =
-        scaleGeometry.scale.find((entry) => entry.handle === "scale-bottom-right")?.point ??
-        scaleGeometry.center;
-      await dragScreen(page, corner, {
-        x: scaleGeometry.center.x + (corner.x - scaleGeometry.center.x) * 2,
-        y: scaleGeometry.center.y + (corner.y - scaleGeometry.center.y) * 2,
-      });
+      const corner = scaleHandleOf(scaleGeometry, "scale-bottom-right");
+      await dragScreen(page, corner.point, scaleTarget(corner, 2));
 
       await expect.poll(async () => (await currentObject(request, project)).scale ?? 0).toBeGreaterThan(1.8);
     } finally {
@@ -341,7 +415,7 @@ test.describe("场景变换手柄", () => {
       const geometry = await gizmoOf(page, before);
       const radius = geometry.ringRadius;
 
-      // 从环上的正右方拖到正上方 = 逆时针 90°
+      // 从环上的正右方拖到**屏幕上方**：屏幕上逆时针 90° → 文档里 -90°
       await dragScreen(
         page,
         { x: geometry.center.x + radius, y: geometry.center.y },
@@ -353,9 +427,9 @@ test.describe("场景变换手柄", () => {
           const rotation = (await currentObject(request, project)).rotation;
           return rotation === undefined ? 0 : Math.round((rotation * 180) / Math.PI);
         })
-        .toBe(90);
+        .toBe(-90);
 
-      // 再拖回正右方 = 0°
+      // 再拖回正右方（屏幕顺时针 90°）= 0°
       const afterFirst = await currentObject(request, project);
       const second = await gizmoOf(page, afterFirst);
       await dragScreen(
@@ -383,7 +457,8 @@ test.describe("场景变换手柄", () => {
       const before = await currentObject(request, project);
       const geometry = await gizmoOf(page, before);
       const radius = geometry.ringRadius;
-      // 从正右方拖约 34°：不按 Shift 会是 34°，按住 Shift 应该吸到 30°
+      // 从正右方往**屏幕上方**拖约 34°：文档里是 -34°（屏幕上的逆时针），
+      // 按住 Shift 应该吸到 -30°
       const targetAngle = (34 * Math.PI) / 180;
 
       await page.keyboard.down("Shift");
@@ -402,7 +477,7 @@ test.describe("场景变换手柄", () => {
           const rotation = (await currentObject(request, project)).rotation;
           return rotation === undefined ? 0 : Math.round((rotation * 180) / Math.PI);
         })
-        .toBe(30);
+        .toBe(-30);
     } finally {
       await dropProject(request, project);
     }
@@ -415,19 +490,13 @@ test.describe("场景变换手柄", () => {
       await expect(page.getByTestId("status-tool")).toHaveAttribute("data-tool", "scale");
       await expect(page.getByTestId("status-selection")).toHaveText("已选 1");
 
-      // 拖右下角：锚点是对角的左上角，把指针拖到「锚点以外两个半边」处 → 尺寸翻倍
+      // 拖右下角：锚点是对角的左上角，把指针拖到「锚点之外两倍处」→ 尺寸**正好**翻倍
       const before = await currentObject(request, project);
       const geometry = await gizmoOf(page, before);
-      const corner =
-        geometry.scale.find((entry) => entry.handle === "scale-bottom-right")?.point ?? geometry.center;
-      await dragScreen(page, corner, {
-        x: geometry.center.x + (corner.x - geometry.center.x) * 2,
-        y: geometry.center.y + (corner.y - geometry.center.y) * 2,
-      });
+      const corner = scaleHandleOf(geometry, "scale-bottom-right");
+      await dragScreen(page, corner.point, scaleTarget(corner, 2));
 
-      await expect
-        .poll(async () => (await currentObject(request, project)).scale ?? 0)
-        .toBeGreaterThan(1.8);
+      await expect.poll(async () => (await currentObject(request, project)).scale ?? 0).toBeCloseTo(2, 1);
 
       const uniform = await currentObject(request, project);
       expect(uniform.scaleX).toBeUndefined();
@@ -457,15 +526,12 @@ test.describe("场景变换手柄", () => {
       );
       expect(color?.g ?? 0).toBeGreaterThan(150);
 
-      // 边手柄单轴：按**读到的**状态算右边中点的屏幕位置，再拖到「宽度翻倍」
+      // 边手柄单轴：按**读到的**状态算右边中点的屏幕位置与它的对侧锚点，
+      // 再把指针拖到「锚点之外两倍处」→ 宽度**正好**在现有基础上翻倍（高度一点不动）
       const scaled = await currentObject(request, project);
       const next = await gizmoOf(page, scaled);
-      const rightEdge =
-        next.scale.find((entry) => entry.handle === "scale-right")?.point ?? next.center;
-      await dragScreen(page, rightEdge, {
-        x: next.center.x + (rightEdge.x - next.center.x) * 2,
-        y: rightEdge.y,
-      });
+      const rightEdge = scaleHandleOf(next, "scale-right");
+      await dragScreen(page, rightEdge.point, scaleTarget(rightEdge, 2));
 
       await expect
         .poll(async () => (await currentObject(request, project)).scaleX ?? 0)
@@ -573,6 +639,135 @@ test.describe("场景变换手柄", () => {
       await dropProject(request, project);
     }
   });
+
+  test("按下不拖就抬手：移动与缩放都不动文档（按下不跳）", async ({ page, request }) => {
+    const project = await openSprite(page, request);
+    try {
+      // 移动：按在 X 箭头正中间，按下 → 抬手，中间没有任何 move
+      await page.getByTestId("tool-move").click();
+      const before = await currentObject(request, project);
+      const geometry = await gizmoOf(page, before);
+      const axis = geometry.axes.find((entry) => entry.handle === "move-x");
+      if (axis === undefined) {
+        throw new Error("拿不到移动轴几何");
+      }
+
+      await page.mouse.move((axis.root.x + axis.tip.x) / 2, axis.root.y);
+      await page.mouse.down();
+      await page.mouse.up();
+      await page.waitForTimeout(400);
+
+      let object = await currentObject(request, project);
+      // 曾经这里会把位置写成「指针的绝对坐标」：按下去的那一刻中心就跑到光标下面
+      expect(object.position?.x ?? 0).toBe(0);
+      expect(object.position?.y ?? 0).toBe(0);
+
+      // 缩放：按在右下角，按下 → 抬手
+      await page.getByTestId("tool-scale").click();
+      object = await currentObject(request, project);
+      const corner = scaleHandleOf(await gizmoOf(page, object), "scale-bottom-right");
+      await page.mouse.move(corner.point.x, corner.point.y);
+      await page.mouse.down();
+      await page.mouse.up();
+      await page.waitForTimeout(400);
+
+      const scaled = await currentObject(request, project);
+      // 曾经这里的分母是「半尺寸」，按下瞬间倍率就是 1.5：一按就变大
+      expect(scaled.scale ?? 1).toBe(1);
+      expect(scaled.scaleX).toBeUndefined();
+      expect(scaled.position?.x ?? 0).toBe(0);
+    } finally {
+      await dropProject(request, project);
+    }
+  });
+
+  test("移动按指针位移算：X 箭头拖 200px，对象正好走 200（不是跳到指针的绝对坐标）", async ({
+    page,
+    request,
+  }) => {
+    const project = await openSprite(page, request);
+    try {
+      await page.getByTestId("tool-move").click();
+      const before = await currentObject(request, project);
+      const axis = (await gizmoOf(page, before)).axes.find((entry) => entry.handle === "move-x");
+      if (axis === undefined) {
+        throw new Error("拿不到移动轴几何");
+      }
+
+      // 视口是 1:1（`reset-viewport`）→ 200 屏幕像素 = 200 世界单位。
+      // 一次 move + 立刻抬手：落盘必须在抬手前完成，终点才不会丢
+      const grab = { x: (axis.root.x + axis.tip.x) / 2, y: axis.root.y };
+      await page.mouse.move(grab.x, grab.y);
+      await page.mouse.down();
+      await page.mouse.move(grab.x + 200, grab.y);
+      await page.mouse.up();
+
+      // 绝对坐标那种写法会得到 ~320（200 位移 + 抓手距离中心的距离）
+      await expect
+        .poll(async () => (await currentObject(request, project)).position?.x ?? 0)
+        .toBeCloseTo(200, 0);
+      expect(Math.abs((await currentObject(request, project)).position?.y ?? 999)).toBeLessThan(1);
+    } finally {
+      await dropProject(request, project);
+    }
+  });
+
+  test("旋转 45° 之后：箭头 / 缩放块 / 旋转环都还点得中", async ({ page, request }) => {
+    const project = await openSprite(page, request);
+    try {
+      // 用属性面板把对象转到 45°：这是「已经转过角度」最确定的入口
+      await openInspector(page);
+      await page.getByTestId("inspector-object-rotation").fill("45");
+      await page.getByTestId("inspector-object-rotation").blur();
+      await closeDrawers(page);
+      await expect
+        .poll(async () => {
+          const rotation = (await currentObject(request, project)).rotation;
+          return rotation === undefined ? 0 : Math.round((rotation * 180) / Math.PI);
+        })
+        .toBe(45);
+
+      // 曾经绘制用的是「旋转后的外框」、命中用的是局部矩形：转过角度后
+      // 画出来的手柄根本点不中（箭头、环、缩放块全都不行）
+      await page.getByTestId("tool-move").click();
+      let object = await currentObject(request, project);
+      const axis = (await gizmoOf(page, object)).axes.find((entry) => entry.handle === "move-x");
+      if (axis === undefined) {
+        throw new Error("拿不到移动轴几何");
+      }
+
+      const grab = { x: (axis.root.x + axis.tip.x) / 2, y: axis.root.y };
+      await dragScreen(page, grab, { x: grab.x + 120, y: grab.y });
+      await expect
+        .poll(async () => (await currentObject(request, project)).position?.x ?? 0)
+        .toBeCloseTo(120, 0);
+
+      await page.getByTestId("tool-scale").click();
+      object = await currentObject(request, project);
+      const corner = scaleHandleOf(await gizmoOf(page, object), "scale-top-right");
+      await dragScreen(page, corner.point, scaleTarget(corner, 1.5));
+      await expect.poll(async () => (await currentObject(request, project)).scale ?? 0).toBeGreaterThan(1.4);
+
+      await page.getByTestId("tool-rotate").click();
+      object = await currentObject(request, project);
+      const rotated = await gizmoOf(page, object);
+      await dragScreen(
+        page,
+        { x: rotated.center.x + rotated.ringRadius, y: rotated.center.y },
+        { x: rotated.center.x, y: rotated.center.y - rotated.ringRadius },
+      );
+
+      // 45° + (-90°)（从环的正右拖到**屏幕上方** = 屏幕上逆时针 90°）= -45°
+      await expect
+        .poll(async () => {
+          const rotation = (await currentObject(request, project)).rotation;
+          return rotation === undefined ? 0 : Math.round((rotation * 180) / Math.PI);
+        })
+        .toBe(-45);
+    } finally {
+      await dropProject(request, project);
+    }
+  });
 });
 
 test.describe("画布上的其它拖动", () => {
@@ -611,4 +806,70 @@ test.describe("画布上的其它拖动", () => {
       await dropProject(request, project);
     }
   });
+
+  /**
+   * 工具开关浮在画布上，底下可能是任何颜色的贴图（一张亮地图），所以它必须**自带底色**、
+   * 而且字与底色的对比度够高。曾经它是「透明底 + 暗字」：压在亮地图上那四个字直接看不见。
+   */
+  test("工具开关在亮地图上也看得清：底色不透明、每个按钮的字与底色对比度足够", async ({
+    page,
+    request,
+  }) => {
+    const project = await openSprite(page, request);
+    try {
+      const control = await page.getByTestId("tool-switch").evaluate((node) => {
+        const style = getComputedStyle(node);
+        return { background: style.backgroundColor };
+      });
+
+      const background = parseColor(control.background);
+      // 底色必须**不透明**：透明底等于让地图的颜色决定字能不能看清
+      expect(background.alpha).toBe(1);
+
+      for (const tool of ["none", "move", "rotate", "scale"] as const) {
+        const own = await page.getByTestId(`tool-${tool}`).evaluate((node) => {
+          const style = getComputedStyle(node);
+          return { color: style.color, background: style.backgroundColor };
+        });
+
+        // 按钮自己没有底色时（未选中）透出的就是整条开关的底色
+        const ownBackground = parseColor(own.background);
+        const behind = ownBackground.alpha > 0 ? ownBackground : background;
+        const ratio = contrastRatio(parseColor(own.color), behind);
+
+        // WCAG AA 正文标准 4.5:1；实测未选中 ≈13:1、选中 ≈7:1
+        expect(ratio, `${tool} 这一格的字与底色对比度只有 ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5);
+      }
+    } finally {
+      await dropProject(request, project);
+    }
+  });
 });
+
+/** `rgb(...)` / `rgba(...)` → 分量（缺省 alpha = 1）。 */
+function parseColor(value: string): { r: number; g: number; b: number; alpha: number } {
+  const parts = (/rgba?\(([^)]+)\)/.exec(value)?.[1] ?? "")
+    .split(",")
+    .map((part) => Number.parseFloat(part.trim()));
+
+  return { r: parts[0] ?? 0, g: parts[1] ?? 0, b: parts[2] ?? 0, alpha: parts[3] ?? 1 };
+}
+
+/** sRGB 分量 → 相对亮度（WCAG 2.x 的算式）。 */
+function relativeLuminance(color: { r: number; g: number; b: number }): number {
+  const channel = (value: number): number => {
+    const ratio = value / 255;
+    return ratio <= 0.03928 ? ratio / 12.92 : ((ratio + 0.055) / 1.055) ** 2.4;
+  };
+
+  return 0.2126 * channel(color.r) + 0.7152 * channel(color.g) + 0.0722 * channel(color.b);
+}
+
+/** 两个颜色的对比度（1 ~ 21）。 */
+function contrastRatio(
+  first: { r: number; g: number; b: number },
+  second: { r: number; g: number; b: number },
+): number {
+  const [light, dark] = [relativeLuminance(first), relativeLuminance(second)].sort((a, b) => b - a);
+  return ((light ?? 0) + 0.05) / ((dark ?? 0) + 0.05);
+}

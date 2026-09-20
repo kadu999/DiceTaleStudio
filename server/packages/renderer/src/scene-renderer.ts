@@ -148,6 +148,13 @@ export interface SceneToolHandles {
   readonly locked: boolean;
   /** 对象在屏幕上太小：只画框不画手柄（手柄会比对象本身还大）。 */
   readonly drawable: boolean;
+  /**
+   * **正在拖的那个手柄**：画成强调色并放大——「按下去了」必须有看得见的反馈，
+   * 否则抓住环之后整块手柄纹丝不动，用户不知道到底抓上了没有。
+   */
+  readonly activeHandle?: GizmoHandle | null;
+  /** **光标悬停的那个手柄**：淡高亮，作为「这里能点」的提示。 */
+  readonly hoveredHandle?: GizmoHandle | null;
 }
 
 export interface SceneRenderer {
@@ -398,14 +405,17 @@ function drawLayer(
   view: ImageSize,
   animationTimeMs: number,
 ): void {
+  const rotation = layer.rotation ?? 0;
   const box = screenBoxOf(layer.rect, viewport);
-  if (box.right < 0 || box.bottom < 0 || box.left > view.width || box.top > view.height) {
+  // 早退要用**旋转后**的外接框：`box` 是矩形自己那块框，转过角度后它的角会伸到框外，
+  // 按 `box` 判断会把「框已经在屏幕外、但转过来的那个角还在屏幕里」的对象整块漏掉
+  const cull = rotation === 0 ? box : rotateScreenBox(box, rotation);
+  if (cull.right < 0 || cull.bottom < 0 || cull.left > view.width || cull.top > view.height) {
     return;
   }
 
   // 旋转：绕矩形中心转，**在裁剪之前**做——裁剪框跟着一起转，
   // 于是贴图 / 格子 / 网格线 / 选中框全在这块转过的矩形里，和拾取用的那块完全一致
-  const rotation = layer.rotation ?? 0;
   if (rotation !== 0) {
     context.save();
     context.translate((box.left + box.right) / 2, (box.top + box.bottom) / 2);
@@ -659,6 +669,33 @@ function screenBoxOf(
   };
 }
 
+/**
+ * 把一个屏幕框按 `rotation` 绕**它自己的中心**转一下之后的外接框。
+ *
+ * 只用于「整块是不是在视口外」的早退判断：绘制仍然在原始框里做（canvas 自己转），
+ * 所以这里宽一点没关系——**宁可多画一层，也不能把转过来露在屏幕里的角漏掉**。
+ */
+function rotateScreenBox(
+  box: { readonly left: number; readonly top: number; readonly right: number; readonly bottom: number },
+  rotation: number,
+): { readonly left: number; readonly top: number; readonly right: number; readonly bottom: number } {
+  const centerX = (box.left + box.right) / 2;
+  const centerY = (box.top + box.bottom) / 2;
+  const halfWidth = (box.right - box.left) / 2;
+  const halfHeight = (box.bottom - box.top) / 2;
+  const cos = Math.abs(Math.cos(rotation));
+  const sin = Math.abs(Math.sin(rotation));
+  const width = halfWidth * cos + halfHeight * sin;
+  const height = halfWidth * sin + halfHeight * cos;
+
+  return {
+    left: centerX - width,
+    top: centerY - height,
+    right: centerX + width,
+    bottom: centerY + height,
+  };
+}
+
 function drawCells(
   context: CanvasRenderingContext2D,
   layer: SceneLayer,
@@ -870,8 +907,24 @@ function drawHandleSquare(
   );
 }
 
-/** 手柄的线段宽度（屏幕像素）：轴条与旋转环都是细线。 */
-const GIZMO_LINE_WIDTH = 1.5;
+/** 手柄的线段宽度（屏幕像素）：轴条与旋转环。2px 起步，缩到很远也还看得见。 */
+const GIZMO_LINE_WIDTH = 2;
+
+/** 按下 / 悬停时的线宽（屏幕像素）：比常态粗一倍，一眼看得出「抓上了」。 */
+const GIZMO_ACTIVE_LINE_WIDTH = 3.5;
+
+/**
+ * 按下时手柄放大的像素数：方块变 `GIZMO_HANDLE_SIZE + 3`。
+ *
+ * 放大而不是换形状，是为了让「我抓的是它」这件事不改变手柄的语义（还是那个方块）。
+ */
+const GIZMO_ACTIVE_HANDLE_GROWTH = 3;
+
+/** 按下时的强调色（与编辑器的 `--color-editor-warn` 同色）：比常态蓝更「热」。 */
+const GIZMO_ACTIVE_COLOR = "#e0a13c";
+
+/** 悬停色：常态蓝的亮版本，只是「这里能点」的提示，不抢按下的强调色。 */
+const GIZMO_HOVER_COLOR = "#93c5fd";
 
 /** 移动轴末端箭头的大小（屏幕像素，半宽）。 */
 const GIZMO_ARROW_HALF = 5;
@@ -888,6 +941,10 @@ const GIZMO_ARROW_HALF = 5;
  * - `rotate`：围绕整个对象的一圈细环；
  * - `scale`：外框八个方位的方形手柄（与选中框上的装饰点同一套画法）；
  * - `none`（拖动模式）：什么都不画——只留选中框，拖动对象本体就是跟手移动。
+ *
+ * **按下 / 悬停的那个手柄单独再画一遍**（强调色 + 放大）：手柄是唯一能改对象的入口，
+ * 点下去没有任何变化会让人以为「没点上」。先画整块常态手柄，再盖一层高亮的，于是
+ * 高亮一定在最上面、也不会因为绘制顺序而缺席。
  */
 function drawGizmo(context: CanvasRenderingContext2D, tools: SceneToolHandles): void {
   if (!tools.drawable || tools.tool === "none") {
@@ -895,6 +952,12 @@ function drawGizmo(context: CanvasRenderingContext2D, tools: SceneToolHandles): 
   }
 
   const color = tools.locked ? SELECTION_LOCKED_COLOR : SELECTION_COLOR;
+  const active = tools.activeHandle ?? null;
+  const hovered = tools.hoveredHandle ?? null;
+  // 锁定的对象不给「按下」的强调色：它本来就点不中，画成黄的等于说「你抓住了」
+  const activeColor = tools.locked ? SELECTION_LOCKED_COLOR : GIZMO_ACTIVE_COLOR;
+  const hoverColor = tools.locked ? SELECTION_LOCKED_COLOR : GIZMO_HOVER_COLOR;
+  const highlight = active ?? hovered;
 
   context.save();
   context.lineWidth = GIZMO_LINE_WIDTH;
@@ -909,25 +972,7 @@ function drawGizmo(context: CanvasRenderingContext2D, tools: SceneToolHandles): 
 
   if (tools.tool === "move") {
     for (const axis of tools.axes) {
-      context.beginPath();
-      context.moveTo(axis.root.x, axis.root.y);
-      context.lineTo(axis.tip.x, axis.tip.y);
-      context.stroke();
-
-      // 箭头：一条以轴为对称轴的等腰三角形（X 轴水平、Y 轴竖直，所以两条分支很直白）
-      context.beginPath();
-      if (axis.handle === "move-x") {
-        context.moveTo(axis.tip.x, axis.tip.y);
-        context.lineTo(axis.tip.x - GIZMO_ARROW_HALF * 2, axis.tip.y - GIZMO_ARROW_HALF);
-        context.lineTo(axis.tip.x - GIZMO_ARROW_HALF * 2, axis.tip.y + GIZMO_ARROW_HALF);
-      } else {
-        context.moveTo(axis.tip.x, axis.tip.y);
-        context.lineTo(axis.tip.x - GIZMO_ARROW_HALF, axis.tip.y + GIZMO_ARROW_HALF * 2);
-        context.lineTo(axis.tip.x + GIZMO_ARROW_HALF, axis.tip.y + GIZMO_ARROW_HALF * 2);
-      }
-
-      context.closePath();
-      context.fill();
+      drawMoveAxis(context, axis, GIZMO_LINE_WIDTH, color, GIZMO_ARROW_HALF);
     }
   }
 
@@ -937,7 +982,79 @@ function drawGizmo(context: CanvasRenderingContext2D, tools: SceneToolHandles): 
     }
   }
 
+  // 高亮：整块里只有「抓住 / 悬停的那一个」再画一遍，强调色 + 更粗 / 更大
+  if (highlight !== null) {
+    const highlightColor = active === null ? hoverColor : activeColor;
+    const lineWidth = active === null ? GIZMO_LINE_WIDTH * 2 : GIZMO_ACTIVE_LINE_WIDTH;
+    const handleSize =
+      active === null
+        ? GIZMO_HANDLE_SIZE + GIZMO_ACTIVE_HANDLE_GROWTH / 2
+        : GIZMO_HANDLE_SIZE + GIZMO_ACTIVE_HANDLE_GROWTH;
+
+    context.lineWidth = lineWidth;
+    context.strokeStyle = highlightColor;
+    context.fillStyle = highlightColor;
+
+    if (tools.tool === "rotate" && highlight === "rotate") {
+      context.beginPath();
+      context.arc(tools.center.x, tools.center.y, tools.ringRadius, 0, Math.PI * 2);
+      context.stroke();
+    }
+
+    if (tools.tool === "move") {
+      for (const axis of tools.axes) {
+        if (axis.handle === highlight) {
+          drawMoveAxis(context, axis, lineWidth, highlightColor, GIZMO_ARROW_HALF);
+        }
+      }
+    }
+
+    if (tools.tool === "scale") {
+      for (const entry of tools.scale) {
+        if (entry.handle === highlight) {
+          drawHandleSquare(context, entry.point, handleSize, highlightColor);
+        }
+      }
+    }
+  }
+
   context.restore();
+}
+
+/** 一根移动轴（线 + 末端三角箭头）。常态与高亮共用它，两边画法不会分叉。 */
+function drawMoveAxis(
+  context: CanvasRenderingContext2D,
+  axis: { readonly handle: "move-x" | "move-y"; readonly root: Point; readonly tip: Point },
+  lineWidth: number,
+  color: string,
+  arrowHalf: number,
+): void {
+  const previousWidth = context.lineWidth;
+  context.lineWidth = lineWidth;
+  context.strokeStyle = color;
+  context.fillStyle = color;
+
+  context.beginPath();
+  context.moveTo(axis.root.x, axis.root.y);
+  context.lineTo(axis.tip.x, axis.tip.y);
+  context.stroke();
+
+  // 箭头：一条以轴为对称轴的等腰三角形（X 轴水平、Y 轴竖直，所以两条分支很直白）
+  context.beginPath();
+  if (axis.handle === "move-x") {
+    context.moveTo(axis.tip.x, axis.tip.y);
+    context.lineTo(axis.tip.x - arrowHalf * 2, axis.tip.y - arrowHalf);
+    context.lineTo(axis.tip.x - arrowHalf * 2, axis.tip.y + arrowHalf);
+  } else {
+    context.moveTo(axis.tip.x, axis.tip.y);
+    context.lineTo(axis.tip.x - arrowHalf, axis.tip.y + arrowHalf * 2);
+    context.lineTo(axis.tip.x + arrowHalf, axis.tip.y + arrowHalf * 2);
+  }
+
+  context.closePath();
+  context.fill();
+
+  context.lineWidth = previousWidth;
 }
 
 /** 世界原点（场景中心）的十字光标。 */function drawOriginCross(context: CanvasRenderingContext2D, viewport: Viewport): void {

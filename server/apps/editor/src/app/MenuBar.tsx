@@ -20,7 +20,8 @@ export function MenuBar({ compact }: MenuBarProps): React.JSX.Element {
   const projectDialog = useEditorStore((state) => state.projectDialog);
   const openProjectDialog = useEditorStore((state) => state.openProjectDialog);
   const currentProject = useEditorStore((state) => state.project.current);
-  const scenes = useEditorStore((state) => state.scenes);
+  // 只要「有几个场景」这个数：订阅整个 `scenes` 会让菜单栏在每次拖手柄时都跟着重渲染
+  const sceneCount = useEditorStore((state) => state.scenes.length);
   const activeSceneName = useEditorStore((state) => state.activeSceneName);
   const sceneDialog = useEditorStore((state) => state.sceneDialog);
   const openSceneDialog = useEditorStore((state) => state.openSceneDialog);
@@ -83,7 +84,7 @@ export function MenuBar({ compact }: MenuBarProps): React.JSX.Element {
         />
         <MenuItem
           label={activeSceneName === null ? "删除场景" : `删除「${activeSceneName}」`}
-          disabled={activeSceneName === null || scenes.length <= 1}
+          disabled={activeSceneName === null || sceneCount <= 1}
           onSelect={() => {
             if (
               activeSceneName !== null &&

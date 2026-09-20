@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import {
   effectiveScaleX,
   effectiveScaleY,
@@ -13,9 +14,9 @@ import {
   gizmoScreenGeometry,
   hitTestGizmoHandles,
   hitTestRect,
-  isDrawableFrame,
   screenToWorld,
   type GizmoHandle,
+  type GizmoScreenHandles,
   type SceneLayer,
   type SceneRenderer,
   type SceneToolHandles,
@@ -60,14 +61,16 @@ const MIDDLE_BUTTON = 1;
  * 有效缩放走 `effectiveScaleX` / `effectiveScaleY`：文档里等比只写 `scale`，
  * 单轴（v11 起的 `scaleX` / `scaleY`）才写两个轴——直接读字段会漏掉「缺省 = 用等比值」。
  *
- * **返回的是「旋转之后」的外框**（轴对齐包围盒），不是原始矩形：
+ * **返回的是对象自己的（未旋转的）矩形**，`rotation` 由各消费方自己带上：
  *
- * - 拾取走 `hitTestRect(point, rect, rotation)`（反向旋转后比半宽半高），而「把原始矩形转一下」
- *   与「把外框转一下」覆盖的是同一块区域（`|cos|²+|sin|²=1`），所以拾取与旋转前完全一致；
- * - 选中框与缩放手柄画在这个外框上并同样转 `rotation`，于是「看到的框」与「点得到的范围」
- *   依旧是同一块——这正是这条注释开头那句约定要的东西。
+ * - 绘制：渲染器绕矩形中心 `rotate(rotation)` 之后再 `drawImage`，贴图于是**刚体旋转**
+ *   （不会因为「外框是旋转后的包围盒」而被拉成别的形状，也不会随角度改大小）；
+ * - 拾取：`hitTestRect(point, rect, rotation)` 反向旋转后比半宽半高，与上面是同一块区域；
+ * - 选中框 / 手柄：`rectCorners(rect, rotation)` 把这块矩形转过去，于是框、贴图、拾取一致。
  *
- * 等比 + 不旋转时结果与以前**逐值相同**（外框就是矩形本身），所以老场景的样子一点不变。
+ * 曾经这里返回的是**旋转后的轴对齐外框**，于是两个真问题：非正方形对象转过角度后贴图被
+ * 画成外框的形状（1920×1080 的地图转 45° 会变成 2121×2121），而且绘制用的手柄几何（外框）
+ * 与命中测试用的几何（局部矩形）对不上——「看得见的柄点不中」。
  *
  * 缩放值坏掉时（0 / 负数 / NaN，只可能来自手写文件）按 `1` 画：渲染不能因为一个坏数字
  * 就把整块对象画没，那种数据由 `validateScene` 报错（`effectiveScale*` 已经兜过底）。
@@ -80,41 +83,49 @@ export function displayRectOf(object: SceneObjectDoc): WorldRect | undefined {
   return worldRectOf(object.position, displaySizeOf(object));
 }
 
-/** 显示矩形（**旋转后的外框**）的尺寸；`displayRectOf` 与手柄几何共用它。 */
+/** 显示矩形的尺寸（**未旋转**）；`displayRectOf` 与手柄几何共用它。 */
 function displaySizeOf(object: SceneObjectDoc): ImageSize {
   // 声音对象画的是**固定的内置图标**（不允许改贴图），所以它那块矩形就是图标的大小：
   // 手写文件里万一挂了 `image` 也不认（`validateScene` 会警告），
   // 免得出现「选中框按贴图算、画出来的却是徽标」这种对不上的情况
   const base = object.kind === "PlaySound" ? COLLIDER_SIZE : objectImage(object) ?? COLLIDER_SIZE;
-  const width = base.width * effectiveScaleX(object);
-  const height = base.height * effectiveScaleY(object);
-
-  const rotation = Number.isFinite(object.rotation) ? object.rotation : 0;
-  return rotatedBoundsOf(width, height, rotation);
+  return {
+    width: base.width * effectiveScaleX(object),
+    height: base.height * effectiveScaleY(object),
+  };
 }
 
 /**
  * 画布上给某个对象算出一份**屏幕手柄几何**（移动轴 / 旋转环 / 缩放块）。
  *
- * 与命中测试用的是同一个 `gizmoScreenGeometry`，所以「画出来的」与「点得到的」
- * 必然是同一份坐标——这也是把它抽成函数而不是各写一遍的理由。
+ * **绘制与命中测试都只走这一个函数**：手柄画在哪、点在哪，坐标从同一个源头出，
+ * 于是「看得见的柄点不中」这类问题在结构上不可能再出现（它们曾经各算一套而分叉）。
  *
- * 缩放柄的位置取自 `displayRectOf`（旋转后的外框）：它与选中框、与拾取范围同一块矩形。
+ * 用的是**对象自己的矩形**（`displayRectOf`）+ `object.rotation`：缩放手柄于是落在对象
+ * 真正的四个角上，旋转环与移动轴条的间距也不随角度变化（见 `gizmoScreenGeometry`）。
+ */
+function gizmoGeometryOf(
+  object: SceneObjectDoc,
+  viewport: Viewport,
+): GizmoScreenHandles | undefined {
+  const rect = displayRectOf(object);
+  return rect === undefined ? undefined : gizmoScreenGeometry(rect, object.rotation, viewport);
+}
+
+/**
+ * 把几何包成渲染器要的形状（补上工具名、锁定与「画不画」）。
+ *
+ * 几何本身来自 `gizmoGeometryOf`——与命中测试同一个函数，所以画出来的就是点得到的。
  */
 function buildToolHandles(
   object: SceneObjectDoc,
   tool: TransformTool,
   viewport: Viewport,
 ): SceneToolHandles | undefined {
-  const position = object.position;
-  if (position === null) {
+  const geometry = gizmoGeometryOf(object, viewport);
+  if (geometry === undefined) {
     return undefined;
   }
-
-  const local = localHalfSizeOf(object);
-  const bounds = rotatedBoundsOf(local.width * 2, local.height * 2, object.rotation);
-  const frame: WorldRect = worldRectOf(position, bounds);
-  const geometry = gizmoScreenGeometry(frame, object.rotation, viewport);
 
   return {
     tool,
@@ -124,42 +135,18 @@ function buildToolHandles(
     scale: geometry.scale,
     ringRadius: geometry.ringRadius,
     locked: object.locked,
-    drawable: isDrawableFrame(frame, viewport),
+    drawable: geometry.drawable,
   };
-}
-
-/**
- * 一个「宽 × 高」的矩形绕中心转 `rotation` 之后的**轴对齐外框**尺寸。
- *
- * 拾取与选中框都按它来（见 `displayRectOf` 的说明），旋转中的手柄也要用它——
- * 否则拖旋转环时手柄会立刻跳一下（外框还没跟上新的角度）。
- */
-function rotatedBoundsOf(
-  width: number,
-  height: number,
-  rotation: number,
-): { width: number; height: number } {
-  if (rotation === 0) {
-    return { width, height };
-  }
-
-  const cos = Math.abs(Math.cos(rotation));
-  const sin = Math.abs(Math.sin(rotation));
-  return { width: width * cos + height * sin, height: width * sin + height * cos };
 }
 
 /**
  * 对象的**局部**半宽 / 半高（世界单位，未旋转）。
  *
- * 手柄几何与缩放锚点都要用它：外框（`displayRectOf`）是旋转后的包围盒，
- * 而手柄、四角、对侧锚点都定义在对象自己的轴上，拿外框去算会算到别处去。
+ * 缩放锚点要用它：四角、对边中点都定义在对象自己的轴上。
  */
 function localHalfSizeOf(object: SceneObjectDoc): { readonly width: number; readonly height: number } {
-  const base = object.kind === "PlaySound" ? COLLIDER_SIZE : objectImage(object) ?? COLLIDER_SIZE;
-  return {
-    width: (base.width * effectiveScaleX(object)) / 2,
-    height: (base.height * effectiveScaleY(object)) / 2,
-  };
+  const size = displaySizeOf(object);
+  return { width: size.width / 2, height: size.height / 2 };
 }
 
 /**
@@ -186,8 +173,59 @@ function warnImageSizeOnce(id: string, message: string): void {
   console.warn(`[scene] ${message}`);
 }
 
+/** 这一根移动柄约束的是哪个轴；旋转 / 缩放柄与「拖对象本体」返回 `undefined`（不受轴约束）。 */
+function moveAxisOf(handle: GizmoHandle | null): "x" | "y" | undefined {
+  if (handle === "move-x") {
+    return "x";
+  }
+
+  return handle === "move-y" ? "y" : undefined;
+}
+
+/**
+ * 一次手柄拖拽的最新指针位置。
+ *
+ * **指针事件只记这个，不写文档**：鼠标 1000Hz 轮询 / 高刷屏下一秒钟能有几千个事件，
+ * 每个事件写一次文档 = 每毫秒一次全应用重渲染（拖拽卡顿的主要来源）。真正落盘在绘制
+ * 循环里做，每个动画帧一次（见 `applyPendingTransform`）。
+ */
+interface PendingDragPointer {
+  readonly clientX: number;
+  readonly clientY: number;
+  /** Shift 的当前状态：吸附 15° / 锁等比都按它算，所以每帧取最新那次的。 */
+  readonly shiftKey: boolean;
+}
+
+/** 正在拖的手柄（一次只有一个）。`handle: null` = **拖的是对象本体**（自由移动）。 */
+interface HandleDrag {
+  readonly pointerId: number;
+  readonly handle: GizmoHandle | null;
+  readonly rect: DOMRect;
+}
+
 /** DPR 上限：平板上 3x DPR 会把填充率吃光，限制到 2 已足够清晰。 */
 const MAX_DPR = 2;
+
+/**
+ * 一个场景里**当前要显示的图片 id**（只算激活的对象）。
+ *
+ * 抽成纯函数是为了让面板能用一个**窄选择器**订阅它：拖手柄时文档每帧都在变，
+ * 但这个数组不变——`useShallow` 一比就跳过重渲染，画布那边照旧每帧重画。
+ */
+function activeSceneImageIds(
+  scenes: readonly SceneDoc[],
+  activeSceneName: string | null,
+): readonly string[] {
+  return (
+    scenes
+      .find((scene) => scene.name === activeSceneName)
+      ?.objects.filter((object) => object.active) // 没激活的对象不画，也不用去加载它的图
+      .flatMap((object) => {
+        const ref = displayImageOf(object);
+        return ref === undefined ? [] : [ref.id];
+      }) ?? []
+  );
+}
 
 /**
  * 棋盘底纹对齐到哪一点：**第一张画在画布上的地图**的左下角。
@@ -223,32 +261,54 @@ export function checkerOriginOf(objects: readonly SceneObjectDoc[]): WorldPositi
  * 屏幕坐标（canvas 的 CSS 像素）是相机，指针 → 世界只做一次换算；
  * 绘制、命中测试、拖动落点**共用同一个场景尺寸**，否则会出现「点哪儿不在哪儿」。
  *
- * 性能约定：指针事件只改 store，**不触发 React 重渲染**；
- * 绘制在 rAF 循环里通过 `getState()` 直读最新值。
+ * 性能约定：指针事件只**记下最新位置**（每个动画帧落一次盘，见 `applyPendingTransform`），
+ * 不触发 React 重渲染；绘制在 rAF 循环里通过 `getState()` 直读最新值。
+ * 一次手柄拖拽因此最多每帧一次文档写入、一次 React 重渲染，与 pointermove 的事件数无关。
  */
 export function ScenePanel(): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rendererRef = useRef<SceneRenderer | null>(null);
 
+  /* ------------------------------------------------------------------ 手柄拖拽
+   *
+   * 拖拽状态放在 **ref** 里而不是 local state：绘制循环（另一个 effect）要读它，
+   * 而指针事件不该触发 React 重渲染——画布本来就每帧重画。
+   */
+
+  /** 正在拖的手柄（一次只有一个）。移动轴 / 旋转环 / 缩放块都归它。 */
+  const dragRef = useRef<HandleDrag | null>(null);
+  /** 最新一次的指针（还没落盘的那一次）。 */
+  const pendingDragRef = useRef<PendingDragPointer | null>(null);
+  /** 光标悬停的手柄（绘制循环每帧算一次，用来画高亮 + 换光标）。 */
+  const hoverRef = useRef<GizmoHandle | null>(null);
+  /** 最后一次指针位置（clientX/Y）：悬停命中测试按帧做一次就够。 */
+  const lastPointerRef = useRef<{ readonly x: number; readonly y: number } | null>(null);
+
   const activeSceneName = useEditorStore((state) => state.activeSceneName);
-  const scenes = useEditorStore((state) => state.scenes);
-  // 订阅视口：只用来把当前变换写进 DOM 属性（给 E2E 精确换算手柄位置用）。
+  // 视口订阅：只用来把当前变换写进 DOM 属性（给 E2E 精确换算手柄位置用）。
   // 绘制循环本来每帧从 getState() 直读，这个订阅不参与绘制路径
   const viewport = useEditorStore((state) => state.viewport);
   const setActiveScene = useEditorStore((state) => state.setActiveScene);
   const openObjectDialog = useEditorStore((state) => state.openObjectDialog);
   const resetViewport = useEditorStore((state) => state.resetViewport);
 
-  // 当前场景里所有要显示的图片（地图贴图 + 精灵图片），一张场景可以有任意多张
-  const imageIds =
-    scenes
-      .find((scene) => scene.name === activeSceneName)
-      ?.objects.filter((object) => object.active) // 没激活的对象不画，也不用去加载它的图
-      .flatMap((object) => {
-        const ref = displayImageOf(object);
-        return ref === undefined ? [] : [ref.id];
-      }) ?? [];
+  /**
+   * 场景切换器要的是**场景名**，不是整个场景列表。
+   *
+   * 拖手柄时文档每帧都在变（`scenes` 每帧都是新数组），而场景名一个都没换——
+   * 用 `useShallow` 比这一层的字符串数组，这个面板就不会因为一次拖拽而重渲染。
+   * 绘制循环读的是 `getState()`，一点不受影响。
+   */
+  const sceneNames = useEditorStore(
+    useShallow((state) => state.scenes.map((scene) => scene.name)),
+  );
+
+  // 当前场景里所有要显示的图片（地图贴图 + 精灵图片），一张场景可以有任意多张。
+  // 同样只比「需要哪些图」：位置 / 角度 / 缩放怎么变都不换这个数组
+  const imageIds = useEditorStore(
+    useShallow((state) => activeSceneImageIds(state.scenes, state.activeSceneName)),
+  );
 
   // 图片读不到（素材还没提交 / 文件名不匹配）时明确写出来，否则那块地方只有棋盘格
   const imageError =
@@ -315,6 +375,11 @@ export function ScenePanel(): React.JSX.Element {
         return;
       }
 
+      // 布局变了：拖拽期间缓存的容器矩形作废（下一次换算重新量一次）
+      if (dragRef.current !== null) {
+        dragRef.current = { ...dragRef.current, rect: container.getBoundingClientRect() };
+      }
+
       apply(entry.contentRect.width, entry.contentRect.height);
     });
 
@@ -324,6 +389,87 @@ export function ScenePanel(): React.JSX.Element {
       observer.disconnect();
     };
   }, []);
+
+  /* ------------------------------------------------------------------ 手柄拖拽 */
+
+  /**
+   * 屏幕坐标（clientX/Y）→ 画布内的 CSS 像素。
+   *
+   * 拖拽期间用**按下那一刻量好的**容器矩形：属性面板里的数字每帧都在变，DOM 一变
+   * `getBoundingClientRect()` 就可能触发一次同步布局，而每帧都做这件事正是拖拽卡顿
+   * 的来源之一。布局真的变了（窗口 / 分栏拖动）由 ResizeObserver 刷新。
+   */
+  const toLocal = useCallback((clientX: number, clientY: number): { x: number; y: number } => {
+    const rect = dragRef.current?.rect ?? containerRef.current?.getBoundingClientRect() ?? null;
+    if (rect === null) {
+      return { x: clientX, y: clientY };
+    }
+
+    return { x: clientX - rect.left, y: clientY - rect.top };
+  }, []);
+
+  /**
+   * 把「最新一次指针」落进文档——**每个动画帧最多一次**。
+   *
+   * 由绘制循环在绘制之前调用，于是画面用的永远是这一帧最新的值（不慢一帧）；
+   * 抬手时也会显式调一次（见 `endPointer`），拖得再快也不会丢掉终点。
+   */
+  const applyPendingTransform = useCallback((): void => {
+    const pending = pendingDragRef.current;
+    const drag = dragRef.current;
+    if (pending === null || drag === null) {
+      return;
+    }
+
+    pendingDragRef.current = null;
+    const store = useEditorStore.getState();
+    // 快照已经清了（Esc 取消 / 拖拽已结束）：残余的 pending 必须丢掉，
+    // 否则下一帧会把「刚取消掉的那次变换」又写回去
+    if (store.transformStart === null) {
+      return;
+    }
+
+    const axis = moveAxisOf(drag.handle);
+    const world = screenToWorld(store.viewport, toLocal(pending.clientX, pending.clientY));
+    store.applyObjectTransform(world, {
+      // 轴约束：X 箭头只改 x、Y 箭头只改 y（另一个轴保持按下时的值）
+      ...(axis === undefined ? {} : { axis }),
+      // Shift：旋转吸附 15°、缩放锁等比（与 Unity 一致的修饰键用法）
+      snapAngle: pending.shiftKey,
+      uniform: pending.shiftKey,
+    });
+  }, [toLocal]);
+
+  /**
+   * 光标下有没有手柄（有就画高亮、光标也变成手）。
+   *
+   * 拖拽进行中不参与：那时候高亮由「正在拖的那一个」负责，比悬停更重要。
+   */
+  const resolveHoveredHandle = useCallback(
+    (local: { readonly x: number; readonly y: number }): GizmoHandle | null => {
+      const store = useEditorStore.getState();
+      if (
+        dragRef.current !== null ||
+        store.transformStart !== null ||
+        store.selectedObjectIds.length !== 1
+      ) {
+        return null;
+      }
+
+      const scene = store.scenes.find((item) => item.name === store.activeSceneName);
+      const object = scene?.objects.find((item) => item.id === store.selectedObjectIds[0]);
+      // 锁定 / 未落位的对象没有可点的把手（手柄照画，只是点不到）——不给「能点」的假提示
+      if (object === undefined || object.position === null || object.locked) {
+        return null;
+      }
+
+      const geometry = gizmoGeometryOf(object, store.viewport);
+      return geometry === undefined
+        ? null
+        : (hitTestGizmoHandles(local, store.ui.tool, geometry) ?? null);
+    },
+    [],
+  );
 
   // 视口手势：拖拽平移、滚轮/双指缩放
   useEffect(() => {
@@ -335,15 +481,6 @@ export function ScenePanel(): React.JSX.Element {
     const pointers = new Map<number, { x: number; y: number }>();
     let pinchDistance = 0;
     let pinchMid: { x: number; y: number } | null = null;
-    /**
-     * 正在拖的手柄（一次只有一个）。移动轴 / 旋转环 / 缩放块都归它，
-     * 一切都相对按下那一刻的快照算（快照在 store 里，见 `beginObjectTransform`）。
-     *
-     * **对象本体不进这里**：对象不跟手拖走，点它只是选中它。
-     *
-     * 手柄拖拽期间也**不再平移画布**：这一下已经被手柄接管了。
-     */
-    let drag: { readonly pointerId: number; readonly handle: GizmoHandle } | null = null;
 
     /**
      * 空白处按下的那一下：**是拖（平移画布）还是点（取消选中）**，要等抬手才知道。
@@ -366,11 +503,6 @@ export function ScenePanel(): React.JSX.Element {
 
     /** 没有场景时画布不可交互：能拖能缩会让人以为「这里有个东西」。 */
     const hasScene = (): boolean => useEditorStore.getState().activeSceneName !== null;
-
-    const toLocal = (clientX: number, clientY: number): { x: number; y: number } => {
-      const rect = container.getBoundingClientRect();
-      return { x: clientX - rect.left, y: clientY - rect.top };
-    };
 
     const currentScene = (): SceneDoc | undefined => {
       const store = useEditorStore.getState();
@@ -426,20 +558,12 @@ export function ScenePanel(): React.JSX.Element {
       return scene?.objects.find((object) => object.id === id);
     };
 
-    /** 这一根移动柄约束的是哪个轴；旋转 / 缩放柄返回 `undefined`（它们不受轴约束）。 */
-    const moveAxisOf = (handle: GizmoHandle): "x" | "y" | undefined => {
-      if (handle === "move-x") {
-        return "x";
-      }
-
-      return handle === "move-y" ? "y" : undefined;
-    };
-
     /**
      * 按下点是不是落在手柄上——是就进入变换拖拽并返回 `true`。
      *
-     * 手柄几何与绘制**共用 `gizmoScreenGeometry`**：两边各算一套迟早会变成
-     * 「看得见的手柄点不中、点得中的地方没有手柄」。
+     * 手柄几何与绘制**共用 `gizmoGeometryOf`**：两边各算一套就会变成
+     * 「看得见的手柄点不中、点得中的地方没有手柄」——曾经真的发生过（绘制用旋转后的外框、
+     * 命中用局部矩形，一转过角度就完全错位）。
      *
      * 锁定的对象**手柄画着但点不到**：它照样有手柄（画成灰的，说明「为什么拖不动」），
      * 但按下去等于按在对象上，走后面的老逻辑。
@@ -451,26 +575,20 @@ export function ScenePanel(): React.JSX.Element {
       }
 
       const store = useEditorStore.getState();
-      const half = localHalfSizeOf(object);
-      // **尺寸要用整宽整除**：`localHalfSizeOf` 给的是半宽半高，而矩形收的是整尺寸。
-      // 少了这个 ×2，命中区会缩成视觉手柄的一半——画在 ±60 的手柄只在 ±30 内可点，
-      // 于是「明明点在手柄上却没反应」。这正是绘制（`buildToolHandles`）与命中必须
-      // 共用同一份几何的原因，也是这条注释留在这里的原因
-      const geometry = gizmoScreenGeometry(
-        worldRectOf(object.position, { width: half.width * 2, height: half.height * 2 }),
-        object.rotation,
-        store.viewport,
-      );
+      const geometry = gizmoGeometryOf(object, store.viewport);
+      if (geometry === undefined) {
+        return false;
+      }
+
       const handle = hitTestGizmoHandles(local, store.ui.tool, geometry);
       if (handle === undefined) {
         return false;
       }
 
-      // 快照记的是**按下那一刻指针的真实世界坐标**（不是手柄中心）：
-      // - 旋转按「指针方位角的变化量」算，基准必须是按下时的真实方位角；
-      //   若把起点吸到对象中心，`pointerAngle` 恒为 0，第一次移动就会把对象
-      //   猛地拽到「指针绝对角度」上（实测：从环上按下再拖会直接跳到 90°）；
-      // - 缩放也按「指针相对锚点的距离比例」算，起点同样必须是真实指针位置。
+      const half = localHalfSizeOf(object);
+      // 快照记的是**按下那一刻指针的真实世界坐标**（不是手柄中心）：移动按指针位移算、
+      // 旋转按指针方位角增量算、缩放按指针相对锚点的偏移比例算，三者都拿它当基准。
+      // 若把起点吸到对象中心或手柄中心，第一次移动就会跳一下（实测：拖旋转环会直接跳到 90°）
       const start = store.beginObjectTransform(
         object.id,
         handle,
@@ -482,7 +600,16 @@ export function ScenePanel(): React.JSX.Element {
         return false;
       }
 
-      drag = { pointerId: event.pointerId, handle };
+      dragRef.current = {
+        pointerId: event.pointerId,
+        handle,
+        // 画布框在按下这一刻量一次：拖拽期间不再每帧 `getBoundingClientRect()`
+        // （那一刻之后属性面板里的数字每帧都在改，每量一次都可能触发一次同步布局）
+        rect: container.getBoundingClientRect(),
+      };
+      pendingDragRef.current = null;
+      // 抓住的那一个立刻高亮：这就是「按下去有反馈」里最要紧的那一下
+      hoverRef.current = handle;
       container.setPointerCapture(event.pointerId);
       return true;
     };
@@ -515,6 +642,7 @@ export function ScenePanel(): React.JSX.Element {
       }
 
       const local = toLocal(event.clientX, event.clientY);
+      lastPointerRef.current = { x: event.clientX, y: event.clientY };
 
       // 1) **手柄优先**：手柄压在对象上（甚至压到别的对象上），必须先判它。
       //    只在「单选 + 未锁 + 对象已落位」时才有手柄——多选不下发变换（见文件顶部说明）。
@@ -530,20 +658,50 @@ export function ScenePanel(): React.JSX.Element {
           .getState()
           .setSelection(additive ? toggleSelection(currentSelection(), hit) : [hit]);
 
-        // 锁定的对象**点得到、选得中，就是拖不走**：不进拖动状态。
-        // 按住它拖动 = 平移画布（和从空白处拖一样），于是手势仍然有用、
-        // 也不会因为「点在对象上」而变成什么都不发生。
         const target = currentScene()?.objects.find((item) => item.id === hit);
+
+        // 1) **「移动」工具下拖对象本体 = 自由移动**（两个轴一起跟手走）。
+        //    这是摆位置最顺手的一条路：不必先对准箭头，抓住对象就能挪。
+        //    只有「真的拖了」才改文档——点一下仍然只是选中（`applyObjectTransform`
+        //    只在指针动过之后才被调用，见 `applyPendingTransform`）。
+        //    修饰键点选（多选）不进拖动：那一下的意图是「选中」，不是「挪走」。
+        if (
+          !additive &&
+          useEditorStore.getState().ui.tool === "move" &&
+          target !== undefined &&
+          !target.locked &&
+          target.position !== null
+        ) {
+          const half = localHalfSizeOf(target);
+          // `handle = null`：没有手柄，于是没有轴约束（自由移动）、也没有缩放锚点
+          const start = useEditorStore
+            .getState()
+            .beginObjectTransform(hit, null, toWorld(local), half.width, half.height);
+          if (start !== undefined) {
+            dragRef.current = {
+              pointerId: event.pointerId,
+              handle: null,
+              rect: container.getBoundingClientRect(),
+            };
+            pendingDragRef.current = null;
+            hoverRef.current = null;
+            container.setPointerCapture(event.pointerId);
+            return;
+          }
+        }
+
+        // 2) 锁定的对象**点得到、选得中，就是拖不走**：不进拖动状态。
+        //    按住它拖动 = 平移画布（和从空白处拖一样），于是手势仍然有用、
+        //    也不会因为「点在对象上」而变成什么都不发生。
         if (target?.locked === true) {
           container.setPointerCapture(event.pointerId);
           pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
           return;
         }
 
-        // **对象一律不跟手拖走**：点它就只是选中它。
-        // 想摆位置用「移动」工具的 X / Y 箭头——于是「拖一下把对象碰歪」这件事
-        // 在任何工具下都不会发生（手柄模式下这一条同样成立，手柄优先命中已经在上面判过了）。
-        // 按住对象拖动 = 平移画布（与锁定对象同一套待遇），手势仍然有用。
+        // 3) 其余情形（「拖动 / 旋转 / 缩放」三个工具，或多选）：对象本体**不跟手拖走**，
+        //    点它只是选中它。旋转 / 缩放下手柄优先命中已经在上面判过了；按住对象拖动 = 平移画布。
+        //    于是「在转角度的时候顺手把对象碰歪」这件事不会发生，手势也仍然有用。
         container.setPointerCapture(event.pointerId);
         pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
         return;
@@ -560,17 +718,19 @@ export function ScenePanel(): React.JSX.Element {
       }
 
       const store = useEditorStore.getState();
+      // 悬停命中测试按帧做（绘制循环里），这里只记下最后一次位置
+      lastPointerRef.current = { x: event.clientX, y: event.clientY };
 
+      const drag = dragRef.current;
       if (drag !== null && drag.pointerId === event.pointerId) {
-        const world = toWorld(toLocal(event.clientX, event.clientY));
-        const axis = moveAxisOf(drag.handle);
-        store.applyObjectTransform(world, {
-          // 轴约束：X 箭头只改 x、Y 箭头只改 y（另一个轴保持按下时的值）
-          ...(axis === undefined ? {} : { axis }),
-          // Shift：旋转吸附 15°、缩放锁等比（与 Unity 一致的修饰键用法）
-          snapAngle: event.shiftKey,
-          uniform: event.shiftKey,
-        });
+        // **只记下最新位置，不在这里写文档**：1000Hz 鼠标下每个事件写一次 = 每毫秒一次
+        // 全应用重渲染。落盘交给绘制循环（每个动画帧一次，见 `applyPendingTransform`），
+        // 于是画面用的永远是这一帧最新的指针位置
+        pendingDragRef.current = {
+          clientX: event.clientX,
+          clientY: event.clientY,
+          shiftKey: event.shiftKey,
+        };
         return;
       }
 
@@ -611,11 +771,20 @@ export function ScenePanel(): React.JSX.Element {
      * 插进来时第一根会被取消）不该被当成「点了一下空白」，否则双指缩放会顺手清掉选中。
      */
     const endPointer = (event: PointerEvent, isClick = false): void => {
+      const drag = dragRef.current;
       if (drag !== null && drag.pointerId === event.pointerId) {
+        // **抬手前先把最后一帧落进去**：拖得快时最后几个 pointermove 可能还没等到 rAF，
+        // 少了这一下对象的终点会比光标差一截。顺序必须是「落盘 → 清快照」，
+        // 反过来的话 `applyPendingTransform` 会认为这次拖拽已经结束而把 pending 丢掉
+        lastPointerRef.current = { x: event.clientX, y: event.clientY };
+        applyPendingTransform();
+
         // 一次手柄拖拽结束：清掉快照（画布靠它画手柄、store 靠它算增量），
         // 并断开撤销合并——下一次拖拽因此成为独立记录
         useEditorStore.getState().endObjectTransform();
-        drag = null;
+        dragRef.current = null;
+        pendingDragRef.current = null;
+        hoverRef.current = null;
         return;
       }
 
@@ -652,10 +821,17 @@ export function ScenePanel(): React.JSX.Element {
     const onPointerUp = (event: PointerEvent): void => endPointer(event, true);
     const onPointerCancel = (event: PointerEvent): void => endPointer(event, false);
 
+    /** 指针离开画布：悬停高亮（以及「能点」的光标）必须跟着消失。 */
+    const onPointerLeave = (): void => {
+      lastPointerRef.current = null;
+      hoverRef.current = null;
+    };
+
     container.addEventListener("pointerdown", onPointerDown);
     container.addEventListener("pointermove", onPointerMove);
     container.addEventListener("pointerup", onPointerUp);
     container.addEventListener("pointercancel", onPointerCancel);
+    container.addEventListener("pointerleave", onPointerLeave);
     container.addEventListener("wheel", onWheel, { passive: false });
 
     return () => {
@@ -663,9 +839,10 @@ export function ScenePanel(): React.JSX.Element {
       container.removeEventListener("pointermove", onPointerMove);
       container.removeEventListener("pointerup", onPointerUp);
       container.removeEventListener("pointercancel", onPointerCancel);
+      container.removeEventListener("pointerleave", onPointerLeave);
       container.removeEventListener("wheel", onWheel);
     };
-  }, []);
+  }, [applyPendingTransform, toLocal]);
 
   // 绘制循环
   useEffect(() => {
@@ -673,6 +850,11 @@ export function ScenePanel(): React.JSX.Element {
 
     const loop = (): void => {
       frame = requestAnimationFrame(loop);
+
+      // **先落最新一次的指针，再绘制**：顺序反过来的话，这一帧画出来的还是上一帧的位置，
+      // 对象就会永远慢光标一帧（快速拖动时看得出来）。每帧最多一次文档写入也由这里保证
+      applyPendingTransform();
+
       const renderer = rendererRef.current;
       if (renderer === null) {
         return;
@@ -687,8 +869,28 @@ export function ScenePanel(): React.JSX.Element {
         gridPaint,
         soundPlayback,
         ui,
-        transformStart,
       } = useEditorStore.getState();
+
+      // 光标：悬停手柄 = 手；拖拽中 = 抓住（拖本体也算，那一下同样是「抓住了东西」）。
+      // 悬停命中按帧算一次（指针事件里不算），于是提示既不慢也不额外触发重渲染
+      const container = containerRef.current;
+      const dragging = dragRef.current !== null;
+      const activeHandle = dragRef.current?.handle ?? null;
+      if (!dragging) {
+        const lastPointer = lastPointerRef.current;
+        hoverRef.current =
+          lastPointer === null ? null : resolveHoveredHandle(toLocal(lastPointer.x, lastPointer.y));
+      }
+
+      if (container !== null) {
+        const hovered = activeHandle ?? hoverRef.current;
+        const cursor =
+          activeSceneName === null ? "default" : dragging ? "grabbing" : hovered !== null ? "pointer" : "grab";
+        if (container.style.cursor !== cursor) {
+          container.style.cursor = cursor;
+        }
+      }
+
       if (viewportSize.width <= 0 || viewportSize.height <= 0) {
         return;
       }
@@ -780,17 +982,26 @@ export function ScenePanel(): React.JSX.Element {
       });
 
       // 变换手柄：只在**单选**时出现（多选不下发变换，见文件顶部说明）。
-      // 拖拽途中改用快照里的角度与缩放——对象正在被改，文档里那一份是「上一步」的值，
-      // 拿它算手柄会让手柄慢一帧（旋转时尤其明显：手柄会一跳一跳地追）。
+      //
+      // **拖拽途中照样画**：手柄就是用户手指底下的那个东西，抓住它之后它消失 / 停在原地
+      // 都会让人以为「没抓上」。这里读的是本帧**已经落盘**的值（`applyPendingTransform`
+      // 在这一帧开头跑过了），所以手柄与对象、与光标三者同帧，不存在「慢一帧地追」。
       const gizmoObject =
-        selectedObjectIds.length === 1 && transformStart === null
+        selectedObjectIds.length === 1
           ? drawOrder.find((object) => object.id === selectedObjectIds[0])
           : undefined;
 
+      const handles =
+        gizmoObject === undefined ? undefined : buildToolHandles(gizmoObject, ui.tool, viewport);
+      // 「按下去 / 悬停」的那个手柄单独高亮：拖拽中读的是正在拖的那一个（比悬停更重要）
       const gizmo =
-        gizmoObject === undefined
+        handles === undefined
           ? undefined
-          : buildToolHandles(gizmoObject, ui.tool, viewport);
+          : {
+              ...handles,
+              activeHandle,
+              hoveredHandle: activeHandle === null ? hoverRef.current : null,
+            };
 
       renderer.draw({
         viewport,
@@ -811,14 +1022,15 @@ export function ScenePanel(): React.JSX.Element {
     return () => {
       cancelAnimationFrame(frame);
     };
-    // imageReady：贴图是异步加载的，加载完成要重跑循环把贴图画上
-  }, [imageReady]);
+    // imageReady：贴图是异步加载的，加载完成要重跑循环把贴图画上。
+    // 其余三个是稳定的 useCallback（只读 ref 与 getState），列出来是为了满足依赖检查
+  }, [imageReady, applyPendingTransform, resolveHoveredHandle, toLocal]);
 
   return (
     <div className="relative flex h-full min-h-0 flex-col">
       <div className="panel-header">
         <span>场景</span>
-        {scenes.length === 0 ? null : (
+        {sceneNames.length === 0 ? null : (
           // 当前场景要看得见、也能切：否则多场景时根本不知道自己在哪一个
           <select
             data-testid="scene-switcher"
@@ -827,9 +1039,9 @@ export function ScenePanel(): React.JSX.Element {
             onChange={(event) => setActiveScene(event.target.value)}
             className="min-w-0 max-w-[40%] rounded border border-[var(--color-editor-border)] bg-black/30 px-1 py-0.5 text-[11px] outline-none"
           >
-            {scenes.map((scene) => (
-              <option key={scene.name} value={scene.name}>
-                {scene.name}
+            {sceneNames.map((name) => (
+              <option key={name} value={name}>
+                {name}
               </option>
             ))}
           </select>
@@ -870,10 +1082,9 @@ export function ScenePanel(): React.JSX.Element {
         data-viewport-tx={viewport.tx}
         data-viewport-ty={viewport.ty}
         className="relative min-h-0 flex-1 overflow-hidden"
-        style={{
-          touchAction: "none",
-          cursor: activeSceneName === null ? "default" : "grab",
-        }}
+        // `cursor` 不写在这里：它按「悬停 / 拖拽手柄」每帧变（绘制循环里 imperative 地写），
+        // 走 React 的话每次重渲染都会把它盖回 grab
+        style={{ touchAction: "none" }}
       >
         {/* biome-ignore lint/a11y/noNoninteractiveTabindex: 画布需要接受指针与触摸手势 */}
         <canvas ref={canvasRef} className="block h-full w-full" />
@@ -914,10 +1125,9 @@ export function ScenePanel(): React.JSX.Element {
  * 变换工具开关（画布左上角）：拖动 / 移动 / 旋转 / 缩放。
  *
  * **「拖动」是默认，它只动摄像机**：拖对象只是选中它、拖哪儿都是平移画布。
- * **「移动」才动对象**（X / Y 轴箭头）；旋转与缩放同理。
- *
- * 这也是为什么**对象一律不跟手拖走**：想摆位置就用「移动」工具，
- * 于是「顺手把对象碰歪」在任何工具下都不会发生。
+ * **「移动」既动对象本体**（拖对象 = 自由移动，最顺手）**也动轴线**（拖 X / Y 箭头沿单轴挪）；
+ * 旋转与缩放只认手柄，拖本体仍然是平移画布——**在转角度的时候顺手把地图碰歪**是最烦人的
+ * 一种意外，这两个工具下宁可让那一下什么都不改。
  *
  * 四个是**互斥的当前工具**，不是四个独立开关——所以用分段按钮而不是复选框，
  * 与菜单栏那个「编辑 / 运行」开关同一套画法。
@@ -929,7 +1139,13 @@ function ToolSwitch(): React.JSX.Element {
   const setTool = useEditorStore((state) => state.setTool);
 
   return (
-    <div className="flex flex-none items-center overflow-hidden rounded border border-[var(--color-editor-border)]">
+    // **不透明底 + 描边 + 投影**：这一条浮在画布上，底下可能是任何颜色的贴图。
+    // 曾经它是透明底 + 暗字（`text-dim`），压在一张亮地图上就直接看不见了——
+    // 所以底色用**面板色**（不跟着画面走），字用正常亮度的正文色，选中态才是强调色。
+    <div
+      data-testid="tool-switch"
+      className="flex flex-none items-center divide-x divide-[var(--color-editor-border)] overflow-hidden rounded border border-[var(--color-editor-border)] bg-[var(--color-editor-panel)] shadow-lg"
+    >
       {TOOL_OPTIONS.map((option) => (
         <button
           key={option.tool}
@@ -938,10 +1154,10 @@ function ToolSwitch(): React.JSX.Element {
           data-active={tool === option.tool}
           title={option.title}
           onClick={() => setTool(option.tool)}
-          className={`px-1.5 py-0.5 text-[11px] ${
+          className={`px-2 py-1 text-[12px] transition-colors active:bg-[var(--color-editor-warn)] active:text-black ${
             tool === option.tool
-              ? "bg-[var(--color-editor-accent)] text-black"
-              : "text-[var(--color-editor-text-dim)] hover:bg-[var(--color-editor-accent-dim)]"
+              ? "bg-[var(--color-editor-accent)] font-semibold text-black"
+              : "text-[var(--color-editor-text)] hover:bg-[var(--color-editor-panel-alt)]"
           }`}
         >
           {option.label}
@@ -962,7 +1178,15 @@ export const TOOL_OPTIONS: readonly {
     label: "拖动",
     title: "拖动场景（Q）：只平移画布——拖对象只是选中它，不会把它碰歪",
   },
-  { tool: "move", label: "移动", title: "移动（W）：拖 X / Y 箭头沿单轴移动对象" },
+  {
+    tool: "move",
+    label: "移动",
+    title: "移动（W）：拖对象本体自由移动；拖 X / Y 箭头只沿单轴移动",
+  },
   { tool: "rotate", label: "旋转", title: "旋转（E）：沿圆环拖动，Shift 吸附 15°" },
-  { tool: "scale", label: "缩放", title: "缩放（R）：拖角等比、拖边单轴，Shift 锁等比" },
+  {
+    tool: "scale",
+    label: "缩放",
+    title: "缩放（R）：拖角等比、拖边单轴，Shift 锁等比",
+  },
 ];
