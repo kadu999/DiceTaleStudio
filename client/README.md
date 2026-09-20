@@ -23,46 +23,46 @@ Unity 客户端（Unity **6000.3.19f1**）。方向已反转：**后台（编辑
 Assets/
 ├─ DiceTale/                          ← 本客户端唯一的游戏模块
 │  ├─ Scripts/                        DiceTale.asmdef（rootNamespace: DiceTale）
-│  │  ├─ Data/          （6）         数据层：镜像模型 / 解析 / 枚举
+│  │  ├─ Data/          （7）         数据层：镜像模型 / 解析 / 枚举 / 本地资源包路径
 │  │  │                 SceneModel.cs            镜像的场景与对象（与后端 `SceneDoc` 同构）
 │  │  │                 SceneParser.cs           场景 JSON → 镜像模型（JsonUtility 读不了嵌套数组）
 │  │  │                 JsonParser.cs            通用 JSON 解析（协议报文用）
 │  │  │                 GridRle.cs               网格 RLE 解码（掩码值与 `@dts/grid` 一致）
 │  │  │                 GridCellType.cs          网格类型位掩码（区域 / 障碍 / 雾位）
 │  │  │                 MapMarker.cs             场景标记点（id + 世界坐标，落点用）
-│  │  ├─ Network/       （4）         网络层：与后端通信的一切（不认识游戏逻辑，也不碰显示）
+│  │  │                 LocalResourceStore.cs    本地资源包的路径约定（逻辑 ID ↔ 本地文件 / 版本清理）
+│  │  │                 ZipStoredReader.cs       读 STORED zip（Unity 没有 System.IO.Compression）
+│  │  ├─ Network/       （5）         网络层：与后端通信的一切（不认识游戏逻辑，也不碰显示）
 │  │  │                 Protocol.cs              协议常量 / 出站 DTO / ws→http 推导
 │  │  │                 ServerConnection.cs      WebSocket 连接（未开闸被拒 = 正常，自动重试）
 │  │  │                 ClientSession.cs         握手 / 心跳 / 把消息变成事件
-│  │  │                 BackendManager.cs        装配：连接 + 会话 + 镜像 + 命令 + 取图
-│  │  ├─ Logic/         （11）        逻辑层：输入 / 流程 / 状态，不直接画东西
-│  │  │                 SceneMirror.cs           **按 id 增 / 改 / 删视图**（镜像落地的地方）
-│  │  │                 CommandRouter.cs         命令 → 动作 → 回执（成败都回）
+│  │  │                 ResourceBundleCache.cs   当前项目的资源包：清单 → 按需下整包 → 解压到本地
+│  │  │                 BackendManager.cs        装配：连接 + 会话 + 资源包 + 镜像 + 命令 + 取图
+│  │  ├─ Logic/         （9）         逻辑层：输入 / 流程 / 状态，不直接画东西
+│  │  │                 SceneMirror.cs           **按 id 增 / 改 / 删视图**（镜像落地的地方）│  │  │                 CommandRouter.cs         命令 → 动作 → 回执（成败都回）
 │  │  │                 Game.cs                  宿主 + 组合根：装配全部管理器、交互锁
 │  │  │                 InputManager.cs          消费输入帧 + 对外统一状态快照
 │  │  │                 InputSource.cs           输入源抽象 / PointerId / InputFrame
 │  │  │                 SimulatedTouchInputSource.cs  开发用模拟触摸源（鼠标 + 数字键）
 │  │  │                 DevicePipeInputSource2.cs     压板源（**已停用**，见「当前状态」）
 │  │  │                 InputConfigPrefs.cs      CommandId 的 PlayerPrefs 持久化
-│  │  │                 GameSceneManager.cs      场景加载 / 卸载 / 淡入淡出
 │  │  │                 DynamicObstacle.cs       运行时把物体占据的格子标成动态阻挡
-│  │  └─ Presentation/  （13）        表现层：直接画 / 播 / 显示
+│  │  └─ Presentation/  （14）        表现层：直接画 / 播 / 显示
 │  │                    SceneObjectView.cs       **一个镜像对象 = 一块贴地面片**（位置/缩放/激活/顺序/取图）
 │  │                    ResourceImageLoader.cs   按资源逻辑 ID 取图（缓存 / 去重 / 失败记忆）
 │  │                    GridMap.cs               地图格子数据 + 网格渲染（+ .bytes 读取）
 │  │                    FogOfWar.cs              战争雾（GPU 羽化 + 右键擦除）
 │  │                    BirdWanderer.cs          装饰物区域随机游荡
-│  │                    GroundSpriteRenderer.cs  贴地面的纹理面片（含运行时纹理入口）
+│  │                    GroundTextureRenderer.cs 贴地面的纹理面片（**只认运行时纹理**）
 │  │                    PhotoClickGlow.cs        拍照指针点地时的点光
 │  │                    AudioPlayerManager.cs    分层音频（4 层，同层顶替）+ 字幕
 │  │                    SmartVideoPlayer.cs      视频播放 / 播完回调 / 淡入淡出
 │  │                    UIManager.cs             唯一 Canvas + 窗口注册/开关
 │  │                    UIWindow.cs              窗口基类
-│  │                    SceneFadeUI.cs           全屏淡入淡出遮罩
+│  │                    SceneFadeUI.cs           全屏淡入淡出遮罩（**当前无调用方**）
 │  │                    SubtitleWindow.cs        字幕窗口
 │  │                    SimulatedTouchDebugUI.cs 触点调试圆点
-│  ├─ Editor/           （2）         编辑器工具（DiceTale.Editor.asmdef）
-│  │                    GroundSpriteRendererMenu.cs   菜单入口：建 GroundSpriteRenderer
+│  ├─ Editor/           （1）         编辑器工具（DiceTale.Editor.asmdef）
 │  │                    SetupMaps.cs                  一次性脚本：把 Demo 场景重建成「只有 Game 宿主」
 │  ├─ Resources/                      ← **运行时按名加载的资产必须留在这里**
 │  │  ├─ Shaders/                     DiceTale/*.shader（FogBlur / GroundSprite / VideoFade 在用）
@@ -87,15 +87,14 @@ Assets/
 `SceneModel` 就是后端 `SceneDoc` 的同构副本，`SceneMirror` 负责把它变成 Unity 对象。
 **网络层**同理只做「连接 + 会话 + 协议」，一行游戏逻辑都没有。
 
-**已知的「逻辑层碰表现层」6 处**（不是随手写的，是现状：真要让方向绝对干净，得先把 `GridMap` 拆成
+**已知的「逻辑层碰表现层」5 处**（不是随手写的，是现状：真要让方向绝对干净，得先把 `GridMap` 拆成
 「格子数据 + 渲染」两个东西，那是新功能落地时的事）：
 
 | 位置 | 碰了什么 | 说明 |
 |---|---|---|
 | `Logic/Game.cs` | 网络层 + 全部表现层管理器 | **组合根**：装配入口本来就得认识所有管理器，这处是允许的 |
-| `Logic/SceneMirror.cs` | `Presentation/SceneObjectView` | 镜像落地就是「建视图」，这是它的本职 |
+| `Logic/SceneMirror.cs` | `Presentation/SceneObjectView` | 镜像落地就是「建视图」，这是它的本职；层级按场景分（`场景/<场景名>/对象`） |
 | `Logic/CommandRouter.cs` | 镜像 + 回执（下一步接音频） | 命令要作用到表现上，回执要经会话发出去 |
-| `Logic/GameSceneManager.cs` | `UIManager` → `SceneFadeUI` | 切场景的淡入淡出属于流程的一部分 |
 | `Logic/InputManager.cs` | uGUI 命中判定 + `PhotoClickGlow` | UI 点击豁免与拍照点光 |
 | `Logic/DynamicObstacle.cs` | `GridMap` | 它只跟 `GridMap` 打交道，而 `GridMap` 目前同时持有格子数据与渲染 |
 
@@ -118,19 +117,115 @@ Assets/
 - 正常路径：用 Unity Hub 打开 `client/`（6000.3.19f1），Console 要求 **0 个 error CS**。
 - 不想开 Unity（或它正开着、不能 `-batchmode` 抢工程）时：把 Unity 生成的 `.csproj` 复制到临时目录，
   只保留仍存在的 `Compile` 项、补 `FrameworkPathOverride`（指 Unity 的 `unity-4.8-api`），
-  再 `dotnet msbuild` 编译（做法见清理文档第 14.4 节）。本次就是这样验的：
-  `DiceTale`（34 个脚本）与 `DiceTale.Editor`（2 个）都是 **0 error CS**。
+  再 `dotnet msbuild` 编译（做法见清理文档第 14.4 节）。
+- 本次（2026-09-20，加资源包那两个脚本）用的办法：临时工程**引用真实的 Unity 程序集**
+  （`Editor/Data/Managed/UnityEngine/*.dll` + `Library/ScriptAssemblies/*.dll`，排除 `DiceTale.dll`），
+  直接编译 `Assets/DiceTale/Scripts/**/*.cs` → **0 error CS**（仅 2 个既有警告，都在 `GridMap.cs`）。
+  这样即使 Unity 开着、MCP 桥接掉了也能离线确认编译通过。
 
-## 当前状态（2026-09-19）
+## 资源从哪来：**先把资源包下完，再载入场景**
 
-- **34 个运行时脚本 + 2 个编辑器脚本**；旧模型零残留；两个程序集编译 0 错误；`.meta` 齐全。
-- **镜像协议已实现**（见 `server/docs/specs/2026-09-19-runtime-mirror-protocol.md`）：
-  编辑器点「运行」→ 服务端开闸 → 前端连上 → 场景整份推下来 → 按 `id` 建 / 改 / 删对象
+顺序是硬要求：**先下载、后载入**。
+
+```
+服务端                                前端
+  │ server_hello
+  │ resources_prepare{project}  ────►  开始下资源包（manifest → 按需下整包 → 解压）
+  │ scene_sync{scene}           ────►  场景**挂起**（不建视图），等资源包处理完
+  │                                    …资源包处理完（成功或失败）…
+  │                                    载入场景 → 按 id 建 / 改 / 删对象，贴图走本地文件
+```
+
+为什么需要服务端提前告知项目名：前端原本只能从镜像里的逻辑 ID 推项目名，而镜像是 `scene_sync`
+带来的——那就必然「场景先到、资源后下」。`resources_prepare` 把项目名提前给出来，顺序才反过来。
+
+- **挂起是客户端强制的**：就算服务端没发 `resources_prepare`（或先发了场景），
+  `SceneMirror` 也会自己从场景推项目名并挂起（`SceneWaitTimeoutSeconds = 30` 秒兜底：
+  等太久就照常载入，图片回落逐文件远程取，不让画面空着）。
+- **失败也放行**：资源包下不下来不该让场景一直不显示。
+- 挂起期间来了更新的一份场景，就替换掉挂起的那份（只应用最新）。
+
+```
+镜像里的逻辑 ID（project:测试项目/Assets/images/Map001.png）
+        │
+        ├─ 资源包就绪且本地有这一版 ──→ file://<persistentDataPath>/dts-bundles/<服务端标识>/测试项目/<指纹>/images/Map001.png
+        │                                （同一条 UnityWebRequestTexture 链路，纹理解码逻辑与远程完全一致）
+        └─ 资源包没就绪 / 本地没有 ───→ GET {http}/api/resources/raw?id=…（逐文件，行为与以前一致）
+```
+
+### 下载的东西存在哪：**运行时目录，绝不进 Unity 工程的 `Assets/`**
+
+- 落盘位置 = **`Application.persistentDataPath`**（本机是 `AppData/LocalLow/DefaultCompany/LLMNPC_NEWLIGHT`）。
+  **绝不写 `Application.dataPath` / 工程的 `Assets/`**：往那儿写会在编辑器里触发资产导入 + 域重载
+  （每下载一次就重编译一次），而且下载物会被打进包体、污染 git。工程 `Assets/` 只放随包发布的源素材。
+- 目录形如 `persistentDataPath/dts-bundles/<服务端标识>/<项目名>/<指纹>/…`：
+  - **服务端标识**（`127.0.0.1-1420-bac2a79d`）= 地址末段 + 地址的 FNV-1a 哈希。`persistentDataPath` 是 Unity 按
+    **工程路径**哈希算的，同一台机器上路径不同但**同名**的工程会共用它；只按项目名分目录挡不住串扰，
+    所以标识必须把完整地址算进去。用自算哈希而不是 `string.GetHashCode`——后者在 .NET Core 上每进程都变。
+  - **指纹即版本目录名**，切素材 = 切目录，不存在「读一半新一半旧」。
+- **本地不保留 `Assets/` 这一层**（磁盘上是 `…/images/Map001.png` 而不是 `…/Assets/images/Map001.png`）：
+  `Assets/` 只是**服务端项目内**的目录名（zip 条目名仍是它，解压时由
+  `LocalResourceStore.LocalRelativePathOfZipEntry` 剥掉）。客户端磁盘上再出现一个叫 `Assets` 的目录，
+  只会和 Unity 工程的 `Assets/` 混淆——这正是要避免的。
+
+- **`ResourceBundleCache`**（Network）：`manifest?project=` 拿指纹 → 本地已有同指纹版本就**一个字节都不下**；
+  否则 `bundle?project=&v=<本地指纹>`（服务端指纹没变回 304）→ zip 落到临时文件 →
+  **后台线程**解压到 `<指纹>.partial` → 写指纹标记 → 改名成正式目录。全部成功才算这一版可用，
+  读方永远不会看到「解了一半」的版本。失败**不清旧版本**，图片继续用旧的并回落远程。
+- **`ZipStoredReader`**（Data）：读 STORED zip 的最小实现，**这是必需的不是可选**——
+  Unity 里没有 `System.IO.Compression` 程序集（`ZipArchive` 被类型转发到它，用了会 `error CS1069`，
+  我已实测运行时该程序集确实不存在），而服务端的包本来就**不压缩**（素材已是压缩格式），
+  所以「解压」只是按中央目录偏移搬字节 + 逐条 CRC32 校验，纯 C# 无依赖。
+- **`LocalResourceStore`**（Data）：纯路径约定（逻辑 ID ↔ 本地文件、版本列表、清理旧版本），
+  脱离 Unity 可单测（36 项断言，覆盖无标记版本不算可用、`.partial` 不进列表、清理保留当前+上一版）。
+- **`ResourceImageLoader`**（Presentation）：本地优先，本地读不出来时**不把 ID 拉黑**，远程还有一份；
+  新增 `Clear()` 释放纹理缓存（以前纹理只增不减）。
+- 拉完（或失败）前端回一条 `resources_ready`，编辑器运行面板显示「资源包：已就绪 / 失败 + 项目 + 文件数 + 指纹」。
+- 更新时机：**指纹比对**。素材被外部工具改了（size 或 mtime 变）指纹就变，下次连上自动重下；
+  没变就不传。本地目录布局与清理规则见 `LocalResourceStore` 的注释。
+
+**音频 / 视频**：字节现在也会被一起下到本地（整包包含 `Assets/` 全部文件），但**播放链路还没接**——
+`AudioPlayerManager` 只吃 `AudioClip`、`SmartVideoPlayer` 只认 Inspector 里的 `VideoClip`，
+本地包落地后这两条只差最后一步。
+
+## 当前状态（2026-09-20）
+
+- **36 个运行时脚本 + 1 个编辑器脚本**（Data 8 / Logic 9 / Network 5 / Presentation 14）；旧模型零残留；`.meta` 齐全。
+- **多场景同时存在，切场景只隐藏不销毁（2026-09-20）**：层级按场景分——
+  `Game / 场景（容器）/ <场景名>/ 对象视图…`，**场景节点直接用场景名命名**。
+  切换场景只是把别的场景 `SetActive(false)` 藏起来，对象、贴图、状态全部留着；
+  切回去直接显示，不重建。一次运行里可以同时有多个场景（玩家可能在场景1 做完事再切到场景2）。
+  `Find(objectId)` 会在**所有场景**里找，所以隐藏场景里的对象照样能被命令寻址。
+  确实要丢弃某个场景时显式调 `DestroyScene(name)`（平时不调）。
+- **贴图真正画上去了（2026-09-20 修）**：`SceneObjectView` 原来只在收到场景推送时才重画面片，
+  而取图是**异步**的——首帧必然拿占位色，且命中缓存的那次推送根本不回调这个视图，于是出现
+  「纹理已经在 `ResourceImageLoader` 缓存里、`MeshRenderer` 上却还是占位色」（地图对象最明显）。
+  现在取图回调里会自己调一次 `ApplyVisual()` 重画。
+- **`GroundSpriteRenderer` → `GroundTextureRenderer`（2026-09-20）**：前者是给 Inspector 用的
+  （`Sprite` 字段 + `OnValidate` 预览 + 序列化资源管理），而镜像的图来自后台推下来的资源 ID、
+  运行时才拿到，根本没有「拖图」这回事。新类**只认 `Texture2D`**，没有 `Sprite` 字段、
+  没有序列化字段、没有编辑器预览；连同它的菜单入口 `GroundSpriteRendererMenu` 一起删掉
+  （Shader `DiceTale/GroundSprite` 保留，新类继续用）。
+- **尺寸烘进网格顶点，不再靠 Transform 缩放（2026-09-20）**：`Apply(texture, width, height, tint, order, lift)`
+  收的是世界单位下的宽高，顶点摆在 `±宽/2` / `±高/2`，`transform.localScale` 由渲染器校正为
+  `(1,1,1)`（`SceneObjectView` 不再设 `localScale`）。这样「对象多大」只有一处来源——网格自己，
+  不会出现「网格比例 × 缩放」两处都能改大小、改错一个就变形。实测：地图声明 1920×1080 → 
+  网格 bounds 1920×1080、scale (1,1,1)；精灵声明 256×256 → 网格 256×256、scale (1,1,1)。
+- **镜像协议已实现**（**协议 v2**，见 `server/docs/specs/2026-09-19-runtime-mirror-protocol.md`）：
+  编辑器点「运行」→ 服务端开闸 → 前端连上 → **先下资源包** → 再整份推场景 → 按 `id` 建 / 改 / 删对象
   （位置 / 缩放 / 旋转 / **激活** / 显示顺序 / 取图都同步）。
+- **资源包已实现**（见上一节）：连上即按项目拉整包到本地，之后图片从本地读；
+  指纹变了才重下。服务端侧见 `server/README.md` 的「运行态资源包」。
+  Unity 内实测：真实 37 MB 包解压 **15 个文件 / 120 ms**，逐条 CRC 通过，
+  解出的 png / mp4 / wav / mp3 / json 与仓库源文件 **SHA256 逐字节一致**；
+  顺序实测为「场景先挂起 → 资源包就绪 → 场景才载入」。
 - **下一步**：`play_sound` 的真出声（取音频 + 按层播放）。现在命令链路已通（转发 / 回执 / 超时 / 日志），
-  但前端如实回 `ok:false` 并说明「镜像里该播哪一条」——不假装成功。
-- **场景载体**：旧 `Resources/Scenes/*.prefab` 与 `*.bytes` 已删；现在场景内容由后台推下来，
-  `GameSceneManager` 的「按名加载 Resources 预置体」那条路径暂时没有资产可加载（等场景加载命令）。
+  但前端如实回 `ok:false` 并说明「镜像里该播哪一条」——不假装成功；音频字节已经在本地了。
+- **场景载体（D1 已落地）**：旧 `Resources/Scenes/*.prefab` 与 `*.bytes` 已删，场景内容由后台推下来、
+  由 `SceneMirror` 搭出来。`GameSceneManager`（按名加载 Resources 预置体 + 淡入淡出）**已于 2026-09-20
+  整个删除**——它唯一的动作就是 `Start()` 里加载早已不存在的 `Scene000` 预设，每次进播放模式都报
+  `Scene prefab not found`。**`SceneFadeUI` 保留**（它不依赖那个类，是自包含的全屏遮罩），
+  但**目前没有调用方**——等真正需要黑屏过渡的功能来调，或确认用不上就删。
 - **已停用但未删**（你要求先不动）：`DevicePipeInputSource2`（`Sample` 整段注释——若在 Game 里把
   输入方案选成 `PipeSource`，输入会**静默失效**）、`InputConfigPrefs`、14 个无人引用的 shader、
   6 个孤儿材质、`Resources/RealMap.prefab`、`Assets/Readme.asset`。要清时按清理文档的口径来

@@ -590,6 +590,42 @@ Playwright 跑在临时资源根上（见 `playwright.config.ts` 的 `DTS_RESOUR
 - 项目名会直接成为文件夹名，因此会挡掉路径分隔符、Windows 非法字符与 `CON`/`NUL` 等保留名。
 - 大体积二进制（地图贴图、音视频）默认不入库，需要时 `git add -f` 或启用 Git LFS。
 
+### 运行态资源包（前端连上就把整个项目的素材拉到本地）
+
+前端**不再逐张图去问服务端**：连上、拿到场景（从而知道当前是哪个项目）之后，它会把该项目的
+`Assets/` **整包拉一份到本地**，之后所有资源从本地文件读，服务端只在素材变了时才需要再传一次。
+
+| 接口 | 说明 |
+|---|---|
+| `GET /api/resources/manifest?project=<项目名>` | 清单：项目名 + **指纹** + 字节数 + 文件列表（`id` / `path` / `size` / `mtimeMs`）。只列 `Assets/` 下的文件——`project.json` 是元数据、`.gitkeep` 是占位，都不下发 |
+| `GET /api/resources/bundle?project=<项目名>[&v=<指纹>]` | 整包 zip。`v` 与服务端当前指纹一致 → **304**（客户端不必重下）；否则 200 + `application/zip`，响应头带 `x-dts-project` / `x-dts-fingerprint` / `x-dts-file-count` / `x-dts-bytes` |
+
+**指纹 = 全部文件 `path:size:mtimeMs` 排序后拼接的 sha1 前 16 位**（`apps/backend/src/resources/bundle.ts`）。
+素材被外部工具改动（大小或修改时间变了）指纹就变，客户端下次连上即发现并重下；
+指纹没变则一个字节都不传。
+
+包的做法与取舍（`bundle.ts` 顶部注释也写了同一份）：
+
+- 包内条目名 = **项目根相对路径**（`Assets/images/Map001.png`，不带项目名前缀），
+  前端按逻辑 ID 去掉项目名后直接对得上本地文件；另含一份 `dts-bundle.json` 清单便于自校验。
+- **压缩方式刻意选 STORED（不压缩）**：后端没有 zip 依赖，自研 writer 用 STORED 才不必实现 deflate；
+  素材本身（png / mp4 / mp3 / wav）已经是压缩格式。代价是传输量 = 文件字节总和。
+  **产出的包用 .NET 的 `ZipArchive` / `Expand-Archive` 实地解压验证过**（中文条目名也正确）。
+- **整包在内存里拼**：`config/app.json` 的 `bundle.maxTotalBytes`（默认 256 MB）是上限，
+  超了回 **413** 并让前端退回逐文件 `/api/resources/raw`——不设上限会在大项目上把内存吃光。
+- 服务端**每个项目只缓存最近一份**打包结果，但进缓存前会**重算指纹**（成本 = 一次 `list`），
+  所以素材改了会自动重打，不需要文件监听，也不会发出发霉的包。
+
+前端侧（`client/`）：`ResourceBundleCache` 负责「问清单 → 按需下包 → 后台线程解压 → 写指纹标记」，
+`LocalResourceStore` 负责路径约定（逻辑 ID ↔ 本地文件、版本目录的选择与清理），
+`ResourceImageLoader` 本地优先、缺的回落远程。拉完（或失败）前端会回一条 `resources_ready`，
+编辑器运行面板上能看见「资源包：已就绪 / 失败 + 项目 + 文件数 + 指纹」。
+
+**顺序：先下资源、再载入场景。** 服务端在 `scene_sync` **之前**先发一条
+`resources_prepare{project}`（项目名从最近一次推上来的场景里的资源逻辑 ID 推出，
+见 `runtime-session.ts` 的 `projectNameOfScene`），前端据此立刻开下；场景到了会被前端挂起，
+等资源包处理完（成功或失败都算）才落地。因此协议版本升到 **v2**——`/client` 多了一种消息类型。
+
 ---
 
 ## 编辑态 / 运行态
