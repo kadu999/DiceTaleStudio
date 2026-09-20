@@ -10,7 +10,11 @@ namespace DiceTale
     /// - 大小 = 声明尺寸（`image` / `map.image`）× `scale`；
     /// - `active` = 是否显示（编辑器那个勾选框一改，这里就出现 / 消失）；
     /// - `sortingOrder` = 遮挡顺序（大的盖在上面）；
-    /// - 有图就去取图贴上；没图（或还没取回来）先用按 `kind` 区分的底色占位，**保证每个对象都看得见**。
+    /// - 有图就去取图贴上（本地资源包优先）；没图（或还没取回来）先用按 `kind` 区分的底色占位，
+    ///   **保证每个对象都看得见**。
+    ///
+    /// 面片本身由 <see cref="GroundTextureRenderer"/> 画——它只认运行时纹理，
+    /// 因为镜像的图来自后台推下来的资源 ID，不是 Inspector 里拖的 Sprite。
     ///
     /// 声音对象（`PlaySound`）不建可见物——编辑器里那枚音频图标只是**编辑器**的画法，
     /// 前端按自己的表现来；它的数据留在镜像里（`sound.picked` 就是该播的那条）。
@@ -20,7 +24,7 @@ namespace DiceTale
         /// <summary>没声明尺寸时的兜底边长（与编辑器画布上那块兜底矩形同口径）。</summary>
         private const float FallbackSize = 64f;
 
-        private GroundSpriteRenderer quad;
+        private GroundTextureRenderer quad;
         private ResourceImageLoader imageLoader;
 
         private string currentImageId = "";
@@ -29,6 +33,10 @@ namespace DiceTale
         private float currentWidth = FallbackSize;
         private float currentHeight = FallbackSize;
 
+        /// <summary>最近一次对象数据里的染色与显示顺序（<see cref="ApplyVisual"/> 要用，含异步取图回来那次）。</summary>
+        private Color currentKindColor = new Color(0.85f, 0.85f, 0.85f, 0.85f);
+        private int currentSortingOrder;
+
         /// <summary>按对象建视图（地图 / 精灵 / 任意实体都先建一块面片；声音对象除外）。</summary>
         public static SceneObjectView Create(MirrorObject obj, Transform parent, ResourceImageLoader loader)
         {
@@ -36,7 +44,7 @@ namespace DiceTale
             go.transform.SetParent(parent, false);
             var view = go.AddComponent<SceneObjectView>();
             view.imageLoader = loader;
-            view.quad = go.AddComponent<GroundSpriteRenderer>();
+            view.quad = go.AddComponent<GroundTextureRenderer>();
             return view;
         }
 
@@ -69,20 +77,12 @@ namespace DiceTale
             currentWidth = (image != null && image.width > 0 ? image.width : FallbackSize) * obj.scale;
             currentHeight = (image != null && image.height > 0 ? image.height : FallbackSize) * obj.scale;
             currentImageId = image != null ? image.id : "";
-            var hasTexture = currentTexture != null && currentImageId.Length > 0 && currentTextureId == currentImageId;
+            currentKindColor = KindColor(obj.kind);
+            currentSortingOrder = obj.sortingOrder;
 
-            // 面片网格的宽 = 宽高比、高 = 1，所以整体按「高」缩放就得到声明尺寸（宽 = 高 × 宽高比）
-            transform.localScale = new Vector3(currentHeight, 1f, currentHeight);
+            ApplyVisual();
 
-            // 面片：宽高比 + 染色（有图时白色 = 原图；没图时按 kind 上色，至少看得见）
-            quad.SetRuntimeVisual(
-                hasTexture ? currentTexture : null,
-                currentHeight <= 0f ? 1f : currentWidth / currentHeight,
-                hasTexture ? Color.white : KindColor(obj.kind),
-                obj.sortingOrder,
-                LiftFor(obj.sortingOrder));
-
-            if (image != null && imageLoader != null && !hasTexture && currentTexture == null)
+            if (image != null && imageLoader != null && currentTextureId != currentImageId)
             {
                 var id = image.id;
                 imageLoader.Load(id, texture =>
@@ -95,8 +95,34 @@ namespace DiceTale
 
                     currentTexture = texture;
                     currentTextureId = id;
+
+                    // **关键**：取图是异步的，首帧必然是占位色；拿到图（或确知取不到）之后
+                    // 这里必须自己重画一次——否则要到下一次推送才更新，而命中缓存时那次推送
+                    // 根本不会调回来（表现为「图在缓存里，画面上却一直是占位色」）。
+                    ApplyVisual();
                 });
             }
+        }
+
+        /// <summary>
+        /// 把当前的尺寸 / 染色 / 纹理应用到面片上（**每次都调，含异步取图回来之后**）。
+        ///
+        /// 拆出来是因为「对象数据变了」和「图取回来了」是两个独立时机：只按前者画，
+        /// 首帧永远只有占位色，而命中缓存的那次推送不会回调这里。
+        /// </summary>
+        private void ApplyVisual()
+        {
+            var hasTexture = currentTexture != null && currentImageId.Length > 0 && currentTextureId == currentImageId;
+
+            // 声明尺寸（× 对象 scale）直接交给渲染器**烘进网格顶点**——
+            // 这里不碰 transform.localScale（尺寸只有一个来源，网格自己）。
+            quad.Apply(
+                hasTexture ? currentTexture : null,
+                currentWidth,
+                currentHeight,
+                hasTexture ? Color.white : currentKindColor,
+                currentSortingOrder,
+                LiftFor(currentSortingOrder));
         }
 
         /// <summary>按显示顺序错开离地高度：大的略高一点，避免同平面共面闪烁（真正的遮挡靠 sortingOrder）。</summary>
