@@ -257,7 +257,11 @@ function ObjectRow({
       ? `${object.map?.grid.width ?? 0}×${object.map?.grid.height ?? 0}`
       : object.kind === "PlaySound"
         ? SOUND_LAYER_LABELS[object.sound?.layer ?? DEFAULT_SOUND_LAYER]
-        : null;
+        : object.kind === "Teleport"
+          ? // 传送阵：行尾写它当前会把人送到哪张图（没加 / 没选就明说，别留白）
+            (object.teleport?.picked ??
+              (object.teleport?.targets.length === 0 ? "未加目标" : "未选目标"))
+          : null;
 
   return (
     <div

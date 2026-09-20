@@ -95,8 +95,10 @@ export async function exactWorldPoint(
 /**
  * 画布（canvas）上的坐标与采样工具（用例共用）。
  *
- * 默认视口是 scale 1 且**世界原点在画布正中**（`createCenteredViewport`），
- * 所以「世界坐标 → 画布上的点」只有一步：`screen = 画布中心 + (x, -y)`。
+ * `worldSamplePoint` / `scenePoint` 这些「世界原点 = 画布中心」的换算，靠的是
+ * **视口刚好落在 1:1 且居中**：场景里的东西都摆在原点附近时，适配出来的就是这个样子
+ * （`fitSceneViewport` 装得下就按 1:1 摆中间）。一旦对象不在原点、或者场景大到装不下，
+ * 视口就会平移到别处 / 缩下去——那时候必须用 `preciseWorldPoint`（读真实视口变换）。
  *
  * **必须用 canvas 而不是 `scene-viewport` 容器**：默认视口把世界原点摆在**画布正中**，
  * 而画布是定宽撑满的——容器比它窄时（平板竖屏左边压着抽屉），两个「中心」能差出上百像素，

@@ -11,6 +11,7 @@ import { FogMaskDialog } from "./FogMaskDialog";
 import { GridEditDialog } from "./GridEditDialog";
 import { ImagePickerDialog } from "./ImagePickerDialog";
 import { SoundEditDialog } from "./SoundEditDialog";
+import { TeleportEditDialog } from "./TeleportEditDialog";
 import { MenuBar } from "./MenuBar";
 import { StatusBar } from "./StatusBar";
 
@@ -39,6 +40,9 @@ export function EditorShell(): React.JSX.Element {
   const soundEditor = useEditorStore((state) => state.soundEditor);
   const soundEditorTarget = useEditorStore((state) => state.soundEditorTarget);
   const openSoundEditor = useEditorStore((state) => state.openSoundEditor);
+  const teleportEditor = useEditorStore((state) => state.teleportEditor);
+  const teleportEditorTarget = useEditorStore((state) => state.teleportEditorTarget);
+  const openTeleportEditor = useEditorStore((state) => state.openTeleportEditor);
   const fogMask = useEditorStore((state) => state.fogMask);
   const fogMaskTarget = useEditorStore((state) => state.fogMaskTarget);
   const openFogMask = useEditorStore((state) => state.openFogMask);
@@ -48,6 +52,8 @@ export function EditorShell(): React.JSX.Element {
   const setObjectImage = useEditorStore((state) => state.setObjectImage);
   const setTool = useEditorStore((state) => state.setTool);
   const cancelObjectTransform = useEditorStore((state) => state.cancelObjectTransform);
+  const openSceneByIndex = useEditorStore((state) => state.openSceneByIndex);
+  const openAdjacentScene = useEditorStore((state) => state.openAdjacentScene);
 
   /**
    * 弹框要换图片的那个对象（对象可能已被删掉，所以现查一次）。
@@ -125,6 +131,22 @@ export function EditorShell(): React.JSX.Element {
         return;
       }
 
+      // 切场景：`1`-`9` 直选切换条上的第 N 格，`[` / `]` 上一场 / 下一场。
+      // 这是 DM 跑团时最常用的两个动作，值得一个**裸键**（和 Q/W/E/R 同一套约定：
+      // 输入框里打字时上面那道 `typing` 已经放行，不会误触）。
+      // 不用 Ctrl+数字：那是浏览器留给标签页的，网页拦不住。
+      if (event.key >= "1" && event.key <= "9") {
+        event.preventDefault();
+        openSceneByIndex(Number(event.key) - 1);
+        return;
+      }
+
+      if (event.key === "[" || event.key === "]") {
+        event.preventDefault();
+        openAdjacentScene(event.key === "[" ? -1 : 1);
+        return;
+      }
+
       if (modifier && event.key.toLowerCase() === "d") {
         event.preventDefault();
         duplicateObjects();
@@ -158,7 +180,7 @@ export function EditorShell(): React.JSX.Element {
     return () => {
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [deleteObjects, duplicateObjects, openObjectDialog, redo, saveSceneNow, undo, setTool, cancelObjectTransform]);
+  }, [deleteObjects, duplicateObjects, openObjectDialog, redo, saveSceneNow, undo, setTool, cancelObjectTransform, openSceneByIndex, openAdjacentScene]);
 
   // 跨越断点（窗口缩放 / 接上触屏）时重置面板开合，避免平板下三栏互相挤压
   const previousCompact = useRef<boolean | null>(null);
@@ -258,6 +280,13 @@ export function EditorShell(): React.JSX.Element {
         open={soundEditor && soundEditorTarget !== null}
         objectId={soundEditorTarget}
         onClose={() => openSoundEditor(null)}
+      />
+
+      {/* 传送目标：把项目里的场景勾成这个传送阵的候选（选哪个在属性面板上点小方块） */}
+      <TeleportEditDialog
+        open={teleportEditor && teleportEditorTarget !== null}
+        objectId={teleportEditorTarget}
+        onClose={() => openTeleportEditor(null)}
       />
 
       {/* 战争雾 Mask 窗口：在贴图上按雾区涂 / 擦（目标地图由属性面板指定） */}

@@ -1,6 +1,7 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import {
   CURRENT_SCENE_FORMAT_VERSION,
+  closeDrawers,
   dropProject,
   enterEditor,
   mapObjectDoc,
@@ -9,7 +10,11 @@ import {
   openMenu,
   openProject,
   sceneDoc,
+  sceneObjectDoc,
   seedProjectDoc,
+  selectObject,
+  solidPng,
+  uploadSceneImage,
 } from "./helpers/editor";
 
 /**
@@ -200,15 +205,25 @@ test.describe("场景菜单", () => {
       await enterEditor(page);
       await openProject(page, project);
 
-      // 画布标题栏就是当前场景：看得见、能切
-      const switcher = page.getByTestId("scene-switcher");
-      await expect(switcher).toHaveValue("Map001");
+      // 当前场景在标题栏上看得见，「切换条」上点一下即切
+      await expect(page.getByTestId("scene-current")).toHaveText("Map001");
+      await expect(page.getByTestId("scene-bar")).toHaveAttribute("data-scene", "Map001");
       await expect(page.getByTestId("status-active-scene")).toHaveText("当前场景 Map001");
 
-      await switcher.selectOption("Map002");
+      await page.getByTestId("scene-chip").filter({ hasText: "Map002" }).click();
 
-      await expect(switcher).toHaveValue("Map002");
+      await expect(page.getByTestId("scene-current")).toHaveText("Map002");
+      await expect(page.getByTestId("scene-bar")).toHaveAttribute("data-scene", "Map002");
       await expect(page.getByTestId("status-active-scene")).toHaveText("当前场景 Map002");
+      // 当前那一格高亮，别的不是
+      await expect(page.getByTestId("scene-chip").filter({ hasText: "Map002" })).toHaveAttribute(
+        "data-active",
+        "true",
+      );
+      await expect(page.getByTestId("scene-chip").filter({ hasText: "Map001" })).toHaveAttribute(
+        "data-active",
+        "false",
+      );
     } finally {
       await dropProject(request, project);
     }
@@ -237,7 +252,7 @@ test.describe("场景菜单", () => {
       await contentRows.filter({ hasText: "Map002" }).first().click();
 
       await expect(page.getByTestId("status-active-scene")).toHaveText("当前场景 Map002");
-      await expect(page.getByTestId("scene-switcher")).toHaveValue("Map002");
+      await expect(page.getByTestId("scene-bar")).toHaveAttribute("data-scene", "Map002");
       await expect(contentRows.filter({ hasText: "Map002" })).toHaveAttribute(
         "data-selected",
         "true",
@@ -284,3 +299,164 @@ test.describe("场景菜单", () => {
     }
   });
 });
+
+/**
+ * 跑团现场最常用的动作：**换台**。
+ *
+ * DM 是边讲边切的，所以这里钉的是「一次点击 / 一个按键就到位」：切换条点一下、
+ * `1`-`9` 直选、`[` / `]` 前后；顺序按**自然序**（`第2幕` 在 `第10幕` 前，编号才靠得住）；
+ * 切到没去过的场景自动铺满，切回去恢复上次的视角。
+ */
+test.describe("场景切换：切换条与快捷键", () => {
+  test("切换条按自然序排：第2幕 在第10幕 前面（序号就是快捷键的说明）", async ({
+    page,
+    request,
+  }) => {
+    const project = await newProject(request);
+    try {
+      await seedProjectDoc(request, project, [
+        sceneDoc("第10幕"),
+        sceneDoc("第2幕"),
+        sceneDoc("第1幕"),
+      ]);
+      await enterEditor(page);
+      await openProject(page, project);
+
+      const chips = page.getByTestId("scene-chip");
+      await expect(chips).toHaveCount(3);
+      await expect(chips.nth(0)).toHaveAttribute("data-scene", "第1幕");
+      await expect(chips.nth(1)).toHaveAttribute("data-scene", "第2幕");
+      await expect(chips.nth(2)).toHaveAttribute("data-scene", "第10幕");
+      // 序号写在格子上（前九格）：按 2 就该到第 2 格
+      await expect(chips.nth(1)).toHaveAttribute("data-index", "2");
+    } finally {
+      await dropProject(request, project);
+    }
+  });
+
+  test("快捷键：`1`-`9` 直选、`[` / `]` 上一场 / 下一场（到端点不循环）", async ({
+    page,
+    request,
+  }) => {
+    const project = await newProject(request);
+    try {
+      await seedProjectDoc(request, project, [
+        sceneDoc("Map001"),
+        sceneDoc("Map002"),
+        sceneDoc("Map003"),
+      ]);
+      await enterEditor(page);
+      await openProject(page, project);
+      await expect(page.getByTestId("status-active-scene")).toHaveText("当前场景 Map001");
+
+      await page.keyboard.press("]");
+      await expect(page.getByTestId("status-active-scene")).toHaveText("当前场景 Map002");
+      await page.keyboard.press("]");
+      await expect(page.getByTestId("status-active-scene")).toHaveText("当前场景 Map003");
+
+      // 到末尾：再按一下什么都不做（不绕回第一场）
+      await page.keyboard.press("]");
+      await expect(page.getByTestId("status-active-scene")).toHaveText("当前场景 Map003");
+
+      await page.keyboard.press("[");
+      await expect(page.getByTestId("status-active-scene")).toHaveText("当前场景 Map002");
+
+      await page.keyboard.press("3");
+      await expect(page.getByTestId("status-active-scene")).toHaveText("当前场景 Map003");
+      await expect(page.getByTestId("scene-bar")).toHaveAttribute("data-scene", "Map003");
+    } finally {
+      await dropProject(request, project);
+    }
+  });
+
+  test("在输入框里打字时数字键不切场景（免得改坐标改到一半换了图）", async ({
+    page,
+    request,
+  }) => {
+    const project = await newProject(request);
+    try {
+      await seedProjectDoc(request, project, [
+        sceneDoc("Map001", [sceneObjectDoc("木门", "SceneObject", { x: 0, y: 0 })]),
+        sceneDoc("Map002"),
+      ]);
+      await enterEditor(page);
+      await openProject(page, project);
+
+      await selectObject(page);
+      const filter = page.getByTestId("object-filter");
+      await filter.fill("");
+      await filter.click();
+      await page.keyboard.type("2");
+
+      await expect(filter).toHaveValue("2");
+      await expect(page.getByTestId("status-active-scene")).toHaveText("当前场景 Map001");
+    } finally {
+      await dropProject(request, project);
+    }
+  });
+
+  test("换台时视口跟着走：没去过的场景自动铺满，切回去恢复上次的视角", async ({
+    page,
+    request,
+  }) => {
+    const project = await newProject(request);
+    try {
+      // 两张**大小不同**的地图：同一张图就看不出「到底适配了谁」
+      const small = mapObjectDoc(
+        project,
+        "Map001",
+        "小图",
+        { width: 400, height: 300 },
+        { width: 8, height: 6 },
+      );
+      const large = mapObjectDoc(
+        project,
+        "Map002",
+        "大图",
+        { width: 1600, height: 1200 },
+        { width: 32, height: 24 },
+      );
+      await seedProjectDoc(request, project, [
+        sceneDoc("Map001", [small]),
+        sceneDoc("Map002", [large]),
+      ]);
+      await uploadSceneImage(request, project, "Map001", solidPng(400, 300, [0, 255, 0]));
+      await uploadSceneImage(request, project, "Map002", solidPng(1600, 1200, [0, 0, 255]));
+
+      await enterEditor(page);
+      await openProject(page, project);
+      // 平板下左栏是**覆盖式抽屉**，会盖住切换条左边那几格
+      await closeDrawers(page);
+      // 先把视角复位成 1:1：小图**适配**出来是 ~2 倍，两者明显不同，正好用来区分
+      // 「切过去自动铺满」与「切回来还记得刚才的视角」
+      await page.getByTestId("reset-viewport").click();
+      await expect.poll(() => readViewportScale(page)).toBeCloseTo(1, 2);
+
+      const box = await page.getByTestId("scene-viewport").boundingBox();
+      const fitOf = (size: { width: number; height: number }): number =>
+        Math.min(((box?.width ?? 0) - 48) / size.width, ((box?.height ?? 0) - 48) / size.height);
+      const smallFit = fitOf({ width: 400, height: 300 });
+      // 小图「铺满」与 1:1 分得开，这条断言才有意义
+      expect(smallFit).toBeGreaterThan(1.2);
+
+      // 切到大图：自动适配（整张 1600×1200 铺进画布），而不是沿用 1:1
+      await page.getByTestId("scene-chip").filter({ hasText: "Map002" }).click();
+      await expect.poll(() => readViewportScale(page)).toBeCloseTo(
+        fitOf({ width: 1600, height: 1200 }),
+        2,
+      );
+
+      // 切回小图：回到刚才复位的 1:1（记住的是用户视角，不是又适配成 ~2 倍）
+      await page.getByTestId("scene-chip").filter({ hasText: "Map001" }).click();
+      await expect.poll(() => readViewportScale(page)).toBeCloseTo(1, 2);
+    } finally {
+      await dropProject(request, project);
+    }
+  });
+});
+
+/** 画布上当前的缩放（面板把它写在 DOM 属性上，只给 E2E 用）。 */
+async function readViewportScale(page: Page): Promise<number> {
+  const raw = await page.getByTestId("scene-viewport").getAttribute("data-viewport-scale");
+  return Number.parseFloat(raw ?? "1");
+}

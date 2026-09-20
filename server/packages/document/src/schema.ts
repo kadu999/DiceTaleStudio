@@ -75,6 +75,19 @@ export const soundDataSchema = z.object({
   layer: z.enum(SOUND_LAYERS).default("sfx"),
 });
 
+/**
+ * 传送阵（动作对象）的数据：候选目标场景 + 选中的那一个（可选）。
+ *
+ * `targets` 给默认值 `[]`（与 `sound.clips` 同一个口径）：手写文件里少写一项时，
+ * 语义只能是「还没加任何目标」。
+ * `picked` **不给默认值**：它的「没写」有明确语义——还没选要传送哪一个（按钮点不了）。
+ * 选中的那条必须落在 `targets` 里，越界不算解析错误（`validateScene` 会提醒并按没选处理）。
+ */
+export const teleportDataSchema = z.object({
+  targets: z.array(z.string().min(1)).default([]),
+  picked: z.string().min(1).optional(),
+});
+
 export const conditionSchema = z.object({
   valueType: z.enum(["Bool", "String", "Number", "Integer"]),
   op: z.enum(["Equal", "NotEqual", "AtLeast", "AtMost"]),
@@ -100,7 +113,7 @@ export const componentSchema = z.object({
 export const sceneObjectSchema = z.object({
   id: z.string().min(1),
   name: z.string(),
-  kind: z.enum(["Map", "SceneObject", "Player", "Item", "Event", "PlaySound"]),
+  kind: z.enum(["Map", "SceneObject", "Player", "Item", "Event", "PlaySound", "Teleport"]),
   // v7 起：是否显示 + 显示顺序。**给默认值**是有意的——v6 及更早的文件没有这两个字段，
   // 「没写」只能是「显示、顺序 0」；写成必填会让所有旧文件直接读不开。
   active: z.boolean().default(true),
@@ -121,6 +134,9 @@ export const sceneObjectSchema = z.object({
   map: mapDataSchema.optional(),
   // 动作对象（播放声音）的声音数据
   sound: soundDataSchema.optional(),
+  // v12 起：动作对象「传送阵」携带的目标场景（可选）。同样**不给默认值**——
+  // 「没写」的语义是「还没指定目标」，别拿空壳冒充；类型见 `ObjectKind`。
+  teleport: teleportDataSchema.optional(),
   // 对象要显示的图片（精灵用；地图的贴图在 map.image 里）
   image: imageRefSchema.optional(),
 });
@@ -336,6 +352,44 @@ function migrateScenePositions(
 }
 
 /**
+ * v12 之前那一版：传送阵只有**一个目标**（`teleport: { target: "地图2" }`）。
+ *
+ * schema 不认 `target`（`z.object` 会把没见过的字段静默丢掉），直接读会变成「还没加目标」——
+ * 文件明明写着目标却点不动「传送」，所以在这里搬一次：挪进候选清单，并顺手选中它。
+ * 只认得出旧形状才动；新形状（已经有 `targets`）或没写 `teleport` 的原样返回。
+ */
+function migrateTeleportTarget(raw: Record<string, unknown>): {
+  readonly raw: Record<string, unknown>;
+  readonly changed: boolean;
+} {
+  const objects = Array.isArray(raw.objects) ? raw.objects : [];
+  let changed = false;
+
+  const next = objects.map((object) => {
+    if (!isRecord(object) || !isRecord(object.teleport)) {
+      return object;
+    }
+
+    const teleport = object.teleport;
+    const legacy = teleport.target;
+    if (
+      typeof legacy !== "string" ||
+      legacy.trim().length === 0 ||
+      Array.isArray(teleport.targets)
+    ) {
+      return object;
+    }
+
+    changed = true;
+    const rest: Record<string, unknown> = { ...teleport };
+    delete rest.target;
+    return { ...object, teleport: { ...rest, targets: [legacy], picked: legacy } };
+  });
+
+  return changed ? { raw: { ...raw, objects: next }, changed } : { raw, changed };
+}
+
+/**
  * 文件里写的 `formatVersion`（没写就按 v1 算）。
  *
  * **判断迁移不能拿它跟 `DOCUMENT_FORMAT_VERSION` 比**：版本号一涨，所有旧文件都会被
@@ -441,9 +495,11 @@ export function parseSceneFile(raw: unknown, size?: SceneSizeHint): SceneFileLoa
         : upgraded;
     // 再补上 v7 的显式字段（active / sortingOrder）与「没有位置的地图」
     const filled = withFilledObjectFields(migrated);
+    // v12：传送阵的「单目标」搬成「候选清单 + 选中的那一个」（中间那一版写下的文件要读得回来）
+    const teleport = migrateTeleportTarget(filled.raw);
     // 读出来的文档一律是当前版本（v6 起网格里不再存 `cellSize`，顺手被 schema 丢掉）
-    normalized = { ...filled.raw, formatVersion: DOCUMENT_FORMAT_VERSION };
-    needsRewrite = version < DOCUMENT_FORMAT_VERSION || filled.changed;
+    normalized = { ...teleport.raw, formatVersion: DOCUMENT_FORMAT_VERSION };
+    needsRewrite = version < DOCUMENT_FORMAT_VERSION || filled.changed || teleport.changed;
   }
 
   const result = sceneFileSchema.safeParse(normalized);

@@ -11,8 +11,15 @@ import { deflateSync } from "node:zlib";
 
 export type LeftTab = "assets" | "hierarchy";
 
-/** 场景文件的当前格式版本（与 `@dts/document` 的 `DOCUMENT_FORMAT_VERSION` 保持一致）。 */
-export const CURRENT_SCENE_FORMAT_VERSION = 11;
+/**
+ * 场景文件的当前格式版本。
+ *
+ * **必须与 `@dts/document` 的 `DOCUMENT_FORMAT_VERSION` 一起改**：e2e 不引用内部包
+ * （见 `scene-transform.spec.ts` 顶部那条分工说明），所以这里是**复述**——
+ * 升级场景格式时忘了改这一处，`hierarchy` / `scene-menu` 里那几条「旧文件自动回写」
+ * 的用例会立刻指出来。
+ */
+export const CURRENT_SCENE_FORMAT_VERSION = 12;
 
 /** 用接口建一个真项目（含 `project.json`），返回项目名。 */
 export async function newProject(request: APIRequestContext): Promise<string> {

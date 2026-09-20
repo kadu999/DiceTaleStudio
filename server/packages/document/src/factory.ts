@@ -17,7 +17,6 @@ import {
   type SoundLayer,
   type WorldPosition,
 } from "./types";
-
 /**
  * 文档工厂。
  *
@@ -112,6 +111,42 @@ export function createSoundObject(input: {
       layer: input.layer ?? DEFAULT_SOUND_LAYER,
       ...(picked === undefined ? {} : { picked }),
     },
+  };
+}
+
+/**
+ * 新建**传送阵**（动作对象）：和实体一样摆在世界里，另带「候选目标场景 + 选中的那一个」。
+ *
+ * 位置 / 缩放 / 激活 / 锁定 / 显示顺序与实体完全同一套；**画布上的样子是固定的**：
+ * 编辑器给它画一枚**内置传送徽标**（不给换贴图，所以没有 `image`），不然一个没有图的
+ * 「传送阵」在场景里既看不见也点不到。
+ *
+ * 新建时候选是空的（还没勾场景）——「传送目标」窗口里勾几个，「传送」才点得动。
+ * 给了 `targets` 就把第一条当作已选中（与 `createSoundObject` 同一个口径：点开面板就能用）。
+ */
+export function createTeleportObject(input: {
+  readonly name: string;
+  readonly targets?: readonly string[];
+  readonly picked?: string;
+  readonly id?: string;
+  /** 对象中心的世界坐标；不传 = 未放置（与普通对象同一个口径，由调用方给落点）。 */
+  readonly position?: WorldPosition | null;
+}): SceneObjectDoc {
+  const targets = [...(input.targets ?? [])];
+  const picked = input.picked ?? targets[0];
+
+  return {
+    id: input.id ?? createId("teleport"),
+    name: input.name,
+    kind: "Teleport",
+    active: true,
+    sortingOrder: DEFAULT_SORTING_ORDER,
+    position: input.position ?? null,
+    rotation: 0,
+    scale: DEFAULT_OBJECT_SCALE,
+    locked: false,
+    components: [],
+    teleport: { targets, ...(picked === undefined ? {} : { picked }) },
   };
 }
 

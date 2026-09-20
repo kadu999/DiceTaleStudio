@@ -81,6 +81,35 @@ describe("协议：场景（镜像的那份对象数据）", () => {
     expect(scene.objects[2]?.sound?.layer).toBe("sfx");
   });
 
+  it("传送阵（动作对象）也接得住：kind 是字符串、teleport 是「候选 + 选中的那个」", () => {
+    const withTeleport = sceneSchema.parse({
+      name: "s",
+      objects: [
+        {
+          ...(sampleScene().objects[0] as Record<string, unknown>),
+          id: "teleport_01",
+          name: "传送阵",
+          kind: "Teleport",
+          teleport: { targets: ["Map002", "Map003"], picked: "Map003" },
+        },
+        // 还没勾任何目标的传送阵（`targets: []`）同样合法
+        {
+          ...(sampleScene().objects[0] as Record<string, unknown>),
+          id: "teleport_02",
+          name: "传送阵 2",
+          kind: "Teleport",
+          teleport: { targets: [] },
+        },
+      ],
+    });
+
+    expect(withTeleport.objects[0]?.teleport).toEqual({
+      targets: ["Map002", "Map003"],
+      picked: "Map003",
+    });
+    expect(withTeleport.objects[1]?.teleport).toEqual({ targets: [] });
+  });
+
   it("position 允许 null（还没落位的对象）", () => {
     const scene = sceneSchema.parse({
       name: "s",

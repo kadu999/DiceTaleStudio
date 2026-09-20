@@ -20,10 +20,11 @@ import {
 import {
   canvasAverageColor,
   clampedWorldPoint,
+  exactWorldPoint,
   findEmptyCanvasPoint,
   offsetFrom,
   preciseWorldPoint,
-  scenePoint,
+  sceneViewport,
   worldSamplePoint,
 } from "./helpers/canvas";
 
@@ -33,8 +34,9 @@ import {
  * 创建只有一条路：**「新建对象」弹框**（画布标题栏的按钮 / `Ctrl+Shift+N` / 编辑菜单），
  * 对象生成在场景正中，之后在画布上拖动定位。
  *
- * 默认视口是 scale 1 且**世界原点在画布正中**（`createCenteredViewport`），
- * 所以「世界坐标 → 画布上的点」只有一步：`screen = 画布中心 + (x, -y)`。
+ * 这一份里的对象都摆在**世界原点附近**，所以打开场景时适配出来的视口就是
+ * **1:1、世界原点在画布正中**，「世界坐标 → 画布上的点」只有一步：`screen = 画布中心 + (x, -y)`。
+ * 对象挪远 / 场景大到装不下时，视口会跟着平移或缩小——那种用例得用 `exactWorldPoint`。
  */
 
 const SCENE_A = "Map001";
@@ -598,7 +600,7 @@ test.describe("创建与编辑场景对象", () => {
     }
   });
 
-  test("画布平移后「复位」：视口回到世界原点居中 + 1:1", async ({ page, request }) => {
+  test("画布平移后「复位」：视角重新装下全部对象（居中、1:1）", async ({ page, request }) => {
     const project = await newProject(request);
     try {
       await openSceneForEdit(page, request, project, [
@@ -608,8 +610,6 @@ test.describe("创建与编辑场景对象", () => {
       // 挪到一个「三种视口都点得到」的落点（平板竖屏左边是抽屉）
       const probed = await clampedWorldPoint(page, -200, 150);
       await setObjectPositionViaInspector(page, probed.world);
-
-      const objectPoint = await scenePoint(page, probed.world.x, probed.world.y);
 
       // 关掉属性抽屉：它在平板下盖住画布右半边，而下面要从画布正中开始平移。
       // 左抽屉可能也开着（两个抽屉都有「关闭」），所以先按「属性」标题定位到右抽屉。
@@ -639,8 +639,12 @@ test.describe("创建与编辑场景对象", () => {
         })
         .toBe(true);
 
-      // 复位后按原世界坐标算出的屏幕点能命中它 → 说明视口真的回到了「原点居中、1:1」
+      // 复位 = 重新装下全部对象：对象装得下（它就是全部）→ 按 1:1 居中在它身上。
+      // 落点从**真实视口**换算（不能按「世界原点在画布正中」猜），点得中才算复位成功
       await page.getByTestId("reset-viewport").click();
+      const viewport = await sceneViewport(page);
+      expect(viewport.scale).toBe(1);
+      const objectPoint = await exactWorldPoint(page, probed.world);
       await page.mouse.click(objectPoint.x, objectPoint.y);
       await expect(page.getByTestId("object-row").first()).toHaveAttribute("data-selected", "true");
     } finally {
@@ -1167,8 +1171,9 @@ test.describe("创建与编辑场景对象", () => {
       await createObject(page);
       await expect(page.getByTestId("object-row")).toHaveCount(1);
 
-      // 不等自动存，立刻切到另一个场景
-      await page.getByTestId("scene-switcher").selectOption(SCENE_B);
+      // 不等自动存，立刻切到另一个场景（切换条上点一下）
+      await closeDrawers(page);
+      await page.getByTestId("scene-chip").filter({ hasText: SCENE_B }).click();
       await expect(page.getByTestId("status-active-scene")).toHaveText(`当前场景 ${SCENE_B}`);
       await expect(page.getByTestId("object-row")).toHaveCount(0);
 

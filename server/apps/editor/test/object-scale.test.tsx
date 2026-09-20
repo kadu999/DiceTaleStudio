@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { DEFAULT_OBJECT_SCALE, MAX_OBJECT_SCALE, MIN_OBJECT_SCALE } from "@dts/document";
 import { createMapObject, createSceneObject, type SceneObjectDoc } from "@dts/document";
 import { InspectorPanel } from "../src/panels/inspector/InspectorPanel";
-import { displayRectOf } from "../src/panels/scene/ScenePanel";
+import { displayRectOf } from "../src/panels/scene/display";
 import { sceneHistory, useEditorStore } from "../src/state/editor-store";
 
 /**

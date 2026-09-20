@@ -61,7 +61,9 @@
 - `resources = { project, fingerprint, fileCount, bytes, ok, at, reason? } | null`（前端本地资源包到哪了，见下）
 
 **推送时机**：进运行态时推一次；之后文档一变就推（编辑器去抖 **200ms** + 内容去重，
-撤销回原样 / 画布重绘不会空推）。**全量推送**，不做增量 patch——这个量级下最省心、永不失同步。
+撤销回原样 / 画布重绘不会空推）；**切场景立刻推**（不等去抖——对 DM 而言这就是「换台」，
+投影晚一秒都比不换更让人困惑；payload 里带场景名，所以切场景必然算一次变更）。
+**全量推送**，不做增量 patch——这个量级下最省心、永不失同步。
 
 ## `/client`（服务端 ↔ 前端）
 
@@ -90,7 +92,7 @@
 |---|---|
 | `id` | 镜像字典的 key：新 id 建对象、老 id 更新、名单里没有的销毁；场景名变了则整场景换 |
 | `name` | GameObject 名字 |
-| `kind` | `Map` / `SceneObject` / `Player` / `Item` / `Event` → 一块贴地面片；`PlaySound` → 不建可见物（数据只留在镜像里） |
+| `kind` | `Map` / `SceneObject` / `Player` / `Item` / `Event` → 一块贴地面片；`PlaySound` / `Teleport`（两个动作对象）→ **不建可见物**（一个 GameObject 都不建，数据只留在镜像里） |
 | `position {x,y}` | `(x, 0, y)`：文档 y 向上 → 客户端 +Z（与 `GridMap.WorldToGrid` 同口径）；`null` = 未落位 → 不建视图 |
 | `active` | 是否显示（编辑器那个勾选框一改，前端就出现 / 消失） |
 | `scale` | 面片尺寸 = 声明尺寸（`image` / `map.image`）× `scale` |
@@ -99,6 +101,7 @@
 | `image` / `map.image` | 资源逻辑 ID → `GET /api/resources/raw?id=…` 取纹理；没图时按 `kind` 上色占位 |
 | `map.cells` | RLE（`[[掩码, 格数], …]`）——掩码值与 `@dts/grid` 的 `CellMask` / Unity 的 `GridCellType` 完全一致 |
 | `sound` | `{ clips, picked, layer }`：前端播的就是 `picked` 那条；`layer` ∈ `bgm/ambient/sfx/voice`，同层同时只响一条 |
+| `teleport { targets, picked }` | **传送阵**：`targets` = 候选场景名清单，`picked` = 现在选中的那一张（与 `sound.clips` / `sound.picked` 同一套形状）。**前端不用它**：触发传送阵 = 编辑器切换当前场景 → 整份 `scene_push` 下来，前端只管换镜像。前端也**不给它建可见物**（和 `PlaySound` 一样：动作对象一个 GameObject 都不建），数据留在镜像里即可 |
 
 ## 命令
 
@@ -106,6 +109,9 @@
 |---|---|---|
 | `play_sound` | `{ objectId, layer }` | 从**镜像里的那个对象**读 `sound.picked`，在该层播放（同层顶替） |
 | `stop_sound` | `{ layer }` | 停掉该层 |
+
+**传送阵不在这里**：它没有自己的命令。触发传送阵 = 编辑器**切换当前场景** → 走上面那条 `scene_push`
+（全量、立刻推）→ 前端按新场景名换整份镜像。少一条命令不是遗漏，而是「后台是唯一真源」的直接结果。
 
 **实现进度**：命令链路（转发 / 回执 / 超时 / 日志）已通；前端 `play_sound` 的**真出声**
 （取音频 + 按层播放）是下一步——现在它如实回 `ok:false` 并说明「镜像里该播哪一条」，

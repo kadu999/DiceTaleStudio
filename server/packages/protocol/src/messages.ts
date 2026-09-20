@@ -92,10 +92,23 @@ export const soundDataSchema = z.object({
 });
 
 /**
+ * 传送阵（动作对象）的数据：候选目标场景 + 当前选中的那一个。
+ *
+ * **前端不需要它**：触发传送阵 = 编辑器切换当前场景 → 整份 `scene_push` 下来，
+ * 前端只管换镜像（没有一个「teleport」命令，也不需要）。放进协议 schema 是因为它就是
+ * `SceneObjectDoc` 的一部分——这份 schema 是文档形状的只读复刻，少了字段等于悄悄丢数据。
+ */
+export const teleportDataSchema = z.object({
+  targets: z.array(z.string()),
+  picked: z.string().optional(),
+});
+
+/**
  * 场景对象（三端同构的那一个对象）。
  *
- * `kind`：`Map` / `SceneObject` / `Player` / `Item` / `Event` / `PlaySound`。
- * 前端按需取用字段：`components`（编辑器侧的组件与动作，前端不执行）等字段会被忽略。
+ * `kind`：`Map` / `SceneObject` / `Player` / `Item` / `Event` / `PlaySound` / `Teleport`。
+ * 前端按需取用字段：`components`（编辑器侧的组件与动作，前端不执行）等字段会被忽略；
+ * `teleport`（传送阵的目标场景）只有编辑器用——见 `teleportDataSchema` 的说明。
  * `position` 为 null = 还没落位（前端不建可见物，与编辑器画布口径一致）。
  */
 export const sceneObjectSchema = z.object({
@@ -116,6 +129,9 @@ export const sceneObjectSchema = z.object({
   components: z.array(z.unknown()).optional(),
   map: mapDataSchema.optional(),
   sound: soundDataSchema.optional(),
+  // v12 起文档里可能带传送阵的目标场景（可选）：**前端不用它**（切场景靠整份 `scene_push`），
+  // 但它是 SceneObjectDoc 的一部分，缺了就等于在这一层丢了字段。
+  teleport: teleportDataSchema.optional(),
   image: imageRefSchema.optional(),
 });
 

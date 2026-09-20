@@ -34,7 +34,18 @@ function checkPosition(
   // 这里**不**给坐标设上下限——越界的对象在画布上看得见，比静默拒绝更有用。
 }
 
-function validateObject(object: SceneObjectDoc, path: string, issues: ValidationIssue[]): void {
+/**
+ * 单个对象的校验。
+ *
+ * `sceneName` 只有一处用得上：传送阵的「目标就是自己所在的场景」是个没意义的配置
+ * （按下去什么都不会发生）——别的规则都只看对象自己。
+ */
+function validateObject(
+  object: SceneObjectDoc,
+  path: string,
+  issues: ValidationIssue[],
+  sceneName?: string,
+): void {
   if (object.position !== null) {
     checkPosition(object.position, `${path}/position`, issues);
   }
@@ -175,6 +186,66 @@ function validateObject(object: SceneObjectDoc, path: string, issues: Validation
     });
   }
 
+  // 传送阵（动作对象）：基础属性与实体一样，另加「候选目标场景 + 选中的那一个」
+  if (object.kind === "Teleport") {
+    const teleport = object.teleport;
+    if (teleport === undefined) {
+      issues.push({
+        level: "error",
+        path,
+        message: "传送阵缺少传送数据（候选目标场景）",
+      });
+    } else {
+      // 还没勾任何目标是**合法状态**（刚建出来就是这样），但要提醒：那时传送按钮点不了
+      if (teleport.targets.length === 0) {
+        issues.push({
+          level: "warning",
+          path: `${path}/teleport/targets`,
+          message: "传送阵还没加目标场景（面板上点不了「传送」）",
+        });
+      }
+
+      if (teleport.picked === undefined) {
+        if (teleport.targets.length > 0) {
+          issues.push({
+            level: "warning",
+            path: `${path}/teleport/picked`,
+            message: "传送阵还没选要传送到哪一张场景（面板上点不了「传送」）",
+          });
+        }
+      } else if (!teleport.targets.includes(teleport.picked)) {
+        // 对不上就是数据坏了，按「还没选」处理（传送按钮点不了）
+        issues.push({
+          level: "warning",
+          path: `${path}/teleport/picked`,
+          message: "选中的目标场景不在候选里（按还没选处理）",
+        });
+      } else if (teleport.picked === sceneName) {
+        // 自己传自己 = 按下去什么都不发生，多半是选错了
+        issues.push({
+          level: "warning",
+          path: `${path}/teleport/picked`,
+          message: "传送阵的目标就是它自己所在的场景（按下去不会换图）",
+        });
+      }
+    }
+
+    // 它画的是**固定的内置徽标**（不给换贴图），所以 `image` 字段没有意义
+    if (object.image !== undefined) {
+      issues.push({
+        level: "warning",
+        path: `${path}/image`,
+        message: "传送阵用固定的内置徽标（不允许改贴图），多余的 image 字段会被忽略",
+      });
+    }
+  } else if (object.teleport !== undefined) {
+    issues.push({
+      level: "warning",
+      path: `${path}/teleport`,
+      message: `非传送阵（kind=${object.kind}）不应携带传送数据`,
+    });
+  }
+
   const componentIds = new Set<string>();
   for (const component of object.components) {
     const componentPath = `${path}/components/${component.id}`;
@@ -273,7 +344,7 @@ export function validateScene(scene: SceneDoc): ValidationIssue[] {
       issues.push({ level: "error", path, message: "对象 id 不能为空" });
     }
 
-    validateObject(object, path, issues);
+    validateObject(object, path, issues, scene.name);
   }
 
   // 动作 id 全场景唯一（运行态靠 actionId 寻址，重名会触发到错误动作）

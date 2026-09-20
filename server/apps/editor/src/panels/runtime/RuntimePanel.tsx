@@ -107,7 +107,10 @@ export function RuntimePanel(): React.JSX.Element {
           <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 border-b border-[var(--color-editor-border)] px-2 py-1 text-[11px]">
             <span>
               镜像场景：
-              <span className="text-[var(--color-editor-text)]">
+              <span
+                data-testid="runtime-mirror-scene"
+                className="text-[var(--color-editor-text)]"
+              >
                 {runtime.scene?.name ?? (activeScene?.name ?? "—")}
               </span>
             </span>

@@ -23,6 +23,11 @@ export function MenuBar({ compact }: MenuBarProps): React.JSX.Element {
   // 只要「有几个场景」这个数：订阅整个 `scenes` 会让菜单栏在每次拖手柄时都跟着重渲染
   const sceneCount = useEditorStore((state) => state.scenes.length);
   const activeSceneName = useEditorStore((state) => state.activeSceneName);
+  // 当前场景在**展示顺序**里的位置（原始值：拖手柄时它不变，于是菜单栏不重渲染）
+  const activeSceneIndex = useEditorStore((state) =>
+    state.scenes.findIndex((scene) => scene.name === state.activeSceneName),
+  );
+  const openAdjacentScene = useEditorStore((state) => state.openAdjacentScene);
   const sceneDialog = useEditorStore((state) => state.sceneDialog);
   const openSceneDialog = useEditorStore((state) => state.openSceneDialog);
   const deleteScene = useEditorStore((state) => state.deleteScene);
@@ -72,6 +77,18 @@ export function MenuBar({ compact }: MenuBarProps): React.JSX.Element {
       </Menu>
 
       <Menu label="场景">
+        {/* 上一场 / 下一场放最前：平板没有键盘，这两个就是「换台」的入口（切换条上也有一份） */}
+        <MenuItem
+          label="上一场（[）"
+          disabled={activeSceneIndex <= 0}
+          onSelect={() => openAdjacentScene(-1)}
+        />
+        <MenuItem
+          label="下一场（]）"
+          disabled={activeSceneIndex < 0 || activeSceneIndex >= sceneCount - 1}
+          onSelect={() => openAdjacentScene(1)}
+        />
+        <MenuSeparator />
         <MenuItem
           label="新建场景…"
           disabled={currentProject === null}

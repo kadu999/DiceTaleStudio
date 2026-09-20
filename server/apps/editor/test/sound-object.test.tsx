@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { createSoundObject, type SceneObjectDoc } from "@dts/document";
 import { InspectorPanel } from "../src/panels/inspector/InspectorPanel";
 import { soundDeliveryHint, soundPlayBlockedReason } from "../src/panels/inspector/SoundFields";
-import { displayRectOf } from "../src/panels/scene/ScenePanel";
+import { displayRectOf } from "../src/panels/scene/display";
 import { KIND_LABELS, OBJECT_CATEGORIES, creatableObjects } from "../src/panels/object-kinds";
 import { sceneHistory, useEditorStore, type EditorMode } from "../src/state/editor-store";
 import type { RuntimeStatus } from "../src/services/runtime-client";
@@ -104,7 +104,8 @@ describe("种类表：动作下的「播放声音」", () => {
   it("「动作」种类下有它、可以创建，展示名叫「播放声音」", () => {
     const action = OBJECT_CATEGORIES.find((category) => category.id === "action");
     expect(action).toBeDefined();
-    expect(creatableObjects(action!).map((object) => object.kind)).toEqual(["PlaySound"]);
+    // 动作种类下还有「传送阵」（它自己的用例在 teleport-object.test.tsx）
+    expect(creatableObjects(action!).map((object) => object.kind)).toContain("PlaySound");
     expect(KIND_LABELS.PlaySound).toBe("播放声音");
   });
 });

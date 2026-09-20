@@ -1,9 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import {
-  effectiveScaleX,
-  effectiveScaleY,
-  objectImage,
   objectsInDrawOrder,
   type SceneDoc,
   type SceneObjectDoc,
@@ -26,23 +23,13 @@ import {
 import {
   worldRectBottom,
   worldRectLeft,
-  worldRectOf,
-  type ImageSize,
-  type WorldRect,
 } from "@dts/grid";
 import { sceneImage, sceneImageError, subscribeSceneImage } from "../../services/scene-image";
 import { useEditorStore } from "../../state/editor-store";
 import { EmptyState } from "../EmptyState";
+import { badgeIconOf } from "../object-kinds";
+import { displayImageOf, displayRectOf, displaySizeOf } from "./display";
 import { cellColorsOf, decodeCellsCached } from "./grid-paint";
-
-/**
- * 没有图片的对象（刚建出来的精灵）的**碰撞体**尺寸：世界里的一块 64×64。
- *
- * 拾取与选中框都按矩形来，所以每个对象都得有一块矩形；没有图片时不能是零面积
- * （零面积的框看不见、也点不到）。它**与缩放无关**：拉远了也是一个对象该有的大小，
- * 不会像按屏幕像素算的命中区那样忽大忽小。
- */
-const COLLIDER_SIZE = { width: 64, height: 64 } as const;
 
 /**
  * 指针按键：只有**主键（鼠标左键 / 触摸 / 笔尖）**拾取与拖动；**中键只平移摄像机**；
@@ -53,47 +40,6 @@ const COLLIDER_SIZE = { width: 64, height: 64 } as const;
  */
 const PRIMARY_BUTTON = 0;
 const MIDDLE_BUTTON = 1;
-
-/**
- * 对象在画布上占据的世界矩形 —— 拾取（碰撞体）、选中框、贴图铺的那块**共用这一个**。
- *
- * 尺寸 = 「贴图里声明的尺寸（没有图片就用 `COLLIDER_SIZE`）× **该轴的有效缩放**」。
- * 有效缩放走 `effectiveScaleX` / `effectiveScaleY`：文档里等比只写 `scale`，
- * 单轴（v11 起的 `scaleX` / `scaleY`）才写两个轴——直接读字段会漏掉「缺省 = 用等比值」。
- *
- * **返回的是对象自己的（未旋转的）矩形**，`rotation` 由各消费方自己带上：
- *
- * - 绘制：渲染器绕矩形中心 `rotate(rotation)` 之后再 `drawImage`，贴图于是**刚体旋转**
- *   （不会因为「外框是旋转后的包围盒」而被拉成别的形状，也不会随角度改大小）；
- * - 拾取：`hitTestRect(point, rect, rotation)` 反向旋转后比半宽半高，与上面是同一块区域；
- * - 选中框 / 手柄：`rectCorners(rect, rotation)` 把这块矩形转过去，于是框、贴图、拾取一致。
- *
- * 曾经这里返回的是**旋转后的轴对齐外框**，于是两个真问题：非正方形对象转过角度后贴图被
- * 画成外框的形状（1920×1080 的地图转 45° 会变成 2121×2121），而且绘制用的手柄几何（外框）
- * 与命中测试用的几何（局部矩形）对不上——「看得见的柄点不中」。
- *
- * 缩放值坏掉时（0 / 负数 / NaN，只可能来自手写文件）按 `1` 画：渲染不能因为一个坏数字
- * 就把整块对象画没，那种数据由 `validateScene` 报错（`effectiveScale*` 已经兜过底）。
- */
-export function displayRectOf(object: SceneObjectDoc): WorldRect | undefined {
-  if (object.position === null) {
-    return undefined;
-  }
-
-  return worldRectOf(object.position, displaySizeOf(object));
-}
-
-/** 显示矩形的尺寸（**未旋转**）；`displayRectOf` 与手柄几何共用它。 */
-function displaySizeOf(object: SceneObjectDoc): ImageSize {
-  // 声音对象画的是**固定的内置图标**（不允许改贴图），所以它那块矩形就是图标的大小：
-  // 手写文件里万一挂了 `image` 也不认（`validateScene` 会警告），
-  // 免得出现「选中框按贴图算、画出来的却是徽标」这种对不上的情况
-  const base = object.kind === "PlaySound" ? COLLIDER_SIZE : objectImage(object) ?? COLLIDER_SIZE;
-  return {
-    width: base.width * effectiveScaleX(object),
-    height: base.height * effectiveScaleY(object),
-  };
-}
 
 /**
  * 画布上给某个对象算出一份**屏幕手柄几何**（移动轴 / 旋转环 / 缩放块）。
@@ -147,15 +93,6 @@ function buildToolHandles(
 function localHalfSizeOf(object: SceneObjectDoc): { readonly width: number; readonly height: number } {
   const size = displaySizeOf(object);
   return { width: size.width / 2, height: size.height / 2 };
-}
-
-/**
- * 这个对象要画的贴图：**声音对象的图标是内置的**，所以它不看 `image`（那个字段对它没有意义）。
- *
- * 只在场景面板里用（加载图片与出图层各一次）：要把「不认贴图」这条规矩收在一处。
- */
-function displayImageOf(object: SceneObjectDoc) {
-  return object.kind === "PlaySound" ? undefined : objectImage(object);
 }
 
 /**
@@ -289,9 +226,8 @@ export function ScenePanel(): React.JSX.Element {
   // 视口订阅：只用来把当前变换写进 DOM 属性（给 E2E 精确换算手柄位置用）。
   // 绘制循环本来每帧从 getState() 直读，这个订阅不参与绘制路径
   const viewport = useEditorStore((state) => state.viewport);
-  const setActiveScene = useEditorStore((state) => state.setActiveScene);
   const openObjectDialog = useEditorStore((state) => state.openObjectDialog);
-  const resetViewport = useEditorStore((state) => state.resetViewport);
+  const fitToViewport = useEditorStore((state) => state.fitToViewport);
 
   /**
    * 场景切换器要的是**场景名**，不是整个场景列表。
@@ -827,11 +763,45 @@ export function ScenePanel(): React.JSX.Element {
       hoverRef.current = null;
     };
 
+    /**
+     * **双击传送阵的徽标 = 传送**（鼠标上的快路径；平板没有可靠的双击，走属性面板的按钮）。
+     *
+     * 命中用的是同一个 `hitTestObject`（与单击选中同一条逻辑），所以「双击到的就是你看见的
+     * 那一个」。只认传送阵：双击别的对象仍然什么都不做。
+     *
+     * 两个容易踩的点：
+     * 1. **target 未必是 `<canvas>`**：`pointerdown` 里对容器调了 `setPointerCapture`，
+     *    而捕获生效时 `click` / `dblclick` 会派发给**捕获元素（容器）**，不是指针底下的
+     *    canvas。所以这里同时接受容器与 canvas——而「画布左上角浮着的工具开关」是别的元素，
+     *    隔着它双击不会触发它下面那个对象（与 `pointerdown` 那条护栏同一个意思）。
+     * 2. 命中用**指针坐标**（不是事件 target）：与单击、拖拽同一套换算。
+     */
+    const onDoubleClick = (event: MouseEvent): void => {
+      const target = event.target;
+      if (target !== container && !(target instanceof HTMLCanvasElement)) {
+        return;
+      }
+
+      const id = hitTestObject(toLocal(event.clientX, event.clientY));
+      if (id === undefined) {
+        return;
+      }
+
+      const object = currentScene()?.objects.find((item) => item.id === id);
+      if (object?.kind !== "Teleport") {
+        return;
+      }
+
+      event.preventDefault();
+      useEditorStore.getState().teleport(id);
+    };
+
     container.addEventListener("pointerdown", onPointerDown);
     container.addEventListener("pointermove", onPointerMove);
     container.addEventListener("pointerup", onPointerUp);
     container.addEventListener("pointercancel", onPointerCancel);
     container.addEventListener("pointerleave", onPointerLeave);
+    container.addEventListener("dblclick", onDoubleClick);
     container.addEventListener("wheel", onWheel, { passive: false });
 
     return () => {
@@ -840,6 +810,7 @@ export function ScenePanel(): React.JSX.Element {
       container.removeEventListener("pointerup", onPointerUp);
       container.removeEventListener("pointercancel", onPointerCancel);
       container.removeEventListener("pointerleave", onPointerLeave);
+      container.removeEventListener("dblclick", onDoubleClick);
       container.removeEventListener("wheel", onWheel);
     };
   }, [applyPendingTransform, toLocal]);
@@ -960,9 +931,9 @@ export function ScenePanel(): React.JSX.Element {
             // 用同一个值，所以「看到的」与「点得到的」始终是同一块
             rotation: object.rotation,
             grid,
-            // 声音对象画**内置的音频徽标**（固定图标，不能换）：有它在，场景里才看得见、
-            // 点得到、拖得动；正在播时徽标会动（一圈圈声波 + 喇叭呼吸）
-            icon: object.kind === "PlaySound" ? "audio" : undefined,
+            // 动作对象画**内置徽标**（固定图形，不能换）：有它在，场景里才看得见、
+            // 点得到、拖得动；播放声音正在播时徽标会动（一圈圈声波 + 喇叭呼吸）
+            icon: badgeIconOf(object.kind),
             playing: playingSounds.has(object.id),
             // 「网格线」总开关：关了就不画线（只是不画，格子数据不动）
             showGrid: grid !== undefined && gridPaint.showGridLines,
@@ -1030,31 +1001,22 @@ export function ScenePanel(): React.JSX.Element {
     <div className="relative flex h-full min-h-0 flex-col">
       <div className="panel-header">
         <span>场景</span>
-        {sceneNames.length === 0 ? null : (
-          // 当前场景要看得见、也能切：否则多场景时根本不知道自己在哪一个
-          <select
-            data-testid="scene-switcher"
-            aria-label="当前场景"
-            value={activeSceneName ?? ""}
-            onChange={(event) => setActiveScene(event.target.value)}
-            className="min-w-0 max-w-[40%] rounded border border-[var(--color-editor-border)] bg-black/30 px-1 py-0.5 text-[11px] outline-none"
-          >
-            {sceneNames.map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
-        )}
+        {/* 当前场景名常驻看得见：没有它，多场景时会不知道自己在哪一张图上 */}
+        <span
+          data-testid="scene-current"
+          className="min-w-0 max-w-[40%] truncate text-[11px] text-[var(--color-editor-text-dim)]"
+        >
+          {activeSceneName ?? ""}
+        </span>
         {activeSceneName === null ? null : (
           // 放最右：平板竖屏下左边 340px 可能被抽屉盖住，靠右才一定点得到
           <div className="ml-auto flex flex-none items-center gap-1">
             <button
               type="button"
               data-testid="reset-viewport"
-              title="视图复位：缩放回 1:1，世界原点 (0,0) 回到画布正中"
+              title="视图复位：把当前场景里的对象全部装进画布（与「视图 → 适配视口」同一件事）"
               className="toolbar-button hover:toolbar-button-hover"
-              onClick={() => resetViewport()}
+              onClick={() => fitToViewport()}
             >
               复位
             </button>
@@ -1070,6 +1032,11 @@ export function ScenePanel(): React.JSX.Element {
           </div>
         )}
       </div>
+
+      {/* 场景切换条：一格一张图，**点一下即切**。只有一个场景时不占地方 */}
+      {sceneNames.length < 2 ? null : (
+        <SceneBar names={sceneNames} active={activeSceneName} />
+      )}
 
       <div
         ref={containerRef}
@@ -1164,6 +1131,142 @@ function ToolSwitch(): React.JSX.Element {
         </button>
       ))}
     </div>
+  );
+}
+
+/**
+ * 场景切换条（画布标题栏下面那条）：一格一个场景，**点一下即切**。
+ *
+ * 为什么不是下拉框：跑团现场 DM 是**边讲边切**的，一次点击和两次点击的差别很大，而且
+ * 「这一局有哪几张图」本身就该一直看得见。场景多到放不下时横向滚动，并把**当前那一格
+ * 自动滚进可视区**；再多的场景靠 `1`-`9` 直选（序号画在前九格上）与 `[` / `]` 前后翻。
+ *
+ * 顺序只有一个来源（`scenes` 数组，装载时按 `compareSceneNames` 排好），所以这里画出来的
+ * 第 N 格与 `openSceneByIndex(N-1)` 必然对得上——序号不是装饰，是**快捷键的说明书**。
+ */
+function SceneBar({
+  names,
+  active,
+}: {
+  readonly names: readonly string[];
+  readonly active: string | null;
+}): React.JSX.Element {
+  const openScene = useEditorStore((state) => state.openScene);
+  const openAdjacentScene = useEditorStore((state) => state.openAdjacentScene);
+  const chipRefs = useRef(new Map<string, HTMLButtonElement>());
+
+  const index = active === null ? -1 : names.indexOf(active);
+
+  // 切场景后把当前格滚进可视区：场景多时横向滚动条停在别处，当前格看不见就失去意义了
+  useEffect(() => {
+    if (active === null) {
+      return;
+    }
+
+    chipRefs.current.get(active)?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [active, names]);
+
+  return (
+    <div
+      data-testid="scene-bar"
+      data-scene={active ?? ""}
+      className="flex flex-none items-stretch gap-1 border-b border-[var(--color-editor-border)] bg-[var(--color-editor-panel-alt)] px-1 py-1"
+    >
+      <StepButton
+        testId="scene-prev"
+        label="上一场"
+        title="上一场（[）"
+        disabled={index <= 0}
+        onClick={() => openAdjacentScene(-1)}
+      >
+        ‹
+      </StepButton>
+
+      <div className="flex min-w-0 flex-1 items-stretch gap-1 overflow-x-auto">
+        {names.map((name, order) => (
+          <button
+            key={name}
+            type="button"
+            ref={(node) => {
+              if (node === null) {
+                chipRefs.current.delete(name);
+                return;
+              }
+
+              chipRefs.current.set(name, node);
+            }}
+            data-testid="scene-chip"
+            data-scene={name}
+            data-active={name === active}
+            data-index={order + 1}
+            title={
+              order < 9
+                ? `第 ${order + 1} 场：${name}（按 ${order + 1} 直选）`
+                : `第 ${order + 1} 场：${name}`
+            }
+            onClick={() => openScene(name)}
+            className={`flex flex-none items-center gap-1 rounded border px-2 py-0.5 text-[12px] transition-colors ${
+              name === active
+                ? "border-[var(--color-editor-accent)] bg-[var(--color-editor-accent)] font-semibold text-black"
+                : "border-[var(--color-editor-border)] bg-[var(--color-editor-panel)] text-[var(--color-editor-text)] hover:border-[var(--color-editor-accent-dim)]"
+            }`}
+          >
+            {/* 序号只画前九个：有对应快捷键的才编号，免得第 10 格上写个「10」引人去按 */}
+            {order < 9 ? (
+              <span
+                className={`font-mono text-[10px] ${
+                  name === active ? "text-black/60" : "text-[var(--color-editor-text-dim)]"
+                }`}
+              >
+                {order + 1}
+              </span>
+            ) : null}
+            <span className="max-w-40 truncate">{name}</span>
+          </button>
+        ))}
+      </div>
+
+      <StepButton
+        testId="scene-next"
+        label="下一场"
+        title="下一场（]）"
+        disabled={index < 0 || index >= names.length - 1}
+        onClick={() => openAdjacentScene(1)}
+      >
+        ›
+      </StepButton>
+    </div>
+  );
+}
+
+/** 切换条两端的前后按钮（平板上「下一场」就靠它，所以要有文字无障碍名）。 */
+function StepButton({
+  testId,
+  label,
+  title,
+  disabled,
+  onClick,
+  children,
+}: {
+  readonly testId: string;
+  readonly label: string;
+  readonly title: string;
+  readonly disabled: boolean;
+  readonly onClick: () => void;
+  readonly children: React.ReactNode;
+}): React.JSX.Element {
+  return (
+    <button
+      type="button"
+      data-testid={testId}
+      aria-label={label}
+      title={title}
+      disabled={disabled}
+      onClick={onClick}
+      className="flex w-6 flex-none items-center justify-center rounded border border-[var(--color-editor-border)] bg-[var(--color-editor-panel)] leading-none text-[var(--color-editor-text)] hover:bg-[var(--color-editor-panel-alt)] disabled:opacity-30 disabled:hover:bg-[var(--color-editor-panel)]"
+    >
+      {children}
+    </button>
   );
 }
 

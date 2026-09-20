@@ -15,9 +15,13 @@ import type { ObjectKind } from "@dts/document";
  * `ObjectTypeDef.kind` 因此不是一一对应的：同一个 kind 可以在表里出现多次。
  *
  * 「播放声音」是**动作**种类下的第一个对象：`kind: "PlaySound"` 是编辑器侧新增的
- * （前端要配合认它，见 README 的契约一节）。基础属性与实体一模一样（位置 / 缩放 / 激活 /
- * 锁定 / 显示顺序），画布上画一枚**固定的内置音频图标**，另带「音频列表 + 层级」——
- * 它声明的是「告诉前端播什么」，编辑器自己**不播放**。
+ * （前端要认它，但**不为它建可见物**——动作对象只留数据，见 README 的契约一节）。
+ * 基础属性与实体一模一样（位置 / 缩放 / 激活 / 锁定 / 显示顺序），画布上画一枚**固定的内置音频图标**，
+ * 另带「音频列表 + 层级」——它声明的是「告诉前端播什么」，编辑器自己**不播放**。
+ *
+ * 「传送阵」是动作种类下的第二个：`kind: "Teleport"`，同样画一枚固定的内置徽标（也只在编辑器的
+ * 画布上，前端不建可见物），另带「传送到哪一张场景」。触发它 = **切换当前场景**（编辑器 →
+ * 整份 `scene_push` → 前端换镜像），所以它**不需要新协议命令**。
  */
 
 export interface ObjectTypeDef {
@@ -44,7 +48,14 @@ export const OBJECT_CATEGORIES: readonly ObjectCategoryDef[] = [
       { kind: "Item", creatable: false },
     ],
   },
-  { id: "action", label: "动作", objects: [{ kind: "PlaySound", creatable: true }] },
+  {
+    id: "action",
+    label: "动作",
+    objects: [
+      { kind: "PlaySound", creatable: true },
+      { kind: "Teleport", creatable: true },
+    ],
+  },
   { id: "event", label: "事件", objects: [{ kind: "Event", creatable: false }] },
 ];
 
@@ -65,6 +76,23 @@ export function categoryOfKind(kind: ObjectKind): ObjectCategoryDef | undefined 
   );
 }
 
+/**
+ * 这个类型画的是**固定内置徽标**吗（动作对象）？返回徽标名，普通对象返回 `undefined`。
+ *
+ * 抽成一个函数是因为「哪种对象不认贴图」在三个地方要用，各写一遍 `kind === "PlaySound"`
+ * 迟早会漏掉新加的那一种：
+ * 1. 画布上画什么（徽标还是 `image` / `map.image`；尺寸也按徽标那块固定矩形算）；
+ * 2. 属性面板要不要给「渲染」那一组（固定徽标就没有换贴图的入口）；
+ * 3. 列表行尾显示什么提示（层级 / 目标场景）。
+ */
+export function badgeIconOf(kind: ObjectKind): "audio" | "teleport" | undefined {
+  if (kind === "PlaySound") {
+    return "audio";
+  }
+
+  return kind === "Teleport" ? "teleport" : undefined;
+}
+
 /** 对象类型的展示名（弹框的瓦片、面板的提示共用）。**只有这里写中文**，代码一律用英文。 */
 export const KIND_LABELS: Record<ObjectKind, string> = {
   Map: "网格地图",
@@ -73,4 +101,5 @@ export const KIND_LABELS: Record<ObjectKind, string> = {
   Item: "道具",
   Event: "事件",
   PlaySound: "播放声音",
+  Teleport: "传送阵",
 };

@@ -12,11 +12,13 @@ import type { ResourceTreeNode } from "../../services/project-api";
 import { findResourceNode, useEditorStore } from "../../state/editor-store";
 import { assetDisplayPath, findAssetById } from "../asset-picker";
 import { assetKindLabel, assetPreviewKind, formatSize } from "../asset-info";
+import { badgeIconOf } from "../object-kinds";
 import { EmptyState } from "../EmptyState";
 import { Field, FieldGroup, FieldRow } from "./fields";
 import { FogFields } from "./FogFields";
 import { GridAnnotationFields } from "./GridAnnotationFields";
 import { SoundFields } from "./SoundFields";
+import { TeleportFields } from "./TeleportFields";
 
 /** 右侧属性面板：当前选中对象 / 场景 / **资源文件**的属性。编辑能力在 M2/M3 接入。 */
 export function InspectorPanel(): React.JSX.Element {
@@ -80,18 +82,29 @@ export function InspectorPanel(): React.JSX.Element {
               图片，精灵就是靠它显示图片的；地图的贴图也是同一个字段，只是存在 `map.image` 里）。
               暂时只支持**替换图片**，后面要加的「怎么画」（着色、混合、动画…）都往这一组里放，
               不再塞回「基础」——「对象是什么」与「对象画成什么样」是两件事。
-              **声音对象没有这一组**：它画的是**固定的内置音频图标**，不给换贴图。
+              **动作对象没有这一组**（`badgeIconOf`）：它们画的是**固定的内置徽标**（音频图标 /
+              传送徽标），不给换贴图——留一个换贴图的入口只会让人以为它管用。
             */}
-            {selected.kind === "PlaySound" ? null : (
+            {badgeIconOf(selected.kind) === undefined ? (
               <FieldGroup title="渲染" group="render">
                 <TextureField object={selected} />
               </FieldGroup>
-            )}
+            ) : null}
 
             {/* 「声音」只对声音对象出现：音频列表 + 层级就是它自己那点东西（基础属性照旧） */}
             {selected.kind === "PlaySound" ? (
               <FieldGroup title="声音" group="sound">
                 <SoundFields object={selected} />
+              </FieldGroup>
+            ) : null}
+
+            {/*
+              「传送」只对传送阵出现：目标场景 + 一个「传送」按钮。触发它就是**切换当前场景**
+              （DM 的「换台」），画布上双击那枚徽标是同一件事。
+            */}
+            {selected.kind === "Teleport" ? (
+              <FieldGroup title="传送" group="teleport">
+                <TeleportFields object={selected} />
               </FieldGroup>
             ) : null}
 

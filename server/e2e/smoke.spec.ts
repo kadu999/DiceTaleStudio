@@ -1,9 +1,11 @@
 import { expect, test, type APIRequestContext, type TestInfo } from "@playwright/test";
 import {
+  closeDrawers,
   dropProject,
   enterEditor,
   newProject,
   openFirstObject,
+  openProject,
   sceneDoc,
   sceneObjectDoc,
   seedProjectDoc,
@@ -95,6 +97,8 @@ test.describe("画布视口交互", () => {
 /** 运行态用例的场景与对象名（只有这个 describe 用得到）。 */
 const RUN_SCENE = "Map001";
 const RUN_OBJECT = "木门";
+/** 运行态用例里「换台」的第二个场景（名字排在 Map001 之后，切换条上的下一格就是它）。 */
+const OTHER_SCENE = "Map002";
 
 /**
  * 场景文件里那个对象**落盘**的样子（`active` / `position`）。
@@ -265,6 +269,81 @@ test.describe("编辑态 / 运行态", { tag: "@runtime" }, () => {
         active: true,
         position: { x: 0, y: 0 },
       });
+    } finally {
+      await dropProject(request, project);
+    }
+  });
+
+  /*
+    切场景 = DM 的「换台」：运行中切换必须**立刻**推给前端。
+
+    这里没有前端，所以看编辑器自己那行「镜像场景：X」——它来自服务端收到 `scene_push`
+    之后广播回来的 `editor_state`，所以能断言「推到了、而且推的是新场景」。
+    少了这一推，投影上还是上一张图，DM 还得跑去面板点「重新同步」。
+  */
+  test("运行中切场景：镜像场景立刻跟着换（不用手动重新同步）", async ({
+    page,
+    request,
+  }, testInfo) => {
+    skipOutsideDesktop(testInfo);
+
+    const project = await newProject(request);
+    try {
+      await seedProjectDoc(request, project, [sceneDoc(RUN_SCENE), sceneDoc(OTHER_SCENE)]);
+
+      await enterEditor(page);
+      await openProject(page, project);
+      await closeDrawers(page);
+
+      await page.getByTestId("mode-run").click();
+      await expect(page.getByTestId("status-mode")).toHaveAttribute("data-mode", "run");
+      await expect(page.getByTestId("runtime-mirror-scene")).toHaveText(RUN_SCENE);
+
+      // 切换条上点一下：镜像立刻换成第二个场景
+      await page.getByTestId("scene-chip").filter({ hasText: OTHER_SCENE }).click();
+
+      await expect(page.getByTestId("status-active-scene")).toHaveText(`当前场景 ${OTHER_SCENE}`);
+      await expect(page.getByTestId("runtime-mirror-scene")).toHaveText(OTHER_SCENE);
+
+      await page.getByTestId("mode-edit").click();
+      await expect(page.getByTestId("status-mode")).toHaveAttribute("data-mode", "edit");
+    } finally {
+      await dropProject(request, project);
+    }
+  });
+
+  /*
+    传送阵 = 「按一下换台」：它**没有自己的命令**，触发它就是编辑器切换当前场景 →
+    走 `scene_push`（全量、立刻推）。这条用例把这句话钉住：运行中点「传送」，
+    服务端收到的镜像场景必须立刻变成目标场景。
+  */
+  test("运行中点传送阵：镜像场景立刻跟着换（它没有自己的命令）", async ({ page, request }, testInfo) => {
+    skipOutsideDesktop(testInfo);
+
+    const project = await newProject(request);
+    try {
+      await seedProjectDoc(request, project, [
+        sceneDoc(RUN_SCENE, [
+          sceneObjectDoc("传送阵", "Teleport", { x: 0, y: 0 }, {
+            id: "teleport_01",
+            teleport: { targets: [OTHER_SCENE], picked: OTHER_SCENE },
+          }),
+        ]),
+        sceneDoc(OTHER_SCENE),
+      ]);
+
+      await openFirstObject(page, project, "传送阵");
+      await page.getByTestId("mode-run").click();
+      await expect(page.getByTestId("status-mode")).toHaveAttribute("data-mode", "run");
+      await expect(page.getByTestId("runtime-mirror-scene")).toHaveText(RUN_SCENE);
+
+      // 按一下传送：场景切过去，并且**立刻**推给前端（镜像场景那行跟着变）
+      await page.getByTestId("teleport-go").click();
+      await expect(page.getByTestId("status-active-scene")).toHaveText(`当前场景 ${OTHER_SCENE}`);
+      await expect(page.getByTestId("runtime-mirror-scene")).toHaveText(OTHER_SCENE);
+
+      await page.getByTestId("mode-edit").click();
+      await expect(page.getByTestId("status-mode")).toHaveAttribute("data-mode", "edit");
     } finally {
       await dropProject(request, project);
     }

@@ -80,7 +80,7 @@ export interface SceneLayer {
    * 现在只有一种：`"audio"` = 声音对象（动作对象）的喇叭徽标——它和别的对象一样摆在
    * 世界里，刚建出来还没有图，画一个徽标才能「看得见、点得到、拖得动」。
    */
-  readonly icon?: "audio";
+  readonly icon?: "audio" | "teleport";
   /**
    * 这个声音对象**现在正在播**（只对 `icon: "audio"` 有意义）：徽标会画成「活的」——
    * 一圈圈往外扩的声波 + 随节拍一胀一缩的喇叭，配合 `animationTimeMs` 出动画。
@@ -206,6 +206,8 @@ const KIND_MARKER_COLORS: Record<string, string> = {
   // 动作对象（播放声音）：画布上的内置音频图标也用它（见 drawAudioBadge）。
   // 用**暖橙**是有意的：地图底图多是草地 / 水面 / 石头（绿蓝灰一片），暖色在那种底上跳得出来
   PlaySound: "#ff7a1a",
+  // 动作对象（传送阵）：内置传送徽标用它。青色与上面五个都分得开
+  Teleport: "#22c7d6",
 };
 
 const DEFAULT_MARKER_COLOR = "#9aa4b2";
@@ -423,9 +425,9 @@ function drawLayer(
     context.translate(-(box.left + box.right) / 2, -(box.top + box.bottom) / 2);
   }
 
-  // 内置图标（声音对象）**不裁剪**：正在播时那几圈声波要扩到矩形外面去，裁剪会把它切掉；
-  // 这块矩形里本来也没有别的东西（图标与贴图互斥），所以挪到裁剪之外画不影响别人
-  const badgeOnly = layer.image == null && layer.icon === "audio";
+  // 内置徽标（动作对象）**不裁剪**：正在播时那几圈声波要扩到矩形外面去，裁剪会把它切掉；
+  // 这块矩形里本来也没有别的东西（徽标与贴图互斥），所以挪到裁剪之外画不影响别人
+  const badgeOnly = layer.image == null && layer.icon !== undefined;
 
   if (!badgeOnly) {
     context.save();
@@ -451,6 +453,8 @@ function drawLayer(
 
   if (!badgeOnly) {
     context.restore();
+  } else if (layer.icon === "teleport") {
+    drawTeleportBadge(context, box);
   } else {
     drawAudioBadge(context, box, { playing: layer.playing === true, timeMs: animationTimeMs });
   }
@@ -639,8 +643,94 @@ function drawAudioBadge(
   context.restore();
 }
 
-/** 把视口整体挪一下，使底纹的锚点（世界坐标）落到世界原点上——底纹于是与地图对齐。 */
-function viewportForChecker(
+/**
+ * 传送阵（动作对象）的**内置徽标**：一块圆角牌 + 一个白色「旋涡 + 箭头」。
+ *
+ * 与音频徽标同一套理由与画法：**全部用路径画**（不占资产、不依赖字体），牌面实色 + 深色
+ * 外描边 + 白色图形，压在任何底图上都看得清；尺寸只由矩形决定，所以缩放对象时它跟着缩放。
+ *
+ * **不画动画**：传送阵是个记号，不是「正在发生的事」（对比音频徽标那圈声波——那是「正在播」
+ * 的可见信号）。要动起来再说，编辑器画布本来就每帧重绘。
+ */
+function drawTeleportBadge(
+  context: CanvasRenderingContext2D,
+  box: { readonly left: number; readonly top: number; readonly right: number; readonly bottom: number },
+): void {
+  const boxSize = Math.min(box.right - box.left, box.bottom - box.top);
+  if (boxSize < MIN_AUDIO_BADGE_SIZE) {
+    return;
+  }
+
+  const cx = (box.left + box.right) / 2;
+  const cy = (box.top + box.bottom) / 2;
+  const badge = boxSize * 0.72;
+  const half = badge / 2;
+  const left = cx - half;
+  const top = cy - half;
+  const radius = badge * 0.2;
+  const color = kindMarkerColor("Teleport");
+
+  const outline = (): void => {
+    context.beginPath();
+    context.moveTo(left + radius, top);
+    context.arcTo(left + badge, top, left + badge, top + badge, radius);
+    context.arcTo(left + badge, top + badge, left, top + badge, radius);
+    context.arcTo(left, top + badge, left, top, radius);
+    context.arcTo(left, top, left + badge, top, radius);
+    context.closePath();
+  };
+
+  context.save();
+
+  // 1) 深色外描边（一半在牌外、一半被牌面盖住 → 亮底上也有清晰边界）
+  outline();
+  context.lineWidth = Math.max(2, badge * 0.12);
+  context.strokeStyle = "rgba(0,0,0,0.62)";
+  context.stroke();
+
+  // 2) 实色牌面（类型色）
+  outline();
+  context.fillStyle = color;
+  context.fill();
+
+  // 3) 旋涡：一圈外环 + 内圈两道错开的弧（开口朝同一侧 → 看着在转）
+  context.strokeStyle = "#ffffff";
+  context.lineCap = "round";
+  context.lineWidth = Math.max(1.5, badge * 0.085);
+  context.beginPath();
+  context.arc(cx, cy, badge * 0.3, 0, Math.PI * 2);
+  context.stroke();
+
+  context.lineWidth = Math.max(1.2, badge * 0.07);
+  for (const [radiusFactor, from, to] of [
+    [0.19, 0.35, 1.25],
+    [0.19, 1.75, 2.65],
+  ] as const) {
+    context.beginPath();
+    context.arc(cx, cy, badge * radiusFactor, from * Math.PI, to * Math.PI);
+    context.stroke();
+  }
+
+  // 4) 箭头：从环右外侧指出去（「传送到那边」），一根杆 + 一个实心三角
+  context.strokeStyle = "#ffffff";
+  context.lineWidth = Math.max(1.5, badge * 0.08);
+  context.beginPath();
+  context.moveTo(cx + badge * 0.2, cy);
+  context.lineTo(cx + badge * 0.46, cy);
+  context.stroke();
+
+  context.beginPath();
+  context.moveTo(cx + badge * 0.48, cy);
+  context.lineTo(cx + badge * 0.32, cy - badge * 0.11);
+  context.lineTo(cx + badge * 0.32, cy + badge * 0.11);
+  context.closePath();
+  context.fillStyle = "#ffffff";
+  context.fill();
+
+  context.restore();
+}
+
+/** 把视口整体挪一下，使底纹的锚点（世界坐标）落到世界原点上——底纹于是与地图对齐。 */function viewportForChecker(
   viewport: Viewport,
   origin: { readonly x: number; readonly y: number } | undefined,
 ): Viewport {

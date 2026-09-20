@@ -30,7 +30,7 @@ import type { RleRun } from "@dts/grid";
  *   （谁画在前面；大的盖住小的，相同则按场景里的先后顺序）。
  */
 
-export const DOCUMENT_FORMAT_VERSION = 11;
+export const DOCUMENT_FORMAT_VERSION = 12;
 
 /** 网格行序：`bottom-up` 表示 cells 第 0 行是图片最下面一行（与 Unity GridMap 一致）。 */
 export type RowOrder = "bottom-up";
@@ -92,13 +92,23 @@ export interface ComponentDoc {
 /**
  * 对象类型。
  *
- * 前四种对齐前端 `BackendObjectKind`；后两种是**编辑器侧新增的**：
+ * 前四种对齐前端 `BackendObjectKind`；后三种是**编辑器侧新增的**：
  * - `Map`：地图就是场景里的一个对象，携带贴图与网格数据；
  * - `PlaySound`：**动作对象**（弹框里「动作」种类下的「播放声音」），基础属性与实体一样，
  *   另带「播什么 + 哪个层级」；画布上画一枚**固定的内置音频图标**（不给换贴图），
- *   编辑器**不播放**——出声是前端的事。
+ *   编辑器**不播放**——出声是前端的事；
+ * - `Teleport`：**动作对象**里的「传送阵」，另带「传送到哪一张场景」；画布上同样是
+ *   **固定的内置徽标**（不给换贴图）。触发它 = **切换当前场景**（对 DM 就是「换台」），
+ *   所以它**不需要新协议命令**：切场景本来就是编辑器的事，整份 `scene_push` 下去前端就换了。
  */
-export type ObjectKind = "Map" | "SceneObject" | "Player" | "Item" | "Event" | "PlaySound";
+export type ObjectKind =
+  | "Map"
+  | "SceneObject"
+  | "Player"
+  | "Item"
+  | "Event"
+  | "PlaySound"
+  | "Teleport";
 
 /** 地图对象携带的数据（贴图 + 网格）。 */
 export interface MapDataDoc {
@@ -181,6 +191,36 @@ export interface SoundDataDoc {
   readonly layer: SoundLayer;
 }
 
+/**
+ * 传送阵（动作对象）的数据：**加进来的候选目标场景 + 当前选中的那一个**。
+ *
+ * 它声明的是「**按下它就把全场换到候选里的哪一张图**」——触发一次 = 切换当前场景（编辑器 →
+ * 整份 `scene_push` → 前端换镜像），所以**不需要新协议命令**。编辑器自己不「播放」任何东西。
+ *
+ * 分工与播放声音**完全同一套**（界面上也是两处，别混）：
+ * - **候选清单**（`targets`）在「传送目标」窗口里勾 / 取消勾（场景就是项目里那些场景）；
+ * - **选中哪一个**（`picked`）在属性面板上点那些小方块切——「传送」送的就是它。
+ *
+ * 场景名 = `Assets/scenes/<场景名>.json` 的文件名（这个仓库里场景的标识就是文件名）。
+ * 代价是**场景改名不会自动跟随**：那时候选里那一条成了「不存在的场景」，界面上会写明，
+ * 勾掉重选一次即可。
+ */
+export interface TeleportDataDoc {
+  /**
+   * **加进来的**候选目标场景，顺序 = 加进来的先后（没有别的语义、不排序）；空数组 = 还没加。
+   *
+   * 加 / 取都在「传送目标」窗口里做。一条都还没加时「传送」点不了。
+   */
+  readonly targets: string[];
+  /**
+   * 候选里**当前选中的那一个**（必须是 `targets` 里的一个）；缺省 = 还没选。
+   *
+   * 「传送」按钮与画布上双击徽标送的就是它。加进来一条却没被选中时，
+   * 文档命令会自动选上第一条（与播放声音同一条规矩），免得面板看着有东西、按钮却是灰的。
+   */
+  readonly picked?: string;
+}
+
 export interface SceneObjectDoc {
   readonly id: string;
   readonly name: string;
@@ -242,6 +282,14 @@ export interface SceneObjectDoc {
    * 画布上的样子是**固定的内置音频图标**，所以它没有 `image`（挂了也会被忽略并警告）。
    */
   readonly sound?: SoundDataDoc;
+  /**
+   * 仅 `kind === "Teleport"` 的传送阵携带：候选目标场景 + 选中的那一个。
+   *
+   * 与声音对象同一套口径：其余属性（位置 / 缩放 / 激活 / 锁定 / 显示顺序）跟实体完全一样，
+   * 画布上是**固定的内置徽标**，所以它没有 `image`（挂了也会被忽略并警告）。
+   * `teleport` 整个缺失 = 数据坏了（`validateScene` 报错），界面上按「还没加目标」显示。
+   */
+  readonly teleport?: TeleportDataDoc;
   /**
    * 对象要显示的图片（**精灵**就靠它显示图片；地图的贴图在 `map.image` 里）。
    *

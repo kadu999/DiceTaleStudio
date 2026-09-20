@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { audioBadgeAnimation } from "../src/scene-renderer";
+import { audioBadgeAnimation, kindMarkerColor } from "../src/scene-renderer";
 
 /**
  * 声音徽标「正在播」的动画参数。
@@ -67,5 +67,15 @@ describe("声音徽标的播放动画", () => {
       0.82,
       5,
     );
+  });
+});
+
+describe("对象类型色（弹框的色点与内置徽标共用）", () => {
+  it("动作对象都有自己的颜色，两个传送阵 / 声音彼此分得开", () => {
+    // 徽标牌面用的就是这两色：撞色会让「这是什么」变得不好认
+    expect(kindMarkerColor("PlaySound")).not.toBe(kindMarkerColor("Teleport"));
+    expect(kindMarkerColor("Teleport")).toMatch(/^#[0-9a-f]{6}$/);
+    // 未知类型仍然退回默认灰（不抛、也不编一个新颜色出来）
+    expect(kindMarkerColor("Portal")).toBe(kindMarkerColor("NotAKind"));
   });
 });

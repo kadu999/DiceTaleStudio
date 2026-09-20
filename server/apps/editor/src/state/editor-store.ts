@@ -13,6 +13,7 @@ import {
   createMapObject,
   createSceneObject,
   createSoundObject,
+  createTeleportObject,
   effectiveScaleX,
   effectiveScaleY,
   isSceneNameTaken,
@@ -35,6 +36,8 @@ import {
   setSoundClips as setSceneSoundClips,
   setSoundLayer as setSceneSoundLayer,
   setSoundClipName as setSceneSoundClipName,
+  setTeleportTargets as setSceneTeleportTargets,
+  setTeleportPicked as setSceneTeleportPicked,
   setSoundPicked as setSceneSoundPicked,
   validateSceneName,
   type ImageRef,
@@ -57,7 +60,6 @@ import {
   type GridPoint,
   type GridSize,
   type ImageSize,
-  type WorldRect,
 } from "@dts/grid";
 import {
   PROJECT_FOLDERS,
@@ -68,7 +70,6 @@ import {
   projectSceneImageId,
 } from "@dts/resources";
 import {
-  createCenteredViewport,
   createViewport,
   fitViewport,
   isCornerScaleHandle,
@@ -102,6 +103,7 @@ import {
 } from "../services/grid-paint-prefs";
 import { readEditorPrefs, writeEditorPrefs } from "../services/editor-prefs";
 import { resolveTransform, type TransformStart } from "../panels/scene/transform";
+import { sceneVisibleRects } from "../panels/scene/display";
 import { clearSceneImageCache } from "../services/scene-image";
 import {
   emptySoundPlayback,
@@ -235,6 +237,10 @@ export interface EditorStoreState {
   readonly soundEditor: boolean;
   /** 正在编辑哪个声音对象的声音；null 表示窗口没打开 */
   readonly soundEditorTarget: string | null;
+  /** 「传送目标」窗口是否打开（属性面板「传送」组里的 `＋` 唤出） */
+  readonly teleportEditor: boolean;
+  /** 正在编辑哪个传送阵的候选目标；null 表示窗口没打开 */
+  readonly teleportEditorTarget: string | null;
   /** 「战争雾 Mask 窗口」是否打开（属性面板的按钮唤出） */
   readonly fogMask: boolean;
   /** Mask 窗口正在编辑哪张地图；null 表示窗口没打开 */
@@ -274,15 +280,30 @@ export interface EditorStoreState {
   setActiveScene(name: string | null): void;
   /** 从资源面板**打开**一个场景：切到它，并把选中态交回场景（属性面板随之显示该场景）。 */
   openScene(name: string): void;
+  /**
+   * 按**当前顺序**切到第 `index` 个场景（0 基；切换条上的 `1`-`9` 与快捷键都走它）。
+   *
+   * 顺序的唯一来源是 `scenes` 数组（装载时按 `compareSceneNames` 排好），
+   * 所以这里与切换条上看到的序号必然一致。越界返回 `false`（什么都不做）。
+   */
+  openSceneByIndex(index: number): boolean;
+  /** 上一场 / 下一场（`delta` = ±1）：到首 / 尾返回 `false`，**不循环**。 */
+  openAdjacentScene(delta: -1 | 1): boolean;
   setSelection(objectIds: readonly string[]): void;
   /** 选中资源文件（传 null 取消）。与对象选中互斥——属性面板一次只显示一样东西。 */
   selectAsset(id: string | null): void;
   setViewport(viewport: Viewport): void;
   zoomAtScreen(anchor: { x: number; y: number }, factor: number): void;
   panByScreen(dx: number, dy: number): void;
+  /**
+   * **适配视图**：把当前场景里**画布上看得见的东西**（地图 / 精灵 / 徽标…）一起装进视口，
+   * 外框居中、按需缩放。一个都没落位时退回「世界原点居中 1:1」。
+   *
+   * 「复位」按钮与「视图 → 适配视口」都走它：对 DM 而言这两件事是同一个意思——
+   * 「让我重新看见全场」。曾经「复位」是「缩放回 1:1 + 世界原点居中」，在 1920×1080 的图上
+   * 只看得到中间一块，正是要解决的问题。
+   */
   fitToViewport(): void;
-  /** 视图复位：缩放回 1:1，并把**世界原点摆回画布正中**（用户平移/缩放后一键回到 0,0）。 */
-  resetViewport(): void;
   setViewportSize(size: { width: number; height: number }): void;
   setUi(patch: Partial<EditorUiState>): void;
   setMode(mode: EditorMode): void;
@@ -471,6 +492,33 @@ export interface EditorStoreState {
   openSoundEditor(objectId: string | null): void;
   /** 改声音层级（同层同时只响一条的那一层）；非声音对象 / 值没变返回 false。 */
   setSoundLayer(objectId: string, layer: SoundLayer): boolean;
+  /**
+   * 改**传送阵的候选目标场景**（「传送目标」窗口里勾 / 取消勾就是这件事）。
+   *
+   * 传的是**整份新清单**（去空去重由文档命令做）：窗口那边只看得到「勾了哪些」，
+   * 拼出来最直接。清单一变，**选中的那一个跟着走**（移出去的正好是选中的 → 顺到下一条；
+   * 一条不剩 → `picked` 删掉）。
+   */
+  setTeleportTargets(objectId: string, targets: readonly string[]): boolean;
+  /**
+   * 选「传送」送到哪一个（必须在候选里；`null` = 取消选中）。
+   *
+   * 与播放声音「点小方块选播哪条」同一个位置、同一套规矩：这是**场景数据**（进撤销栈、
+   * 重开项目还在），运行态下改的也一样是「临时改动」（退出运行会还原）。
+   */
+  setTeleportPicked(objectId: string, target: string | null): boolean;
+  /** 打开 / 关闭「传送目标」窗口（传传送阵 id；传 null 关闭）。 */
+  openTeleportEditor(objectId: string | null): void;
+  /**
+   * **触发传送阵**：把整个场景切到它**选中的那个**候选场景（= DM 的「换台」）。
+   *
+   * 走的就是切场景那条路（`switchScene`）：写回改动 → 记住视口 → 换场景 → 适配 / 恢复视口 →
+   * **立刻 `scene_push`**。UI 上它**不改文档、不进撤销栈**——「按一下换台」不是编辑。
+   *
+   * 返回 `false` 且**写明理由**（写进运行日志）的四种情况：不是传送阵 / 候选是空的 /
+   * 还没选（或选的那个已经不在候选里）/ 目标场景不存在（改名或删掉了）或就是当前场景。
+   */
+  teleport(objectId: string): boolean;
   /** 改地图网格的列数 / 行数（格子按新尺寸重建，重叠部分保留）。 */
   setMapGrid(mapObjectId: string, grid: GridSize): boolean;
 
@@ -555,14 +603,27 @@ const SCENE_CENTER: WorldPosition = { x: 0, y: 0 };
  */
 const DEFAULT_MAP_IMAGE = { width: 1920, height: 1080 } as const;
 
-/** 场景里的地图在世界里占的矩形（每张地图一块，各自带自己的贴图尺寸）。 */
-export function sceneMapRects(scene: SceneDoc | undefined): WorldRect[] {
-  // 只算**激活**的地图：它们才是画布上看得见的底图，「适配视图」自然只装看得见的东西
-  return (scene?.objects ?? []).flatMap((object) =>
-    object.active && object.kind === "Map" && object.map !== undefined && object.position !== null
-      ? [worldRectOf(object.position, object.map.image)]
-      : [],
-  );
+/**
+ * 「适配视图」/「复位」/ 首次量到画布尺寸时的默认视野：**同一个算法，只有这一份**。
+ *
+ * 装的是当前场景里**画布上看得见的东西**（地图 / 精灵 / 徽标…，见 `sceneVisibleRects`），
+ * 外框居中、按需缩放，四周留 24px 边距。
+ *
+ * **只缩不放（上限 1:1）**：装得下就按 1:1 摆中间——「尽量看到所有对象」要的是
+ * **别把东西漏在屏幕外**，而不是把小场景放大到糊脸（一张 120×120 的精灵铺满 1400px 的画布
+ * 既没有信息量，还会让人以为比例坏了）。装不下才缩，缩到刚好装下。
+ *
+ * 单独提出来是因为它有三个入口——用户点「复位」/「视图 → 适配视口」，以及**视口尺寸第一次
+ * 量出来时**的默认视野（打开场景、转屏、拉开面板）。三处必须同一套算法，否则「默认看到的」
+ * 与「按一下复位看到的」会不一样。
+ */
+export function fitSceneViewport(
+  scenes: readonly SceneDoc[],
+  activeSceneName: string | null,
+  size: { readonly width: number; readonly height: number },
+): Viewport {
+  const scene = scenes.find((item) => item.name === activeSceneName);
+  return fitViewport(sceneVisibleRects(scene), size, 24, { max: 1 });
 }
 
 /**
@@ -703,6 +764,17 @@ export function serializeSceneFile(scene: SceneDoc): string {
   const text = `${JSON.stringify(file, null, 2)}\n`;
   serializedScenes.set(scene, text);
   return text;
+}
+
+/**
+ * 场景的**展示顺序**：中文拼音序 + **数字按数值比**。
+ *
+ * `numeric: true` 是这条的关键：没有它，`第10幕` 会排在 `第2幕` 前面（逐字符比），
+ * 而编号恰恰是 DM 给「跑团顺序」最常用的办法（`01-门厅`、`第2幕-地牢`）。
+ * 顺序就是 `scenes` 数组的顺序，切换条、`1`-`9` 直选、上一场 / 下一场都按它走。
+ */
+export function compareSceneNames(a: string, b: string): number {
+  return a.localeCompare(b, "zh-Hans-CN", { numeric: true });
 }
 
 /** 在资源树里按条件找节点（找场景目录、按 id 找选中的资源文件）。 */
@@ -1011,6 +1083,16 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
    * 中间态（窄列 / 0 宽），不跟着校正的话「场景中心 = 0,0」会偏到一边去。
    */
   let viewportAdjusted = false;
+  /**
+   * 每个场景上次的视口（**只在本次会话里记住**，不落盘）。
+   *
+   * 为什么记：跑团时在几张图之间来回切（酒馆 ↔ 地窖 ↔ 遭遇图），切回去应该还是刚才看的那一角，
+   * 而不是「又从 1:1 原点开始」；切到**没去过的**场景则自动适配（整张地图铺满），
+   * 否则从一张放大 8 倍的地图切过来，看见的只是一块空白。
+   *
+   * 为什么不落盘：隔一天打开项目时被一个说不清来路的缩放吓到，比省下这一次适配更烦人。
+   */
+  const sceneViewports = new Map<string, Viewport>();
   /** 上次成功写盘时的场景内容（场景名 → 序列化文本），用来算「哪些场景有未保存改动」。 */
   const savedScenes = new Map<string, string>();
   let saveTimer: number | null = null;
@@ -1092,6 +1174,64 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
   const currentObjectOf = (id: string): SceneObjectDoc | undefined =>
     findSceneByName(get().scenes, get().activeSceneName)?.objects.find((object) => object.id === id);
 
+  /**
+   * **切场景的唯一路径**：切之前写回改动与视口，切之后恢复视口、立刻推给前端。
+   *
+   * 不把这套动作抄成两三份的理由：落了一步（尤其是**推送**）就会出现「画布换了、投影没换」
+   * 这种在跑团现场最恼人的偏差，而调用方有三处（切换条 / 快捷键 / 资源面板）。
+   */
+  const switchScene = (
+    name: string | null,
+    options: { readonly clearAssetSelection?: boolean; readonly log?: boolean } = {},
+  ): void => {
+    const previous = get().activeSceneName;
+    const changed = previous !== name;
+
+    if (changed) {
+      // 切之前先把手上未保存的改动写回（写入谁由内容差异决定，所以不会写错场景）
+      void get().flushSceneSave();
+      if (previous !== null) {
+        sceneViewports.set(previous, get().viewport);
+      }
+    }
+
+    // 清选中 / 关窗口 / 清记账这一套**照旧无条件执行**（切到同一个场景时也一样）：
+    // 记账记的是「这个场景现在该响什么」，重新打开它就该从「没在播」开始
+    set({
+      activeSceneName: name,
+      selectedObjectIds: [],
+      ...(options.clearAssetSelection === true ? { selectedAssetId: null } : {}),
+      fogMask: false,
+      fogMaskTarget: null,
+      gridEditor: false,
+      gridEditorTarget: null,
+      // 切场景：记账里的对象属于上一个场景，清掉（前端那边由使用方自己按新场景重播）
+      soundPlayback: emptySoundPlayback(),
+    });
+
+    // **视口跟着场景走**：回到这个场景上次的样子；没来过就适配（整张地图铺满）。
+    // 画布尺寸还没量出来（抽屉挡着 / 0 宽）时**不动视口**——那时候「适配」会把世界原点甩到角上。
+    // 只在**真的换了场景**时做：点当前那一格不该把视角重置
+    if (changed && name !== null) {
+      const remembered = sceneViewports.get(name);
+      if (remembered !== undefined) {
+        viewportAdjusted = true;
+        set({ viewport: remembered });
+      } else if (get().viewportSize.width > 0 && get().viewportSize.height > 0) {
+        get().fitToViewport();
+      }
+    }
+
+    // **运行态下切场景要立刻推**（不等 200ms 去抖）：对 DM 而言这就是「换台」，
+    // 投影晚一秒都比不换更让人困惑。推不推仍由 shouldPushScene 决定（编辑态 / 断线不推；
+    // 内容没变也不推，所以「切到同一个场景」不会产生流量）
+    pushSceneNow();
+
+    if (options.log === true) {
+      pushLog(makeLog("info", `已切换到场景：${name}`));
+    }
+  };
+
   return {
     mode: "edit",
     doc: createEmptyProject(),
@@ -1115,6 +1255,8 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
     imagePickerTarget: null,
     soundEditor: false,
     soundEditorTarget: null,
+    teleportEditor: false,
+    teleportEditorTarget: null,
     fogMask: false,
     fogMaskTarget: null,
     gridEditor: false,
@@ -1158,6 +1300,8 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
 
     resetDoc(doc) {
       savedScenes.clear();
+      // 换文档了：记着的视口属于上一个项目的同名场景，不能拿来用
+      sceneViewports.clear();
       // 订阅里会把 scenes 清空、撤销栈清掉，并把保存状态置回 saved
       sceneHistory.reset([]);
       set({
@@ -1189,18 +1333,7 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
     },
 
     setActiveScene(name) {
-      // 切场景前先把手上未保存的改动写回（写入谁由内容差异决定，所以不会写错场景）
-      void get().flushSceneSave();
-      set({
-        activeSceneName: name,
-        selectedObjectIds: [],
-        fogMask: false,
-        fogMaskTarget: null,
-        gridEditor: false,
-        gridEditorTarget: null,
-        // 切场景：记账里的对象属于上一个场景，清掉（前端那边由使用方自己按新场景重播）
-        soundPlayback: emptySoundPlayback(),
-      });
+      switchScene(name);
     },
 
     openScene(name) {
@@ -1208,19 +1341,32 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
         return;
       }
 
-      void get().flushSceneSave();
-      // 打开场景 = 切到它并清掉别的选中：属性面板接着显示这个场景
-      set({
-        activeSceneName: name,
-        selectedObjectIds: [],
-        selectedAssetId: null,
-        fogMask: false,
-        fogMaskTarget: null,
-        gridEditor: false,
-        gridEditorTarget: null,
-        soundPlayback: emptySoundPlayback(),
-      });
-      pushLog(makeLog("info", `已切换到场景：${name}`));
+      // 打开场景 = 切到它并清掉别的选中：属性面板接着显示这个场景（并记一条运行日志）
+      switchScene(name, { clearAssetSelection: true, log: true });
+    },
+
+    openSceneByIndex(index) {
+      const names = get().scenes.map((scene) => scene.name);
+      const name = names[index];
+      if (name === undefined) {
+        return false;
+      }
+
+      switchScene(name, { clearAssetSelection: true, log: true });
+      return true;
+    },
+
+    openAdjacentScene(delta) {
+      const names = get().scenes.map((scene) => scene.name);
+      const current = names.indexOf(get().activeSceneName ?? "");
+      const next = current + delta;
+      // 到端点就什么都不做（**不循环**：开场按「上一场」跳到最后一幕比没反应更让人困惑）
+      if (current < 0 || next < 0 || next >= names.length) {
+        return false;
+      }
+
+      switchScene(names[next] as string, { clearAssetSelection: true, log: true });
+      return true;
     },
 
     setSelection(objectIds) {
@@ -1250,8 +1396,7 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
 
     fitToViewport() {
       const { scenes, activeSceneName, viewportSize } = get();
-      // 场景整体铺满视口；视口尺寸还没量出来时退回「世界原点居中」
-      const scene = scenes.find((item) => item.name === activeSceneName);
+      // 视口尺寸还没量出来时退回「世界原点居中 1:1」（此刻算不出该缩到多少）
       if (viewportSize.width === 0 || viewportSize.height === 0) {
         viewportAdjusted = false;
         set({ viewport: createViewport() });
@@ -1259,8 +1404,7 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       }
 
       viewportAdjusted = true;
-      // 世界无限大：这里装的是**所有地图**的并集外框（一张地图都没有就退回原点居中）
-      set({ viewport: fitViewport(sceneMapRects(scene), viewportSize, 24) });
+      set({ viewport: fitSceneViewport(scenes, activeSceneName, viewportSize) });
     },
 
     setViewportSize(size) {
@@ -1269,19 +1413,17 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
         return;
       }
 
-      // 尺寸首次确定或用户还没调过视口时，把世界原点摆回正中；
-      // 用户一旦自己平移 / 缩放过，就不要再动他的视角。
+      // 尺寸首次确定或用户还没调过视口时**直接适配**：打开场景 / 转屏 / 拉开面板之后
+      // 第一眼就该看到整个场景（而不是世界原点周围那一块，让对象散在屏幕外）
       if (!viewportAdjusted) {
-        set({ viewportSize: size, viewport: createCenteredViewport(size) });
+        set({
+          viewportSize: size,
+          viewport: fitSceneViewport(get().scenes, get().activeSceneName, size),
+        });
         return;
       }
 
       set({ viewportSize: size });
-    },
-
-    resetViewport() {
-      viewportAdjusted = false;
-      set({ viewport: createCenteredViewport(get().viewportSize) });
     },
 
     setUi(patch) {
@@ -1781,7 +1923,7 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
           }
         }
 
-        scenes.sort((a, b) => a.name.localeCompare(b.name, "zh-Hans-CN"));
+        scenes.sort((a, b) => compareSceneNames(a.name, b.name));
 
         // 旧格式的场景文件（带着已废弃的字段）按新格式回写一次——只做一次
         for (const scene of legacy) {
@@ -1793,6 +1935,8 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
 
         // 记下每个场景「磁盘上的样子」：之后的未保存改动就是拿它比出来的
         savedScenes.clear();
+        // 场景是**重新读盘**的（打开 / 切换项目、增删改名后重读）：记着的视口按名字对不上了
+        sceneViewports.clear();
         for (const scene of scenes) {
           savedScenes.set(scene.name, serializeSceneFile(scene));
         }
@@ -2001,8 +2145,12 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
             ? // 声音对象（动作对象）：和实体一样摆在世界里（画布上是一枚音频徽标，可以拖），
               // 新建时音频列表是空的（还没挑素材）
               createSoundObject({ name: trimmed, position: at })
-            : // 其它实体（例如精灵，kind = "SceneObject"）走普通对象：只有名字、类型与位置
-              createSceneObject({ name: trimmed, kind, position: at });
+            : kind === "Teleport"
+              ? // 传送阵（动作对象）：同样摆在世界里（画布上是一枚传送徽标），
+                // 新建时**还没指定目标场景**——属性面板挑一个目标，传送按钮才点得动
+                createTeleportObject({ name: trimmed, position: at })
+              : // 其它实体（例如精灵，kind = "SceneObject"）走普通对象：只有名字、类型与位置
+                createSceneObject({ name: trimmed, kind, position: at });
 
       const changed = get().applyScenes(`新建对象 ${trimmed}`, (draft) => {
         const target = draft.find((item) => item.name === sceneName);
@@ -2614,6 +2762,82 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
           setSceneSoundLayer(scene, objectId, layer);
         }
       });
+    },
+
+    // ------------------------------------------------------------ 传送阵（动作对象）
+
+    setTeleportTargets(objectId, targets) {
+      const sceneName = get().activeSceneName;
+      if (sceneName === null) {
+        return false;
+      }
+
+      return get().applyScenes("修改传送目标", (draft) => {
+        const scene = draft.find((item) => item.name === sceneName);
+        if (scene !== undefined) {
+          setSceneTeleportTargets(scene, objectId, targets);
+        }
+      });
+    },
+
+    setTeleportPicked(objectId, target) {
+      const sceneName = get().activeSceneName;
+      if (sceneName === null) {
+        return false;
+      }
+
+      return get().applyScenes("选择传送目标", (draft) => {
+        const scene = draft.find((item) => item.name === sceneName);
+        if (scene !== undefined) {
+          setSceneTeleportPicked(scene, objectId, target);
+        }
+      });
+    },
+
+    openTeleportEditor(objectId) {
+      set({ teleportEditor: objectId !== null, teleportEditorTarget: objectId });
+    },
+
+    teleport(objectId) {
+      const object = currentObjectOf(objectId);
+      if (object === undefined || object.kind !== "Teleport") {
+        pushLog(makeLog("error", "找不到这个传送阵"));
+        return false;
+      }
+
+      const teleport = object.teleport;
+      if (teleport === undefined || teleport.targets.length === 0) {
+        pushLog(makeLog("error", `${object.name}：还没有加目标场景，先在「传送目标」里勾几个`));
+        return false;
+      }
+
+      // 选中的那个可能已经被移出候选（手写文件里也可能留下一个对不上的值）：按「还没选」处理
+      const target = teleport.picked;
+      if (target === undefined || !teleport.targets.includes(target)) {
+        pushLog(makeLog("error", `${object.name}：还没选要传送到哪一张场景（面板上点一下小方块）`));
+        return false;
+      }
+
+      if (target === get().activeSceneName) {
+        pushLog(makeLog("warn", `${object.name}：目标就是当前场景，什么都不用做`));
+        return false;
+      }
+
+      if (!get().scenes.some((scene) => scene.name === target)) {
+        pushLog(
+          makeLog(
+            "error",
+            `${object.name}：目标场景「${target}」不存在（可能被改名或删掉了），重新挑一个`,
+          ),
+        );
+        return false;
+      }
+
+      // 走切场景那条唯一的路（写回改动 → 记住视口 → 换场景 → 立刻推给前端）。
+      // `log: false`：下面这条带来源的日志更说明问题，免得一次传送写两行
+      switchScene(target, { clearAssetSelection: true, log: false });
+      pushLog(makeLog("info", `传送阵「${object.name}」→ 场景「${target}」`));
+      return true;
     },
 
     // ------------------------------------------------------------ 网格标注

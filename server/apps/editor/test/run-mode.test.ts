@@ -25,6 +25,7 @@ import type { ResourceTreeNode } from "../src/services/project-api";
 
 const PROJECT = "Demo";
 const SCENE = "Map001";
+const OTHER_SCENE = "Map002";
 const DOOR = "door";
 
 /** 假的 WebSocket：测试决定什么时候「连上」、什么时候「收到服务端消息」。 */
@@ -116,6 +117,13 @@ const editorState = (runtimeActive: boolean): unknown => ({
 /** 编辑器发出去的报文类型（顺序保留）。 */
 const sentTypes = (socket: FakeSocket): string[] =>
   socket.sent.map((raw) => (JSON.parse(raw) as { type: string }).type);
+
+/** 编辑器推下去的场景（按顺序）：`scene_push` 的载荷，用来验「切场景有没有推」。 */
+const scenePushes = (socket: FakeSocket): Array<{ name?: string } | null> =>
+  socket.sent
+    .map((raw) => JSON.parse(raw) as { type: string; scene?: { name?: string } | null })
+    .filter((message) => message.type === "scene_push")
+    .map((message) => message.scene ?? null);
 
 /** 后端调用记录：写盘就是 `PUT`（这个用例集里唯一要防的事）。 */
 function stubBackend(files: Readonly<Record<string, string>> = {}): string[] {
@@ -324,6 +332,58 @@ describe("运行中的改动：不保存、退出即还原", () => {
 
     await flushTimers();
     expect(writes(calls)).toEqual([]);
+  });
+});
+
+describe("切场景 = DM 的「换台」：运行态下立刻推", () => {
+  it("运行中切到另一个场景：多推一条 `scene_push`，带的是新场景名（不等去抖）", async () => {
+    await seedScene([door()], [SCENE, OTHER_SCENE]);
+    const socket = connect();
+    useEditorStore.getState().setMode("run");
+    socket.receive(editorState(true));
+    expect(scenePushes(socket).map((scene) => scene?.name)).toEqual([SCENE]);
+
+    useEditorStore.getState().openScene(OTHER_SCENE);
+
+    // **不推进定时器**就该看得见：切场景是「必须马上到」的动作（去抖 200ms 对现场太慢）
+    expect(scenePushes(socket).map((scene) => scene?.name)).toEqual([SCENE, OTHER_SCENE]);
+    expect(useEditorStore.getState().runtime.runtimeActive).toBe(true);
+  });
+
+  it("编辑态切场景不推（没有运行态就没有流量）", async () => {
+    await seedScene([door()], [SCENE, OTHER_SCENE]);
+    const socket = connect();
+
+    useEditorStore.getState().openScene(OTHER_SCENE);
+
+    expect(scenePushes(socket)).toEqual([]);
+  });
+
+  it("「下一场」走的是**展示顺序**，到端点不循环", async () => {
+    await seedScene([door()], [SCENE, OTHER_SCENE, "Map003"]);
+    expect(useEditorStore.getState().activeSceneName).toBe(SCENE);
+
+    expect(useEditorStore.getState().openAdjacentScene(1)).toBe(true);
+    expect(useEditorStore.getState().activeSceneName).toBe(OTHER_SCENE);
+    expect(useEditorStore.getState().openAdjacentScene(1)).toBe(true);
+    expect(useEditorStore.getState().activeSceneName).toBe("Map003");
+
+    // 到末尾：什么都不做，也**不绕回第一场**（绕回去比没反应更让人摸不着头脑）
+    expect(useEditorStore.getState().openAdjacentScene(1)).toBe(false);
+    expect(useEditorStore.getState().activeSceneName).toBe("Map003");
+
+    expect(useEditorStore.getState().openAdjacentScene(-1)).toBe(true);
+    expect(useEditorStore.getState().activeSceneName).toBe(OTHER_SCENE);
+  });
+
+  it("按序号直选：第 2 格就是第 2 个场景（0 基越界返回 false）", async () => {
+    await seedScene([door()], [SCENE, OTHER_SCENE, "Map003"]);
+
+    expect(useEditorStore.getState().openSceneByIndex(2)).toBe(true);
+    expect(useEditorStore.getState().activeSceneName).toBe("Map003");
+
+    expect(useEditorStore.getState().openSceneByIndex(3)).toBe(false);
+    expect(useEditorStore.getState().activeSceneName).toBe("Map003");
   });
 });
 
