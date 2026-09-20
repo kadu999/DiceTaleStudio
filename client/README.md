@@ -197,6 +197,15 @@ Assets/
   切回去直接显示，不重建。一次运行里可以同时有多个场景（玩家可能在场景1 做完事再切到场景2）。
   `Find(objectId)` 会在**所有场景**里找，所以隐藏场景里的对象照样能被命令寻址。
   确实要丢弃某个场景时显式调 `DestroyScene(name)`（平时不调）。
+- **对象用局部坐标，根节点可以自由变换（2026-09-20）**：`SceneObjectView` 写的是
+  `localPosition` / `localRotation`（不再是世界坐标），尺寸烘在网格里、`localScale` 恒为 1。
+  容器与场景根节点都是单位变换起步，所以**想整场景平移 / 旋转 / 缩放，直接改容器或场景根节点的
+  Transform**——里面的对象跟着一起变，不用逐个改世界坐标。实测把场景根节点设成 `scale=0.5`：
+  对象 `localPosition` 不变、世界位置与世界缩放都减半。
+  ⚠️ **`GridMap` / `FogOfWar` / `DynamicObstacle` 仍按世界坐标算格子**
+  （`GridMap.GridOrigin` 用 `transform.position`、`WorldToGrid` 取 `transform.position.y`），
+  它们目前还没接进镜像（`map.cells` 是解析了但没人消费的死数据），
+  等要用「缩放后的场景」做格子交互时，这几处得改成按场景根节点换算。
 - **贴图真正画上去了（2026-09-20 修）**：`SceneObjectView` 原来只在收到场景推送时才重画面片，
   而取图是**异步**的——首帧必然拿占位色，且命中缓存的那次推送根本不回调这个视图，于是出现
   「纹理已经在 `ResourceImageLoader` 缓存里、`MeshRenderer` 上却还是占位色」（地图对象最明显）。

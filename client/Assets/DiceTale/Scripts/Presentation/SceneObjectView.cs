@@ -7,7 +7,11 @@ namespace DiceTale
     ///
     /// 属性怎么来（全部来自后台推下来的对象数据）：
     /// - 位置 = `position`（文档世界坐标 x/y 向上 → 客户端 x/z + 离地抬升）；
-    /// - 大小 = 声明尺寸（`image` / `map.image`）× `scale`；
+    ///   写的是 **`localPosition` / `localRotation`**——相对所在**场景的根节点**，
+    ///   所以根节点可以自由平移 / 旋转 / **缩放**，整棵场景一起变，不用逐个改世界坐标；
+    /// - 大小 = 声明尺寸（`image` / `map.image`）× `scale`；尺寸由
+    ///   <see cref="GroundTextureRenderer"/> 烘进网格顶点，本组件**不碰 `localScale`**
+    ///   （保持 1，这样根节点的缩放才是唯一影响整体大小的因素）；
     /// - `active` = 是否显示（编辑器那个勾选框一改，这里就出现 / 消失）；
     /// - `sortingOrder` = 遮挡顺序（大的盖在上面）；
     /// - 有图就去取图贴上（本地资源包优先）；没图（或还没取回来）先用按 `kind` 区分的底色占位，
@@ -69,9 +73,12 @@ namespace DiceTale
 
             gameObject.SetActive(obj.active);
 
-            // 文档 y 向上 → 客户端 +Z（与 GridMap.WorldToGrid 同口径）；y 只用来避免共面闪烁
-            transform.position = new Vector3(obj.x, 0f, obj.y);
-            transform.rotation = Quaternion.Euler(0f, -obj.rotation, 0f);
+            // **用局部坐标**：位置/旋转都相对所在场景的根节点。
+            // 这样整棵场景可以被根节点平移、旋转、**缩放**（比如把场景缩到 0.5 倍看全局），
+            // 里面的对象跟着一起变，而不用逐个改世界坐标。
+            // 文档 y 向上 → 客户端 +Z（与 GridMap.WorldToGrid 同口径）；y 只用来避免共面闪烁。
+            transform.localPosition = new Vector3(obj.x, 0f, obj.y);
+            transform.localRotation = Quaternion.Euler(0f, -obj.rotation, 0f);
 
             var image = obj.DisplayImage;
             currentWidth = (image != null && image.width > 0 ? image.width : FallbackSize) * obj.scale;
