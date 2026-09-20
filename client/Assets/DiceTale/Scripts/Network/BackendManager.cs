@@ -30,18 +30,6 @@ namespace DiceTale
         private ResourceBundleCache bundleCache;
         private ResourceImageLoader imageLoader;
 
-        /// <summary>创建的 WebSocket 连接组件（Game.ServerConnection 即此连接）。</summary>
-        public ServerConnection Connection => connection;
-
-        /// <summary>协议会话（连接状态、会话 id 都在它身上）。</summary>
-        public ClientSession Session => session;
-
-        /// <summary>场景镜像（命令要用它读对象数据，例如该播哪一条音频）。</summary>
-        public SceneMirror Mirror => mirror;
-
-        /// <summary>本地资源包（诊断 / 手动重试用）。</summary>
-        public ResourceBundleCache BundleCache => bundleCache;
-
         /// <summary>服务端 HTTP 基地址（从 WebSocket 地址推导；取图走它）。</summary>
         public string HttpBaseUrl => Protocol.DeriveHttpBase(serverUrl);
 

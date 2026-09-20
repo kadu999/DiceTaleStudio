@@ -165,7 +165,12 @@ namespace DiceTale
             return 0.01f + Mathf.Clamp(sortingOrder, -100, 100) * 0.0005f;
         }
 
-        /// <summary>没有图时的占位色（按对象种类区分，一眼看出「这儿有个对象」）。</summary>
+        /// <summary>
+        /// 没有图时的占位色（按对象种类区分，一眼看出「这儿有个对象」）。
+        ///
+        /// 没有 `PlaySound` 分支：那种对象在 <see cref="Apply"/> 里提前 `return`（不建可见物），
+        /// 永远走不到这里——写了也是死代码。
+        /// </summary>
         private static Color KindColor(string kind)
         {
             switch (kind)
@@ -178,8 +183,6 @@ namespace DiceTale
                     return new Color(0.95f, 0.80f, 0.20f, 0.85f);
                 case "Event":
                     return new Color(0.80f, 0.45f, 0.85f, 0.85f);
-                case "PlaySound":
-                    return new Color(0.95f, 0.55f, 0.25f, 0.85f);
                 default:
                     return new Color(0.85f, 0.85f, 0.85f, 0.85f);
             }

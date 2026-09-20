@@ -55,16 +55,7 @@ namespace DiceTale
         /// </summary>
         public event Action SessionReady;
 
-        /// <summary>会话状态变化（附带一句人能看懂的说明）。</summary>
-        public event Action<ClientSessionState, string> StateChanged;
-
         public ClientSessionState State { get; private set; } = ClientSessionState.Idle;
-
-        /// <summary>服务端给本次运行态的会话 id（`server_hello` 里带来，日志排查用）。</summary>
-        public string SessionId { get; private set; } = "";
-
-        /// <summary>服务端协议版本（`server_hello` 里带来）。</summary>
-        public int ServerProtocolVersion { get; private set; }
 
         private ServerConnection connection;
 
@@ -76,7 +67,7 @@ namespace DiceTale
             connection.OnConnectFailed += OnConnectFailed;
             connection.OnDisconnected += OnDisconnected;
             connection.OnMessage += OnMessage;
-            SetState(ClientSessionState.Connecting, "开始连接服务端");
+            SetState(ClientSessionState.Connecting);
         }
 
         private void OnDestroy()
@@ -92,13 +83,17 @@ namespace DiceTale
 
         private void OnConnectFailed(string reason)
         {
-            // 多半是编辑器还没点「运行」（服务端以 503 拒握手）：不是故障，等它点
-            SetState(ClientSessionState.WaitingForRuntime, $"尚未进入运行态（{reason}），正在重试…");
+            // 多半是编辑器还没点「运行」（服务端以 503 拒握手）：不是故障，等它点。
+            // 原因不在这里落日志：连接层已经把「连不上」提示过一次（见 ServerConnection.Connect），
+            // 每 3 秒重试一次时再刷一遍会把控制台淹掉。
+            SetState(ClientSessionState.WaitingForRuntime);
         }
 
         private void OnDisconnected(string reason)
         {
-            SetState(ClientSessionState.WaitingForRuntime, reason);
+            // 断开原因（4003 关闸 / 4002 协议不符 / 普通掉线）只到这一层为止：
+            // 连接层已把可读原因打进日志（ServerConnection.DescribeClose），这里只改状态
+            SetState(ClientSessionState.WaitingForRuntime);
         }
 
         private void OnConnected()
@@ -133,24 +128,22 @@ namespace DiceTale
             switch (JsonParser.GetString(message, "type"))
             {
                 case Protocol.TypeServerHello:
-                    ServerProtocolVersion = (int)JsonParser.GetNumber(message, "protocolVersion");
-                    SessionId = JsonParser.GetString(message, "sessionId") ?? "";
-                    if (ServerProtocolVersion != Protocol.Version)
+                    var serverVersion = (int)JsonParser.GetNumber(message, "protocolVersion");
+                    if (serverVersion != Protocol.Version)
                     {
-                        SetState(
-                            ClientSessionState.WaitingForRuntime,
-                            $"协议版本不一致：服务端 v{ServerProtocolVersion}，前端 v{Protocol.Version}");
+                        // 版本不符：连接层随后会收到 close 4002 并自行重连
+                        SetState(ClientSessionState.WaitingForRuntime);
                         return;
                     }
 
-                    SetState(ClientSessionState.Ready, $"已连接服务端（会话 {SessionId}）");
+                    SetState(ClientSessionState.Ready);
                     SessionReady?.Invoke();
                     return;
 
                 case Protocol.TypeSceneSync:
                     if (State != ClientSessionState.Ready)
                     {
-                        SetState(ClientSessionState.Ready, "已连接服务端");
+                        SetState(ClientSessionState.Ready);
                     }
 
                     SceneReceived?.Invoke(SceneParser.Parse(JsonParser.GetObject(message, "scene")));
@@ -230,15 +223,9 @@ namespace DiceTale
             return command;
         }
 
-        private void SetState(ClientSessionState state, string detail)
+        private void SetState(ClientSessionState state)
         {
-            if (State == state)
-            {
-                return;
-            }
-
             State = state;
-            StateChanged?.Invoke(state, detail);
         }
     }
 }

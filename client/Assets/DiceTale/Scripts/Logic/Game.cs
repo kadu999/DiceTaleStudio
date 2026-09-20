@@ -27,10 +27,6 @@ namespace DiceTale
         public AudioPlayerManager AudioPlayerManager { get; private set; }
         public PhotoClickGlow PhotoClickGlow { get; private set; }
 
-        /// <summary>后台 WebSocket 连接（由 BackendManager 创建并持有；未创建/已销毁时为 null）。</summary>
-        public ServerConnection ServerConnection =>
-            BackendManager != null ? BackendManager.Connection : null;
-
         public bool CanInteract { get; private set; } = true;
 
         private void Awake()

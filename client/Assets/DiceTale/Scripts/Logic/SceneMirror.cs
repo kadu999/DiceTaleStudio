@@ -68,27 +68,6 @@ namespace DiceTale
         /// <summary>当前**显示中**的场景名（null = 还没镜像任何场景）。其余场景只是被隐藏。</summary>
         public string SceneName { get; private set; }
 
-        /// <summary>已经在镜像里的场景名（含被隐藏的），按首次出现顺序。</summary>
-        public IReadOnlyCollection<string> SceneNames => sceneRoots.Keys;
-
-        /// <summary>当前显示的那个场景里的对象数（所有场景合计见 <see cref="TotalObjectCount"/>）。</summary>
-        public int ObjectCount => ObjectsOf(SceneName).Count;
-
-        /// <summary>所有场景加起来的对象数。</summary>
-        public int TotalObjectCount
-        {
-            get
-            {
-                var total = 0;
-                foreach (var table in sceneObjects.Values)
-                {
-                    total += table.Count;
-                }
-
-                return total;
-            }
-        }
-
         /// <summary>接上会话（由 <see cref="BackendManager"/> 调用一次）。</summary>
         public void Initialize(ClientSession clientSession, ResourceImageLoader loader, ResourceBundleCache cache = null)
         {
@@ -392,36 +371,6 @@ namespace DiceTale
                     root.gameObject.SetActive(false);
                 }
             }
-        }
-
-        /// <summary>
-        /// 彻底丢掉一个场景（节点、视图、模型全删）。
-        ///
-        /// **默认不做这件事**——切场景只隐藏。这个方法留给「确实不会再回去」的场合
-        /// （例如玩家长时间离开、需要回收内存时由玩法层显式调用）。
-        /// </summary>
-        public void DestroyScene(string sceneName)
-        {
-            if (string.IsNullOrEmpty(sceneName))
-            {
-                return;
-            }
-
-            if (sceneRoots.TryGetValue(sceneName, out var root) && root != null)
-            {
-                Destroy(root.gameObject);
-            }
-
-            sceneRoots.Remove(sceneName);
-            sceneViews.Remove(sceneName);
-            sceneObjects.Remove(sceneName);
-
-            if (SceneName == sceneName)
-            {
-                SceneName = null;
-            }
-
-            Debug.Log($"[镜像] 已丢弃场景「{sceneName}」（显式调用；平时切场景只隐藏）");
         }
     }
 }

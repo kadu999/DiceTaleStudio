@@ -57,6 +57,9 @@ namespace DiceTale
         ///
         /// 顺带把 `localScale` 校正回 `(1,1,1)`：尺寸已经由网格决定，缩放再参与进来只会让
         /// 「实际多大」变成两个来源相乘。摆位置与旋转仍由调用方负责（本组件不碰）。
+        ///
+        /// 本组件**没有 `Awake` 预热**：网格与材质都在这里按需创建（`Ensure*` 幂等），
+        /// 免得每个视图先建一块 1×1 的网格、再在第一次 `Apply` 时丢掉重建。
         /// </summary>
         public void Apply(Texture2D texture, float width, float height, Color tint, int order, float lift)
         {
@@ -82,12 +85,6 @@ namespace DiceTale
             // y 只用来离地（世界单位），x/z 保持外面摆的局部位置
             var position = transform.localPosition;
             transform.localPosition = new Vector3(position.x, lift, position.z);
-        }
-
-        private void Awake()
-        {
-            EnsureMesh(1f, 1f, Color.white);
-            EnsureMaterial();
         }
 
         private void OnDestroy()
@@ -169,15 +166,7 @@ namespace DiceTale
                 return;
             }
 
-            if (Application.isPlaying)
-            {
-                Destroy(ownedMesh);
-            }
-            else
-            {
-                DestroyImmediate(ownedMesh);
-            }
-
+            Release(ownedMesh);
             ownedMesh = null;
         }
 
@@ -188,25 +177,27 @@ namespace DiceTale
                 return;
             }
 
+            Release(ownedMaterial);
+            ownedMaterial = null;
+        }
+
+        /// <summary>释放自建的 Unity 对象：运行时用 `Destroy`，编辑器（退出播放的收尾）用 `DestroyImmediate`。</summary>
+        private static void Release(UnityEngine.Object owned)
+        {
             if (Application.isPlaying)
             {
-                Destroy(ownedMaterial);
+                Destroy(owned);
             }
             else
             {
-                DestroyImmediate(ownedMaterial);
+                DestroyImmediate(owned);
             }
-
-            ownedMaterial = null;
         }
 
         /// <summary>染色写进 4 个顶点（面片整体同色；shader 里 纹理 × 顶点色）。</summary>
         private static void ApplyVertexColor(Mesh mesh, Color tint)
         {
-            if (mesh != null)
-            {
-                mesh.colors = new[] { tint, tint, tint, tint };
-            }
+            mesh.colors = new[] { tint, tint, tint, tint };
         }
 
         /// <summary>

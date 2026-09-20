@@ -77,7 +77,6 @@ namespace DiceTale
         private void Awake()
         {
             // 组件由 BackendManager 挂到宿主物体；同物体出现重复连接组件时保留首个、销毁多余
-            // （不再使用单例 Instance，连接统一经 Game.Instance.ServerConnection 获取）
             if (GetComponents<ServerConnection>().Length > 1)
             {
                 Destroy(this);
@@ -183,13 +182,6 @@ namespace DiceTale
             {
                 Debug.LogWarning($"[ServerConnection] Send failed: {ex.Message}");
             }
-        }
-
-        public void Close()
-        {
-            closing = true;
-            generation++; // 立即作废旧会话：进行中的 ReceiveLoop/排队的发送不再触碰本连接
-            _ = CloseAsync();
         }
 
         private async Task ReceiveLoop(int gen)
@@ -372,7 +364,7 @@ namespace DiceTale
 
         private void OnDestroy()
         {
-            // 连接不再使用单例：清理会话状态即可（引用统一经 Game.Instance.ServerConnection 获取）
+            // 宿主销毁即退出：作废旧会话、取消未完成的收发，再关闭连接
             closing = true;
             generation++; // 作废旧会话，避免收尾逻辑在销毁流程中继续干扰
             cts?.Cancel();

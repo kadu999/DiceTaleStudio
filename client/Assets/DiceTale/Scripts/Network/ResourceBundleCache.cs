@@ -54,9 +54,6 @@ namespace DiceTale
 
         private const float RetryDelaySeconds = 3f;
 
-        /// <summary>状态变化（就绪 / 失败 / 进度推进）时触发，供 UI 或日志用。</summary>
-        public event Action<ResourceBundleCache> StateChanged;
-
         /// <summary>
         /// 本地版本目录换了一个（新指纹就绪）时触发。
         ///
@@ -88,9 +85,6 @@ namespace DiceTale
 
         /// <summary>失败原因（没人能看懂的错误也在这里，日志里打全）。</summary>
         public string LastError { get; private set; } = "";
-
-        /// <summary>进度 0..1（清单阶段为 0，解压阶段为 1）。</summary>
-        public float Progress { get; private set; }
 
         /// <summary>这份包里的文件清单（来自服务端 manifest / 包内 dts-bundle.json）。</summary>
         public IReadOnlyList<BundleFile> Files => files;
@@ -266,7 +260,6 @@ namespace DiceTale
             VersionRoot = "";
             Fingerprint = "";
             LastError = "";
-            Progress = 0f;
             attempts = 0;
             reportedFingerprint = "";
             reportedOk = false;
@@ -327,7 +320,6 @@ namespace DiceTale
                     inFlight = false;
                     Debug.LogWarning($"[资源包] {project} 未就绪：{outcome.Reason}（图片继续走远程逐张取）");
                     ReportToServer();
-                    StateChanged?.Invoke(this);
                     Completed?.Invoke(this);
                     yield break;
                 }
@@ -354,14 +346,12 @@ namespace DiceTale
                 inFlight = false;
                 Debug.LogWarning($"[资源包] {project} 未就绪：{outcome.Reason}（图片继续走远程逐张取）");
                 ReportToServer();
-                StateChanged?.Invoke(this);
                 Completed?.Invoke(this);
                 yield break;
             }
 
             inFlight = false;
             Ready = true;
-            StateChanged?.Invoke(this);
             ReportToServer();
             Completed?.Invoke(this);
         }
@@ -456,13 +446,9 @@ namespace DiceTale
                 request.timeout = BundleTimeoutSeconds;
                 request.downloadHandler = new DownloadHandlerFile(zipPath) { removeFileOnAbort = true };
 
-                Progress = 0f;
-                StateChanged?.Invoke(this);
-
                 var operation = request.SendWebRequest();
                 while (!operation.isDone)
                 {
-                    Progress = request.downloadProgress;
                     yield return null;
                 }
 
@@ -492,8 +478,6 @@ namespace DiceTale
                     yield break;
                 }
             }
-
-            Progress = 1f;
 
             // 解压是同步 IO：放后台线程，别把主线程卡住（几十 MB 要几百毫秒）
             var partialRoot = LocalResourceStore.PartialRoot(RootPath, project, fingerprint);
