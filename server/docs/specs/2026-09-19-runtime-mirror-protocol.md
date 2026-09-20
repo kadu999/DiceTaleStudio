@@ -1,6 +1,7 @@
 # 运行态镜像协议（编辑器 → 服务端 → 前端）
 
-> 状态：**已实现**（2026-09-19）。取代 [`2026-09-18-frontend-integration-contract.md`](2026-09-18-frontend-integration-contract.md)
+> 状态：**已实现**（2026-09-19；2026-09-20 升到 **协议 v2**：新增 `resources_prepare`，让前端
+> **先下资源包、再载入场景**）。取代 [`2026-09-18-frontend-integration-contract.md`](2026-09-18-frontend-integration-contract.md)
 > （那份写的是「前端上报数据、后台按 id 寻址动作」的老模型，已整层删除）。
 
 ## 一句话
@@ -50,13 +51,14 @@
 | E→S | `scene_push` | `scene: SceneDoc \| null` | 推当前场景（整份）；`null` = 没打开场景 |
 | E→S | `editor_command` | `requestId`, `command` | 下发一条命令给前端 |
 | E→S | `editor_refresh` | — | 要一份当前运行态 |
-| S→E | `editor_state` | `runtimeActive`, `client`, `scene`, `serverTime` | 连接 / 断开 / 场景更新 / 开关闸时推 |
+| S→E | `editor_state` | `runtimeActive`, `client`, `scene`, `resources`, `serverTime` | 连接 / 断开 / 场景更新 / 开关闸时推 |
 | S→E | `editor_command_result` | `requestId`, `ok`, `reason?`, `effects?` | 前端回执（5s 不回 → `editor_error`） |
 | S→E | `editor_log` | `level`, `message`, `time` | 服务端日志（「前端已连接」等直接进运行日志） |
 | S→E | `editor_error` | `requestId?`, `reason` | 明确失败：前端未连接 / 未进入运行态 / 超时 |
 
 - `client = { name, version, connectedAt } | null`
 - `scene = { name, objectCount, updatedAt } | null`（前端镜像到哪了）
+- `resources = { project, fingerprint, fileCount, bytes, ok, at, reason? } | null`（前端本地资源包到哪了，见下）
 
 **推送时机**：进运行态时推一次；之后文档一变就推（编辑器去抖 **200ms** + 内容去重，
 撤销回原样 / 画布重绘不会空推）。**全量推送**，不做增量 patch——这个量级下最省心、永不失同步。
@@ -66,14 +68,18 @@
 | 方向 | type | 字段 |
 |---|---|---|
 | S→C | `server_hello` | `protocolVersion`, `sessionId`, `serverTime` |
+| S→C | `resources_prepare` | `project: string \| null`（**在 `scene_sync` 之前**：让前端先下资源包，前端会挂起场景直到资源就绪） |
 | S→C | `scene_sync` | `scene: SceneDoc \| null`（**全量**：连上立刻给缓存那份，之后每次推送转发） |
 | S→C | `command` | `requestId`, `command` |
 | S→C | `ping` | `seq`（15s 一拍；连续两拍没有 pong 判死并清理） |
 | C→S | `client_hello` | `protocolVersion`, `name`, `version`（版本不符 → close 4002） |
 | C→S | `command_result` | `requestId`, `ok`, `reason?`, `effects?`（**必须回**） |
+| C→S | `resources_ready` | `project`, `fingerprint`, `fileCount`, `bytes`, `ok`, `reason?`（本地资源包结果，成功失败都报） |
 | C→S | `pong` | `seq` |
 
 前端**不上报任何游戏数据**（旧协议里的 `register_*` / `report_*` / `request_join` / `heartbeat` 全没了）。
+`resources_ready` 不是游戏数据，它是**资源包拉到哪了**的回执：编辑器运行面板据此显示进度，
+不影响寻址、也不参与门控。
 
 ## 场景数据（`SceneDoc`）与前端映射
 

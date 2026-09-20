@@ -40,6 +40,21 @@ namespace DiceTale
         /// <summary>收到一条命令。</summary>
         public event Action<CommandRequest> CommandReceived;
 
+        /// <summary>
+        /// 服务端让前端**先把某个项目的资源包拉下来**（在 `scene_sync` 之前到）。
+        ///
+        /// 参数是项目名；`null` = 服务端还不知道当前项目，等场景到了再从镜像里推。
+        /// </summary>
+        public event Action<string> ResourcesPrepareRequested;
+
+        /// <summary>
+        /// 会话变成 Ready（收到 `server_hello`，握手完成）。
+        ///
+        /// 资源包用它补报一次结果：`resources_ready` 必须是一份**合法会话**里的消息——
+        /// 连接刚建立、还没握手完就发包，服务端（按协议）不认。
+        /// </summary>
+        public event Action SessionReady;
+
         /// <summary>会话状态变化（附带一句人能看懂的说明）。</summary>
         public event Action<ClientSessionState, string> StateChanged;
 
@@ -129,6 +144,7 @@ namespace DiceTale
                     }
 
                     SetState(ClientSessionState.Ready, $"已连接服务端（会话 {SessionId}）");
+                    SessionReady?.Invoke();
                     return;
 
                 case Protocol.TypeSceneSync:
@@ -138,6 +154,11 @@ namespace DiceTale
                     }
 
                     SceneReceived?.Invoke(SceneParser.Parse(JsonParser.GetObject(message, "scene")));
+                    return;
+
+                case Protocol.TypeResourcesPrepare:
+                    // 服务端提前告知项目名：前端据此**先下资源包、再载入场景**
+                    ResourcesPrepareRequested?.Invoke(JsonParser.GetString(message, "project"));
                     return;
 
                 case Protocol.TypeCommand:
@@ -172,6 +193,22 @@ namespace DiceTale
                 reason = reason ?? "",
                 effects = effects ?? new string[0],
             });
+        }
+
+        /// <summary>
+        /// 把本地资源包的结果报给服务端（编辑器运行面板据此显示「素材下到哪了」）。
+        ///
+        /// 连不上时**静默丢掉**：这不是致命信息，下一次成功上报会带上最新状态
+        /// （<see cref="ResourceBundleCache"/> 只在不重复时才发）。
+        /// </summary>
+        public void SendResourcesReady(Protocol.ResourcesReadyMessage message)
+        {
+            if (connection == null || message == null)
+            {
+                return;
+            }
+
+            connection.Send(message);
         }
 
         private static CommandRequest ParseCommand(Dictionary<string, object> message)

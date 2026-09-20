@@ -455,6 +455,138 @@ describe("运行态：门控 + 场景镜像中继", () => {
 
     expect(await closed).toBe(4002);
   });
+
+  it("顺序：前端一连上就先收到 resources_prepare，再收到 scene_sync", async () => {
+    const editor = await startEditor();
+    send(editor.socket, { type: "scene_push", scene: sampleScene("场景1", true) });
+    await editor.inbox.waitFor<ServerToEditorMessage>(
+      (message) => typeOf(message) === "editor_state" && (message as { scene?: unknown }).scene !== null,
+    );
+
+    // 记录前端**收到消息的先后顺序**（这是「先下资源、再载入场景」的协议依据）
+    const order: string[] = [];
+    const client = connect(`ws://${baseUrl}/client`);
+    sockets.push(client.socket);
+    client.socket.on("message", (data) => {
+      order.push((JSON.parse(data.toString()) as { type: string }).type);
+    });
+    await waitOpen(client.socket);
+
+    const prepare = await client.inbox.waitFor<ServerToClientMessage>(
+      (message) => typeOf(message) === "resources_prepare",
+    );
+    if (prepare.type !== "resources_prepare") {
+      throw new Error("类型不符");
+    }
+
+    // 项目名从场景里的资源逻辑 ID 推出（示例场景的地图贴图是 project:P/…）
+    expect(prepare.project).toBe("P");
+    await client.inbox.waitFor<ServerToClientMessage>((message) => typeOf(message) === "scene_sync");
+
+    expect(order.indexOf("resources_prepare")).toBeGreaterThanOrEqual(0);
+    expect(order.indexOf("scene_sync")).toBeGreaterThan(order.indexOf("resources_prepare"));
+  });
+
+  it("还没推过场景时：resources_prepare 的 project 是 null（前端照旧等场景）", async () => {
+    await startEditor();
+    const client = await startClient();
+
+    const prepare = await client.inbox.waitFor<ServerToClientMessage>(
+      (message) => typeOf(message) === "resources_prepare",
+    );
+    if (prepare.type !== "resources_prepare") {
+      throw new Error("类型不符");
+    }
+
+    expect(prepare.project).toBeNull();
+  });
+
+  it("运行中换项目：会给前端重发一次 resources_prepare", async () => {
+    const editor = await startEditor();
+    send(editor.socket, { type: "scene_push", scene: sampleScene("场景1", true) });
+
+    const client = await startClient();
+    await client.inbox.waitFor<ServerToClientMessage>(
+      (message) => typeOf(message) === "resources_prepare" && (message as { project?: string }).project === "P",
+    );
+
+    // 换成另一个项目的场景（同样的对象结构，只换资源 ID 里的项目名）
+    const other = sampleScene("场景1", true);
+    other.objects[0]!.map = {
+      image: { id: "project:Q/Assets/images/map.png", width: 1920, height: 1080 },
+      grid: { width: 64, height: 36 },
+      rowOrder: "bottom-up",
+      cells: { encoding: "rle", runs: [[0, 2304]] },
+    };
+    send(editor.socket, { type: "scene_push", scene: other });
+
+    const again = await client.inbox.waitFor<ServerToClientMessage>(
+      (message) => typeOf(message) === "resources_prepare" && (message as { project?: string }).project === "Q",
+    );
+    expect(typeOf(again)).toBe("resources_prepare");
+  });
+
+  it("前端上报资源包结果：编辑器在状态里看得见，关闸后清掉", async () => {
+    const editor = await startEditor();
+    const client = await startClient();
+    send(client.socket, { type: "client_hello", protocolVersion: PROTOCOL_VERSION, name: "DiceTale Unity", version: "1.0.0" });
+
+    send(client.socket, {
+      type: "resources_ready",
+      project: "测试项目",
+      fingerprint: "398ff8e23aada15d",
+      fileCount: 14,
+      bytes: 39_765_209,
+      ok: true,
+    });
+
+    const withResources = await editor.inbox.waitFor<ServerToEditorMessage>(
+      (message) => typeOf(message) === "editor_state" && (message as { resources?: unknown }).resources !== null,
+    );
+    if (withResources.type !== "editor_state") {
+      throw new Error("类型不符");
+    }
+
+    expect(withResources.resources?.project).toBe("测试项目");
+    expect(withResources.resources?.fileCount).toBe(14);
+    expect(withResources.resources?.ok).toBe(true);
+    expect(withResources.resources?.fingerprint).toBe("398ff8e23aada15d");
+
+    // 失败也要如实记下来（不假装就绪）
+    send(client.socket, {
+      type: "resources_ready",
+      project: "测试项目",
+      fingerprint: "398ff8e23aada15d",
+      fileCount: 0,
+      bytes: 0,
+      ok: false,
+      reason: "解压资源包失败：CRC 校验失败",
+    });
+
+    const failed = await editor.inbox.waitFor<ServerToEditorMessage>(
+      (message) =>
+        typeOf(message) === "editor_state" &&
+        (message as { resources?: { ok?: boolean } }).resources?.ok === false,
+    );
+    if (failed.type !== "editor_state") {
+      throw new Error("类型不符");
+    }
+
+    expect(failed.resources?.reason).toMatch(/CRC/);
+
+    // 关闸：运行态里的资源包状态一并清掉（下一次运行重新算）
+    send(editor.socket, { type: "runtime_stop" });
+    const cleared = await editor.inbox.waitFor<ServerToEditorMessage>(
+      (message) =>
+        typeOf(message) === "editor_state" &&
+        (message as { runtimeActive?: boolean }).runtimeActive === false,
+    );
+    if (cleared.type !== "editor_state") {
+      throw new Error("类型不符");
+    }
+
+    expect(cleared.resources).toBeNull();
+  });
 });
 
 describe("后端 HTTP 接口", () => {

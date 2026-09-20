@@ -14,7 +14,7 @@ import {
   type ServerToClientMessage,
   type ServerToEditorMessage,
 } from "@dts/protocol";
-import { RuntimeSession, type RuntimeClientInfo } from "./runtime-session";
+import { RuntimeSession, projectNameOfScene, type RuntimeClientInfo } from "./runtime-session";
 
 export type LogLevel = "info" | "warn" | "error";
 export type HubLogger = (level: LogLevel, message: string) => void;
@@ -186,6 +186,9 @@ export class RuntimeHub {
       sessionId: this.session.sessionId,
       serverTime: Date.now(),
     });
+    // 先把「当前是哪个项目」告诉前端：它据此**先下资源包、再载入场景**。
+    // 必须在 scene_sync 之前发——顺序反了就成了「场景先到、资源后下」。
+    this.prepareClientResources(ws);
     // 立刻补一份场景：前端后连上也能拿到全量镜像
     this.sendTo(ws, { type: "scene_sync", scene: this.session.scene });
 
@@ -275,6 +278,34 @@ export class RuntimeHub {
           this.client.missedPongs = 0;
         }
 
+        return;
+      }
+
+      case "resources_ready": {
+        // 前端报它本地资源包的结果：只记状态 + 广播给编辑器，不参与任何寻址
+        const info = {
+          project: message.project,
+          fingerprint: message.fingerprint,
+          fileCount: message.fileCount,
+          bytes: message.bytes,
+          ok: message.ok,
+          at: Date.now(),
+          ...(message.reason === undefined ? {} : { reason: message.reason }),
+        };
+
+        this.session.setResources(info);
+        this.log(
+          message.ok ? "info" : "warn",
+          `前端资源包「${message.project}」${message.ok ? "就绪" : "失败"}` +
+            `（${message.fileCount} 个文件 / ${message.bytes} 字节 / ${message.fingerprint}）` +
+            `${message.reason === undefined ? "" : `：${message.reason}`}`,
+        );
+        this.broadcastEditorState();
+        this.logToEditors(
+          message.ok ? "info" : "warn",
+          `前端资源包${message.ok ? "已就绪" : "失败"}：「${message.project}」${message.fileCount} 个文件` +
+            `${message.reason === undefined ? "" : `（${message.reason}）`}`,
+        );
         return;
       }
 
@@ -394,8 +425,15 @@ export class RuntimeHub {
       }
 
       case "scene_push": {
+        const projectChanged = projectNameOfScene(message.scene) !== this.session.resourceProject;
         this.session.setScene(message.scene);
+
         if (this.client !== undefined) {
+          // 项目换了（或编辑器第一次推场景）→ 先让前端换资源包，再给场景
+          if (projectChanged) {
+            this.prepareClientResources(this.client.ws);
+          }
+
           this.sendTo(this.client.ws, { type: "scene_sync", scene: message.scene });
         }
 
@@ -474,6 +512,16 @@ export class RuntimeHub {
     return createRequestId("cmd");
   }
 
+  /**
+   * 告诉前端「当前是哪个项目」，让它先把资源包拉下来。
+   *
+   * 在 `scene_sync` **之前**发。项目还不知道（编辑器没推过场景）时发 `null`，
+   * 前端就照旧等场景到了再从镜像里推项目名。
+   */
+  private prepareClientResources(ws: WebSocket): void {
+    this.sendTo(ws, { type: "resources_prepare", project: this.session.resourceProject });
+  }
+
   // ------------------------------------------------------------ 发送
 
   private editorStateMessage(): ServerToEditorMessage {
@@ -483,6 +531,7 @@ export class RuntimeHub {
       runtimeActive: snapshot.runtimeActive,
       client: snapshot.client,
       scene: snapshot.scene,
+      resources: snapshot.resources,
       serverTime: Date.now(),
     };
   }

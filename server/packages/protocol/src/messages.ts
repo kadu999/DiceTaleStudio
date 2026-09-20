@@ -18,8 +18,13 @@ import { z } from "zod";
  * 协议版本：`PROTOCOL_VERSION`。两端不一致时服务端以 close code `4002` 断开。
  */
 
-/** 协议版本：任何不兼容改动都要 +1（前端在 `client_hello` 里报自己的版本）。 */
-export const PROTOCOL_VERSION = 1;
+/**
+ * 协议版本：任何不兼容改动都要 +1（前端在 `client_hello` 里报自己的版本）。
+ *
+ * v2（2026-09-20）：`/client` 新增 `resources_prepare`（服务端主动告诉前端「当前是哪个项目」，
+ * 让前端**先把资源包下完、再载入场景**）。老前端收到不认识的类型会告警并丢弃，所以是破坏性改动。
+ */
+export const PROTOCOL_VERSION = 2;
 
 /** 未进入运行态时拒绝 `/client` 升级的 HTTP 状态与原因头。 */
 export const RUNTIME_INACTIVE_STATUS = 503;
@@ -120,6 +125,7 @@ export type SceneObjectPayload = z.infer<typeof sceneObjectSchema>;
 export type SoundLayer = z.infer<typeof soundLayerSchema>;
 export type ClientInfo = z.infer<typeof clientInfoSchema>;
 export type SceneInfo = z.infer<typeof sceneInfoSchema>;
+export type ResourcesInfo = z.infer<typeof resourcesInfoSchema>;
 
 // ---------------------------------------------------------------- 命令（触发器，不是数据）
 
@@ -168,6 +174,23 @@ export const sceneInfoSchema = z.object({
   updatedAt: z.number().int(),
 });
 
+/**
+ * 前端本地资源包的摘要（编辑器用它显示「素材下到哪了」）。
+ *
+ * 前端连上后会把当前项目的 `Assets/` 整包拉到本地（见 `docs/specs/` 的资源包说明），
+ * 拉完（或拉失败）回一条 `resources_ready`，服务端记在这里并广播给编辑器。
+ * `null` = 这次运行态还没收到过前端的资源包回执。
+ */
+export const resourcesInfoSchema = z.object({
+  project: z.string(),
+  fingerprint: z.string(),
+  fileCount: z.number().int().nonnegative(),
+  bytes: z.number().int().nonnegative(),
+  ok: z.boolean(),
+  at: z.number().int(),
+  reason: z.string().optional(),
+});
+
 // ---------------------------------------------------------------- 编辑器 → 服务端
 
 export const editorToServerSchema = z.discriminatedUnion("type", [
@@ -200,6 +223,8 @@ export const serverToEditorSchema = z.discriminatedUnion("type", [
     runtimeActive: z.boolean(),
     client: clientInfoSchema.nullable(),
     scene: sceneInfoSchema.nullable(),
+    /** 前端本地资源包状态（没收到回执时 null）。 */
+    resources: resourcesInfoSchema.nullable(),
     serverTime: z.number().int(),
   }),
   z.object({
@@ -235,6 +260,21 @@ export const clientToServerSchema = z.discriminatedUnion("type", [
   }),
   commandResultSchema,
   z.object({ type: z.literal("pong"), seq: z.number().int() }),
+  /**
+   * 前端把本地资源包的结果报上来（成功或失败都报）。
+   *
+   * 它**不影响协议版本**：老前端的入站消息里没有这一条，服务端只是收不到回执；
+   * 新前端的出站多这一条，服务端 schema 认它。
+   */
+  z.object({
+    type: z.literal("resources_ready"),
+    project: z.string().min(1),
+    fingerprint: z.string().min(1),
+    fileCount: z.number().int().nonnegative(),
+    bytes: z.number().int().nonnegative(),
+    ok: z.boolean(),
+    reason: z.string().optional(),
+  }),
 ]);
 
 export type ClientToServerMessage = z.infer<typeof clientToServerSchema>;
@@ -250,6 +290,14 @@ export const serverToClientSchema = z.discriminatedUnion("type", [
   }),
   /** 全量场景：连上立刻给一份缓存，之后每次 `scene_push` 转发一份。 */
   z.object({ type: z.literal("scene_sync"), scene: sceneSchema.nullable() }),
+  /**
+   * 让前端**先把当前项目的资源包拉下来**（在 `scene_sync` 之前发）。
+   *
+   * 为什么需要它：前端要从镜像里的逻辑 ID 才能推出项目名，而镜像是 `scene_sync` 带来的——
+   * 那就成了「场景先到、资源后下」。这条消息把项目名提前告知，前端就能**先下载、再载入场景**。
+   * `project` 为 null = 服务端还不知道当前项目（编辑器还没推过场景），前端照常等场景。
+   */
+  z.object({ type: z.literal("resources_prepare"), project: z.string().min(1).nullable() }),
   z.object({
     type: z.literal("command"),
     requestId: z.string().min(1),

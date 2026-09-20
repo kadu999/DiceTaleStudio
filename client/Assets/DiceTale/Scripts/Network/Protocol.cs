@@ -9,13 +9,34 @@ namespace DiceTale
     /// </summary>
     public static class Protocol
     {
-        public const int Version = 1;
+        /// <summary>
+        /// 协议版本：与 `server/packages/protocol` 的 `PROTOCOL_VERSION` 一一对应。
+        ///
+        /// v2（2026-09-20）：服务端新增 `resources_prepare`——连上就把「当前是哪个项目」告诉前端，
+        /// 让前端**先把资源包下完、再载入场景**。
+        /// </summary>
+        public const int Version = 2;
 
         // 服务端 → 前端
         public const string TypeServerHello = "server_hello";
         public const string TypeSceneSync = "scene_sync";
         public const string TypeCommand = "command";
         public const string TypePing = "ping";
+        /// <summary>「先把当前项目的资源包拉下来」（在 `scene_sync` 之前到）。</summary>
+        public const string TypeResourcesPrepare = "resources_prepare";
+
+        // 前端 → 服务端
+        public const string TypeClientHello = "client_hello";
+        public const string TypeCommandResult = "command_result";
+        public const string TypePong = "pong";
+        /// <summary>本地资源包结果（成功 / 失败都报，编辑器运行面板据此显示进度）。</summary>
+        public const string TypeResourcesReady = "resources_ready";
+
+        // 资源包（HTTP，不走 WebSocket）
+        /// <summary>问项目资源清单（拿指纹，决定要不要下整包）。</summary>
+        public const string ManifestPath = "/api/resources/manifest?project=";
+        /// <summary>整包 zip；带 `&v=<指纹>` 时指纹一致则服务端回 304。</summary>
+        public const string BundlePath = "/api/resources/bundle?project=";
 
         // 命令种类
         public const string CommandPlaySound = "play_sound";
@@ -71,6 +92,26 @@ namespace DiceTale
             public bool ok;
             public string reason = "";
             public string[] effects = new string[0];
+        }
+
+        /// <summary>
+        /// 本地资源包结果。同样**不留 null**：服务端 zod 里 `reason` 是可选字符串，
+        /// 但显式 `null` 会校验失败，所以空值一律给 `""`。
+        /// </summary>
+        [System.Serializable]
+        public class ResourcesReadyMessage
+        {
+            public string type = "resources_ready";
+            public string project = "";
+            public string fingerprint = "";
+            public int fileCount;
+            /// <summary>
+            /// 整包字节数。用 `long` 是因为单个包可能超过 int 上限（2 GB）——
+            /// 服务端 zod 收的是 JSON 数字，不区分整型宽度，`JsonUtility` 也照常写成数字。
+            /// </summary>
+            public long bytes;
+            public bool ok;
+            public string reason = "";
         }
     }
 

@@ -247,6 +247,43 @@ describe("协议：前端 → 服务端", () => {
     expect(() => parseClientToServer({ type: "command_result", ok: true })).toThrow(/校验失败/);
     expect(() => parseClientToServer({ type: "command_result", requestId: "r" })).toThrow(/校验失败/);
   });
+
+  it("resources_ready：成功与失败都收，字段缺失被拒", () => {
+    const ready = parseClientToServer({
+      type: "resources_ready",
+      project: "测试项目",
+      fingerprint: "398ff8e23aada15d",
+      fileCount: 14,
+      bytes: 39_765_209,
+      ok: true,
+    });
+    expect(ready.type).toBe("resources_ready");
+    if (ready.type === "resources_ready") {
+      expect(ready.project).toBe("测试项目");
+      expect(ready.fileCount).toBe(14);
+      expect(ready.bytes).toBe(39_765_209);
+      expect(ready.reason).toBeUndefined();
+    }
+
+    const failed = parseClientToServer({
+      type: "resources_ready",
+      project: "测试项目",
+      fingerprint: "398ff8e23aada15d",
+      fileCount: 0,
+      bytes: 0,
+      ok: false,
+      reason: "解压资源包失败：CRC 校验失败",
+    });
+    expect(failed.type === "resources_ready" && failed.reason).toMatch(/CRC/);
+
+    // 指纹是「本地这份是哪一版」的依据，缺了就没法判断，必须拒
+    expect(() =>
+      parseClientToServer({ type: "resources_ready", project: "p", fileCount: 0, bytes: 0, ok: true }),
+    ).toThrow(/校验失败/);
+    expect(() => parseClientToServer({ type: "resources_ready", fingerprint: "f", ok: true })).toThrow(
+      /校验失败/,
+    );
+  });
 });
 
 describe("协议：服务端 → 前端", () => {
@@ -283,6 +320,7 @@ describe("协议：服务端 → 编辑器", () => {
       runtimeActive: true,
       client: { name: "DiceTale Unity", version: "1.0.0", connectedAt: 123 },
       scene: { name: "场景1", objectCount: 3, updatedAt: 456 },
+      resources: null,
       serverTime: 789,
     });
 
@@ -299,9 +337,48 @@ describe("协议：服务端 → 编辑器", () => {
       runtimeActive: false,
       client: null,
       scene: null,
+      resources: null,
       serverTime: 1,
     });
     expect(state.type === "editor_state" && state.client).toBeNull();
+    expect(state.type === "editor_state" && state.resources).toBeNull();
+  });
+
+  it("editor_state 带上前端的资源包状态（就绪 / 失败）", () => {
+    const ready = parseServerToEditor({
+      type: "editor_state",
+      runtimeActive: true,
+      client: null,
+      scene: null,
+      resources: {
+        project: "测试项目",
+        fingerprint: "abc123",
+        fileCount: 12,
+        bytes: 37_000_000,
+        ok: true,
+        at: 1,
+      },
+      serverTime: 2,
+    });
+    expect(ready.type === "editor_state" && ready.resources?.fileCount).toBe(12);
+
+    const failed = parseServerToEditor({
+      type: "editor_state",
+      runtimeActive: true,
+      client: null,
+      scene: null,
+      resources: {
+        project: "测试项目",
+        fingerprint: "abc123",
+        fileCount: 0,
+        bytes: 0,
+        ok: false,
+        at: 3,
+        reason: "zip 解压失败",
+      },
+      serverTime: 4,
+    });
+    expect(failed.type === "editor_state" && failed.resources?.reason).toBe("zip 解压失败");
   });
 
   it("editor_command_result / editor_log / editor_error", () => {
