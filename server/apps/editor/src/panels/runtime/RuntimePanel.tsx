@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useEditorStore } from "../../state/editor-store";
 import { SOUND_LAYER_LABELS } from "@dts/document";
 
@@ -24,6 +25,10 @@ function formatBytes(bytes: number): string {
  *
  * 「可触发动作」那张表已经删掉：前端不再上报动作（旧模型），能下发的命令就是声音那两条，
  * 入口在声音对象的属性面板里。
+ *
+ * **日志要能带走**：外壳全局禁用了文本选择（`#root { user-select: none }`，为了画布手感），
+ * 但日志是出故障时唯一能拿给人看的东西——这里放开选择，另给一个「复制」按钮。
+ * 前端回执里的失败原因（「命令 执行失败：…」）就靠它带出来，不然只能对着屏幕念。
  */
 export function RuntimePanel(): React.JSX.Element {
   const mode = useEditorStore((state) => state.mode);
@@ -32,6 +37,25 @@ export function RuntimePanel(): React.JSX.Element {
   const activeSceneName = useEditorStore((state) => state.activeSceneName);
   const pushRuntimeScene = useEditorStore((state) => state.pushRuntimeScene);
   const clearRuntimeLogs = useEditorStore((state) => state.clearRuntimeLogs);
+  /** 「已复制」的回执（1.5 秒后自己消失，不用再点一下确认）。 */
+  const [copied, setCopied] = useState(false);
+
+  const logText = runtime.logs.map((entry) => `${entry.time} ${entry.message}`).join("\n");
+
+  const copyLogs = (): void => {
+    if (logText.length === 0) {
+      return;
+    }
+
+    // 剪贴板在本地页面（安全上下文）里可用；老浏览器没有这个 API 时退回「选中自己复制」
+    void navigator.clipboard?.writeText(logText).then(
+      () => {
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 1500);
+      },
+      () => setCopied(false),
+    );
+  };
 
   const activeScene = scenes.find((scene) => scene.name === activeSceneName) ?? null;
   const clientConnected = runtime.client !== null;
@@ -214,12 +238,27 @@ export function RuntimePanel(): React.JSX.Element {
 
       <div className="flex items-center justify-between border-t border-[var(--color-editor-border)] px-2 py-0.5 text-[10px] text-[var(--color-editor-text-dim)]">
         <span>日志 {runtime.logs.length}</span>
-        <button type="button" className="toolbar-button hover:toolbar-button-hover" onClick={clearRuntimeLogs}>
-          清空
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            data-testid="runtime-logs-copy"
+            className="toolbar-button hover:toolbar-button-hover"
+            title="把日志全部复制到剪贴板（出故障时贴给开发看）"
+            onClick={copyLogs}
+          >
+            {copied ? "已复制" : "复制"}
+          </button>
+          <button type="button" className="toolbar-button hover:toolbar-button-hover" onClick={clearRuntimeLogs}>
+            清空
+          </button>
+        </div>
       </div>
 
-      <div className="h-28 min-h-0 overflow-auto border-t border-[var(--color-editor-border)] bg-black/30 px-2 py-1 font-mono text-[10px] leading-relaxed">
+      {/* `select-text`：外壳全局禁用了文本选择，日志这一块放开（能手动选中、也能点上面的「复制」） */}
+      <div
+        data-testid="runtime-logs"
+        className="h-28 min-h-0 select-text overflow-auto border-t border-[var(--color-editor-border)] bg-black/30 px-2 py-1 font-mono text-[10px] leading-relaxed"
+      >
         {runtime.logs.length === 0 ? (
           <div className="text-[var(--color-editor-text-dim)]">（暂无日志）</div>
         ) : (
