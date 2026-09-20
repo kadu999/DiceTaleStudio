@@ -101,6 +101,49 @@ describe("协议：场景（镜像的那份对象数据）", () => {
     expect(scene.objects[0]?.position).toBeNull();
   });
 
+  it("单轴缩放（v11）是可选的：带与不带都能解析，且原样传给前端", () => {
+    // 不带：老编辑器 / 等比对象——协议必须照旧收下（**不能**因为缺字段就报错，
+    // 那会让所有旧前端与旧文件都连不上）
+    const uniform = sceneSchema.parse({
+      name: "s",
+      objects: [
+        {
+          id: "a",
+          name: "a",
+          kind: "SceneObject",
+          active: true,
+          sortingOrder: 0,
+          position: { x: 0, y: 0 },
+          rotation: 0,
+          scale: 2,
+        },
+      ],
+    });
+    expect(uniform.objects[0]?.scaleX).toBeUndefined();
+    expect(uniform.objects[0]?.scaleY).toBeUndefined();
+
+    // 带上：新编辑器发得出，前端按需取用（旧前端忽略它们，只看到等比 `scale`）
+    const perAxis = sceneSchema.parse({
+      name: "s",
+      objects: [
+        {
+          id: "a",
+          name: "a",
+          kind: "SceneObject",
+          active: true,
+          sortingOrder: 0,
+          position: { x: 0, y: 0 },
+          rotation: 0,
+          scale: 1,
+          scaleX: 4,
+          scaleY: 0.25,
+        },
+      ],
+    });
+    expect(perAxis.objects[0]?.scaleX).toBe(4);
+    expect(perAxis.objects[0]?.scaleY).toBe(0.25);
+  });
+
   it("编辑器侧的额外字段不报错（前端按需取用）", () => {
     const parsed = sceneSchema.parse({
       name: "s",

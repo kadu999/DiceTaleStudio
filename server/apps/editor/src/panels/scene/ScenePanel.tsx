@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  effectiveScaleX,
+  effectiveScaleY,
   objectImage,
   objectsInDrawOrder,
   type SceneDoc,
@@ -8,15 +10,23 @@ import {
 } from "@dts/document";
 import {
   createCanvasSceneRenderer,
+  gizmoScreenGeometry,
+  hitTestGizmoHandles,
   hitTestRect,
+  isDrawableFrame,
   screenToWorld,
+  type GizmoHandle,
   type SceneLayer,
   type SceneRenderer,
+  type SceneToolHandles,
+  type TransformTool,
+  type Viewport,
 } from "@dts/renderer";
 import {
   worldRectBottom,
   worldRectLeft,
   worldRectOf,
+  type ImageSize,
   type WorldRect,
 } from "@dts/grid";
 import { sceneImage, sceneImageError, subscribeSceneImage } from "../../services/scene-image";
@@ -46,25 +56,110 @@ const MIDDLE_BUTTON = 1;
 /**
  * 对象在画布上占据的世界矩形 —— 拾取（碰撞体）、选中框、贴图铺的那块**共用这一个**。
  *
- * 尺寸 = 「贴图里声明的尺寸（没有图片就用 `COLLIDER_SIZE`）× **对象的缩放**」：
- * 三件事只要有一件用了别的尺寸，就会出现「看着在那儿、点不到」或「框和图片不重合」。
- * 地图也是走这条路，所以**缩放地图 = 贴图与它的网格一起缩放**（格子尺寸是
- * `贴图尺寸 ÷ 列数` 算出来的，矩形一变它跟着变）。
+ * 尺寸 = 「贴图里声明的尺寸（没有图片就用 `COLLIDER_SIZE`）× **该轴的有效缩放**」。
+ * 有效缩放走 `effectiveScaleX` / `effectiveScaleY`：文档里等比只写 `scale`，
+ * 单轴（v11 起的 `scaleX` / `scaleY`）才写两个轴——直接读字段会漏掉「缺省 = 用等比值」。
+ *
+ * **返回的是「旋转之后」的外框**（轴对齐包围盒），不是原始矩形：
+ *
+ * - 拾取走 `hitTestRect(point, rect, rotation)`（反向旋转后比半宽半高），而「把原始矩形转一下」
+ *   与「把外框转一下」覆盖的是同一块区域（`|cos|²+|sin|²=1`），所以拾取与旋转前完全一致；
+ * - 选中框与缩放手柄画在这个外框上并同样转 `rotation`，于是「看到的框」与「点得到的范围」
+ *   依旧是同一块——这正是这条注释开头那句约定要的东西。
+ *
+ * 等比 + 不旋转时结果与以前**逐值相同**（外框就是矩形本身），所以老场景的样子一点不变。
  *
  * 缩放值坏掉时（0 / 负数 / NaN，只可能来自手写文件）按 `1` 画：渲染不能因为一个坏数字
- * 就把整块对象画没，那种数据由 `validateScene` 报错。
+ * 就把整块对象画没，那种数据由 `validateScene` 报错（`effectiveScale*` 已经兜过底）。
  */
 export function displayRectOf(object: SceneObjectDoc): WorldRect | undefined {
   if (object.position === null) {
     return undefined;
   }
 
+  return worldRectOf(object.position, displaySizeOf(object));
+}
+
+/** 显示矩形（**旋转后的外框**）的尺寸；`displayRectOf` 与手柄几何共用它。 */
+function displaySizeOf(object: SceneObjectDoc): ImageSize {
   // 声音对象画的是**固定的内置图标**（不允许改贴图），所以它那块矩形就是图标的大小：
   // 手写文件里万一挂了 `image` 也不认（`validateScene` 会警告），
   // 免得出现「选中框按贴图算、画出来的却是徽标」这种对不上的情况
   const base = object.kind === "PlaySound" ? COLLIDER_SIZE : objectImage(object) ?? COLLIDER_SIZE;
-  const scale = Number.isFinite(object.scale) && object.scale > 0 ? object.scale : 1;
-  return worldRectOf(object.position, { width: base.width * scale, height: base.height * scale });
+  const width = base.width * effectiveScaleX(object);
+  const height = base.height * effectiveScaleY(object);
+
+  const rotation = Number.isFinite(object.rotation) ? object.rotation : 0;
+  return rotatedBoundsOf(width, height, rotation);
+}
+
+/**
+ * 画布上给某个对象算出一份**屏幕手柄几何**（移动轴 / 旋转环 / 缩放块）。
+ *
+ * 与命中测试用的是同一个 `gizmoScreenGeometry`，所以「画出来的」与「点得到的」
+ * 必然是同一份坐标——这也是把它抽成函数而不是各写一遍的理由。
+ *
+ * 缩放柄的位置取自 `displayRectOf`（旋转后的外框）：它与选中框、与拾取范围同一块矩形。
+ */
+function buildToolHandles(
+  object: SceneObjectDoc,
+  tool: TransformTool,
+  viewport: Viewport,
+): SceneToolHandles | undefined {
+  const position = object.position;
+  if (position === null) {
+    return undefined;
+  }
+
+  const local = localHalfSizeOf(object);
+  const bounds = rotatedBoundsOf(local.width * 2, local.height * 2, object.rotation);
+  const frame: WorldRect = worldRectOf(position, bounds);
+  const geometry = gizmoScreenGeometry(frame, object.rotation, viewport);
+
+  return {
+    tool,
+    center: geometry.center,
+    corners: geometry.corners,
+    axes: geometry.axes,
+    scale: geometry.scale,
+    ringRadius: geometry.ringRadius,
+    locked: object.locked,
+    drawable: isDrawableFrame(frame, viewport),
+  };
+}
+
+/**
+ * 一个「宽 × 高」的矩形绕中心转 `rotation` 之后的**轴对齐外框**尺寸。
+ *
+ * 拾取与选中框都按它来（见 `displayRectOf` 的说明），旋转中的手柄也要用它——
+ * 否则拖旋转环时手柄会立刻跳一下（外框还没跟上新的角度）。
+ */
+function rotatedBoundsOf(
+  width: number,
+  height: number,
+  rotation: number,
+): { width: number; height: number } {
+  if (rotation === 0) {
+    return { width, height };
+  }
+
+  const cos = Math.abs(Math.cos(rotation));
+  const sin = Math.abs(Math.sin(rotation));
+  return { width: width * cos + height * sin, height: width * sin + height * cos };
+}
+
+/**
+ * 对象的**局部**半宽 / 半高（世界单位，未旋转）。
+ *
+ * 手柄几何与缩放锚点都要用它：外框（`displayRectOf`）是旋转后的包围盒，
+ * 而手柄、四角、对侧锚点都定义在对象自己的轴上，拿外框去算会算到别处去。
+ */
+function localHalfSizeOf(object: SceneObjectDoc): { readonly width: number; readonly height: number } {
+  const base = object.kind === "PlaySound" ? COLLIDER_SIZE : objectImage(object) ?? COLLIDER_SIZE;
+  return {
+    width: (base.width * effectiveScaleX(object)) / 2,
+    height: (base.height * effectiveScaleY(object)) / 2,
+  };
 }
 
 /**
@@ -138,6 +233,9 @@ export function ScenePanel(): React.JSX.Element {
 
   const activeSceneName = useEditorStore((state) => state.activeSceneName);
   const scenes = useEditorStore((state) => state.scenes);
+  // 订阅视口：只用来把当前变换写进 DOM 属性（给 E2E 精确换算手柄位置用）。
+  // 绘制循环本来每帧从 getState() 直读，这个订阅不参与绘制路径
+  const viewport = useEditorStore((state) => state.viewport);
   const setActiveScene = useEditorStore((state) => state.setActiveScene);
   const openObjectDialog = useEditorStore((state) => state.openObjectDialog);
   const resetViewport = useEditorStore((state) => state.resetViewport);
@@ -237,8 +335,15 @@ export function ScenePanel(): React.JSX.Element {
     const pointers = new Map<number, { x: number; y: number }>();
     let pinchDistance = 0;
     let pinchMid: { x: number; y: number } | null = null;
-    /** 正在拖动的对象：命中对象矩形后进入拖动，这一下就不再平移画布。 */
-    let dragging: { pointerId: number; objectId: string } | null = null;
+    /**
+     * 正在拖的手柄（一次只有一个）。移动轴 / 旋转环 / 缩放块都归它，
+     * 一切都相对按下那一刻的快照算（快照在 store 里，见 `beginObjectTransform`）。
+     *
+     * **对象本体不进这里**：对象不跟手拖走，点它只是选中它。
+     *
+     * 手柄拖拽期间也**不再平移画布**：这一下已经被手柄接管了。
+     */
+    let drag: { readonly pointerId: number; readonly handle: GizmoHandle } | null = null;
 
     /**
      * 空白处按下的那一下：**是拖（平移画布）还是点（取消选中）**，要等抬手才知道。
@@ -309,8 +414,90 @@ export function ScenePanel(): React.JSX.Element {
       return undefined;
     };
 
+    /** 当前**单选**的那个对象；多选 / 没选 / 没落位都返回 `undefined`（手柄只作用于单选）。 */
+    const singleSelectedObject = (): SceneObjectDoc | undefined => {
+      const store = useEditorStore.getState();
+      if (store.selectedObjectIds.length !== 1) {
+        return undefined;
+      }
+
+      const scene = currentScene();
+      const id = store.selectedObjectIds[0];
+      return scene?.objects.find((object) => object.id === id);
+    };
+
+    /** 这一根移动柄约束的是哪个轴；旋转 / 缩放柄返回 `undefined`（它们不受轴约束）。 */
+    const moveAxisOf = (handle: GizmoHandle): "x" | "y" | undefined => {
+      if (handle === "move-x") {
+        return "x";
+      }
+
+      return handle === "move-y" ? "y" : undefined;
+    };
+
+    /**
+     * 按下点是不是落在手柄上——是就进入变换拖拽并返回 `true`。
+     *
+     * 手柄几何与绘制**共用 `gizmoScreenGeometry`**：两边各算一套迟早会变成
+     * 「看得见的手柄点不中、点得中的地方没有手柄」。
+     *
+     * 锁定的对象**手柄画着但点不到**：它照样有手柄（画成灰的，说明「为什么拖不动」），
+     * 但按下去等于按在对象上，走后面的老逻辑。
+     */
+    const tryBeginHandleDrag = (event: PointerEvent, local: { x: number; y: number }): boolean => {
+      const object = singleSelectedObject();
+      if (object === undefined || object.position === null || object.locked) {
+        return false;
+      }
+
+      const store = useEditorStore.getState();
+      const half = localHalfSizeOf(object);
+      // **尺寸要用整宽整除**：`localHalfSizeOf` 给的是半宽半高，而矩形收的是整尺寸。
+      // 少了这个 ×2，命中区会缩成视觉手柄的一半——画在 ±60 的手柄只在 ±30 内可点，
+      // 于是「明明点在手柄上却没反应」。这正是绘制（`buildToolHandles`）与命中必须
+      // 共用同一份几何的原因，也是这条注释留在这里的原因
+      const geometry = gizmoScreenGeometry(
+        worldRectOf(object.position, { width: half.width * 2, height: half.height * 2 }),
+        object.rotation,
+        store.viewport,
+      );
+      const handle = hitTestGizmoHandles(local, store.ui.tool, geometry);
+      if (handle === undefined) {
+        return false;
+      }
+
+      // 快照记的是**按下那一刻指针的真实世界坐标**（不是手柄中心）：
+      // - 旋转按「指针方位角的变化量」算，基准必须是按下时的真实方位角；
+      //   若把起点吸到对象中心，`pointerAngle` 恒为 0，第一次移动就会把对象
+      //   猛地拽到「指针绝对角度」上（实测：从环上按下再拖会直接跳到 90°）；
+      // - 缩放也按「指针相对锚点的距离比例」算，起点同样必须是真实指针位置。
+      const start = store.beginObjectTransform(
+        object.id,
+        handle,
+        toWorld(local),
+        half.width,
+        half.height,
+      );
+      if (start === undefined) {
+        return false;
+      }
+
+      drag = { pointerId: event.pointerId, handle };
+      container.setPointerCapture(event.pointerId);
+      return true;
+    };
+
     const onPointerDown = (event: PointerEvent): void => {
       if (!hasScene()) {
+        return;
+      }
+
+      // **画布上的浮层控件（左下角的工具开关）要能正常点**。
+      // 这个监听挂在容器上，按钮按下时事件同样会冒泡到这里；若照常 `setPointerCapture`，
+      // 指针就被容器抢走了——`pointerup` / `click` 都不会再发给按钮，表现是「按钮点了没反应」。
+      // 所以只接管**落在画布本身**的按压：`<canvas>` 撑满容器、也是唯一的绘图面，
+      // 其余 target（浮层控件）一律放行。
+      if (!(event.target instanceof HTMLCanvasElement)) {
         return;
       }
 
@@ -328,6 +515,12 @@ export function ScenePanel(): React.JSX.Element {
       }
 
       const local = toLocal(event.clientX, event.clientY);
+
+      // 1) **手柄优先**：手柄压在对象上（甚至压到别的对象上），必须先判它。
+      //    只在「单选 + 未锁 + 对象已落位」时才有手柄——多选不下发变换（见文件顶部说明）。
+      if (tryBeginHandleDrag(event, local)) {
+        return;
+      }
 
       const hit = hitTestObject(local);
       if (hit !== undefined) {
@@ -347,8 +540,12 @@ export function ScenePanel(): React.JSX.Element {
           return;
         }
 
-        dragging = { pointerId: event.pointerId, objectId: hit };
+        // **对象一律不跟手拖走**：点它就只是选中它。
+        // 想摆位置用「移动」工具的 X / Y 箭头——于是「拖一下把对象碰歪」这件事
+        // 在任何工具下都不会发生（手柄模式下这一条同样成立，手柄优先命中已经在上面判过了）。
+        // 按住对象拖动 = 平移画布（与锁定对象同一套待遇），手势仍然有用。
         container.setPointerCapture(event.pointerId);
+        pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
         return;
       }
 
@@ -364,10 +561,16 @@ export function ScenePanel(): React.JSX.Element {
 
       const store = useEditorStore.getState();
 
-      if (dragging !== null && dragging.pointerId === event.pointerId) {
-        useEditorStore
-          .getState()
-          .moveObject(dragging.objectId, toWorld(toLocal(event.clientX, event.clientY)));
+      if (drag !== null && drag.pointerId === event.pointerId) {
+        const world = toWorld(toLocal(event.clientX, event.clientY));
+        const axis = moveAxisOf(drag.handle);
+        store.applyObjectTransform(world, {
+          // 轴约束：X 箭头只改 x、Y 箭头只改 y（另一个轴保持按下时的值）
+          ...(axis === undefined ? {} : { axis }),
+          // Shift：旋转吸附 15°、缩放锁等比（与 Unity 一致的修饰键用法）
+          snapAngle: event.shiftKey,
+          uniform: event.shiftKey,
+        });
         return;
       }
 
@@ -408,10 +611,11 @@ export function ScenePanel(): React.JSX.Element {
      * 插进来时第一根会被取消）不该被当成「点了一下空白」，否则双指缩放会顺手清掉选中。
      */
     const endPointer = (event: PointerEvent, isClick = false): void => {
-      if (dragging !== null && dragging.pointerId === event.pointerId) {
-        // 一次拖动结束：断开撤销合并，下一次拖动成为独立记录
-        useEditorStore.getState().endObjectDrag();
-        dragging = null;
+      if (drag !== null && drag.pointerId === event.pointerId) {
+        // 一次手柄拖拽结束：清掉快照（画布靠它画手柄、store 靠它算增量），
+        // 并断开撤销合并——下一次拖拽因此成为独立记录
+        useEditorStore.getState().endObjectTransform();
+        drag = null;
         return;
       }
 
@@ -482,6 +686,8 @@ export function ScenePanel(): React.JSX.Element {
         selectedObjectIds,
         gridPaint,
         soundPlayback,
+        ui,
+        transformStart,
       } = useEditorStore.getState();
       if (viewportSize.width <= 0 || viewportSize.height <= 0) {
         return;
@@ -573,6 +779,19 @@ export function ScenePanel(): React.JSX.Element {
         ];
       });
 
+      // 变换手柄：只在**单选**时出现（多选不下发变换，见文件顶部说明）。
+      // 拖拽途中改用快照里的角度与缩放——对象正在被改，文档里那一份是「上一步」的值，
+      // 拿它算手柄会让手柄慢一帧（旋转时尤其明显：手柄会一跳一跳地追）。
+      const gizmoObject =
+        selectedObjectIds.length === 1 && transformStart === null
+          ? drawOrder.find((object) => object.id === selectedObjectIds[0])
+          : undefined;
+
+      const gizmo =
+        gizmoObject === undefined
+          ? undefined
+          : buildToolHandles(gizmoObject, ui.tool, viewport);
+
       renderer.draw({
         viewport,
         cssWidth: viewportSize.width,
@@ -584,6 +803,7 @@ export function ScenePanel(): React.JSX.Element {
         // 棋盘底纹与**第一张地图**的左下角对齐：格子与地图的网格分成同一套，
         // 拖动地图时底纹跟着走。没有地图（纯精灵场景）就退回世界原点
         checkerOrigin: checkerOriginOf(drawOrder),
+        ...(gizmo === undefined ? {} : { tools: gizmo }),
       });
     };
 
@@ -642,6 +862,13 @@ export function ScenePanel(): React.JSX.Element {
       <div
         ref={containerRef}
         data-testid="scene-viewport"
+        // 当前视口变换（scale / tx / ty）暴露成 DOM 属性，**只给 E2E 用**：
+        // 手柄的位置由视口算出来，用例要精确点到 X 箭头或某个角，就必须知道真实的
+        // 「世界原点落在屏幕哪儿」。靠「画布中心 = 世界原点」去猜是错的——画布会被
+        // 左右面板挤窄，而属性面板宽度随断点与内容变
+        data-viewport-scale={viewport.scale}
+        data-viewport-tx={viewport.tx}
+        data-viewport-ty={viewport.ty}
         className="relative min-h-0 flex-1 overflow-hidden"
         style={{
           touchAction: "none",
@@ -650,6 +877,16 @@ export function ScenePanel(): React.JSX.Element {
       >
         {/* biome-ignore lint/a11y/noNoninteractiveTabindex: 画布需要接受指针与触摸手势 */}
         <canvas ref={canvasRef} className="block h-full w-full" />
+
+        {/* 变换工具开关放在**画布左上角**：它改的是「在画布上拖动会发生什么」，
+            贴在画布上比塞进标题栏更容易理解 */}
+        {activeSceneName === null ? null : (
+          <div className="pointer-events-none absolute left-2 top-2 z-10">
+            <div className="pointer-events-auto">
+              <ToolSwitch />
+            </div>
+          </div>
+        )}
 
         {imageError === undefined ? null : (
           // 贴图读不到时说清楚原因，否则画面只有棋盘格，看不出是「没贴图」还是「贴图坏了」
@@ -672,3 +909,60 @@ export function ScenePanel(): React.JSX.Element {
     </div>
   );
 }
+
+/**
+ * 变换工具开关（画布左上角）：拖动 / 移动 / 旋转 / 缩放。
+ *
+ * **「拖动」是默认，它只动摄像机**：拖对象只是选中它、拖哪儿都是平移画布。
+ * **「移动」才动对象**（X / Y 轴箭头）；旋转与缩放同理。
+ *
+ * 这也是为什么**对象一律不跟手拖走**：想摆位置就用「移动」工具，
+ * 于是「顺手把对象碰歪」在任何工具下都不会发生。
+ *
+ * 四个是**互斥的当前工具**，不是四个独立开关——所以用分段按钮而不是复选框，
+ * 与菜单栏那个「编辑 / 运行」开关同一套画法。
+ *
+ * 平板没有键盘快捷键，所以这里必须是看得见、点得到的按钮（菜单里也各有一份）。
+ */
+function ToolSwitch(): React.JSX.Element {
+  const tool = useEditorStore((state) => state.ui.tool);
+  const setTool = useEditorStore((state) => state.setTool);
+
+  return (
+    <div className="flex flex-none items-center overflow-hidden rounded border border-[var(--color-editor-border)]">
+      {TOOL_OPTIONS.map((option) => (
+        <button
+          key={option.tool}
+          type="button"
+          data-testid={`tool-${option.tool}`}
+          data-active={tool === option.tool}
+          title={option.title}
+          onClick={() => setTool(option.tool)}
+          className={`px-1.5 py-0.5 text-[11px] ${
+            tool === option.tool
+              ? "bg-[var(--color-editor-accent)] text-black"
+              : "text-[var(--color-editor-text-dim)] hover:bg-[var(--color-editor-accent-dim)]"
+          }`}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** 三个工具的名字、提示与快捷键（菜单、状态栏、快捷键都从这里取，免得各写一份）。 */
+export const TOOL_OPTIONS: readonly {
+  readonly tool: TransformTool;
+  readonly label: string;
+  readonly title: string;
+}[] = [
+  {
+    tool: "none",
+    label: "拖动",
+    title: "拖动场景（Q）：只平移画布——拖对象只是选中它，不会把它碰歪",
+  },
+  { tool: "move", label: "移动", title: "移动（W）：拖 X / Y 箭头沿单轴移动对象" },
+  { tool: "rotate", label: "旋转", title: "旋转（E）：沿圆环拖动，Shift 吸附 15°" },
+  { tool: "scale", label: "缩放", title: "缩放（R）：拖角等比、拖边单轴，Shift 锁等比" },
+];

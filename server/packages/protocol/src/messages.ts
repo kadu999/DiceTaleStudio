@@ -108,6 +108,11 @@ export const sceneObjectSchema = z.object({
   position: worldPositionSchema.nullable(),
   rotation: z.number(),
   scale: z.number(),
+  // v11 起文档里可能带单轴缩放（可选）：`scaleX` / `scaleY` 存在时覆盖 `scale` 在对应轴上的值。
+  // 这里**可选 + 不设默认**：老编辑器不会发这两个字段，老前端也不认它们（只会看到等比），
+  // 所以协议不需要版本号变更——新字段对旧实现是无害的额外信息。
+  scaleX: z.number().optional(),
+  scaleY: z.number().optional(),
   components: z.array(z.unknown()).optional(),
   map: mapDataSchema.optional(),
   sound: soundDataSchema.optional(),

@@ -213,6 +213,12 @@ Assets/
   （`GridMap.GridOrigin` 用 `transform.position`、`WorldToGrid` 取 `transform.position.y`），
   它们目前还没接进镜像（`map.cells` 是解析了但没人消费的死数据），
   等要用「缩放后的场景」做格子交互时，这几处得改成按场景根节点换算。
+- **缩放：`scale` 是等比，单轴字段可选（2026-09-20）**：文档 v11 起，对象上可能多出
+  **可选**的 `scaleX` / `scaleY`（编辑器里拖缩放手柄的**边**、或关掉属性面板的等比锁后改单轴时会写）。
+  客户端目前**按 `scale` 等比渲染**——`SceneObjectView` 把它们忽略掉是**正确**的（协议里它们是可选字段，
+  老前端本来就不认）。要看到非等比，是独立的一次改动：读这两个字段后传给
+  `GroundTextureRenderer.Apply(w, h)`（渲染器本来就吃两个尺寸参数，尺寸仍烘进网格顶点）。
+  规格与折叠规则见 `server/README.md` 的 v11 迁移一节。
 - **角度与编辑器同一套口径（2026-09-20）**：文档里的 `SceneObject.rotation` 存**弧度**，
   Unity 侧必须 `Rad2Deg` 再喂给 `Quaternion.Euler`（**不能直接把弧度当度用**，否则 30° 变成 0.52°），
   且**符号不取反**——编辑器面板里填 `30`，Unity 里就是正的 30° Y 轴旋转。

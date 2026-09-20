@@ -1,5 +1,6 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import {
+  closeDrawers,
   dropProject,
   enterEditor,
   expectPersistedObjectNames,
@@ -14,13 +15,15 @@ import {
   selectObject,
   solidPng,
   uploadSceneImage,
+  useMoveTool,
 } from "./helpers/editor";
 import {
   canvasAverageColor,
   clampedWorldPoint,
   findEmptyCanvasPoint,
+  offsetFrom,
+  preciseWorldPoint,
   scenePoint,
-  sceneWorldAt,
   worldSamplePoint,
 } from "./helpers/canvas";
 
@@ -393,7 +396,7 @@ test.describe("创建与编辑场景对象", () => {
     }
   });
 
-  test("拖动画布上的对象：位置随之改变（世界坐标 y 向上，屏幕 y 向下）", async ({
+  test("用移动工具拖轴线：位置随之改变（世界坐标 y 向上，屏幕 y 向下）", async ({
     page,
     request,
   }) => {
@@ -407,29 +410,32 @@ test.describe("创建与编辑场景对象", () => {
       // 而落点坐标只能在场景打开之后量），再用它的实际屏幕点开始拖动。
       const probed = await clampedWorldPoint(page, -200, 150);
       await setObjectPositionViaInspector(page, probed.world);
+      // 平板下左栏是**覆盖式抽屉**（上一步会把它唤出来），而工具开关贴在画布左上角——
+      // 不关掉抽屉，`useMoveTool` 点到的是抽屉
+      await closeDrawers(page);
+      await useMoveTool(page);
+      await closeDrawers(page);
 
-      const from = await scenePoint(page, probed.world.x, probed.world.y);
-      const to = { x: from.x + 120, y: from.y + 60 };
-
-      await page.mouse.move(from.x, from.y);
+      // 抓 X 轴中段（手柄在对象右侧外框之外）往 +X 拖 120：世界 x +120、y 不变。
+      // 位移按**真实视口缩放**换算——手柄贴在对象上，用「世界坐标 → 画布中心」会偏掉
+      const origin = await preciseWorldPoint(page, probed.world);
+      const grab = await offsetFrom(page, origin, { x: 105, y: 0 });
+      const drop = await offsetFrom(page, grab, { x: 120, y: 0 });
+      await page.mouse.move(grab.x, grab.y);
       await page.mouse.down();
-      await page.mouse.move(to.x, to.y, { steps: 8 });
+      await page.mouse.move(drop.x, drop.y, { steps: 8 });
       await page.mouse.up();
 
-      // 拖动改位置 → 自动存写回；落点就是指针处的世界坐标：
-      // 屏幕向右 120px、向下 60px = 世界 x +120、**y -60**（y 向上）。
-      const expected = await sceneWorldAt(page, to);
       await expect
         .poll(async () => {
           const position = (await readSceneObjects(request, project, SCENE_A))[0]?.position ?? null;
-          return position === null
-            ? null
-            : Math.hypot(position.x - expected.x, position.y - expected.y) < 2;
+          return position === null ? 0 : position.x - probed.world.x;
         })
-        .toBe(true);
+        .toBeGreaterThan(100);
 
-      // 拖动整块矩形（不是中心那个点）：点哪儿都能拿起来
-      await expect(page.getByTestId("object-row").first()).toHaveAttribute("data-selected", "true");
+      const moved = (await readSceneObjects(request, project, SCENE_A))[0]?.position ?? null;
+      // 轴约束：只有 x 变，y 保持按下时的值
+      expect(Math.abs((moved?.y ?? 0) - probed.world.y)).toBeLessThan(2);
     } finally {
       await dropProject(request, project);
     }
@@ -876,28 +882,28 @@ test.describe("创建与编辑场景对象", () => {
         })
         .toEqual({ x: -300, y: 200 });
 
-      // 在画布上直接拖地图同样能移动它（和普通对象一样，按整块矩形拾取）。
+      // 在画布上用手柄同样能移动它（地图也是场景里的对象，一样吃移动工具的轴线）。
       // 落点先探一次：平板竖屏左边有抽屉、桌面也可能被面板压住，
       // 直接按世界坐标算出的屏幕点不一定点得到（那一下会变成平移画布）
       const probed = await clampedWorldPoint(page, -200, 150);
       await setObjectPositionViaInspector(page, probed.world);
+      // 抽屉会盖住画布左上角的工具开关，先关掉再切工具
+      await closeDrawers(page);
+      await useMoveTool(page);
+      await closeDrawers(page);
 
-      const from = await scenePoint(page, probed.world.x, probed.world.y);
-      const to = { x: from.x + 120, y: from.y - 60 };
+      // 地图 400×300 → 半边 200/150，X 轴在右侧外框之外
+      const base = await preciseWorldPoint(page, probed.world);
+      const from = await offsetFrom(page, base, { x: 245, y: 0 });
+      const to = await offsetFrom(page, from, { x: 120, y: 0 });
       await page.mouse.move(from.x, from.y);
       await page.mouse.down();
       await page.mouse.move(to.x, to.y, { steps: 8 });
       await page.mouse.up();
 
-      const expected = await sceneWorldAt(page, to);
       await expect
-        .poll(async () => {
-          const position = (await readSceneObjects(request, project, SCENE_A))[0]?.position ?? null;
-          return position === null
-            ? null
-            : Math.hypot(position.x - expected.x, position.y - expected.y) < 2;
-        })
-        .toBe(true);
+        .poll(async () => (await readSceneObjects(request, project, SCENE_A))[0]?.position?.x ?? 0)
+        .toBeGreaterThan(probed.world.x + 100);
     } finally {
       await dropProject(request, project);
     }

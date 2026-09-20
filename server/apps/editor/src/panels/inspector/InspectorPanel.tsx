@@ -1,5 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { normalizeDegrees, objectImage, type SceneObjectDoc } from "@dts/document";
+import {
+  effectiveScaleX,
+  effectiveScaleY,
+  isUniformScale,
+  normalizeDegrees,
+  objectImage,
+  type SceneObjectDoc,
+} from "@dts/document";
 import { cellPixelSize } from "@dts/grid";
 import type { ResourceTreeNode } from "../../services/project-api";
 import { findResourceNode, useEditorStore } from "../../state/editor-store";
@@ -337,42 +344,159 @@ function SortingOrderField({ object }: { readonly object: SceneObjectDoc }): Rea
  * 输入非法（留空 / 敲了字母）就退回当前值，不把 NaN 写进文档；越界（0 / 负数 / 超大）
  * 交给文档命令夹到 `0.01 ~ 100`，框里回填**夹取后**的值。
  *
- * 缩放是**等比**的：地图的贴图与网格、精灵的图片、拾取范围、选中框一起缩放。
+ * **等比锁**（默认打开）：只有一个「缩放」框，改它 = 两轴一起改（写出去仍是等比 `scale`）。
+ * 关掉它才露出 X / Y 两个框，各自独立——对应文档 v11 的单轴 `scaleX` / `scaleY`。
+ * 两轴被改成相等时文档会自动折叠回等比（`collapseScale`），所以「拉平了」不会在文件里
+ * 留下两个等价但多余的字段。
+ *
+ * 缩放是**等比 / 单轴都作用于同一块矩形**：地图的贴图与网格、精灵的图片、拾取范围、
+ * 选中框一起缩放。
  */
 function ScaleField({ object }: { readonly object: SceneObjectDoc }): React.JSX.Element {
   const setObjectScale = useEditorStore((state) => state.setObjectScale);
+  const setObjectScaleAxes = useEditorStore((state) => state.setObjectScaleAxes);
+  // 两轴有效值（单轴字段缺省 = 用等比 `scale`，所以不能直接读 object.scale）
+  const scaleX = effectiveScaleX(object);
+  const scaleY = effectiveScaleY(object);
+
+  // 等比锁是**局部界面状态**，不进文档也不持久化：它只决定「露出一个框还是两个框」。
+  // 打开时两轴本就相等（否则数据是非等比），所以默认值取「当前是不是等比」更贴合直觉
+  const [uniform, setUniform] = useState(() => isUniformScale(scaleX, scaleY));
   const inputRef = useRef<HTMLInputElement>(null);
-  const [draft, setDraft] = useState(formatScale(object.scale));
+  const [draft, setDraft] = useState(formatScale(scaleX));
 
   useEffect(() => {
     // 正在输入的框不被 store 回灌（否则提交后触发的同步会把刚敲的值冲掉）
     if (document.activeElement !== inputRef.current) {
-      setDraft(formatScale(object.scale));
+      setDraft(formatScale(scaleX));
     }
-  }, [object.id, object.scale]);
+  }, [object.id, scaleX]);
 
   const commit = (): void => {
     const parsed = Number.parseFloat(draft);
     // 非法值（留空 / 敲了字母）退回当前值，不要把 NaN 写进文档；
     // 0 / 负数 / 超大值照常交给命令，由它夹到 0.01 ~ 100
-    const next = Number.isFinite(parsed) ? parsed : object.scale;
+    const next = Number.isFinite(parsed) ? parsed : scaleX;
     setObjectScale(object.id, next);
     // 提交后回到**文档里实际采用的值**（会被夹取），否则框里留着用户敲的原始文本
     setDraft(formatScale(next));
   };
 
   return (
-    <FieldRow label="缩放">
+    <>
+      <FieldRow label="缩放">
+        <button
+          type="button"
+          data-testid="inspector-object-scale-uniform"
+          data-active={uniform}
+          aria-pressed={uniform}
+          title={
+            uniform
+              ? "等比锁：打开时只有一个缩放框，两轴一起改（点一下可拆成 X / Y 单轴）"
+              : "等比锁：关掉后 X / Y 各改各的（点一下恢复等比）"
+          }
+          onClick={() => setUniform((value) => !value)}
+          className={`flex-none rounded border px-1 text-[11px] ${
+            uniform
+              ? "border-[var(--color-editor-accent)] text-[var(--color-editor-accent)]"
+              : "border-[var(--color-editor-border)] text-[var(--color-editor-text-dim)]"
+          }`}
+        >
+          {uniform ? "锁" : "解"}
+        </button>
+        <input
+          ref={inputRef}
+          value={draft}
+          data-testid="inspector-object-scale"
+          aria-label="缩放"
+          inputMode="decimal"
+          type="number"
+          step="0.1"
+          min="0"
+          title="1 = 原始尺寸；等比缩放（贴图与地图网格一起缩放），范围 0.01 ~ 100"
+          className="min-w-0 flex-1 rounded border border-[var(--color-editor-border)] bg-black/30 px-1 py-0.5 font-mono text-[11px] outline-none"
+          onChange={(event) => setDraft(event.target.value)}
+          onBlur={commit}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              commit();
+              event.currentTarget.blur();
+            } else if (event.key === "Escape") {
+              setDraft(formatScale(scaleX));
+            }
+          }}
+        />
+      </FieldRow>
+
+      {uniform ? null : (
+        <ScaleAxisField
+          key={`${object.id}-x`}
+          label="缩放 X"
+          testId="inspector-object-scale-x"
+          value={scaleX}
+          onCommit={(next) => setObjectScaleAxes(object.id, next, scaleY)}
+        />
+      )}
+
+      {uniform ? null : (
+        <ScaleAxisField
+          key={`${object.id}-y`}
+          label="缩放 Y"
+          testId="inspector-object-scale-y"
+          value={scaleY}
+          onCommit={(next) => setObjectScaleAxes(object.id, scaleX, next)}
+        />
+      )}
+    </>
+  );
+}
+
+/**
+ * 一个**单轴**缩放输入框（等比锁关掉后才出现）。
+ *
+ * 与等比的「缩放」框同一套提交规则，只是把另一个轴原样带回去——
+ * 两个轴一起提交，`setObjectScaleAxes` 才有机会把「两轴又相等了」折叠回等比。
+ */
+function ScaleAxisField({
+  label,
+  testId,
+  value,
+  onCommit,
+}: {
+  readonly label: string;
+  readonly testId: string;
+  readonly value: number;
+  readonly onCommit: (next: number) => void;
+}): React.JSX.Element {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [draft, setDraft] = useState(formatScale(value));
+
+  useEffect(() => {
+    // 正在输入的框不被 store 回灌（与等比框同一套理由）
+    if (document.activeElement !== inputRef.current) {
+      setDraft(formatScale(value));
+    }
+  }, [value]);
+
+  const commit = (): void => {
+    const parsed = Number.parseFloat(draft);
+    const next = Number.isFinite(parsed) ? parsed : value;
+    onCommit(next);
+    setDraft(formatScale(next));
+  };
+
+  return (
+    <FieldRow label={label}>
       <input
         ref={inputRef}
         value={draft}
-        data-testid="inspector-object-scale"
-        aria-label="缩放"
+        data-testid={testId}
+        aria-label={label}
         inputMode="decimal"
         type="number"
         step="0.1"
         min="0"
-        title="1 = 原始尺寸；等比缩放（贴图与地图网格一起缩放），范围 0.01 ~ 100"
+        title="1 = 原始尺寸；只改这一个轴，范围 0.01 ~ 100"
         className="min-w-0 flex-1 rounded border border-[var(--color-editor-border)] bg-black/30 px-1 py-0.5 font-mono text-[11px] outline-none"
         onChange={(event) => setDraft(event.target.value)}
         onBlur={commit}
@@ -381,7 +505,7 @@ function ScaleField({ object }: { readonly object: SceneObjectDoc }): React.JSX.
             commit();
             event.currentTarget.blur();
           } else if (event.key === "Escape") {
-            setDraft(formatScale(object.scale));
+            setDraft(formatScale(value));
           }
         }}
       />

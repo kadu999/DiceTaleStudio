@@ -46,6 +46,8 @@ export function EditorShell(): React.JSX.Element {
   const gridEditorTarget = useEditorStore((state) => state.gridEditorTarget);
   const openGridEditor = useEditorStore((state) => state.openGridEditor);
   const setObjectImage = useEditorStore((state) => state.setObjectImage);
+  const setTool = useEditorStore((state) => state.setTool);
+  const cancelObjectTransform = useEditorStore((state) => state.cancelObjectTransform);
   const scenes = useEditorStore((state) => state.scenes);
   const activeSceneName = useEditorStore((state) => state.activeSceneName);
 
@@ -96,6 +98,28 @@ export function EditorShell(): React.JSX.Element {
         return;
       }
 
+      // 变换工具：Q / W / E / R（W / E / R 与 Unity 同一套键位；Q 是「拖动」= 默认状态）。
+      // 放在 `typing` 之后：输入框里敲 w 不该切工具
+      if (event.key === "q" || event.key === "w" || event.key === "e" || event.key === "r") {
+        event.preventDefault();
+        setTool(
+          event.key === "q"
+            ? "none"
+            : event.key === "w"
+              ? "move"
+              : event.key === "e"
+                ? "rotate"
+                : "scale",
+        );
+        return;
+      }
+
+      // 拖手柄拖到一半按 Esc = 放弃这次变换（回到按下前的样子）
+      if (event.key === "Escape") {
+        cancelObjectTransform();
+        return;
+      }
+
       if (modifier && event.key.toLowerCase() === "d") {
         event.preventDefault();
         duplicateObjects();
@@ -129,7 +153,7 @@ export function EditorShell(): React.JSX.Element {
     return () => {
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [deleteObjects, duplicateObjects, openObjectDialog, redo, saveSceneNow, undo]);
+  }, [deleteObjects, duplicateObjects, openObjectDialog, redo, saveSceneNow, undo, setTool, cancelObjectTransform]);
 
   // 跨越断点（窗口缩放 / 接上触屏）时重置面板开合，避免平板下三栏互相挤压
   const previousCompact = useRef<boolean | null>(null);

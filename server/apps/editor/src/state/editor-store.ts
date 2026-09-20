@@ -6,12 +6,15 @@ import {
   SOUND_LAYER_LABELS,
   addObject,
   clearMapCells,
+  collapseScale,
   createEmptyProject,
   createEmptyScene,
   createId,
   createMapObject,
   createSceneObject,
   createSoundObject,
+  effectiveScaleX,
+  effectiveScaleY,
   isSceneNameTaken,
   nextObjectName,
   paintMapCells,
@@ -26,6 +29,7 @@ import {
   setObjectPosition as setSceneObjectPosition,
   setObjectLocked as setSceneObjectLocked,
   setObjectScale as setSceneObjectScale,
+  setObjectScaleAxes as setSceneObjectScaleAxes,
   setObjectRotation as setSceneObjectRotation,
   setObjectSortingOrder as setSceneObjectSortingOrder,
   setSoundClips as setSceneSoundClips,
@@ -67,8 +71,13 @@ import {
   createCenteredViewport,
   createViewport,
   fitViewport,
+  isCornerScaleHandle,
   panBy,
+  scaleAnchorFor,
+  scaleAxisOf,
   zoomAt,
+  type GizmoHandle,
+  type TransformTool,
   type Viewport,
 } from "@dts/renderer";
 import type { ClientInfo, ResourcesInfo, SceneInfo, ScenePayload } from "@dts/protocol";
@@ -91,6 +100,8 @@ import {
   writeGridPaintPrefs,
   type GridPaintPrefs,
 } from "../services/grid-paint-prefs";
+import { readEditorPrefs, writeEditorPrefs } from "../services/editor-prefs";
+import { angleAround, resolveTransform, type TransformStart } from "../panels/scene/transform";
 import { clearSceneImageCache } from "../services/scene-image";
 import {
   emptySoundPlayback,
@@ -118,6 +129,13 @@ export interface EditorUiState {
   readonly leftOpen: boolean;
   readonly rightOpen: boolean;
   readonly runtimeOpen: boolean;
+  /**
+   * 当前变换工具（画布上的手柄跟着它换）：移动 / 旋转 / 缩放，对齐 Unity 的 W / E / R。
+   *
+   * 它是**编辑器偏好**而不是文档内容：换个工具是「我现在想怎么摆对象」，
+   * 不该让场景文件因为点了一下按钮就变脏。默认 `move`——正是手柄出现之前那个行为。
+   */
+  readonly tool: TransformTool;
 }
 
 export interface RuntimeUiState {
@@ -236,6 +254,13 @@ export interface EditorStoreState {
    * 不写文档、不进撤销栈；点播放 / 停止只改它 + 尽力下发，前端连上时补发。
    */
   readonly soundPlayback: SoundPlaybackState;
+  /**
+   * 正在进行的手柄拖拽的快照；null = 没在拖。
+   *
+   * 放在 store 里（而不是组件闭包里）有一个具体理由：拖拽期间画布要**按快照**画手柄
+   * （对象转过角度时手柄要跟着转、缩放时锚点要跟着走），闭包里的副本没法参与渲染。
+   */
+  readonly transformStart: TransformStart | null;
 
   /** 场景编辑（对象增删改）统一走这里：进撤销栈，并触发自动落盘。 */
   applyScenes(
@@ -378,6 +403,32 @@ export interface EditorStoreState {
   moveObject(id: string, position: WorldPosition): void;
   /** 一次拖动结束：断开撤销合并，使后续拖动成为独立记录。 */
   endObjectDrag(): void;
+  /** 换变换工具（移动 / 旋转 / 缩放）；写进浏览器本地偏好，不进文档。 */
+  setTool(tool: TransformTool): void;
+  /**
+   * 开始一次手柄拖拽：把当前状态拍成快照（世界中心、角度、两轴有效缩放、
+   * 显示矩形半宽半高、指针方位角、缩放锚点）。
+   *
+   * 返回 `undefined` = 这次不进入变换：对象不存在 / 没落位 / **锁定**（锁的语义是
+   * 「不能被移动」，旋转缩放当然也算移动它）/ 正在拖别的。
+   */
+  beginObjectTransform(id: string, handle: GizmoHandle, pointer: WorldPosition, halfWidth: number, halfHeight: number): TransformStart | undefined;
+  /**
+   * 拖拽中：按快照算出新值并写进文档（连续调用合并成一条撤销记录）。
+   *
+   * `axis`（移动柄）与 `snapAngle`（Shift 吸附 15°）由调用方从事件里读；
+   * 一切以 `beginObjectTransform` 的快照为基准，不做逐帧累加。
+   */
+  applyObjectTransform(
+    pointer: WorldPosition,
+    options?: { readonly axis?: "x" | "y"; readonly snapAngle?: boolean; readonly uniform?: boolean },
+  ): void;
+  /** 一次手柄拖拽结束：断开撤销合并（与 `endObjectDrag` 同一件事，名字说清用途）。 */
+  endObjectTransform(): void;
+  /** 取消这次拖拽：用快照把位置 / 角度 / 两轴缩放写回按下前的样子，再收尾。 */
+  cancelObjectTransform(): void;
+  /** 改对象的**两轴缩放**（单轴手柄与属性面板用）；两轴相等时自动折叠回等比。 */
+  setObjectScaleAxes(id: string, x: number, y: number): boolean;
   /** 换对象显示的图片（地图写进 map.image，精灵写进 image；宽高由调用方从素材本身读出）。 */
   setObjectImage(objectId: string, image: ImageRef): boolean;
   /**
@@ -466,7 +517,12 @@ function initialUi(): EditorUiState {
     typeof window !== "undefined" &&
     (window.matchMedia("(pointer: coarse)").matches || window.innerWidth < 1024);
 
-  return { leftOpen: !compact, rightOpen: !compact, runtimeOpen: false };
+  return {
+    leftOpen: !compact,
+    rightOpen: !compact,
+    runtimeOpen: false,
+    tool: readEditorPrefs().tool,
+  };
 }
 
 /**
@@ -599,16 +655,28 @@ function findSceneByName(
   return name === null ? undefined : scenes.find((scene) => scene.name === name);
 }
 
+/** 撤销记录上显示的变换动作名（与工具一一对应，用户看到的和点的一致）。 */
+const TRANSFORM_LABELS: Record<TransformTool, string> = {
+  none: "移动对象",
+  move: "移动对象",
+  rotate: "旋转对象",
+  scale: "缩放对象",
+};
+
 /**
  * 场景文件的序列化。
  *
  * 场景名**不进文件**（它就是文件名），所以写出去的内容只有内容本身——
  * 这也是「重命名场景 = 只改文件名」能成立的前提。
+ *
+ * 写出去之前每个对象都过一遍 `collapseScale`：两轴相等的缩放**只写等比 `scale`**。
+ * 少了这一步，用角手柄拖出来的（或单轴拖回等比的）对象会带着 `scaleX` / `scaleY` 落盘，
+ * 而那两个字段 Unity 客户端还不认——等比场景本来不需要它们。
  */
 function serializeSceneFile(scene: SceneDoc): string {
   const file: SceneFileDoc = {
     formatVersion: DOCUMENT_FORMAT_VERSION,
-    objects: scene.objects,
+    objects: scene.objects.map(collapseScale),
   };
 
   return `${JSON.stringify(file, null, 2)}\n`;
@@ -997,6 +1065,10 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
 
   const storedGridPaint = readGridPaintPrefs();
 
+  /** 当前场景里按 id 找一个对象（画布与变换用；找不到返回 undefined）。 */
+  const currentObjectOf = (id: string): SceneObjectDoc | undefined =>
+    findSceneByName(get().scenes, get().activeSceneName)?.objects.find((object) => object.id === id);
+
   return {
     mode: "edit",
     doc: createEmptyProject(),
@@ -1036,6 +1108,7 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       showFog: storedGridPaint.showFog,
     },
     soundPlayback: emptySoundPlayback(),
+    transformStart: null,
     runtime: {
       status: "idle",
       statusDetail: "",
@@ -2185,6 +2258,149 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
 
     endObjectDrag() {
       sceneHistory.endCoalescing();
+    },
+
+    setTool(tool) {
+      set((state) => ({ ui: { ...state.ui, tool } }));
+      writeEditorPrefs({ tool });
+    },
+
+    beginObjectTransform(id, handle, pointer, halfWidth, halfHeight) {
+      // 「拖动」模式没有手柄，也就没有变换拖拽：护栏放在这里，任何调用方都进不来
+      const tool = get().ui.tool;
+      if (tool === "none") {
+        return undefined;
+      }
+
+      const object = currentObjectOf(id);
+      // 锁定的对象**不进入变换**：锁的语义就是「不能被移动」，而旋转与缩放同样是在动它。
+      // 画布那边还会先判一次（免得白进一次拖拽状态），这里的护栏是给其它调用方兜底的。
+      if (object === undefined || object.position === null || object.locked) {
+        return undefined;
+      }
+
+      const center = { x: object.position.x, y: object.position.y };
+      const rect = worldRectOf(center, { width: halfWidth, height: halfHeight });
+      // 边手柄管哪一轴：拖它是「只改这一轴」，`resolveTransform` 靠它把另一轴按住不动
+      const scaleAxis = scaleAxisOf(handle);
+
+      const start: TransformStart = {
+        id,
+        mode: tool,
+        base: center,
+        rotation: object.rotation,
+        scaleX: effectiveScaleX(object),
+        scaleY: effectiveScaleY(object),
+        halfWidth,
+        halfHeight,
+        // 旋转按「指针方位角的变化量」算，所以起始方位角必须在**按下这一刻**记下来
+        pointerAngle: angleAround(pointer, center),
+        center,
+        // 移动与旋转用不到锚点；缩放拖拽的固定点是对角 / 对边中点（与 Unity 一致）
+        anchor: get().ui.tool === "scale" ? (scaleAnchorFor(handle, rect, object.rotation) ?? center) : center,
+        corner: isCornerScaleHandle(handle),
+        ...(scaleAxis === undefined ? {} : { axis: scaleAxis }),
+      };
+
+      set({ transformStart: start });
+      return start;
+    },
+
+    applyObjectTransform(pointer, options) {
+      const start = get().transformStart;
+      if (start === null) {
+        return;
+      }
+
+      // 拖拽途中对象可能已经被删掉（撤销 / 别人删了）：直接收手，别写一个不存在的 id
+      if (currentObjectOf(start.id) === undefined) {
+        return;
+      }
+
+      const result = resolveTransform({
+        start,
+        pointer,
+        ...(options?.axis === undefined ? {} : { axis: options.axis }),
+        ...(options?.snapAngle === undefined ? {} : { snapAngle: options.snapAngle }),
+        ...(options?.uniform === undefined ? {} : { uniform: options.uniform }),
+      });
+
+      const sceneName = get().activeSceneName;
+      if (sceneName === null) {
+        return;
+      }
+
+      // 位置 / 角度 / 缩放**一次写完**：三次独立调用会产生三条撤销记录，
+      // 而用户眼里这明明是一次拖拽（对比 `moveObject` 只改一个属性，所以它单独一条）
+      get().applyScenes(
+        TRANSFORM_LABELS[start.mode],
+        (draft) => {
+          const scene = draft.find((item) => item.name === sceneName);
+          if (scene === undefined) {
+            return;
+          }
+
+          setSceneObjectPosition(scene, start.id, result.position);
+          setSceneObjectRotation(scene, start.id, result.rotation);
+          setSceneObjectScaleAxes(scene, start.id, { x: result.scaleX, y: result.scaleY });
+        },
+        { coalesceKey: `transform:${start.id}` },
+      );
+    },
+
+    endObjectTransform() {
+      set({ transformStart: null });
+      sceneHistory.endCoalescing();
+    },
+
+    cancelObjectTransform() {
+      const start = get().transformStart;
+      const sceneName = get().activeSceneName;
+      set({ transformStart: null });
+
+      if (start === null || sceneName === null) {
+        sceneHistory.endCoalescing();
+        return;
+      }
+
+      // 用快照写回按下前的样子。快照里的 scaleX / scaleY 是**有效值**，
+      // 而"按下前是不是等比的写法"已经无从考证——所以统一按当前工具的形状写回：
+      // 等比就折叠回 `scale`（`collapseScale` 会做），非等比就写两轴。
+      get().applyScenes(
+        "取消变换",
+        (draft) => {
+          const scene = draft.find((item) => item.name === sceneName);
+          if (scene === undefined) {
+            return;
+          }
+
+          setSceneObjectPosition(scene, start.id, start.base);
+          setSceneObjectRotation(scene, start.id, start.rotation);
+          setSceneObjectScaleAxes(scene, start.id, { x: start.scaleX, y: start.scaleY });
+        },
+        { coalesceKey: `transform:${start.id}` },
+      );
+
+      sceneHistory.endCoalescing();
+    },
+
+    setObjectScaleAxes(id, x, y) {
+      const sceneName = get().activeSceneName;
+      if (sceneName === null) {
+        return false;
+      }
+
+      return get().applyScenes(
+        "修改缩放",
+        (draft) => {
+          const scene = draft.find((item) => item.name === sceneName);
+          if (scene !== undefined) {
+            setSceneObjectScaleAxes(scene, id, { x, y });
+          }
+        },
+        // 连续输入合并成一条撤销记录（与等比缩放同一套做法）
+        { coalesceKey: `scale:${id}` },
+      );
     },
 
     setMapGrid(mapObjectId, grid) {

@@ -9,6 +9,7 @@ import {
   type WorldRect,
 } from "@dts/grid";
 import { visibleWorldRect, worldToScreen, type Point, type Viewport } from "./viewport";
+import { GIZMO_HANDLE_SIZE, toolHasGizmo, type GizmoHandle, type TransformTool } from "./gizmo";
 
 /**
  * Canvas 2D 场景渲染器。
@@ -119,6 +120,34 @@ export interface SceneRenderInput {
    * 所以只要把时刻传进来，图标就动起来了——不需要另起定时器。
    */
   readonly animationTimeMs?: number;
+  /**
+   * 变换手柄（移动轴 / 旋转环 / 缩放块）。
+   *
+   * **几何由调用方算好**（见 `gizmoScreenGeometry`），渲染器只负责画：
+   * 于是「画出来的手柄」与「点得到的手柄」永远共用同一份坐标，不可能对不上。
+   * 缺省 = 不画（不开手柄时与以前完全一样）。
+   */
+  readonly tools?: SceneToolHandles;
+}
+
+/**
+ * 变换手柄的屏幕几何（全部是 canvas 的 CSS 像素坐标）。
+ *
+ * 与 `GizmoScreenHandles` 同形但不直接引用它：渲染器只认「一串点和半径」，
+ * 不需要知道它们是怎么从世界坐标算出来的。
+ */
+export interface SceneToolHandles {
+  readonly tool: TransformTool;
+  readonly center: Point;
+  readonly corners: readonly Point[];
+  /** 两根移动轴（移动工具画）。 */
+  readonly axes: readonly { readonly handle: "move-x" | "move-y"; readonly root: Point; readonly tip: Point }[];
+  readonly scale: readonly { readonly handle: GizmoHandle; readonly point: Point }[];
+  readonly ringRadius: number;
+  /** 对象被锁住：手柄画成灰的（「看得见但拖不动」，与灰色选中框同一套说法）。 */
+  readonly locked: boolean;
+  /** 对象在屏幕上太小：只画框不画手柄（手柄会比对象本身还大）。 */
+  readonly drawable: boolean;
 }
 
 export interface SceneRenderer {
@@ -266,11 +295,22 @@ export function createCanvasSceneRenderer(canvas: HTMLCanvasElement): SceneRende
       }
 
       // 选中框画在**所有图层之后**：被别的图片盖住的对象也要看得见自己的框。
-      // 框同样要绕矩形中心旋转——否则「转过的对象」配上「正着的框」，看着就错位了
+      // 框同样要绕矩形中心旋转——否则「转过的对象」配上「正着的框」，看着就错位了。
+      //
+      // **开了变换工具就只留虚线框、不画那 8 个装饰方块**（`toolHasGizmo`）：
+      // 它们和缩放手柄长得一模一样（同一个 `drawHandleSquare`，同尺寸同配色），
+      // 一起画出来会让人以为「移动模式下也出现了缩放的 UI」。
+      // 选中框只要有框就够说明「选中的是它」，手柄交给当前工具那一套。
+      const activeTool = input.tools !== undefined && toolHasGizmo(input.tools.tool);
       for (const layer of input.layers ?? []) {
         if (layer.selected === true) {
-          drawRotatedSelectionFrame(context, layer, viewport);
+          drawRotatedSelectionFrame(context, layer, viewport, !activeTool);
         }
+      }
+
+      // 变换手柄画在最后：它是**操作目标**，必须压在所有东西（含选中框）上面
+      if (input.tools !== undefined) {
+        drawGizmo(context, input.tools);
       }
 
       if (input.showOrigin === true) {
@@ -741,10 +781,11 @@ function drawRotatedSelectionFrame(
   context: CanvasRenderingContext2D,
   layer: SceneLayer,
   viewport: Viewport,
+  showHandles = true,
 ): void {
   const rotation = layer.rotation ?? 0;
   if (rotation === 0) {
-    drawSelectionFrame(context, layer.rect, viewport, layer.locked === true);
+    drawSelectionFrame(context, layer.rect, viewport, layer.locked === true, showHandles);
     return;
   }
 
@@ -753,7 +794,7 @@ function drawRotatedSelectionFrame(
   context.translate((box.left + box.right) / 2, (box.top + box.bottom) / 2);
   context.rotate(rotation);
   context.translate(-(box.left + box.right) / 2, -(box.top + box.bottom) / 2);
-  drawSelectionFrame(context, layer.rect, viewport, layer.locked === true);
+  drawSelectionFrame(context, layer.rect, viewport, layer.locked === true, showHandles);
   context.restore();
 }
 
@@ -762,6 +803,8 @@ function drawSelectionFrame(
   rect: WorldRect,
   viewport: Viewport,
   locked = false,
+  /** 有变换工具在用时**不画装饰方块**，见下面那条注释。 */
+  showHandles = true,
 ): void {
   const topLeft = worldToScreen(viewport, worldRectTopLeft(rect));
   const width = rect.size.width * viewport.scale;
@@ -769,7 +812,6 @@ function drawSelectionFrame(
   const color = locked ? SELECTION_LOCKED_COLOR : SELECTION_COLOR;
 
   // 太小的矩形（缩得很远）只画框、不画手柄：手柄会比框还大，糊成一团
-  const half = SELECTION_HANDLE_SIZE / 2;
   const handles: Point[] = [
     { x: topLeft.x, y: topLeft.y },
     { x: topLeft.x + width / 2, y: topLeft.y },
@@ -790,22 +832,108 @@ function drawSelectionFrame(
   context.strokeRect(topLeft.x + 0.5, topLeft.y + 0.5, width - 1, height - 1);
   context.setLineDash([]);
 
-  if (width >= SELECTION_HANDLE_SIZE * 2 && height >= SELECTION_HANDLE_SIZE * 2) {
+  if (
+    showHandles &&
+    width >= SELECTION_HANDLE_SIZE * 2 &&
+    height >= SELECTION_HANDLE_SIZE * 2
+  ) {
     for (const handle of handles) {
-      context.fillStyle = color;
-      context.fillRect(
-        Math.round(handle.x - half),
-        Math.round(handle.y - half),
-        SELECTION_HANDLE_SIZE,
-        SELECTION_HANDLE_SIZE,
-      );
-      context.strokeStyle = "rgba(0,0,0,0.6)";
-      context.strokeRect(
-        Math.round(handle.x - half) + 0.5,
-        Math.round(handle.y - half) + 0.5,
-        SELECTION_HANDLE_SIZE - 1,
-        SELECTION_HANDLE_SIZE - 1,
-      );
+      drawHandleSquare(context, handle, SELECTION_HANDLE_SIZE, color);
+    }
+  }
+
+  context.restore();
+}
+
+/**
+ * 一个实心手柄方块 + 细描边（Unity 那套画法：在任何贴图上都看得清）。
+ *
+ * 选中框与变换手柄共用它，于是「框上的装饰点」与「能拖的缩放柄」长得一模一样、
+ * 大小也一样——用户看到的就是他能抓的。
+ */
+function drawHandleSquare(
+  context: CanvasRenderingContext2D,
+  center: Point,
+  size: number,
+  color: string,
+): void {
+  const half = size / 2;
+
+  context.fillStyle = color;
+  context.fillRect(Math.round(center.x - half), Math.round(center.y - half), size, size);
+  context.strokeStyle = "rgba(0,0,0,0.6)";
+  context.strokeRect(
+    Math.round(center.x - half) + 0.5,
+    Math.round(center.y - half) + 0.5,
+    size - 1,
+    size - 1,
+  );
+}
+
+/** 手柄的线段宽度（屏幕像素）：轴条与旋转环都是细线。 */
+const GIZMO_LINE_WIDTH = 1.5;
+
+/** 移动轴末端箭头的大小（屏幕像素，半宽）。 */
+const GIZMO_ARROW_HALF = 5;
+
+/**
+ * 变换手柄：**只按调用方给好的屏幕坐标画**，自己不做任何几何计算。
+ *
+ * 这一点是刻意的：手柄的命中测试在编辑器那边（`hitTestGizmoHandles`），
+ * 两边只要共用同一份 `GizmoScreenHandles`，就不可能「画在一处、点的是另一处」。
+ *
+ * **只画当前工具有的那一套**（对齐 Unity：切工具 = 换手柄的样子）：
+ *
+ * - `move`：对象外框外两根轴条 + 末端箭头（X 向右、Y 向上，与世界坐标同向）；
+ * - `rotate`：围绕整个对象的一圈细环；
+ * - `scale`：外框八个方位的方形手柄（与选中框上的装饰点同一套画法）；
+ * - `none`（拖动模式）：什么都不画——只留选中框，拖动对象本体就是跟手移动。
+ */
+function drawGizmo(context: CanvasRenderingContext2D, tools: SceneToolHandles): void {
+  if (!tools.drawable || tools.tool === "none") {
+    return;
+  }
+
+  const color = tools.locked ? SELECTION_LOCKED_COLOR : SELECTION_COLOR;
+
+  context.save();
+  context.lineWidth = GIZMO_LINE_WIDTH;
+  context.strokeStyle = color;
+  context.fillStyle = color;
+
+  if (tools.tool === "rotate") {
+    context.beginPath();
+    context.arc(tools.center.x, tools.center.y, tools.ringRadius, 0, Math.PI * 2);
+    context.stroke();
+  }
+
+  if (tools.tool === "move") {
+    for (const axis of tools.axes) {
+      context.beginPath();
+      context.moveTo(axis.root.x, axis.root.y);
+      context.lineTo(axis.tip.x, axis.tip.y);
+      context.stroke();
+
+      // 箭头：一条以轴为对称轴的等腰三角形（X 轴水平、Y 轴竖直，所以两条分支很直白）
+      context.beginPath();
+      if (axis.handle === "move-x") {
+        context.moveTo(axis.tip.x, axis.tip.y);
+        context.lineTo(axis.tip.x - GIZMO_ARROW_HALF * 2, axis.tip.y - GIZMO_ARROW_HALF);
+        context.lineTo(axis.tip.x - GIZMO_ARROW_HALF * 2, axis.tip.y + GIZMO_ARROW_HALF);
+      } else {
+        context.moveTo(axis.tip.x, axis.tip.y);
+        context.lineTo(axis.tip.x - GIZMO_ARROW_HALF, axis.tip.y + GIZMO_ARROW_HALF * 2);
+        context.lineTo(axis.tip.x + GIZMO_ARROW_HALF, axis.tip.y + GIZMO_ARROW_HALF * 2);
+      }
+
+      context.closePath();
+      context.fill();
+    }
+  }
+
+  if (tools.tool === "scale") {
+    for (const entry of tools.scale) {
+      drawHandleSquare(context, entry.point, GIZMO_HANDLE_SIZE, color);
     }
   }
 

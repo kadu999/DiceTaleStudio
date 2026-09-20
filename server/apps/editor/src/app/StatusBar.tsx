@@ -1,5 +1,6 @@
 import { useEditorStore } from "../state/editor-store";
 import type { SceneSaveState } from "../state/editor-store";
+import type { TransformTool } from "@dts/renderer";
 
 /** 场景保存状态的显示文案（自动存与手动保存共用同一个状态）。 */
 const SAVE_STATE_LABELS: Record<SceneSaveState, string> = {
@@ -9,6 +10,14 @@ const SAVE_STATE_LABELS: Record<SceneSaveState, string> = {
   error: "保存失败",
   // 运行态下不写盘（退出运行会整体还原），所以这里不是「未保存」而是「不保存」
   runtime: "运行中（不保存）",
+};
+
+/** 变换工具的中文名（状态栏显示用）。 */
+const TOOL_LABELS: Record<TransformTool, string> = {
+  none: "拖动",
+  move: "移动",
+  rotate: "旋转",
+  scale: "缩放",
 };
 
 export function StatusBar(): React.JSX.Element {
@@ -21,6 +30,7 @@ export function StatusBar(): React.JSX.Element {
   const status = useEditorStore((state) => state.runtime.status);
   const runtimeActive = useEditorStore((state) => state.runtime.runtimeActive);
   const clientConnected = useEditorStore((state) => state.runtime.client !== null);
+  const tool = useEditorStore((state) => state.ui.tool);
 
   const activeScene = scenes.find((scene) => scene.name === activeSceneName);
 
@@ -48,6 +58,11 @@ export function StatusBar(): React.JSX.Element {
       </span>
       <span data-testid="status-active-scene">当前场景 {activeScene?.name ?? "—"}</span>
       <span data-testid="status-selection">已选 {selection.length}</span>
+      {/* 当前变换工具：与场景面板上的开关同一个值。放状态栏是为了**一眼确认**
+          「现在拖动是摆位置还是转角度」——切错了工具却不知道，是最容易白费功夫的一种错 */}
+      <span data-testid="status-tool" data-tool={tool}>
+        工具 {TOOL_LABELS[tool]}
+      </span>
       <span data-testid="status-mode" data-mode={mode} className="ml-auto flex items-center gap-1">
         <span
           data-testid="status-mode-dot"

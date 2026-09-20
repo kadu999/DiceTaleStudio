@@ -1,6 +1,98 @@
 import { type Page } from "@playwright/test";
 
 /**
+ * 世界坐标 → 屏幕点，按**真实视口**换算（视口原点 + 世界位移 × 缩放）。
+ *
+ * 与 `scenePoint` / `worldSamplePoint` 的分工：
+ * - 那两个把「世界原点」当成**画布几何中心**，对「按对象矩形整块命中」的老用例够用
+ *   （差几十像素照样落在 120px 的矩形里），而且 `scenePoint` 还会把落点夹进可点区域；
+ * - **手柄只有 7px**，几十像素的偏差就是「点了没反应」，而且 `scenePoint` 的夹取会
+ *   把落点挪到别处。所以凡是要点手柄，一律用这个精确换算。
+ */
+export async function preciseWorldPoint(
+  page: Page,
+  world: { x: number; y: number },
+): Promise<{ x: number; y: number }> {
+  const viewport = await sceneViewport(page);
+  return {
+    x: viewport.left + viewport.tx + world.x * viewport.scale,
+    y: viewport.top + viewport.ty - world.y * viewport.scale,
+  };
+}
+
+/**
+ * 对象**当前**在屏幕哪儿：用对象中心的世界坐标做精确换算。
+ *
+ * 手柄贴在对象外框之外，所以「从对象出发按视口缩放量偏移」是唯一稳的算法。
+ */
+export async function objectScreenPoint(
+  page: Page,
+  center: { x: number; y: number },
+): Promise<{ x: number; y: number }> {
+  return preciseWorldPoint(page, center);
+}
+
+/**
+ * 画布上放**手柄**（或任何贴在对象上的 UI）时用的换算：把世界位移换成屏幕像素位移。
+ *
+ * 与 `worldSamplePoint` / `scenePoint` 的区别：那两个假设「世界原点在画布正中」，
+ * 只在没有左右面板挤压时对；**手柄贴在对象上**，位置由视口变换决定，
+ * 所以要从「对象当前在屏幕哪儿」出发，按 `视口缩放` 加位移，才能点中。
+ * 纯平移的量用不着视口原点，因此这条不需要读 DOM 属性。
+ */
+export async function offsetFrom(
+  page: Page,
+  base: { x: number; y: number },
+  worldDelta: { x: number; y: number },
+): Promise<{ x: number; y: number }> {
+  const { scale } = await sceneViewport(page);
+  return { x: base.x + worldDelta.x * scale, y: base.y - worldDelta.y * scale };
+}
+
+/**
+ * 场景视口的**真实**变换（`scale` / `tx` / `ty`），由场景面板把它写在
+ * `[data-testid="scene-viewport"]` 的 DOM 属性上。
+ *
+ * 为什么要读它而不是「画布中心 = 世界原点」：那条假设只在画布铺满窗口时成立，
+ * 而画布会被左右面板挤窄、容器上下还有别的区块，于是「画布中心」和「视口原点」
+ * 能差出几十像素——按中心算出来的世界坐标会整体偏掉，手柄根本点不中。
+ */
+export async function sceneViewport(
+  page: Page,
+): Promise<{ scale: number; tx: number; ty: number; left: number; top: number }> {
+  const box = await page.getByTestId("scene-viewport").boundingBox();
+  if (box === null) {
+    throw new Error("拿不到场景视口尺寸");
+  }
+
+  const viewport = await page.getByTestId("scene-viewport").evaluate((element) => ({
+    scale: Number(element.getAttribute("data-viewport-scale")),
+    tx: Number(element.getAttribute("data-viewport-tx")),
+    ty: Number(element.getAttribute("data-viewport-ty")),
+  }));
+
+  return { ...viewport, left: box.x, top: box.y };
+}
+
+/**
+ * 世界坐标 → 屏幕点（**精确**，用于点手柄 / 断言手柄位置）。
+ *
+ * 与 `worldSamplePoint` 的区别：那个假设「世界原点在画布正中」，只在地图铺满的
+ * 老用例里够用；手柄场景必须按视口真实变换算，否则点不中。
+ * 不夹取：调用方自己选的点要么在视口里，要么就是用例写错了。
+ */
+export async function exactWorldPoint(
+  page: Page,
+  world: { x: number; y: number },
+): Promise<{ x: number; y: number }> {
+  const viewport = await sceneViewport(page);
+  return {
+    x: viewport.left + viewport.tx + world.x * viewport.scale,
+    y: viewport.top + viewport.ty - world.y * viewport.scale,
+  };
+}
+
+/**
  * 画布（canvas）上的坐标与采样工具（用例共用）。
  *
  * 默认视口是 scale 1 且**世界原点在画布正中**（`createCenteredViewport`），

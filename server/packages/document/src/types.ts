@@ -30,7 +30,7 @@ import type { RleRun } from "@dts/grid";
  *   （谁画在前面；大的盖住小的，相同则按场景里的先后顺序）。
  */
 
-export const DOCUMENT_FORMAT_VERSION = 10;
+export const DOCUMENT_FORMAT_VERSION = 11;
 
 /** 网格行序：`bottom-up` 表示 cells 第 0 行是图片最下面一行（与 Unity GridMap 一致）。 */
 export type RowOrder = "bottom-up";
@@ -208,16 +208,30 @@ export interface SceneObjectDoc {
   readonly position: WorldPosition | null;
   readonly rotation: number;
   /**
-   * **统一缩放**：`1` = 原始尺寸（每个对象都有这个参数，新建时就是 1）。
+   * **等比缩放**：`1` = 原始尺寸（每个对象都有这个参数，新建时就是 1）。
    *
    * 它放大的是对象**自己那块矩形**（`image` / `map.image` 声明的尺寸 × scale），
    * 于是地图的贴图与**网格格子**、精灵的图片、拾取范围、选中框**一起**缩放——
    * 这四件事共用同一个矩形（见编辑器的 `displayRectOf`）。
    *
    * 位置不受影响：`position` 始终是缩放**之后**那块矩形的中心。
-   * 只支持等比缩放（一个数），不做 X / Y 分开——需要非等比时再加字段。
+   *
+   * 想**单轴**缩放就写 `scaleX` / `scaleY`（v11 起）：它们存在时覆盖本字段在对应轴上的值。
+   * 两轴相等时一律只写 `scale`（见 `collapseScale`），所以「等比」在文件里只有这一种写法。
    */
   readonly scale: number;
+  /**
+   * **单轴缩放**（v11 起，可选）：存在时覆盖 `scale` 在这一轴上的值。
+   *
+   * 省掉它 = 用 `scale`。读的时候一律走 `effectiveScaleX` / `effectiveScaleY`，
+   * **不要直接读字段**——那样会漏掉「缺省 = 用等比值」这条规则。
+   *
+   * 为什么不是 X / Y 两个必填字段：`scale` 从 v8 起就在文件、协议与 Unity 客户端里，
+   * 保留它 + 两个可选覆盖，能让所有旧文件与旧客户端零改动继续工作。
+   * 单位与值域同 `scale`（`0.01 ~ 100`，等比语义相同，只是两轴各自独立）。
+   */
+  readonly scaleX?: number;
+  readonly scaleY?: number;
   readonly components: ComponentDoc[];
   /** 仅 `kind === "Map"` 的地图对象携带；其它对象没有。 */
   readonly map?: MapDataDoc;

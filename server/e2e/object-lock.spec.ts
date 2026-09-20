@@ -11,8 +11,9 @@ import {
   sceneObjectDoc,
   seedProjectDoc,
   selectObject,
+  useMoveTool,
 } from "./helpers/editor";
-import { scenePoint, sceneWorldAt, worldSamplePoint } from "./helpers/canvas";
+import { offsetFrom, preciseWorldPoint, scenePoint } from "./helpers/canvas";
 
 /**
  * 对象的**锁定**：锁上就拖不动。
@@ -44,7 +45,7 @@ async function persistedPosition(
 }
 
 test.describe("对象锁定", () => {
-  test("锁上后画布上拖不动、坐标框禁用；解锁后又能拖", async ({ page, request }) => {
+  test("锁上后手柄拖不动、坐标框禁用；解锁后又能拖", async ({ page, request }) => {
     const project = await newProject(request);
     try {
       await seedProjectDoc(request, project, [
@@ -54,67 +55,62 @@ test.describe("对象锁定", () => {
       await enterEditor(page);
       await openProject(page, project);
       await selectObject(page);
+      // `selectObject` 会在平板下唤出左抽屉，而工具开关贴在画布左上角：先关掉再切工具
+      await closeDrawers(page);
+      await useMoveTool(page);
+      await closeDrawers(page);
 
-      // 基线：未锁时能拖（不然「拖不动」的断言可能只是因为压根拖不动）
-      const from = await worldSamplePoint(page, { x: 0, y: 0 });
-      const to = { x: from.x + 120, y: from.y - 80 };
-      await page.mouse.move(from.x, from.y);
-      await page.mouse.down();
-      await page.mouse.move(to.x, to.y, { steps: 8 });
-      await page.mouse.up();
+      /** 抓 X 轴中段往 +X 拖 120：对象的 x 应该跟着走。 */
+      const dragAxis = async (): Promise<void> => {
+        // 平板下属性是**覆盖式右抽屉**，会盖住画布右侧——不关掉，手柄的落点会被抽屉吃掉
+        await closeDrawers(page);
+        const position = await persistedPosition(request, project);
+        // 用**真实视口**换算：手柄只有 7px，按「世界坐标 → 画布中心」算会整体偏掉
+        // （平板档位就是这么超时的）
+        const base = await preciseWorldPoint(page, position ?? { x: 0, y: 0 });
+        const from = await offsetFrom(page, base, { x: 105, y: 0 });
+        const to = await offsetFrom(page, from, { x: 120, y: 0 });
+        await page.mouse.move(from.x, from.y);
+        await page.mouse.down();
+        await page.mouse.move(to.x, to.y, { steps: 8 });
+        await page.mouse.up();
+      };
 
-      const movedTo = await sceneWorldAt(page, to);
+      // 基线：未锁时手柄能拖（不然「拖不动」的断言可能只是因为压根拖不动）
+      await dragAxis();
+
       await expect
-        .poll(async () => {
-          const position = await persistedPosition(request, project);
-          return position !== null && Math.hypot(position.x - movedTo.x, position.y - movedTo.y) < 4;
-        })
-        .toBe(true);
+        .poll(async () => (await persistedPosition(request, project))?.x ?? 0)
+        .toBeGreaterThan(100);
 
       // 锁上：坐标框立刻禁用（锁 = 不能移动，留一个能改坐标的入口等于没锁）
+      await openInspector(page);
       await page.getByTestId("inspector-object-locked").check();
       await expect(page.getByTestId("inspector-object-x")).toBeDisabled();
       await expect(page.getByTestId("inspector-object-y")).toBeDisabled();
 
       const locked = await persistedPosition(request, project);
       expect(locked).not.toBeNull();
-
-      // 再从对象身上拖一次。拖动是相对位移，所以断言「落点没变」而不是变多少。
-      // 锁住的对象跟背景一个待遇：这一下会变成平移画布，所以之后要复位视口。
       await closeDrawers(page);
-      const center = await worldSamplePoint(page, locked ?? { x: 0, y: 0 });
-      await page.mouse.move(center.x, center.y);
-      await page.mouse.down();
-      await page.mouse.move(center.x + 150, center.y + 90, { steps: 8 });
-      await page.mouse.up();
 
-      // 拖动要是真生效了，800ms 内必落盘；等它一下再读
+      // 再拖一次手柄：锁定的对象手柄画着但点不到，所以这一下什么也不该发生
+      await dragAxis();
       await page.waitForTimeout(1200);
       expect(await persistedPosition(request, project)).toEqual(locked);
 
       await page.getByTestId("reset-viewport").click();
 
-      // 解锁：又能拖了
+      // 解锁：手柄又能拖了
       await openInspector(page);
       await page.getByTestId("inspector-object-locked").uncheck();
       await expect(page.getByTestId("inspector-object-x")).toBeEnabled();
-
       await closeDrawers(page);
-      const start = await worldSamplePoint(page, locked ?? { x: 0, y: 0 });
-      await page.mouse.move(start.x, start.y);
-      await page.mouse.down();
-      await page.mouse.move(start.x - 140, start.y - 60, { steps: 8 });
-      await page.mouse.up();
+
+      await dragAxis();
 
       await expect
-        .poll(async () => {
-          const position = await persistedPosition(request, project);
-          return (
-            position !== null &&
-            Math.hypot(position.x - (locked?.x ?? 0), position.y - (locked?.y ?? 0)) > 20
-          );
-        })
-        .toBe(true);
+        .poll(async () => (await persistedPosition(request, project))?.x ?? 0)
+        .toBeGreaterThan((locked?.x ?? 0) + 100);
     } finally {
       await dropProject(request, project);
     }
@@ -170,7 +166,7 @@ test.describe("对象锁定", () => {
       await openInspector(page);
       await expect(page.getByTestId("inspector-object-locked")).toBeChecked();
 
-      // 在画布上拖它：位置一动不动
+      // 在画布上拖它：位置一动不动（对象本体本就不会被跟手拖走，锁定的更不会）
       await closeDrawers(page);
       await page.mouse.move(center.x, center.y);
       await page.mouse.down();

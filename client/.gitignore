@@ -51,6 +51,8 @@ ExportedObj/
 *.csproj
 *.unityproj
 *.sln
+# Visual Studio 的新解决方案格式（`client.slnx` 就是这么冒出来的）——与 *.sln 一样是生成物
+*.slnx
 *.suo
 *.tmp
 *.user

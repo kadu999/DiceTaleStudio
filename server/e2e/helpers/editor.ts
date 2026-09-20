@@ -12,7 +12,7 @@ import { deflateSync } from "node:zlib";
 export type LeftTab = "assets" | "hierarchy";
 
 /** 场景文件的当前格式版本（与 `@dts/document` 的 `DOCUMENT_FORMAT_VERSION` 保持一致）。 */
-export const CURRENT_SCENE_FORMAT_VERSION = 10;
+export const CURRENT_SCENE_FORMAT_VERSION = 11;
 
 /** 用接口建一个真项目（含 `project.json`），返回项目名。 */
 export async function newProject(request: APIRequestContext): Promise<string> {
@@ -452,7 +452,26 @@ export async function expectPersistedObjectNames(
 }
 
 /**
- * 选中场景里的第 `index` 个对象，并保证属性面板露出来（平板下它是右抽屉）。
+ * 切到「移动」工具（画布左上角的工具开关）。
+ *
+ * **对象不会被跟手拖走**：拖动工具只平移画布，想改对象位置就得用移动工具的 X / Y 箭头。
+ * 所以任何「拖对象本体」的老用例都要先调到这个工具，否则那一下只会平移视口。
+ *
+ * 手柄本身的位置由 `ScenePanel` 算，用例不必知道：抓轴线中段即可。
+ */
+export async function useMoveTool(page: Page): Promise<void> {
+  await page.getByTestId("tool-move").click();
+  await expect(page.getByTestId("status-tool")).toHaveAttribute("data-tool", "move");
+}
+
+/** 切到「拖动」工具（默认）：只平移画布，拖对象只是选中它。 */
+export async function useDragTool(page: Page): Promise<void> {
+  await page.getByTestId("tool-none").click();
+  await expect(page.getByTestId("status-tool")).toHaveAttribute("data-tool", "none");
+}
+
+/**
+ * 场景里的某个对象，并保证属性面板露出来（平板下它是右抽屉）。
  *
  * 对象列表在「场景对象」页签里，所以要先把左栏切过去。
  */

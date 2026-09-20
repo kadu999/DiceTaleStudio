@@ -12,6 +12,7 @@ import {
   type RleRun,
 } from "@dts/grid";
 import { defaultComponentData } from "./components";
+import { DEFAULT_OBJECT_SCALE, clampObjectScale, collapseScale } from "./scale";
 import type {
   ActionInstanceDoc,
   ComponentDoc,
@@ -59,24 +60,11 @@ export const DEFAULT_SOUND_LAYER: SoundLayer = "sfx";
 const SORTING_ORDER_LIMIT = 9999;
 
 /**
- * 缩放的取值范围与默认值。
- *
- * `1` = 原始尺寸（新建对象就是这个值）。上下限是给**输入框**兜底的：0 会让对象
- * 变成不可见 / 不可点的零面积矩形，极大值则会把贴图与网格算成天文数字；
- * 夹在 `0.01 ~ 100`（1% ~ 100 倍）足够表达实际需求，也不至于把画布算坏。
+ * 缩放的取值范围与默认值**住在 `scale.ts`**（那里还管着等比与单轴的换算关系），
+ * 这里原样再导出一次：`DEFAULT_OBJECT_SCALE` 等一直是 `@dts/document` 的公开名字，
+ * 老调用方不该因为一次内部搬家而改 import。
  */
-export const DEFAULT_OBJECT_SCALE = 1;
-export const MIN_OBJECT_SCALE = 0.01;
-export const MAX_OBJECT_SCALE = 100;
-
-/** 把一个缩放值夹到合法范围；非法数字（NaN / Infinity）返回 `undefined`。 */
-function clampScale(scale: number): number | undefined {
-  if (!Number.isFinite(scale)) {
-    return undefined;
-  }
-
-  return Math.min(MAX_OBJECT_SCALE, Math.max(MIN_OBJECT_SCALE, scale));
-}
+export { DEFAULT_OBJECT_SCALE, MAX_OBJECT_SCALE, MIN_OBJECT_SCALE } from "./scale";
 
 /**
  * 角度的归一化区间：`(-180, 180]`（**度**）。
@@ -301,28 +289,60 @@ export function setObjectSortingOrder(
 }
 
 /**
- * 对象的**统一缩放**（`1` = 原始尺寸）。
+ * 对象的**等比缩放**（`1` = 原始尺寸）。
  *
  * 与显示顺序一样「夹而不拒」：输入框里敲出 0 / 负数 / 超大值都夹到 `0.01 ~ 100`，
  * 但落进文档的必须是有限正数——`NaN`（留空或敲了字母）直接拒绝，不写进文档。
  * 缩放改的是「对象占多大」，位置（矩形中心）不动。
+ *
+ * 这是 `setObjectScaleAxes` 的等比特例：**单轴字段会被摘掉**（`collapseScale`），
+ * 于是「把它改回等比」只需要调这一个命令，不用再单独去清 `scaleX` / `scaleY`。
  */
 export function setObjectScale(
   scene: Draft<SceneDoc>,
   objectId: string,
   scale: number,
 ): boolean {
+  return setObjectScaleAxes(scene, objectId, { x: scale, y: scale });
+}
+
+/**
+ * 对象的**两轴缩放**（v11 起：X / Y 各自独立；相等时自动折叠回等比 `scale`）。
+ *
+ * 两个轴分别「夹而不拒」（`0.01 ~ 100`），但**任一轴**是非有限数就整体拒绝、不写文档——
+ * 宁可这次拖拽白做，也不要把 `NaN` 半途写进去（那会让矩形算不出来）。
+ *
+ * 画布上的等比拖角、单轴拖边都走这里；`collapseScale` 保证写出来的形状是规范的
+ * （两轴相等只留 `scale`），所以反复拖手柄不会把对象钉死在非等比形态上。
+ *
+ * 位置（矩形中心）不动——`SceneObjectDoc.position` 的语义就是「缩放之后那块矩形的中心」。
+ */
+export function setObjectScaleAxes(
+  scene: Draft<SceneDoc>,
+  objectId: string,
+  axes: { readonly x: number; readonly y: number },
+): boolean {
   const object = findObject(scene, objectId);
   if (object === undefined) {
     return false;
   }
 
-  const next = clampScale(scale);
-  if (next === undefined || object.scale === next) {
+  const x = clampObjectScale(axes.x);
+  const y = clampObjectScale(axes.y);
+  if (x === undefined || y === undefined) {
     return false;
   }
 
-  object.scale = next;
+  const next = collapseScale({ ...object, scale: object.scale, scaleX: x, scaleY: y });
+  const unchanged =
+    next.scale === object.scale && next.scaleX === object.scaleX && next.scaleY === object.scaleY;
+  if (unchanged) {
+    return false;
+  }
+
+  object.scale = next.scale;
+  object.scaleX = next.scaleX;
+  object.scaleY = next.scaleY;
   return true;
 }
 

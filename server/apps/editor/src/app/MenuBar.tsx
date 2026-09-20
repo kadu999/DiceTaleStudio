@@ -2,6 +2,7 @@ import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { ProjectDialog } from "./ProjectDialog";
 import { SceneDialog } from "./SceneDialog";
 import { ObjectDialog } from "./ObjectDialog";
+import { TOOL_OPTIONS } from "../panels/scene/ScenePanel";
 import { useEditorStore } from "../state/editor-store";
 
 /**
@@ -45,6 +46,7 @@ export function MenuBar({ compact }: MenuBarProps): React.JSX.Element {
   const undo = useEditorStore((state) => state.undo);
   const redo = useEditorStore((state) => state.redo);
   const fitToViewport = useEditorStore((state) => state.fitToViewport);
+  const setTool = useEditorStore((state) => state.setTool);
 
   return (
     // `data-testid` 给测试一个**稳定的作用域**：菜单栏里叫「场景 / 编辑 / 项目」的按钮，
@@ -135,6 +137,16 @@ export function MenuBar({ compact }: MenuBarProps): React.JSX.Element {
         />
         <MenuSeparator />
         <MenuItem label="适配视口" onSelect={fitToViewport} />
+        <MenuSeparator />
+        {/* 场景工具也放在「视图」里：平板没有键盘，所有命令都得能从菜单触发。
+            带勾表示当前工具——三个互斥，菜单里同样要看得出来 */}
+        {TOOL_OPTIONS.map((option) => (
+          <MenuItem
+            key={option.tool}
+            label={`${ui.tool === option.tool ? "● " : "　"}${option.label}`}
+            onSelect={() => setTool(option.tool)}
+          />
+        ))}
       </Menu>
 
       <Menu label="运行">

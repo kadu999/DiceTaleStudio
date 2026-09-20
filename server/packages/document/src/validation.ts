@@ -39,14 +39,29 @@ function validateObject(object: SceneObjectDoc, path: string, issues: Validation
     checkPosition(object.position, `${path}/position`, issues);
   }
 
-  // 缩放：画布按「矩形尺寸 × scale」画，0 / 负数 / NaN 都画不出来（渲染端会退回 1，
-  // 但那是兜底，不是数据正确——所以这里明确报错，别让坏数据悄悄留在文件里）
+  // 缩放：画布按「矩形尺寸 × 缩放」画，0 / 负数 / NaN 都画不出来（渲染端会退回 1，
+  // 但那是兜底，不是数据正确——所以这里明确报错，别让坏数据悄悄留在文件里）。
+  //
+  // v8 起是等比的 `scale`，v11 起还可以有**可选**的单轴 `scaleX` / `scaleY`：
+  // 三个字段各自按同一个规则查（缺省的单轴字段本身就是合法写法，不报错），
+  // 路径分别写出来，才知道是哪一个数坏了。
   if (!Number.isFinite(object.scale) || object.scale <= 0) {
     issues.push({
       level: "error",
       path: `${path}/scale`,
       message: `缩放必须是正数（现在 ${String(object.scale)}）`,
     });
+  }
+
+  for (const axis of ["scaleX", "scaleY"] as const) {
+    const value = object[axis];
+    if (value !== undefined && (!Number.isFinite(value) || value <= 0)) {
+      issues.push({
+        level: "error",
+        path: `${path}/${axis}`,
+        message: `单轴缩放必须是正数（现在 ${String(value)}）`,
+      });
+    }
   }
 
   // 地图对象：数据必须完整（没有数据的「地图对象」在场景里就是个空壳）

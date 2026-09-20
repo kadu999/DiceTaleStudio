@@ -1,16 +1,19 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import {
+  closeDrawers,
   dropProject,
   enterEditor,
   newProject,
+  openInspector,
   openLeftTab,
   openProject,
   sceneDoc,
   sceneObjectDoc,
   seedProjectDoc,
   selectObject,
+  useMoveTool,
 } from "./helpers/editor";
-import { canvasAverageColor, dragOnCanvas, worldSamplePoint } from "./helpers/canvas";
+import { canvasAverageColor, offsetFrom, preciseWorldPoint, worldSamplePoint } from "./helpers/canvas";
 
 /**
  * **声音对象**（动作对象）：弹框里「动作」种类下的「播放声音」。
@@ -251,10 +254,12 @@ test.describe("动作对象：播放声音", () => {
       await openProject(page, project);
       await openLeftTab(page, "hierarchy");
 
-      const origin = await worldSamplePoint(page, { x: 0, y: 0 });
+      // 像素采样与点击都用**精确**换算：采样点必须落在图标上，点击点必须落在 7px 级别的
+      // 手柄上——两者都不能用「世界原点 = 画布中心」那条近似
+      const origin = await preciseWorldPoint(page, { x: 0, y: 0 });
 
       // 1) 画出来了：牌面是**实色**暖橙（暖度很高），旁边的棋盘底纹是中性灰（暖度 ≈ 0）
-      const plainRedness = await redness(page, await worldSamplePoint(page, { x: 240, y: 0 }));
+      const plainRedness = await redness(page, await preciseWorldPoint(page, { x: 240, y: 0 }));
       await expect.poll(() => redness(page, origin)).toBeGreaterThan(plainRedness + 20);
 
       // 2) 点得到：拾取用的还是那块显示矩形（与实体同一套）
@@ -263,11 +268,30 @@ test.describe("动作对象：播放声音", () => {
       await expect(soundRow).toHaveAttribute("data-kind", "PlaySound");
       await expect(soundRow).toHaveAttribute("data-selected", "true");
 
-      // 3) 拖得动：位置跟着走，并自动落盘
-      await dragOnCanvas(page, origin, { x: origin.x + 120, y: origin.y - 80 });
+      // 3) 用手柄移动它：位置跟着走，并自动落盘。
+      //    注意是「移动」工具——拖动工具只平移画布，对象本体不会被跟手拖走。
+      //    先把对象挪到**画布靠左**：平板竖屏下属性是覆盖式右抽屉，对象摆在正中时
+      //    它右侧的手柄会正好落在抽屉底下（那一下就点不中）
+      await openInspector(page);
+      await page.getByTestId("inspector-object-x").fill("-200");
+      await page.getByTestId("inspector-object-y").fill("0");
+      await page.getByTestId("inspector-object-y").blur();
+      await expect(page.getByTestId("inspector-object-x")).toHaveValue("-200");
+      await closeDrawers(page);
+      await useMoveTool(page);
+      await closeDrawers(page);
+
+      const moved = await preciseWorldPoint(page, { x: -200, y: 0 });
+      const axis = await offsetFrom(page, moved, { x: 105, y: 0 });
+      const to = await offsetFrom(page, axis, { x: 120, y: 0 });
+      await page.mouse.move(axis.x, axis.y);
+      await page.mouse.down();
+      await page.mouse.move(to.x, to.y, { steps: 8 });
+      await page.mouse.up();
+
       await expect
-        .poll(async () => (await readSound(request, project, SCENE))?.position)
-        .not.toEqual({ x: 0, y: 0 });
+        .poll(async () => (await readSound(request, project, SCENE))?.position?.x ?? 0)
+        .toBeGreaterThan(-100);
     } finally {
       await dropProject(request, project);
     }

@@ -1,5 +1,6 @@
 export * from "./fields";
 export * from "./types";
+export * from "./scale";
 export * from "./schema";
 export * from "./components";
 export * from "./factory";

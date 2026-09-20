@@ -109,9 +109,14 @@ export const sceneObjectSchema = z.object({
   locked: z.boolean().default(false),
   position: worldPositionSchema.nullable(),
   rotation: z.number(),
-  // v8 起：统一缩放。同样给默认值（v7 及更早的文件没有它，语义只能是 1 = 原始尺寸）；
+  // v8 起：等比缩放。同样给默认值（v7 及更早的文件没有它，语义只能是 1 = 原始尺寸）；
   // 0 / 负数 / NaN 这类坏值不在这里硬拒（读不开比画不出来更糟），由 `validateScene` 报错
   scale: z.number().default(1),
+  // v11 起：单轴缩放（可选）。存在时覆盖 `scale` 在对应轴上的值；**不给默认值**是有意的
+  // ——「没写」的语义是「用 `scale`」，补成 1 会把等比对象悄悄变成非等比。
+  // 取值与坏值处理同 `scale`（见 `@dts/document` 的 `effectiveScaleX` / `validateScene`）
+  scaleX: z.number().optional(),
+  scaleY: z.number().optional(),
   components: z.array(componentSchema),
   map: mapDataSchema.optional(),
   // 动作对象（播放声音）的声音数据
@@ -238,6 +243,8 @@ export interface SceneSizeHint {
  * - `active` / `sortingOrder` / `scale` / `locked` 是后来新增的**显式**字段：老文件里没有，
  *   语义只能是「显示、顺序 0、缩放 1、不锁」。补进内存后要求调用方回写一次，
  *   否则会出现「内存里已补全、磁盘上还是缺字段」的长期不一致。
+ * - v11 的 `scaleX` / `scaleY` **刻意不在这里补**：它们是**可选**的，「没写」本身就是合法
+ *   且有意义的（= 用等比 `scale`）。补成 1 会把等比对象悄悄变成非等比，那才是改坏数据。
  *
  * 返回是否补过：补了就要求调用方回写一次文件。
  */
