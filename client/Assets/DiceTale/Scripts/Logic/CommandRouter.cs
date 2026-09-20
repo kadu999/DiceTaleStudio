@@ -40,6 +40,23 @@ namespace DiceTale
 
         private void OnCommand(CommandRequest command)
         {
+            try
+            {
+                Handle(command);
+            }
+            catch (System.Exception error)
+            {
+                // 前端自己炸了也要回执：不回的话编辑器只能等到 5 秒超时，看不出真正的原因
+                Debug.LogError($"[命令] 处理 {command.kind} 时出错：{error}");
+                if (session != null)
+                {
+                    session.SendCommandResult(command, false, $"前端处理这条命令时出错：{error.Message}");
+                }
+            }
+        }
+
+        private void Handle(CommandRequest command)
+        {
             switch (command.kind)
             {
                 case Protocol.CommandPlaySound:
@@ -105,26 +122,29 @@ namespace DiceTale
             var fog = FogOf(command.objectId);
             if (fog == null)
             {
-                session.SendCommandResult(command, false, $"{DescribeFogTarget(command.objectId)}，没有雾层可擦");
+                var reason = $"{DescribeFogTarget(command.objectId)}，没有雾层可擦";
+                Debug.LogWarning($"[命令] 擦除战争雾失败：{reason}");
+                session.SendCommandResult(command, false, reason);
                 return;
             }
 
             if (command.points.Count == 0)
             {
+                Debug.LogWarning("[命令] 擦除战争雾失败：这笔擦除没有落点（stroke.points 为空）");
                 session.SendCommandResult(command, false, "这笔擦除没有落点（stroke.points 为空）");
                 return;
             }
 
             if (!fog.EraseStroke(command.points, command.radius, command.softness))
             {
+                Debug.LogWarning("[命令] 擦除战争雾失败：雾层还没准备好（数据不全或遮罩没建起来）");
                 session.SendCommandResult(command, false, "雾层还没准备好（这张地图的数据不全或遮罩没建起来）");
                 return;
             }
 
-            session.SendCommandResult(
-                command,
-                true,
-                effects: new[] { $"沿轨迹擦掉 1 笔（{command.points.Count} 个落点）" });
+            var effect = $"沿轨迹擦掉 1 笔（{command.points.Count} 个落点）";
+            Debug.Log($"[命令] 擦除战争雾：{command.objectId} {effect}");
+            session.SendCommandResult(command, true, effects: new[] { effect });
         }
 
         /// <summary>整区开关：含该区域位的格子整片揭示 / 盖回。</summary>
@@ -133,27 +153,31 @@ namespace DiceTale
             var fog = FogOf(command.objectId);
             if (fog == null)
             {
-                session.SendCommandResult(command, false, $"{DescribeFogTarget(command.objectId)}，没有雾层可改");
+                var reason = $"{DescribeFogTarget(command.objectId)}，没有雾层可改";
+                Debug.LogWarning($"[命令] 战争雾整区操作失败：{reason}");
+                session.SendCommandResult(command, false, reason);
                 return;
             }
 
             var obj = mirror.Find(command.objectId);
             if (!ContainsRegion(obj?.map?.fogRegions, command.region))
             {
-                session.SendCommandResult(command, false, $"区域位 {command.region} 不是这张地图的雾区");
+                var reason = $"区域位 {command.region} 不是这张地图的雾区";
+                Debug.LogWarning($"[命令] 战争雾整区操作失败：{reason}");
+                session.SendCommandResult(command, false, reason);
                 return;
             }
 
             if (!fog.RevealRegion(command.region, command.revealed))
             {
+                Debug.LogWarning("[命令] 战争雾整区操作失败：雾层还没准备好（数据不全或遮罩没建起来）");
                 session.SendCommandResult(command, false, "雾层还没准备好（这张地图的数据不全或遮罩没建起来）");
                 return;
             }
 
-            session.SendCommandResult(
-                command,
-                true,
-                effects: new[] { command.revealed ? "这一区整片揭示" : "这一区整片盖回" });
+            var effect = command.revealed ? "这一区整片揭示" : "这一区整片盖回";
+            Debug.Log($"[命令] 战争雾：{command.objectId} 区域位 {command.region} {effect}");
+            session.SendCommandResult(command, true, effects: new[] { effect });
         }
 
         /// <summary>取某个地图对象上的雾层（对象不在镜像里 / 不是地图 / 没绑雾区时都是 null）。</summary>

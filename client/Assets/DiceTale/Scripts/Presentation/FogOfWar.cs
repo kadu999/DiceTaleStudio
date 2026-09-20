@@ -80,13 +80,13 @@ namespace DiceTale
         /// <summary>有序的操作记录：地图数据变了要「重填初始态 + 重放」。**顺序有意义**——盖回要盖掉之前的笔画。</summary>
         private readonly List<MaskOp> ops = new List<MaskOp>();
 
-        private GroundTextureRenderer renderer;
+        private GroundTextureRenderer overlayRenderer;
 
         private static readonly Color32 Transparent = new Color32(0, 0, 0, 0);
 
         private void Awake()
         {
-            renderer = GetComponent<GroundTextureRenderer>();
+            overlayRenderer = GetComponent<GroundTextureRenderer>();
         }
 
         private void OnDestroy()
@@ -114,15 +114,15 @@ namespace DiceTale
                 return;
             }
 
-            if (renderer == null)
+            if (overlayRenderer == null)
             {
-                renderer = GetComponent<GroundTextureRenderer>();
+                overlayRenderer = GetComponent<GroundTextureRenderer>();
             }
 
-            if (renderer != null)
+            if (overlayRenderer != null)
             {
                 // 白色染色 = 原样显示遮罩（雾色已经在遮罩里了）
-                renderer.Apply(texture, worldWidth, worldHeight, Color.white, sortingOrder, lift);
+                overlayRenderer.Apply(texture, worldWidth, worldHeight, Color.white, sortingOrder, lift);
             }
         }
 
@@ -262,6 +262,57 @@ namespace DiceTale
             }
 
             Upload();
+
+            // 一条日志说明这一层建成了什么样：现场排查「投影上一片都没有」时先看这行在不在
+            // （在 = 雾层建起来了，问题在命令 / 显示；不在 = 数据没到这一层）。
+            Debug.Log(
+                $"[战争雾] {name}：雾区 {DescribeRegions()}，雾格 {CountFogCells()} 个，" +
+                $"遮罩 {maskWidth}×{maskHeight}，已重放 {ops.Count} 步");
+        }
+
+        /// <summary>已指定的雾区（写成面板上的名字：区域1+区域4）。</summary>
+        private string DescribeRegions()
+        {
+            if (fogRegions.Count == 0)
+            {
+                return "(无)";
+            }
+
+            var parts = new List<string>(fogRegions.Count);
+            for (int i = 0; i < fogRegions.Count; i++)
+            {
+                parts.Add($"区域{RegionIndex(fogRegions[i])}");
+            }
+
+            return string.Join("+", parts);
+        }
+
+        /// <summary>位 → 面板上的编号（区域1 = 位 1、区域4 = 位 8……与编辑器的 `MASK_LABELS` 同序）。</summary>
+        private static int RegionIndex(int bit)
+        {
+            var index = 1;
+            for (var value = 1; value < bit; value <<= 1)
+            {
+                index += 1;
+            }
+
+            return index;
+        }
+
+        /// <summary>含已指定雾区位的格子数（只看数据，不看揭示状态）。</summary>
+        private int CountFogCells()
+        {
+            var count = 0;
+            var total = gridWidth * gridHeight;
+            for (int i = 0; i < total; i++)
+            {
+                if ((cells[i] & fogMask) != 0)
+                {
+                    count += 1;
+                }
+            }
+
+            return count;
         }
 
         /// <summary>建 / 换 CPU 遮罩与纹理（尺寸变了就重建；旧纹理自己释放）。</summary>
