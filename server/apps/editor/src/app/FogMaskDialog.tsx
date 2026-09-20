@@ -24,6 +24,11 @@ import {
   type MaskPoint,
 } from "../services/mask-math";
 import { useEditorStore } from "../state/editor-store";
+import {
+  shouldFlushBatch,
+  splitStrokeBatch,
+  type FogRevealPoint,
+} from "../services/fog-reveal";
 import { fitBox, useDialogSize } from "./dialog-size";
 
 /**
@@ -39,7 +44,10 @@ import { fitBox, useDialogSize } from "./dialog-size";
  * - 每次打开都按当前文档重画一遍，所以**关掉再打开就恢复原样**；
  * - 遮罩纹理 **960 宽**（参考实现的默认遮罩宽度）、高度按贴图比例推；笔刷 48 texel
  *   ——于是归一化半径 = 宽度 5%，正是参考实现下发给前端的值（详见 `previewMaskSizeFor`）；
- * - 没有「画笔 / 画回去 / 全部清除」：运行时那边也只有擦除（雾只会被揭示，不会被重新盖上）。
+ * - 没有「画笔 / 画回去 / 全部清除」：运行时那边也只有擦除（雾只会被揭示，不会被重新盖上）；
+ * - **运行态下还顺手下发**：拖动中按批（攒够几个点或过一会儿）把**轨迹**发给前端，
+ *   抬手再补最后一批（`eraseFogMask`）；整区开关同样下发（`setFogRegionRevealed`）。
+ *   编辑态什么都不发——那时候这一窗口就是纯粹的预览。
  *
  * 雾区格子（哪几个区域算雾）在属性面板指定，涂格子走「编辑 → 打开编辑窗口…」。
  */
@@ -60,6 +68,8 @@ export function FogMaskDialog({
   const scenes = useEditorStore((state) => state.scenes);
   const activeSceneName = useEditorStore((state) => state.activeSceneName);
   const colors = useEditorStore((state) => state.gridPaint.colors);
+  /** 运行态：擦了会下发给前端（编辑态只是预览）——底部那句话按它换。 */
+  const running = useEditorStore((state) => state.mode === "run");
 
   // 目标对象现查一次：它可能已经被删掉（删了窗口就该关，这里只是兜底不崩）
   const object =
@@ -89,6 +99,15 @@ export function FogMaskDialog({
   const imageDataRef = useRef<ImageData | null>(null);
   const stageObserverRef = useRef<ResizeObserver | null>(null);
   const lastPointRef = useRef<MaskPoint | null>(null);
+
+  /**
+   * 这一笔还没下发的落点（**归一化坐标**，与画布预览用的纹理像素分开两份）。
+   *
+   * 拖动中按批下发（见 `shouldFlushBatch`）：攒下来的点交给 `eraseFogMask`，
+   * 它会记进 store 并在有前端时发一条 `erase_mask`。
+   */
+  const pendingStrokeRef = useRef<readonly FogRevealPoint[]>([]);
+  const lastSentAtRef = useRef(0);
 
   /**
    * 画布节点（callback ref 存 state）。
@@ -184,6 +203,44 @@ export function FogMaskDialog({
     return { x: x * (maskSize?.width ?? 1), y: y * (maskSize?.height ?? 1) };
   };
 
+  /** 纹理像素坐标 → **归一化坐标**（下发给前端的就是这个：`[0,1]`、y 向下）。 */
+  const toNormalized = (point: MaskPoint): FogRevealPoint => ({
+    x: point.x / Math.max(1, maskSize?.width ?? 1),
+    y: point.y / Math.max(1, maskSize?.height ?? 1),
+  });
+
+  /**
+   * 把攒下的落点按批发给前端（运行态；编辑态 store 那边什么都不做）。
+   *
+   * `done` = 抬手 / 取消那一批：剩下的点一起发。拖动中每批都会有回执，
+   * 但成功回执不写日志（`eraseFogMask` 里静默），所以运行日志不会被刷屏。
+   */
+  const flushStroke = (done: boolean): void => {
+    const pending = pendingStrokeRef.current;
+    const now = Date.now();
+    if (
+      objectId === null ||
+      !shouldFlushBatch({
+        pendingPoints: pending.length,
+        now,
+        lastSentAt: lastSentAtRef.current,
+        done,
+      })
+    ) {
+      return;
+    }
+
+    // 留下的最后一个点会成为下一批的第一个点：接缝处不会断一段
+    const batch = splitStrokeBatch(pending, done);
+    pendingStrokeRef.current = batch.pending;
+    if (batch.sent.length === 0) {
+      return;
+    }
+
+    lastSentAtRef.current = now;
+    useEditorStore.getState().eraseFogMask(objectId, batch.sent, done);
+  };
+
   /** 在纹理像素坐标的一个点上擦一下（就地改遮罩像素并回写画布）。 */
   const eraseAt = (point: MaskPoint): void => {
     const imageData = imageDataRef.current;
@@ -214,6 +271,10 @@ export function FogMaskDialog({
     const point = toTexelPoint(event);
     lastPointRef.current = point;
     eraseAt(point);
+
+    // 这一笔从这里开始攒点（上一笔如果没被抬手收尾，剩下的点就丢掉——它已经不是这一笔了）
+    pendingStrokeRef.current = [toNormalized(point)];
+    lastSentAtRef.current = Date.now();
   };
 
   const onPointerMove = (event: React.PointerEvent<HTMLCanvasElement>): void => {
@@ -229,10 +290,15 @@ export function FogMaskDialog({
     }
 
     lastPointRef.current = point;
+
+    // 攒点：够了（或过一会儿了）就发一批——前端那边是边拖边擦的
+    pendingStrokeRef.current = [...pendingStrokeRef.current, toNormalized(point)];
+    flushStroke(false);
   };
 
   const onPointerEnd = (): void => {
     lastPointRef.current = null;
+    flushStroke(true);
   };
 
   /**
@@ -240,6 +306,9 @@ export function FogMaskDialog({
    *
    * 只改这一窗口里的遮罩：不写文档、不进撤销栈；关掉重开回到未探索的样子。
    * 手动擦掉的零散部分**不会**让开关跟着变——开关管的是「整区」，不是「擦过没有」。
+   *
+   * 运行态下顺手下发一条 `reveal_fog_region`：前端按**同一顺序**重放（盖回会连带盖掉
+   * 这一区里之前擦掉的部分），与这里看到的一致。
    */
   const toggleRegion = (bit: number, revealed: boolean): void => {
     const imageData = imageDataRef.current;
@@ -268,6 +337,10 @@ export function FogMaskDialog({
     setRevealedRegions((previous) =>
       revealed ? [...previous, bit] : previous.filter((value) => value !== bit),
     );
+
+    if (objectId !== null) {
+      useEditorStore.getState().setFogRegionRevealed(objectId, bit, revealed);
+    }
   };
 
   return (
@@ -364,7 +437,11 @@ export function FogMaskDialog({
 
               <div className="mt-2 flex flex-none items-center gap-2 text-[10px] text-[var(--color-editor-text-dim)]">
                 {/* 用法不写（软边圆刷 / 整区开关一眼就懂），只留这条会让人意外的语义 */}
-                <span>擦了不写文档：关掉重开就回到未探索的样子</span>
+                <span>
+                  {running
+                    ? "擦了会下发给前端（拖动中分批发）"
+                    : "擦了不写文档：关掉重开就回到未探索的样子"}
+                </span>
                 <Dialog.Close asChild>
                   <button
                     type="button"

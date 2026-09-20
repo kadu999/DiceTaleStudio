@@ -100,6 +100,7 @@
 | `sortingOrder` | `MeshRenderer.sortingOrder` + 按序微小离地（避免共面闪烁） |
 | `image` / `map.image` | 资源逻辑 ID → `GET /api/resources/raw?id=…` 取纹理；没图时按 `kind` 上色占位 |
 | `map.cells` | RLE（`[[掩码, 格数], …]`）——掩码值与 `@dts/grid` 的 `CellMask` / Unity 的 `GridCellType` 完全一致 |
+| `map.fog` | **战争雾**：`regions` = 哪几个「区域位」算雾区（区域位就是 `cells` 里那些位，任意可绘制位都行，如 `[1, 8]` = 区域1 + 区域4）。前端据此挑出**雾格子**、生成一张像素遮罩；**哪里被揭示了不在数据里**——那是运行态，由下面两条命令驱动，不写文档、也不随 `scene_sync` 回来 |
 | `sound` | `{ clips, picked, layer }`：前端播的就是 `picked` 那条；`layer` ∈ `bgm/ambient/sfx/voice`，同层同时只响一条 |
 | `teleport { targets, picked }` | **传送阵**：`targets` = 候选场景名清单，`picked` = 现在选中的那一张（与 `sound.clips` / `sound.picked` 同一套形状）。**前端不用它**：触发传送阵 = 编辑器切换当前场景 → 整份 `scene_push` 下来，前端只管换镜像。前端也**不给它建可见物**（和 `PlaySound` 一样：动作对象一个 GameObject 都不建），数据留在镜像里即可 |
 
@@ -109,13 +110,27 @@
 |---|---|---|
 | `play_sound` | `{ objectId, layer }` | 从**镜像里的那个对象**读 `sound.picked`，在该层播放（同层顶替） |
 | `stop_sound` | `{ layer }` | 停掉该层 |
+| `erase_mask` | `{ objectId, stroke: { points, radius, softness } }` | 在**镜像里那张地图**的雾层上，沿这笔**轨迹**擦出一条软边（见下） |
+| `reveal_fog_region` | `{ objectId, region, revealed }` | 含该区域位的格子**整片揭示**（`true`）/ **整片盖回**（`false`） |
+
+**战争雾发的是轨迹，不是整张遮罩**（照参考实现 `backend_diceTale` 的 `erase_mask` / `EraseStroke`）：
+
+- `points`：鼠标拖过的归一化轨迹点（`[0,1]`、**y 向下**）。前端把它翻成纹理的自下而上（`(1 - y) × 高`），
+  沿线段按 `step = max(1, 半径 / 2)` 补点、两端各打一个软边擦除圆，`min` 幂等（同一处擦 N 次 = 一次）；
+- `radius`：**半径 / 遮罩宽**（编辑器固定 `48/960 = 0.05`）。前端收到后乘**它自己**的遮罩宽——
+  两端的遮罩是**同一张尺寸**（`apps/editor/src/services/mask-math.ts` 的 `previewMaskSizeFor`：
+  960 宽、高按贴图比例推、长边超 2048 等比缩），所以两边擦出的是同一片纹素；
+- `softness`：软边带比例（0 = 硬边、1 = 全程衰减），编辑器固定 `1`；
+- 拖动中是**分批**发的（编辑器攒够几个点或过一会儿发一批），每批都是同一笔轨迹的一段。
 
 **传送阵不在这里**：它没有自己的命令。触发传送阵 = 编辑器**切换当前场景** → 走上面那条 `scene_push`
 （全量、立刻推）→ 前端按新场景名换整份镜像。少一条命令不是遗漏，而是「后台是唯一真源」的直接结果。
 
-**实现进度**：命令链路（转发 / 回执 / 超时 / 日志）已通；前端 `play_sound` 的**真出声**
-（取音频 + 按层播放）是下一步——现在它如实回 `ok:false` 并说明「镜像里该播哪一条」，
-编辑器日志里看得见失败原因，不会假装成功、也不会超时。
+**实现进度**：命令链路（转发 / 回执 / 超时 / 日志）已通，战争雾两条命令**前后端都已实现**
+（编辑器 Mask 窗口擦除 / 整区开关 → 前端雾层；前端进程不重启的话揭示状态会留着，重开 Unity 回到未探索，
+编辑器在同一次运行里会把记下的轨迹补发一遍）。
+前端 `play_sound` 的**真出声**（取音频 + 按层播放）是下一步——现在它如实回 `ok:false` 并说明
+「镜像里该播哪一条」，编辑器日志里看得见失败原因，不会假装成功、也不会超时。
 
 ## 客户端实现位置（`client/`）
 
@@ -128,5 +143,6 @@
 | `Network/ClientSession.cs` | 握手 / 心跳 / 把消息变成事件 |
 | `Logic/SceneMirror.cs` | 按 id 增 / 改 / 删视图 |
 | `Logic/CommandRouter.cs` | 命令 → 动作 → 回执 |
-| `Presentation/SceneObjectView.cs` | 一个对象一块贴地面片（位置 / 缩放 / 激活 / 显示顺序 / 取图） |
+| `Presentation/SceneObjectView.cs` | 一个对象一块贴地面片（位置 / 缩放 / 激活 / 显示顺序 / 取图）；**绑了雾区的地图**再多一个 `FogOverlay` 子物体 |
+| `Presentation/FogOfWar.cs` | 战争雾层：按 `map.fog.regions` + `map.cells` 生成像素遮罩（与编辑器预览同一张尺寸），按 `erase_mask` / `reveal_fog_region` 揭示；揭示状态留在组件里，数据变了「重填 + 重放」 |
 | `Presentation/ResourceImageLoader.cs` | 按逻辑 ID 取图（带缓存 / 去重 / 失败记忆） |

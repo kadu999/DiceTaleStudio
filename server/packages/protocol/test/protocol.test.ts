@@ -246,6 +246,83 @@ describe("协议：编辑器 → 服务端", () => {
     expect(stop.type).toBe("editor_command");
   });
 
+  it("战争雾：擦除只发轨迹（不是整张遮罩），整区开关带区域位", () => {
+    const stroke = {
+      points: [
+        { x: 0.1, y: 0.2 },
+        { x: 0.3, y: 0.25 },
+      ],
+      radius: 0.05,
+      softness: 1,
+    };
+
+    const erase = parseEditorToServer({
+      type: "editor_command",
+      requestId: "fog-1",
+      command: { kind: "erase_mask", objectId: "map_01", stroke },
+    });
+
+    expect(erase.type).toBe("editor_command");
+    if (erase.type === "editor_command") {
+      expect(erase.command).toEqual({ kind: "erase_mask", objectId: "map_01", stroke });
+      // 命令里**没有**雾数据：没有格子、没有贴图、没有位图
+      const wire = JSON.stringify(erase.command);
+      expect(wire).not.toContain("cells");
+      expect(wire).not.toContain("image");
+      expect(wire).not.toContain("regions");
+    }
+
+    const region = parseEditorToServer({
+      type: "editor_command",
+      requestId: "fog-2",
+      command: { kind: "reveal_fog_region", objectId: "map_01", region: 8, revealed: false },
+    });
+    expect(region.type).toBe("editor_command");
+    if (region.type === "editor_command") {
+      expect(region.command).toEqual({
+        kind: "reveal_fog_region",
+        objectId: "map_01",
+        region: 8,
+        revealed: false,
+      });
+    }
+  });
+
+  it("战争雾：空轨迹 / 非有限数 / 缺字段都拒（畸形结构不进管线）", () => {
+    const cases: unknown[] = [
+      // 空轨迹：前端会拒（一笔至少要一个点），后端先挡，别白转发一条无效笔画
+      { kind: "erase_mask", objectId: "map_01", stroke: { points: [], radius: 0.05, softness: 1 } },
+      // 半径 / 软边必须是有限的数（zod 4 的 z.number() 不收 NaN 与 Infinity）
+      {
+        kind: "erase_mask",
+        objectId: "map_01",
+        stroke: { points: [{ x: 0, y: 0 }], radius: Number.POSITIVE_INFINITY, softness: 1 },
+      },
+      {
+        kind: "erase_mask",
+        objectId: "map_01",
+        stroke: { points: [{ x: 0, y: 0 }], radius: 0.05, softness: Number.NaN },
+      },
+      // 少了整笔
+      { kind: "erase_mask", objectId: "map_01" },
+      // 点不是 {x, y}
+      {
+        kind: "erase_mask",
+        objectId: "map_01",
+        stroke: { points: [{ x: 0 }], radius: 0.05, softness: 1 },
+      },
+      // 整区开关少了 revealed / region 不是整数
+      { kind: "reveal_fog_region", objectId: "map_01", region: 1 },
+      { kind: "reveal_fog_region", objectId: "map_01", region: 1.5, revealed: true },
+    ];
+
+    for (const command of cases) {
+      expect(() => parseEditorToServer({ type: "editor_command", requestId: "fog-3", command })).toThrow(
+        /校验失败/,
+      );
+    }
+  });
+
   it("拒绝旧模型的消息（整层删除，不再兼容）", () => {
     for (const legacy of [
       { type: "request_join" },

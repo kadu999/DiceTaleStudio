@@ -4,6 +4,7 @@ import { CellMask } from "@dts/grid";
 import { createMapObject, createSceneObject, type SceneObjectDoc } from "@dts/document";
 import { InspectorPanel } from "../src/panels/inspector/InspectorPanel";
 import { sceneHistory, useEditorStore } from "../src/state/editor-store";
+import { emptyFogReveal } from "../src/services/fog-reveal";
 
 /**
  * 战争雾：**属性面板的开关 / 指定雾区**（雾区是文档数据，开关是编辑器偏好）。
@@ -25,6 +26,17 @@ const GRID = { width: 8, height: 6 };
 
 function mapObject(): SceneObjectDoc {
   return createMapObject({ id: "map-1", name: "网格地图", image: IMAGE, grid: GRID });
+}
+
+/** 一张**绑了「区域4」**的地图（揭示记账只认绑了雾区的地图）。 */
+function fogMap(): SceneObjectDoc {
+  const object = mapObject();
+  const map = object.map;
+  if (map === undefined) {
+    throw new Error("createMapObject 应当带 map 数据");
+  }
+
+  return { ...object, map: { ...map, fog: { regions: [CellMask.Fog1] } } };
 }
 
 /**
@@ -70,6 +82,9 @@ afterEach(() => {
     },
     fogMask: false,
     fogMaskTarget: null,
+    // 揭示记账与运行态都是跨用例留着的：每个用例都从「编辑态、什么都没擦」开始
+    mode: "edit",
+    fogReveal: emptyFogReveal(),
   });
   window.localStorage.clear();
 });
@@ -163,4 +178,91 @@ describe("属性面板：战争雾开关与雾区", () => {
     expect(useEditorStore.getState().fogMaskTarget).toBeNull();
   });
 
+});
+
+describe("战争雾：揭示记账（运行态才下发给前端）", () => {
+  const logs = (): string[] => useEditorStore.getState().runtime.logs.map((entry) => entry.message);
+  const ops = (): readonly { kind: string }[] =>
+    useEditorStore.getState().fogReveal.objects["map-1"]?.ops ?? [];
+
+  it("编辑态擦一笔：只是这一窗口里的预览——不记账、不动文档、不进撤销栈", () => {
+    seedScene([fogMap()], ["map-1"]);
+
+    act(() => useEditorStore.getState().eraseFogMask("map-1", [{ x: 0.1, y: 0.1 }], true));
+
+    expect(useEditorStore.getState().fogReveal.objects).toEqual({});
+    expect(logs()).toEqual([]);
+    expect(useEditorStore.getState().canUndo).toBe(false);
+    expect(mapFog()).toEqual([CellMask.Fog1]);
+  });
+
+  it("运行态、前端没连：记账 + 写明「连上后自动补发」；拖动中的分批并成一条轨迹", () => {
+    seedScene([fogMap()], ["map-1"]);
+    act(() => useEditorStore.setState({ mode: "run" }));
+
+    // 拖动中两批 + 收笔那批：记账里是**一条**完整轨迹（补发时要的是整笔）
+    act(() => useEditorStore.getState().eraseFogMask("map-1", [{ x: 0.1, y: 0.1 }, { x: 0.2, y: 0.2 }], false));
+    act(() => useEditorStore.getState().eraseFogMask("map-1", [{ x: 0.2, y: 0.2 }, { x: 0.3, y: 0.3 }], true));
+
+    const recorded = useEditorStore.getState().fogReveal.objects["map-1"];
+    expect(recorded?.ops).toHaveLength(1);
+    expect(recorded?.ops[0]).toMatchObject({
+      kind: "stroke",
+      stroke: { radius: 0.05, softness: 1 },
+    });
+    expect(
+      recorded?.ops[0]?.kind === "stroke" ? recorded.ops[0].stroke.points : [],
+    ).toEqual([
+      { x: 0.1, y: 0.1 },
+      { x: 0.2, y: 0.2 },
+      { x: 0.2, y: 0.2 },
+      { x: 0.3, y: 0.3 },
+    ]);
+
+    // 只有**收笔**那批写日志：拖动中每批都写会把运行日志刷屏。
+    // 这条用例里编辑器自己也没连上服务端（jsdom 里没有 WS），所以写的是那一档原因
+    const eraseLogs = logs().filter((line) => line.includes("擦除"));
+    expect(eraseLogs).toHaveLength(1);
+    expect(eraseLogs[0]).toMatch(/已记录擦除：「网格地图」第 1 笔（4 个落点）/);
+    expect(eraseLogs[0]).toMatch(/连上后自动补发/);
+    expect(useEditorStore.getState().canUndo).toBe(false);
+  });
+
+  it("整区开关：记账；只认这张地图已指定的雾区", () => {
+    seedScene([fogMap()], ["map-1"]);
+    act(() => useEditorStore.setState({ mode: "run" }));
+
+    act(() => useEditorStore.getState().setFogRegionRevealed("map-1", CellMask.Fog1, true));
+    expect(ops().at(-1)).toEqual({ kind: "region", region: CellMask.Fog1, revealed: true });
+    expect(logs().at(-1)).toMatch(/已记录揭示：区域4整片揭示/);
+
+    // 没指定成雾区的区域位：明确说明，不记账
+    act(() => useEditorStore.getState().setFogRegionRevealed("map-1", CellMask.Obstacle, true));
+    expect(ops()).toHaveLength(1);
+    expect(logs().at(-1)).toMatch(/没把 区域1 指定为雾区/);
+  });
+
+  it("目标不对时给明确原因、不记账（对象不存在 / 不是地图 / 还没指定雾区）", () => {
+    seedScene([mapObject(), createSceneObject({ id: "sprite", name: "精灵" })], ["map-1"]);
+    act(() => useEditorStore.setState({ mode: "run" }));
+
+    for (const [objectId, expected] of [
+      ["不存在", /找不到这个对象/],
+      ["sprite", /不是地图/],
+      ["map-1", /还没指定雾区/],
+    ] as const) {
+      act(() => useEditorStore.getState().eraseFogMask(objectId, [{ x: 0.1, y: 0.1 }], true));
+      expect(logs().at(-1)).toMatch(expected);
+    }
+
+    expect(useEditorStore.getState().fogReveal.objects).toEqual({});
+  });
+
+  it("前端不在时补发什么都不做（返回 0）", () => {
+    seedScene([fogMap()], ["map-1"]);
+    act(() => useEditorStore.setState({ mode: "run" }));
+    act(() => useEditorStore.getState().eraseFogMask("map-1", [{ x: 0.1, y: 0.1 }], true));
+
+    expect(useEditorStore.getState().flushFogReveal()).toBe(0);
+  });
 });

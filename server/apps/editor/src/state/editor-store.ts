@@ -56,6 +56,7 @@ import {
   clampBrushSize,
   gridSizeFromImage,
   isHexColor,
+  maskToLabel,
   worldRectOf,
   type GridPoint,
   type GridSize,
@@ -113,6 +114,17 @@ import {
   type SoundPlaybackEntry,
   type SoundPlaybackState,
 } from "../services/sound-playback";
+import {
+  emptyFogReveal,
+  fogRevealResendPlan,
+  pruneFogReveal,
+  withEraseBatch,
+  withRegion,
+  type FogRevealEntry,
+  type FogRevealPoint,
+  type FogRevealState,
+} from "../services/fog-reveal";
+import { MASK_BRUSH_RATIO, MASK_BRUSH_SOFTNESS } from "../services/mask-math";
 
 /**
  * 编辑器状态。
@@ -260,6 +272,14 @@ export interface EditorStoreState {
    * 不写文档、不进撤销栈；点播放 / 停止只改它 + 尽力下发，前端连上时补发。
    */
   readonly soundPlayback: SoundPlaybackState;
+  /**
+   * 战争雾的**揭示记账**（编辑器记账，见 `services/fog-reveal`）。
+   *
+   * 与 `soundPlayback` 一样是运行态：不写文档、不进撤销栈；擦一笔 / 拨整区开关只改它 + 尽力下发，
+   * 前端（重）连上时补发。**切场景不清**——雾是按地图对象记的，前端各场景的雾层都留着
+   * （`soundPlayback` 按场景清，因为「这一层该响什么」是当前场景的事）。
+   */
+  readonly fogReveal: FogRevealState;
   /**
    * 正在进行的手柄拖拽的快照；null = 没在拖。
    *
@@ -563,6 +583,24 @@ export interface EditorStoreState {
   setFogRegions(mapObjectId: string, regions: readonly number[]): boolean;
   /** 战争雾那一组设置是否露出来（编辑器偏好；纯界面，不动文档、也不画到画布上）。 */
   setFogVisible(visible: boolean): void;
+  /**
+   * 战争雾：在 Mask 窗口里**擦一笔**（运行态才下发给前端）。
+   *
+   * 拖动中是分批调用的：每一批的点都记进 `fogReveal`（相邻批次并成一条完整轨迹），
+   * 有前端连着就顺手发一条 `erase_mask`。`done` 是这一笔的最后一批（抬手 / 取消），
+   * 只有它写一条运行日志——不然拖动中会把日志刷屏。
+   *
+   * 编辑态（没点「运行」）什么都不做：Mask 窗口那时候只是预览，与今天完全一样。
+   */
+  eraseFogMask(objectId: string, points: readonly FogRevealPoint[], done: boolean): string | undefined;
+  /** 战争雾：把某个雾区**整片揭示 / 整片盖回**（与 Mask 窗口右侧那个开关同一件事）。 */
+  setFogRegionRevealed(objectId: string, region: number, revealed: boolean): string | undefined;
+  /**
+   * 把记着的揭示记录补发一遍（前端刚连上时调用）。
+   *
+   * 返回补发的步数（擦一笔 / 一次整区开合都算一步）；没连服务端或前端不在时返回 0。
+   */
+  flushFogReveal(): number;
 }
 
 /**
@@ -832,6 +870,14 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
    */
   let pendingRunRequest = false;
 
+  /**
+   * 「成功的回执不用写日志」的命令 id：战争雾拖动中的那些批次。
+   *
+   * 拖动中一条命令一批（攒够 4 个点或 150ms 一批），成功回执要是每条都写一行，运行日志会被刷屏。
+   * **失败照写**（不静默失败）；回执或错误回来时就把它从集合里去掉，不会越攒越多。
+   */
+  const quietCommandIds = new Set<string>();
+
   const runtimeClient = new RuntimeClient({
     onStatus: (status, detail) => {
       set((state) => ({
@@ -890,6 +936,8 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       // 关闸 → 还原到进入运行前的样子（对齐 Unity：退出播放模式丢掉运行期间的改动）
       if (!snapshot.runtimeActive && wasRuntimeActive) {
         restoreRunBaseline();
+        // 揭示记账也是运行态：关闸就清掉（前端已经被踢下线，下次运行重新开始）
+        set({ fogReveal: emptyFogReveal() });
       }
 
       // 前端刚连上：把记着的期望播放状态补发一遍（「点的时候前端不在」也不会丢）
@@ -901,6 +949,16 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       if (plan.length > 0) {
         get().flushSoundPlayback();
       }
+
+      // 战争雾同理：前端（重）连上时，把它还没看到的那些揭示轨迹补发一遍
+      const fogPlan = fogRevealResendPlan({
+        wasClientConnected,
+        isClientConnected: snapshot.client !== null,
+        reveal: get().fogReveal,
+      });
+      if (fogPlan.length > 0) {
+        get().flushFogReveal();
+      }
     },
 
     onServerLog: (entry) => {
@@ -908,11 +966,21 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
     },
 
     onError: (reason, requestId) => {
+      if (requestId !== undefined) {
+        quietCommandIds.delete(requestId);
+      }
+
       set((state) => ({ runtime: { ...state.runtime, lastError: reason } }));
       pushLog(makeLog("error", requestId === undefined ? reason : `[${requestId}] ${reason}`));
     },
 
     onCommandResult: (message) => {
+      // 拖动中的战争雾批次：成功不写日志（否则运行日志会被刷屏），失败照写
+      const quiet = quietCommandIds.delete(message.requestId);
+      if (quiet && message.ok) {
+        return;
+      }
+
       pushLog(
         makeLog(
           message.ok ? "info" : "warn",
@@ -1002,6 +1070,69 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
     pushLog(makeLog("info", `下发播放：${label}（${what}，请前端按它自己镜像里的选中项播）`));
     return requestId;
   };
+
+  /**
+   * 找出「能揭示战争雾」的对象：当前场景里那张**绑了雾区**的地图。
+   *
+   * 找不到就写一条**说明原因**的运行日志并返回 null（不静默失败）：
+   * 这类失败恰恰说明瞄准的目标不对（对象被删了 / 拿精灵去擦雾 / 还没指定雾区）。
+   */
+  const fogTargetOf = (objectId: string, what: string): SceneObjectDoc | null => {
+    const object = findSceneByName(get().scenes, get().activeSceneName)?.objects.find(
+      (item) => item.id === objectId,
+    );
+
+    if (object === undefined) {
+      pushLog(makeLog("warn", `${what}失败：找不到这个对象（${objectId}）`));
+      return null;
+    }
+
+    if (object.kind !== "Map") {
+      pushLog(makeLog("warn", `${what}失败：「${object.name}」不是地图，没有雾层`));
+      return null;
+    }
+
+    if ((object.map?.fog?.regions ?? []).length === 0) {
+      pushLog(makeLog("warn", `${what}失败：「${object.name}」还没指定雾区（属性面板 → 战争雾）`));
+      return null;
+    }
+
+    return object;
+  };
+
+  /** 这个对象**现在**还能揭示雾吗？补发前筛掉没意义的记录用——与 `fogTargetOf` 同口径，但不写日志。 */
+  const canRevealFog = (objectId: string): boolean => {
+    const object = findSceneByName(get().scenes, get().activeSceneName)?.objects.find(
+      (item) => item.id === objectId,
+    );
+
+    return object !== undefined && object.kind === "Map" && (object.map?.fog?.regions ?? []).length > 0;
+  };
+
+  /**
+   * 把一批轨迹**尽力**发给前端（前端不在就什么都不做，由调用方在收笔时写一条日志说明）。
+   *
+   * 命令里只有 `objectId + stroke`：雾层在前端**自己镜像里的那张地图**上（`map.fog.regions`
+   * + `map.cells`），这里发的只是鼠标拖过的轨迹——参考实现也是这么做的（不发整张遮罩）。
+   */
+  const deliverFogErase = (objectId: string, points: readonly FogRevealPoint[]): string | undefined => {
+    if (!runtimeClient.connected || get().runtime.client === null) {
+      return undefined;
+    }
+
+    const requestId = runtimeClient.sendCommand({
+      kind: "erase_mask",
+      objectId,
+      stroke: { points: [...points], radius: MASK_BRUSH_RATIO, softness: MASK_BRUSH_SOFTNESS },
+    });
+
+    // 拖动中一条命令一批：成功的回执不写日志（失败照写），免得把运行日志刷屏
+    quietCommandIds.add(requestId);
+    return requestId;
+  };
+
+  /** 前端在不在（编辑器连着服务端 **且** 前端连着）。 */
+  const fogFrontendReady = (): boolean => runtimeClient.connected && get().runtime.client !== null;
 
   const syncHistoryFlags = (): void => {
     set({
@@ -1273,6 +1404,7 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       showFog: storedGridPaint.showFog,
     },
     soundPlayback: emptySoundPlayback(),
+    fogReveal: emptyFogReveal(),
     transformStart: null,
     runtime: {
       status: "idle",
@@ -1325,6 +1457,8 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
         gridEditorTarget: null,
         // 换了文档：记着的「哪一层该播什么」盯的是上一个项目的对象，清掉
         soundPlayback: emptySoundPlayback(),
+        // 战争雾的揭示记账同理：瞄准的对象已经不存在了
+        fogReveal: emptyFogReveal(),
       });
 
       // 文档整份换掉了（关项目 / 换文档）：运行中的话基线要跟着换，否则退出运行会把
@@ -2991,6 +3125,134 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       const gridPaint: GridPaintState = { ...get().gridPaint, showFog: visible };
       set({ gridPaint });
       persistGridPaint(gridPaint);
+    },
+
+    eraseFogMask(objectId, points, done) {
+      // 编辑态：Mask 窗口只是预览（擦了不写文档、也不下发），与「运行」之前完全一样
+      if (get().mode !== "run" || points.length === 0) {
+        return undefined;
+      }
+
+      const map = fogTargetOf(objectId, "擦除战争雾");
+      if (map === null) {
+        return undefined;
+      }
+
+      // 逐批记账：拖动中的相邻批次在记账里并成**一条完整轨迹**（补发时要的是整笔）
+      set({ fogReveal: withEraseBatch(get().fogReveal, objectId, points) });
+
+      const requestId = deliverFogErase(objectId, points);
+      if (!done) {
+        return requestId;
+      }
+
+      const entry = get().fogReveal.objects[objectId];
+      const strokes = (entry?.ops ?? []).filter((op) => op.kind === "stroke").length;
+      const total = (entry?.ops ?? []).reduce(
+        (count, op) => count + (op.kind === "stroke" ? op.stroke.points.length : 0),
+        0,
+      );
+      const what = `「${map.name}」第 ${strokes} 笔（${total} 个落点）`;
+
+      pushLog(
+        fogFrontendReady()
+          ? makeLog("info", `下发擦除：${what}（请前端沿轨迹擦掉雾）`)
+          : makeLog(
+              "info",
+              `已记录擦除：${what}（${
+                runtimeClient.connected ? "前端未连接，等它连上后自动补发" : "编辑器还没连上服务端，连上后自动补发"
+              }）`,
+            ),
+      );
+
+      return requestId;
+    },
+
+    setFogRegionRevealed(objectId, region, revealed) {
+      if (get().mode !== "run") {
+        return undefined;
+      }
+
+      const map = fogTargetOf(objectId, revealed ? "揭示雾区" : "盖回雾区");
+      if (map === null) {
+        return undefined;
+      }
+
+      if (!(map.map?.fog?.regions ?? []).includes(region)) {
+        pushLog(makeLog("warn", `雾区操作失败：「${map.name}」没把 ${maskToLabel(region)} 指定为雾区`));
+        return undefined;
+      }
+
+      set({ fogReveal: withRegion(get().fogReveal, objectId, region, revealed) });
+
+      const what = `${maskToLabel(region)}${revealed ? "整片揭示" : "整片盖回"}`;
+      if (!fogFrontendReady()) {
+        pushLog(
+          makeLog(
+            "info",
+            `已记录${revealed ? "揭示" : "盖回"}：${what}（${
+              runtimeClient.connected ? "前端未连接，等它连上后自动补发" : "编辑器还没连上服务端，连上后自动补发"
+            }）`,
+          ),
+        );
+        return undefined;
+      }
+
+      const requestId = runtimeClient.sendCommand({
+        kind: "reveal_fog_region",
+        objectId,
+        region,
+        revealed,
+      });
+      pushLog(makeLog("info", `下发${revealed ? "揭示" : "盖回"}：${what}（「${map.name}」）`));
+      return requestId;
+    },
+
+    flushFogReveal() {
+      const { fogReveal } = get();
+      if (!fogFrontendReady()) {
+        return 0;
+      }
+
+      // 先按当前文档筛掉没意义的记录（对象被删了 / 不是地图 / 解绑了雾区），免得补发一堆注定失败的命令
+      const pruned = pruneFogReveal(fogReveal, canRevealFog);
+      const entries: Array<{ objectId: string; entry: FogRevealEntry }> = Object.entries(
+        pruned.objects,
+      ).map(([objectId, entry]) => ({ objectId, entry }));
+
+      let steps = 0;
+      for (const { objectId, entry } of entries) {
+        for (const op of entry.ops) {
+          if (op.kind === "stroke") {
+            deliverFogErase(objectId, op.stroke.points);
+          } else {
+            runtimeClient.sendCommand({
+              kind: "reveal_fog_region",
+              objectId,
+              region: op.region,
+              revealed: op.revealed,
+            });
+          }
+
+          steps += 1;
+        }
+      }
+
+      if (pruned !== fogReveal) {
+        set({ fogReveal: pruned });
+      }
+
+      if (steps === 0) {
+        return 0;
+      }
+
+      pushLog(
+        makeLog(
+          "info",
+          `补发战争雾：${entries.length} 张地图 / ${steps} 步（前端刚连上，把它还没看到的揭示补过去）`,
+        ),
+      );
+      return steps;
     },
   };
 });

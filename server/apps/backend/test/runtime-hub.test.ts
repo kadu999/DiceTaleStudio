@@ -366,6 +366,91 @@ describe("运行态：门控 + 场景镜像中继", () => {
     expect(typeOf(logged)).toBe("editor_log");
   });
 
+  it("战争雾：擦一笔的轨迹原样转发给前端，回执回到编辑器", async () => {
+    const editor = await startEditor();
+    const client = await startClient();
+    send(client.socket, { type: "client_hello", protocolVersion: PROTOCOL_VERSION, name: "Mock", version: "0.0.0" });
+
+    // 假前端：收到命令就回执（回执里带上「擦了多少」这类效果，编辑器日志看得见）
+    client.socket.on("message", (data) => {
+      const parsed = JSON.parse(typeof data === "string" ? data : data.toString()) as {
+        type?: string;
+        requestId?: string;
+      };
+      if (parsed.type !== "command") {
+        return;
+      }
+
+      send(client.socket, {
+        type: "command_result",
+        requestId: parsed.requestId,
+        ok: true,
+        effects: ["擦除 1 笔（3 个落点）"],
+      });
+    });
+
+    // 一笔轨迹：归一化点（y 向下）+ 归一化半径（48/960）+ 软边 1 —— 只发轨迹，不发整张遮罩
+    const stroke = {
+      points: [
+        { x: 0.1, y: 0.2 },
+        { x: 0.2, y: 0.22 },
+        { x: 0.3, y: 0.25 },
+      ],
+      radius: 0.05,
+      softness: 1,
+    };
+
+    send(editor.socket, {
+      type: "editor_command",
+      requestId: "fog-1",
+      command: { kind: "erase_mask", objectId: "map_01", stroke },
+    });
+
+    const forwarded = await client.inbox.waitFor<ServerToClientMessage>((message) => typeOf(message) === "command");
+    if (forwarded.type !== "command") {
+      throw new Error("类型不符");
+    }
+
+    expect(forwarded.requestId).toBe("fog-1");
+    expect(forwarded.command).toEqual({ kind: "erase_mask", objectId: "map_01", stroke });
+
+    // 回执回到编辑器：这条命令**没有**被静默（前端如实回了 ok + 效果）
+    const result = await editor.inbox.waitFor<ServerToEditorMessage>(
+      (message) =>
+        typeOf(message) === "editor_command_result" &&
+        (message as { requestId?: string }).requestId === "fog-1",
+    );
+    if (result.type !== "editor_command_result") {
+      throw new Error("类型不符");
+    }
+
+    expect(result.ok).toBe(true);
+    expect(result.effects).toEqual(["擦除 1 笔（3 个落点）"]);
+
+    // 整区开关走同一条通用转发
+    send(editor.socket, {
+      type: "editor_command",
+      requestId: "fog-2",
+      command: { kind: "reveal_fog_region", objectId: "map_01", region: 8, revealed: true },
+    });
+
+    const region = await client.inbox.waitFor<ServerToClientMessage>(
+      (message) =>
+        typeOf(message) === "command" &&
+        (message as { requestId?: string }).requestId === "fog-2",
+    );
+    if (region.type !== "command") {
+      throw new Error("类型不符");
+    }
+
+    expect(region.command).toEqual({
+      kind: "reveal_fog_region",
+      objectId: "map_01",
+      region: 8,
+      revealed: true,
+    });
+  });
+
   it("命令：前端不在 → 明确报错；未进入运行态 → 也明确报错", async () => {
     const editor = await startEditor();
 

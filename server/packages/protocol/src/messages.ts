@@ -23,6 +23,11 @@ import { z } from "zod";
  *
  * v2（2026-09-20）：`/client` 新增 `resources_prepare`（服务端主动告诉前端「当前是哪个项目」，
  * 让前端**先把资源包下完、再载入场景**）。老前端收到不认识的类型会告警并丢弃，所以是破坏性改动。
+ *
+ * **新增命令种类不算不兼容改动、不升版本**：老前端收到不认识的 `kind` 会回一条
+ * 「前端不认识这条命令」的回执，编辑器如实显示失败原因（不静默、也不断线）。战争雾的
+ * `erase_mask` / `reveal_fog_region` 就是这么加的——与 `scaleX` / `scaleY`、`resources_ready`
+ * 同一条政策。
  */
 export const PROTOCOL_VERSION = 2;
 
@@ -68,10 +73,16 @@ export const cellRunsSchema = z.object({
   runs: z.array(rleRunSchema),
 });
 
+/**
+ * 战争雾：把哪些「区域」当成雾区（区域位取自 `@dts/grid` 的可绘制位，`[1, 8]` = 区域1 + 区域4）。
+ *
+ * 前端据此从 `cells` 里挑出**雾格子**、生成一张像素遮罩（只盖雾区、其余透明）。
+ * **哪个格子被揭示了不在数据里**：那是运行态，由 `erase_mask` / `reveal_fog_region` 命令驱动，
+ * 不写文档、也不随 `scene_sync` 走。
+ */
 export const mapFogSchema = z.object({
   regions: z.array(z.number().int()),
 });
-
 /** 地图对象携带的数据（贴图 + 网格；`rowOrder` 固定 bottom-up）。 */
 export const mapDataSchema = z.object({
   image: imageRefSchema,
@@ -151,10 +162,41 @@ export type ResourcesInfo = z.infer<typeof resourcesInfoSchema>;
 // ---------------------------------------------------------------- 命令（触发器，不是数据）
 
 /**
+ * 归一化图片坐标：`[0,1]`，**y 向下**（左上原点，与编辑器画布一致）。
+ *
+ * 前端把它映射到纹理像素时要翻一次 y（`(1 - y) × 高`）——纹理是自下而上的。
+ */
+export const normalizedPointSchema = z.object({
+  x: z.number(),
+  y: z.number(),
+});
+
+/**
+ * 战争雾擦除的**一笔轨迹**（与参考实现 `backend_diceTale` 的 `EraseStroke` 同一套口径，
+ * 逐字对齐 `apps/editor/src/services/mask-math.ts` 里前端实际执行的那套运算）。
+ *
+ * - `points`：鼠标拖过的**轨迹**（归一化点，y 向下）。**发的只是轨迹，不是整张遮罩**——
+ *   擦除在两端各自算一遍（前端不必收几 MB 的位图）。单点也算一笔（在那一处打一个擦除圆）；
+ * - `radius`：**半径 / 遮罩宽**（编辑器固定 `48/960 = 0.05`）。前端收到后乘**它自己**的
+ *   遮罩宽得到纹理像素半径——两边只要都按这个比例，擦出来的范围一致；
+ * - `softness`：软边带比例（`0` = 硬边、`1` = 全程衰减），编辑器固定 `1`。
+ *
+ * 这里**只挡畸形结构**（空轨迹、`NaN` / `Infinity`——zod 4 的 `z.number()` 本来就不收无限值）：
+ * 点坐标的具体处理由前端消化（越界点夹到 `[0,1]`），与参考实现的后端校验同一条口径。
+ */
+export const eraseStrokeSchema = z.object({
+  points: z.array(normalizedPointSchema).min(1),
+  radius: z.number().nonnegative(),
+  softness: z.number().nonnegative(),
+});
+
+/**
  * 后台 → 前端的命令。
  *
  * **载荷里不带数据**：`play_sound` 只说「让这个对象在它自己声明的层上播」，
  * 前端从**镜像里的那个对象**读 `sound.picked`——数据在场景里，命令只是触发器。
+ * 战争雾同理：`erase_mask` 只给**轨迹**，雾层本身在推下去的那个地图对象里
+ * （`map.fog.regions` + `map.cells`）。
  */
 export const commandRequestSchema = z.discriminatedUnion("kind", [
   z.object({
@@ -165,6 +207,24 @@ export const commandRequestSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("stop_sound"),
     layer: soundLayerSchema,
+  }),
+  /** 战争雾：沿这笔轨迹擦掉地图对象上的雾。 */
+  z.object({
+    kind: z.literal("erase_mask"),
+    objectId: z.string().min(1),
+    stroke: eraseStrokeSchema,
+  }),
+  /**
+   * 战争雾：整片揭示（`revealed: true`）或整片盖回（`false`）某个区域。
+   *
+   * 「区域」是 `map.fog.regions` 里的那个区域位：含该位的**每个**格子一起变。
+   * 盖回会连带盖掉这一区里手动擦掉的部分——与 Mask 窗口里那个「整区开关」同一口径。
+   */
+  z.object({
+    kind: z.literal("reveal_fog_region"),
+    objectId: z.string().min(1),
+    region: z.number().int(),
+    revealed: z.boolean(),
   }),
 ]);
 
