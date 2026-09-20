@@ -48,8 +48,9 @@ namespace DiceTale
         /// <summary>
         /// 应用一次显示参数（每次收到新数据都调，幂等）。
         ///
-        /// - <paramref name="texture"/>：要显示的图；`null` = 还没有图，显示 <paramref name="tint"/> 纯色占位
-        ///   （保证每个对象都看得见，而不是一片透明）；
+        /// - <paramref name="texture"/>：要显示的图（普通贴图，或者战争雾那条模糊链的
+        ///   `RenderTexture`——两者都是 <see cref="Texture"/>）；`null` = 还没有图，显示
+        ///   <paramref name="tint"/> 纯色占位（保证每个对象都看得见，而不是一片透明）；
         /// - <paramref name="width"/> / <paramref name="height"/>：**世界单位**下的面片尺寸，
         ///   直接烘进网格顶点；`&lt;= 0` 按 1 处理；
         /// - <paramref name="tint"/>：染色（有图时给白色 = 原图）；
@@ -62,7 +63,7 @@ namespace DiceTale
         /// 本组件**没有 `Awake` 预热**：网格与材质都在这里按需创建（`Ensure*` 幂等），
         /// 免得每个视图先建一块 1×1 的网格、再在第一次 `Apply` 时丢掉重建。
         /// </summary>
-        public void Apply(Texture2D texture, float width, float height, Color tint, int order, float lift)
+        public void Apply(Texture texture, float width, float height, Color tint, int order, float lift)
         {
             // 给进来的就是世界单位（文档像素 → 世界单位在 SceneObjectView.GlobalScale 做掉了）
             var safeWidth = width <= 0f ? 1f : width;

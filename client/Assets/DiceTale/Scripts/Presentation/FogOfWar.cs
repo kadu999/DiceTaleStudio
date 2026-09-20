@@ -26,6 +26,12 @@ namespace DiceTale
     /// 长边超 2048 等比缩）——两边像素级对齐，而不是「归一化范围大致一致」。
     /// 两个常量（<see cref="MaskPreviewWidth"/> / <see cref="MaxPreviewEdge"/>）**必须与编辑器同步改**。
     ///
+    /// **边缘羽化**：遮罩是按格子填的方块，直接画出来就是一个一个方格；所以显示前先过一条 GPU 模糊链
+    /// （`DiceTale/FogBlur`，模糊纹理每格 <see cref="BlurTexelsPerCell"/> 个纹素、跑
+    /// <see cref="blurPasses"/> 遍，羽化宽度约一格）——与参考实现
+    /// （`backend_diceTale` / `LLMNPC_NEWLIGHT_EX` 的 `FogOfWar` + `FogBlur.shader`）同一套做法。
+    /// 已擦透的地方（alpha≈0）由 shader 挡在模糊之外，不会被相邻的雾回填。
+    ///
     /// **揭示状态只在前端**（不写文档、也不随场景推送回来）：组件里留一份 CPU 遮罩 + 一份**有序的
     /// 操作记录**，地图数据一变（换了雾区 / 涂了格子 / 网格尺寸变了）就「重填初始态 + 按顺序重放」——
     /// 于是「整区盖回」能按顺序盖掉它之前的笔画（与编辑器预览一致），已揭示的部分也不会因为后台推了
@@ -38,6 +44,24 @@ namespace DiceTale
         /// <summary>雾色（默认黑不透明：未探索 = 完全看不见底图）。编辑器预览按区域配色，前端是统一的雾色。</summary>
         [SerializeField]
         private Color fogColor = new Color(0f, 0f, 0f, 1f);
+
+        /// <summary>
+        /// 雾边缘羽化：模糊链跑几遍（每遍 3×3 高斯，羽化约 1 个模糊纹素）。
+        ///
+        /// 模糊纹素见 <see cref="BlurTexelsPerCell"/>：每格 4 个纹素时，**4 遍 ≈ 羽化一格**。
+        /// 想更柔就加遍数（每加一遍多柔一点、代价是一次全屏 Blit，很小）。
+        /// </summary>
+        [SerializeField]
+        private int blurPasses = 4;
+
+        /// <summary>模糊纹理的分辨率：**每格几个纹素**（参考实现是每格 2 个；这里取 4，擦除形状保留得细一些）。</summary>
+        private const int BlurTexelsPerCell = 4;
+
+        /// <summary>模糊纹理的边长上限（超大网格别把显存吃光；超了就整体等比缩）。</summary>
+        private const int MaxBlurEdge = 1024;
+
+        /// <summary>模糊用的 shader（在 `Resources/Shaders/` 下，打包一定会带上）。</summary>
+        private const string BlurShaderName = "DiceTale/FogBlur";
 
         /// <summary>预览遮罩的宽度（`mask-math.ts` 的 `MASK_PREVIEW_WIDTH`）：与编辑器**必须一致**。</summary>
         private const int MaskPreviewWidth = 960;
@@ -70,6 +94,9 @@ namespace DiceTale
         /// <summary>数据不全的提示只打一次（每次推送都刷会把控制台淹掉）。</summary>
         private bool warnedMissingData;
 
+        /// <summary>缺 `FogBlur` shader 的提示也只打一次（雾照常显示，只是不羽化）。</summary>
+        private bool warnedMissingBlurShader;
+
         // ---------------------------------------------------------------- 遮罩（CPU 是真源，纹理是显示副本）
 
         private Color32[] pixels = new Color32[0];
@@ -79,6 +106,14 @@ namespace DiceTale
 
         /// <summary>有序的操作记录：地图数据变了要「重填初始态 + 重放」。**顺序有意义**——盖回要盖掉之前的笔画。</summary>
         private readonly List<MaskOp> ops = new List<MaskOp>();
+
+        // ---------------------------------------------------------------- 羽化（GPU 模糊链）
+
+        /// <summary>模糊链的每一级（显示用的是最后一级；网格尺寸变了整条重建）。</summary>
+        private RenderTexture[] blurRTs;
+        private Material blurMaterial;
+        private int blurWidth;
+        private int blurHeight;
 
         private GroundTextureRenderer overlayRenderer;
 
@@ -91,6 +126,14 @@ namespace DiceTale
 
         private void OnDestroy()
         {
+            ReleaseBlurChain();
+
+            if (blurMaterial != null)
+            {
+                Release(blurMaterial);
+                blurMaterial = null;
+            }
+
             if (texture != null)
             {
                 Release(texture);
@@ -121,8 +164,8 @@ namespace DiceTale
 
             if (overlayRenderer != null)
             {
-                // 白色染色 = 原样显示遮罩（雾色已经在遮罩里了）
-                overlayRenderer.Apply(texture, worldWidth, worldHeight, Color.white, sortingOrder, lift);
+                // 白色染色 = 原样显示（雾色已经在遮罩里了）
+                overlayRenderer.Apply(DisplayTexture, worldWidth, worldHeight, Color.white, sortingOrder, lift);
             }
         }
 
@@ -267,7 +310,8 @@ namespace DiceTale
             // （在 = 雾层建起来了，问题在命令 / 显示；不在 = 数据没到这一层）。
             Debug.Log(
                 $"[战争雾] {name}：雾区 {DescribeRegions()}，雾格 {CountFogCells()} 个，" +
-                $"遮罩 {maskWidth}×{maskHeight}，已重放 {ops.Count} 步");
+                $"遮罩 {maskWidth}×{maskHeight}，羽化 {blurWidth}×{blurHeight}×{blurRTs?.Length ?? 0} 遍，" +
+                $"已重放 {ops.Count} 步");
         }
 
         /// <summary>已指定的雾区（写成面板上的名字：区域1+区域4）。</summary>
@@ -560,7 +604,8 @@ namespace DiceTale
             }
         }
 
-        /// <summary>把 CPU 遮罩推给纹理（整张上传：960×540 这个量级一次几毫秒，一条命令一次，够用）。</summary>
+        /// <summary>把 CPU 遮罩推给纹理，再重新羽化一次（雾边缘统一柔化）。
+        /// 整张上传：960×540 这个量级一次几毫秒，一条命令一次，够用。</summary>
         private void Upload()
         {
             if (texture == null)
@@ -570,6 +615,108 @@ namespace DiceTale
 
             texture.SetPixels32(pixels);
             texture.Apply(false);
+            BlurFog();
+        }
+
+        // ---------------------------------------------------------------- 羽化
+
+        /// <summary>要显示的那张图：羽化链的最后一级；链还没建起来时退回没羽化的遮罩。</summary>
+        private Texture DisplayTexture =>
+            blurRTs != null && blurRTs.Length > 0 && blurRTs[blurRTs.Length - 1] != null
+                ? blurRTs[blurRTs.Length - 1]
+                : texture;
+
+        /// <summary>
+        /// 把遮罩过一遍模糊链：`maskTexture → blurRTs[0] → … → blurRTs[last]`（最后一级给显示用）。
+        ///
+        /// 每一级都是「上一级的 3×3 高斯」，所以羽化宽度 ≈ 级数 × (1 / 每格纹素数) 格。
+        /// **不写回遮罩**：遮罩永远是没羽化的真状态（擦除 / 重放都按它算），羽化只影响显示。
+        /// </summary>
+        private void BlurFog()
+        {
+            if (texture == null || !EnsureBlurChain())
+            {
+                return;
+            }
+
+            Graphics.Blit(texture, blurRTs[0], blurMaterial);
+            for (int i = 1; i < blurRTs.Length; i++)
+            {
+                Graphics.Blit(blurRTs[i - 1], blurRTs[i], blurMaterial);
+            }
+        }
+
+        /// <summary>
+        /// 建 / 换模糊链（网格尺寸变了才重建）。每格 <see cref="BlurTexelsPerCell"/> 个纹素、边长封顶
+        /// <see cref="MaxBlurEdge"/>，超出就整体等比缩——网格特别大时羽化会相对细一点，但不会吃光显存。
+        /// </summary>
+        private bool EnsureBlurChain()
+        {
+            if (blurMaterial == null)
+            {
+                var shader = Shader.Find(BlurShaderName);
+                if (shader == null)
+                {
+                    // 找不到 shader 只提示一次：雾还能显示（没羽化），别每次推送都刷一条错误
+                    if (!warnedMissingBlurShader)
+                    {
+                        warnedMissingBlurShader = true;
+                        Debug.LogError($"[战争雾] 找不到 Shader「{BlurShaderName}」：雾能显示，但边缘不会羽化");
+                    }
+
+                    return false;
+                }
+
+                blurMaterial = new Material(shader) { hideFlags = HideFlags.DontSave };
+            }
+
+            var factor = Mathf.Min(BlurTexelsPerCell, MaxBlurEdge / (float)Mathf.Max(1, Mathf.Max(gridWidth, gridHeight)));
+            var width = Mathf.Max(8, Mathf.RoundToInt(gridWidth * factor));
+            var height = Mathf.Max(8, Mathf.RoundToInt(gridHeight * factor));
+
+            if (blurRTs != null && blurWidth == width && blurHeight == height)
+            {
+                return true;
+            }
+
+            ReleaseBlurChain();
+            blurWidth = width;
+            blurHeight = height;
+
+            var passes = Mathf.Max(1, blurPasses);
+            blurRTs = new RenderTexture[passes];
+            for (int i = 0; i < passes; i++)
+            {
+                blurRTs[i] = new RenderTexture(width, height, 0, RenderTextureFormat.ARGB32)
+                {
+                    name = $"FogBlur{i}",
+                    filterMode = FilterMode.Bilinear,
+                    wrapMode = TextureWrapMode.Clamp,
+                    hideFlags = HideFlags.DontSave,
+                };
+            }
+
+            return true;
+        }
+
+        private void ReleaseBlurChain()
+        {
+            if (blurRTs != null)
+            {
+                for (int i = 0; i < blurRTs.Length; i++)
+                {
+                    if (blurRTs[i] != null)
+                    {
+                        blurRTs[i].Release();
+                        Release(blurRTs[i]);
+                    }
+                }
+
+                blurRTs = null;
+            }
+
+            blurWidth = 0;
+            blurHeight = 0;
         }
 
         private void WarnOnce(string message)

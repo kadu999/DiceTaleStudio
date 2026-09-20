@@ -51,7 +51,7 @@ Assets/
 │  │                    SceneObjectView.cs       **一个镜像对象 = 一块贴地面片**（位置/缩放/激活/顺序/取图）
 │  │                    ResourceImageLoader.cs   按资源逻辑 ID 取图（缓存 / 去重 / 失败记忆）
 │  │                    GridMap.cs               地图格子数据 + 网格渲染（+ .bytes 读取）
-│  │                    FogOfWar.cs              战争雾（按 map.fog.regions/cells 建遮罩，按后台轨迹揭示）
+│  │                    FogOfWar.cs              战争雾（按 map.fog.regions/cells 建遮罩、GPU 羽化、按后台轨迹揭示）
 │  │                    BirdWanderer.cs          装饰物区域随机游荡
 │  │                    GroundTextureRenderer.cs 贴地面的纹理面片（**只认运行时纹理**）
 │  │                    PhotoClickGlow.cs        拍照指针点地时的点光
@@ -65,7 +65,7 @@ Assets/
 │  ├─ Editor/           （1）         编辑器工具（DiceTale.Editor.asmdef）
 │  │                    SetupMaps.cs                  一次性脚本：把 Demo 场景重建成「只有 Game 宿主」
 │  ├─ Resources/                      ← **运行时按名加载的资产必须留在这里**
-│  │  ├─ Shaders/                     DiceTale/*.shader（GroundSprite / VideoFade 在用）
+│  │  ├─ Shaders/                     DiceTale/*.shader（GroundSprite / VideoFade / FogBlur 在用）
 │  │  └─ RealMap.prefab
 │  ├─ Materials/                      材质（原 `Res/Materials`）
 │  └─ Scenes/Demo.unity               唯一的场景
@@ -215,6 +215,10 @@ Assets/
   `erase_mask`（**只发鼠标轨迹**）+ `reveal_fog_region`（整区开合）把它揭示掉。
   擦除公式与编辑器逐字对齐（归一化半径 × 遮罩宽、沿线段按半径一半补点、按纹素中心算软边、
   `min` 幂等），所以**同一笔在两边擦出的是同一片纹素**；雾色统一（默认黑不透明）。
+  **雾的边缘会羽化**：遮罩是按格子填的方块，直接画出来就是一个个方格，所以显示前先过一条
+  GPU 模糊链（`DiceTale/FogBlur`，模糊纹理每格 4 个纹素、跑 4 遍 ≈ 羽化一格；做法照参考实现
+  `LLMNPC_NEWLIGHT_EX` 的 `FogOfWar` + `FogBlur.shader`）。遮罩本身不写回羽化结果——
+  擦除与重放都按没羽化的真状态算。
   揭示状态**只在前端**（不写文档）：切场景 / 重连（视图不销毁）都保留，Unity 重启回到未探索；
   地图数据一变（换绑定 / 涂格子）就「重填初始态 + 按顺序重放操作」，已揭示的部分不丢。
   ⚠️ **`GridMap` / `DynamicObstacle` 仍按世界坐标算格子**，而且运行时不建 `GridMap`
@@ -262,10 +266,10 @@ Assets/
   `Scene prefab not found`。**`SceneFadeUI` 保留**（它不依赖那个类，是自包含的全屏遮罩），
   但**目前没有调用方**——等真正需要黑屏过渡的功能来调，或确认用不上就删。
 - **已停用但未删**（你要求先不动）：`DevicePipeInputSource2`（`Sample` 整段注释——若在 Game 里把
-  输入方案选成 `PipeSource`，输入会**静默失效**）、`InputConfigPrefs`、15 个无人引用的 shader
-  （战争雾改成 CPU 算遮罩后，`FogBlur` / `MaskEraseStamp` 也不再有人用）、
-  6 个孤儿材质、`Resources/RealMap.prefab`、`Assets/Readme.asset`。要清时按清理文档的口径来
-  （都能从 git 取回）。
+  输入方案选成 `PipeSource`，输入会**静默失效**）、`InputConfigPrefs`、14 个无人引用的 shader
+  （`MaskEraseStamp` / `FogOfWar` / `FogOfWarAccumulate` / `FogCombine` 等——战争雾走 CPU 擦除 +
+  `FogBlur` 羽化，这几个都没接）、6 个孤儿材质、`Resources/RealMap.prefab`、`Assets/Readme.asset`。
+  要清时按清理文档的口径来（都能从 git 取回）。
 - **待办（关掉 Unity 后再改，否则会被编辑器内存里的旧值覆盖）**：
   `ProjectSettings/EditorBuildSettings.asset` 里还挂着 6 个**已不存在**的场景
   （`DMGameLibrary` / `SampleScene` / `DarkwaterM0` / `TableBand` / 两个 `ProjectionAlignment` 场景），
