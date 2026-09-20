@@ -26,7 +26,15 @@ Thumbs.db
 !.vscode/extensions.json
 
 # 大体积二进制资源：默认不入库，需要时显式 git add -f（详见 server/README.md）
-# 素材按「一个项目一个文件夹」放在 projects/<项目>/Assets/ 下，所以按目录忽略
-server/resources/projects/*/Assets/audio/
-server/resources/projects/*/Assets/video/
-server/resources/projects/*/Assets/images/
+# 素材按「一个项目一个文件夹」放在 projects/<项目>/Assets/ 下，所以按目录忽略。
+# 注意：这里**不能**写成 `.../images/`（结尾带斜杠）——那会匹配到目录本身，
+# 而 git 不会重新包含「父目录被忽略」的文件，下面的例外规则就会失效。
+server/resources/projects/*/Assets/audio/*
+server/resources/projects/*/Assets/video/*
+server/resources/projects/*/Assets/images/*
+
+# 例外：**调试用的测试项目整个入库**（含图片 / 音频 / 视频）。它是手测与联调的固定数据，
+# 缺一张图就会让「贴图取不到」这类问题看起来像 bug。
+!server/resources/projects/测试项目/Assets/audio/*
+!server/resources/projects/测试项目/Assets/video/*
+!server/resources/projects/测试项目/Assets/images/*

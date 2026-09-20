@@ -6,7 +6,7 @@
       "name": "地图",
       "kind": "Map",
       "active": true,
-      "sortingOrder": 0,
+      "sortingOrder": -1,
       "locked": true,
       "position": {
         "x": 0,
@@ -333,19 +333,19 @@
       "name": "精灵",
       "kind": "SceneObject",
       "active": true,
-      "sortingOrder": 0,
-      "locked": false,
+      "sortingOrder": 1,
+      "locked": true,
       "position": {
-        "x": -114.25713292690396,
-        "y": -54.42421336374019
+        "x": -108.73631692271957,
+        "y": -56.60175488292025
       },
       "rotation": 0,
-      "scale": 2,
+      "scale": 1,
       "components": [],
       "image": {
-        "id": "project:测试项目/Assets/images/Baseballbat_weapon.png",
-        "width": 74,
-        "height": 74
+        "id": "project:测试项目/Assets/images/Bridge.png",
+        "width": 256,
+        "height": 256
       }
     },
     {
