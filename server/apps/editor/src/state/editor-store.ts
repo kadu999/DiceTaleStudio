@@ -70,7 +70,7 @@ import {
   zoomAt,
   type Viewport,
 } from "@dts/renderer";
-import type { ClientInfo, SceneInfo, ScenePayload } from "@dts/protocol";
+import type { ClientInfo, ResourcesInfo, SceneInfo, ScenePayload } from "@dts/protocol";
 import {
   RuntimeClient,
   type RuntimeLogEntry,
@@ -128,6 +128,8 @@ export interface RuntimeUiState {
   readonly client: ClientInfo | null;
   /** 已经推给服务端的那份场景的摘要；null = 还没推过。 */
   readonly scene: SceneInfo | null;
+  /** 前端本地资源包状态（它把当前项目的 Assets/ 下到本地）；null = 还没收到回执。 */
+  readonly resources: ResourcesInfo | null;
   readonly logs: RuntimeLogEntry[];
   readonly lastError: string;
 }
@@ -700,6 +702,7 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
           runtimeActive: snapshot.runtimeActive,
           client: snapshot.client,
           scene: snapshot.scene,
+          resources: snapshot.resources,
         },
       }));
 
@@ -1033,6 +1036,7 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       runtimeActive: false,
       client: null,
       scene: null,
+      resources: null,
       logs: [],
       lastError: "",
     },

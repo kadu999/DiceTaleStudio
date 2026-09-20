@@ -1,6 +1,19 @@
 import { useEditorStore } from "../../state/editor-store";
 import { SOUND_LAYER_LABELS } from "@dts/document";
 
+/** 字节数说人话（资源包小到几 KB、大到几百 MB，固定单位看着别扭）。 */
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
 /**
  * 运行态面板：**服务端连接 + 运行态开关 + 前端镜像 + 命令日志**。
  *
@@ -120,6 +133,60 @@ export function RuntimePanel(): React.JSX.Element {
               {runtime.lastError}
             </div>
           ) : null}
+
+          {/*
+            前端本地资源包：连上后它会把当前项目的 Assets/ 整包下到本地，之后资源不再逐张走 HTTP。
+            没收到回执时明确写「还没报」——不静默留白，也不假装就绪。
+          */}
+          <div
+            data-testid="runtime-resources"
+            data-ready={runtime.resources === null ? "unknown" : runtime.resources.ok ? "yes" : "no"}
+            className="flex flex-wrap items-center gap-x-3 gap-y-0.5 border-b border-[var(--color-editor-border)] px-2 py-1 text-[11px]"
+          >
+            <span className="flex items-center gap-1.5">
+              <span
+                className="inline-block h-2 w-2 rounded-full"
+                style={{
+                  background:
+                    runtime.resources === null
+                      ? "var(--color-editor-text-dim)"
+                      : runtime.resources.ok
+                        ? "var(--color-editor-ok)"
+                        : "var(--color-editor-danger)",
+                }}
+              />
+              <span
+                style={{
+                  color:
+                    runtime.resources === null
+                      ? "var(--color-editor-text-dim)"
+                      : runtime.resources.ok
+                        ? "var(--color-editor-ok)"
+                        : "var(--color-editor-danger)",
+                }}
+              >
+                资源包：
+                {runtime.resources === null
+                  ? "等待前端回执"
+                  : runtime.resources.ok
+                    ? "已就绪"
+                    : "失败"}
+              </span>
+            </span>
+            {runtime.resources === null ? null : (
+              <>
+                <span className="text-[var(--color-editor-text-dim)]">
+                  「{runtime.resources.project}」{runtime.resources.fileCount} 个文件 / {formatBytes(runtime.resources.bytes)}
+                </span>
+                <span className="font-mono text-[10px] text-[var(--color-editor-text-dim)]" title="资源指纹：素材一变它就变">
+                  {runtime.resources.fingerprint}
+                </span>
+                {runtime.resources.reason === undefined || runtime.resources.reason.length === 0 ? null : (
+                  <span className="text-[var(--color-editor-danger)]">{runtime.resources.reason}</span>
+                )}
+              </>
+            )}
+          </div>
 
           <div className="px-2 py-2 text-[11px] leading-relaxed text-[var(--color-editor-text-dim)]">
             <div className="mb-1 text-[var(--color-editor-warn)]">

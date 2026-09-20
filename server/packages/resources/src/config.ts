@@ -29,6 +29,17 @@ export const appConfigSchema = z.object({
     .default({ host: "0.0.0.0", port: 1420 }),
   /** 由图片推导网格尺寸时的默认每格像素数（DiceTale 现有地图为 30）。 */
   defaultCellPixels: z.number().int().positive().default(30),
+  /**
+   * 运行态资源包（前端连上后整包拉取当前项目的 `Assets/`）。
+   *
+   * `maxTotalBytes` 是**整包上限**：超了就让 `/api/resources/bundle` 回 413，
+   * 让前端退回逐文件远程取——服务端是把整包在内存里拼出来的，不设上限会在大项目上把内存吃光。
+   */
+  bundle: z
+    .object({
+      maxTotalBytes: z.number().int().positive().default(256 * 1024 * 1024),
+    })
+    .default({ maxTotalBytes: 256 * 1024 * 1024 }),
 });
 
 export type AppConfig = z.infer<typeof appConfigSchema>;

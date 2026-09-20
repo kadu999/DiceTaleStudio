@@ -18,6 +18,12 @@ import {
   type ResourceProvider,
 } from "@dts/resources";
 import { openFolder as openFolderInFileManager } from "../open-folder";
+import {
+  BundleTooLargeError,
+  ProjectNotFoundError,
+  buildBundle,
+  readProjectManifest,
+} from "../resources/bundle";
 import type { LogLevel } from "../ws/hub";
 import type { RuntimeHub } from "../ws/hub";
 import type { LoadedConfig } from "../config";
@@ -103,6 +109,15 @@ function sendJson(response: ServerResponse, status: number, payload: unknown): v
 export function createHttpServer(options: HttpServerOptions): Server {
   const { config, provider, hub, log } = options;
   const openFolder = options.openFolder ?? openFolderInFileManager;
+
+  /**
+   * 资源包缓存：**每个项目只留最近一份**（key = 项目名）。
+   *
+   * 打一次包要把整个 `Assets/` 读进内存再拼 zip，37 MB 量级每次都重打太浪费；
+   * 但素材是**外部工具随时可能改**的，所以进缓存前先重算一次指纹（成本 = 一次 `list`），
+   * 内容变了就重打——不需要文件监听，也不会发出发霉的包。
+   */
+  const bundleCache = new Map<string, { fingerprint: string; zip: Buffer; headers: Record<string, string> }>();
 
   return createServer((request, response) => {
     void handle(request, response).catch((error: unknown) => {
@@ -348,6 +363,104 @@ export function createHttpServer(options: HttpServerOptions): Server {
 
         response.writeHead(200, { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" });
         response.end(await provider.readText(id));
+        return;
+      }
+
+      /**
+       * 项目资源清单（前端先问这一份，拿指纹决定要不要真的下载）。
+       *
+       * 只列 `Assets/` 下的文件（项目文件与 `.gitkeep` 不算资源）。
+       */
+      case "/api/resources/manifest": {
+        const project = (url.searchParams.get("project") ?? "").trim();
+        if (project.length === 0) {
+          sendJson(response, 400, { error: "缺少 project 参数" });
+          return;
+        }
+
+        try {
+          const manifest = await readProjectManifest(provider, project);
+          sendJson(response, 200, {
+            project: manifest.project,
+            fingerprint: manifest.fingerprint,
+            bytes: manifest.bytes,
+            fileCount: manifest.entries.length,
+            files: manifest.entries,
+          });
+        } catch (error) {
+          if (error instanceof ProjectNotFoundError) {
+            sendJson(response, 404, { error: error.message });
+            return;
+          }
+
+          throw error;
+        }
+
+        return;
+      }
+
+      /**
+       * 项目资源包（整包 zip）。
+       *
+       * `v=<指纹>`：客户端说「我本地已经是这一版」——指纹没变就回 **304**，
+       * 省掉一次几十 MB 的传输；变了才回整包。
+       */
+      case "/api/resources/bundle": {
+        const project = (url.searchParams.get("project") ?? "").trim();
+        if (project.length === 0) {
+          sendJson(response, 400, { error: "缺少 project 参数" });
+          return;
+        }
+
+        const known = url.searchParams.get("v") ?? "";
+
+        try {
+          const current = await readProjectManifest(provider, project);
+          if (known.length > 0 && known === current.fingerprint) {
+            response.writeHead(304, {
+              "cache-control": "no-store",
+              "x-dts-project": encodeURIComponent(project),
+              "x-dts-fingerprint": current.fingerprint,
+            });
+            response.end();
+            return;
+          }
+
+          let cached = bundleCache.get(project);
+          if (cached === undefined || cached.fingerprint !== current.fingerprint) {
+            const built = await buildBundle(provider, project, {
+              maxTotalBytes: config.app.bundle.maxTotalBytes,
+            });
+            cached = { fingerprint: built.manifest.fingerprint, zip: built.zip, headers: { ...built.headers } };
+            bundleCache.set(project, cached);
+            log(
+              "info",
+              `已打包资源「${project}」：${built.manifest.entries.length} 个文件 / ${built.manifest.bytes} 字节 / ${built.manifest.fingerprint}`,
+            );
+          }
+
+          response.writeHead(200, {
+            "content-type": "application/zip",
+            "content-length": String(cached.zip.byteLength),
+            // 指纹变了 URL 就不同，所以可以放心让客户端/代理缓存；这里交给前端自己落盘
+            "cache-control": "no-store",
+            ...cached.headers,
+          });
+          response.end(cached.zip);
+        } catch (error) {
+          if (error instanceof ProjectNotFoundError) {
+            sendJson(response, 404, { error: error.message });
+            return;
+          }
+
+          if (error instanceof BundleTooLargeError) {
+            sendJson(response, 413, { error: error.message });
+            return;
+          }
+
+          throw error;
+        }
+
         return;
       }
 

@@ -6,6 +6,7 @@ import {
   type ClientInfo,
   type CommandRequest,
   type EditorToServerMessage,
+  type ResourcesInfo,
   type SceneInfo,
   type ScenePayload,
   type ServerToEditorMessage,
@@ -30,11 +31,13 @@ export interface RuntimeLogEntry {
   readonly time: string;
 }
 
-/** 服务端推来的运行态快照（「前端连没连 / 镜像是哪份场景」）。 */
+/** 服务端推来的运行态快照（「前端连没连 / 镜像是哪份场景 / 本地资源包下到哪了」）。 */
 export interface RuntimeStateSnapshot {
   readonly runtimeActive: boolean;
   readonly client: ClientInfo | null;
   readonly scene: SceneInfo | null;
+  /** 前端本地资源包状态；null = 这次运行态还没收到过前端的回执。 */
+  readonly resources: ResourcesInfo | null;
 }
 
 export interface RuntimeHandlers {
@@ -172,6 +175,7 @@ export class RuntimeClient {
           runtimeActive: message.runtimeActive,
           client: message.client,
           scene: message.scene,
+          resources: message.resources,
         });
         break;
 

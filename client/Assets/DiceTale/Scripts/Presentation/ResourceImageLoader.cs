@@ -1,16 +1,21 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.IO;
 using UnityEngine;
 using UnityEngine.Networking;
 
 namespace DiceTale
 {
     /// <summary>
-    /// 按**资源逻辑 ID** 取图：`GET {http}/api/resources/raw?id=…` → <see cref="Texture2D"/>。
+    /// 按**资源逻辑 ID** 取图。
     ///
-    /// 后台推下来的是逻辑 ID（如 `project:测试项目/Assets/images/场景1.png`），字节走服务端的
-    /// 原始资源接口——前端不自己拼文件路径，也不假设资源在本地。
+    /// 优先**本地资源包**（<see cref="ResourceBundleCache"/> 已经把整个项目的 `Assets/` 下到本地），
+    /// 本地没有再退回服务端的原始资源接口：
+    /// `GET {http}/api/resources/raw?id=…` → <see cref="Texture2D"/>。
+    ///
+    /// 后台推下来的是逻辑 ID（如 `project:测试项目/Assets/images/场景1.png`），字节要么来自本地包、
+    /// 要么来自服务端——前端既不自己拼文件路径，也不假设资源在本地。
     ///
     /// 缓存与去重：同一张图整个进程只取一次；正在取的时候再来要就排队等同一份结果。
     /// 取失败只记一条日志并**记住失败**（不再每帧重试），视图那边继续显示占位色。
@@ -22,11 +27,63 @@ namespace DiceTale
         private readonly HashSet<string> failed = new HashSet<string>();
 
         private string httpBaseUrl = "";
+        private ResourceBundleCache bundleCache;
 
-        /// <summary>服务端 HTTP 基地址（从 WebSocket 地址推导；取图 / 后续取音频都走它）。</summary>
+        /// <summary>服务端 HTTP 基地址（从 WebSocket 地址推导；本地没有的图仍走它）。</summary>
         public void Initialize(string httpBase)
         {
             httpBaseUrl = httpBase ?? "";
+        }
+
+        /// <summary>接上资源包（可能后于本组件创建；接上后优先读本地）。</summary>
+        public void Attach(ResourceBundleCache cache)
+        {
+            if (bundleCache != null)
+            {
+                bundleCache.VersionChanged -= OnBundleVersionChanged;
+            }
+
+            bundleCache = cache;
+
+            if (bundleCache != null)
+            {
+                // 本地资源包换了版本（新指纹就绪）→ 丢掉旧版本解出来的贴图
+                bundleCache.VersionChanged += OnBundleVersionChanged;
+            }
+        }
+
+        private void OnBundleVersionChanged(ResourceBundleCache cache)
+        {
+            Clear();
+        }
+
+        private void OnDestroy()
+        {
+            if (bundleCache != null)
+            {
+                bundleCache.VersionChanged -= OnBundleVersionChanged;
+            }
+        }
+
+        /// <summary>
+        /// 释放全部已加载的贴图（换项目 / 资源包换版本时调）。
+        ///
+        /// 不释放的话纹理只增不减：镜像反复重建、资源包换版都会留下一堆用不到的贴图常驻内存。
+        /// 注意**只销毁本加载器创建的**（它们都是运行时下载 / 解出来的）。
+        /// </summary>
+        public void Clear()
+        {
+            foreach (var texture in cache.Values)
+            {
+                if (texture != null)
+                {
+                    Destroy(texture);
+                }
+            }
+
+            cache.Clear();
+            failed.Clear();
+            pending.Clear();
         }
 
         /// <summary>取一张图（命中缓存立即回调；否则去要一份）。失败时回调 `null`。</summary>
@@ -62,22 +119,38 @@ namespace DiceTale
 
         private IEnumerator Fetch(string logicalId)
         {
-            if (string.IsNullOrEmpty(httpBaseUrl))
+            // 本地优先：资源包已就绪且这一版里有这个文件，就不再问服务端
+            var localPath = bundleCache != null && bundleCache.Ready
+                ? LocalResourceStore.LocalPathOf(bundleCache.VersionRoot, logicalId)
+                : null;
+            var isLocal = localPath != null && File.Exists(localPath);
+
+            if (!isLocal && string.IsNullOrEmpty(httpBaseUrl))
             {
-                Debug.LogWarning("[取图] 还不知道服务端 HTTP 地址（连接没建立？），先不取图");
+                Debug.LogWarning("[取图] 既没有本地资源包、也还不知道服务端 HTTP 地址，先不取图");
                 Complete(logicalId, null);
                 yield break;
             }
 
-            var url = $"{httpBaseUrl}/api/resources/raw?id={UnityWebRequest.EscapeURL(logicalId)}";
+            // file:// 让同一条 UnityWebRequestTexture 链路既能读本地也能读远程
+            var url = isLocal
+                ? new Uri(localPath).AbsoluteUri
+                : $"{httpBaseUrl}/api/resources/raw?id={UnityWebRequest.EscapeURL(logicalId)}";
+
             using (var request = UnityWebRequestTexture.GetTexture(url))
             {
                 yield return request.SendWebRequest();
 
                 if (request.result != UnityWebRequest.Result.Success)
                 {
-                    Debug.LogWarning($"[取图] 失败：{logicalId}（{request.error}）");
-                    failed.Add(logicalId);
+                    Debug.LogWarning(
+                        $"[取图] 失败：{logicalId}（{(isLocal ? "本地" : "远程")} {request.error}）");
+                    // 本地文件读不出来（被删 / 权限）时别把 ID 拉黑：远程还有一份
+                    if (!isLocal)
+                    {
+                        failed.Add(logicalId);
+                    }
+
                     Complete(logicalId, null);
                     yield break;
                 }
@@ -86,7 +159,11 @@ namespace DiceTale
                 if (texture == null)
                 {
                     Debug.LogWarning($"[取图] 解不出纹理：{logicalId}");
-                    failed.Add(logicalId);
+                    if (!isLocal)
+                    {
+                        failed.Add(logicalId);
+                    }
+
                     Complete(logicalId, null);
                     yield break;
                 }

@@ -109,6 +109,7 @@ const editorState = (runtimeActive: boolean): unknown => ({
   runtimeActive,
   client: null,
   scene: null,
+  resources: null,
   serverTime: Date.now(),
 });
 
@@ -260,6 +261,7 @@ afterEach(() => {
       runtimeActive: false,
       client: null,
       scene: null,
+      resources: null,
       logs: [],
       lastError: "",
     },

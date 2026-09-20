@@ -15,5 +15,8 @@
     "host": "0.0.0.0",
     "port": 1420
   },
-  "defaultCellPixels": 30
+  "defaultCellPixels": 30,
+  "bundle": {
+    "maxTotalBytes": 268435456
+  }
 }
