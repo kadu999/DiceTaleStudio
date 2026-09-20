@@ -9,8 +9,13 @@ namespace DiceTale
     /// 与它的前身 `GroundSpriteRenderer` 的区别：那个是给 Inspector 用的（拖一张 `Sprite` 字段、
     /// `OnValidate` 即时预览、自己管序列化资源），而镜像是**运行时数据驱动**的——
     /// 贴图来自后台推下来的资源逻辑 ID、要么从本地资源包读、要么从服务端取，
-    /// 根本没有「在 Inspector 里拖图」这回事。所以这里**只认 <see cref="Texture2D"/>**：
+    /// 根本没有「在 Inspector 里拖图」这回事。所以这里**只认 <see cref="Texture"/>**
+    /// （普通贴图，或战争雾那条模糊链的 `RenderTexture`）：
     /// 没有 `Sprite` 字段、没有序列化字段、没有编辑器预览逻辑。
+    ///
+    /// **但 Inspector 里要能看见**：尺寸 / 显示顺序全是 `Apply(...)` 传进来的，而 `MeshRenderer`
+    /// 的 Inspector 看不到 Sorting Layer / Order in Layer——所以另有一个只读的 Inspector
+    /// （`Editor/GroundTextureRendererEditor.cs`）把实际生效的 `sortingOrder` 与长宽显示出来。
     ///
     /// 尺寸口径：**宽高直接烘进网格顶点，不靠 Transform 缩放**。调用方给的就是世界单位下的
     /// 宽与高（文档像素到世界单位的换算在 <see cref="SceneObjectView.GlobalScale"/>，

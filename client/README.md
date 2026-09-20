@@ -62,8 +62,9 @@ Assets/
 │  │                    SceneFadeUI.cs           全屏淡入淡出遮罩（**当前无调用方**）
 │  │                    SubtitleWindow.cs        字幕窗口
 │  │                    SimulatedTouchDebugUI.cs 触点调试圆点
-│  ├─ Editor/           （1）         编辑器工具（DiceTale.Editor.asmdef）
+│  ├─ Editor/           （2）         编辑器工具（DiceTale.Editor.asmdef）
 │  │                    SetupMaps.cs                  一次性脚本：把 Demo 场景重建成「只有 Game 宿主」
+│  │                    GroundTextureRendererEditor.cs 只读 Inspector：面片实际生效的 sortingOrder / 长宽
 │  ├─ Resources/                      ← **运行时按名加载的资产必须留在这里**
 │  │  ├─ Shaders/                     DiceTale/*.shader（GroundSprite / VideoFade / FogBlur 在用）
 │  │  └─ RealMap.prefab
@@ -190,7 +191,7 @@ Assets/
 
 ## 当前状态（2026-09-20）
 
-- **36 个运行时脚本 + 1 个编辑器脚本**（Data 8 / Logic 9 / Network 5 / Presentation 14）；旧模型零残留；`.meta` 齐全。
+- **36 个运行时脚本 + 2 个编辑器脚本**（Data 8 / Logic 9 / Network 5 / Presentation 14）；旧模型零残留；`.meta` 齐全。
 - **多场景同时存在，切场景只隐藏不销毁（2026-09-20）**：层级按场景分——
   `Game / 场景（容器）/ <场景名>/ 对象视图…`，**场景节点直接用场景名命名**。
   切换场景只是把别的场景 `SetActive(false)` 藏起来，对象、贴图、状态全部留着；
@@ -224,6 +225,8 @@ Assets/
   擦除与重放都按没羽化的真状态算。
   揭示状态**只在前端**（不写文档）：切场景 / 重连（视图不销毁）都保留，Unity 重启回到未探索；
   地图数据一变（换绑定 / 涂格子）就「重填初始态 + 按顺序重放操作」，已揭示的部分不丢。
+  Unity 里选中地图或 `FogOverlay`，Inspector 上就能看到这一层**实际生效的 `sortingOrder`
+  与长宽**（只读，见 `Editor/GroundTextureRendererEditor.cs`）——层叠关系不对时先看那里。
   ⚠️ **`GridMap` / `DynamicObstacle` 仍按世界坐标算格子**，而且运行时不建 `GridMap`
   （它只服务 `.bytes` 那套旧资产，`map.cells` 现在由战争雾那层消费）；
   以后要用「缩放后的场景」做格子交互时，这两处得改成按场景根节点换算。
