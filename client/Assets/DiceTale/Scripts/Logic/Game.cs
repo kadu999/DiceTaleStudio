@@ -12,15 +12,16 @@ namespace DiceTale
             "PipeSource2=压板 v2 单点指挥（只触发压力最大点，Id 由 CommandId 控制）。")]
         [SerializeField] private InputManager.InputSourceKind inputSourceKind = InputManager.InputSourceKind.SimulatedTouch;
 
-        /// <summary>宿主实例：所有管理器（Input/Scene/Backend/UI/Audio/Registry…）都挂在本组件所在物体，
+        /// <summary>宿主实例：所有管理器（Input/Backend/UI/Audio/Registry…）都挂在本组件所在物体，
         /// 随宿主一起销毁（本组件所在场景物体卸载即全部销毁，退出即清、重进可重建）。</summary>
         public static Game Instance { get; private set; }
 
         /// <summary>所有管理器统一由宿主 Game 初始化并持有（唯一入口，经 Game.Instance 访问），不再各自使用单例。
         /// 角色/玩家、后台对象注册、录音回放等管理器已随旧模型删除（见
-        /// `client/docs/2026-09-19-unused-code-removal.md`），新功能按新方向重建。</summary>
+        /// `client/docs/2026-09-19-unused-code-removal.md`）；
+        /// <c>GameSceneManager</c> 也已在 2026-09-20 删除——场景内容由后台推送、由 <see cref="SceneMirror"/> 搭出来，
+        /// 「按 Resources 预设加载场景」那条路已经没有资产可加载（脚本与资源一起删掉了）。</summary>
         public InputManager InputManager { get; private set; }
-        public GameSceneManager GameSceneManager { get; private set; }
         public BackendManager BackendManager { get; private set; }
         public UIManager UIManager { get; private set; }
         public AudioPlayerManager AudioPlayerManager { get; private set; }
@@ -47,7 +48,6 @@ namespace DiceTale
             // 没有则挂一个），经 Game.Instance.X 访问
             InputManager = GetOrCreateManager<InputManager>();
             InitializeInputSource(); // 输入方案：按开关装模拟源或压板设备源
-            GameSceneManager = GetOrCreateManager<GameSceneManager>();
             BackendManager = GetOrCreateManager<BackendManager>();
             UIManager = GetOrCreateManager<UIManager>();
             AudioPlayerManager = GetOrCreateManager<AudioPlayerManager>();

@@ -5,18 +5,23 @@ using UnityEngine.UI;
 namespace DiceTale
 {
     /// <summary>
-    /// 场景切换淡入淡出窗口（继承 <see cref="UIWindow"/>，由 UIManager 统一管理）。
+    /// 全屏淡入淡出遮罩窗口（继承 <see cref="UIWindow"/>，由 UIManager 统一管理）。
     /// 全屏黑色遮罩盖住整个 Canvas，alpha 0→1（淡出/变黑）或 1→0（淡入/显像），
-    /// 用于场景切换时盖住旧场景卸载、新场景加载的瞬间。
+    /// 用于切场景时盖住旧内容卸载、新内容载入的瞬间。
     ///
     /// **无 prefab 的代码构建窗口**：结构只一个全屏 Image（Mask），Awake 时自动生成并撑满 Canvas，
     /// 经 <see cref="UIManager.OpenWindow{T}"/>（不传 Resources 路径）打开即可，无需在 Resources 建预设。
     ///
-    /// 用法（GameSceneManager.LoadScene 内部）：
-    ///   FadeToBlack(duration)     —— 淡出到全黑（切场景在回调/黑屏间隙做）
-    ///   FadeFromBlack(duration)   —— 从全黑淡入（新场景显像）
+    /// 用法：
+    ///   FadeToBlack(duration)     —— 淡出到全黑（切换在黑屏间隙做）
+    ///   FadeFromBlack(duration)   —— 从全黑淡入（新内容显像）
     ///   IsFading                  —— 是否正在播放淡入淡出（外部协程用轮询等待）
     /// 遮罩 alpha &gt; 0 时开启 raycastTarget 拦截点击，避免黑屏期间误触场景/UI；完全透明时关闭不挡交互。
+    ///
+    /// **当前没有调用方**：原来唯一的调用者是 `GameSceneManager.LoadScene`，而那个类已在 2026-09-20 删除
+    /// （场景内容由后台推送、由 <see cref="SceneMirror"/> 搭出来，不再有「按 Resources 预设切场景」这回事）。
+    /// 这个遮罩本身是完整可用的独立工具，留着等真正需要「黑屏过渡」的功能（例如切项目的加载态）来调；
+    /// 若确认用不上，直接删本文件即可（`UIManager` 是注册式管理，不引具体窗口类型）。
     /// </summary>
     public class SceneFadeUI : UIWindow
     {
