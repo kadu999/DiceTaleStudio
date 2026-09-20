@@ -35,6 +35,10 @@ namespace DiceTale
     ///
     /// 同时把每份场景的模型都留一份（<see cref="Find"/> 会在**所有场景**里找），因为命令是**触发器**：
     /// 比如播放声音时，前端要读出那个对象自己声明的 `sound.picked`——数据在镜像里，不在命令里。
+    ///
+    /// **动作对象（`PlaySound` / `Teleport`）只有模型、没有视图**：前端连 GameObject 都不为它们建
+    /// （判据在 <see cref="SceneObjectView.NeedsView"/>，建视图前问一次）。所以两张表不是一一对应的：
+    /// 增 / 改 / 删都要**按模型表**走，否则会漏掉它们（删掉的声音会永远留在镜像里，命令还会读到）。
     /// </summary>
     public class SceneMirror : MonoBehaviour
     {
@@ -171,6 +175,21 @@ namespace DiceTale
                 present.Add(obj.id);
                 objectTable[obj.id] = obj;
 
+                // **动作对象（PlaySound / Teleport）不建视图**：它们只是「一条给前端的指令」，
+                // 数据留在镜像里够用（命令要用它取数据）；编辑器画布上那两枚徽标是编辑器的画法。
+                // 这里连 GameObject 都不建，不是「建了再隐藏」——所以也不会占层级、不会进相机的剔除。
+                if (!SceneObjectView.NeedsView(obj.kind))
+                {
+                    if (viewTable.TryGetValue(obj.id, out var stale) && stale != null)
+                    {
+                        // 之前建过（改了 kind、或老版本建的）就销毁，别留下一个孤儿面片
+                        Destroy(stale.gameObject);
+                    }
+
+                    viewTable.Remove(obj.id);
+                    continue;
+                }
+
                 if (!viewTable.TryGetValue(obj.id, out var view) || view == null)
                 {
                     view = SceneObjectView.Create(obj, sceneRoot, imageLoader);
@@ -180,9 +199,11 @@ namespace DiceTale
                 view.Apply(obj);
             }
 
-            // 名单里没有的 → 这个场景里不该有（删除 / 复制后改名都走这里）
+            // 名单里没有的 → 这个场景里不该有（删除 / 复制后改名都走这里）。
+            // **按模型表找**而不是按视图表：动作对象只有模型、没有视图，漏掉它们的话
+            // 删掉的声音 / 传送阵会永远留在镜像里（命令还会读到它）。
             var removed = new List<string>();
-            foreach (var id in viewTable.Keys)
+            foreach (var id in objectTable.Keys)
             {
                 if (!present.Contains(id))
                 {
@@ -192,8 +213,7 @@ namespace DiceTale
 
             foreach (var id in removed)
             {
-                var view = viewTable[id];
-                if (view != null)
+                if (viewTable.TryGetValue(id, out var view) && view != null)
                 {
                     Destroy(view.gameObject);
                 }

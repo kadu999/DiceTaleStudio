@@ -20,6 +20,7 @@ namespace DiceTale
     {
         public string id = "";
         public string name = "";
+        /// <summary>对象种类。**动作对象（`PlaySound` / `Teleport`）只留在镜像里、不建视图**（见 <see cref="SceneObjectView.NeedsView"/>）。</summary>
         public string kind = "SceneObject";
 
         /// <summary>是否激活：不激活的对象前端也不显示（与编辑器那个勾选框同一件事）。</summary>

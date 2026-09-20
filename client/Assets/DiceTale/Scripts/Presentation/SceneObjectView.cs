@@ -21,8 +21,10 @@ namespace DiceTale
     /// 面片本身由 <see cref="GroundTextureRenderer"/> 画——它只认运行时纹理，
     /// 因为镜像的图来自后台推下来的资源 ID，不是 Inspector 里拖的 Sprite。
     ///
-    /// 声音对象（`PlaySound`）不建可见物——编辑器里那枚音频图标只是**编辑器**的画法，
-    /// 前端按自己的表现来；它的数据留在镜像里（`sound.picked` 就是该播的那条）。
+    /// **动作对象不建视图**：`PlaySound` / `Teleport` 只是「一条给前端的指令」（要播哪条声音、
+    /// 要换到哪张图），编辑器画布上那两枚徽标是**编辑器**的画法，前端按自己的表现来。
+    /// 它们的数据留在镜像里就够了，所以 <see cref="SceneMirror"/> 根本不会为它们调
+    /// <see cref="Create"/>（见 <see cref="NeedsView"/>）——这里的每一行都假定「自己是个实体」。
     /// </summary>
     public class SceneObjectView : MonoBehaviour
     {
@@ -54,11 +56,26 @@ namespace DiceTale
         private float currentWidth = FallbackSize;
         private float currentHeight = FallbackSize;
 
+        /// <summary>
+        /// 这种对象在前端**要不要建视图**（连 GameObject 都不该建的那种返回 `false`）。
+        ///
+        /// **实体要、动作不要**：地图 / 精灵 / 玩家 / 道具 / 事件都在世界里看得见摸得着；
+        /// `PlaySound` / `Teleport` 只是「一条给前端的指令」——声音靠命令来播，传送靠编辑器
+        /// 换场景（整份 `scene_push`）——它们的**数据留在镜像里**（命令要用它取数据）就够了。
+        ///
+        /// 判据放在**一处**（<see cref="SceneMirror"/> 建视图前问这里）：新加一种动作对象时，
+        /// 只改这一个地方，不会出现「镜像建了、却忘了在别处跳过」的半套状态。
+        /// </summary>
+        public static bool NeedsView(string kind)
+        {
+            return kind != "PlaySound" && kind != "Teleport";
+        }
+
         /// <summary>最近一次对象数据里的染色与显示顺序（<see cref="ApplyVisual"/> 要用，含异步取图回来那次）。</summary>
         private Color currentKindColor = new Color(0.85f, 0.85f, 0.85f, 0.85f);
         private int currentSortingOrder;
 
-        /// <summary>按对象建视图（地图 / 精灵 / 任意实体都先建一块面片；声音对象除外）。</summary>
+        /// <summary>按对象建视图（地图 / 精灵 / 任意实体都先建一块面片；动作对象**根本不建**，见 <see cref="NeedsView"/>）。</summary>
         public static SceneObjectView Create(MirrorObject obj, Transform parent, ResourceImageLoader loader)
         {
             var go = new GameObject(obj.id);
@@ -69,17 +86,10 @@ namespace DiceTale
             return view;
         }
 
-        /// <summary>把最新的对象数据应用到视图上（每次推送都会调）。</summary>
+        /// <summary>把最新的对象数据应用到视图上（每次推送都会调；**只对实体**，见 <see cref="NeedsView"/>）。</summary>
         public void Apply(MirrorObject obj)
         {
             gameObject.name = string.IsNullOrEmpty(obj.name) ? obj.id : $"{obj.name}（{obj.id}）";
-
-            // 声音对象不建可见物：编辑器里那枚音频图标只是编辑器的画法，它的数据留在镜像里就够了
-            if (obj.kind == "PlaySound")
-            {
-                gameObject.SetActive(false);
-                return;
-            }
 
             // 没落位的对象不画（与编辑器画布同一口径：画布上也不画、点不到）
             if (!obj.hasPosition)
@@ -168,7 +178,7 @@ namespace DiceTale
         /// <summary>
         /// 没有图时的占位色（按对象种类区分，一眼看出「这儿有个对象」）。
         ///
-        /// 没有 `PlaySound` 分支：那种对象在 <see cref="Apply"/> 里提前 `return`（不建可见物），
+        /// 没有 `PlaySound` / `Teleport` 分支：动作对象**根本不建视图**（见 <see cref="NeedsView"/>），
         /// 永远走不到这里——写了也是死代码。
         /// </summary>
         private static Color KindColor(string kind)
