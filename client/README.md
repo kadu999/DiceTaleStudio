@@ -64,7 +64,7 @@ Assets/
 │  │                    SimulatedTouchDebugUI.cs 触点调试圆点
 │  ├─ Editor/           （2）         编辑器工具（DiceTale.Editor.asmdef）
 │  │                    SetupMaps.cs                  一次性脚本：把 Demo 场景重建成「只有 Game 宿主」
-│  │                    GroundTextureRendererEditor.cs 只读 Inspector：面片实际生效的 sortingOrder / 长宽
+│  │                    GroundTextureRendererEditor.cs 只读 Inspector：面片实际生效的 sortingOrder 与纹理长宽
 │  ├─ Resources/                      ← **运行时按名加载的资产必须留在这里**
 │  │  ├─ Shaders/                     DiceTale/*.shader（GroundSprite / VideoFade / FogBlur 在用）
 │  │  └─ RealMap.prefab

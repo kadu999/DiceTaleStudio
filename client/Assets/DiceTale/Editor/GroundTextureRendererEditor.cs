@@ -20,9 +20,8 @@ namespace DiceTale.Editor
                 return;
             }
 
-            var meshFilter = component.GetComponent<MeshFilter>();
-            var mesh = meshFilter != null ? meshFilter.sharedMesh : null;
             var material = meshRenderer.sharedMaterial;
+            var texture = material != null ? material.mainTexture : null;
 
             using (new EditorGUI.DisabledScope(true))
             {
@@ -30,13 +29,9 @@ namespace DiceTale.Editor
                 EditorGUILayout.TextField(
                     "Sorting Layer",
                     string.IsNullOrEmpty(meshRenderer.sortingLayerName) ? "Default" : meshRenderer.sortingLayerName);
-                EditorGUILayout.ObjectField(
-                    "Texture",
-                    material != null ? material.mainTexture : null,
-                    typeof(Texture),
-                    false);
-                EditorGUILayout.FloatField("Width", mesh != null ? mesh.bounds.size.x : 0f);
-                EditorGUILayout.FloatField("Height", mesh != null ? mesh.bounds.size.z : 0f);
+                EditorGUILayout.ObjectField("Texture", texture, typeof(Texture), false);
+                EditorGUILayout.IntField("Width", texture != null ? texture.width : 0);
+                EditorGUILayout.IntField("Height", texture != null ? texture.height : 0);
                 EditorGUILayout.FloatField("Lift Y", component.transform.localPosition.y);
             }
         }
