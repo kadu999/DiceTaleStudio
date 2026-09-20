@@ -6,8 +6,10 @@ namespace DiceTale
     /// <summary>
     /// 战争雾（镜像驱动）：**把地图数据里那些雾格画成一层雾，再按后台发来的鼠标轨迹把它擦掉**。
     ///
-    /// 这一层是**地图视图的子物体**（<see cref="SceneObjectView"/> 建的 `FogOverlay`），所以它天然跟着
-    /// 地图的位置 / 旋转走；尺寸交给 <see cref="GroundTextureRenderer"/> 烘进网格（与地图面片同一套口径）。
+    /// 这一层与地图**同级**（`SceneObjectView` 建的 `FogOverlay`，和地图一起挂在场景根节点下，
+    /// 不是地图的子物体）：位置与角度由那边按**地图同一份数值**摆一遍，尺寸交给
+    /// <see cref="GroundTextureRenderer"/> 烘进网格（与地图面片同一套口径）；
+    /// 显示顺序的调用方会给**最前面**——未探索的地方连地图上的对象一起盖住。
     ///
     /// **雾是哪几格**：`map.fog.regions` 指定了哪些「区域位」算雾区（区域位就是 `map.cells` 里那些位，
     /// 与 `@dts/grid` 的 `CellMask` / <see cref="GridCellType"/> 同一套值）。一格只要含其中任意一位

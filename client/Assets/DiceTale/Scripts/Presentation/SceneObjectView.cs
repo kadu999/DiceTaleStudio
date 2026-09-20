@@ -26,8 +26,10 @@ namespace DiceTale
     /// 它们的数据留在镜像里就够了，所以 <see cref="SceneMirror"/> 根本不会为它们调
     /// <see cref="Create"/>（见 <see cref="NeedsView"/>）——这里的每一行都假定「自己是个实体」。
     ///
-    /// **绑了雾区的地图多一个子物体**：`FogOverlay`（<see cref="FogOfWar"/>），跟着地图走、
-    /// 尺寸与地图面片同大、略高一点；没绑雾区的地图不会有它（见 <see cref="ApplyFog"/>）。
+    /// **绑了雾区的地图多一个同级的 `FogOverlay`**（<see cref="FogOfWar"/>）：它挂在**场景根节点**下
+    /// （与地图并列，不是地图的子物体）、尺寸与地图面片同大、位置与角度按地图同一份数值各摆一遍，
+    /// 显示顺序取<a cref="FogSortingOrder">最前面</a>——未探索的地方连对象一起盖住。
+    /// 没绑雾区的地图不会有它（见 <see cref="ApplyFog"/>）。
     /// </summary>
     public class SceneObjectView : MonoBehaviour
     {
@@ -54,7 +56,16 @@ namespace DiceTale
         private const string FogOverlayName = "FogOverlay";
 
         /// <summary>
-        /// 雾层比自己那张地图高多少（**世界单位**）：只求比地图抬升高一档、别被地图盖住。
+        /// 雾层的显示顺序：**盖在所有东西前面**（未探索 = 连上面的令牌一起看不见）。
+        ///
+        /// 文档里的 `sortingOrder` 是给对象自己排前后用的（默认范围很小），雾不该跟它们比大小；
+        /// 取 `short.MaxValue`（Unity 的 `sortingOrder` 是 16 位有符号），实际就是「最前面」。
+        /// 已经揭示的地方雾是透明的，所以不会挡住该看见的东西。
+        /// </summary>
+        private const int FogSortingOrder = short.MaxValue;
+
+        /// <summary>
+        /// 雾层比自己那张地图高多少（**世界单位**）：只求比地图抬升高一档、别跟地图共面。
         ///
         /// 地图自己的抬升按 `sortingOrder` 每档差 `0.0005`（见 <see cref="LiftFor"/>），
         /// 所以这里给 `0.002` 就够——高了会在斜视角下看起来「浮起来」。
@@ -67,8 +78,13 @@ namespace DiceTale
         /// <summary>这张对象的地图数据（仅 `Map`；`map.fog.regions` 非空时才会建雾层）。</summary>
         private MirrorMap currentMap;
 
-        /// <summary>雾层（仅绑了雾区的地图有）；命令路由经 <see cref="Fog"/> 找到它。</summary>
+        /// <summary>雾层（仅绑了雾区的地图有；**与地图同级**，命令路由经 <see cref="Fog"/> 找到它）。</summary>
         private FogOfWar fog;
+
+        /// <summary>对象在文档里的位置 / 角度（雾层与地图同级，要各自摆一遍，所以留一份）。</summary>
+        private float currentX;
+        private float currentY;
+        private float currentRotation;
 
         private string currentImageId = "";
         private string currentTextureId = "";
@@ -127,14 +143,10 @@ namespace DiceTale
             //
             // 位置是**文档像素**，乘同一个 GlobalScale（与尺寸同系数，否则会被摆到离谱的地方）；
             // y（离地抬升）是**世界单位**，不参与缩放。
-            var scale = GlobalScale;
-            transform.localPosition = new Vector3(obj.x * scale, 0f, obj.y * scale);
-
-            // 角度：文档里存的是**弧度**（编辑器的 `SceneObject.rotation` 与参考实现同一套），
-            // 而 `Quaternion.Euler` 收的是**度**——必须 `Rad2Deg` 换算，
-            // 否则 30° 会被当成 0.52°（弧度值直接当度用）。
-            // 符号与 Unity 一致（文档正角 = Unity 里正的 Y 轴旋转），所以不取反。
-            transform.localRotation = Quaternion.Euler(0f, obj.rotation * Mathf.Rad2Deg, 0f);
+            currentX = obj.x;
+            currentY = obj.y;
+            currentRotation = obj.rotation;
+            Place(transform);
 
             var image = obj.DisplayImage;
             currentWidth = (image != null && image.width > 0 ? image.width : FallbackSize) * obj.scale;
@@ -196,9 +208,10 @@ namespace DiceTale
         /// <summary>
         /// 雾层：**这张地图绑了雾区就建 / 刷，没绑就把旧的拆掉**（每次重画都会走这里）。
         ///
-        /// 雾层是子物体，所以位置 / 旋转自动跟着地图走；这里只给它**世界单位的尺寸**（与地图面片
-        /// 同一份算法：声明尺寸 × scale × <see cref="GlobalScale"/>）、盖住地图的显示顺序、
-        /// 比地图高一点的抬升。
+        /// 雾层与地图**同级**（都挂在场景根节点下，见 <see cref="FogOverlayName"/>）：
+        /// 它不是地图的一部分，而是盖在整个场景之上的一层——所以位置 / 角度要**自己摆一遍**
+        /// （<see cref="Place"/> 与地图同一份算法），显示顺序取最前面（<see cref="FogSortingOrder"/>），
+        /// 未探索的地方连对象一起盖住。
         ///
         /// **谁算雾、怎么揭示**由 <see cref="FogOfWar"/> 自己管（后台命令驱动），这里只负责摆放。
         /// </summary>
@@ -222,21 +235,58 @@ namespace DiceTale
             if (fog == null)
             {
                 var go = new GameObject(FogOverlayName);
-                go.transform.SetParent(transform, false);
+                // **与地图同级**：挂在场景根节点下（视图的父节点），不是地图的子物体
+                go.transform.SetParent(transform.parent != null ? transform.parent : transform, false);
                 fog = go.AddComponent<FogOfWar>();
             }
+
+            Place(fog.transform);
 
             var scale = GlobalScale;
             fog.Apply(
                 map,
                 currentWidth * scale,
                 currentHeight * scale,
-                currentSortingOrder + 1,
+                FogSortingOrder,
                 mapLift + FogLift);
+        }
+
+        /// <summary>
+        /// 把一个面片摆到「这个对象在世界里的位置与角度」（**局部坐标**：相对所在场景的根节点）。
+        ///
+        /// 地图视图与它的雾层是**两个同级物体**，位置 / 角度必须各自摆——摆的是同一份数值
+        /// （<see cref="currentX"/> / <see cref="currentY"/> / <see cref="currentRotation"/>），
+        /// 所以两者永远重合。y（离地抬升）不在这里设：它由渲染器按自己的显示顺序给。
+        /// </summary>
+        private void Place(Transform target)
+        {
+            var scale = GlobalScale;
+            target.localPosition = new Vector3(currentX * scale, target.localPosition.y, currentY * scale);
+
+            // 角度：文档里存的是**弧度**（编辑器的 `SceneObject.rotation` 与参考实现同一套），
+            // 而 `Quaternion.Euler` 收的是**度**——必须 `Rad2Deg` 换算，
+            // 否则 30° 会被当成 0.52°（弧度值直接当度用）。
+            // 符号与 Unity 一致（文档正角 = Unity 里正的 Y 轴旋转），所以不取反。
+            target.localRotation = Quaternion.Euler(0f, currentRotation * Mathf.Rad2Deg, 0f);
         }
 
         /// <summary>这一层的雾（没绑雾区的地图返回 null）；命令路由用它执行 `erase_mask` / `reveal_fog_region`。</summary>
         public FogOfWar Fog => fog;
+
+        /// <summary>
+        /// 视图被销毁（对象被删 / 换场景）时，把雾层一起带走。
+        ///
+        /// 雾层是**同级**物体、不是子物体，Unity 不会跟着销毁——不在这里收，它会留在地图上
+        /// 盖着一块谁也点不到、也擦不掉的旧雾。
+        /// </summary>
+        private void OnDestroy()
+        {
+            if (fog != null)
+            {
+                Destroy(fog.gameObject);
+                fog = null;
+            }
+        }
 
         /// <summary>按显示顺序错开离地高度：大的略高一点，避免同平面共面闪烁（真正的遮挡靠 sortingOrder）。</summary>
         private static float LiftFor(int sortingOrder)
