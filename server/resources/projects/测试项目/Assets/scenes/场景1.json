@@ -1,5 +1,5 @@
 {
-  "formatVersion": 11,
+  "formatVersion": 12,
   "objects": [
     {
       "id": "map_mu6uln3x1l7fg",
@@ -356,8 +356,8 @@
       "sortingOrder": 0,
       "locked": false,
       "position": {
-        "x": -650.7071719912242,
-        "y": -143.0721777032979
+        "x": -460.44229870411004,
+        "y": -224.75738693759615
       },
       "rotation": 0,
       "scale": 1,
@@ -375,6 +375,28 @@
           "project:测试项目/Assets/audio/thunderstorm-30s-high.wav": "背景音乐3"
         },
         "layer": "bgm"
+      }
+    },
+    {
+      "id": "teleport_mua13jbo1iopa",
+      "name": "传送阵",
+      "kind": "Teleport",
+      "active": true,
+      "sortingOrder": 0,
+      "locked": false,
+      "position": {
+        "x": 530.2365709136379,
+        "y": 18.221188003905088
+      },
+      "rotation": 0,
+      "scale": 1,
+      "components": [],
+      "teleport": {
+        "targets": [
+          "场景2",
+          "场景3"
+        ],
+        "picked": "场景3"
       }
     }
   ]

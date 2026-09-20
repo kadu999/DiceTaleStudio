@@ -1,5 +1,5 @@
 {
-  "formatVersion": 11,
+  "formatVersion": 12,
   "objects": [
     {
       "id": "map_mu7t4t731b222",
@@ -7,13 +7,13 @@
       "kind": "Map",
       "active": true,
       "sortingOrder": -10,
+      "locked": true,
       "position": {
         "x": 0,
         "y": 0
       },
       "rotation": 0,
       "scale": 1,
-      "locked": true,
       "components": [],
       "map": {
         "image": {
