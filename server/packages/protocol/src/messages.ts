@@ -24,12 +24,14 @@ import { z } from "zod";
  * v2（2026-09-20）：`/client` 新增 `resources_prepare`（服务端主动告诉前端「当前是哪个项目」，
  * 让前端**先把资源包下完、再载入场景**）。老前端收到不认识的类型会告警并丢弃，所以是破坏性改动。
  *
- * **新增命令种类不算不兼容改动、不升版本**：老前端收到不认识的 `kind` 会回一条
- * 「前端不认识这条命令」的回执，编辑器如实显示失败原因（不静默、也不断线）。战争雾的
- * `erase_mask` / `reveal_fog_region` 就是这么加的——与 `scaleX` / `scaleY`、`resources_ready`
- * 同一条政策。
+ * v3（2026-09-21）：新增战争雾两条命令（`erase_mask` / `reveal_fog_region`）。
+ * 对**前端**是加法（老前端回一条「前端不认识这条命令」就行），但对**服务端**不是：
+ * 老的 `/editor` 入站 schema 会直接把这条命令判成非法消息丢掉，编辑器只看到一行
+ * 「消息校验失败」、命令凭空消失（现场就是这么踩了一次：服务端进程没重启）。
+ * 所以这里仍然 +1——版本握手（两端都要相等）会在连上的那一刻就说清「新旧不同步」，
+ * 而不是等第一条新命令发出去才暴露。
  */
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 
 /** 未进入运行态时拒绝 `/client` 升级的 HTTP 状态与原因头。 */
 export const RUNTIME_INACTIVE_STATUS = 503;

@@ -17,8 +17,12 @@ namespace DiceTale
         ///
         /// v2（2026-09-20）：服务端新增 `resources_prepare`——连上就把「当前是哪个项目」告诉前端，
         /// 让前端**先把资源包下完、再载入场景**。
+        ///
+        /// v3（2026-09-21）：新增战争雾两条命令（`erase_mask` / `reveal_fog_region`）。
+        /// 版本必须与服务端**完全一致**（不一致时服务端以 close `4002` 断开并写明原因），
+        /// 所以编辑器和前端要一起更新——这条规矩正是为了不让「新旧混着跑」悄悄失效。
         /// </summary>
-        public const int Version = 2;
+        public const int Version = 3;
 
         // 服务端 → 前端
         public const string TypeServerHello = "server_hello";

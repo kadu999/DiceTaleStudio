@@ -25,6 +25,22 @@ const COMMAND_RESULT_TIMEOUT_MS = 5000;
 const CLIENT_PING_INTERVAL_MS = 15000;
 const CLIENT_MAX_MISSED_PINGS = 2;
 
+/**
+ * 从一条**没通过校验**的入站消息里尽力取出 `requestId`。
+ *
+ * 校验失败有两种：JSON 本身就坏了（取不出来，只能报一条无主的错），以及 JSON 合法但字段 /
+ * 判别值不认识（例如服务端进程还是旧的、不认识新增的命令种类）。后者带着 `requestId`，
+ * 把它一起回给编辑器，那条命令的失败才有主、编辑器的 pending 才收得掉。
+ */
+function requestIdOf(raw: unknown): string | undefined {
+  if (typeof raw !== "object" || raw === null) {
+    return undefined;
+  }
+
+  const value = (raw as { requestId?: unknown }).requestId;
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
 interface ClientSession {
   readonly ws: WebSocket;
   readonly address: string;
@@ -373,12 +389,24 @@ export class RuntimeHub {
   }
 
   private onEditorMessage(ws: WebSocket, text: string): void {
+    let raw: unknown;
     let message;
     try {
-      message = parseEditorToServer(parseJsonMessage(text));
+      raw = parseJsonMessage(text);
+      message = parseEditorToServer(raw);
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
-      this.sendTo(ws, { type: "editor_error", reason });
+      // **能对上号的错误要挂到那条命令上**：消息没通过校验时它同样带 `requestId`（JSON 是合法的，
+      // 只是字段/判别值不认识，例如服务端进程还是旧的、不认识新增的命令种类）。
+      // 只发一行无主的「消息校验失败」的话，编辑器那边那条命令就成了「发出去、永远没回音」——
+      // 现场的表现就是「点了有报错、前端一动不动」。
+      const requestId = requestIdOf(raw);
+      this.sendTo(
+        ws,
+        requestId === undefined
+          ? { type: "editor_error", reason }
+          : { type: "editor_error", requestId, reason },
+      );
       return;
     }
 

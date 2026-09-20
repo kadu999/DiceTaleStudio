@@ -366,6 +366,38 @@ describe("运行态：门控 + 场景镜像中继", () => {
     expect(typeOf(logged)).toBe("editor_log");
   });
 
+  it("不认识的命令（服务端还是旧版本时会这样）：回带 requestId 的 editor_error，不静默丢弃、也不转发", async () => {
+    const editor = await startEditor();
+    const client = await startClient();
+    send(client.socket, { type: "client_hello", protocolVersion: PROTOCOL_VERSION, name: "Mock", version: "0.0.0" });
+    await client.inbox.waitFor<ServerToClientMessage>((message) => typeOf(message) === "server_hello");
+
+    // 现场踩过的坑：服务端进程没重启 → 它的入站 schema 不认识新增的命令种类 →
+    // 只发一行无主的「消息校验失败」，编辑器那边那条命令发出去就没了回音
+    // （表现：点了有报错、前端一动不动）。现在这条错误必须挂在 requestId 上。
+    send(editor.socket, {
+      type: "editor_command",
+      requestId: "fog-unknown",
+      command: { kind: "erase_mask_unknown", objectId: "map_01" },
+    });
+
+    const failed = await editor.inbox.waitFor<ServerToEditorMessage>(
+      (message) =>
+        typeOf(message) === "editor_error" &&
+        (message as { requestId?: string }).requestId === "fog-unknown",
+    );
+    if (failed.type !== "editor_error") {
+      throw new Error("类型不符");
+    }
+
+    expect(failed.reason).toMatch(/校验失败/);
+
+    // 非法消息不会被转发成一条「半截命令」给前端
+    await expect(
+      client.inbox.waitFor((message) => typeOf(message) === "command", 300),
+    ).rejects.toThrow(/超时/);
+  });
+
   it("战争雾：擦一笔的轨迹原样转发给前端，回执回到编辑器", async () => {
     const editor = await startEditor();
     const client = await startClient();

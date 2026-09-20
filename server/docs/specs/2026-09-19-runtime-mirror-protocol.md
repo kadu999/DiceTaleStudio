@@ -1,7 +1,10 @@
 # 运行态镜像协议（编辑器 → 服务端 → 前端）
 
 > 状态：**已实现**（2026-09-19；2026-09-20 升到 **协议 v2**：新增 `resources_prepare`，让前端
-> **先下资源包、再载入场景**）。取代 [`2026-09-18-frontend-integration-contract.md`](2026-09-18-frontend-integration-contract.md)
+> **先下资源包、再载入场景**；2026-09-21 升到 **协议 v3**：新增战争雾的 `erase_mask` /
+> `reveal_fog_region`——对前端是加法，但**老服务端的入站 schema 会把新命令判成非法消息丢掉**，
+> 所以照样 +1，靠版本握手把「新旧混着跑」挡在连上的那一刻）。取代
+> [`2026-09-18-frontend-integration-contract.md`](2026-09-18-frontend-integration-contract.md)
 > （那份写的是「前端上报数据、后台按 id 寻址动作」的老模型，已整层删除）。
 
 ## 一句话
@@ -114,7 +117,6 @@
 | `reveal_fog_region` | `{ objectId, region, revealed }` | 含该区域位的格子**整片揭示**（`true`）/ **整片盖回**（`false`） |
 
 **战争雾发的是轨迹，不是整张遮罩**（照参考实现 `backend_diceTale` 的 `erase_mask` / `EraseStroke`）：
-
 - `points`：鼠标拖过的归一化轨迹点（`[0,1]`、**y 向下**）。前端把它翻成纹理的自下而上（`(1 - y) × 高`），
   沿线段按 `step = max(1, 半径 / 2)` 补点、两端各打一个软边擦除圆，`min` 幂等（同一处擦 N 次 = 一次）；
 - `radius`：**半径 / 遮罩宽**（编辑器固定 `48/960 = 0.05`）。前端收到后乘**它自己**的遮罩宽——
