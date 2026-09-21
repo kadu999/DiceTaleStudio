@@ -28,6 +28,8 @@ describe("项目 API", () => {
   let root: string;
   /** 被「打开」的目录（真的去调系统命令会弹资源管理器窗口，所以整条链路都注入假的）。 */
   let openedFolders: string[];
+  /** 被要求「选中」的文件（`selectFile` 为真时）。 */
+  let selectedFiles: (string | undefined)[];
   let failNextOpen: boolean;
 
   beforeEach(async () => {
@@ -38,6 +40,7 @@ describe("项目 API", () => {
     provider = new FsResourceProvider(config.resourceRoot, config.dirs);
 
     openedFolders = [];
+    selectedFiles = [];
     failNextOpen = false;
 
     hub = new RuntimeHub(() => {});
@@ -46,13 +49,14 @@ describe("项目 API", () => {
       provider,
       hub,
       log: () => {},
-      openFolder: async (folder) => {
+      openFolder: async (folder, selectFile) => {
         if (failNextOpen) {
           failNextOpen = false;
           throw new Error("没有可用的文件管理器");
         }
 
         openedFolders.push(folder);
+        selectedFiles.push(selectFile);
       },
     });
     hub.attach(server);
@@ -287,6 +291,84 @@ describe("项目 API", () => {
       expect((await response.json()) as { error: string }).toMatchObject({
         error: /没有可用的文件管理器/,
       });
+    });
+
+    it("带 path 时打开的是**项目内的那一层**（资源面板选中的目录）", async () => {
+      await postJson("/api/projects", { name: TEST_PROJECT });
+
+      const response = await postJson("/api/projects/reveal", {
+        name: TEST_PROJECT,
+        path: "Assets/images",
+      });
+      expect(response.status).toBe(200);
+
+      const expected = pathApi.join(root, config.dirs.project, TEST_PROJECT, "Assets", "images");
+      expect(pathApi.resolve(openedFolders[0] ?? "")).toBe(pathApi.resolve(expected));
+      expect(selectedFiles).toEqual([undefined]);
+    });
+
+    it("selectFile 指向存在的文件时：打开它所在的目录并选中它", async () => {
+      await postJson("/api/projects", { name: TEST_PROJECT });
+      await fetch(`${baseUrl}/api/resources/raw?id=${encodeURIComponent(`project:${TEST_PROJECT}/Assets/images/Map001.png`)}`, {
+        method: "PUT",
+        headers: { "content-type": "image/png" },
+        body: Buffer.from([137, 80, 78, 71]),
+      });
+
+      const response = await postJson("/api/projects/reveal", {
+        name: TEST_PROJECT,
+        path: "Assets/images/Map001.png",
+        selectFile: true,
+      });
+      expect(response.status).toBe(200);
+
+      const file = pathApi.join(
+        root,
+        config.dirs.project,
+        TEST_PROJECT,
+        "Assets",
+        "images",
+        "Map001.png",
+      );
+      expect(pathApi.resolve(selectedFiles[0] ?? "")).toBe(pathApi.resolve(file));
+      // 打开的是它所在的目录（explorer 的 `/select,` 会自己把窗口定位到那个文件）
+      expect(pathApi.resolve(openedFolders[0] ?? "")).toBe(pathApi.resolve(pathApi.dirname(file)));
+    });
+
+    it("selectFile 指向目录时按打开目录处理（不给 explorer 传一个目录去选中）", async () => {
+      await postJson("/api/projects", { name: TEST_PROJECT });
+
+      const response = await postJson("/api/projects/reveal", {
+        name: TEST_PROJECT,
+        path: "Assets/images",
+        selectFile: true,
+      });
+      expect(response.status).toBe(200);
+      expect(selectedFiles).toEqual([undefined]);
+    });
+
+    it("selectFile 指向不存在的文件返回 404，且不会去打开任何目录", async () => {
+      await postJson("/api/projects", { name: TEST_PROJECT });
+
+      const response = await postJson("/api/projects/reveal", {
+        name: TEST_PROJECT,
+        path: "Assets/images/没有这个文件.png",
+        selectFile: true,
+      });
+      expect(response.status).toBe(404);
+      expect(openedFolders).toEqual([]);
+    });
+
+    it("path 试图越出项目目录时返回 400，绝不越出", async () => {
+      await postJson("/api/projects", { name: TEST_PROJECT });
+
+      const escaped = ["../别的项目", "Assets/../..", "Assets/images/..", "/abs", "a//b"];
+      for (const path of escaped) {
+        const response = await postJson("/api/projects/reveal", { name: TEST_PROJECT, path });
+        expect([path, response.status]).toEqual([path, 400]);
+      }
+
+      expect(openedFolders).toEqual([]);
     });
   });
 });

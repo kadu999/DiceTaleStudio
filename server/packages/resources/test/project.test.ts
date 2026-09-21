@@ -71,6 +71,14 @@ describe("项目内相对路径校验", () => {
     expect(validateProjectRelativePath("a//b")).toMatch(/空的目录名/);
     expect(validateProjectRelativePath("a/con/b")).toMatch(/保留名/);
   });
+
+  it("逐段拒绝 . 与 ..（它们不含分隔符，能绕开 `/../` 那条检查）", () => {
+    // `Assets/images/..` 拼进真实路径后会把结果抬到项目目录之外，必须挡在这里
+    expect(validateProjectRelativePath("Assets/images/..")).toMatch(/\.\./);
+    expect(validateProjectRelativePath("a/..")).toMatch(/\.\./);
+    expect(validateProjectRelativePath("..")).toMatch(/\.\./);
+    expect(validateProjectRelativePath("a/./b")).toMatch(/\./);
+  });
 });
 
 describe("创建 / 打开 / 删除项目", () => {

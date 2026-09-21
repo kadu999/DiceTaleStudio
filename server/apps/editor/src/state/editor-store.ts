@@ -45,9 +45,8 @@ import {
   // 项目级数据：音频文件标注（显示名 + 标签 ID，纯编辑器数据，见 AudioFilesDialog）
   setAudioMetaName as setProjectAudioName,
   setAudioMetaTags as setProjectAudioTags,
-  addAudioTag as addProjectAudioTag,
   renameAudioTag as renameProjectAudioTag,
-  deleteAudioTag as deleteProjectAudioTag,
+  setAudioTagName as setProjectAudioTagName,
   setTeleportTargets as setSceneTeleportTargets,
   setTeleportPicked as setSceneTeleportPicked,
   setSoundPicked as setSceneSoundPicked,
@@ -536,23 +535,19 @@ export interface EditorStoreState {
    */
   setAudioTags(clipId: string, tagIds: readonly number[]): boolean;
   /**
-   * 标签表：新建一个标签，返回它的 **ID**（同名返回已有那个；空名字返回 `null`）。
+   * 标签表：给某个 tag ID 改名字（**只改表**，文件里的 ID 不动）。
    *
-   * `applyProject` 返回的是「有没有变更」，拿不到 ID——所以这里直接读**改完之后**的 `doc`：
-   * 表是同一个对象引用的话（同名复用），返回已有的那个 ID。
+   * 只改**已经存在**的槽位；给「序号预先列好、只填名字」的界面用的是 `setAudioTagName`。
    */
-  addAudioTag(name: string): number | null;
-  /** 标签表：给某个 tag ID 改名字（**只改表**，文件里的 ID 不动）。 */
   renameAudioTag(tagId: number, name: string): boolean;
   /**
-   * 标签表：删掉一个标签（从**所有**文件上摘引用 + 表里留洞）。
+   * 标签表：给**指定的序号**命名（序号不存在就把它补出来，中间的缺口补成空名字）。
    *
-   * 影响面大（全项目），调用方负责二次确认。
+   * 「标签」窗口用它：序号是预先列好的，人往第 N 个格子里敲名字，N 就是它以后的 ID
+   * （对齐 Unity 的 TagManager）。指向洞（`null`）的序号不写。
    */
-  deleteAudioTag(tagId: number): boolean;
-  /** 给某个音频文件**新建并立即挂上**一个标签（一条撤销记录里做完两件事）。 */
-  addAudioTagToClip(clipId: string, name: string): boolean;
-  /** 打开 / 关闭「标签」窗口（标签表：新建 / 改名 / 删除）。 */
+  setAudioTagName(tagId: number, name: string): boolean;
+  /** 打开 / 关闭「标签」窗口（标签表：只填名字）。 */
   openAudioTags(open: boolean): void;
   /** 全局设置 · 背景音乐音量（`0..1`，越界夹回；前端收到即生效）。 */
   setBgmVolume(volume: number): boolean;
@@ -578,12 +573,14 @@ export interface EditorStoreState {
   refreshTree(): Promise<void>;
   createFolder(path: string): Promise<boolean>;
   /**
-   * 在**运行服务端的那台机器**上用文件管理器打开当前项目目录。
+   * 在**运行服务端的那台机器**上用文件管理器打开项目里的某一层。
    *
    * 浏览器不能替用户开文件夹，所以这件事由后端调系统命令完成：从平板经局域网访问时，
-   * 弹出来的是服务端那台电脑的窗口。失败（系统不支持 / 命令缺失）会写进 `project.error`。
+   * 弹出来的是服务端那台电脑的窗口。`target` 是**项目内相对路径**（空串 = 项目根）：
+   * 给目录就打开那个目录；给文件路径并且 `selectFile` 为真，就打开它所在目录并**选中它**。
+   * 失败（系统不支持 / 命令缺失 / 路径越界）会写进 `project.error`。
    */
-  openProjectFolder(): Promise<boolean>;
+  openProjectFolder(target?: string, selectFile?: boolean): Promise<boolean>;
   uploadFiles(dirPath: string, files: readonly File[]): Promise<void>;
   deleteResource(id: string, label: string): Promise<boolean>;
 
@@ -2624,45 +2621,27 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       });
     },
 
-    addAudioTag(name) {
-      get().applyProject("新建标签", (draft) => {
-        addProjectAudioTag(draft, name);
-      });
-
-      // 命令返回的是 ID，但 `applyProject` 只回「有没有变更」——所以改完再查一次表：
-      // 名字已存在（没产生变更）时也能拿到那个 ID
-      const trimmed = name.trim();
-      const index = (get().doc.audioTags ?? []).indexOf(trimmed);
-      return index >= 0 ? index : null;
-    },
-
     renameAudioTag(tagId, name) {
       return get().applyProject("修改标签名字", (draft) => {
         renameProjectAudioTag(draft, tagId, name);
       });
     },
 
-    deleteAudioTag(tagId) {
-      // 撤销菜单里写清删掉的是哪个标签（用**改之前**的名字）
-      const name = get().doc.audioTags?.[tagId] ?? `#${tagId}`;
-      return get().applyProject(`删除标签（${name}）`, (draft) => {
-        deleteProjectAudioTag(draft, tagId);
+    /**
+     * 给**指定的序号**命名（序号不够长就把它补出来）。
+     *
+     * 「标签」窗口的序号是预先列好的，人往 `#3` 那个格子里敲名字，3 就是它以后的 ID——
+     * 所以这里走的是 `setAudioTagName`（允许补槽），而不是只改已存在槽位的 `renameAudioTag`。
+     */
+    setAudioTagName(tagId, name) {
+      return get().applyProject(`命名标签 #${tagId}`, (draft) => {
+        setProjectAudioTagName(draft, tagId, name);
       });
     },
 
-    addAudioTagToClip(clipId, name) {
-      // 「新建并挂上」在**一条**撤销记录里做完：命令返回 ID，所以两步都在同一个 recipe 里
-      return get().applyProject("添加标签", (draft) => {
-        const tagId = addProjectAudioTag(draft, name);
-        if (tagId === null) {
-          return;
-        }
-
-        const current = draft.audioMeta?.[clipId]?.tags ?? [];
-        setProjectAudioTags(draft, clipId, [...current, tagId]);
-      });
-    },
-
+    // 说明：「标签」窗口只填名字、「选择标签」框只勾选——**两个入口都不新建标签**。
+    // 所以「新建并挂上」那条 store 动作也一并去掉了；文档层的 `addAudioTag`
+    // （选第一个洞、没有就追加）仍留着：它是标签表的底层能力，别处（迁移 / 将来的工具）还要用。
     openAudioTags(open) {
       set({ audioTags: open });
     },
@@ -2891,17 +2870,20 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       }
     },
 
-    async openProjectFolder() {
+    async openProjectFolder(target = "", selectFile = false) {
       const project = get().project.current;
       if (project === null) {
         return false;
       }
 
       try {
-        const path = await projectApi.reveal(project);
+        const opened = await projectApi.reveal(project, target, selectFile);
         // 顺手清掉上一次的错误：成功了还挂着红字会让人以为没成功
         set((state) => ({ project: { ...state.project, error: "" } }));
-        pushLog(makeLog("info", `已打开项目目录：${path}`));
+        // 日志里带上**项目内**的相对路径：后端回的是绝对路径，人看的是「打开的是哪一个」
+        const what = selectFile ? "文件" : "目录";
+        const where = target.length === 0 ? "" : `（${target}）`;
+        pushLog(makeLog("info", `已打开${what}${where}：${opened}`));
         return true;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

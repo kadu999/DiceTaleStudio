@@ -9,6 +9,7 @@ import {
   type SceneObjectDoc,
 } from "@dts/document";
 import { cellPixelSize } from "@dts/grid";
+import { PROJECT_FOLDERS, PROJECT_SCENE_FILE_EXTENSION } from "@dts/resources";
 import type { ResourceTreeNode } from "../../services/project-api";
 import { findResourceNode, useEditorStore } from "../../state/editor-store";
 import { tagsOfClip, type AudioTagRef } from "../audio-catalog";
@@ -161,6 +162,8 @@ export function InspectorPanel(): React.JSX.Element {
                   : "无（对象不依赖地图，可直接添加）"
               }
             />
+            {/* 场景也是一个文件：告诉人它在盘上的哪儿（打开它交给资源面板的「打开目录」） */}
+            <Field label="文件" value={`${PROJECT_FOLDERS.scenes}/${activeScene.name}${PROJECT_SCENE_FILE_EXTENSION}`} mono />
           </FieldGroup>
         ) : (
           // 属性**不跟场景绑定**：打开着项目就总有东西可看（没有场景时看项目自身的属性）
@@ -1069,7 +1072,7 @@ function AudioDisplayNameField({
 
 /**
  * 音频的**标签**：已勾的按名字列成 chip（`×` = 只从这个文件上摘掉），
- * 「＋ 标签」打开**选择标签**框（给这个文件勾 / 去、也能现建一个），
+ * 「＋」打开**选择标签**框（给这个文件勾 / 去、也能现建一个），
  * 「标签…」打开**标签表**（新建 / 改名 / 删除——改名字只改表）。
  */
 function AudioTagsField({
@@ -1105,7 +1108,7 @@ function AudioTagsField({
                 data-testid="asset-audio-tag-remove"
                 data-id={tag.id}
                 aria-label={`从这个文件上摘掉标签 ${tag.name}`}
-                title={`把这个文件上的「${tag.name}」摘掉（别的文件上的不受影响；标签本身还在「标签」窗口里）`}
+                title={`摘掉「${tag.name}」`}
                 className="text-[var(--color-editor-text-dim)] hover:text-[var(--color-editor-danger)]"
                 onClick={() =>
                   setAudioTags(
@@ -1119,14 +1122,19 @@ function AudioTagsField({
             </span>
           ))}
 
+          {/*
+            只放一个「＋」，但**画大一点**：这里就是个入口，旁边那一串 chip 已经说明了
+            「这是标签」；小号的 ＋ 在平板上很难点准。无文字，所以补上 aria-label。
+          */}
           <button
             type="button"
             data-testid="asset-audio-add-tag"
-            title="打开「选择标签」：给这个文件勾 / 去标签，也能现建一个"
-            className="flex-none rounded border border-dashed border-[var(--color-editor-border)] px-1.5 py-0.5 text-[10px] text-[var(--color-editor-text-dim)] hover:border-[var(--color-editor-accent)] hover:text-[var(--color-editor-text)]"
+            aria-label="加标签"
+            title="加标签"
+            className="flex h-6 w-6 flex-none items-center justify-center rounded border border-dashed border-[var(--color-editor-border)] text-[15px] leading-none text-[var(--color-editor-text-dim)] hover:border-[var(--color-editor-accent)] hover:text-[var(--color-editor-text)]"
             onClick={() => setPicking(true)}
           >
-            ＋ 标签
+            ＋
           </button>
         </div>
       </FieldRow>
@@ -1135,15 +1143,12 @@ function AudioTagsField({
         <button
           type="button"
           data-testid="asset-audio-open-tags"
-          title="打开「标签」窗口：新建标签、给每个 tag 改名字 / 删除"
+          title="标签表"
           className="toolbar-button flex-none hover:toolbar-button-hover"
           onClick={() => openAudioTags(true)}
         >
           标签…
         </button>
-        <span className="min-w-0 flex-1 truncate text-[10px] text-[var(--color-editor-text-dim)]">
-          标签是整数（#0、#1…），名字在「标签」窗口里改——改名字不会动到音频文件。
-        </span>
       </FieldRow>
 
       {/* 选择标签：挂在这个面板上（`AssetProperties` 按资源 id 挂了 key，换文件时自动收起） */}

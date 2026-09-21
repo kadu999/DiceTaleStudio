@@ -48,6 +48,17 @@ body {
   -webkit-touch-callout: none;
 }
 
+/* 触控设备上放大命中区（平板可用性硬要求）。
+   放在 `@utility` **之前**：它是一条普通规则（选择器是裸的 `button`），
+   而 `@utility` 生成的自定义 utility 会排在普通规则之后；顺序反过来的话，
+   资源面板那行「压掉 32px」的例外又会被它顶回去。 */
+@media (pointer: coarse) {
+  button,
+  [role="button"] {
+    min-height: 32px;
+  }
+}
+
 @utility panel {
   background: var(--color-editor-panel);
   border-color: var(--color-editor-border);
@@ -86,12 +97,15 @@ body {
   border-color: var(--color-editor-border);
 }
 
-/* 触控设备上放大命中区（平板可用性硬要求） */
-@media (pointer: coarse) {
-  button,
-  [role="button"] {
-    min-height: 32px;
-  }
+/* 资源面板的**行内**按钮例外（目录树的小三角、行名、右列内容行）。
+   它们一行只有 12px 文字高，被上面粗指针的 32px 规则一撑，列表立刻变成
+   「一行一个的大按钮」——点着费劲、看得也累。命中区靠行本身的 padding 保证。
+
+   为什么用 `!important` 而不是 @utility：Tailwind 会把粗指针那条媒体查询排在
+   生成的 utility **之后**（同类选择器、同权重），utility 版的 `min-height: 0`
+   会被它顶回去。这里用 important 明确表态，顺序怎么排都生效。 */
+.asset-row-button {
+  min-height: 0 !important;
 }
 
 /* ------------------------------------------------------------------

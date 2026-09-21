@@ -1,3 +1,5 @@
+import { PROJECT_SCENE_FILE_EXTENSION } from "@dts/resources";
+
 /**
  * 资源文件的展示辅助（资源面板与属性面板共用）。
  *
@@ -8,6 +10,7 @@
 const IMAGE_SUFFIXES = [".png", ".jpg", ".jpeg", ".webp", ".gif"] as const;
 const VIDEO_SUFFIXES = [".mp4", ".webm"] as const;
 const AUDIO_SUFFIXES = [".mp3", ".wav", ".ogg"] as const;
+const TEXT_SUFFIXES = new Set([".json", ".txt", ".md", ".csv"]);
 
 const KIND_LABELS: Record<string, string> = {
   ".png": "PNG 图片",
@@ -25,14 +28,56 @@ const KIND_LABELS: Record<string, string> = {
   ".md": "Markdown",
 };
 
-function suffixOf(fileName: string): string {
+/**
+ * 文件的扩展名（小写，带点）；没有扩展名返回空串。
+ *
+ * 导出是因为**图标**也要按同一份后缀表判断类型——它和预览 / 类型名必须认同一套规则，
+ * 否则会出现「类型写着 PNG 图片、图标却是通用文件」这种自相矛盾。
+ */
+export function assetSuffix(fileName: string): string {
   const dot = fileName.lastIndexOf(".");
   return dot <= 0 ? "" : fileName.slice(dot).toLowerCase();
 }
 
+/** 资源行图标的种类（未知扩展名归入 `file`）。 */
+export type AssetIconKind = "image" | "video" | "audio" | "text" | "scene" | "file";
+
+/**
+ * 图标种类：图片 / 视频 / 音频 / 文本 / 场景 / 通用文件。
+ *
+ * 和 `assetPreviewKind` 一样**只看文件名**（不看路径）：`.json` 就是「场景」那一格的图标，
+ * 因为项目里 `.json` 目前只有场景文件（`project.json` 不进资源树，见 `PROJECT_SPECIAL_FILES`）。
+ * 「这一行点下去是打开场景还是看属性」由面板按路径判定（见 `AssetsPanel` 的 `sceneNameOf`）。
+ */
+export function assetIconKind(fileName: string): AssetIconKind {
+  const suffix = assetSuffix(fileName);
+
+  if ((IMAGE_SUFFIXES as readonly string[]).includes(suffix)) {
+    return "image";
+  }
+
+  if ((VIDEO_SUFFIXES as readonly string[]).includes(suffix)) {
+    return "video";
+  }
+
+  if ((AUDIO_SUFFIXES as readonly string[]).includes(suffix)) {
+    return "audio";
+  }
+
+  if (suffix === PROJECT_SCENE_FILE_EXTENSION) {
+    return "scene";
+  }
+
+  if (TEXT_SUFFIXES.has(suffix)) {
+    return "text";
+  }
+
+  return "file";
+}
+
 /** 能不能在属性面板里预览，以及用哪种元素预览。 */
 export function assetPreviewKind(fileName: string): "image" | "video" | "audio" | null {
-  const suffix = suffixOf(fileName);
+  const suffix = assetSuffix(fileName);
   if ((IMAGE_SUFFIXES as readonly string[]).includes(suffix)) {
     return "image";
   }
@@ -50,7 +95,7 @@ export function assetPreviewKind(fileName: string): "image" | "video" | "audio" 
 
 /** 人类可读的资源类型（认不出就给「文件」）。 */
 export function assetKindLabel(fileName: string): string {
-  return KIND_LABELS[suffixOf(fileName)] ?? "文件";
+  return KIND_LABELS[assetSuffix(fileName)] ?? "文件";
 }
 
 /**

@@ -87,16 +87,20 @@ export const projectApi = {
   },
 
   /**
-   * 在**运行服务端的那台机器**上用文件管理器打开项目目录，返回打开的真实路径。
+   * 在**运行服务端的那台机器**上用文件管理器打开项目里的某一层，返回打开的真实路径。
    *
    * 浏览器不能替用户开文件夹，所以这件事只能后端做；从平板经局域网访问时，
    * 弹出来的是服务端那台电脑的窗口（不是平板上的文件 App）。
+   *
+   * `target` 是**项目内相对路径**（空串表示项目根）：给目录路径就打开那个目录；
+   * 给文件路径并且 `selectFile` 为真，就打开它所在的目录并**在文件管理器里选中它**
+   * （绝对路径由服务端拼，客户端拼不出来也不该拼）。服务端只接受**项目目录之内**的路径。
    */
-  async reveal(name: string): Promise<string> {
+  async reveal(name: string, target = "", selectFile = false): Promise<string> {
     const body = await request<{ path: string }>("/api/projects/reveal", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, path: target, selectFile }),
     });
     return body.path;
   },

@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { readFile, stat } from "node:fs/promises";
-import { extname, join, resolve, sep } from "node:path";
+import { extname, dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createEmptyProject } from "@dts/document";
 import {
@@ -8,6 +8,7 @@ import {
   createProject,
   deleteProject,
   listProjects,
+  normalizePath,
   parseResourceId,
   projectFileId,
   projectFolderId,
@@ -17,7 +18,10 @@ import {
   validateProjectRelativePath,
   type ResourceProvider,
 } from "@dts/resources";
-import { openFolder as openFolderInFileManager } from "../open-folder";
+import {
+  openFolder as openFolderInFileManager,
+  revealFile as revealFileInFileManager,
+} from "../open-folder";
 import {
   BundleTooLargeError,
   ProjectNotFoundError,
@@ -60,11 +64,12 @@ export interface HttpServerOptions {
   readonly hub: RuntimeHub;
   readonly log: (level: LogLevel, message: string) => void;
   /**
-   * 「在文件管理器里打开目录」的实现（`/api/projects/reveal` 用）。
+   * 「在文件管理器里打开目录 / 定位文件」的实现（`/api/projects/reveal` 用）。
    *
-   * 测试注入假的：真的去调系统命令会在跑测试的机器上弹出一堆窗口。
+   * 参数是**要打开的目录路径**，以及（可选）**要选中的文件路径**——两者都是服务端自己拼出来的
+   * 绝对路径。测试注入假的：真的去调系统命令会在跑测试的机器上弹出一堆窗口。
    */
-  readonly openFolder?: (path: string) => Promise<void>;
+  readonly openFolder?: (path: string, selectFile?: string) => Promise<void>;
 }
 
 function contentTypeFor(path: string): string {
@@ -108,7 +113,13 @@ function sendJson(response: ServerResponse, status: number, payload: unknown): v
 
 export function createHttpServer(options: HttpServerOptions): Server {
   const { config, provider, hub, log } = options;
-  const openFolder = options.openFolder ?? openFolderInFileManager;
+  // 给了 `selectFile` 就走「定位文件」，否则就是普通地打开目录
+  const openFolder =
+    options.openFolder ??
+    ((path: string, selectFile?: string) =>
+      selectFile === undefined
+        ? openFolderInFileManager(path)
+        : revealFileInFileManager(selectFile));
 
   /**
    * 资源包缓存：**每个项目只留最近一份**（key = 项目名）。
@@ -253,11 +264,18 @@ export function createHttpServer(options: HttpServerOptions): Server {
       }
 
       /**
-       * 用文件管理器打开项目目录（资源面板的「打开目录」按钮）。
+       * 用文件管理器打开项目里的某一层（资源面板的「打开目录」按钮）。
        *
        * 打开的是**服务端这台机器**上的目录：浏览器不能替用户开文件夹，所以只能后端做。
-       * 路径由服务端按自己的配置拼出来（`资源根 / projects / 项目名`），项目名先过
-       * `validateProjectName`——客户端**不能**指定任意路径，这是这个接口的安全边界。
+       * 绝对路径由服务端自己拼（`资源根 / projects / 项目名 / 项目内相对路径`），
+       * 客户端只能给**项目内的相对路径**，而且必须过 `validateProjectRelativePath`
+       * （逐段拒绝 `..`），拼好后还要**再确认落在项目目录里**才 spawn——这是这个接口的安全边界。
+       *
+       * 请求体：
+       * - `name`：项目名（必填）；
+       * - `path`：项目内相对路径（可选，空 = 项目根）；
+       * - `selectFile`：为真且 `path` 指向一个**存在的文件**时，打开它所在的目录并选中它
+       *   （Linux 没有统一的「选中文件」接口，会退回打开父目录）。
        */
       case "/api/projects/reveal": {
         if (request.method !== "POST") {
@@ -278,9 +296,41 @@ export function createHttpServer(options: HttpServerOptions): Server {
           return;
         }
 
-        const folder = resolve(config.resourceRoot, config.dirs.project, projectPath(name));
+        const subPath = typeof body.path === "string" ? normalizePath(body.path).trim() : "";
+        if (subPath.length > 0) {
+          const pathReason = validateProjectRelativePath(subPath);
+          if (pathReason !== undefined) {
+            sendJson(response, 400, { error: pathReason });
+            return;
+          }
+        }
+
+        const projectFolder = resolve(config.resourceRoot, config.dirs.project, projectPath(name));
+        const target =
+          subPath.length === 0 ? projectFolder : resolve(projectFolder, ...subPath.split("/"));
+        // 拼出来之后再确认一次：任何越出项目目录的路径都不许开
+        if (target !== projectFolder && !target.startsWith(projectFolder + sep)) {
+          sendJson(response, 400, { error: "路径不允许越出项目目录" });
+          return;
+        }
+
+        const selectFile = body.selectFile === true;
+        let fileToSelect: string | undefined;
+        if (selectFile && subPath.length > 0) {
+          // 只对**真实存在的文件**做「选中」：目录也过 `/select,` 会变成「打开它并选中它自己」，
+          // 那不是用户要的；`path` 是个不存在的文件则是明确的错，不能悄悄退化成打开目录。
+          const info = await stat(target).catch(() => null);
+          if (info === null) {
+            sendJson(response, 404, { error: `文件不存在：${subPath}` });
+            return;
+          }
+
+          fileToSelect = info.isFile() ? target : undefined;
+        }
+
+        const folderToOpen = fileToSelect === undefined ? target : dirname(fileToSelect);
         try {
-          await openFolder(folder);
+          await openFolder(folderToOpen, fileToSelect);
         } catch (error) {
           sendJson(response, 500, {
             error: error instanceof Error ? error.message : String(error),
@@ -288,8 +338,13 @@ export function createHttpServer(options: HttpServerOptions): Server {
           return;
         }
 
-        log("info", `已在文件管理器中打开项目目录: ${folder}`);
-        sendJson(response, 200, { ok: true, path: folder });
+        log(
+          "info",
+          fileToSelect === undefined
+            ? `已在文件管理器中打开目录: ${folderToOpen}`
+            : `已在文件管理器中定位文件: ${fileToSelect}`,
+        );
+        sendJson(response, 200, { ok: true, path: folderToOpen });
         return;
       }
 

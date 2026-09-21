@@ -18,4 +18,14 @@ if (typeof window !== "undefined" && typeof window.matchMedia !== "function") {
   })) as unknown as typeof window.matchMedia;
 }
 
+/*
+  jsdom 也没有 `Element.prototype.scrollIntoView`（布局是假的，无从滚动）。
+  资源面板用它把左树滚到「当前所在的那一层」，缺了它组件会**真的抛错**——
+  补一个空实现，让用例能跑到「列表内容对不对」这一层。
+  为什么不在组件里加特性判断：那是为测试让步的运行时分支，浏览器里永远不会走到。
+*/
+if (typeof window !== "undefined" && typeof Element.prototype.scrollIntoView !== "function") {
+  Element.prototype.scrollIntoView = () => undefined;
+}
+
 export {};

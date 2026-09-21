@@ -97,7 +97,13 @@ export function validateProjectName(name: string): string | undefined {
   return undefined;
 }
 
-/** 校验项目内的相对路径（新建文件夹 / 上传文件时用）。 */
+/**
+ * 校验项目内的相对路径（新建文件夹 / 上传文件 / 在文件管理器里定位时用）。
+ *
+ * `.` 与 `..` **逐段拒绝**：`validateProjectName` 只管文件名本身的字符，会放行这两个
+ * （它们不含分隔符也不是保留名），于是 `a/..` 这种「整段是点点」的路径能绕开上面那条
+ * `/../` 检查——拼进真实路径后它会把结果抬到项目目录之外。
+ */
 export function validateProjectRelativePath(path: string): string | undefined {
   const normalized = normalizePath(path).trim();
   if (normalized.length === 0) {
@@ -112,6 +118,10 @@ export function validateProjectRelativePath(path: string): string | undefined {
   for (const segment of segments) {
     if (segment.length === 0) {
       return "路径中不能有空的目录名";
+    }
+
+    if (segment === "." || segment === "..") {
+      return "路径不允许使用 . 或 ..";
     }
 
     const reason = validateProjectName(segment);

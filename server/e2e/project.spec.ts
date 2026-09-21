@@ -51,6 +51,11 @@ test.describe("项目", () => {
       await expect(treeRows).toHaveCount(1 + STANDARD_FOLDERS.length);
       await expect(treeRows.filter({ hasText: "Assets" })).toHaveCount(1);
       await expect(treeRows.filter({ hasText: name })).toHaveCount(0);
+      // 每行都带类型图标（内联 SVG，不是字体字形）；`data-icon` 是给这里钉的
+      await expect(treeRows.first()).toHaveAttribute("data-icon", "folder");
+      await expect(treeRows.first().locator("svg")).toHaveCount(1);
+      await expect(contentRows.first()).toHaveAttribute("data-icon", "folder");
+      await expect(contentRows.first().locator("svg")).toHaveCount(1);
 
       // 右列默认显示 Assets 的内容
       await expect(page.getByTestId("folder-breadcrumb")).toHaveText("/");
