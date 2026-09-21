@@ -1000,13 +1000,16 @@ export function ScenePanel(): React.JSX.Element {
   return (
     <div className="relative flex h-full min-h-0 flex-col">
       <div className="panel-header">
-        <span>场景</span>
-        {/* 当前场景名常驻看得见：没有它，多场景时会不知道自己在哪一张图上 */}
+        {/*
+          顶栏只写**场景名**（不写「场景」标签）：这一栏下面就是画布，除了当前这张图叫什么，
+          没有别的需要说明的东西；多一个标签只会挤掉长场景名的显示宽度。
+          没有场景时用一个占位（免得整条标题栏只剩右侧按钮，看着像坏了）。
+        */}
         <span
           data-testid="scene-current"
-          className="min-w-0 max-w-[40%] truncate text-[11px] text-[var(--color-editor-text-dim)]"
+          className="min-w-0 truncate text-[11px] text-[var(--color-editor-text)]"
         >
-          {activeSceneName ?? ""}
+          {activeSceneName ?? "（没有场景）"}
         </span>
         {activeSceneName === null ? null : (
           // 放最右：平板竖屏下左边 340px 可能被抽屉盖住，靠右才一定点得到
@@ -1023,11 +1026,13 @@ export function ScenePanel(): React.JSX.Element {
             <button
               type="button"
               data-testid="new-object"
+              // 按钮上只写「对象」：它旁边就是场景名，这一栏讲的就是「当前场景」，
+              // 「新建」由弹框自己说（打开的窗口标题也是「新建对象」）
               title="新建对象（Ctrl/⌘+Shift+N）"
               className="toolbar-button hover:toolbar-button-hover"
               onClick={() => openObjectDialog(true)}
             >
-              新建对象
+              对象
             </button>
           </div>
         )}
