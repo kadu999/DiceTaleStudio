@@ -1,69 +1,65 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { useEditorStore } from "../state/editor-store";
-import { allTagsOf, audioCatalog } from "../panels/audio-catalog";
 
 /**
- * 「标签」窗口（v18 起）：**标签表**的编辑页——新建 / 改名 / 删除。
+ * 「标签」窗口（v18 起）：**标签表**的编辑页。
  *
  * 学 Unity 的 TagManager：**tag 是个整数**（就是表里的下标 `#0`、`#1`…），名字只是它的显示文本。
  * 所以这里改名字**只改这一张表**，所有音频文件里记的 `[0, 2]` 一个字节都不用动
  * （这正是「文件里存整数、不存字符串」换来的好处：不会因为改一次名字就把每个文件翻一遍，
  * 也不会因为「战斗」和「战斗 」这种写法分裂成两个标签）。
  *
- * 三条口径：
- * - **新建**：占一个槽位。删过的槽位是**洞**（`null`），新建时**优先复用第一个洞**——
- *   ID 是身份，不能让别的标签 ID 位移；
- * - **改名**：就地改，空名字不提交（要「不显示」就删掉它）；
- * - **删除**：把这个标签从**所有**音频文件上摘掉（二次确认），表里留洞。
+ * **序号是定好的，这里只填名字**——没有「添加」按钮、没有「删除」：
+ * - 一列 `#0`…`#15` 从一开始就在（已经用过的序号一并列出、哪怕超过 16 个）；
+ * - 往哪个格子敲名字，**那个序号**就是它以后的 ID（`setAudioTagName` 会把中间的空槽补出来）；
+ * - 填满这一屏的最后一格会自动再接一屏（上限见 `MAX_SLOTS`），序号永远够用。
  *
- * 入口：「工程 → 标签…」，「音频文件」窗口右上角的「标签…」按钮。
+ * **只关心这一张表**：不显示「多少个文件在用」——那个数字要把全项目的音频标注扫一遍、
+ * 还得跟着文件增删实时变，为了一个参考数字把两个面板耦在一起不划算。要用量就去「选择标签」框
+ * （那里本来就在挑「哪个标签用得多」）。
+ *
+ * 洞（`null`，手改过的数据里可能有）照旧**不显示**：那是删过的记号，不能拿空名字去顶它。
+ *
+ * 入口：「工程 → 标签…」，属性面板标签行右边的「标签…」按钮。
  */
+
+/** 默认铺多少个空槽（已经用过的序号一并列出，实际行数取两者更大的那个）。 */
+const SLOTS_PER_PAGE = 16;
+
+/** 一次最多铺到多少个序号（填满这一屏的最后一个格子会自动再续一屏）。 */
+const MAX_SLOTS = 32;
+
 export function AudioTagEditorDialog(): React.JSX.Element {
   const open = useEditorStore((state) => state.audioTags);
   const openAudioTags = useEditorStore((state) => state.openAudioTags);
-  const tree = useEditorStore((state) => state.project.tree);
-  const meta = useEditorStore((state) => state.doc.audioMeta);
   const table = useEditorStore((state) => state.doc.audioTags);
-  const addAudioTag = useEditorStore((state) => state.addAudioTag);
-  const deleteAudioTag = useEditorStore((state) => state.deleteAudioTag);
 
-  const [draft, setDraft] = useState("");
-
+  /**
+   * 要列出来的序号：**已有槽位**（含洞的位置——洞不画，但占着序号）与**一屏空槽**取大的那个。
+   *
+   * 空槽是**界面上铺出来的**，不是数据：只有真的在某个格子里敲了名字，那个序号才会写进文档。
+   * 所以打开这个窗口看一眼不会改任何东西。
+   */
+  const [extraSlots, setExtraSlots] = useState(SLOTS_PER_PAGE);
   useEffect(() => {
     if (open) {
-      setDraft("");
+      setExtraSlots(SLOTS_PER_PAGE);
     }
   }, [open]);
 
-  const rows = useMemo(() => audioCatalog(tree, meta, table), [tree, meta, table]);
-  // 标签表按 **ID 升序**列（#0、#1、#2…）：这是「表的编辑页」，顺序该跟下标一致
-  // （「选择标签」框那边是按用量排的，那里关心的是「常用的先看到」）
-  const entries = useMemo(
-    () => [...allTagsOf(table, rows)].sort((a, b) => a.id - b.id),
-    [table, rows],
-  );
+  const usedCount = table?.length ?? 0;
+  const slotCount = Math.min(Math.max(usedCount, extraSlots), MAX_SLOTS);
+  const slots = Array.from({ length: slotCount }, (_, id) => id);
 
-  const create = (): void => {
-    const name = draft.trim();
-    setDraft("");
-    if (name.length === 0) {
-      return;
+  /** 名字提交后：如果他填的是**最后一个空格子**，后面再接一屏（序号够用，不用来回找按钮）。 */
+  const commit = (id: number, name: string): boolean => {
+    const changed = useEditorStore.getState().setAudioTagName(id, name);
+    if (changed && id >= slotCount - 1) {
+      setExtraSlots((previous) => Math.min(previous + SLOTS_PER_PAGE, MAX_SLOTS));
     }
 
-    addAudioTag(name);
-  };
-
-  const remove = (id: number, name: string, count: number): void => {
-    if (
-      !window.confirm(
-        `删除标签「${name || "（未命名）"}」？它会在全项目 ${count} 个音频文件上被摘掉（音频文件本身不动）。`,
-      )
-    ) {
-      return;
-    }
-
-    deleteAudioTag(id);
+    return changed;
   };
 
   return (
@@ -82,72 +78,34 @@ export function AudioTagEditorDialog(): React.JSX.Element {
               event.preventDefault();
             }
           }}
-          className="fixed left-1/2 top-1/2 z-[70] flex h-[520px] w-[560px] max-h-[92vh] max-w-[92vw] -translate-x-1/2 -translate-y-1/2 flex-col rounded border border-[var(--color-editor-border)] bg-[var(--color-editor-panel)] p-3 shadow-2xl"
+          // 窄一点、高一点：这一页只有「序号 + 名字」两列，宽度浪费在空白上，
+          // 而一屏 16 行需要的是高度
+          className="fixed left-1/2 top-1/2 z-[70] flex h-[640px] w-[420px] max-h-[92vh] max-w-[92vw] -translate-x-1/2 -translate-y-1/2 flex-col rounded border border-[var(--color-editor-border)] bg-[var(--color-editor-panel)] p-3 shadow-2xl"
         >
-          <Dialog.Title className="mb-1 flex-none text-[13px] font-semibold">标签</Dialog.Title>
-          <div className="mb-2 flex-none text-[11px] text-[var(--color-editor-text-dim)]">
-            标签是<span className="text-[var(--color-editor-text)]">整数</span>（
-            <span className="font-mono">#0</span>、<span className="font-mono">#1</span>
-            …）：这里只是给每个值起名字——
-            <span className="text-[var(--color-editor-text)]">改名字只改这张表</span>
-            ，音频文件里记的还是原来的整数。
-          </div>
+          <Dialog.Title className="mb-2 flex-none text-[13px] font-semibold">标签</Dialog.Title>
           <div className="min-h-0 flex-1 overflow-auto" data-testid="audio-tag-editor-list">
-            {entries.length === 0 ? (
-              <div
-                data-testid="audio-tag-editor-empty"
-                className="flex h-full flex-col items-center justify-center gap-1 rounded border border-dashed border-[var(--color-editor-border)] text-[11px] text-[var(--color-editor-text-dim)]"
-              >
-                <span>还没有标签</span>
-                <span>在下面输入一个名字回车，就会占一个整数 ID</span>
-              </div>
-            ) : (
-              <div className="flex flex-col gap-1">
-                {entries.map((entry) => (
+            <div className="flex flex-col gap-1">
+              {slots
+                // 洞不画（手改过的数据里可能有）：序号照旧占位，只是不给这一行
+                .filter((id) => table?.[id] !== null)
+                .map((id) => (
                   <AudioTagEditorRow
-                    key={entry.id}
-                    id={entry.id}
-                    name={entry.name}
-                    count={entry.count}
-                    onDelete={() => remove(entry.id, entry.name, entry.count)}
+                    key={id}
+                    id={id}
+                    name={(table?.[id] ?? "").trim()}
+                    onCommit={commit}
                   />
                 ))}
-              </div>
-            )}
+            </div>
           </div>
 
-          <div className="mt-2 flex flex-none items-center gap-2 border-t border-[var(--color-editor-border)] pt-2">
-            <input
-              data-testid="audio-tag-editor-new"
-              value={draft}
-              placeholder="新建标签…"
-              aria-label="新建标签"
-              title="敲一个名字回车：占一个新的（或删过的）整数 ID"
-              className="min-w-0 flex-1 rounded border border-[var(--color-editor-border)] bg-black/30 px-2 py-1 text-[11px] outline-none placeholder:text-[var(--color-editor-text-dim)]"
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  create();
-                } else if (event.key === "Escape") {
-                  setDraft("");
-                }
-              }}
-            />
-            <button
-              type="button"
-              data-testid="audio-tag-editor-add"
-              disabled={draft.trim().length === 0}
-              title="新建一个标签（同名的话就用已有的那个）"
-              className="toolbar-button flex-none hover:toolbar-button-hover"
-              onClick={create}
-            >
-              添加
-            </button>
+          <div className="mt-2 flex flex-none justify-end">
             <Dialog.Close asChild>
               <button
                 type="button"
                 data-testid="audio-tag-editor-close"
-                className="toolbar-button flex-none hover:toolbar-button-hover"
+                // 与「选择标签」框同一个尺寸：关闭是收尾动作，别做成小按钮
+                className="toolbar-button h-8 flex-none px-4 text-[12px] hover:toolbar-button-hover"
               >
                 关闭
               </button>
@@ -159,33 +117,41 @@ export function AudioTagEditorDialog(): React.JSX.Element {
   );
 }
 
-/** 一行：`#ID` + 名字输入框（就地改）+ 用量 + 删除。 */
+/**
+ * 一行：`#序号` + 名字输入框。**序号是死的，名字是活的**。
+ *
+ * 输入框里敲完（Enter / 失焦）就改表：名字为空 = 这一行还是「没有名字」，
+ * 什么都不写（所以打开窗口随手点一下不会留下空槽数据）。
+ *
+ * 不显示用量：这一页只跟**标签表**打交道（要看用量去「选择标签」框）。
+ */
 function AudioTagEditorRow({
   id,
   name,
-  count,
-  onDelete,
+  onCommit,
 }: {
   readonly id: number;
   readonly name: string;
-  readonly count: number;
-  readonly onDelete: () => void;
+  readonly onCommit: (id: number, name: string) => boolean;
 }): React.JSX.Element {
-  const renameAudioTag = useEditorStore((state) => state.renameAudioTag);
   const [draft, setDraft] = useState(name);
 
+  // 表在别处变了（撤销、换项目）：这一格跟着走——除非它正被编辑（那时 drafts 才是用户的意思）
   useEffect(() => {
     setDraft(name);
   }, [id, name]);
 
   const commit = (): void => {
-    if (draft.trim() === name || draft.trim().length === 0) {
-      // 空名字不提交：要让一个标签「不显示」，就把它删掉
+    const trimmed = draft.trim();
+    if (trimmed.length === 0 || trimmed === name) {
+      // 空名字不写进数据：序号存在与否不该由「随手点过一个空格子」决定
       setDraft(name);
       return;
     }
 
-    renameAudioTag(id, draft);
+    if (!onCommit(id, draft)) {
+      setDraft(name);
+    }
   };
 
   return (
@@ -193,14 +159,16 @@ function AudioTagEditorRow({
       data-testid="audio-tag-editor-row"
       data-id={id}
       data-name={name}
-      className="flex items-center gap-2 rounded border border-[var(--color-editor-border)] px-1.5 py-1 hover:bg-[var(--color-editor-panel-alt)]"
+      // 行本身是干净的：**只有名字那一格有底色**，这样一列名字跟窗口分得开，
+      // 又不会变成 16 个色块。鼠标移上去整行淡淡亮一下，方便看清点的是哪一行。
+      className="flex items-center gap-2 rounded px-1 py-0.5 hover:bg-[var(--color-editor-panel-alt)]"
     >
       <span
         data-testid="audio-tag-editor-id"
-        className="w-8 flex-none font-mono text-[10px] text-[var(--color-editor-text-dim)]"
-        title={`tag ID = ${id}（文件里记的就是这个整数）`}
+        className="w-6 flex-none text-right font-mono text-[10px] text-[var(--color-editor-text-dim)]"
+        title={`tag ID = ${id}`}
       >
-        #{id}
+        {id}
       </span>
 
       <input
@@ -208,9 +176,11 @@ function AudioTagEditorRow({
         data-id={id}
         value={draft}
         placeholder="（未命名）"
-        aria-label={`标签 #${id} 的名字`}
-        title="改名字只改这张表：所有用到它的音频文件自动跟着变（文件里记的是整数 ID）"
-        className="w-44 flex-none rounded border border-[var(--color-editor-border)] bg-black/30 px-1 py-0.5 text-[11px] outline-none placeholder:text-[var(--color-editor-text-dim)]"
+        aria-label={`标签 ${id} 的名字`}
+        title="填名字"
+        // 名字这一格**自带底色**（跟窗口底色分开，一眼看出「这里能填」）；
+        // 光标进去再亮一档、加一圈强调色边框
+        className="min-w-0 flex-1 rounded border border-transparent bg-black/25 px-1.5 py-0.5 text-[11px] outline-none focus:border-[var(--color-editor-accent)] focus:bg-black/40 placeholder:text-[var(--color-editor-text-dim)]"
         onChange={(event) => setDraft(event.target.value)}
         onBlur={commit}
         onKeyDown={(event) => {
@@ -222,25 +192,6 @@ function AudioTagEditorRow({
           }
         }}
       />
-
-      <span
-        data-testid="audio-tag-editor-count"
-        className="min-w-0 flex-1 truncate text-[10px] text-[var(--color-editor-text-dim)]"
-      >
-        {count} 个文件在用
-      </span>
-
-      <button
-        type="button"
-        data-testid="audio-tag-editor-delete"
-        data-id={id}
-        aria-label={`删除标签 #${id}`}
-        title={`从全项目的音频文件上摘掉这个标签（影响 ${count} 个文件）`}
-        className="flex-none rounded border border-[var(--color-editor-border)] px-1.5 py-0.5 text-[10px] hover:border-[var(--color-editor-danger)] hover:text-[var(--color-editor-danger)]"
-        onClick={onDelete}
-      >
-        删除
-      </button>
     </div>
   );
 }

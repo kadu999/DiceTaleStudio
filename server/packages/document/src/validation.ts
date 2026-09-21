@@ -495,16 +495,12 @@ function validateAudioTags(table: ProjectDoc["audioTags"], issues: ValidationIss
       continue;
     }
 
-    const trimmed = name.trim();
-    if (trimmed.length === 0) {
-      issues.push({
-        level: "warning",
-        path: `audioTags/${id}`,
-        message: "标签名是空的（界面上会显示成一个没有名字的标签）",
-      });
+    // 空名字 = **还没起名字的槽位**（序号预先定好、只填名字的界面会留下这种），不是脏数据
+    if (name.trim().length === 0) {
       continue;
     }
 
+    const trimmed = name.trim();
     const first = seen.get(trimmed);
     if (first !== undefined) {
       issues.push({

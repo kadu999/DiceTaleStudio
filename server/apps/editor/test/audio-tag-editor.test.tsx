@@ -1,19 +1,19 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createEmptyProject } from "@dts/document";
 import { AudioTagEditorDialog } from "../src/app/AudioTagEditorDialog";
 import { projectHistory, sceneHistory, useEditorStore } from "../src/state/editor-store";
 import type { ResourceTreeNode } from "../src/services/project-api";
 
 /**
- * **「标签」窗口**（v18）：标签表本身的编辑页——新建 / 改名 / 删除。
+ * **「标签」窗口**（v18）：标签表本身的编辑页——**序号预先定好，只填名字**（对齐 Unity 的 TagManager）。
  *
- * 学 Unity：**tag 是个整数**（表的下标 `#0`、`#1`…），名字只是显示文本。这一份钉住：
- * 1. 列出表里每个 ID + 名字 + 「N 个文件在用」（洞不显示）；
+ * 这一份钉住：
+ * 1. 一列 `#0`…`#7` 一开始就在，已有槽位（哪怕超过一页）也全列出来；洞不画；
  * 2. **改名字只改表**：文件里记的 ID 一个字节都不动；
- * 3. 新建：往后发 ID；删过的洞优先复用；
- * 4. 删除：从所有文件上摘掉 + 表里留洞（二次确认；取消什么都不做）；
- * 5. 空名字不提交（要「不显示」就删掉它）。
+ * 3. 往哪个格子填名字，那个序号就是 ID（中间的空槽一起补出来），填满最后格自动续一页；
+ * 4. 界面上**没有**新建输入框 / 新建按钮 / 删除按钮；
+ * 5. 空名字不写进数据，Esc 还原。
  */
 
 const PROJECT = "测试";
@@ -77,9 +77,6 @@ const rowFor = (id: number): HTMLElement => {
 const nameInputFor = (id: number): HTMLInputElement =>
   rowFor(id).querySelector<HTMLInputElement>('[data-testid="audio-tag-editor-name"]') as HTMLInputElement;
 
-const deleteFor = (id: number): HTMLElement =>
-  rowFor(id).querySelector('[data-testid="audio-tag-editor-delete"]') as HTMLElement;
-
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -97,27 +94,107 @@ afterEach(() => {
 });
 
 describe("列出标签表", () => {
-  it("每个 ID 一行：名字 + 用量；洞不显示", () => {
+  it("序号是预先铺好的：一列 #0…#15，已用过的名字在里面", () => {
     seed({
       tags: ["战斗", null, "环境"],
       meta: { [CLIP_A]: { tags: [0, 2] }, [CLIP_B]: { tags: [0] } },
     });
     render(<AudioTagEditorDialog />);
 
+    // 16 个格子一开始就在（手填的是名字，序号不用自己挣）；洞（#1）那一格不给行
     expect(
       screen.getAllByTestId("audio-tag-editor-row").map((row) => row.getAttribute("data-id")),
-    ).toEqual(["0", "2"]);
-    expect(rowFor(0).textContent).toContain("#0");
-    expect(rowFor(0).textContent).toContain("2 个文件在用");
-    expect(rowFor(2).textContent).toContain("1 个文件在用");
+    ).toEqual([
+      "0",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "9",
+      "10",
+      "11",
+      "12",
+      "13",
+      "14",
+      "15",
+    ]);
+
     expect(nameInputFor(0).value).toBe("战斗");
+    expect(nameInputFor(2).value).toBe("环境");
+    // 还没起名字的格子：空的
+    expect(nameInputFor(5).value).toBe("");
   });
 
-  it("表是空的：空态提示", () => {
-    seed();
+  it("行里没有「多少个文件在用」（这一页只跟标签表打交道）", () => {
+    seed({ tags: ["战斗"], meta: { [CLIP_A]: { tags: [0] } } });
     render(<AudioTagEditorDialog />);
 
-    expect(screen.getByTestId("audio-tag-editor-empty").textContent).toContain("还没有标签");
+    expect(screen.queryByTestId("audio-tag-editor-count")).toBeNull();
+    expect(rowFor(0).textContent).not.toContain("个文件在用");
+    // 序号直接写数字（不写 `#`）
+    expect(rowFor(0).textContent).toContain("0");
+  });
+
+  it("已有数据比一屏长时：全列出来（序号不会被截断）", () => {
+    seed({ tags: Array.from({ length: 20 }, (_, i) => `t${i}`), meta: {} });
+    render(<AudioTagEditorDialog />);
+
+    expect(screen.getAllByTestId("audio-tag-editor-row")).toHaveLength(20);
+  });
+});
+
+describe("只填名字（没有新建 / 删除）", () => {
+  it("界面上没有添加输入框、添加按钮、删除按钮", () => {
+    seed({ tags: ["战斗"], meta: {} });
+    render(<AudioTagEditorDialog />);
+
+    expect(screen.queryByTestId("audio-tag-editor-new")).toBeNull();
+    expect(screen.queryByTestId("audio-tag-editor-add")).toBeNull();
+    expect(screen.queryByTestId("audio-tag-editor-delete")).toBeNull();
+    expect(screen.queryByTestId("audio-tag-editor-empty")).toBeNull();
+  });
+
+  it("往空格子填名字：那个序号就是它的 ID（中间的空槽一起补出来）", () => {
+    seed({ tags: ["战斗"], meta: {} });
+    render(<AudioTagEditorDialog />);
+
+    // #2 还空着，直接填它 → 表补到 3 格，#1 是「还没起名字」
+    const input = nameInputFor(2);
+    fireEvent.change(input, { target: { value: "环境" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(docOf().audioTags).toEqual(["战斗", "", "环境"]);
+    expect(nameInputFor(1).value).toBe("");
+  });
+
+  it("填满最后一屏的最后一个格子会自动再接一屏（序号够用）", () => {
+    seed({ tags: Array.from({ length: 15 }, (_, i) => `t${i}`), meta: {} });
+    render(<AudioTagEditorDialog />);
+
+    // 现在列到 #15（16 格）
+    expect(screen.getAllByTestId("audio-tag-editor-row")).toHaveLength(16);
+
+    const input = nameInputFor(15);
+    fireEvent.change(input, { target: { value: "t15" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(docOf().audioTags).toHaveLength(16);
+    // 后面又铺出一屏：#16 已经能填了
+    expect(nameInputFor(16).value).toBe("");
+  });
+
+  it("空名字不写进数据（打开窗口随手点一下就关，不会留下空槽）", () => {
+    seed({ tags: ["战斗"], meta: {} });
+    render(<AudioTagEditorDialog />);
+
+    const input = nameInputFor(3);
+    fireEvent.change(input, { target: { value: "   " } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(docOf().audioTags).toEqual(["战斗"]);
   });
 });
 
@@ -135,7 +212,7 @@ describe("改名（只改表）", () => {
     expect(nameInputFor(0).value).toBe("交战");
   });
 
-  it("Esc 还原；空名字不提交（要「不显示」就删掉它）", () => {
+  it("Esc 还原；空名字不提交", () => {
     seed({ tags: ["战斗"], meta: { [CLIP_A]: { tags: [0] } } });
     render(<AudioTagEditorDialog />);
 
@@ -148,101 +225,6 @@ describe("改名（只改表）", () => {
     fireEvent.change(nameInputFor(0), { target: { value: "   " } });
     fireEvent.keyDown(nameInputFor(0), { key: "Enter" });
     expect(docOf().audioTags).toEqual(["战斗"]);
-  });
-});
-
-describe("新建", () => {
-  it("后面接着发 ID；同名复用已有的那个", () => {
-    seed({ tags: ["战斗"], meta: {} });
-    render(<AudioTagEditorDialog />);
-
-    fireEvent.change(screen.getByTestId("audio-tag-editor-new"), { target: { value: "紧张" } });
-    fireEvent.keyDown(screen.getByTestId("audio-tag-editor-new"), { key: "Enter" });
-
-    expect(docOf().audioTags).toEqual(["战斗", "紧张"]);
-    expect(
-      screen.getAllByTestId("audio-tag-editor-row").map((row) => row.getAttribute("data-id")),
-    ).toEqual(["0", "1"]);
-
-    fireEvent.change(screen.getByTestId("audio-tag-editor-new"), { target: { value: " 战斗 " } });
-    fireEvent.click(screen.getByTestId("audio-tag-editor-add"));
-
-    expect(docOf().audioTags).toEqual(["战斗", "紧张"]);
-  });
-
-  it("删过的洞优先复用（ID 不位移）", () => {
-    seed({ tags: ["战斗", "紧张"], meta: { [CLIP_A]: { tags: [1] } } });
-    render(<AudioTagEditorDialog />);
-
-    // 先删 #0 → 留洞
-    vi.spyOn(window, "confirm").mockReturnValue(true);
-    fireEvent.click(deleteFor(0));
-    expect(docOf().audioTags).toEqual([null, "紧张"]);
-
-    // 新建：占回 #0
-    fireEvent.change(screen.getByTestId("audio-tag-editor-new"), { target: { value: "追击" } });
-    fireEvent.keyDown(screen.getByTestId("audio-tag-editor-new"), { key: "Enter" });
-
-    expect(docOf().audioTags).toEqual(["追击", "紧张"]);
-    // 文件上指向 #1 的引用没动
-    expect(docOf().audioMeta?.[CLIP_A]?.tags).toEqual([1]);
-  });
-
-  it("空名字：按钮点不动、回车也不建", () => {
-    seed({ tags: ["战斗"], meta: {} });
-    render(<AudioTagEditorDialog />);
-
-    expect((screen.getByTestId("audio-tag-editor-add") as HTMLButtonElement).disabled).toBe(true);
-
-    fireEvent.change(screen.getByTestId("audio-tag-editor-new"), { target: { value: "   " } });
-    fireEvent.keyDown(screen.getByTestId("audio-tag-editor-new"), { key: "Enter" });
-    expect(docOf().audioTags).toEqual(["战斗"]);
-  });
-});
-
-describe("删除（从所有文件上摘掉 + 留洞）", () => {
-  it("确认后：表里留洞、两边文件都没了；能撤销", () => {
-    vi.spyOn(window, "confirm").mockReturnValue(true);
-    seed({
-      tags: ["战斗", "紧张"],
-      meta: { [CLIP_A]: { tags: [0, 1] }, [CLIP_B]: { tags: [0] } },
-    });
-    render(<AudioTagEditorDialog />);
-
-    fireEvent.click(deleteFor(0));
-
-    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining("2 个音频文件"));
-    expect(docOf().audioTags).toEqual([null, "紧张"]);
-    expect(docOf().audioMeta).toEqual({ [CLIP_A]: { tags: [1] } });
-
-    act(() => {
-      useEditorStore.getState().undo();
-    });
-    expect(docOf().audioTags).toEqual(["战斗", "紧张"]);
-    expect(docOf().audioMeta?.[CLIP_B]?.tags).toEqual([0]);
-  });
-
-  it("取消确认：什么都不动", () => {
-    vi.spyOn(window, "confirm").mockReturnValue(false);
-    seed({ tags: ["战斗"], meta: { [CLIP_A]: { tags: [0] } } });
-    render(<AudioTagEditorDialog />);
-
-    fireEvent.click(deleteFor(0));
-
-    expect(docOf().audioTags).toEqual(["战斗"]);
-    expect(docOf().audioMeta?.[CLIP_A]?.tags).toEqual([0]);
-  });
-
-  it("删掉最后一个标签：audioTags / audioMeta 都收干净", () => {
-    vi.spyOn(window, "confirm").mockReturnValue(true);
-    seed({ tags: ["战斗"], meta: { [CLIP_A]: { tags: [0] } } });
-    render(<AudioTagEditorDialog />);
-
-    fireEvent.click(deleteFor(0));
-
-    expect(docOf().audioTags).toBeUndefined();
-    expect(docOf().audioMeta).toBeUndefined();
-    expect(screen.getByTestId("audio-tag-editor-empty")).toBeDefined();
   });
 });
 

@@ -1974,6 +1974,51 @@ export function renameAudioTag(project: Draft<ProjectDoc>, tagId: number, name: 
 }
 
 /**
+ * 给**指定的槽位**命名（槽位不存在就把它补出来）。
+ *
+ * 与 `renameAudioTag` 的区别在「谁定序号」：
+ * - `renameAudioTag` 只改**已经存在**的槽（编辑器较早的「新建」流程用它）；
+ * - 这一条是给「序号预先定好、只填名字」的界面用的（对齐 Unity 的 TagManager）：
+ *   界面上从 `#0` 开始一列到底，人往第 N 个格子里敲名字，那 N 就是它以后的 ID。
+ *
+ * 下标不够长时**把中间的空槽补成 `""`**（空名字 = 还没起名字）；已经是 `null` 的洞**保留**——
+ * 洞是「曾经删过」的记号，不能悄悄改成空名字，不然 `audioMeta` 里那些指向洞的旧引用会被重新点亮。
+ *
+ * 名字为空 / 没变 / 指向洞 / 下标非法 → `false`（不进撤销栈）。
+ */
+export function setAudioTagName(
+  project: Draft<ProjectDoc>,
+  tagId: number,
+  name: string,
+): boolean {
+  if (!Number.isInteger(tagId) || tagId < 0) {
+    return false;
+  }
+
+  const trimmed = name.trim();
+  if (trimmed.length === 0) {
+    return false;
+  }
+
+  const table = audioTagsOf(project);
+  if (tagId < table.length && table[tagId] === null) {
+    return false;
+  }
+
+  if (table[tagId] === trimmed) {
+    return false;
+  }
+
+  // 中间的缺口补空名字（不是洞）：它们只是「还没起名字」的槽
+  while (table.length < tagId) {
+    table.push("");
+  }
+
+  table[tagId] = trimmed;
+  return true;
+}
+
+/**
  * 删掉一个标签（按 tag ID）：从**所有**音频文件上摘掉这个 ID，表里把槽设成 `null`（**留洞**）。
  *
  * 为什么留洞而不是把后面的标签往前挪：ID 是身份，一挪就会把别的标签的 ID 改掉，

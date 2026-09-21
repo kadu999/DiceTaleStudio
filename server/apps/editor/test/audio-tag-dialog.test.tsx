@@ -8,10 +8,10 @@ import type { ResourceTreeNode } from "../src/services/project-api";
 /**
  * **「选择标签」框**（v18）：给一个音频文件**勾标签**——只做加 / 去。
  *
- * 标签是整数（名字住在标签表里），所以这一份钉住：
+ * 新增 / 改名都在「标签」窗口里做（序号预先定好、只填名字），所以这一份钉住：
  * 1. 列的是**标签表里的全部标签**（含还没人用到的），带「N 个文件在用」；
  * 2. 点一行 = 给这个文件加上 / 去掉那个 **tag ID**（写进 `audioMeta`、可撤销）；
- * 3. 「新建」= 建出一个 tag ID **并立刻挂到这个文件上**（一条撤销记录）；
+ * 3. **没有新建入口**（这里只从已有的标签里挑）；
  * 4. 空态 / 目标文件查不到时的提示。
  */
 
@@ -105,7 +105,9 @@ describe("列标签 / 勾选", () => {
       "2",
     ]);
     expect(rowFor(0).getAttribute("data-count")).toBe("2");
-    expect(rowFor(0).textContent).toContain("#0");
+    // 序号直接写数字（不写 `#`），用量照旧
+    expect(rowFor(0).textContent).toContain("0");
+    expect(rowFor(0).textContent).not.toContain("#");
     expect(rowFor(0).textContent).toContain("2 个文件在用");
     expect(rowFor(2).textContent).toContain("0 个文件在用");
 
@@ -156,59 +158,28 @@ describe("列标签 / 勾选", () => {
       />,
     );
 
-    fireEvent.click(screen.getByTestId("audio-tag-open-editor"));
+    // 本框里只做「给这个文件勾哪个」：标签表从「标签…」按钮（属性面板）/ 工程菜单进
+    fireEvent.click(screen.getByTestId("audio-tag-close"));
 
-    expect(useEditorStore.getState().audioTags).toBe(true);
     expect(closed).toBe(1);
   });
 });
 
-describe("新建标签", () => {
-  it("敲一个名字回车：建出一个 tag ID 并**立刻挂到这个文件上**（一条撤销记录）", () => {
+describe("只从已有标签里挑（没有新建入口）", () => {
+  it("界面上没有新建输入框与「添加」按钮", () => {
     seed({ tags: ["战斗"], meta: { [CLIP_A]: { tags: [0] } } });
     render(<AudioTagDialog clipId={CLIP_A} onClose={() => undefined} />);
 
-    const input = screen.getByTestId("audio-tag-new") as HTMLInputElement;
-    fireEvent.change(input, { target: { value: "  开场  " } });
-    fireEvent.keyDown(input, { key: "Enter" });
-
-    expect(docOf().audioTags).toEqual(["战斗", "开场"]);
-    expect(docOf().audioMeta?.[CLIP_A]?.tags).toEqual([0, 1]);
-    expect(input.value).toBe("");
-    expect(rowFor(1).getAttribute("data-selected")).toBe("true");
-
-    // 一条撤销记录把两件事一起退回（表里那条也没了）
-    act(() => {
-      useEditorStore.getState().undo();
-    });
-    expect(docOf().audioTags).toEqual(["战斗"]);
-    expect(docOf().audioMeta?.[CLIP_A]?.tags).toEqual([0]);
+    expect(screen.queryByTestId("audio-tag-new")).toBeNull();
+    expect(screen.queryByTestId("audio-tag-create")).toBeNull();
   });
 
-  it("表里已有同名（含首尾空白差异）：复用那个 ID，只做勾选", () => {
-    seed({ tags: ["战斗"], meta: { [CLIP_B]: { tags: [0] } } });
-    render(<AudioTagDialog clipId={CLIP_A} onClose={() => undefined} />);
-
-    fireEvent.change(screen.getByTestId("audio-tag-new"), { target: { value: " 战斗 " } });
-    fireEvent.keyDown(screen.getByTestId("audio-tag-new"), { key: "Enter" });
-
-    expect(docOf().audioTags).toEqual(["战斗"]);
-    expect(docOf().audioMeta?.[CLIP_A]?.tags).toEqual([0]);
-    expect(docOf().audioMeta?.[CLIP_B]?.tags).toEqual([0]);
-  });
-
-  it("标签表是空的：空态提示 + 空名字按钮点不动", () => {
+  it("标签表是空的：只显示空态提示（想建标签去「标签」窗口）", () => {
     seed();
     render(<AudioTagDialog clipId={CLIP_A} onClose={() => undefined} />);
 
-    expect(screen.getByTestId("audio-tag-empty").textContent).toContain("标签表还是空的");
-    expect((screen.getByTestId("audio-tag-create") as HTMLButtonElement).disabled).toBe(true);
-
-    fireEvent.change(screen.getByTestId("audio-tag-new"), { target: { value: "战斗" } });
-    fireEvent.click(screen.getByTestId("audio-tag-create"));
-
-    expect(docOf().audioTags).toEqual(["战斗"]);
-    expect(docOf().audioMeta?.[CLIP_A]?.tags).toEqual([0]);
+    expect(screen.getByTestId("audio-tag-empty").textContent).toContain("还没有标签");
+    expect(screen.queryAllByTestId("audio-tag-row")).toHaveLength(0);
   });
 });
 

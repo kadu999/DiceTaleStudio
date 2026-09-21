@@ -17,8 +17,8 @@ import {
  * v18 把那个「音频文件」列表窗口删掉了——「选中哪个就改哪个」本来就是这个面板的用法，
  * 多一个窗口只是让人多跳一次。标签学 Unity：**tag 是个整数**（`audioTags` 的下标），
  * 名字住在表里，音频文件只记 ID。所以这一份钉住：
- * 1. 资源面板选中一个音频 → 属性面板里就地改**显示名**、**「＋ 标签」**勾标签 → 落进 `project.json`；
- * 2. 标签表在「工程 → 标签…」：新建 / **改名（只改表，文件里的 ID 不动）** / 删除（留洞）；
+ * 1. 资源面板选中一个音频 → 属性面板里就地改**显示名**、右下角那个 **「＋」** 勾标签 → 落进 `project.json`；
+ * 2. 标签表在「工程 → 标签…」：**序号预先列好，只填名字**（改名字只改表，文件里的 ID 不动；没有新建 / 删除）；
  * 3. 行上 chip 的 `×` 只从这个文件上摘掉，标签本身还在表里；撤销能把他们一起还原。
  */
 
@@ -103,20 +103,26 @@ test.describe("音频标注：在属性面板里改", () => {
         })
         .toBe("战斗曲");
 
-      // 2) 「＋ 标签」→ 选择标签框里现建一个「战斗」：建出 tag #0 并立刻挂上
-      await page.getByTestId("asset-audio-add-tag").click();
-      await expect(page.getByTestId("audio-tag-dialog")).toBeVisible();
-      await page.getByTestId("audio-tag-new").fill("战斗");
-      await page.getByTestId("audio-tag-new").press("Enter");
-      await page.getByTestId("audio-tag-close").click();
-      await expect(page.getByTestId("audio-tag-dialog")).toBeHidden();
-
+      // 2) 先在「标签」窗口给 #0 起名「战斗」，再回属性面板的「＋」里把它勾上
+      await openAudioTagsDialog(page);
+      await page.locator('[data-testid="audio-tag-editor-name"][data-id="0"]').fill("战斗");
+      await page.locator('[data-testid="audio-tag-editor-name"][data-id="0"]').press("Enter");
       await expect
         .poll(async () => await readProjectAudioTags(request, project), {
           timeout: 8000,
           message: "等待标签表落盘",
         })
         .toEqual(["战斗"]);
+      await closeAudioTagsDialog(page);
+
+      await page.getByTestId("asset-audio-add-tag").click();
+      await expect(page.getByTestId("audio-tag-dialog")).toBeVisible();
+      // 选择标签框里**没有新建入口**：只从已有的标签里勾
+      await expect(page.getByTestId("audio-tag-new")).toHaveCount(0);
+      await page.locator('[data-testid="audio-tag-toggle"][data-id="0"]').click();
+      await page.getByTestId("audio-tag-close").click();
+      await expect(page.getByTestId("audio-tag-dialog")).toBeHidden();
+
       await expect
         .poll(async () => (await readProjectAudioMeta(request, project))?.[battle]?.tags, {
           timeout: 8000,
@@ -152,7 +158,7 @@ test.describe("音频标注：在属性面板里改", () => {
     }
   });
 
-  test("标签表：新建 / 改名（**只改表**）/ 删除留洞", async ({ page, request }) => {
+  test("标签表：序号预先列好，只填名字（只改表，没有新建 / 删除）", async ({ page, request }) => {
     const project = await newProject(request);
 
     try {
@@ -162,13 +168,20 @@ test.describe("音频标注：在属性面板里改", () => {
       await enterEditor(page);
       await openProject(page, project);
 
-      // 1) 建两个标签（ID 按建的先后：#0 战斗、#1 紧张）
+      // 1) 序号一开始就铺好了（#0…#15），没有任何「新建」入口——往格子里填名字就行
       await openAudioTagsDialog(page);
-      await expect(page.getByTestId("audio-tag-editor-empty")).toBeVisible();
-      await page.getByTestId("audio-tag-editor-new").fill("战斗");
-      await page.getByTestId("audio-tag-editor-new").press("Enter");
-      await page.getByTestId("audio-tag-editor-new").fill("紧张");
-      await page.getByTestId("audio-tag-editor-new").press("Enter");
+      await expect(page.getByTestId("audio-tag-editor-new")).toHaveCount(0);
+      await expect(page.getByTestId("audio-tag-editor-delete")).toHaveCount(0);
+      await expect(page.getByTestId("audio-tag-editor-name")).toHaveCount(16);
+
+      const tagName = (id: number) =>
+        page.locator(`[data-testid="audio-tag-editor-name"][data-id="${id}"]`);
+
+      // #0 战斗、#1 紧张：序号就是 ID
+      await tagName(0).fill("战斗");
+      await tagName(0).press("Enter");
+      await tagName(1).fill("紧张");
+      await tagName(1).press("Enter");
       await expect
         .poll(async () => await readProjectAudioTags(request, project), {
           timeout: 8000,
@@ -191,9 +204,8 @@ test.describe("音频标注：在属性面板里改", () => {
 
       // 3) **改名只改表**：#0「战斗」→「交战」
       await openAudioTagsDialog(page);
-      const nameInput = page.locator('[data-testid="audio-tag-editor-name"][data-id="0"]');
-      await nameInput.fill("交战");
-      await nameInput.press("Enter");
+      await tagName(0).fill("交战");
+      await tagName(0).press("Enter");
       await expect
         .poll(async () => (await readProjectAudioTags(request, project))?.[0], {
           timeout: 8000,
@@ -203,25 +215,18 @@ test.describe("音频标注：在属性面板里改", () => {
       // 文件里记的还是那个整数（一个字节都没动）
       expect((await readProjectAudioMeta(request, project))?.[battle]?.tags).toEqual([0]);
 
-      // 4) 删除 #1（没人用）：表里留洞，别的 ID 不位移
-      page.once("dialog", (dialog) => void dialog.accept());
-      await page.locator('[data-testid="audio-tag-editor-delete"][data-id="1"]').click();
+      // 4) 换个序号填名字：那个序号就是它的 ID
+      await tagName(1).fill("追击");
+      await tagName(1).press("Enter");
       await expect
         .poll(async () => await readProjectAudioTags(request, project), {
           timeout: 8000,
-          message: "等待删除落盘",
-        })
-        .toEqual(["交战", null]);
-
-      // 5) 新建「追击」：**优先复用那个洞**（回到 #1），不追加 #2
-      await page.getByTestId("audio-tag-editor-new").fill("追击");
-      await page.getByTestId("audio-tag-editor-new").press("Enter");
-      await expect
-        .poll(async () => await readProjectAudioTags(request, project), {
-          timeout: 8000,
-          message: "等待复用洞落盘",
+          message: "等待改名落盘",
         })
         .toEqual(["交战", "追击"]);
+
+      // 5) 空格子没填名字就不会写进数据（打开窗口看一眼不会改任何东西）
+      expect((await readProjectAudioTags(request, project))?.length).toBe(2);
 
       await closeAudioTagsDialog(page);
 

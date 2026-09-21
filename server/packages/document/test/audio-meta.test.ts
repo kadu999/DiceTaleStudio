@@ -6,6 +6,7 @@ import {
   renameAudioTag,
   setAudioMetaName,
   setAudioMetaTags,
+  setAudioTagName,
 } from "../src/commands";
 import { createEmptyProject } from "../src/factory";
 import { parseProjectDoc, parseProjectFile } from "../src/schema";
@@ -144,6 +145,50 @@ describe("标签表：新建 / 改名", () => {
 
     expect(renamed.audioTags).toEqual(["战斗", "战斗"]);
     expect(validateProject(renamed).map((issue) => issue.path)).toContain("audioTags/1");
+  });
+});
+
+describe("标签表：按序号命名（序号预先定好，只填名字）", () => {
+  it("序号越界时把中间的空槽补出来（空名字 = 还没起名字，不是洞）", () => {
+    const named = produce(createEmptyProject("测试项目"), (draft) => {
+      expect(setAudioTagName(draft, 2, "环境")).toBe(true);
+    });
+
+    expect(named.audioTags).toEqual(["", "", "环境"]);
+    // 空名字不是脏数据：校验不该为它们报 warning
+    expect(validateProject(named)).toEqual([]);
+  });
+
+  it("同一个序号再改名：只改那一格，别人的名字与引用都不动", () => {
+    const two = produce(tagged(), (draft) => {
+      setAudioTagName(draft, 1, "追击");
+    });
+
+    expect(two.audioTags).toEqual(["战斗", "追击"]);
+    expect(two.audioMeta?.[CLIP_A]?.tags).toEqual([0, 1]);
+  });
+
+  it("名字没变 / 空名字 / 负序号：返回 false（不进撤销栈）", () => {
+    const start = tagged();
+    const after = produce(start, (draft) => {
+      expect(setAudioTagName(draft, 0, "战斗")).toBe(false);
+      expect(setAudioTagName(draft, 1, "   ")).toBe(false);
+      expect(setAudioTagName(draft, -1, "越界")).toBe(false);
+    });
+
+    expect(after.audioTags).toEqual(["战斗", "紧张"]);
+  });
+
+  it("指向洞的序号不写（洞是「曾经删过」的记号，不能拿名字去顶它）", () => {
+    const holed = produce(tagged(), (draft) => {
+      deleteAudioTag(draft, 0);
+    });
+
+    const after = produce(holed, (draft) => {
+      expect(setAudioTagName(draft, 0, "新名字")).toBe(false);
+    });
+
+    expect(after.audioTags).toEqual([null, "紧张"]);
   });
 });
 
@@ -338,7 +383,7 @@ describe("读写工程文件与 v17 → v18 迁移", () => {
 });
 
 describe("校验", () => {
-  it("标签表：空名字 / 重名各一条 warning", () => {
+  it("标签表：空名字不算问题（那是还没起名字的槽位），重名报一条 warning", () => {
     const doc: ProjectDoc = {
       ...createEmptyProject("测试项目"),
       audioTags: ["战斗", "  ", "战斗", null],
@@ -347,7 +392,8 @@ describe("校验", () => {
     const issues = validateProject(doc);
     const paths = issues.map((issue) => issue.path);
 
-    expect(paths).toContain("audioTags/1");
+    // 空名字 = 序号预先定好、还没填名字的格子，正常；只有重名值得提醒
+    expect(paths).not.toContain("audioTags/1");
     expect(paths).toContain("audioTags/2");
     expect(issues.every((issue) => issue.level === "warning")).toBe(true);
   });
