@@ -40,6 +40,13 @@ namespace DiceTale
     /// **动作对象（`PlaySound` / `Teleport`）只有模型、没有视图**：前端连 GameObject 都不为它们建
     /// （判据在 <see cref="SceneObjectView.NeedsView"/>，建视图前问一次）。所以两张表不是一一对应的：
     /// 增 / 改 / 删都要**按模型表**走，否则会漏掉它们（删掉的声音会永远留在镜像里，命令还会读到）。
+    ///
+    /// **真的换了一个场景时套一层淡入淡出**（参照参考实现 `LLMNPC_NEWLIGHT_EX` 的
+    /// `GameSceneManager.LoadScene`）：先淡出到全黑 → **黑屏里**建 / 显新场景 → 淡入还原
+    /// （遮罩是 <see cref="SceneFadeUI"/>，代码构建、由 UIManager 管）。淡出期间屏幕已经罩住，
+    /// 所以「旧图消失、新图出现」那一瞬不会闪。
+    /// **第一次载入与同一场景的增量更新都不淡**：前者没有可交叉的画面（一进游戏先黑一下是白等），
+    /// 后者每改一笔就闪一下根本没法用。
     /// </summary>
     public class SceneMirror : MonoBehaviour
     {
@@ -48,6 +55,16 @@ namespace DiceTale
 
         /// <summary>场景容器名：把各个场景归在一起，免得和对象视图混在同一层。</summary>
         private const string ContainerName = "场景";
+
+        [Header("切场景的淡入淡出")]
+        [Tooltip("淡出到全黑的时长（秒）。0 = 不淡出（切的那一瞬会露出旧图消失的过程）")]
+        [SerializeField] private float fadeOutDuration = 0.25f;
+
+        [Tooltip("从全黑淡入的时长（秒）。0 = 直接显像")]
+        [SerializeField] private float fadeInDuration = 0.3f;
+
+        [Tooltip("关掉 = 切场景直接切（排查「画面被遮罩挡住」这类问题时用）")]
+        [SerializeField] private bool sceneFadeEnabled = true;
 
         /// <summary>每个场景一棵子树：场景名 → 该场景的根节点。</summary>
         private readonly Dictionary<string, Transform> sceneRoots = new Dictionary<string, Transform>();
@@ -69,6 +86,13 @@ namespace DiceTale
         private MirrorScene pendingScene;
         private string pendingProject;
         private Coroutine pendingTimer;
+
+        /// <summary>正在播的那一轮淡入淡出（null = 空闲）。</summary>
+        private Coroutine fadeRoutine;
+
+        /// <summary>淡入淡出期间到达的场景：只留最新一份，由进行中的那一轮在黑屏里落地。</summary>
+        private MirrorScene queuedScene;
+        private bool hasQueuedScene;
 
         /// <summary>当前**显示中**的场景名（null = 还没镜像任何场景）。其余场景只是被隐藏。</summary>
         public string SceneName { get; private set; }
@@ -153,9 +177,16 @@ namespace DiceTale
             if (scene == null)
             {
                 pendingScene = null;
-                HideAll();
-                SceneName = null;
-                Debug.Log("[镜像] 编辑器没有打开场景：已隐藏全部场景（对象与状态都留着）");
+
+                // 淡入淡出中：别在已经被罩住的屏幕上单独演一遍「全藏起来」，
+                // 交给那一轮统一处理（黑屏里藏完再淡入）
+                if (fadeRoutine != null)
+                {
+                    QueueForFade(null);
+                    return;
+                }
+
+                ApplySceneOrHide(null);
                 return;
             }
 
@@ -184,7 +215,149 @@ namespace DiceTale
                 return;
             }
 
-            ApplyNow(scene);
+            ApplyReady(scene);
+        }
+
+        /// <summary>
+        /// 资源就绪（或本来就不用等）→ 落地。
+        ///
+        /// 三个去向，顺序就是优先级：
+        /// 1. **正在淡入淡出** → 排队（只留最新一份），由进行中的那一轮在黑屏里应用——
+        ///    连点几次换台不会叠出几层遮罩，也不会在淡入到一半时又跳一下；
+        /// 2. **真的换了一个场景** → 开一轮淡入淡出（见 <see cref="SwitchWithFade"/>）；
+        /// 3. 其余（第一次载入 / 同一场景的增量更新 / 遮罩关掉）→ 直接落地。
+        /// </summary>
+        private void ApplyReady(MirrorScene scene)
+        {
+            if (fadeRoutine != null)
+            {
+                QueueForFade(scene);
+                return;
+            }
+
+            if (ShouldFade(scene))
+            {
+                fadeRoutine = StartCoroutine(SwitchWithFade(scene));
+                return;
+            }
+
+            ApplySceneOrHide(scene);
+        }
+
+        /// <summary>
+        /// 该淡吗：**换了一个场景**才淡。
+        ///
+        /// - 第一次载入不淡（`SceneName == null`）：没有可交叉的画面，先黑一下只是白等；
+        /// - 同一个场景再来不淡：那是编辑器的增量更新（改一笔推一次），一改就闪没法用；
+        /// - `sceneFadeEnabled` 关掉 = 直接切（排查「画面被遮罩挡住」这类问题时用）。
+        /// </summary>
+        private bool ShouldFade(MirrorScene scene)
+        {
+            return sceneFadeEnabled
+                && scene != null
+                && SceneName != null
+                && SceneName != scene.name;
+        }
+
+        /// <summary>
+        /// 淡入淡出切场景：**淡出到全黑 → 黑屏里落地 → 淡入还原**。
+        ///
+        /// 黑屏期间 / 淡入期间又来了新的场景（连点几次换台、资源包刚好处理完），
+        /// 就留在黑屏里换成最新那份、或者在淡入结束后再走一轮——所以这个方法是个循环，
+        /// 屏幕上**始终只有一层遮罩**（`SceneFadeUI` 按类型注册，一个类型至多一个实例）。
+        ///
+        /// 遮罩开不出来（没有 UIManager，例如纯逻辑测试）就退化成直接切，绝不因为过渡效果挡住换台。
+        /// </summary>
+        private IEnumerator SwitchWithFade(MirrorScene scene)
+        {
+            var fade = OpenFadeWindow();
+            if (fade == null)
+            {
+                Debug.LogWarning("[镜像] 拿不到全屏遮罩窗口：这次切场景直接切（没有淡入淡出）");
+                ApplySceneOrHide(scene);
+                fadeRoutine = null;
+                yield break;
+            }
+
+            while (true)
+            {
+                // 1) 淡出到全黑：屏幕先被罩住，后面无论怎么建 / 删都不会露出过程
+                fade.FadeToBlack(Mathf.Max(fadeOutDuration, 0.001f));
+                while (fade.IsFading)
+                {
+                    yield return null;
+                }
+
+                // 2) 黑屏里落地（建 / 改 / 删视图 + 显现新场景，与直接切完全同一条路）
+                ApplySceneOrHide(scene);
+
+                // 3) 黑屏期间又来了（连点几次换台）：就地换成最新那份，不让屏幕闪一下
+                while (hasQueuedScene)
+                {
+                    ApplySceneOrHide(TakeQueuedScene());
+                }
+
+                // 黑屏期间可能建出了新的 UI（以后加场景 HUD 时）：淡入前把遮罩再提到 Canvas 最上层，
+                // 保证「慢慢变亮」盖住所有新东西
+                fade.transform.SetAsLastSibling();
+
+                // 4) 淡入还原
+                fade.FadeFromBlack(Mathf.Max(fadeInDuration, 0.001f));
+                while (fade.IsFading)
+                {
+                    yield return null;
+                }
+
+                // 5) 淡入期间又来了：再走一轮（从当前透明度接着淡出）
+                if (!hasQueuedScene)
+                {
+                    break;
+                }
+
+                scene = TakeQueuedScene();
+            }
+
+            // 淡入完成：关掉遮罩窗口（Close 只隐藏、保留注册，下次切场景再 Open）
+            fade.Close();
+            fadeRoutine = null;
+        }
+
+        /// <summary>把场景排给进行中的那一轮淡入淡出（只留最新一份；`null` = 编辑器关掉了场景）。</summary>
+        private void QueueForFade(MirrorScene scene)
+        {
+            queuedScene = scene;
+            hasQueuedScene = true;
+        }
+
+        /// <summary>取走排队的那份场景（取完即清）。</summary>
+        private MirrorScene TakeQueuedScene()
+        {
+            var scene = queuedScene;
+            queuedScene = null;
+            hasQueuedScene = false;
+            return scene;
+        }
+
+        /// <summary>打开（或取已打开的）全屏淡入淡出遮罩窗口；没有 UIManager 时返回 null。</summary>
+        private static SceneFadeUI OpenFadeWindow()
+        {
+            var game = Game.Instance;
+            var ui = game != null ? game.UIManager : null;
+            return ui != null ? ui.OpenWindow<SceneFadeUI>() : null;
+        }
+
+        /// <summary>落地一份场景；`null` = 编辑器没有打开场景（全藏起来，**不销毁**）。</summary>
+        private void ApplySceneOrHide(MirrorScene scene)
+        {
+            if (scene != null)
+            {
+                ApplyNow(scene);
+                return;
+            }
+
+            HideAll();
+            SceneName = null;
+            Debug.Log("[镜像] 编辑器没有打开场景：已隐藏全部场景（对象与状态都留着）");
         }
 
         private void ApplyNow(MirrorScene scene)
@@ -269,7 +442,7 @@ namespace DiceTale
             var scene = pendingScene;
             pendingScene = null;
             pendingProject = null;
-            ApplyNow(scene);
+            ApplyReady(scene);
         }
 
         /// <summary>
@@ -296,7 +469,7 @@ namespace DiceTale
             Debug.LogWarning(
                 $"[镜像] 等「{project}」的资源包超过 {SceneWaitTimeoutSeconds} 秒，先载入场景「{scene.name}」；" +
                 "图片回落逐文件远程取（资源包就绪后新图会走本地）");
-            ApplyNow(scene);
+            ApplyReady(scene);
         }
 
         /// <summary>

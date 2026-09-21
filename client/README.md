@@ -61,7 +61,7 @@ Assets/
 │  │                    SmartVideoPlayer.cs      视频播放 / 播完回调 / 淡入淡出
 │  │                    UIManager.cs             唯一 Canvas + 窗口注册/开关
 │  │                    UIWindow.cs              窗口基类
-│  │                    SceneFadeUI.cs           全屏淡入淡出遮罩（**当前无调用方**）
+│  │                    SceneFadeUI.cs           全屏淡入淡出遮罩（切场景时由 SceneMirror 调用）
 │  │                    SubtitleWindow.cs        字幕窗口
 │  │                    SimulatedTouchDebugUI.cs 触点调试圆点
 │  ├─ Editor/           （2）         编辑器工具（DiceTale.Editor.asmdef）
@@ -125,6 +125,9 @@ Assets/
   （`Editor/Data/Managed/UnityEngine/*.dll` + `Library/ScriptAssemblies/*.dll`，排除 `DiceTale.dll`），
   直接编译 `Assets/DiceTale/Scripts/**/*.cs` → **0 error CS**（仅 2 个既有警告，都在 `GridMap.cs`）。
   这样即使 Unity 开着、MCP 桥接掉了也能离线确认编译通过。
+- 本次（2026-09-21，把淡入淡出接回 `SceneMirror`）：同一套离线办法（`netstandard2.1`，
+  引用 `Library/ScriptAssemblies` 里 230 个程序集，排除 `DiceTale.dll` / `DiceTale.Editor.dll`）
+  → **0 error CS**（只剩既有的 `CS0108 CommandRouter.audio` 与程序集版本冲突的 MSB3277 警告）。
 
 ## 资源从哪来：**先把资源包下完，再载入场景**
 
@@ -191,6 +194,26 @@ Assets/
 视频走 `VideoOverlay`（`VideoPlayer.url`，本地 `file://` 优先），音频走 `AudioClipLoader`
 （`UnityWebRequestMultimedia`，本地优先）+ `AudioPlayerManager`（三条通道）。
 
+## 切场景：淡出到全黑 → 黑屏里切换 → 淡入
+
+换台（编辑器换了场景 → `scene_sync`）时**套一层淡入淡出**，做法照参考实现
+`LLMNPC_NEWLIGHT_EX` 的 `GameSceneManager.LoadScene`：
+
+```
+淡出到全黑（0.25s）──► 黑屏里落地（建 / 改 / 删视图 + 显现新场景）──► 淡入还原（0.3s）
+```
+
+- 遮罩是 `Presentation/SceneFadeUI.cs`：**代码构建**（不依赖 prefab，结构由组件自己 Awake 生成），
+  经 `UIManager.OpenWindow<SceneFadeUI>()` 挂到唯一 Canvas 下；alpha > 0 时 `raycastTarget` 打开，
+  黑屏期间不会误触；淡入完 `Close()` 只隐藏、保留注册，下次切场景再 `Open()`。
+- **只在「真的换了一个场景」时淡**（`SceneName != null && SceneName != 新场景名`）：
+  **第一次载入不淡**（没有可交叉的画面，先黑一下是白等）、**同一场景的增量更新不淡**
+  （编辑器改一笔推一次，一改就闪根本没法用）。
+- **黑屏 / 淡入期间又来了新的场景**（连点几次换台、资源包刚好处理完）只留最新一份，
+  由进行中的那一轮在黑屏里换成它——屏幕上**始终只有一层遮罩**，不会叠出几层、也不会在淡入到一半时跳一下。
+- 遮罩拿不到（没有 `UIManager`，例如纯逻辑环境）就**退化成直接切**：过渡效果绝不挡住换台。
+- 时长与总开关是 `SceneMirror` 上的序列化字段（默认 0.25s / 0.3s / 开）。
+
 ## 当前状态（2026-09-20）
 
 - **36 个运行时脚本 + 2 个编辑器脚本**（Data 8 / Logic 9 / Network 5 / Presentation 14）；旧模型零残留；`.meta` 齐全。
@@ -199,6 +222,7 @@ Assets/
   切换场景只是把别的场景 `SetActive(false)` 藏起来，对象、贴图、状态全部留着；
   切回去直接显示，不重建。一次运行里可以同时有多个场景（玩家可能在场景1 做完事再切到场景2）。
   `Find(objectId)` 会在**所有场景**里找，所以隐藏场景里的对象照样能被命令寻址。
+  **换台时套一层淡入淡出**（2026-09-21，见上一节）：隐藏 / 显现那一瞬被全屏遮罩盖住，不会闪。
   **没有任何「丢弃场景」的入口**——只隐藏；真要回收内存时再加（不预置一个没人调的销毁 API，
   免得被误用成「切场景就销毁」）。
 - **对象用局部坐标，根节点可以自由变换（2026-09-20）**：`SceneObjectView` 写的是
@@ -302,8 +326,8 @@ Assets/
 - **场景载体（D1 已落地）**：旧 `Resources/Scenes/*.prefab` 与 `*.bytes` 已删，场景内容由后台推下来、
   由 `SceneMirror` 搭出来。`GameSceneManager`（按名加载 Resources 预置体 + 淡入淡出）**已于 2026-09-20
   整个删除**——它唯一的动作就是 `Start()` 里加载早已不存在的 `Scene000` 预设，每次进播放模式都报
-  `Scene prefab not found`。**`SceneFadeUI` 保留**（它不依赖那个类，是自包含的全屏遮罩），
-  但**目前没有调用方**——等真正需要黑屏过渡的功能来调，或确认用不上就删。
+  `Scene prefab not found`。**淡入淡出没有跟着丢**：2026-09-21 把它接回 **`SceneMirror`**
+  （`SceneFadeUI` 本来就是自包含的全屏遮罩，见上面「切场景」一节）。
 - **已停用但未删**（你要求先不动）：`DevicePipeInputSource2`（`Sample` 整段注释——若在 Game 里把
   输入方案选成 `PipeSource`，输入会**静默失效**）、`InputConfigPrefs`、14 个无人引用的 shader
   （`MaskEraseStamp` / `FogOfWar` / `FogOfWarAccumulate` / `FogCombine` 等——战争雾走 CPU 擦除 +

@@ -18,10 +18,11 @@ namespace DiceTale
     ///   IsFading                  —— 是否正在播放淡入淡出（外部协程用轮询等待）
     /// 遮罩 alpha &gt; 0 时开启 raycastTarget 拦截点击，避免黑屏期间误触场景/UI；完全透明时关闭不挡交互。
     ///
-    /// **当前没有调用方**：原来唯一的调用者是 `GameSceneManager.LoadScene`，而那个类已在 2026-09-20 删除
-    /// （场景内容由后台推送、由 <see cref="SceneMirror"/> 搭出来，不再有「按 Resources 预设切场景」这回事）。
-    /// 这个遮罩本身是完整可用的独立工具，留着等真正需要「黑屏过渡」的功能（例如切项目的加载态）来调；
-    /// 若确认用不上，直接删本文件即可（`UIManager` 是注册式管理，不引具体窗口类型）。
+    /// **调用方是 <see cref="SceneMirror"/>**：真的换了一个场景时，它按
+    /// 「淡出到全黑 → 黑屏里建 / 显新场景 → 淡入还原」的次序用这个窗口
+    /// （参照参考实现 `LLMNPC_NEWLIGHT_EX` 的 `GameSceneManager.LoadScene`；
+    /// 本工程没有「按 Resources 预置体切场景」那回事——场景内容由后台推送、由镜像搭出来）。
+    /// 遮罩本身仍然是个独立工具：开关与时长在 `SceneMirror` 的 Inspector 字段上。
     /// </summary>
     public class SceneFadeUI : UIWindow
     {
