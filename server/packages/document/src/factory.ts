@@ -5,6 +5,9 @@ import {
   MAP_DEFAULT_SORTING_ORDER,
   createId,
 } from "./commands";
+// 全局设置的缺省值住在 schema 里（那里也是「形状 + 默认值」的家）：新建工程与读老文件
+// 补齐共用同一份，不会出现「新建的缺一样、读出来的缺另一样」
+import { defaultProjectSettings } from "./schema";
 import {
   DOCUMENT_FORMAT_VERSION,
   type GridSpec,
@@ -161,5 +164,8 @@ export function createEmptyProject(name = "未命名项目"): ProjectDoc {
       count: 0,
       items: [],
     },
+    // v15 起：全局设置（音频）随工程文件一起建出来——歌单空、没有默认曲、三档音量用缺省值。
+    // 用 schema 里那份默认值工厂，保证「新建」与「读老文件补齐」得到的是同一份形状。
+    settings: defaultProjectSettings(),
   };
 }

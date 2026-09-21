@@ -1,152 +1,158 @@
-using System.Collections.Generic;
 using UnityEngine;
 
 namespace DiceTale
 {
     /// <summary>
-    /// 声音播放管理器（由 Game 初始化持有，RequireComponent 自带 AudioSource）：
-    /// 负责旁白/对话音频，并可选同步显示字幕（<see cref="SubtitleWindow"/>）；
-    /// 另提供**分层背景音乐**（<see cref="PlayBackground(int, AudioClip)"/>）：
-    /// 共 <see cref="backgroundLayerCount"/> 层（默认 4），**每层同一时刻只播一首**——
-    /// 向某层换曲会顶掉该层旧曲，层与层之间可同时响（如环境层 + 氛围层 + 主题层）；
-    /// 各层共享 <see cref="BackgroundVolume"/>，与对白音量互不干扰（对白播放/停止不影响 BGM，反之亦然）。
-    /// 「播放时显示文字」功能始终实现，用 <see cref="enableText"/> 开关控制是否启用；
-    /// 字幕在播放结束 / <see cref="Stop"/> 时自动关闭（循环播放时持续显示）。
-    /// 调用：<c>Game.Instance.AudioPlayerManager.Play(clip, "字幕内容");</c> /
-    /// <c>Game.Instance.AudioPlayerManager.PlayBackground(0, ambientClip);</c>（layer 为层号）
+    /// 声音播放管理器（由 <see cref="Game"/> 初始化持有）：**三条通道**，与后台的三档声音一一对应。
+    ///
+    /// - **背景音乐（`bgm`）**：全局一条（曲目清单在编辑器顶栏「音乐」弹框里），**恒循环**、音量单独一档；
+    /// - **音效（`sfx`）**：一次性，播完就停；
+    /// - **旁白（`voice`）**：一次性，可选同步显示字幕（<see cref="SubtitleWindow"/>）。
+    ///
+    /// 三条通道的口径完全一致（与协议里「同层同时只响一条」对齐）：**同一通道里播新的会顶掉旧的**，
+    /// 各自有独立的 <see cref="AudioSource"/>，所以三条可以同时响（背景音乐 + 一句旁白 + 一个音效）。
+    ///
+    /// 音量来自**项目级全局设置**（<see cref="ApplySettings"/>，服务端随 `project_settings` 下发）：
+    /// 收到即生效，不需要命令——「数据是数据，动作是动作」。
+    ///
+    /// 管理器**自己不起播**：放哪一首、什么时候放全由编辑器的命令决定（见
+    /// `CommandRouter`）——单一真源，不会出现「前端自播 + 编辑器补发」双播。
     /// </summary>
-    [RequireComponent(typeof(AudioSource))]
     public class AudioPlayerManager : MonoBehaviour
     {
-        [SerializeField, Tooltip("播放时是否显示字幕文字（功能已实现，这里控制是否打开）")]
+        [SerializeField, Tooltip("旁白播放时是否显示字幕文字（功能已实现，这里控制是否打开）")]
         private bool enableText = true;
 
-        [SerializeField, Tooltip("背景音乐层数（每层同一时刻只播一首，层间可同时响）")]
-        [Min(1)]
-        private int backgroundLayerCount = 4;
+        private AudioSource bgmSource;
+        private AudioSource sfxSource;
+        private AudioSource voiceSource;
 
-        [SerializeField, Tooltip("开场按层播的背景音乐（列表索引 = 层号：第 i 项播到第 i 层；留空 = 不自动播）")]
-        private List<AudioClip> backgroundMusic = new List<AudioClip>();
+        /// <summary>当前那份全局设置（三档音量）；收到新的就换掉并立即生效。</summary>
+        private MirrorSettings settings;
 
-        [SerializeField, Tooltip("背景音乐音量（0..1，所有层共享；运行时可经 BackgroundVolume 修改）")]
-        [Range(0f, 1f)]
-        private float backgroundVolume = 0.5f;
-
-        private AudioSource audioSource;
-        private readonly List<AudioSource> bgmLayers = new List<AudioSource>();
-        private float currentBackgroundVolume;
+        /// <summary>旁白字幕开着没有（播完 / 停止时关掉）。</summary>
         private bool subtitleShown;
 
-        private void Awake()
+        /// <summary>三条通道的声源（按需创建；音量按当前设置给，背景音乐那条恒循环）。</summary>
+        private AudioSource BgmSource => bgmSource != null
+            ? bgmSource
+            : bgmSource = CreateSource("bgm");
+
+        private AudioSource SfxSource => sfxSource != null
+            ? sfxSource
+            : sfxSource = CreateSource("sfx");
+
+        private AudioSource VoiceSource => voiceSource != null
+            ? voiceSource
+            : voiceSource = CreateSource("voice");
+
+        private AudioSource CreateSource(string channel)
         {
-            audioSource = GetComponent<AudioSource>();
-            if (audioSource != null)
-            {
-                audioSource.playOnAwake = false;
-            }
-
-            currentBackgroundVolume = Mathf.Clamp01(backgroundVolume);
-
-            // 层槽位占位：播放时再补 AudioSource（RequireComponent 只保证一个 AudioSource）
-            int layerCount = Mathf.Max(1, backgroundLayerCount);
-            for (int i = 0; i < layerCount; i++)
-            {
-                bgmLayers.Add(null);
-            }
-
-            // 开场按层自动播：列表第 i 项播到第 i 层（每层一首，可多层同时响）
-            for (int i = 0; i < backgroundMusic.Count; i++)
-            {
-                if (backgroundMusic[i] != null)
-                {
-                    PlayBackground(i, backgroundMusic[i]);
-                }
-            }
+            var source = gameObject.AddComponent<AudioSource>();
+            source.playOnAwake = false;
+            source.loop = false;
+            source.volume = VolumeOf(channel);
+            return source;
         }
 
         private void Update()
         {
             // 字幕随播放结束自动关闭（循环播放中持续显示，直到 Stop）
-            if (subtitleShown && (audioSource == null || !audioSource.isPlaying))
+            if (subtitleShown && (voiceSource == null || !voiceSource.isPlaying))
             {
                 HideSubtitle();
             }
         }
 
-        /// <summary>是否正在播放（对白/旁白通道）。</summary>
-        public bool IsPlaying => audioSource != null && audioSource.isPlaying;
+        // ---------------------------------------------------------------- 设置（三档音量）
 
-        /// <summary>对白/旁白通道是否正在播该片段（重复触发不重启的判定用）。</summary>
-        public bool IsPlayingClip(AudioClip clip)
+        /// <summary>
+        /// 换一份全局设置（`project_settings` 到了就调）：三档音量立刻生效。
+        ///
+        /// `null`（服务端没有设置）按**一份缺省设置**处理：音量回到缺省。
+        /// </summary>
+        public void ApplySettings(MirrorSettings next)
         {
-            return audioSource != null && audioSource.clip == clip && audioSource.isPlaying;
-        }
+            settings = next ?? new MirrorSettings();
+            settings.ClampVolumes();
 
-        /// <summary>是否有任一背景音乐层在播放。</summary>
-        public bool AnyBackgroundPlaying
-        {
-            get
+            if (bgmSource != null)
             {
-                for (int i = 0; i < bgmLayers.Count; i++)
-                {
-                    if (bgmLayers[i] != null && bgmLayers[i].isPlaying)
-                    {
-                        return true;
-                    }
-                }
+                bgmSource.volume = settings.audio.bgm.volume;
+            }
 
-                return false;
+            if (sfxSource != null)
+            {
+                sfxSource.volume = settings.audio.sfxVolume;
+            }
+
+            if (voiceSource != null)
+            {
+                voiceSource.volume = settings.audio.voiceVolume;
             }
         }
 
-        /// <summary>指定层是否在播放（越界返回 false）。</summary>
-        public bool IsBackgroundPlaying(int layer)
+        /// <summary>当前设置里的某条通道音量（还没收到设置时用缺省值）。</summary>
+        private float VolumeOf(string channel)
         {
-            return layer >= 0 && layer < bgmLayers.Count
-                && bgmLayers[layer] != null && bgmLayers[layer].isPlaying;
-        }
-
-        /// <summary>指定层是否**正在播该片段**（同曲续播判定：正在播同曲时换场景不要重启，免突兀）。</summary>
-        public bool IsBackgroundClipPlaying(int layer, AudioClip clip)
-        {
-            return layer >= 0 && layer < bgmLayers.Count
-                && bgmLayers[layer] != null
-                && bgmLayers[layer].clip == clip
-                && bgmLayers[layer].isPlaying;
-        }
-
-        /// <summary>背景音乐音量（0..1，所有层共享；运行时可改，立即生效）。</summary>
-        public float BackgroundVolume
-        {
-            get => currentBackgroundVolume;
-            set
+            var audio = settings?.audio;
+            if (audio == null)
             {
-                currentBackgroundVolume = Mathf.Clamp01(value);
-                for (int i = 0; i < bgmLayers.Count; i++)
-                {
-                    if (bgmLayers[i] != null)
-                    {
-                        bgmLayers[i].volume = currentBackgroundVolume;
-                    }
-                }
+                return channel == "bgm" ? 0.6f : channel == "voice" ? 1f : 0.8f;
             }
+
+            return channel == "bgm"
+                ? audio.bgm.volume
+                : channel == "voice"
+                    ? audio.voiceVolume
+                    : audio.sfxVolume;
         }
 
-        /// <summary>播放音频并可选显示字幕。subtitle 为空或 <see cref="enableText"/> 关闭时不显示文字；
-        /// loop 为 true 时循环播放（字幕持续显示到 <see cref="Stop"/>）。</summary>
-        public void Play(AudioClip clip, string subtitle = null, bool loop = false)
+        // ---------------------------------------------------------------- 三条通道的公共动作
+
+        /// <summary>某条通道现在在响没有（`layer` = `bgm` / `sfx` / `voice`）。</summary>
+        public bool IsPlaying(string layer)
+        {
+            var source = SourceOf(layer);
+            return source != null && source.isPlaying;
+        }
+
+        /// <summary>某条通道放的是不是这一条（判定「重复点同一首」用）。</summary>
+        public bool IsPlayingClip(string layer, AudioClip clip)
+        {
+            var source = SourceOf(layer);
+            return source != null && clip != null && source.clip == clip && source.isPlaying;
+        }
+
+        /// <summary>播一条（**顶掉这条通道上原来那条**）；`bgm` 通道恒循环。</summary>
+        public void Play(string layer, AudioClip clip, string subtitle = null)
         {
             if (clip == null)
             {
-                Stop();
+                Stop(layer);
                 return;
             }
 
-            audioSource.clip = clip;
-            audioSource.loop = loop;
-            audioSource.Play();
+            var source = SourceOf(layer);
+            if (source == null)
+            {
+                return;
+            }
 
-            if (enableText && !string.IsNullOrEmpty(subtitle))
+            // 背景音乐恒循环（v16 起循环不是设置项：响到被换掉 / 停掉为止）；其余通道一次性
+            var loop = layer == "bgm";
+            if (source.isPlaying)
+            {
+                source.Stop();
+            }
+
+            source.clip = clip;
+            source.loop = loop;
+            source.volume = VolumeOf(layer);
+            source.Play();
+
+            // 只有旁白这一条有字幕（音效 / 背景音乐没有文本可显示）
+            if (layer == "voice" && enableText && !string.IsNullOrEmpty(subtitle))
             {
                 var window = Game.Instance != null && Game.Instance.UIManager != null
                     ? Game.Instance.UIManager.OpenWindow<SubtitleWindow>()
@@ -159,99 +165,82 @@ namespace DiceTale
                 }
             }
 
-            HideSubtitle();
+            if (layer == "voice")
+            {
+                HideSubtitle();
+            }
         }
 
-        /// <summary>在某层播放背景音乐（循环）：**每层同一时刻只播一首**——换曲会顶掉该层旧曲；
-        /// 同层同曲已在播则不动作。返回层号（-1 = clip 为空或层号非法）；
-        /// 用 <see cref="StopBackground(int)"/> 停指定层。</summary>
-        public int PlayBackground(int layer, AudioClip clip)
+        /// <summary>暂停某条通道（没在响就什么都不做，返回 false）。</summary>
+        public bool Pause(string layer)
         {
-            if (clip == null)
+            var source = SourceOf(layer);
+            if (source == null || !source.isPlaying)
             {
-                return -1;
+                return false;
             }
 
-            var source = EnsureLayer(layer);
-            if (source == null)
-            {
-                return -1;
-            }
-
-            if (source.clip == clip && source.isPlaying)
-            {
-                return layer; // 该层同一曲已在播：不动
-            }
-
-            if (source.isPlaying)
-            {
-                source.Stop();
-            }
-
-            source.clip = clip;
-            source.loop = true;
-            source.volume = currentBackgroundVolume;
-            source.Play();
-            return layer;
+            source.Pause();
+            return true;
         }
 
-        /// <summary>停止指定背景音乐层（越界忽略；该层 AudioSource 保留，可再次 PlayBackground 续播）。</summary>
-        public void StopBackground(int layer)
+        /// <summary>从暂停处继续（没暂停就什么都不做，返回 false）。</summary>
+        public bool Resume(string layer)
         {
-            if (layer < 0 || layer >= bgmLayers.Count)
+            var source = SourceOf(layer);
+            if (source == null || source.clip == null || source.isPlaying)
             {
-                return;
+                return false;
             }
 
-            var source = bgmLayers[layer];
+            source.UnPause();
+            return true;
+        }
+
+        /// <summary>停掉某条通道（字幕一起收掉）。</summary>
+        public void Stop(string layer)
+        {
+            var source = SourceOf(layer);
             if (source != null)
             {
                 source.Stop();
             }
-        }
 
-        /// <summary>停止全部背景音乐层。</summary>
-        public void StopAllBackground()
-        {
-            for (int i = 0; i < bgmLayers.Count; i++)
+            if (layer == "voice")
             {
-                if (bgmLayers[i] != null)
-                {
-                    bgmLayers[i].Stop();
-                }
+                HideSubtitle();
             }
         }
 
-        /// <summary>停止对白/旁白播放并关闭字幕（不影响背景音乐）。</summary>
-        public void Stop()
+        /// <summary>
+        /// 停掉三条通道。
+        ///
+        /// 两个场合用它：编辑器关闸（前端被踢下线，不该继续响），以及换项目 / 换资源包版本
+        /// （手里的片段已经作废）。
+        /// </summary>
+        public void StopAll()
         {
-            if (audioSource != null)
-            {
-                audioSource.Stop();
-            }
-
-            HideSubtitle();
+            Stop("bgm");
+            Stop("sfx");
+            Stop("voice");
         }
 
-        /// <summary>取/建指定层的 AudioSource（越界返回 null）。</summary>
-        private AudioSource EnsureLayer(int layer)
+        private AudioSource SourceOf(string layer)
         {
-            if (layer < 0 || layer >= bgmLayers.Count)
+            switch (layer)
             {
-                return null;
-            }
+                case "bgm":
+                    return BgmSource;
 
-            var source = bgmLayers[layer];
-            if (source == null)
-            {
-                source = gameObject.AddComponent<AudioSource>();
-                source.playOnAwake = false;
-                source.loop = true;
-                source.volume = currentBackgroundVolume;
-                bgmLayers[layer] = source;
-            }
+                case "voice":
+                    return VoiceSource;
 
-            return source;
+                case "sfx":
+                    return SfxSource;
+
+                default:
+                    return null;
+            }
         }
 
         private void HideSubtitle()

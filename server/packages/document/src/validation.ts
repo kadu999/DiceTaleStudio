@@ -1,7 +1,7 @@
 import { PAINTABLE_MASKS, decodeRle } from "@dts/grid";
 import { findComponentType, isKnownComponentType } from "./components";
 import { collectActionIds, isMapFogEnabled, supportsVideo } from "./commands";
-import type { ProjectDoc, SceneDoc, SceneObjectDoc } from "./types";
+import type { ProjectDoc, ProjectSettingsDoc, SceneDoc, SceneObjectDoc } from "./types";
 
 /**
  * 结构性校验（**不依赖动作注册表**，因此放在 document 包内）。
@@ -150,6 +150,19 @@ function validateObject(
         level: "error",
         path,
         message: "声音对象缺少声音数据（音频列表 / 层级）",
+      });
+    }
+
+    /*
+      背景音乐不再属于对象（顶栏「音乐」弹框管：清单就是项目 `Assets/audio/` 下的音频）。
+      schema 仍然认 `bgm`（老文件里对象可能写着它，协议里它也是声道名），
+      但界面上不再给这个选项——所以这里明确提醒作者把这条改成音效或旁白。
+    */
+    if (sound?.layer === "bgm") {
+      issues.push({
+        level: "warning",
+        path: `${path}/sound/layer`,
+        message: "背景音乐已改成顶栏「音乐」弹框（play_bgm 那一组）：请把这条改成音效或旁白",
       });
     }
 
@@ -432,6 +445,153 @@ export function validateScene(scene: SceneDoc): ValidationIssue[] {
 }
 
 /**
+ * 全局设置里的「音频」那一份（v15 起；v16 起背景音乐也只剩音量）。
+ *
+ * v16 之前这里还要校验歌单 / 默认曲 / 名字——那些字段已经不在文档里了（曲目清单就是
+ * 项目 `Assets/audio/` 下的音频，由编辑器弹框列出来），所以这里只剩三档音量。
+ *
+ * 音量越界单独说一句：前端会按 `0..1` 用，写 `1.5` 的人多半以为能放大声音。
+ */
+function validateAudioSettings(
+  settings: ProjectSettingsDoc | undefined,
+  issues: ValidationIssue[],
+): void {
+  const volumes: ReadonlyArray<readonly [string, number | undefined]> = [
+    ["settings/audio/bgm/volume", settings?.audio?.bgm?.volume],
+    ["settings/audio/sfx/volume", settings?.audio?.sfx?.volume],
+    ["settings/audio/voice/volume", settings?.audio?.voice?.volume],
+  ];
+
+  for (const [path, volume] of volumes) {
+    if (volume === undefined) {
+      // 手搭的文档可能没有这一项（schema 会给默认值），不算问题
+      continue;
+    }
+
+    if (!Number.isFinite(volume) || volume < 0 || volume > 1) {
+      issues.push({
+        level: "warning",
+        path,
+        message: `音量应在 0..1（现在 ${String(volume)}，会被夹进范围内）`,
+      });
+    }
+  }
+}
+
+/**
+ * 音频标签表（v18 起）：空名字、重名。
+ *
+ * 重名**不拦**（与 Unity 一致：可以有两个同名标签，只是显示上分不清），只报 warning 提醒整理。
+ */
+function validateAudioTags(table: ProjectDoc["audioTags"], issues: ValidationIssue[]): void {
+  if (table === undefined) {
+    return;
+  }
+
+  const seen = new Map<string, number>();
+  for (const [id, name] of table.entries()) {
+    if (name === null) {
+      // 洞：删掉的标签留的位置，正常
+      continue;
+    }
+
+    const trimmed = name.trim();
+    if (trimmed.length === 0) {
+      issues.push({
+        level: "warning",
+        path: `audioTags/${id}`,
+        message: "标签名是空的（界面上会显示成一个没有名字的标签）",
+      });
+      continue;
+    }
+
+    const first = seen.get(trimmed);
+    if (first !== undefined) {
+      issues.push({
+        level: "warning",
+        path: `audioTags/${id}`,
+        message: `标签名与 #${first} 重复: ${trimmed}（建议改成不同的名字）`,
+      });
+      continue;
+    }
+
+    seen.set(trimmed, id);
+  }
+}
+
+/**
+ * 音频文件标注（v17 起；v18 起标签是整数 ID）：空显示名、标签 ID 越界 / 指向已删的标签 / 重复。
+ *
+ * 全部只报 **warning**：这些是「数据对不上」，不该把工程文件拦在门外；
+ * 界面上会把这些引用**忽略掉**照常显示其它标签，作者在「标签」窗口里改一下就好。
+ */
+function validateAudioMeta(
+  meta: ProjectDoc["audioMeta"],
+  table: ProjectDoc["audioTags"],
+  issues: ValidationIssue[],
+): void {
+  if (meta === undefined) {
+    return;
+  }
+
+  for (const [clipId, entry] of Object.entries(meta)) {
+    if (entry.name !== undefined && entry.name.trim().length === 0) {
+      issues.push({
+        level: "warning",
+        path: `audioMeta/${clipId}/name`,
+        message: "显示名是空的（会退回素材文件名）",
+      });
+    }
+
+    const tags = entry.tags;
+    if (tags === undefined) {
+      continue;
+    }
+
+    if (tags.length === 0) {
+      issues.push({
+        level: "warning",
+        path: `audioMeta/${clipId}/tags`,
+        message: "标签列表是空的（会被忽略）",
+      });
+      continue;
+    }
+
+    const seen = new Set<number>();
+    for (const [index, tagId] of tags.entries()) {
+      if (!Number.isInteger(tagId) || tagId < 0 || tagId >= (table?.length ?? 0)) {
+        issues.push({
+          level: "warning",
+          path: `audioMeta/${clipId}/tags/${index}`,
+          message: `标签 ID ${String(tagId)} 不在标签表里（会被忽略）`,
+        });
+        continue;
+      }
+
+      if (table?.[tagId] === null) {
+        issues.push({
+          level: "warning",
+          path: `audioMeta/${clipId}/tags/${index}`,
+          message: `标签 ID ${tagId} 已经被删掉了（会被忽略）`,
+        });
+        continue;
+      }
+
+      if (seen.has(tagId)) {
+        issues.push({
+          level: "warning",
+          path: `audioMeta/${clipId}/tags/${index}`,
+          message: `标签 ID ${tagId} 重复（会被去掉）`,
+        });
+        continue;
+      }
+
+      seen.add(tagId);
+    }
+  }
+}
+
+/**
  * 校验工程文件里的项目级数据。
  *
  * 场景已各自成文件、由 `validateScene` 逐个校验，所以这里不再遍历场景；
@@ -447,6 +607,10 @@ export function validateProject(doc: ProjectDoc): ValidationIssue[] {
       message: `道具库 count=${doc.items.count} 与实际条目数 ${doc.items.items.length} 不一致`,
     });
   }
+
+  validateAudioSettings(doc.settings, issues);
+  validateAudioTags(doc.audioTags, issues);
+  validateAudioMeta(doc.audioMeta, doc.audioTags, issues);
 
   return issues;
 }

@@ -56,7 +56,8 @@ Assets/
 │  │                    BirdWanderer.cs          装饰物区域随机游荡
 │  │                    TextureRenderer.cs 贴地面的纹理面片（**只认运行时纹理**）
 │  │                    PhotoClickGlow.cs        拍照指针点地时的点光
-│  │                    AudioPlayerManager.cs    分层音频（4 层，同层顶替）+ 字幕
+│  │                    AudioPlayerManager.cs    三条音频通道（背景音乐 / 音效 / 旁白+字幕），三档音量来自项目设置
+│  │                    AudioClipLoader.cs       按资源逻辑 ID 取音频（本地优先 / 缓存 / 去重 / 失败记忆）
 │  │                    SmartVideoPlayer.cs      视频播放 / 播完回调 / 淡入淡出
 │  │                    UIManager.cs             唯一 Canvas + 窗口注册/开关
 │  │                    UIWindow.cs              窗口基类
@@ -96,7 +97,7 @@ Assets/
 |---|---|---|
 | `Logic/Game.cs` | 网络层 + 全部表现层管理器 | **组合根**：装配入口本来就得认识所有管理器，这处是允许的 |
 | `Logic/SceneMirror.cs` | `Presentation/SceneObjectView` | 镜像落地就是「建视图」，这是它的本职；层级按场景分（`场景/<场景名>/对象`） |
-| `Logic/CommandRouter.cs` | 镜像 + 回执（下一步接音频） | 命令要作用到表现上，回执要经会话发出去 |
+| `Logic/CommandRouter.cs` | 镜像 + 音频 / 视频 + 回执 | 命令要作用到表现上（取音频是异步的，回执在加载完成后发），回执要经会话发出去 |
 | `Logic/InputManager.cs` | uGUI 命中判定 + `PhotoClickGlow` | UI 点击豁免与拍照点光 |
 | `Logic/DynamicObstacle.cs` | `GridMap` | 它只跟 `GridMap` 打交道，而 `GridMap` 目前同时持有格子数据与渲染 |
 
@@ -186,9 +187,9 @@ Assets/
 - 更新时机：**指纹比对**。素材被外部工具改了（size 或 mtime 变）指纹就变，下次连上自动重下；
   没变就不传。本地目录布局与清理规则见 `LocalResourceStore` 的注释。
 
-**音频 / 视频**：字节现在也会被一起下到本地（整包包含 `Assets/` 全部文件），但**播放链路还没接**——
-`AudioPlayerManager` 只吃 `AudioClip`、`SmartVideoPlayer` 只认 Inspector 里的 `VideoClip`，
-本地包落地后这两条只差最后一步。
+**音频 / 视频**：字节会被一起下到本地（整包包含 `Assets/` 全部文件），两条播放链路都**已经接上**：
+视频走 `VideoOverlay`（`VideoPlayer.url`，本地 `file://` 优先），音频走 `AudioClipLoader`
+（`UnityWebRequestMultimedia`，本地优先）+ `AudioPlayerManager`（三条通道）。
 
 ## 当前状态（2026-09-20）
 
@@ -277,18 +278,27 @@ Assets/
   `(1,1,1)`（`SceneObjectView` 不再设 `localScale`）。这样「对象多大」只有一处来源——网格自己，
   不会出现「网格比例 × 缩放」两处都能改大小、改错一个就变形。实测：地图声明 1920×1080 → 
   网格 bounds 1920×1080、scale (1,1,1)；精灵声明 256×256 → 网格 256×256、scale (1,1,1)。
-- **镜像协议已实现**（**协议 v6**：v5 起战争雾的总开关与视频随场景下发，v6 起声音补齐
-  `pause_sound` / `resume_sound`，见
-  `server/docs/specs/2026-09-19-runtime-mirror-protocol.md`）：
-  编辑器点「运行」→ 服务端开闸 → 前端连上 → **先下资源包** → 再整份推场景 → 按 `id` 建 / 改 / 删对象
+- **镜像协议已实现**（**协议 v8**：v5 起战争雾的总开关与视频随场景下发，v6 起声音补齐
+  `pause_sound` / `resume_sound`，v7 起**全局背景音乐**（`play_bgm` 那一组命令）与三档层级，
+  v8 起**背景音乐与项目设置解耦**——`project_settings` 只剩三档音量，曲目清单就是项目
+  `Assets/audio/` 下的音频，见 `server/docs/specs/2026-09-19-runtime-mirror-protocol.md`）：
+  编辑器点「运行」→ 服务端开闸 → 前端连上 → **先下资源包** → 再整份推设置与场景 → 按 `id` 建 / 改 / 删对象
   （位置 / 缩放 / 旋转 / **激活** / 显示顺序 / 取图都同步）。
-- **资源包已实现**（见上一节）：连上即按项目拉整包到本地，之后图片从本地读；
+- **声音已实现（2026-09-21；v8 起设置里只剩音量）**：三条通道各一个 `AudioSource`——
+  **背景音乐**（全局一条，**恒循环**、音量来自项目设置）、**音效**（一次性）、**旁白**（一次性，可带字幕）；
+  同一条通道里播新的会顶掉旧的（与协议「同层只响一条」一致）。音频按**逻辑 ID** 取：
+  `AudioClipLoader` 先看本地资源包（`file://`）、没有才回落 `/api/resources/raw`，
+  带缓存 / 同 id 去重 / 失败记忆。**编辑器不自己起播**：起播、切歌、暂停、停止全来自命令
+  （`play_sound` 那一组按层级；`play_bgm{clip}` / `pause_bgm` / `resume_bgm` / `stop_bgm` 管全局背景音乐，
+  清单在编辑器顶栏「音乐」弹框里），取音频是异步的，所以回执在**加载完成后**发。
+  验收过的现场（MCP 直接驱动编辑器里的 Unity）：`play_bgm` 起播本地 mp3、`stop_bgm` 停掉、
+  音量随 `project_settings` 立即变化、会话断开时 `StopAll` 把三通道一起停。
+- **资源包已实现**（见上一节）：连上即按项目拉整包到本地，之后图片 / 音频从本地读；
   指纹变了才重下。服务端侧见 `server/README.md` 的「运行态资源包」。
   Unity 内实测：真实 37 MB 包解压 **15 个文件 / 120 ms**，逐条 CRC 通过，
   解出的 png / mp4 / wav / mp3 / json 与仓库源文件 **SHA256 逐字节一致**；
   顺序实测为「场景先挂起 → 资源包就绪 → 场景才载入」。
-- **下一步**：`play_sound` 的真出声（取音频 + 按层播放）。现在命令链路已通（转发 / 回执 / 超时 / 日志），
-  但前端如实回 `ok:false` 并说明「镜像里该播哪一条」——不假装成功；音频字节已经在本地了。
+- **下一步**：旁白**字幕**（`sound` 数据里还没有字幕文本字段）、背景音乐淡入淡出 / 按场覆盖。
 - **场景载体（D1 已落地）**：旧 `Resources/Scenes/*.prefab` 与 `*.bytes` 已删，场景内容由后台推下来、
   由 `SceneMirror` 搭出来。`GameSceneManager`（按名加载 Resources 预置体 + 淡入淡出）**已于 2026-09-20
   整个删除**——它唯一的动作就是 `Start()` 里加载早已不存在的 `Scene000` 预设，每次进播放模式都报

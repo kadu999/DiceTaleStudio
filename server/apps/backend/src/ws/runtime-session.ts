@@ -1,4 +1,10 @@
-import { createRequestId, type ResourcesInfo, type ScenePayload } from "@dts/protocol";
+import {
+  createRequestId,
+  type ProjectSettingsInfo,
+  type ProjectSettingsPayload,
+  type ResourcesInfo,
+  type ScenePayload,
+} from "@dts/protocol";
 
 /**
  * 运行态会话（内存态，**不持久化**）。
@@ -6,11 +12,13 @@ import { createRequestId, type ResourcesInfo, type ScenePayload } from "@dts/pro
  * 运行态由**编辑器**驱动：编辑器点「运行」= `runtime_start`（开闸），点「编辑」或它的 WS 断开 = 关闸。
  * 没开闸时服务端**拒绝** `/client` 的 WebSocket 升级——前端连不上，也就谈不上被控制。
  *
- * 这里只记三件事：
+ * 这里只记四件事：
  * - 开没开闸（`runtimeActive`）；
  * - 前端是谁（`client`，`client_hello` 后填上名字与版本）；
  * - **最近一份场景**（`scene`，编辑器 `scene_push` 推来的整份文档）。
- *   它同时是「后连上的前端也能立刻拿到全量」的依据：前端一连上就补发这份。
+ *   它同时是「后连上的前端也能立刻拿到全量」的依据：前端一连上就补发这份；
+ * - **最近一份全局设置**（`settings`，编辑器 `settings_push` 推来的项目级设置）。
+ *   与场景同命：前端一连上就补发，退出运行态一起清。
  *
  * 旧模型里那个「对象 / 玩家 / 动作清单」镜像已经删掉：新方向下数据在后台，
  * 前端不再上报任何东西，服务端也就没有可镜像的对象。
@@ -35,6 +43,8 @@ export interface RuntimeSnapshot {
   readonly scene: RuntimeSceneInfo | null;
   /** 前端本地资源包的状态（没收到回执时 null）。 */
   readonly resources: ResourcesInfo | null;
+  /** 已推下去的全局设置摘要（没推过时 null）。 */
+  readonly settings: ProjectSettingsInfo | null;
 }
 
 /**
@@ -74,6 +84,8 @@ export class RuntimeSession {
   private sceneUpdatedAt = 0;
   private resourcesInfo: ResourcesInfo | null = null;
   private resourceProjectValue: string | null = null;
+  private settingsDoc: ProjectSettingsPayload | null = null;
+  private settingsUpdatedAt = 0;
 
   get runtimeActive(): boolean {
     return this.active;
@@ -86,6 +98,11 @@ export class RuntimeSession {
   /** 最近一份场景（没有 = null）。 */
   get scene(): ScenePayload | null {
     return this.sceneDoc;
+  }
+
+  /** 最近一份全局设置（没有 = null）。 */
+  get settings(): ProjectSettingsPayload | null {
+    return this.settingsDoc;
   }
 
   /** 前端本地资源包的状态（没收到回执时 null）。 */
@@ -116,6 +133,13 @@ export class RuntimeSession {
               updatedAt: this.sceneUpdatedAt,
             },
       resources: this.resourcesInfo,
+      settings:
+        this.settingsDoc === null
+          ? null
+          : {
+              // v16 起设置里只有三档音量，摘要不需要「内容」，只报「什么时候推的」
+              updatedAt: this.settingsUpdatedAt,
+            },
     };
   }
 
@@ -124,7 +148,7 @@ export class RuntimeSession {
     this.active = true;
   }
 
-  /** 关闸（退出运行态）：清场景缓存与前端信息，旧运行态不留痕。 */
+  /** 关闸（退出运行态）：清场景与设置缓存、前端信息，旧运行态不留痕。 */
   stop(): void {
     this.active = false;
     this.sceneDoc = null;
@@ -132,6 +156,8 @@ export class RuntimeSession {
     this.clientInfo = null;
     this.resourcesInfo = null;
     this.resourceProjectValue = null;
+    this.settingsDoc = null;
+    this.settingsUpdatedAt = 0;
   }
 
   setClient(info: RuntimeClientInfo | null): void {
@@ -143,6 +169,12 @@ export class RuntimeSession {
     this.sceneDoc = scene;
     this.sceneUpdatedAt = Date.now();
     this.resourceProjectValue = projectNameOfScene(scene);
+  }
+
+  /** 推一份全局设置（`null` = 编辑器没有打开的项目）。 */
+  setSettings(settings: ProjectSettingsPayload | null): void {
+    this.settingsDoc = settings;
+    this.settingsUpdatedAt = Date.now();
   }
 
   /** 记一份前端本地资源包的状态（前端解压成功 / 失败都报）。 */

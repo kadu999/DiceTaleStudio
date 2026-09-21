@@ -224,9 +224,10 @@ test.describe("动作对象：播放声音", () => {
         (chipsBox?.y ?? 0) + (chipsBox?.height ?? 0) - 1,
       );
 
-      // 换层级：音效 → 背景音乐
-      await page.getByLabel("声音层级").selectOption("bgm");
-      await expect(row).toContainText("背景音乐");
+      // 换层级：音效 → 旁白（**背景音乐不在对象上**了：v15 起它是项目级全局设置，
+      // 见 `global-bgm.spec.ts`；这里只留音效 / 旁白两档）
+      await page.getByLabel("声音层级").selectOption("voice");
+      await expect(row).toContainText("旁白");
 
       // 落盘：加进来的清单 + 选中的那条 + 每个文件的名字表 + 层级，对象和实体一样摆在世界原点
       await expect
@@ -235,7 +236,7 @@ test.describe("动作对象：播放声音", () => {
           clips: [step1, step2],
           picked: step2,
           names: { [step1]: "雷雨" },
-          layer: "bgm",
+          layer: "voice",
           position: { x: 0, y: 0 },
         });
     } finally {
@@ -551,7 +552,7 @@ async function connectFakeSoundClient(page: Page, port: number): Promise<void> {
           type: "client_hello",
           // 与 `@dts/protocol` 的 `PROTOCOL_VERSION` 一致（这里写死：e2e 不是 workspace 包，
           // 拿不到那个常量；版本一升这里会连不上、用例会当场失败，提醒同步改）
-          protocolVersion: 6,
+          protocolVersion: 8,
           name: "e2e 假前端",
           version: "0.0.0",
         }),

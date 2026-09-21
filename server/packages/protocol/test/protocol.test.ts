@@ -372,9 +372,10 @@ describe("协议：编辑器 → 服务端", () => {
       }
     }
 
-    // 层级只认四档，别的值 / 缺字段都拒
+    // 层级只认三档（v7 起删掉了环境音），别的值 / 缺字段都拒
     for (const command of [
       { kind: "pause_sound", layer: "bogus" },
+      { kind: "pause_sound", layer: "ambient" },
       { kind: "pause_sound" },
       { kind: "resume_sound", layer: "" },
     ] as const) {
@@ -382,6 +383,136 @@ describe("协议：编辑器 → 服务端", () => {
         parseEditorToServer({ type: "editor_command", requestId: "sound-bad", command }),
       ).toThrow();
     }
+  });
+
+  it("全局背景音乐（v7）：play_bgm 带 clip 播 / 切某一条，暂停·继续·停止不带载荷", () => {
+    const play = parseEditorToServer({
+      type: "editor_command",
+      requestId: "bgm-play",
+      command: { kind: "play_bgm", clip: "project:P/Assets/audio/theme.mp3" },
+    });
+
+    expect(play.type).toBe("editor_command");
+    if (play.type === "editor_command") {
+      // 与视频 / 声音不同：歌单在**项目设置**里，切歌是运行动作——所以命令里带着要放的那一首
+      expect(play.command).toEqual({
+        kind: "play_bgm",
+        clip: "project:P/Assets/audio/theme.mp3",
+      });
+    }
+
+    for (const kind of ["pause_bgm", "resume_bgm", "stop_bgm"] as const) {
+      const parsed = parseEditorToServer({
+        type: "editor_command",
+        requestId: `bgm-${kind}`,
+        command: { kind },
+      });
+
+      expect(parsed.type).toBe("editor_command");
+      if (parsed.type === "editor_command") {
+        expect(parsed.command).toEqual({ kind });
+      }
+    }
+
+    // 没有 clip 的 play_bgm 是畸形命令（放哪一首都没说），拒掉
+    expect(() =>
+      parseEditorToServer({
+        type: "editor_command",
+        requestId: "bgm-bad",
+        command: { kind: "play_bgm" },
+      }),
+    ).toThrow();
+    expect(() =>
+      parseEditorToServer({
+        type: "editor_command",
+        requestId: "bgm-bad",
+        command: { kind: "play_bgm", clip: "" },
+      }),
+    ).toThrow();
+  });
+
+  it("项目设置（v8）：settings_push 收整份设置或 null；缺字段的一项也有默认值", () => {
+    const pushed = parseEditorToServer({
+      type: "settings_push",
+      settings: {
+        audio: {
+          bgm: { volume: 0.25 },
+          sfx: { volume: 0.5 },
+          voice: { volume: 0.75 },
+        },
+      },
+    });
+
+    expect(pushed.type).toBe("settings_push");
+    if (pushed.type === "settings_push") {
+      expect(pushed.settings?.audio.bgm.volume).toBe(0.25);
+      expect(pushed.settings?.audio.sfx.volume).toBe(0.5);
+      // 歌单 / 默认曲 / 名字都不再进协议：背景音乐只剩音量
+      const serialized = JSON.stringify(pushed.settings);
+      expect(serialized).not.toContain("clips");
+      expect(serialized).not.toContain("picked");
+      expect(serialized).not.toContain("names");
+      expect(serialized).not.toContain("loop");
+    }
+
+    // 没有打开项目时推 null（前端据此清掉本地的设置）
+    const cleared = parseEditorToServer({ type: "settings_push", settings: null });
+    expect(cleared.type === "settings_push" && cleared.settings).toBeNull();
+
+    // 缺字段的音频设置补默认值：三档音量各用缺省（0.6 / 0.8 / 1）
+    const sparse = parseEditorToServer({ type: "settings_push", settings: { audio: {} } });
+    if (sparse.type !== "settings_push") {
+      throw new Error("类型不符");
+    }
+
+    expect(sparse.settings?.audio.bgm).toEqual({ volume: 0.6 });
+    expect(sparse.settings?.audio.sfx).toEqual({ volume: 0.8 });
+    expect(sparse.settings?.audio.voice).toEqual({ volume: 1 });
+  });
+
+  it("服务端 → 前端：project_settings 带整份设置或 null", () => {
+    const parsed = parseServerToClient({
+      type: "project_settings",
+      settings: {
+        audio: {
+          bgm: { volume: 0.6 },
+          sfx: { volume: 0.8 },
+          voice: { volume: 1 },
+        },
+      },
+    });
+
+    expect(parsed.type).toBe("project_settings");
+
+    const cleared = parseServerToClient({ type: "project_settings", settings: null });
+    expect(cleared.type === "project_settings" && cleared.settings).toBeNull();
+  });
+
+  it("编辑器状态（v8）：settings 摘要是必填项（没推过给 null），只带推送时间", () => {
+    const parsed = parseServerToEditor({
+      type: "editor_state",
+      runtimeActive: true,
+      client: null,
+      scene: null,
+      resources: null,
+      settings: { updatedAt: 1 },
+      serverTime: 1,
+    });
+
+    expect(parsed.type).toBe("editor_state");
+    expect(parsed.type === "editor_state" && parsed.settings?.updatedAt).toBe(1);
+
+    const empty = parseServerToEditor({
+      type: "editor_state",
+      runtimeActive: false,
+      client: null,
+      scene: null,
+      resources: null,
+      settings: null,
+      serverTime: 1,
+    });
+
+    expect(empty.type === "editor_state" && empty.settings).toBeNull();
   });
 
   it("视频（v5）：四条命令都只带 objectId（放哪一条 / 循环 / 声音在对象数据里）", () => {
@@ -598,6 +729,7 @@ describe("协议：服务端 → 编辑器", () => {
       client: { name: "DiceTale Unity", version: "1.0.0", connectedAt: 123 },
       scene: { name: "场景1", objectCount: 3, updatedAt: 456 },
       resources: null,
+      settings: null,
       serverTime: 789,
     });
 
@@ -615,6 +747,7 @@ describe("协议：服务端 → 编辑器", () => {
       client: null,
       scene: null,
       resources: null,
+      settings: null,
       serverTime: 1,
     });
     expect(state.type === "editor_state" && state.client).toBeNull();
@@ -635,6 +768,7 @@ describe("协议：服务端 → 编辑器", () => {
         ok: true,
         at: 1,
       },
+      settings: null,
       serverTime: 2,
     });
     expect(ready.type === "editor_state" && ready.resources?.fileCount).toBe(12);
@@ -653,6 +787,7 @@ describe("协议：服务端 → 编辑器", () => {
         at: 3,
         reason: "zip 解压失败",
       },
+      settings: null,
       serverTime: 4,
     });
     expect(failed.type === "editor_state" && failed.resources?.reason).toBe("zip 解压失败");

@@ -158,6 +158,17 @@ export class DocumentHistory<T> {
     }
   }
 
+  /**
+   * 丢掉重做栈（撤销栈不动）。
+   *
+   * 给「两套历史共用一个撤销入口」的编辑器用：一旦在**另一条轨道**上产生了新的修改，
+   * 这条轨道上那些重做记录就属于一条已经不存在的未来——留着它们会让「重做」跳回旧状态。
+   * 正常单轨使用时不需要它（`apply` 自己就会清空重做栈）。
+   */
+  clearRedo(): void {
+    this.redoStack.length = 0;
+  }
+
   undo(): boolean {
     const entry = this.undoStack.pop();
     if (entry === undefined) {

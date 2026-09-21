@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { createSoundObject, type SceneObjectDoc } from "@dts/document";
+import { createSoundObject, type SceneObjectDoc, type SoundLayer } from "@dts/document";
 import { InspectorPanel } from "../src/panels/inspector/InspectorPanel";
 import { soundDeliveryHint, soundPlayBlockedReason } from "../src/panels/inspector/SoundFields";
 import { displayRectOf } from "../src/panels/scene/display";
@@ -54,7 +54,7 @@ const TREE: ResourceTreeNode[] = [
   },
 ];
 
-function sound(clips: readonly string[] = [], layer: "bgm" | "sfx" = "sfx"): SceneObjectDoc {
+function sound(clips: readonly string[] = [], layer: SoundLayer = "sfx"): SceneObjectDoc {
   // 摆在场景正中（和实体一样）：没有贴图时显示矩形是 64×64 的兜底矩形，画内置音频徽标
   return createSoundObject({ id: "sound-1", name: "脚步", clips, layer, position: { x: 0, y: 0 } });
 }
@@ -195,26 +195,48 @@ describe("属性面板：声音组", () => {
     expect(screen.getByTestId("inspector-object-scale")).toBeDefined();
   });
 
-  it("层级是四档下拉：默认音效，改成背景音乐写进文档（可撤销）", () => {
+  it("层级只有音效 / 旁白两档（背景音乐已改成弹框）：改成旁白写进文档（可撤销）", () => {
     seedScene([sound([CLIP])], ["sound-1"]);
     render(<InspectorPanel />);
 
     const select = screen.getByTestId("sound-layer") as HTMLSelectElement;
     expect(select.value).toBe("sfx");
-    expect(Array.from(select.options).map((option) => option.text)).toEqual([
-      "背景音乐",
-      "环境音",
-      "音效",
-      "语音",
-    ]);
+    expect(Array.from(select.options).map((option) => option.text)).toEqual(["音效", "旁白"]);
 
-    fireEvent.change(select, { target: { value: "bgm" } });
-    expect(soundOf("sound-1")?.layer).toBe("bgm");
+    fireEvent.change(select, { target: { value: "voice" } });
+    expect(soundOf("sound-1")?.layer).toBe("voice");
     expect(useEditorStore.getState().canUndo).toBe(true);
 
     // 撤销回到音效（层级是文档数据，不是界面偏好）
     act(() => useEditorStore.getState().undo());
     expect(soundOf("sound-1")?.layer).toBe("sfx");
+  });
+
+  it("老文件里写着背景音乐层的对象：下拉里照旧显示它，并给一条「已改成弹框」的提示", () => {
+    seedScene([sound([CLIP], "bgm")], ["sound-1"]);
+    render(<InspectorPanel />);
+
+    const select = screen.getByTestId("sound-layer") as HTMLSelectElement;
+    // 不悄悄替用户改数据：值还是 bgm，但多了一条说明
+    expect(select.value).toBe("bgm");
+    expect(Array.from(select.options).map((option) => option.text)).toEqual([
+      "背景音乐（已改为弹框）",
+      "音效",
+      "旁白",
+    ]);
+    expect(screen.getByTestId("sound-layer-legacy-bgm").textContent).toContain("背景音乐已改成顶栏「音乐」弹框");
+  });
+
+  it("老背景音乐对象点「播放」：就地说明去哪儿搬，不发那条注定被拒的命令", () => {
+    seedScene([sound([CLIP], "bgm")], ["sound-1"]);
+    render(<InspectorPanel />);
+
+    fireEvent.click(screen.getByTestId("sound-play"));
+
+    // 没有记账（前端那边也会拒这条命令），运行日志里写清了原因
+    expect(useEditorStore.getState().soundPlayback.layers.bgm).toBeUndefined();
+    const messages = useEditorStore.getState().runtime.logs.map((entry) => entry.message);
+    expect(messages.some((line) => line.includes("背景音乐已改成顶栏「音乐」弹框"))).toBe(true);
   });
 
   it("行序是 层级 → 音频 → 编辑音频… → 播放；小方块全列在「音频」那行，开窗口的按钮**单独一行**", () => {
@@ -247,6 +269,24 @@ describe("属性面板：声音组", () => {
     // 第一条默认是选中的那条（新建时把第一条当选中）
     expect(chips()[0]?.getAttribute("data-selected")).toBe("true");
     expect(chips()[1]?.getAttribute("data-selected")).toBe("false");
+  });
+
+  it("对象自己没起名字时：小方块显示**音频文件自己的显示名**（「音频文件」窗口里配的）", () => {
+    seedScene([sound([CLIP, CLIP2])], ["sound-1"]);
+    // 项目级标注：只给第一条起名，第二条不动
+    useEditorStore.setState({
+      doc: { ...useEditorStore.getState().doc, audioMeta: { [CLIP]: { name: "开场曲" } } },
+    });
+    render(<InspectorPanel />);
+
+    expect(chips()[0]?.textContent).toBe("开场曲");
+    expect(chips()[1]?.textContent).toBe("step2");
+
+    // 对象自己那份名字是**覆盖**：两边都写时以对象为准
+    act(() => {
+      useEditorStore.getState().setSoundClipName("sound-1", CLIP, "这一幕的脚步");
+    });
+    expect(chips()[0]?.textContent).toBe("这一幕的脚步");
   });
 
   it("点小方块 = 换选（单选，写进文档、可撤销）；再点选中的那条 = 取消选中", () => {

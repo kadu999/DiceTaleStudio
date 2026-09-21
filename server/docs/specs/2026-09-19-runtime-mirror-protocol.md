@@ -8,15 +8,23 @@
 > 所以同样靠版本握手拦住；同日再升到 **协议 v5**：地图 / 精灵多了**视频**
 > （`video` + `play_video` / `pause_video` / `resume_video` / `stop_video`），理由与 v3 完全相同；
 > 再升到 **协议 v6**：声音补齐 `pause_sound` / `resume_sound`（编辑器里「播放声音对象」与「视频」
-> 两组 UI 的控件行完全一致），同样是新增命令）。取代
+> 两组 UI 的控件行完全一致），同样是新增命令；2026-09-21 再升到 **协议 v7**：**全局背景音乐**
+> （项目级设置）落地——新增 `settings_push` / `project_settings` 两条消息与 `play_bgm` / `pause_bgm` /
+> `resume_bgm` / `stop_bgm` 四条命令，声音层级从四档收成三档；2026-09-22 升到 **协议 v8**：
+> **背景音乐与项目设置解耦**——`project_settings.audio.bgm` 只剩音量（歌单 / 默认曲 / 循环不再下发），
+> 曲目清单**就是项目 `Assets/audio/` 下的音频**，由编辑器弹框点一首、发一条 `play_bgm{clip}`；
+> 命令那一组不变，但载荷形状变了，所以照旧 +1）。取代
 > [`2026-09-18-frontend-integration-contract.md`](2026-09-18-frontend-integration-contract.md)
 > （那份写的是「前端上报数据、后台按 id 寻址动作」的老模型，已整层删除）。
 
 ## 一句话
 
 **后台（编辑器文档）是唯一真源，前端只是它的镜像 + 播放器**：
-编辑器把当前场景整份推给服务端，服务端缓存并转发给前端，前端按对象 `id` 建 / 改 / 删自己的对象。
-命令（如播放声音）只是**触发器**——数据在场景里，命令里不带数据。
+编辑器把当前场景整份推给服务端（项目级的全局设置另外一条消息），服务端缓存并转发给前端，
+前端按对象 `id` 建 / 改 / 删自己的对象。
+命令（如播放声音）只是**触发器**——数据在场景里，命令里基本不带数据
+（唯一的例外是 `play_bgm{clip}`：曲目清单不在任何对象上、也不在项目设置里——它就是项目
+`Assets/audio/` 下的音频，DM 在弹框里点哪一首，命令就说哪一首）。
 
 ## 门控：没点「运行」，前端连不上
 
@@ -57,16 +65,18 @@
 | E→S | `runtime_start` | — | 点「运行」；幂等 |
 | E→S | `runtime_stop` | — | 点「编辑」；关闸 |
 | E→S | `scene_push` | `scene: SceneDoc \| null` | 推当前场景（整份）；`null` = 没打开场景 |
+| E→S | `settings_push` | `settings: ProjectSettings \| null` | 推**项目级全局设置**（v7 起；v8 起只有三档音量）；`null` = 没打开项目。与场景分开一条消息，因为**它跨场景有效** |
 | E→S | `editor_command` | `requestId`, `command` | 下发一条命令给前端 |
 | E→S | `editor_refresh` | — | 要一份当前运行态 |
-| S→E | `editor_state` | `runtimeActive`, `client`, `scene`, `resources`, `serverTime` | 连接 / 断开 / 场景更新 / 开关闸时推 |
-| S→E | `editor_command_result` | `requestId`, `ok`, `reason?`, `effects?` | 前端回执（5s 不回 → `editor_error`） |
+| S→E | `editor_state` | `runtimeActive`, `client`, `scene`, `resources`, `settings`, `serverTime` | 连接 / 断开 / 场景或设置更新 / 开关闸时推 |
+| S→E | `editor_command_result` | `requestId`, `ok`, `reason?`, `effects?` | 前端回执（15s 不回 → `editor_error`） |
 | S→E | `editor_log` | `level`, `message`, `time` | 服务端日志（「前端已连接」等直接进运行日志） |
 | S→E | `editor_error` | `requestId?`, `reason` | 明确失败：前端未连接 / 未进入运行态 / 超时 |
 
 - `client = { name, version, connectedAt } | null`
 - `scene = { name, objectCount, updatedAt } | null`（前端镜像到哪了）
 - `resources = { project, fingerprint, fileCount, bytes, ok, at, reason? } | null`（前端本地资源包到哪了，见下）
+- `settings = { updatedAt } | null`（已推下去的全局设置摘要；v8 起设置里只有音量，所以不报内容）
 
 **推送时机**：进运行态时推一次；之后文档一变就推（编辑器去抖 **200ms** + 内容去重，
 撤销回原样 / 画布重绘不会空推）；**切场景立刻推**（不等去抖——对 DM 而言这就是「换台」，
@@ -109,18 +119,21 @@
 | `image` / `map.image` | 资源逻辑 ID → `GET /api/resources/raw?id=…` 取纹理；没图时按 `kind` 上色占位 |
 | `map.cells` | RLE（`[[掩码, 格数], …]`）——掩码值与 `@dts/grid` 的 `CellMask` / Unity 的 `GridCellType` 完全一致 |
 | `map.fog` | **战争雾**：`enabled` = **总开关**（协议 v4 起；缺省算开，v10–v12 的文件里「有 `fog`」就等于「开着」），`regions` = 哪几个「区域位」算雾区（区域位就是 `cells` 里那些位，任意可绘制位都行，如 `[1, 8]` = 区域1 + 区域4）。**只有 `enabled && regions.length > 0` 前端才建那一层雾**（关掉是真的拆掉，不是画了再藏），据此挑出**雾格子**、生成一张像素遮罩；**哪里被揭示了不在数据里**——那是运行态，由下面两条命令驱动，不写文档、也不随 `scene_sync` 回来 |
-| `sound` | `{ clips, picked, layer }`：前端播的就是 `picked` 那条；`layer` ∈ `bgm/ambient/sfx/voice`，同层同时只响一条 |
+| `sound` | `{ clips, picked, layer }`：前端播的就是 `picked` 那条；`layer` ∈ `bgm/sfx/voice`（v7 起三档——原「环境音」并进背景音乐），同层同时只响一条。`layer: "bgm"` 的老对象前端会**明确拒掉**（背景音乐已改成编辑器顶栏「音乐」弹框，走 `play_bgm` 那一组） |
 | `video` | **视频**（v14 起，只有地图 / 精灵会带）：`{ enabled, clips, picked, loop, audio }`——总开关、加进来的视频、放哪一条、循不循环、出不出视频自带的声音。收到 `play_video` 时前端在**这个对象自己的矩形**上建一层视频（`Presentation/VideoOverlay.cs`）；`enabled` 缺省 `true`、`loop` / `audio` 缺省 `false`（放一遍、静音）；关掉 `enabled` 时前端连那一层都不建，播放类命令会被明确拒掉。`names`（显示名）**不进协议** |
 | `teleport { targets, picked }` | **传送阵**：`targets` = 候选场景名清单，`picked` = 现在选中的那一张（与 `sound.clips` / `sound.picked` 同一套形状）。**前端不用它**：触发传送阵 = 编辑器切换当前场景 → 整份 `scene_push` 下来，前端只管换镜像。前端也**不给它建可见物**（和 `PlaySound` 一样：动作对象一个 GameObject 都不建），数据留在镜像里即可 |
+| `project_settings` | **项目级全局设置**（v7 起，**不在场景里**，由上面那条单独下发）。**v8 起只有三档音量**：`{ audio: { bgm: { volume }, sfx: { volume }, voice: { volume } } }`（v7 那版里的 `bgm.clips` / `picked` / `loop` 已删除——曲目清单就是项目 `Assets/audio/` 下的音频，放哪一首由 `play_bgm{clip}` 说）。前端**收到即生效**，不需要命令；背景音乐**恒循环** |
 
 ## 命令
 
 | kind | 载荷 | 前端行为 |
 |---|---|---|
-| `play_sound` | `{ objectId, layer }` | 从**镜像里的那个对象**读 `sound.picked`，在该层播放（同层顶替） |
+| `play_sound` | `{ objectId, layer }` | 从**镜像里的那个对象**读 `sound.picked`，在该层播放（同层顶替）；`layer` 只能是音效 / 旁白 |
 | `stop_sound` | `{ layer }` | 停掉该层 |
 | `pause_sound` | `{ layer }` | **暂停**该层（v6 起；同层只响一条，所以「暂停这一层」= 暂停当前那条） |
 | `resume_sound` | `{ layer }` | 从暂停处**继续**放该层（v6 起） |
+| `play_bgm` | `{ clip }` | **放 / 切换到指定的那一首**（v7 起）。唯一带数据的一条命令：曲目清单不在任何对象上、也不在项目设置里——它就是项目 `Assets/audio/` 下的音频，编辑器弹框里点哪一首就说哪一首。重复放同一首 = 从头重播 |
+| `pause_bgm` / `resume_bgm` / `stop_bgm` | — | 背景音乐的暂停 / 继续 / 停止（v7 起）。`pause_bgm` 赶在取音频完成之前到时，前端记下意图、加载落地后立刻补一次暂停（编辑器补发暂停态是「先放再暂停」两条连发） |
 | `erase_mask` | `{ objectId, stroke: { points, radius, softness } }` | 在**镜像里那张地图**的雾层上，沿这笔**轨迹**擦出一条软边（见下） |
 | `reveal_fog_region` | `{ objectId, region, revealed }` | 含该区域位的格子**整片揭示**（`true`）/ **整片盖回**（`false`） |
 | `play_video` | `{ objectId }` | 在这个对象自己的矩形上放它 `video.picked` 那一条（**命令里不带数据**：放哪条 / 循环 / 声音都从镜像里读） |
@@ -143,8 +156,9 @@
 **实现进度**：命令链路（转发 / 回执 / 超时 / 日志）已通，战争雾两条命令**前后端都已实现**
 （编辑器 Mask 窗口擦除 / 整区开关 → 前端雾层；前端进程不重启的话揭示状态会留着，重开 Unity 回到未探索，
 编辑器在同一次运行里会把记下的轨迹补发一遍）。
-前端 `play_sound` 的**真出声**（取音频 + 按层播放）是下一步——现在它如实回 `ok:false` 并说明
-「镜像里该播哪一条」，编辑器日志里看得见失败原因，不会假装成功、也不会超时。
+**声音（v7 起）也真的出声了**：前端按逻辑 ID 取音频（本地资源包优先、回落 `/api/resources/raw`），
+三条通道（背景音乐 / 音效 / 旁白）各一个 `AudioSource`，音量来自全局设置、背景音乐恒循环；
+取音频是异步的，所以回执在**加载完成后**发（成功报「正在播放 X」、失败报拿不到的原因）。
 **视频四条命令也已经实现**（v5）：前端按 URL 放本地资源包 / 服务端里的那份视频，画面盖在对象
 自己的矩形上；解码失败只在 Unity 控制台报（回执是同步的，协议里没有「晚到的失败」这条通道）。
 
@@ -152,13 +166,15 @@
 
 | 文件 | 职责 |
 |---|---|
-| `Data/SceneModel.cs` | 镜像模型（与 `SceneDoc` 同构） |
-| `Data/SceneParser.cs` + `Data/JsonParser.cs` + `Data/GridRle.cs` | 解析场景 / RLE 解码（JsonUtility 读不了嵌套数组） |
+| `Data/SceneModel.cs` | 镜像模型（与 `SceneDoc` 同构）+ `MirrorSettings`（项目级全局设置） |
+| `Data/SceneParser.cs` + `Data/SettingsParser.cs` + `Data/JsonParser.cs` + `Data/GridRle.cs` | 解析场景 / 设置 / RLE 解码（JsonUtility 读不了嵌套数组） |
 | `Network/Protocol.cs` | 协议常量、出站 DTO、`ws://…/client` → `http://…` 推导 |
 | `Network/ServerConnection.cs` | WS 连接（未开闸时握手被拒 = 正常现象，只提示一次并重试） |
 | `Network/ClientSession.cs` | 握手 / 心跳 / 把消息变成事件 |
 | `Logic/SceneMirror.cs` | 按 id 增 / 改 / 删视图 |
-| `Logic/CommandRouter.cs` | 命令 → 动作 → 回执 |
+| `Logic/CommandRouter.cs` | 命令 → 动作 → 回执（声音类命令的回执在音频加载完成后发） |
+| `Presentation/AudioPlayerManager.cs` | 三条音频通道（背景音乐恒循环 / 音效一次性 / 旁白+字幕），音量来自全局设置；`StopAll` 在会话结束时停掉一切 |
+| `Presentation/AudioClipLoader.cs` | 按逻辑 ID 取音频（本地资源包优先、回落服务端；带缓存 / 去重 / 失败记忆） |
 | `Presentation/SceneObjectView.cs` | 一个对象一块贴地面片（位置 / 缩放 / 激活 / 显示顺序 / 取图）；**开着战争雾且指定了雾区的地图**再多一个 `FogOverlay` 子物体（`map.fog.enabled` 关着就拆掉） |
 | `Presentation/FogOfWar.cs` | 战争雾层：按 `map.fog.regions` + `map.cells` 生成像素遮罩（与编辑器预览同一张尺寸），按 `erase_mask` / `reveal_fog_region` 揭示；揭示状态留在组件里，数据变了「重填 + 重放」 |
 | `Presentation/VideoOverlay.cs` | 视频层：按 URL 放（本地资源包优先、否则服务端原始字节），盖在**对象自己的矩形**上、显示顺序在战争雾之下；首帧就绪前不显示，`stop_video` 拆掉整个子物体 |

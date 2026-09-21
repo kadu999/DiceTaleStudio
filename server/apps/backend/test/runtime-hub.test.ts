@@ -604,6 +604,110 @@ describe("运行态：门控 + 场景镜像中继", () => {
     expect(order.indexOf("scene_sync")).toBeGreaterThan(order.indexOf("resources_prepare"));
   });
 
+  /** 一份最小全局设置：只有三档音量（v16 起歌单不在设置里）。 */
+  function sampleSettings(volume = 0.5) {
+    return {
+      audio: {
+        bgm: { volume },
+        sfx: { volume: 0.8 },
+        voice: { volume: 1 },
+      },
+    };
+  }
+
+  it("顺序：前端一连上先收到 resources_prepare → project_settings → scene_sync（音量先于场景到）", async () => {
+    const editor = await startEditor();
+    send(editor.socket, { type: "settings_push", settings: sampleSettings() });
+    send(editor.socket, { type: "scene_push", scene: sampleScene("场景1", true) });
+    await editor.inbox.waitFor<ServerToEditorMessage>(
+      (message) => typeOf(message) === "editor_state" && (message as { scene?: unknown }).scene !== null,
+    );
+
+    const order: string[] = [];
+    const client = connect(`ws://${baseUrl}/client`);
+    sockets.push(client.socket);
+    client.socket.on("message", (data) => {
+      order.push((JSON.parse(data.toString()) as { type: string }).type);
+    });
+    await waitOpen(client.socket);
+
+    const settings = await client.inbox.waitFor<ServerToClientMessage>(
+      (message) => typeOf(message) === "project_settings",
+    );
+    if (settings.type !== "project_settings") {
+      throw new Error("类型不符");
+    }
+
+    expect(settings.settings?.audio.bgm.volume).toBe(0.5);
+    expect(order.indexOf("project_settings")).toBeGreaterThan(order.indexOf("resources_prepare"));
+    expect(order.indexOf("scene_sync")).toBeGreaterThan(order.indexOf("project_settings"));
+  });
+
+  it("运行中改设置：整份推给已连接的前端", async () => {
+    const editor = await startEditor();
+    const client = await startClient();
+    await client.inbox.waitFor<ServerToClientMessage>((message) => typeOf(message) === "project_settings");
+
+    send(editor.socket, { type: "settings_push", settings: sampleSettings(0.2) });
+
+    const pushed = await client.inbox.waitFor<ServerToClientMessage>(
+      (message) =>
+        typeOf(message) === "project_settings" &&
+        (message as { settings?: { audio?: { bgm?: { volume?: number } } } }).settings?.audio?.bgm
+          ?.volume === 0.2,
+    );
+    if (pushed.type !== "project_settings") {
+      throw new Error("类型不符");
+    }
+
+    expect(pushed.settings?.audio.sfx.volume).toBe(0.8);
+    expect(pushed.settings?.audio.voice.volume).toBe(1);
+  });
+
+  it("编辑器看到的设置摘要：只报「什么时候推的」（歌单不在设置里了）", async () => {
+    const editor = await startEditor();
+    send(editor.socket, { type: "settings_push", settings: sampleSettings(0.3) });
+
+    const state = await editor.inbox.waitFor<ServerToEditorMessage>(
+      (message) => typeOf(message) === "editor_state" && (message as { settings?: unknown }).settings !== null,
+    );
+    if (state.type !== "editor_state") {
+      throw new Error("类型不符");
+    }
+
+    expect(state.settings?.updatedAt).toBeGreaterThan(0);
+  });
+
+  it("退出运行态：设置缓存跟着场景一起清掉", async () => {
+    const editor = await startEditor();
+    send(editor.socket, { type: "settings_push", settings: sampleSettings() });
+    await editor.inbox.waitFor<ServerToEditorMessage>(
+      (message) => typeOf(message) === "editor_state" && (message as { settings?: unknown }).settings !== null,
+    );
+
+    send(editor.socket, { type: "runtime_stop" });
+    const cleared = await editor.inbox.waitFor<ServerToEditorMessage>(
+      (message) => typeOf(message) === "editor_state" && (message as { settings?: unknown }).settings === null,
+    );
+    if (cleared.type !== "editor_state") {
+      throw new Error("类型不符");
+    }
+
+    expect(cleared.settings).toBeNull();
+
+    // 再次开闸：前一次设置不该复活（旧运行态不留痕）
+    send(editor.socket, { type: "runtime_start" });
+    const client = await startClient();
+    const settings = await client.inbox.waitFor<ServerToClientMessage>(
+      (message) => typeOf(message) === "project_settings",
+    );
+    if (settings.type !== "project_settings") {
+      throw new Error("类型不符");
+    }
+
+    expect(settings.settings).toBeNull();
+  });
+
   it("还没推过场景时：resources_prepare 的 project 是 null（前端照旧等场景）", async () => {
     await startEditor();
     const client = await startClient();

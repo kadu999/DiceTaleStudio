@@ -44,9 +44,13 @@ namespace DiceTale
             // 没有则挂一个），经 Game.Instance.X 访问
             InputManager = GetOrCreateManager<InputManager>();
             InitializeInputSource(); // 输入方案：按开关装模拟源或压板设备源
+            // **音频管理器要在 BackendManager 之前**：后端那边装配命令路由时要拿到播放器
+            // （命令一来就出声）。顺序反了的话 `Awake` 里那次取到的是 null——真机上就踩过一次：
+            // `play_bgm` 回执写着「前端没有装配音频播放器」。
+            // 命令路由本身也会在用到时再解析一次（见 `CommandRouter.Audio`），这里只是让首次装配就完整。
+            AudioPlayerManager = GetOrCreateManager<AudioPlayerManager>();
             BackendManager = GetOrCreateManager<BackendManager>();
             UIManager = GetOrCreateManager<UIManager>();
-            AudioPlayerManager = GetOrCreateManager<AudioPlayerManager>();
             // 拍照点击发光：拍照指针点地时点击处点光闪烁（参考 Scene002 Photograph02 预设）
             PhotoClickGlow = GetOrCreateManager<PhotoClickGlow>();
         }

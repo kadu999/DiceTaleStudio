@@ -2,7 +2,7 @@ import { useEditorStore } from "../state/editor-store";
 import type { SceneSaveState } from "../state/editor-store";
 import type { TransformTool } from "@dts/renderer";
 
-/** 场景保存状态的显示文案（自动存与手动保存共用同一个状态）。 */
+/** 保存状态的显示文案（自动存与手动保存共用同一个状态；场景与工程文件各有各的）。 */
 const SAVE_STATE_LABELS: Record<SceneSaveState, string> = {
   saved: "已保存",
   pending: "未保存",
@@ -30,6 +30,7 @@ export function StatusBar(): React.JSX.Element {
     (state) => state.scenes.find((scene) => scene.name === state.activeSceneName)?.name ?? "—",
   );
   const saveState = useEditorStore((state) => state.sceneSaveState);
+  const projectSaveState = useEditorStore((state) => state.projectSaveState);
   const selection = useEditorStore((state) => state.selectedObjectIds);
   const status = useEditorStore((state) => state.runtime.status);
   const runtimeActive = useEditorStore((state) => state.runtime.runtimeActive);
@@ -57,6 +58,16 @@ export function StatusBar(): React.JSX.Element {
         className={saveState === "error" ? "text-[var(--color-editor-danger)]" : undefined}
       >
         {SAVE_STATE_LABELS[saveState]}
+      </span>
+      {/* 工程文件（全局设置）的保存状态单独一格：它与场景是两份文件，
+          合起来说「已保存」会让人以为两边都落了盘 */}
+      <span
+        data-testid="status-project-save"
+        data-state={projectSaveState}
+        className={projectSaveState === "error" ? "text-[var(--color-editor-danger)]" : undefined}
+        title="工程文件（project.json：全局设置）的保存状态"
+      >
+        工程{SAVE_STATE_LABELS[projectSaveState]}
       </span>
       <span data-testid="status-active-scene">当前场景 {activeSceneName}</span>
       <span data-testid="status-selection">已选 {selection.length}</span>

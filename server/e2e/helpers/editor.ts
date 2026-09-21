@@ -18,8 +18,11 @@ export type LeftTab = "assets" | "hierarchy";
  * （见 `scene-transform.spec.ts` 顶部那条分工说明），所以这里是**复述**——
  * 升级场景格式时忘了改这一处，`hierarchy` / `scene-menu` 里那几条「旧文件自动回写」
  * 的用例会立刻指出来。
+ *
+ * 要有意制造「旧版本文件」时别用它：自己写那个版本号（`formatVersion: 4` 之类），
+ * 并预期编辑器会把它升上来回写一次。
  */
-export const CURRENT_SCENE_FORMAT_VERSION = 14;
+export const CURRENT_SCENE_FORMAT_VERSION = 18;
 
 /** 用接口建一个真项目（含 `project.json`），返回项目名。 */
 export async function newProject(request: APIRequestContext): Promise<string> {
@@ -77,11 +80,56 @@ export async function enterEditor(page: Page): Promise<void> {
 /**
  * 点菜单栏上的一个一级菜单（工程 / 场景 / 编辑 / 视图 / 运行）。
  *
- * **限定在菜单栏里**：属性面板的分组标题与菜单同名（例如「场景」），
- * 全页按名字找会命中两个按钮（Playwright 的严格模式会直接失败）。
+ * **限定在菜单栏里、并且只认下拉触发器**：属性面板的分组标题可能与菜单同名（例如「场景」），
+ * 而菜单栏右侧的模式开关又叫「编辑 / 运行」——按名字找会命中多个按钮
+ * （Playwright 的严格模式会直接失败）。下拉触发器带 `aria-haspopup="menu"`，
+ * 模式开关没有，所以拿它当分辨依据最稳。
  */
 export async function openMenu(page: Page, label: string): Promise<void> {
-  await page.getByTestId("menu-bar").getByRole("button", { name: label, exact: true }).click();
+  await page
+    .getByTestId("menu-bar")
+    .locator('button[aria-haspopup="menu"]')
+    .filter({ hasText: label })
+    .first()
+    .click();
+}
+
+/**
+ * 打开顶栏的「音乐」弹框（背景音乐：点一首就播 / 暂停 · 继续 / 停止）。
+ *
+ * 单独抽出来是因为好几条用例要用它：顶栏那个按钮只是**打开弹框**，
+ * 打开之后要找的行 / 按钮都在弹框里（`bgm-track` / `bgm-pause` / `bgm-stop`）。
+ *
+ * **已经是开着的就别再点**：再点一次触发器反而是「又开一次」，没有意义。
+ * 与 `openLeftTab` 的「已经是这个页签就别再点」同一条规矩。
+ */
+export async function openBgmDialog(page: Page): Promise<void> {
+  if (!(await page.getByTestId("bgm-dialog").isVisible().catch(() => false))) {
+    await page.getByTestId("bgm-control").click();
+  }
+
+  await expect(page.getByTestId("bgm-dialog")).toBeVisible();
+}
+
+/**
+ * 收起顶栏的「音乐」弹框。
+ *
+ * **弹框开着的时候它拦住页面**（Radix 的模态对话框会把 `pointer-events: none` 打到
+ * `body` 上）：不收起来，接下来点任何别的地方都会一直等「元素能收到指针事件」，直到用例超时。
+ * 所以「点完弹框里的东西要去点别处」时，先调它。
+ */
+export async function closeBgmDialog(page: Page): Promise<void> {
+  if (!(await page.getByTestId("bgm-dialog").isVisible().catch(() => false))) {
+    return;
+  }
+
+  if (await page.getByTestId("bgm-close").isVisible().catch(() => false)) {
+    await page.getByTestId("bgm-close").click();
+  } else {
+    await page.keyboard.press("Escape");
+  }
+
+  await expect(page.getByTestId("bgm-dialog")).toBeHidden();
 }
 
 /**
@@ -477,6 +525,131 @@ export async function readSceneVideo(
   };
 
   return file.objects?.find((object) => object.kind === kind)?.video;
+}
+
+/**
+ * 读**工程文件**里的全局设置（`project.json` 的 `settings.audio`）。
+ *
+ * v16 起这里**只有三档音量**：背景音乐的歌单 / 默认曲 / 循环不再进文档
+ * （清单就是项目 `Assets/audio/` 下的音频），所以「改完音量有没有落盘」直接看文件即可，
+ * 而「有没有把歌单偷偷写进去」也是看它。
+ * 老工程文件里没有这一项时返回 `undefined`（`parseProjectFile` 会补一份缺省的并要求回写）。
+ */
+export async function readProjectSettings(
+  request: APIRequestContext,
+  project: string,
+): Promise<
+  | {
+      bgm?: { clips?: readonly string[]; picked?: string; names?: Record<string, string>; loop?: boolean; volume?: number };
+      sfx?: { volume?: number };
+      voice?: { volume?: number };
+    }
+  | undefined
+> {
+  const id = `project:${project}/project.json`;
+  const response = await request.get(`/api/resources/text?id=${encodeURIComponent(id)}`);
+  if (!response.ok()) {
+    throw new Error(`读工程文件失败：HTTP ${response.status()}（${id}）`);
+  }
+
+  const file = JSON.parse(await response.text()) as {
+    formatVersion?: number;
+    settings?: {
+      audio?: {
+        bgm?: { clips?: string[]; picked?: string; names?: Record<string, string>; loop?: boolean; volume?: number };
+        sfx?: { volume?: number };
+        voice?: { volume?: number };
+      };
+    };
+  };
+
+  return file.settings?.audio;
+}
+
+/**
+ * 读**工程文件**里的音频文件标注（`project.json` 的 `audioMeta`，v17 起；v18 起标签是**整数 ID**）。
+ *
+ * 形状：`资源逻辑 ID → { name?, tags?: number[] }`；没整理过音频时整个字段不在文件里 → `undefined`
+ * （**不补空壳**：`{}` 与「没有这一项」是两回事）。
+ */
+export async function readProjectAudioMeta(
+  request: APIRequestContext,
+  project: string,
+): Promise<Record<string, { name?: string; tags?: number[] }> | undefined> {
+  const id = `project:${project}/project.json`;
+  const response = await request.get(`/api/resources/text?id=${encodeURIComponent(id)}`);
+  if (!response.ok()) {
+    throw new Error(`读工程文件失败：HTTP ${response.status()}（${id}）`);
+  }
+
+  const file = JSON.parse(await response.text()) as {
+    audioMeta?: Record<string, { name?: string; tags?: number[] }>;
+  };
+
+  return file.audioMeta;
+}
+
+/**
+ * 读工程文件里的**标签表**（`audioTags`，v18 起）：**下标就是 tag ID**，值是这个 ID 的名字
+ * （`null` = 删掉的洞）。没有标签时整个字段不在文件里 → `undefined`。
+ */
+export async function readProjectAudioTags(
+  request: APIRequestContext,
+  project: string,
+): Promise<Array<string | null> | undefined> {
+  const id = `project:${project}/project.json`;
+  const response = await request.get(`/api/resources/text?id=${encodeURIComponent(id)}`);
+  if (!response.ok()) {
+    throw new Error(`读工程文件失败：HTTP ${response.status()}（${id}）`);
+  }
+
+  return (JSON.parse(await response.text()) as { audioTags?: Array<string | null> }).audioTags;
+}
+
+/**
+ * 直接把**音频标注 + 标签表**写进工程文件（v18 形状：`audioTags` 下标 = tag ID，文件里记整数）。
+ *
+ * 给「只关心按标签找 / 播」的用例用（编辑那套界面在 `audio-meta.spec.ts` 里单独验）。
+ * 版本故意写 4：编辑器打开时会升到当前版本并回写一次（与 `seedProjectDoc` 同一条规矩）。
+ */
+export async function seedProjectAudioMeta(
+  request: APIRequestContext,
+  project: string,
+  input: {
+    readonly tags: ReadonlyArray<string | null>;
+    readonly meta: Readonly<Record<string, { name?: string; tags?: readonly number[] }>>;
+  },
+): Promise<void> {
+  const doc = {
+    formatVersion: 4,
+    name: project,
+    items: { source: "item.xlsx", updatedAt: "2026-09-18", count: 0, items: [] },
+    audioTags: [...input.tags],
+    audioMeta: input.meta,
+  };
+
+  const response = await request.put(
+    `/api/resources/text?id=${encodeURIComponent(`project:${project}/project.json`)}`,
+    {
+      headers: { "content-type": "text/plain; charset=utf-8" },
+      data: `${JSON.stringify(doc, null, 2)}\n`,
+    },
+  );
+  expect(response.ok()).toBeTruthy();
+}
+
+/** 读工程文件的 `formatVersion`（迁移有没有把新形状回写进文件，看它）。 */
+export async function readProjectFormatVersion(
+  request: APIRequestContext,
+  project: string,
+): Promise<number | undefined> {
+  const id = `project:${project}/project.json`;
+  const response = await request.get(`/api/resources/text?id=${encodeURIComponent(id)}`);
+  if (!response.ok()) {
+    throw new Error(`读工程文件失败：HTTP ${response.status()}（${id}）`);
+  }
+
+  return (JSON.parse(await response.text()) as { formatVersion?: number }).formatVersion;
 }
 
 /** 把 RLE 游程展开成掩码数组（断言某一格画上了什么）。 */

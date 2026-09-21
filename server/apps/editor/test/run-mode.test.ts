@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   DOCUMENT_FORMAT_VERSION,
+  createEmptyProject,
   createSceneObject,
   type SceneObjectDoc,
 } from "@dts/document";
@@ -112,6 +113,7 @@ const editorState = (runtimeActive: boolean): unknown => ({
   client: null,
   scene: null,
   resources: null,
+  settings: null,
   serverTime: Date.now(),
 });
 
@@ -207,6 +209,10 @@ async function seedScene(
   }
 
   const calls = stubBackend(files);
+  // 工程文件也按**真实流程**装一次（`openProject` 就是 `resetDoc` + `loadScenes`）：
+  // v15 起全局设置住在 `project.json` 里，「有没有未保存改动」同样拿磁盘上的样子比
+  // （少了这一步，用例里的工程文件天生是「脏」的，退出运行会顺手写一次盘）
+  useEditorStore.getState().resetDoc(createEmptyProject(PROJECT));
   useEditorStore.setState({
     project: {
       list: [],
@@ -271,6 +277,7 @@ afterEach(() => {
       client: null,
       scene: null,
       resources: null,
+      settings: null,
       logs: [],
       lastError: "",
     },

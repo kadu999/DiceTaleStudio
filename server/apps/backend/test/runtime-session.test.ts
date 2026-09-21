@@ -26,16 +26,18 @@ function scene(name: string, objectCount: number): ScenePayload {
 }
 
 describe("RuntimeSession", () => {
-  it("初始：没开闸、没前端、没场景", () => {
+  it("初始：没开闸、没前端、没场景、没设置", () => {
     const session = new RuntimeSession();
     expect(session.runtimeActive).toBe(false);
     expect(session.client).toBeNull();
     expect(session.scene).toBeNull();
+    expect(session.settings).toBeNull();
     expect(session.snapshot).toEqual({
       runtimeActive: false,
       client: null,
       scene: null,
       resources: null,
+      settings: null,
     });
   });
 
@@ -111,6 +113,26 @@ describe("RuntimeSession", () => {
 
     session.stop();
     expect(session.snapshot.resources).toBeNull();
+  });
+
+  it("全局设置：快照只报「什么时候推的」（v16 起设置里只有三档音量），关闸一起清", () => {
+    const session = new RuntimeSession();
+    session.start();
+
+    session.setSettings({
+      audio: {
+        bgm: { volume: 0.6 },
+        sfx: { volume: 0.8 },
+        voice: { volume: 1 },
+      },
+    });
+
+    expect(session.settings?.audio.bgm.volume).toBe(0.6);
+    expect(session.snapshot.settings?.updatedAt).toBeGreaterThan(0);
+
+    session.stop();
+    expect(session.settings).toBeNull();
+    expect(session.snapshot.settings).toBeNull();
   });
 
   it("从场景里的资源 ID 推出项目名（前端据此先下资源包）", () => {

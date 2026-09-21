@@ -4,16 +4,18 @@ import {
   parseJsonMessage,
   parseServerToClient,
   type ClientToServerMessage,
+  type ProjectSettingsPayload,
   type ScenePayload,
 } from "@dts/protocol";
 
 /**
  * Mock 前端（假 Unity 客户端）。
  *
- * 它在新协议里的角色很小：**什么都不上报**，只做三件事——
+ * 它在新协议里的角色很小：**什么都不上报**，只做四件事——
  * 1. 连上（`/client` 只有在编辑器点「运行」之后才收，所以这里带重试）；
  * 2. 收到 `scene_sync` 就把镜像打印出来（场景名 + 每个对象的 id/kind/active/position）；
- * 3. 收到 `command` 回 `command_result`（这条路是给编辑器看回执的；真出声在 Unity 里）。
+ * 3. 收到 `project_settings` 就把全局设置打印出来（歌单 / 默认曲 / 三档音量）；
+ * 4. 收到 `command` 回 `command_result`（这条路是给编辑器看回执的；真出声在 Unity 里）。
  *
  * 用法：`pnpm --filter @dts/backend mock`（端口取 PORT，默认 1420）。
  * **先让编辑器进入运行态**，否则连接会被服务端以 503 拒（正常现象，会自动重试）。
@@ -92,6 +94,10 @@ class MockClient {
         this.applyScene(message.scene);
         return;
 
+      case "project_settings":
+        this.applySettings(message.settings);
+        return;
+
       case "command": {
         const { requestId, command } = message;
         // 真出声 / 真放视频在 Unity 里；这里只证明「后台控制前端」这条链路通了 + 回执
@@ -103,7 +109,9 @@ class MockClient {
           ok: false,
           reason: command.kind.endsWith("_video")
             ? "mock 前端不放视频（真实播放器是 Unity）"
-            : "mock 前端不出声（真实播放器是 Unity）",
+            : command.kind.endsWith("_bgm")
+              ? "mock 前端不放背景音乐（真实播放器是 Unity）"
+              : "mock 前端不出声（真实播放器是 Unity）",
         });
         console.log(`[mock] 已回执 ${requestId}（effects: ${effects.join("，")}）`);
         return;
@@ -138,6 +146,19 @@ class MockClient {
             : `  video=${object.video.picked || "(未选)"}（${object.video.clips.length} 条，循环=${object.video.loop}，声音=${object.video.audio}）`),
       );
     }
+  }
+
+  /** 全局设置（三档音量）也打印出来：音量改了在前端看得见。 */
+  private applySettings(settings: ProjectSettingsPayload | null): void {
+    if (settings === null) {
+      console.log("[mock] 全局设置已清空（编辑器没有打开的项目）");
+      return;
+    }
+
+    const { bgm, sfx, voice } = settings.audio;
+    console.log(
+      `[mock] 全局设置：音量 bgm=${bgm.volume} / sfx=${sfx.volume} / voice=${voice.volume}`,
+    );
   }
 
   private send(message: ClientToServerMessage): void {

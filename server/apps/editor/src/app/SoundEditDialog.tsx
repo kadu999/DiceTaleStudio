@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import type { SceneObjectDoc } from "@dts/document";
 import { useEditorStore } from "../state/editor-store";
+import { audioNameOf } from "../panels/audio-catalog";
 import { assetDisplayName } from "../panels/asset-info";
 import { assetDisplayPath, listAudioAssets } from "../panels/asset-picker";
 import { AudioPickerDialog } from "./AudioPickerDialog";
@@ -23,8 +24,10 @@ import { AudioPickerDialog } from "./AudioPickerDialog";
 /** 窗口里的一行：一条**已经加进来**的音频（可能已经不在项目里了）。 */
 interface SoundRow {
   readonly id: string;
-  /** 素材文件名（去掉扩展名）——名字输入框的占位。 */
+  /** 素材文件名（去掉扩展名）——没有任何标注时的兜底。 */
   readonly fileName: string;
+  /** 留空时显示成什么：**音频文件自己的显示名**，没有才用文件名（输入框的占位）。 */
+  readonly fallbackName: string;
   /** 项目内相对路径（`audio/step1.mp3`）；找不到的素材显示它自己的逻辑 ID。 */
   readonly path: string;
   readonly missing: boolean;
@@ -100,6 +103,7 @@ function SoundEditBody({
   const setSoundClipName = useEditorStore((state) => state.setSoundClipName);
   const addSoundClip = useEditorStore((state) => state.addSoundClip);
   const removeSoundClip = useEditorStore((state) => state.removeSoundClip);
+  const audioMeta = useEditorStore((state) => state.doc.audioMeta);
 
   /** 「选择音频」弹框开着没有（换个对象就收起来）。 */
   const [picking, setPicking] = useState(false);
@@ -119,6 +123,9 @@ function SoundEditBody({
     return {
       id,
       fileName: assetDisplayName(asset?.name ?? fileNameOf(id)),
+      // 输入框的占位 = **跟随的那一层**（音频文件自己的名字，没有才用文件名）：
+      // 留空时这一条会显示成它，作者一眼看得出「不改就是这个名字」
+      fallbackName: audioNameOf(audioMeta, id) ?? assetDisplayName(asset?.name ?? fileNameOf(id)),
       path: assetDisplayPath(id),
       missing: asset === undefined,
     };
@@ -208,9 +215,9 @@ function SoundEditRow({
         data-testid="sound-edit-name"
         data-clip={row.id}
         value={draft}
-        placeholder={row.fileName}
+        placeholder={row.fallbackName}
         aria-label={`${row.fileName} 的名字`}
-        title="给这个音频文件起个好认的名字（留空 = 用文件名）"
+        title="只给这一条声音对象改名（覆盖）；留空 = 跟随音频文件自己的名字（在「音频文件」窗口里改）"
         className="w-44 flex-none rounded border border-[var(--color-editor-border)] bg-black/30 px-1 py-0.5 text-[11px] outline-none placeholder:text-[var(--color-editor-text-dim)]"
         onChange={(event) => setDraft(event.target.value)}
         onBlur={commit}

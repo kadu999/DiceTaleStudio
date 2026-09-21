@@ -29,9 +29,13 @@ namespace DiceTale
         private CommandRouter commandRouter;
         private ResourceBundleCache bundleCache;
         private ResourceImageLoader imageLoader;
+        private AudioClipLoader audioLoader;
 
         /// <summary>服务端 HTTP 基地址（从 WebSocket 地址推导；取图走它）。</summary>
         public string HttpBaseUrl => Protocol.DeriveHttpBase(serverUrl);
+
+        /// <summary>当前那份项目级全局设置（三档音量）；还没收到时是一份缺省设置。</summary>
+        public MirrorSettings Settings { get; private set; } = new MirrorSettings();
 
         private void Awake()
         {
@@ -56,15 +60,69 @@ namespace DiceTale
             imageLoader.Initialize(HttpBaseUrl);
             imageLoader.Attach(bundleCache);
 
+            // 取音频（背景音乐 / 音效 / 旁白都用它）：与取图同一套「本地优先、远程兜底」
+            audioLoader = gameObject.AddComponent<AudioClipLoader>();
+            audioLoader.Initialize(HttpBaseUrl);
+            audioLoader.Attach(bundleCache);
+
             mirror = gameObject.AddComponent<SceneMirror>();
             mirror.Initialize(session, imageLoader, bundleCache);
 
             commandRouter = gameObject.AddComponent<CommandRouter>();
-            // 命令路由要资源包与 HTTP 地址：视频的「本地优先、远程兜底」在这里解析（见 `VideoUrlOf`）
-            commandRouter.Initialize(session, mirror, bundleCache, HttpBaseUrl);
+            // 命令路由要资源包、HTTP 地址与音频（视频 / 音频的「本地优先、远程兜底」都在这里解析）。
+            // 播放器由宿主 Game 持有：`Game.Awake` 里**先建它再建本组件**，所以这里通常拿得到；
+            // 拿不到也不致命——命令路由会在用到时再解析一次，真没有就如实回失败
+            var game = Game.Instance;
+            commandRouter.Initialize(
+                session,
+                mirror,
+                bundleCache,
+                HttpBaseUrl,
+                audioLoader,
+                game != null ? game.AudioPlayerManager : null);
+
+            // 项目级全局设置：收到就整套应用到播放器（音量立刻生效，不需要命令）
+            session.SettingsReceived += OnSettingsReceived;
+
+            // 会话结束（编辑器关闸 / 断线）：**停掉所有声音**——前端被踢下线后不该继续响
+            session.OnClosed += OnSessionClosed;
 
             // 立刻开始连：编辑器还没点「运行」时会被服务端拒（正常现象，连接会一直重试）
             connection.Connect(serverUrl);
+        }
+
+        private void OnDestroy()
+        {
+            if (session != null)
+            {
+                session.SettingsReceived -= OnSettingsReceived;
+                session.OnClosed -= OnSessionClosed;
+            }
+        }
+
+        private void OnSessionClosed()
+        {
+            var game = Game.Instance;
+            if (game != null && game.AudioPlayerManager != null)
+            {
+                game.AudioPlayerManager.StopAll();
+            }
+        }
+
+        private void OnSettingsReceived(MirrorSettings settings)
+        {
+            Settings = settings ?? new MirrorSettings();
+
+            var game = Game.Instance;
+            if (game != null && game.AudioPlayerManager != null)
+            {
+                game.AudioPlayerManager.ApplySettings(Settings);
+            }
+
+            Debug.Log(
+                $"[设置] 全局设置已应用：音量 bgm={Settings.audio.bgm.volume:0.##}" +
+                $" / sfx={Settings.audio.sfxVolume:0.##} / voice={Settings.audio.voiceVolume:0.##}" +
+                "（背景音乐放哪一首由 play_bgm 命令说）");
         }
     }
 }

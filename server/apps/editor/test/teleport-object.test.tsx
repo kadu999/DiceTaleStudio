@@ -77,6 +77,7 @@ afterEach(() => {
       client: null,
       scene: null,
       resources: null,
+      settings: null,
       logs: [],
       lastError: "",
     },

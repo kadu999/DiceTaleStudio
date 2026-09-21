@@ -48,12 +48,29 @@ namespace DiceTale
         public event Action<string> ResourcesPrepareRequested;
 
         /// <summary>
+        /// 项目级**全局设置**（v7 起；v8 起只剩三档音量）。
+        ///
+        /// `null` = 服务端还没有设置（编辑器没打开项目）——那种情况当成「一份缺省设置」用，
+        /// 音量回到缺省值。
+        /// </summary>
+        public event Action<MirrorSettings> SettingsReceived;
+
+        /// <summary>
         /// 会话变成 Ready（收到 `server_hello`，握手完成）。
         ///
         /// 资源包用它补报一次结果：`resources_ready` 必须是一份**合法会话**里的消息——
         /// 连接刚建立、还没握手完就发包，服务端（按协议）不认。
         /// </summary>
         public event Action SessionReady;
+
+        /// <summary>
+        /// 会话**结束**了（从 Ready 掉出去：编辑器关闸、被协议不符踢掉、网络断开）。
+        ///
+        /// 上层据此收拾「只在会话里成立」的东西——目前是**停掉所有声音**
+        /// （见 <see cref="BackendManager.OnSessionClosed"/>）：前端被踢下线后不该继续响，
+        /// 而且下一次连上来时编辑器会把该播的重新下发一遍。
+        /// </summary>
+        public event Action OnClosed;
 
         public ClientSessionState State { get; private set; } = ClientSessionState.Idle;
 
@@ -154,6 +171,11 @@ namespace DiceTale
                     ResourcesPrepareRequested?.Invoke(JsonParser.GetString(message, "project"));
                     return;
 
+                case Protocol.TypeProjectSettings:
+                    // 全局设置（三档音量）：收到即生效，不需要命令
+                    SettingsReceived?.Invoke(SettingsParser.Parse(JsonParser.GetObject(message, "settings")));
+                    return;
+
                 case Protocol.TypeCommand:
                     CommandReceived?.Invoke(ParseCommand(message));
                     return;
@@ -227,6 +249,8 @@ namespace DiceTale
             command.kind = JsonParser.GetString(node, "kind") ?? "";
             command.objectId = JsonParser.GetString(node, "objectId") ?? "";
             command.layer = JsonParser.GetString(node, "layer") ?? "";
+            // `play_bgm` 是唯一带数据的一条（清单在编辑器弹框里，点一首就发这条）
+            command.clip = JsonParser.GetString(node, "clip") ?? "";
             command.region = (int)JsonParser.GetNumber(node, "region");
             command.revealed = JsonParser.GetBool(node, "revealed");
 
@@ -256,7 +280,14 @@ namespace DiceTale
 
         private void SetState(ClientSessionState state)
         {
+            var wasReady = State == ClientSessionState.Ready;
             State = state;
+
+            // 从 Ready 掉出去 = 这一场会话结束了（只在那一刻通知一次）
+            if (wasReady && state != ClientSessionState.Ready)
+            {
+                OnClosed?.Invoke();
+            }
         }
     }
 }

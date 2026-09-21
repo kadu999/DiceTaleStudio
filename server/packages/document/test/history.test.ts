@@ -91,6 +91,26 @@ describe("补丁式历史：撤销 / 重做", () => {
     });
     expect(history.canRedo).toBe(false);
   });
+
+  it("clearRedo：只丢重做栈（撤销栈与当前值不动）——两套历史共用撤销入口时用", () => {
+    const history = new DocumentHistory<Doc>(initial());
+    history.apply("a", (draft) => {
+      draft.counter = 1;
+    });
+    history.undo();
+    expect(history.canRedo).toBe(true);
+
+    history.clearRedo();
+
+    expect(history.canRedo).toBe(false);
+    expect(history.canUndo).toBe(false);
+    expect(history.current.counter).toBe(0);
+    // 撤销栈没被动过：清完之后还能继续正常编辑与撤销
+    history.apply("b", (draft) => {
+      draft.counter = 2;
+    });
+    expect(history.undoLabel).toBe("b");
+  });
 });
 
 describe("补丁式历史：连续操作合并", () => {

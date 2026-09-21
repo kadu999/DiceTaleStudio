@@ -6,6 +6,8 @@ import {
   type ClientInfo,
   type CommandRequest,
   type EditorToServerMessage,
+  type ProjectSettingsInfo,
+  type ProjectSettingsPayload,
   type ResourcesInfo,
   type SceneInfo,
   type ScenePayload,
@@ -18,7 +20,8 @@ import {
  * 职责边界：**只负责协议与连接**，不碰文档、不改任何编辑态数据；
  * 收到的运行态交给上层（store）放进 `runtime` 切片。
  *
- * 新协议下编辑器只做三件事：声明运行态（开闸 / 关闸）、把**当前场景整份推下去**、下发命令。
+ * 新协议下编辑器只做四件事：声明运行态（开闸 / 关闸）、把**当前场景整份推下去**、
+ * 把**项目级全局设置**推下去（三档音量，v7 起）、下发命令。
  * 前端 → 服务端 → 编辑器的回执与日志按 `onCommandResult` / `onServerLog` 抛给上层。
  */
 
@@ -31,13 +34,15 @@ export interface RuntimeLogEntry {
   readonly time: string;
 }
 
-/** 服务端推来的运行态快照（「前端连没连 / 镜像是哪份场景 / 本地资源包下到哪了」）。 */
+/** 服务端推来的运行态快照（「前端连没连 / 镜像是哪份场景 / 本地资源包下到哪了 / 设置推没推」）。 */
 export interface RuntimeStateSnapshot {
   readonly runtimeActive: boolean;
   readonly client: ClientInfo | null;
   readonly scene: SceneInfo | null;
   /** 前端本地资源包状态；null = 这次运行态还没收到过前端的回执。 */
   readonly resources: ResourcesInfo | null;
+  /** 已经推下去的全局设置摘要；null = 还没推过（没打开项目）。 */
+  readonly settings: ProjectSettingsInfo | null;
 }
 
 export interface RuntimeHandlers {
@@ -220,6 +225,16 @@ export class RuntimeClient {
     this.send({ type: "scene_push", scene });
   }
 
+  /**
+   * 把**项目级全局设置**推下去（`null` = 没有打开的项目）。
+   *
+   * 与场景分开一条消息：设置**跨场景有效**（换场景不该丢），服务端各缓存一份。
+   * 音量属于「数据」——前端收到即生效，不需要命令。
+   */
+  pushSettings(settings: ProjectSettingsPayload | null): void {
+    this.send({ type: "settings_push", settings });
+  }
+
   refresh(): void {
     this.send({ type: "editor_refresh" });
   }
@@ -247,6 +262,7 @@ export class RuntimeClient {
           client: message.client,
           scene: message.scene,
           resources: message.resources,
+          settings: message.settings,
         });
         break;
 

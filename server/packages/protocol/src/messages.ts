@@ -43,8 +43,19 @@ import { z } from "zod";
  * v6（2026-09-21）：声音补齐**暂停 / 继续**（`pause_sound` / `resume_sound`）——编辑器里
  * 「播放声音对象」与「地图 / 精灵的视频」两组 UI 的控件行现在完全一致（播放 / 暂停 / 停止）。
  * 同样是新增命令，所以 +1。
+ *
+ * v7（2026-09-21）：**全局背景音乐**（项目级设置）+ 声音层级从四档收敛成三档。
+ * - 新增两条消息：编辑器推项目设置的 `settings_push`、服务端下发的 `project_settings`；
+ * - 新增四条命令：`play_bgm` / `pause_bgm` / `resume_bgm` / `stop_bgm`；
+ * - `layer` 枚举去掉 `ambient`（环境音并进 `bgm`）。
+ * 老前端两者都接不住（不认的消息只告警、不认的命令当失败），必须一起更新，照旧 +1。
+ *
+ * v8（2026-09-22）：**背景音乐与项目设置解耦**——`project_settings.audio.bgm` 从
+ * 「歌单 + 默认曲 + 循环 + 音量」收敛成**只有音量**（曲目清单不再进文档，编辑器弹框直接列项目音频）；
+ * 命令那一组**不变**（还是四条 `*_bgm`，`play_bgm` 仍带 `clip`）。
+ * 载荷形状变了、老前端读到的 `bgm` 少三项，所以照旧 +1。
  */
-export const PROTOCOL_VERSION = 6;
+export const PROTOCOL_VERSION = 8;
 
 /** 未进入运行态时拒绝 `/client` 升级的 HTTP 状态与原因头。 */
 export const RUNTIME_INACTIVE_STATUS = 503;
@@ -111,8 +122,17 @@ export const mapDataSchema = z.object({
   fog: mapFogSchema.optional(),
 });
 
-/** 声音层级：固定四档（同层同时只响一条）。 */
-export const soundLayerSchema = z.enum(["bgm", "ambient", "sfx", "voice"]);
+/**
+ * 声音层级：**固定三档**（同层同时只响一条）。
+ *
+ * v7 起去掉了 `ambient`（环境音）：那一条在文档里被并进了 `bgm`（见 `@dts/document` 的迁移），
+ * 所以协议这一侧也收成三档——**两端必须一致**，否则老前端会按「四档」理解一次迁移过的数据。
+ *
+ * `bgm` 留在枚举里是有用的：它是**声道名**（前端按声源分组），也是老文档里
+ * `layer: "bgm"` 的声音对象能被读回来的依据；但背景音乐由编辑器顶栏「音乐」弹框 +
+ * `play_bgm` 那一组命令管，不再挂在对象上、也不是项目设置里的歌单。
+ */
+export const soundLayerSchema = z.enum(["bgm", "sfx", "voice"]);
 
 /** 声音对象的数据：加进来的音频 + 当前选中的那条 + 层级（前端播的就是 `picked`）。 */
 export const soundDataSchema = z.object({
@@ -151,6 +171,46 @@ export const videoDataSchema = z.object({
 export const teleportDataSchema = z.object({
   targets: z.array(z.string()),
   picked: z.string().optional(),
+});
+
+/**
+ * 三档音量的缺省值（与 `@dts/document` 的 `DEFAULT_*_VOLUME` 同值；`protocol` 是被三端共用的
+ * 最底层包，不能反过来依赖文档包，所以这里复刻一份数字）。
+ */
+export const DEFAULT_BGM_VOLUME = 0.6;
+export const DEFAULT_SFX_VOLUME = 0.8;
+export const DEFAULT_VOICE_VOLUME = 1;
+
+/** 一条声道（背景音乐 / 音效 / 旁白）：**只剩音量**（v8 起背景音乐的歌单不在这里）。 */
+export const channelVolumeSchema = z.object({
+  volume: z.number(),
+});
+
+/**
+ * 项目级**全局设置**（v7 起，目前只有音频）：前端不解释业务，照着调音量。
+ *
+ * 它是**文档形状的只读复刻**（`@dts/document` 的 `ProjectSettingsDoc`），但**不走场景**：
+ * 场景是整份推的，项目设置是另一条通道（`settings_push` → `project_settings`），
+ * 因为它跨场景有效、换场景不该丢。
+ *
+ * 两条口径：
+ * - 每一档都给默认值（老编辑器不发这一项时语义只能是「用缺省参数」）；
+ * - v8 起 `bgm` **只剩音量**：曲目清单（v7 的 `clips` / `picked` / `loop`）不再进文档，
+ *   也不是命令的载荷来源——编辑器弹框直接列项目 `Assets/audio/` 下的音频，点一首就发
+ *   `play_bgm{clip}`。背景音乐因此与项目设置彻底分开：这里只是「这条声道多大声」。
+ */
+export const projectSettingsSchema = z.object({
+  audio: z
+    .object({
+      bgm: channelVolumeSchema.default(() => ({ volume: DEFAULT_BGM_VOLUME })),
+      sfx: channelVolumeSchema.default(() => ({ volume: DEFAULT_SFX_VOLUME })),
+      voice: channelVolumeSchema.default(() => ({ volume: DEFAULT_VOICE_VOLUME })),
+    })
+    .default(() => ({
+      bgm: { volume: DEFAULT_BGM_VOLUME },
+      sfx: { volume: DEFAULT_SFX_VOLUME },
+      voice: { volume: DEFAULT_VOICE_VOLUME },
+    })),
 });
 
 /**
@@ -197,6 +257,10 @@ export const sceneSchema = z.object({
 export type ScenePayload = z.infer<typeof sceneSchema>;
 export type SceneObjectPayload = z.infer<typeof sceneObjectSchema>;
 export type SoundLayer = z.infer<typeof soundLayerSchema>;
+/** 项目级全局设置（`settings_push` / `project_settings` 的载荷）。 */
+export type ProjectSettingsPayload = z.infer<typeof projectSettingsSchema>;
+/** 已推下去的全局设置摘要（`editor_state.settings`）。 */
+export type ProjectSettingsInfo = z.infer<typeof projectSettingsInfoSchema>;
 export type ClientInfo = z.infer<typeof clientInfoSchema>;
 export type SceneInfo = z.infer<typeof sceneInfoSchema>;
 export type ResourcesInfo = z.infer<typeof resourcesInfoSchema>;
@@ -292,6 +356,30 @@ export const commandRequestSchema = z.discriminatedUnion("kind", [
     kind: z.literal("stop_video"),
     objectId: z.string().min(1),
   }),
+  /**
+   * 全局背景音乐（v7 起）：放（或**切换**到）某一首。
+   *
+   * 与 `play_video` / `play_sound` 的差别只有一处：它**带 `clip`**。
+   * 理由是曲目清单不在任何对象上、也不在项目设置里（v8 起）——它就是**项目 `Assets/audio/`
+   * 下的音频文件**，由编辑器弹框列出来给 DM 点。所以命令说「现在放哪一首」，
+   * 前端按 `clip` 去资源包里找音频；音量读 `project_settings`，循环恒开。
+   */
+  z.object({
+    kind: z.literal("play_bgm"),
+    clip: z.string().min(1),
+  }),
+  /** 背景音乐：暂停在当前帧（同一条曲子被再次 `play_bgm` = 从头重播）。 */
+  z.object({
+    kind: z.literal("pause_bgm"),
+  }),
+  /** 背景音乐：从暂停处续播。 */
+  z.object({
+    kind: z.literal("resume_bgm"),
+  }),
+  /** 背景音乐：停掉（再 `play_bgm` 从头开始）。 */
+  z.object({
+    kind: z.literal("stop_bgm"),
+  }),
   /** 战争雾：沿这笔轨迹擦掉地图对象上的雾。 */
   z.object({
     kind: z.literal("erase_mask"),
@@ -340,6 +428,16 @@ export const sceneInfoSchema = z.object({
 });
 
 /**
+ * 已推下去的**全局设置**的摘要（编辑器用它显示「全局设置已下发」）。
+ *
+ * 只带看得懂的一件事实：什么时候推的——足够让 DM 确认「我刚调的音量确实到了服务端」，
+ * 不必把整份设置回传一遍。v8 起背景音乐的歌单不在设置里，所以摘要里也没有它。
+ */
+export const projectSettingsInfoSchema = z.object({
+  updatedAt: z.number().int(),
+});
+
+/**
  * 前端本地资源包的摘要（编辑器用它显示「素材下到哪了」）。
  *
  * 前端连上后会把当前项目的 `Assets/` 整包拉到本地（见 `docs/specs/` 的资源包说明），
@@ -366,6 +464,13 @@ export const editorToServerSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("runtime_stop") }),
   /** 推当前场景（整份）；`null` = 没有打开的场景（前端清空镜像）。 */
   z.object({ type: z.literal("scene_push"), scene: sceneSchema.nullable() }),
+  /**
+   * 推**项目级全局设置**（v7 起）；`null` = 没有打开的项目。
+   *
+   * 与 `scene_push` 并排而不是塞进场景里：它跨场景有效（换场景不该丢），
+   * 服务端缓存一份，前端一连上就补发。音量是**数据**——前端收到即生效，不需要命令。
+   */
+  z.object({ type: z.literal("settings_push"), settings: projectSettingsSchema.nullable() }),
   /** 下发一条命令给前端。 */
   z.object({
     type: z.literal("editor_command"),
@@ -390,6 +495,8 @@ export const serverToEditorSchema = z.discriminatedUnion("type", [
     scene: sceneInfoSchema.nullable(),
     /** 前端本地资源包状态（没收到回执时 null）。 */
     resources: resourcesInfoSchema.nullable(),
+    /** 已经推下去的全局设置摘要（编辑器据此显示「全局设置已下发」；没推过时 null）。 */
+    settings: projectSettingsInfoSchema.nullable(),
     serverTime: z.number().int(),
   }),
   z.object({
@@ -463,6 +570,13 @@ export const serverToClientSchema = z.discriminatedUnion("type", [
    * `project` 为 null = 服务端还不知道当前项目（编辑器还没推过场景），前端照常等场景。
    */
   z.object({ type: z.literal("resources_prepare"), project: z.string().min(1).nullable() }),
+  /**
+   * 项目级全局设置（v7 起）：前端连上就补一份，之后每次 `settings_push` 转发一份。
+   *
+   * **在 `scene_sync` 之前发**：音量与歌单是「放之前就该知道的事」，先到一步，
+   * 前端载入场景 / 起播时就不用等第二条消息。`null` = 服务端还没有设置（没打开项目）。
+   */
+  z.object({ type: z.literal("project_settings"), settings: projectSettingsSchema.nullable() }),
   z.object({
     type: z.literal("command"),
     requestId: z.string().min(1),

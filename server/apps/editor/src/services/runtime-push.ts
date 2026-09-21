@@ -1,4 +1,4 @@
-import type { SceneDoc } from "@dts/document";
+import type { ProjectSettingsDoc, SceneDoc } from "@dts/document";
 
 /**
  * 运行态「把当前场景推给服务端」的判定与去抖。
@@ -44,6 +44,16 @@ export function scenePayloadText(scene: SceneDoc | null): string | null {
   }
 
   return JSON.stringify({ name: scene.name, objects: scene.objects });
+}
+
+/**
+ * 项目级全局设置 → 比对 / 传输用的文本。
+ *
+ * 与场景那一份同一个用处：内容没变就不重推（音量滑杆拖回来、撤销回原样都不该产生流量）。
+ * 没有打开项目时是 `null`——推上去等于告诉前端「清掉你手上的设置」。
+ */
+export function projectSettingsPayloadText(settings: ProjectSettingsDoc | null): string | null {
+  return settings === null ? null : JSON.stringify(settings);
 }
 
 /** 去抖调度器：`schedule` 反复调用，只有停下来 `delayMs` 之后才真的推一次。 */

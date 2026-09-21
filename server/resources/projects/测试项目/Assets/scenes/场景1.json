@@ -1,5 +1,5 @@
 {
-  "formatVersion": 14,
+  "formatVersion": 18,
   "objects": [
     {
       "id": "map_mu6uln3x1l7fg",
@@ -365,17 +365,12 @@
       "components": [],
       "sound": {
         "clips": [
-          "project:测试项目/Assets/audio/freesound_community-fire-burning-loop-6135.mp3",
-          "project:测试项目/Assets/audio/mixkit-cinematic-thunder-hit-1280.wav",
-          "project:测试项目/Assets/audio/thunderstorm-30s-high.wav"
+          "project:测试项目/Assets/audio/act-2-to-act-3/06-altar-transition.mp3",
+          "project:测试项目/Assets/audio/act-2/01-bird-capture-part-1.mp3",
+          "project:测试项目/Assets/audio/act-2/02-bird-capture-part-2.mp3"
         ],
-        "picked": "project:测试项目/Assets/audio/freesound_community-fire-burning-loop-6135.mp3",
-        "names": {
-          "project:测试项目/Assets/audio/freesound_community-fire-burning-loop-6135.mp3": "背景音乐1",
-          "project:测试项目/Assets/audio/mixkit-cinematic-thunder-hit-1280.wav": "背景音乐2",
-          "project:测试项目/Assets/audio/thunderstorm-30s-high.wav": "背景音乐3"
-        },
-        "layer": "bgm"
+        "picked": "project:测试项目/Assets/audio/act-2-to-act-3/06-altar-transition.mp3",
+        "layer": "voice"
       }
     },
     {

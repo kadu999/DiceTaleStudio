@@ -30,8 +30,17 @@ namespace DiceTale
         ///
         /// v6（2026-09-21）：声音补齐 `pause_sound` / `resume_sound`——编辑器里「播放声音对象」与
         /// 「视频」两组 UI 的控件行完全一致（播放 / 暂停 / 停止）。
+        ///
+        /// v7（2026-09-21）：**全局背景音乐**（项目级设置）落地。
+        /// - 服务端新增 `project_settings`（音量 / 歌单 / 默认曲整份下发，收到即生效）；
+        /// - 新增四条命令：`play_bgm` / `pause_bgm` / `resume_bgm` / `stop_bgm`；
+        /// - 声音层级从四档收成三档（环境音并进背景音乐），对象只剩音效 / 旁白。
+        /// 前两条老前端都接不住，所以照旧 +1。
+        ///
+        /// v8（2026-09-22）：**背景音乐与项目设置解耦**——`project_settings.audio.bgm` 只剩音量
+        /// （歌单 / 默认曲 / 循环不再下发），命令那一组不变。载荷形状变了，所以照旧 +1。
         /// </summary>
-        public const int Version = 6;
+        public const int Version = 8;
 
         // 服务端 → 前端
         public const string TypeServerHello = "server_hello";
@@ -40,6 +49,8 @@ namespace DiceTale
         public const string TypePing = "ping";
         /// <summary>「先把当前项目的资源包拉下来」（在 `scene_sync` 之前到）。</summary>
         public const string TypeResourcesPrepare = "resources_prepare";
+        /// <summary>项目级全局设置（三档音量）；在前端放东西之前到，收到即生效。</summary>
+        public const string TypeProjectSettings = "project_settings";
 
         // 前端 → 服务端
         public const string TypeClientHello = "client_hello";
@@ -73,6 +84,14 @@ namespace DiceTale
         public const string CommandResumeVideo = "resume_video";
         /// <summary>视频：停止并拆掉那一层（露出对象原来的贴图）。</summary>
         public const string CommandStopVideo = "stop_video";
+        /// <summary>背景音乐（v7）：放 / 切换到**指定的那一首**（清单在编辑器弹框里，所以命令带 clip）。</summary>
+        public const string CommandPlayBgm = "play_bgm";
+        /// <summary>背景音乐：暂停在当前处。</summary>
+        public const string CommandPauseBgm = "pause_bgm";
+        /// <summary>背景音乐：从暂停处继续。</summary>
+        public const string CommandResumeBgm = "resume_bgm";
+        /// <summary>背景音乐：停掉。</summary>
+        public const string CommandStopBgm = "stop_bgm";
 
         /// <summary>关闸（编辑器退出运行态）时服务端用的 close code。</summary>
         public const int CloseRuntimeStopped = 4003;
@@ -151,7 +170,8 @@ namespace DiceTale
     /// 服务端下发的命令（触发器：数据不在命令里，在前端自己的镜像里）。
     ///
     /// 字段是**扁平的多用途**：一条命令只填自己那几个（`play_sound` 用 `objectId + layer`；
-    /// `erase_mask` 用 `objectId + stroke`；`reveal_fog_region` 用 `objectId + region + revealed`）。
+    /// `erase_mask` 用 `objectId + stroke`；`reveal_fog_region` 用 `objectId + region + revealed`；
+    /// `play_bgm` 用 `clip`）。
     /// </summary>
     public class CommandRequest
     {
@@ -159,6 +179,15 @@ namespace DiceTale
         public string kind = "";
         public string objectId = "";
         public string layer = "";
+
+        /// <summary>
+        /// `play_bgm`：要放的那一首（资源逻辑 ID）。
+        ///
+        /// 背景音乐的命令**带数据**（与视频 / 声音不同）：曲目清单不在任何对象上、也不在项目设置里
+        /// （v8 起），它就是**项目 `Assets/audio/` 下的音频文件**，由编辑器弹框列出来给 DM 点——
+        /// 所以命令说「现在放哪一首」，前端按 `clip` 去资源包里找音频。
+        /// </summary>
+        public string clip = "";
 
         /// <summary>`erase_mask`：归一化笔刷半径（**半径 / 遮罩宽**，编辑器固定 `48/960 = 0.05`）。</summary>
         public float radius;

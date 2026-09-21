@@ -38,6 +38,16 @@ import {
   setSoundClips as setSceneSoundClips,
   setSoundLayer as setSceneSoundLayer,
   setSoundClipName as setSceneSoundClipName,
+  // 全局设置（项目级）：三档音量（背景音乐的曲目清单不在这里，见 BgmDialog）
+  setBgmVolume as setProjectBgmVolume,
+  setSfxVolume as setProjectSfxVolume,
+  setVoiceVolume as setProjectVoiceVolume,
+  // 项目级数据：音频文件标注（显示名 + 标签 ID，纯编辑器数据，见 AudioFilesDialog）
+  setAudioMetaName as setProjectAudioName,
+  setAudioMetaTags as setProjectAudioTags,
+  addAudioTag as addProjectAudioTag,
+  renameAudioTag as renameProjectAudioTag,
+  deleteAudioTag as deleteProjectAudioTag,
   setTeleportTargets as setSceneTeleportTargets,
   setTeleportPicked as setSceneTeleportPicked,
   setSoundPicked as setSceneSoundPicked,
@@ -53,6 +63,7 @@ import {
   type ImageRef,
   type ObjectKind,
   type ProjectDoc,
+  type ProjectSettingsDoc,
   type SceneDoc,
   type SceneFileDoc,
   type SceneListDraft,
@@ -92,14 +103,29 @@ import {
   type TransformTool,
   type Viewport,
 } from "@dts/renderer";
-import type { ClientInfo, ResourcesInfo, SceneInfo, ScenePayload } from "@dts/protocol";
+import type { ClientInfo, ProjectSettingsInfo, ResourcesInfo, SceneInfo, ScenePayload } from "@dts/protocol";
 import {
   RuntimeClient,
   type RuntimeLogEntry,
   type RuntimeStateSnapshot,
   type RuntimeStatus,
 } from "../services/runtime-client";
-import { ScenePushScheduler, scenePayloadText, shouldPushScene } from "../services/runtime-push";
+import {
+  ScenePushScheduler,
+  projectSettingsPayloadText,
+  scenePayloadText,
+  shouldPushScene,
+} from "../services/runtime-push";
+import {
+  bgmResendActions,
+  bgmResendPlan,
+  emptyBgmPlayback,
+  withBgmPaused,
+  withBgmPlaying,
+  withBgmStopped,
+  type BgmAction,
+  type BgmPlaybackState,
+} from "../services/bgm-playback";
 import {
   projectApi,
   contentTypeFor,
@@ -183,6 +209,8 @@ export interface RuntimeUiState {
   readonly scene: SceneInfo | null;
   /** 前端本地资源包状态（它把当前项目的 Assets/ 下到本地）；null = 还没收到回执。 */
   readonly resources: ResourcesInfo | null;
+  /** 已经推给服务端的**全局设置**摘要（推送时间；设置里只有三档音量）；null = 还没推过。 */
+  readonly settings: ProjectSettingsInfo | null;
   readonly logs: RuntimeLogEntry[];
   readonly lastError: string;
 }
@@ -278,6 +306,12 @@ export interface EditorStoreState {
   readonly videoEditor: boolean;
   /** 正在编辑哪个对象的视频列表；null 表示窗口没打开 */
   readonly videoEditorTarget: string | null;
+  /** 「全局设置」窗口是否打开（「工程」菜单唤出；里面只有三档音量） */
+  readonly globalSettings: boolean;
+  /** 「背景音乐」弹框是否打开（顶栏「音乐」按钮唤出） */
+  readonly bgmDialog: boolean;
+  /** 「标签」窗口是否打开（工程菜单 / 属性面板唤出；标签表：新建 / 改名 / 删除） */
+  readonly audioTags: boolean;
   /** 「战争雾 Mask 窗口」是否打开（属性面板的按钮唤出） */
   readonly fogMask: boolean;
   /** Mask 窗口正在编辑哪张地图；null 表示窗口没打开 */
@@ -289,6 +323,14 @@ export interface EditorStoreState {
   /** 场景文件的保存状态（自动存与手动保存共用） */
   readonly sceneSaveState: SceneSaveState;
   readonly sceneSaveError: string;
+  /**
+   * **工程文件**（`project.json`）的保存状态（自动存与手动保存共用）。
+   *
+   * 与 `sceneSaveState` 分开：两份文件各自有未保存改动，底栏要把两件事都说清楚
+   * （「场景未保存」与「工程未保存」是两回事，合成一个只会让人以为都存了）。
+   */
+  readonly projectSaveState: SceneSaveState;
+  readonly projectSaveError: string;
   /** 网格标注（画笔）状态：编辑窗口的涂 / 擦与画布的着色都读它。 */
   readonly gridPaint: GridPaintState;
   /**
@@ -305,6 +347,17 @@ export interface EditorStoreState {
    * **切场景清**（记账里的对象属于上一个场景），与 `soundPlayback` 同一处。
    */
   readonly videoPlayback: VideoPlaybackState;
+  /**
+   * **全局背景音乐**的期望播放状态（编辑器记账，见 `services/bgm-playback`）。
+   *
+   * 与 `soundPlayback` / `videoPlayback` 一样是运行态：不写文档、不进撤销栈。
+   * 差别在归属——它是**全局一条**（没有宿主对象，也不在项目设置里）：
+   * 曲目清单就是项目 `Assets/audio/` 下的音频（弹框里点一首）；
+   * - 缺省 = 什么都没放（**进运行态不会自动出声**，播放权全交给 DM）；
+   * - 前端（重）连上时补发记账里的那一首（暂停态先放再暂停）；
+   * - **切场景不碰它**（换台不该把 BGM 掐了），换项目 / 退出运行态才清。
+   */
+  readonly bgmPlayback: BgmPlaybackState;
   /**
    * 战争雾的**揭示记账**（编辑器记账，见 `services/fog-reveal`）。
    *
@@ -325,6 +378,16 @@ export interface EditorStoreState {
   applyScenes(
     label: string,
     recipe: (draft: SceneListDraft) => void,
+    options?: { coalesceKey?: string },
+  ): boolean;
+  /**
+   * **工程文件**（项目级数据：全局设置）的编辑走这里：进撤销栈，并触发工程文件的自动落盘。
+   *
+   * 与 `applyScenes` 并列（两份文件、两套历史），但**撤销入口只有一个**——见 `undo`。
+   */
+  applyProject(
+    label: string,
+    recipe: (draft: ProjectDoc) => void,
     options?: { coalesceKey?: string },
   ): boolean;
   undo(): void;
@@ -435,6 +498,68 @@ export interface EditorStoreState {
   setVideoLoop(objectId: string, loop: boolean): boolean;
   /** 视频：是否放视频自带的声音（文档数据）。 */
   setVideoAudio(objectId: string, audio: boolean): boolean;
+  /**
+   * 全局背景音乐（v16 起）：让前端放 / **切换**到某一首。
+   *
+   * 与声音对象的「播放」同一套规矩（记账 + 尽力下发，前端不在就等它连上补发），
+   * 但命令里**带 `clip`**：曲目清单不在任何对象上、也不在项目设置里——它就是弹框里
+   * 列出来的项目音频，所以命令说「现在放哪一首」。
+   * 再点同一首 = 让前端从头重播一遍（与视频那边同一个手感）。
+   */
+  playBgm(clip: string): string | undefined;
+  /** 全局背景音乐：暂停（只有点过的那一首谈得上暂停）。 */
+  pauseBgm(): string | undefined;
+  /** 全局背景音乐：从暂停处继续。 */
+  resumeBgm(): string | undefined;
+  /** 全局背景音乐：停掉（停完再点一首 = 从头放）。 */
+  stopBgm(): string | undefined;
+  /**
+   * 把记账里的背景音乐补发一遍（前端刚连上时调用）。
+   *
+   * 返回真正下发的命令条数：没连上、或本来就没在放（`clip === null`，含点过停止）时返回 0。
+   * 不按内容签名去重——补发的时机只有「前端刚连上」一处，不必再叠一层状态。
+   */
+  flushBgmPlayback(): number;
+  /** 打开 / 关闭「全局设置」窗口（只有三档音量）。 */
+  openGlobalSettings(open: boolean): void;
+  /** 打开 / 关闭「背景音乐」弹框（顶栏「音乐」按钮唤出）。 */
+  openBgmDialog(open: boolean): void;
+  /**
+   * 音频文件：起显示名（`""` = 退回素材文件名）。进工程文件、可撤销、随自动落盘。
+   *
+   * 界面入口只有一个：**选中那个音频文件时属性面板上的「显示名」输入框**
+   * （曾经另有一个「音频文件」列表窗口，v18 删掉了——「选中谁就改谁」本来就是这个面板的用法）。
+   */
+  setAudioName(clipId: string, name: string): boolean;
+  /**
+   * 音频文件：替换**整份**标签 ID 清单（去重升序、丢掉越界已删的，由文档命令做）。
+   */
+  setAudioTags(clipId: string, tagIds: readonly number[]): boolean;
+  /**
+   * 标签表：新建一个标签，返回它的 **ID**（同名返回已有那个；空名字返回 `null`）。
+   *
+   * `applyProject` 返回的是「有没有变更」，拿不到 ID——所以这里直接读**改完之后**的 `doc`：
+   * 表是同一个对象引用的话（同名复用），返回已有的那个 ID。
+   */
+  addAudioTag(name: string): number | null;
+  /** 标签表：给某个 tag ID 改名字（**只改表**，文件里的 ID 不动）。 */
+  renameAudioTag(tagId: number, name: string): boolean;
+  /**
+   * 标签表：删掉一个标签（从**所有**文件上摘引用 + 表里留洞）。
+   *
+   * 影响面大（全项目），调用方负责二次确认。
+   */
+  deleteAudioTag(tagId: number): boolean;
+  /** 给某个音频文件**新建并立即挂上**一个标签（一条撤销记录里做完两件事）。 */
+  addAudioTagToClip(clipId: string, name: string): boolean;
+  /** 打开 / 关闭「标签」窗口（标签表：新建 / 改名 / 删除）。 */
+  openAudioTags(open: boolean): void;
+  /** 全局设置 · 背景音乐音量（`0..1`，越界夹回；前端收到即生效）。 */
+  setBgmVolume(volume: number): boolean;
+  /** 全局设置 · 音效通道音量（`0..1`）。 */
+  setSfxVolume(volume: number): boolean;
+  /** 全局设置 · 旁白通道音量（`0..1`）。 */
+  setVoiceVolume(volume: number): boolean;
   clearRuntimeLogs(): void;
 
   /**
@@ -466,6 +591,15 @@ export interface EditorStoreState {
   saveSceneNow(): Promise<boolean>;
   /** 有待保存改动就立刻写回；场景级操作与关闭项目之前调用，避免丢失或写错场景。 */
   flushSceneSave(): Promise<void>;
+
+  /**
+   * 立即把**工程文件**（`project.json`，全局设置在这里）写回磁盘。
+   *
+   * 与 `saveSceneNow` 同一套：运行态下不写盘（改动退出运行会整体还原），失败写进 `projectSaveError`。
+   */
+  saveProjectNow(): Promise<boolean>;
+  /** 工程文件有待保存改动就立刻写回；关项目 / 进运行态前调用。 */
+  flushProjectSave(): Promise<void>;
 
   /** 重新扫描 `Assets/scenes/` 并把场景读进内存（打开项目、增删改名后调用）。 */
   loadScenes(): Promise<void>;
@@ -719,6 +853,56 @@ function initialUi(): EditorUiState {
  */
 export const sceneHistory = new DocumentHistory<readonly SceneDoc[]>([], { limit: 200 });
 
+/**
+ * **工程文件**（`project.json`，v15 起才真的有可编辑内容：全局设置的三档音量）的编辑历史。
+ *
+ * 与 `sceneHistory` 并列而不是合并，是因为两者是**两份文件**：场景各自成文件、工程文件是项目级的。
+ * 但用户只该看到一个「撤销」——所以加了 `lastEditTrack`：撤销 / 重做作用在**最近改过的那条轨道**上，
+ * 那条轨道撤完了就轮到另一条（见 `undo` / `redo`）。在两套历史之间切换时还要清掉对方的重做栈
+ * （`clearRedo`）：否则「撤销 A、改 B、重做」会跳回一个已经不存在的未来。
+ */
+export const projectHistory = new DocumentHistory<ProjectDoc>(createEmptyProject(), { limit: 200 });
+
+/** 最近一次编辑发生在哪条轨道上（两套历史共用一个撤销入口）。 */
+type EditTrack = "scenes" | "project";
+let lastEditTrack: EditTrack = "scenes";
+
+/** 撤销入口要能不理泛型地操作两条轨道，所以只依赖这点共同接口。 */
+interface EditHistory {
+  readonly canUndo: boolean;
+  readonly canRedo: boolean;
+  readonly undoLabel: string | undefined;
+  readonly redoLabel: string | undefined;
+  undo(): boolean;
+  redo(): boolean;
+}
+
+/** 按「先试哪条轨道」的顺序排：最近改过的那条优先，撤完了轮到另一条。 */
+function trackOrder(preferred: EditTrack): readonly [EditTrack, EditTrack] {
+  return preferred === "project" ? ["project", "scenes"] : ["scenes", "project"];
+}
+
+function historyOf(track: EditTrack): EditHistory {
+  return track === "scenes" ? sceneHistory : projectHistory;
+}
+
+/**
+ * 下一次撤销 / 重做会作用在哪条轨道上。
+ *
+ * 菜单文案与实际执行**共用这一个判定**（`undo` / `redo` / `syncHistoryFlags` 都调它），
+ * 所以「撤销 移动对象」点下去必然撤销的就是那件事。两条都没得撤时返回最近改过的那条
+ * （此时标签本来就是空的）。
+ */
+function activeTrack(action: "undo" | "redo"): EditTrack {
+  for (const track of trackOrder(lastEditTrack)) {
+    if ((action === "undo" ? historyOf(track).canUndo : historyOf(track).canRedo)) {
+      return track;
+    }
+  }
+
+  return lastEditTrack;
+}
+
 /** 自动落盘的防抖窗口：连续拖动 / 连续输入只写一次盘。 */
 const SCENE_SAVE_DEBOUNCE_MS = 800;
 
@@ -896,6 +1080,19 @@ export function serializeSceneFile(scene: SceneDoc): string {
 }
 
 /**
+ * 工程文件（`project.json`）的序列化。
+ *
+ * 与场景文件那套同一个写法（两空格缩进 + 末尾换行），差别只有内容：工程文件里**有项目名**
+ * （场景文件里没有，场景名就是文件名），并且带着项目级的那几样东西——道具库与 v15 起的全局设置。
+ *
+ * `formatVersion` 每次都写当前版本：工程文件里的字段是**会被补齐的**（缺 `settings` 就补一份），
+ * 写回时版本号一起前进，磁盘上的文件从此自描述。
+ */
+export function serializeProjectFile(doc: ProjectDoc): string {
+  return `${JSON.stringify({ ...doc, formatVersion: DOCUMENT_FORMAT_VERSION }, null, 2)}\n`;
+}
+
+/**
  * 场景的**展示顺序**：中文拼音序 + **数字按数值比**。
  *
  * `numeric: true` 是这条的关键：没有它，`第10幕` 会排在 `第2幕` 前面（逐字符比），
@@ -1011,6 +1208,7 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
           client: snapshot.client,
           scene: snapshot.scene,
           resources: snapshot.resources,
+          settings: snapshot.settings,
         },
       }));
 
@@ -1019,10 +1217,11 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
         rememberRunBaseline();
       }
 
-      // 刚开闸（真的从「编辑」切过来）→ 把当前场景整份补过去。
+      // 刚开闸（真的从「编辑」切过来）→ 把当前场景与全局设置整份补过去。
       // 只在「false → true」这一跳推，避免 scene_push 引发的状态广播把自己推进死循环
-      // （内容没变的第二次推送会被 shouldPushScene 去重掉）。
+      // （内容没变的第二次推送会被 shouldPushScene / 签名去重掉）。
       if (snapshot.runtimeActive && !wasRuntimeActive) {
+        pushSettingsNow();
         get().pushRuntimeScene();
       }
 
@@ -1031,6 +1230,8 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
         restoreRunBaseline();
         // 揭示记账也是运行态：关闸就清掉（前端已经被踢下线，下次运行重新开始）
         set({ fogReveal: emptyFogReveal(), videoPlayback: emptyVideoPlayback() });
+        // 背景音乐同理：回到「什么都没放」（下次进运行态**不会自动出声**，由 DM 点一首）
+        set({ bgmPlayback: emptyBgmPlayback() });
       }
 
       // 前端刚连上：把记着的期望播放状态补发一遍（「点的时候前端不在」也不会丢）
@@ -1061,6 +1262,17 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       });
       if (fogPlan.length > 0) {
         get().flushFogReveal();
+      }
+
+      // 背景音乐同理：前端刚连上时把它还没听到的那一首补过去（暂停态先放再暂停）。
+      // 期望「什么都没放」时 `bgmResendPlan` 返回 null，一条都不发
+      const bgmPlan = bgmResendPlan({
+        wasClientConnected,
+        isClientConnected: snapshot.client !== null,
+        playback: get().bgmPlayback,
+      });
+      if (bgmPlan !== null) {
+        get().flushBgmPlayback();
       }
     },
 
@@ -1142,6 +1354,46 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
     }
 
     pushScheduler.schedule(scenePayloadText(currentSceneDoc()));
+  };
+
+  /** 当前项目的全局设置（没打开项目 = null：推上去等于让前端清掉手上的设置）。 */
+  const currentSettingsOf = (): ProjectSettingsDoc | null =>
+    get().project.current === null ? null : projectHistory.current.settings;
+
+  /** 上次真的推出去的设置文本（与场景那份同一个用途：内容没变不重推）。 */
+  let lastPushedSettingsText: string | null = null;
+
+  /**
+   * 全局设置的推送通道（与场景那套并列）。
+   *
+   * 音量是滑杆拖出来的，一次拖动会改很多次文档 — 所以同样去抖；内容没变（拖回来、撤销回原样）
+   * 一个字节都不发。
+   */
+  const settingsScheduler = new ScenePushScheduler({
+    push: () => {
+      const settings = currentSettingsOf();
+      const nextText = projectSettingsPayloadText(settings);
+      if (get().mode !== "run" || !runtimeClient.connected || lastPushedSettingsText === nextText) {
+        return;
+      }
+
+      runtimeClient.pushSettings(settings);
+      lastPushedSettingsText = nextText;
+    },
+  });
+
+  /** 立刻推一份设置（进运行态、重连补发用）。 */
+  const pushSettingsNow = (): void => {
+    settingsScheduler.flush(projectSettingsPayloadText(currentSettingsOf()));
+  };
+
+  /** 设置变了就安排一次推送（只有运行态 + 连着服务端才有意义）。 */
+  const scheduleSettingsPush = (): void => {
+    if (get().mode !== "run" || !runtimeClient.connected) {
+      return;
+    }
+
+    settingsScheduler.schedule(projectSettingsPayloadText(currentSettingsOf()));
   };
 
   /**
@@ -1358,27 +1610,109 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
   /** 前端在不在（编辑器连着服务端 **且** 前端连着）。 */
   const frontendReady = (): boolean => runtimeClient.connected && get().runtime.client !== null;
 
+  /** 背景音乐动作在运行日志里的说法。 */
+  const bgmActionLabel = (action: BgmAction): string =>
+    action.kind === "play"
+      ? `背景音乐：${action.clip}`
+      : action.kind === "pause"
+        ? "背景音乐：暂停"
+        : action.kind === "resume"
+          ? "背景音乐：继续"
+          : "背景音乐：停止";
+
+  /** 真发一条背景音乐命令（调用方负责确认前端连着）。 */
+  const sendBgmAction = (action: BgmAction): string | undefined => {
+    const requestId = runtimeClient.sendCommand(
+      action.kind === "play"
+        ? { kind: "play_bgm", clip: action.clip }
+        : action.kind === "pause"
+          ? { kind: "pause_bgm" }
+          : action.kind === "resume"
+            ? { kind: "resume_bgm" }
+            : { kind: "stop_bgm" },
+    );
+
+    pushLog(makeLog("info", `下发${bgmActionLabel(action)}`));
+    return requestId;
+  };
+
+  /**
+   * 把一条背景音乐动作**尽力**发给前端（DM 的手动操作走它）。
+   *
+   * 与 `deliverSound` / `deliverVideo` 同一套：编辑器没连服务端 / 前端不在时**不发**
+   * （记账已经改过），只写明白原因——等前端连上由 `flushBgmPlayback()` 补发。
+   */
+  const deliverBgm = (action: BgmAction): string | undefined => {
+    if (!runtimeClient.connected) {
+      pushLog(makeLog("info", `${bgmActionLabel(action)}：已记录（编辑器还没连上服务端，连上后自动补发）`));
+      return undefined;
+    }
+
+    if (get().runtime.client === null) {
+      pushLog(makeLog("info", `${bgmActionLabel(action)}：已记录（前端未连接，等它连上后自动补发）`));
+      return undefined;
+    }
+
+    return sendBgmAction(action);
+  };
+
+  /**
+   * 把记账里的背景音乐补发一遍（前端刚连上时走它，与 `flushSoundPlayback` 同一条路）。
+   *
+   * 没在放（`clip === null`，含点过停止）就什么都不发——前端是干净的，无需求。
+   * 补发的触发点只有「前端刚连上」一处（见 `onRuntimeState` / `bgmResendPlan`），
+   * 所以这里不需要「按内容签名去重」那层状态。
+   */
+  const flushBgm = (): number => {
+    const playback = get().bgmPlayback;
+    if (!frontendReady() || playback.clip === null) {
+      return 0;
+    }
+
+    const actions = bgmResendActions({ clip: playback.clip, paused: playback.paused });
+    for (const action of actions) {
+      sendBgmAction(action);
+    }
+
+    return actions.length;
+  };
+
   const syncHistoryFlags = (): void => {
+    const undoHistory = historyOf(activeTrack("undo"));
+    const redoHistory = historyOf(activeTrack("redo"));
     set({
       scenes: sceneHistory.current,
-      canUndo: sceneHistory.canUndo,
-      canRedo: sceneHistory.canRedo,
-      undoLabel: sceneHistory.undoLabel ?? "",
-      redoLabel: sceneHistory.redoLabel ?? "",
+      doc: projectHistory.current,
+      canUndo: historyOf("scenes").canUndo || historyOf("project").canUndo,
+      canRedo: historyOf("scenes").canRedo || historyOf("project").canRedo,
+      undoLabel: undoHistory.canUndo ? (undoHistory.undoLabel ?? "") : "",
+      redoLabel: redoHistory.canRedo ? (redoHistory.redoLabel ?? "") : "",
     });
   };
 
   /**
    * 进入运行前的文档快照（对齐 Unity 的播放模式：**运行中的改动不保存、退出即还原**）。
    *
-   * 运行态里允许随便改（改激活、拖位置、涂格子…）——那些改动会推给前端看效果，但既不写盘也不留历史；
-   * 退出运行时把整个文档换回这份快照。immer 的文档是不可变的，所以这里存引用就够（每次 apply 都是新对象）。
+   * 运行态里允许随便改（改激活、拖位置、涂格子、调音量…）——那些改动会推给前端看效果，
+   * 但既不写盘也不留历史；退出运行时把整个文档换回这份快照。immer 的文档是不可变的，
+   * 所以这里存引用就够（每次 apply 都是新对象）。
+   *
+   * v15 起快照里**也带着工程文件**：全局设置（三档音量）同样是文档数据，
+   * 「运行态改音量立刻生效、退出运行还原」这条规矩靠它落地。
    */
-  let runBaseline: { readonly scenes: readonly SceneDoc[]; readonly activeSceneName: string | null } | null = null;
+  let runBaseline: {
+    readonly scenes: readonly SceneDoc[];
+    readonly activeSceneName: string | null;
+    readonly doc: ProjectDoc;
+  } | null = null;
 
   /** 拍下当前文档作为运行基线（不动状态、不记日志）。 */
   const snapshotRunBaseline = (): void => {
-    runBaseline = { scenes: get().scenes, activeSceneName: get().activeSceneName };
+    runBaseline = {
+      scenes: get().scenes,
+      activeSceneName: get().activeSceneName,
+      doc: projectHistory.current,
+    };
   };
 
   /** 进入运行态：记下快照，并让底栏显示「运行中（不保存）」。 */
@@ -1413,6 +1747,8 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
     }
 
     sceneHistory.reset(baseline.scenes);
+    // 工程文件（全局设置）一起还原：运行态里拖过的音量不留痕（要留下就先退出运行再调）
+    projectHistory.reset(baseline.doc);
 
     const restoredNames = new Set(baseline.scenes.map((scene) => scene.name));
     set((state) => ({
@@ -1452,6 +1788,18 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
   const savedScenes = new Map<string, string>();
   let saveTimer: number | null = null;
 
+  /**
+   * 上次成功写盘的**工程文件**文本；`null` = 还没装载过（或刚换过文档）。
+   *
+   * 与 `savedScenes` 同一个用途，只是工程文件只有一份，所以存文本而不是 Map。
+   */
+  let savedProjectText: string | null = null;
+  let projectSaveTimer: number | null = null;
+
+  /** 内存里的工程文件与磁盘不一致（有未保存的全局设置改动）。 */
+  const projectDirty = (): boolean =>
+    get().project.current !== null && savedProjectText !== serializeProjectFile(projectHistory.current);
+
   /** 内存里与磁盘不一致的场景名（顺序与 scenes 一致）。 */
   const dirtySceneNames = (): string[] =>
     get()
@@ -1487,6 +1835,33 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
     }, SCENE_SAVE_DEBOUNCE_MS);
   };
 
+  /**
+   * 有改动就延迟回写**工程文件**（全局设置）。
+   *
+   * 与场景那套同一份防抖窗口：拖音量滑杆时每一格都会改文档，但只该写一次盘。
+   * 运行态下不写（见 `saveProjectNow`）。
+   */
+  const scheduleProjectSave = (): void => {
+    if (get().project.current === null) {
+      return;
+    }
+
+    if (get().runtime.runtimeActive) {
+      set({ projectSaveState: "runtime" });
+      return;
+    }
+
+    set({ projectSaveState: "pending" });
+    if (projectSaveTimer !== null) {
+      window.clearTimeout(projectSaveTimer);
+    }
+
+    projectSaveTimer = window.setTimeout(() => {
+      projectSaveTimer = null;
+      void get().saveProjectNow();
+    }, SCENE_SAVE_DEBOUNCE_MS);
+  };
+
   sceneHistory.subscribe(() => {
     syncHistoryFlags();
     // 运行态下文档一改就（去抖）把整份场景推给服务端 → 前端镜像跟着变
@@ -1503,6 +1878,27 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
     }
 
     scheduleSceneSave();
+  });
+
+  /**
+   * 工程文件（全局设置）的变更：与场景那套对称——同步 doc 与撤销标记、运行态下推给服务端、
+   * 编辑态下（去抖）落盘。
+   */
+  projectHistory.subscribe(() => {
+    syncHistoryFlags();
+    scheduleSettingsPush();
+
+    if (get().runtime.runtimeActive) {
+      set({ projectSaveState: "runtime" });
+      return;
+    }
+
+    if (!projectDirty()) {
+      set({ projectSaveState: "saved" });
+      return;
+    }
+
+    scheduleProjectSave();
   });
 
   /**
@@ -1624,12 +2020,17 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
     teleportEditorTarget: null,
     videoEditor: false,
     videoEditorTarget: null,
+    globalSettings: false,
+    bgmDialog: false,
+    audioTags: false,
     fogMask: false,
     fogMaskTarget: null,
     gridEditor: false,
     gridEditorTarget: null,
     sceneSaveState: "saved",
     sceneSaveError: "",
+    projectSaveState: "saved",
+    projectSaveError: "",
     gridPaint: {
       mask: storedGridPaint.mask,
       brushSize: storedGridPaint.brushSize,
@@ -1640,6 +2041,7 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
     },
     soundPlayback: emptySoundPlayback(),
     videoPlayback: emptyVideoPlayback(),
+    bgmPlayback: emptyBgmPlayback(),
     fogReveal: emptyFogReveal(),
     transformStart: null,
     runtime: {
@@ -1649,6 +2051,7 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       client: null,
       scene: null,
       resources: null,
+      settings: null,
       logs: [],
       lastError: "",
     },
@@ -1658,12 +2061,33 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       return sceneHistory.apply(label, recipe, options ?? {});
     },
 
+    applyProject(label, recipe, options) {
+      // 与 applyScenes 对称：订阅里会同步 doc、撤销/重做标记与工程文件的落盘
+      return projectHistory.apply(label, recipe, options ?? {});
+    },
+
     undo() {
-      sceneHistory.undo();
+      // 两套历史共用一个撤销入口：作用在**最近改过的那条轨道**上，撤完了轮到另一条
+      // （顺序判定只有 `activeTrack` 一处，菜单文案也用它）
+      const track = activeTrack("undo");
+      const history = historyOf(track);
+      if (!history.canUndo) {
+        return;
+      }
+
+      history.undo();
+      lastEditTrack = track;
     },
 
     redo() {
-      sceneHistory.redo();
+      const track = activeTrack("redo");
+      const history = historyOf(track);
+      if (!history.canRedo) {
+        return;
+      }
+
+      history.redo();
+      lastEditTrack = track;
     },
 
     resetDoc(doc) {
@@ -1672,6 +2096,9 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       sceneViewports.clear();
       // 订阅里会把 scenes 清空、撤销栈清掉，并把保存状态置回 saved
       sceneHistory.reset([]);
+      // 工程文件同理：换项目时这份 doc 就是新的磁盘内容（`openProject` 里已经读过它了）
+      projectHistory.reset(doc);
+      savedProjectText = serializeProjectFile(doc);
       set({
         doc,
         canUndo: false,
@@ -1685,6 +2112,8 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
         activeSceneName: null,
         sceneSaveState: "saved",
         sceneSaveError: "",
+        projectSaveState: "saved",
+        projectSaveError: "",
         // 换了文档：两个格子编辑窗口盯着的地图对象必然失效（偏好留着，下个项目接着用）
         // 两个格子编辑窗口同理：它们指向的地图对象已经不存在了
         fogMask: false,
@@ -1697,6 +2126,13 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
         videoPlayback: emptyVideoPlayback(),
         videoEditor: false,
         videoEditorTarget: null,
+        // 背景音乐也是一段记账（清单本身来自项目资源，不随项目变）：回到「什么都没放」，
+        // 两个窗口都关掉
+        bgmPlayback: emptyBgmPlayback(),
+        globalSettings: false,
+        bgmDialog: false,
+        // 标签表窗口也跟前一个项目的标签表说再见
+        audioTags: false,
         // 战争雾的揭示记账同理：瞄准的对象已经不存在了
         fogReveal: emptyFogReveal(),
       });
@@ -1874,11 +2310,28 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
         return undefined;
       }
 
+      /*
+        背景音乐不再属于对象（它走顶栏「音乐」弹框 + `play_bgm` 那一组命令）。
+        老文件里写着 `layer: "bgm"` 的对象**照样读得回来**，但播放会被前端明确拒掉——
+        与其让它走一趟注定失败的下发，不如在这里就说清楚该去哪儿（前端那边也有一份同样的说法）。
+      */
+      const objectLayer = sound?.layer ?? DEFAULT_SOUND_LAYER;
+      if (objectLayer === "bgm") {
+        pushLog(
+          makeLog(
+            "warn",
+            `「${object.name}」用的是背景音乐层：背景音乐已改成顶栏「音乐」弹框（点项目音频），` +
+              "请把这条改成音效或旁白",
+          ),
+        );
+        return undefined;
+      }
+
       // 先记账（「这一层现在该播什么」），再尽力下发——所以编辑器没连服务端 / 前端不在
       // 也点得动：状态记着，等前端连上补发
       const entry: Omit<SoundPlaybackEntry, "paused"> = {
         objectId,
-        layer: sound?.layer ?? DEFAULT_SOUND_LAYER,
+        layer: objectLayer,
         clips: [picked],
       };
       set({ soundPlayback: withPlaying(get().soundPlayback, entry) });
@@ -2097,6 +2550,156 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       set((state) => ({ runtime: { ...state.runtime, logs: [] } }));
     },
 
+    // ---------------------------------------------------------------- 全局背景音乐（弹框里点一首）
+
+    playBgm(clip) {
+      set({ bgmPlayback: withBgmPlaying(get().bgmPlayback, clip) });
+
+      /*
+        显式下发：DM 再点同一首的意思就是「从头再放一遍」，那条命令必须真的发出去
+        （补发那条路只在「前端刚连上」走一次，不参与这里的判断）。
+      */
+      return deliverBgm({ kind: "play", clip });
+    },
+
+    pauseBgm() {
+      const playback = get().bgmPlayback;
+      const next = withBgmPaused(playback, true);
+      if (next === playback) {
+        // 没在放就没有「这一首」可暂停（编辑器不知道前端此刻手里是什么）
+        pushLog(makeLog("warn", "还没点过曲子：先在弹框里点一首"));
+        return undefined;
+      }
+
+      set({ bgmPlayback: next });
+      return deliverBgm({ kind: "pause" });
+    },
+
+    resumeBgm() {
+      const playback = get().bgmPlayback;
+      const next = withBgmPaused(playback, false);
+      if (next === playback) {
+        pushLog(makeLog("warn", "现在没有暂停着的背景音乐"));
+        return undefined;
+      }
+
+      set({ bgmPlayback: next });
+      return deliverBgm({ kind: "resume" });
+    },
+
+    stopBgm() {
+      set({ bgmPlayback: withBgmStopped(get().bgmPlayback) });
+      return deliverBgm({ kind: "stop" });
+    },
+
+    flushBgmPlayback() {
+      return flushBgm();
+    },
+
+    openGlobalSettings(open) {
+      set({ globalSettings: open });
+    },
+
+    openBgmDialog(open) {
+      set({ bgmDialog: open });
+    },
+
+    // ---------------------------------------------------------------- 项目级数据：音频文件标注（显示名 + 标签）
+
+    setAudioName(clipId, name) {
+      // 连续敲名字合成一条撤销记录（与音量滑杆同一套写法）
+      return get().applyProject(
+        name.trim().length === 0 ? "清除音频文件名字" : "修改音频文件名字",
+        (draft) => {
+          setProjectAudioName(draft, clipId, name);
+        },
+        { coalesceKey: `audio-name:${clipId}` },
+      );
+    },
+
+    setAudioTags(clipId, tagIds) {
+      // 勾一个标签是**离散**动作，所以不合并撤销记录：一次撤销就退回上一个勾选状态
+      return get().applyProject("修改音频文件标签", (draft) => {
+        setProjectAudioTags(draft, clipId, tagIds);
+      });
+    },
+
+    addAudioTag(name) {
+      get().applyProject("新建标签", (draft) => {
+        addProjectAudioTag(draft, name);
+      });
+
+      // 命令返回的是 ID，但 `applyProject` 只回「有没有变更」——所以改完再查一次表：
+      // 名字已存在（没产生变更）时也能拿到那个 ID
+      const trimmed = name.trim();
+      const index = (get().doc.audioTags ?? []).indexOf(trimmed);
+      return index >= 0 ? index : null;
+    },
+
+    renameAudioTag(tagId, name) {
+      return get().applyProject("修改标签名字", (draft) => {
+        renameProjectAudioTag(draft, tagId, name);
+      });
+    },
+
+    deleteAudioTag(tagId) {
+      // 撤销菜单里写清删掉的是哪个标签（用**改之前**的名字）
+      const name = get().doc.audioTags?.[tagId] ?? `#${tagId}`;
+      return get().applyProject(`删除标签（${name}）`, (draft) => {
+        deleteProjectAudioTag(draft, tagId);
+      });
+    },
+
+    addAudioTagToClip(clipId, name) {
+      // 「新建并挂上」在**一条**撤销记录里做完：命令返回 ID，所以两步都在同一个 recipe 里
+      return get().applyProject("添加标签", (draft) => {
+        const tagId = addProjectAudioTag(draft, name);
+        if (tagId === null) {
+          return;
+        }
+
+        const current = draft.audioMeta?.[clipId]?.tags ?? [];
+        setProjectAudioTags(draft, clipId, [...current, tagId]);
+      });
+    },
+
+    openAudioTags(open) {
+      set({ audioTags: open });
+    },
+
+    // ---------------------------------------------------------------- 全局设置（工程文件：三档音量）
+
+    setBgmVolume(volume) {
+      // 音量滑杆拖动中每一步都改文档：同一个 coalesceKey 让它们合成一条撤销记录
+      return get().applyProject(
+        "调整背景音乐音量",
+        (draft) => {
+          setProjectBgmVolume(draft, volume);
+        },
+        { coalesceKey: "bgm:volume" },
+      );
+    },
+
+    setSfxVolume(volume) {
+      return get().applyProject(
+        "调整音效音量",
+        (draft) => {
+          setProjectSfxVolume(draft, volume);
+        },
+        { coalesceKey: "sfx:volume" },
+      );
+    },
+
+    setVoiceVolume(volume) {
+      return get().applyProject(
+        "调整旁白音量",
+        (draft) => {
+          setProjectVoiceVolume(draft, volume);
+        },
+        { coalesceKey: "voice:volume" },
+      );
+    },
+
     // ---------------------------------------------------------------- 项目
 
     openProjectDialog(mode) {
@@ -2191,7 +2794,8 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
         clearSceneImageCache();
         get().resetDoc(load.doc);
 
-        // 旧版工程文件：把内联场景落成独立文件，工程文件按新格式回写（只做一次）
+        // 旧版工程文件：把内联场景落成独立文件，工程文件按新格式回写（只做一次）。
+        // v15 起「缺 `settings`」也算需要回写（全局设置会被补一份默认的落进文件）。
         if (load.migratedScenes.length > 0 || load.needsRewrite) {
           for (const scene of load.migratedScenes) {
             await projectApi.writeText(
@@ -2200,10 +2804,7 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
             );
           }
 
-          await projectApi.writeText(
-            projectFileId(name),
-            `${JSON.stringify(load.doc, null, 2)}\n`,
-          );
+          await projectApi.writeText(projectFileId(name), serializeProjectFile(load.doc));
           pushLog(
             makeLog("info", `工程文件已升级到 v${DOCUMENT_FORMAT_VERSION}（场景拆成 ${load.migratedScenes.length} 个文件）`),
           );
@@ -2412,6 +3013,68 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       }
 
       await get().saveSceneNow();
+    },
+
+    // ---------------------------------------------------------------- 工程文件（音量 / 音频标注）
+
+    async saveProjectNow() {
+      const project = get().project.current;
+      if (project === null) {
+        return false;
+      }
+
+      // 运行态下不写盘：工程文件（三档音量 / 音频标注）同样是文档数据
+      // （改音量立刻生效、退出运行会还原）
+      if (get().runtime.runtimeActive) {
+        if (projectSaveTimer !== null) {
+          window.clearTimeout(projectSaveTimer);
+          projectSaveTimer = null;
+        }
+
+        set({ projectSaveState: "runtime" });
+        pushLog(
+          makeLog("info", "运行态：工程文件（音量 / 音频标注）不会保存（点「编辑」退出运行会还原）"),
+        );
+        return false;
+      }
+
+      if (projectSaveTimer !== null) {
+        window.clearTimeout(projectSaveTimer);
+        projectSaveTimer = null;
+      }
+
+      // 同步取快照：调用方可能紧接着清空内存（例如关闭项目）
+      const text = serializeProjectFile(projectHistory.current);
+      if (savedProjectText === text) {
+        set({ projectSaveState: "saved", projectSaveError: "" });
+        return true;
+      }
+
+      set({ projectSaveState: "saving", projectSaveError: "" });
+      try {
+        await projectApi.writeText(projectFileId(project), text);
+        savedProjectText = text;
+        set({ projectSaveState: "saved" });
+        return true;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        set({ projectSaveState: "error", projectSaveError: message });
+        pushLog(makeLog("error", `保存工程文件失败：${message}`));
+        return false;
+      }
+    },
+
+    async flushProjectSave() {
+      if (projectSaveTimer !== null) {
+        window.clearTimeout(projectSaveTimer);
+        projectSaveTimer = null;
+      }
+
+      if (!projectDirty()) {
+        return;
+      }
+
+      await get().saveProjectNow();
     },
 
     async loadScenes() {

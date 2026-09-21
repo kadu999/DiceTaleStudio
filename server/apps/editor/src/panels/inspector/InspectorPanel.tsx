@@ -11,10 +11,12 @@ import {
 import { cellPixelSize } from "@dts/grid";
 import type { ResourceTreeNode } from "../../services/project-api";
 import { findResourceNode, useEditorStore } from "../../state/editor-store";
+import { tagsOfClip, type AudioTagRef } from "../audio-catalog";
 import { assetDisplayPath, findAssetById } from "../asset-picker";
 import { assetKindLabel, assetPreviewKind, formatSize } from "../asset-info";
 import { badgeIconOf } from "../object-kinds";
 import { EmptyState } from "../EmptyState";
+import { AudioTagDialog } from "../../app/AudioTagDialog";
 import { Field, FieldGroup, FieldRow } from "./fields";
 import { FogFields } from "./FogFields";
 import { GridAnnotationFields } from "./GridAnnotationFields";
@@ -948,11 +950,21 @@ function parseCoordinate(raw: string): number {
  *
  * 图片 / 视频 / 音频额外给预览（图片还会读出真实像素尺寸——那是贴图最有用的属性）。
  * 预览直接用后端的原始字节接口，所以「提交到目录里的素材」能立刻看到，不需要先导入。
+ *
+ * **音频在这里**就地改**显示名**（v17 起）与**标签**（v18 起：tag 是整数、名字住在标签表里）——
+ * 曾经另有一个「音频文件」列表窗口做这件事，但「选中哪个就改哪个」本来就是这个面板的用法，
+ * 多一个窗口只是让人多跳一次（v18 删掉）。「名称」那一行始终是**真实文件名**：
+ * 这个面板同时也在回答「这到底是盘上的哪个文件」。
  */
 function AssetProperties({ asset }: { readonly asset: ResourceTreeNode }): React.JSX.Element {
   const [imageSize, setImageSize] = useState<{ width: number; height: number } | null>(null);
+  const meta = useEditorStore((state) => state.doc.audioMeta);
+  const table = useEditorStore((state) => state.doc.audioTags);
   const preview = assetPreviewKind(asset.name);
   const src = `/api/resources/raw?id=${encodeURIComponent(asset.id)}`;
+  const audioMeta = preview === "audio" ? meta?.[asset.id] : undefined;
+  // 标签在文档里是**整数 ID**（tag 是整数、名字住在标签表里），界面上一律按名字显示
+  const tags = tagsOfClip(table, audioMeta?.tags);
 
   return (
     <div data-testid="asset-properties">
@@ -965,6 +977,12 @@ function AssetProperties({ asset }: { readonly asset: ResourceTreeNode }): React
         )}
         {imageSize === null ? null : (
           <Field label="尺寸" value={`${imageSize.width} × ${imageSize.height}`} mono />
+        )}
+        {preview !== "audio" ? null : (
+          <>
+            <AudioDisplayNameField assetId={asset.id} fileName={asset.name} storedName={audioMeta?.name ?? ""} />
+            <AudioTagsField assetId={asset.id} tags={tags} />
+          </>
         )}
       </FieldGroup>
 
@@ -996,6 +1014,141 @@ function AssetProperties({ asset }: { readonly asset: ResourceTreeNode }): React
         <audio src={src} controls data-testid="asset-preview-audio" className="w-full" />
       ) : null}
     </div>
+  );
+}
+
+/** 音频的**显示名**：就地改（Enter / 失焦提交、Esc 还原）；留空 = 退回素材文件名。 */
+function AudioDisplayNameField({
+  assetId,
+  fileName,
+  storedName,
+}: {
+  readonly assetId: string;
+  readonly fileName: string;
+  readonly storedName: string;
+}): React.JSX.Element {
+  const setAudioName = useEditorStore((state) => state.setAudioName);
+  const [draft, setDraft] = useState(storedName);
+
+  useEffect(() => {
+    setDraft(storedName);
+  }, [assetId, storedName]);
+
+  const commit = (): void => {
+    if (draft.trim() === storedName.trim()) {
+      setDraft(storedName);
+      return;
+    }
+
+    setAudioName(assetId, draft);
+  };
+
+  return (
+    <FieldRow label="显示名">
+      <input
+        data-testid="asset-audio-name"
+        value={draft}
+        placeholder={fileName}
+        aria-label="音频显示名"
+        title="给这个音频文件起个好认的名字（留空 = 用素材文件名）；只是编辑器里给人看 / 找的"
+        className="min-w-0 flex-1 rounded border border-[var(--color-editor-border)] bg-black/30 px-1 py-0.5 text-[11px] outline-none placeholder:text-[var(--color-editor-text-dim)]"
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            commit();
+            event.currentTarget.blur();
+          } else if (event.key === "Escape") {
+            setDraft(storedName);
+          }
+        }}
+      />
+    </FieldRow>
+  );
+}
+
+/**
+ * 音频的**标签**：已勾的按名字列成 chip（`×` = 只从这个文件上摘掉），
+ * 「＋ 标签」打开**选择标签**框（给这个文件勾 / 去、也能现建一个），
+ * 「标签…」打开**标签表**（新建 / 改名 / 删除——改名字只改表）。
+ */
+function AudioTagsField({
+  assetId,
+  tags,
+}: {
+  readonly assetId: string;
+  readonly tags: readonly AudioTagRef[];
+}): React.JSX.Element {
+  const setAudioTags = useEditorStore((state) => state.setAudioTags);
+  const openAudioTags = useEditorStore((state) => state.openAudioTags);
+  const [picking, setPicking] = useState(false);
+
+  return (
+    <>
+      <FieldRow label="标签">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1" data-testid="asset-audio-tags">
+          {tags.length === 0 ? (
+            <span className="text-[11px] text-[var(--color-editor-text-dim)]">（没有标签）</span>
+          ) : null}
+
+          {tags.map((tag) => (
+            <span
+              key={tag.id}
+              data-testid="asset-audio-tag"
+              data-id={tag.id}
+              data-tag={tag.name}
+              className="flex flex-none items-center gap-1 rounded-full border border-[var(--color-editor-border)] px-1.5 py-0.5 text-[10px]"
+            >
+              <span title={`tag ID = ${tag.id}`}>{tag.name}</span>
+              <button
+                type="button"
+                data-testid="asset-audio-tag-remove"
+                data-id={tag.id}
+                aria-label={`从这个文件上摘掉标签 ${tag.name}`}
+                title={`把这个文件上的「${tag.name}」摘掉（别的文件上的不受影响；标签本身还在「标签」窗口里）`}
+                className="text-[var(--color-editor-text-dim)] hover:text-[var(--color-editor-danger)]"
+                onClick={() =>
+                  setAudioTags(
+                    assetId,
+                    tags.filter((item) => item.id !== tag.id).map((item) => item.id),
+                  )
+                }
+              >
+                ×
+              </button>
+            </span>
+          ))}
+
+          <button
+            type="button"
+            data-testid="asset-audio-add-tag"
+            title="打开「选择标签」：给这个文件勾 / 去标签，也能现建一个"
+            className="flex-none rounded border border-dashed border-[var(--color-editor-border)] px-1.5 py-0.5 text-[10px] text-[var(--color-editor-text-dim)] hover:border-[var(--color-editor-accent)] hover:text-[var(--color-editor-text)]"
+            onClick={() => setPicking(true)}
+          >
+            ＋ 标签
+          </button>
+        </div>
+      </FieldRow>
+
+      <FieldRow label="">
+        <button
+          type="button"
+          data-testid="asset-audio-open-tags"
+          title="打开「标签」窗口：新建标签、给每个 tag 改名字 / 删除"
+          className="toolbar-button flex-none hover:toolbar-button-hover"
+          onClick={() => openAudioTags(true)}
+        >
+          标签…
+        </button>
+        <span className="min-w-0 flex-1 truncate text-[10px] text-[var(--color-editor-text-dim)]">
+          标签是整数（#0、#1…），名字在「标签」窗口里改——改名字不会动到音频文件。
+        </span>
+      </FieldRow>
+
+      {/* 选择标签：挂在这个面板上（`AssetProperties` 按资源 id 挂了 key，换文件时自动收起） */}
+      <AudioTagDialog clipId={picking ? assetId : null} onClose={() => setPicking(false)} />
+    </>
   );
 }
 

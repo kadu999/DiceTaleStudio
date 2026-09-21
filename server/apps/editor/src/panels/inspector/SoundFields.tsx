@@ -1,14 +1,14 @@
 import {
   DEFAULT_SOUND_LAYER,
-  SOUND_LAYERS,
+  OBJECT_SOUND_LAYERS,
   SOUND_LAYER_LABELS,
   type SceneObjectDoc,
   type SoundLayer,
 } from "@dts/document";
 import { useEditorStore, type EditorMode } from "../../state/editor-store";
 import type { RuntimeStatus } from "../../services/runtime-client";
-import { assetDisplayName } from "../asset-info";
-import { assetDisplayPath, findAssetById } from "../asset-picker";
+import { audioDisplayName } from "../audio-catalog";
+import { assetDisplayPath } from "../asset-picker";
 import {
   FieldRow,
   PLAYBACK_BUTTON_ACTIVE_CLASS,
@@ -72,7 +72,7 @@ export function soundDeliveryHint(input: {
 }
 
 export function SoundFields({ object }: { readonly object: SceneObjectDoc }): React.JSX.Element {
-  const tree = useEditorStore((state) => state.project.tree);
+  const audioMeta = useEditorStore((state) => state.doc.audioMeta);
   const scenes = useEditorStore((state) => state.scenes);
   const activeSceneName = useEditorStore((state) => state.activeSceneName);
   const playback = useEditorStore((state) => state.soundPlayback);
@@ -93,11 +93,13 @@ export function SoundFields({ object }: { readonly object: SceneObjectDoc }): Re
   const layer: SoundLayer = sound?.layer ?? DEFAULT_SOUND_LAYER;
   const picked = sound?.picked;
 
-  /** 面板上显示什么名字：自己起过就用它，否则用素材文件名（去掉扩展名）。 */
-  const nameOf = (clip: string): string => {
-    const fileName = findAssetById(tree, clip)?.name ?? clip;
-    return sound?.names?.[clip] ?? assetDisplayName(fileName);
-  };
+  /**
+   * 面板上显示什么名字：**这个对象自己起的 → 音频文件自己的显示名 → 素材文件名**。
+   *
+   * 中间那一层是「音频文件」窗口里的项目级标注（v17 起）：同一个文件在别处（BGM 弹框、
+   * 选择音频）也叫这个名字，所以对象这边留空就自动跟随，不必每个对象再起一遍。
+   */
+  const nameOf = (clip: string): string => audioDisplayName(audioMeta, clip, sound?.names?.[clip]);
 
   const pickedName = picked === undefined ? "" : nameOf(picked);
   const playBlocked = soundPlayBlockedReason({ clips: clips.length, picked });
@@ -145,17 +147,37 @@ export function SoundFields({ object }: { readonly object: SceneObjectDoc }): Re
           data-testid="sound-layer"
           aria-label="声音层级"
           value={layer}
-          title="声道分组：同层同时只响一条（播新的，旧的停）；要两件事同时响就分到两层"
+          title="这是「这几类声音」里的哪一类：同层同时只响一条（播新的，旧的停）；要两件事同时响就分到两类。背景音乐不在对象上（顶栏「音乐」弹框），对象上只能选音效 / 旁白"
           className="min-w-0 flex-1 rounded border border-[var(--color-editor-border)] bg-black/30 px-1 py-0.5 text-[11px] outline-none"
           onChange={(event) => setSoundLayer(object.id, event.target.value as SoundLayer)}
         >
-          {SOUND_LAYERS.map((value) => (
+          {/*
+            对象只给「音效 / 旁白」两档：背景音乐（`bgm`）已经改成顶栏「音乐」弹框那一套了。
+            老文件里写着 `bgm` 的对象**照旧显示它**（下面那条提示让作者自己改），
+            而不是悄悄把它改成音效——那等于替用户改了数据。
+          */}
+          {layer === "bgm" ? (
+            <option value="bgm">{SOUND_LAYER_LABELS.bgm}（已改为弹框）</option>
+          ) : null}
+          {OBJECT_SOUND_LAYERS.map((value) => (
             <option key={value} value={value}>
               {SOUND_LAYER_LABELS[value]}
             </option>
           ))}
         </select>
       </FieldRow>
+
+      {layer === "bgm" ? (
+        <FieldRow label="">
+          <span
+            data-testid="sound-layer-legacy-bgm"
+            className="text-[10px] leading-relaxed text-[var(--color-editor-warn)]"
+            title="背景音乐现在是顶栏「音乐」弹框那一套（点项目 Assets/audio 下的音频）：把这条改成音效 / 旁白"
+          >
+            背景音乐已改成顶栏「音乐」弹框：把这条改成音效 / 旁白
+          </span>
+        </FieldRow>
+      ) : null}
 
       {/*
         音频那一行：**加进来的全列出来**（单选，选中的那条就是前端会播的）。

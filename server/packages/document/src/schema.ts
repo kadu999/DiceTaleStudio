@@ -2,7 +2,9 @@ import { z } from "zod";
 import {
   DOCUMENT_FORMAT_VERSION,
   SOUND_LAYERS,
+  type BgmSettingsDoc,
   type ProjectDoc,
+  type ProjectSettingsDoc,
   type SceneDoc,
   type SceneFileDoc,
 } from "./types";
@@ -67,7 +69,9 @@ export const mapDataSchema = z.object({
  *
  * `clips` 给默认值 `[]`、`layer` 给默认值 `"sfx"`：手写文件里少写一项时，
  * 语义只能是「还没加音频」「音效这一层」，给默认值省掉一处三元判断。
- * 层级只认四档（`SOUND_LAYERS`）：写了别的值说明数据不是这份编辑器写的，报错比猜更安全。
+ * 层级只认三档（`SOUND_LAYERS` = `bgm` / `sfx` / `voice`）：写了别的值说明数据不是这份编辑器写的，
+ * 报错比猜更安全。`bgm` 虽然还认（老文件里对象可能写着它），但**界面不再给对象选**
+ * （背景音乐是项目级全局设置，见 `OBJECT_SOUND_LAYERS` 与 `validateScene` 的警告）。
  * `picked` 缺省 = 还没选（播放按钮点不了）：它必须落在 `clips` 里，越界不算解析错误
  * （`validateScene` 会把「选中的那条不在列表里」提醒出来并按没选处理）。
  * `names` 是「文件 → 显示名」的可选标签（缺省 = 素材文件名）：空白名字不在这里硬拒，
@@ -191,11 +195,101 @@ export const itemLibrarySchema = z.object({
   items: z.array(itemDefSchema),
 });
 
-/** 工程文件：只有项目级数据，场景在 `Assets/scenes/` 下各自成文件。 */
+/**
+ * 三档音量的缺省值（`0..1`）：背景音乐略低（别盖住说话）、音效其次、旁白最清（必须听清）。
+ *
+ * 放在这里而不是散在各处，是因为它们既是 schema 的默认值，也是「新建项目」的初值
+ * （`createEmptyProject` 与 `defaultProjectSettings()` 共用同一份）。
+ */
+export const DEFAULT_BGM_VOLUME = 0.6;
+export const DEFAULT_SFX_VOLUME = 0.8;
+export const DEFAULT_VOICE_VOLUME = 1;
+
+/** 缺省的背景音乐通道：只有音量（歌单在编辑器弹框里，不进文档）。 */
+export function defaultBgmSettings(): BgmSettingsDoc {
+  return { volume: DEFAULT_BGM_VOLUME };
+}
+
+/** 缺省的音频设置（背景音乐 + 音效 + 旁白三档音量）。 */
+export function defaultAudioSettings(): ProjectSettingsDoc["audio"] {
+  return {
+    bgm: defaultBgmSettings(),
+    sfx: { volume: DEFAULT_SFX_VOLUME },
+    voice: { volume: DEFAULT_VOICE_VOLUME },
+  };
+}
+
+/** 缺省的项目级全局设置（新建项目、老文件缺项补齐都用它）。 */
+export function defaultProjectSettings(): ProjectSettingsDoc {
+  return { audio: defaultAudioSettings() };
+}
+
+/**
+ * 三档音量共用的形状：**只有一个 `volume`**。
+ *
+ * v16 起背景音乐也用它（v15 的歌单 / 默认曲 / 循环已从文档里拿掉）。
+ * 越界不在这里硬拒（与 `scale` 同一个口径：读不开比听不清更糟）：`validateProject` 报 warning、
+ * 编辑命令按 `0..1` 夹一次，前端收到也按 `0..1` 用。
+ */
+export const channelVolumeSchema = z.object({
+  volume: z.number(),
+});
+
+/**
+ * 项目级全局设置（v15 起，v16 起背景音乐只剩音量）。
+ *
+ * 每一档都**给默认值**：老 `project.json`（以及手写缺项的文件）读出来就是一份可用的设置，
+ * 不必在调用方到处写三元判断。音效音量比旁白低一档是常听的配比（音效多半是点缀，
+ * 旁白是「必须听清」的那一档）。
+ */
+export const projectSettingsSchema = z.object({
+  audio: z
+    .object({
+      bgm: channelVolumeSchema.default(() => defaultBgmSettings()),
+      sfx: channelVolumeSchema.default(() => ({ volume: DEFAULT_SFX_VOLUME })),
+      voice: channelVolumeSchema.default(() => ({ volume: DEFAULT_VOICE_VOLUME })),
+    })
+    .default(() => defaultAudioSettings()),
+});
+
+/**
+ * 一个音频文件的标注（v17 起；v18 起标签是**整数 ID**）：显示名 + 标签 ID 列表。
+ *
+ * **两项都不给默认值**（与 `video` / `teleport` 同一个口径）：「没写」本身有语义——
+ * 显示名空着 = 用素材文件名，标签空着 = 还没打标签。补成 `""` / `[]` 只会让
+ * 「没整理过」和「整理成空」变得分不清。脏值（空名字、越界 / 重复的标签 ID）由
+ * `validateProject` 报 warning。
+ */
+export const audioMetaEntrySchema = z.object({
+  name: z.string().optional(),
+  tags: z.array(z.number().int()).optional(),
+});
+
+/**
+ * 项目级**标签表**（v18 起）：下标 = tag ID，值 = 名字（`null` = 已删除的洞）。
+ *
+ * 逐项校验只保证「是字符串或 null」；空名字 / 重名 / 文件引用越界都由 `validateProject` 报 warning
+ * （读不开比标签显示不出来更糟）。
+ */
+export const audioTagTableSchema = z.array(z.string().nullable());
+
+/**
+ * 工程文件：只有项目级数据，场景在 `Assets/scenes/` 下各自成文件。
+ *
+ * `audioMeta` / `audioTags` **可选且不给默认值**：缺省 = 这个项目还没整理过音频
+ * （v14 的 `video` 同一条规矩：不拿空壳冒充「有这个字段」）。
+ */
 export const projectDocSchema = z.object({
   formatVersion: z.number().int().positive(),
   name: z.string().min(1),
   items: itemLibrarySchema,
+  // v15 起：项目级全局设置（目前是音频）。**给默认值**：老 `project.json` 里没有它，
+  // 语义只能是「全用缺省参数」；版本升到 15 时本来就会回写一次，磁盘上的文件从此自描述。
+  settings: projectSettingsSchema.default(() => defaultProjectSettings()),
+  // v17 起：音频文件标注（显示名 + 标签 ID）。纯编辑器数据，不进协议、不下发 Unity。
+  audioMeta: z.record(z.string(), audioMetaEntrySchema).optional(),
+  // v18 起：音频标签表（下标 = tag ID，值 = 名字）。与 audioMeta 一起构成「标签」这一套。
+  audioTags: audioTagTableSchema.optional(),
 });
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -419,6 +513,177 @@ function migrateTeleportTarget(raw: Record<string, unknown>): {
 }
 
 /**
+ * v15：声音层级从四档收敛成三档，原来的「环境音 `ambient`」并进 **`bgm`**。
+ *
+ * 为什么是并进 `bgm` 而不是 `sfx`：环境音就是「一直在响的底噪」，与背景音乐同属
+ * 「一条持续着的氛围声」，只是分工不同；并进音效会把它变成一次性动作，语义差得远。
+ * 只认得出 `ambient` 才动（写别的值由 schema 报错，不在这里猜）。
+ */
+function migrateSoundLayers(raw: Record<string, unknown>): {
+  readonly raw: Record<string, unknown>;
+  readonly changed: boolean;
+} {
+  const objects = Array.isArray(raw.objects) ? raw.objects : [];
+  let changed = false;
+
+  const next = objects.map((object) => {
+    if (!isRecord(object) || !isRecord(object.sound)) {
+      return object;
+    }
+
+    if (object.sound.layer !== "ambient") {
+      return object;
+    }
+
+    changed = true;
+    return { ...object, sound: { ...object.sound, layer: "bgm" } };
+  });
+
+  return changed ? { raw: { ...raw, objects: next }, changed } : { raw, changed };
+}
+
+/**
+ * v16：把 `settings.audio.bgm` 上的**歌单 / 默认曲 / 名字 / 循环**删掉，只留 `volume`。
+ *
+ * 为什么显式删而不是靠 zod 的「丢掉不认识的键」：静默丢弃正是数据损坏的来源——
+ * 这里要说清「这四项是**故意**去掉的」（背景音乐改成弹框里点项目音频，播放不再需要声明），
+ * 顺带把 `changed` 报出来，让调用方把新形状回写一次。
+ *
+ * 缺 `volume`（或整份不是对象）就补默认值；`settings` 本身没有时不在这里补
+ * （`projectDocSchema` 会给整份默认值，`settingsFilled` 那条回写规矩管它）。
+ */
+function migrateBgmSettings(raw: Record<string, unknown>): {
+  readonly raw: Record<string, unknown>;
+  readonly changed: boolean;
+} {
+  const settings = raw.settings;
+  if (!isRecord(settings)) {
+    return { raw, changed: false };
+  }
+
+  const audio = settings.audio;
+  if (!isRecord(audio)) {
+    return { raw, changed: false };
+  }
+
+  const bgmRecord = isRecord(audio.bgm) ? audio.bgm : undefined;
+  const hadLegacy =
+    bgmRecord !== undefined &&
+    (bgmRecord.clips !== undefined ||
+      bgmRecord.picked !== undefined ||
+      bgmRecord.names !== undefined ||
+      bgmRecord.loop !== undefined);
+  const volume =
+    typeof bgmRecord?.volume === "number" ? (bgmRecord.volume as number) : DEFAULT_BGM_VOLUME;
+
+  if (!hadLegacy && bgmRecord !== undefined && bgmRecord.volume === volume) {
+    return { raw, changed: false };
+  }
+
+  return {
+    raw: { ...raw, settings: { ...settings, audio: { ...audio, bgm: { volume } } } },
+    changed: true,
+  };
+}
+
+/**
+ * v18：把音频标签从**字符串**改成**整数 ID + 项目级标签表**（`audioTags`）。
+ *
+ * v17 的 `audioMeta[clip].tags` 是 `["战斗", "紧张"]` 这样的字符串数组；现在文件里只记
+ * `[0, 1]`（下标 = tag ID），名字住在 `audioTags` 里——这是「改标签名只改一处」的前提。
+ *
+ * 迁移规则（都按**出现顺序**，保证同一份文件每次迁出来的 ID 一样）：
+ * - 逐个文件、逐个标签地看：trim 后非空的名字，已经在表里就用那个 ID，没有就追加；
+ * - 每个文件的标签换成 ID 列表（去重、升序），空列表就把 `tags` 删掉；
+ * - 改名后既没名字也没标签的 entry 收掉（与命令层「不留空壳」同一条规矩）；
+ * - 表是空的（没有任何标签）就不写 `audioTags`。
+ *
+ * 已经有了 `audioTags`（不该出现在 v17，防御性判断）就整段不动。
+ */
+function migrateAudioTags(raw: Record<string, unknown>): {
+  readonly raw: Record<string, unknown>;
+  readonly changed: boolean;
+} {
+  const meta = raw.audioMeta;
+  if (!isRecord(meta) || Array.isArray(raw.audioTags)) {
+    return { raw, changed: false };
+  }
+
+  const table: string[] = [];
+  const idOf = (name: string): number => {
+    const existing = table.indexOf(name);
+    if (existing >= 0) {
+      return existing;
+    }
+
+    table.push(name);
+    return table.length - 1;
+  };
+
+  let changed = false;
+  const nextMeta: Record<string, unknown> = {};
+
+  for (const [clipId, entry] of Object.entries(meta)) {
+    if (!isRecord(entry)) {
+      nextMeta[clipId] = entry;
+      continue;
+    }
+
+    const legacy = entry.tags;
+    if (!Array.isArray(legacy)) {
+      nextMeta[clipId] = entry;
+      continue;
+    }
+
+    changed = true;
+    const ids = new Set<number>();
+    for (const tag of legacy) {
+      if (typeof tag !== "string") {
+        continue;
+      }
+
+      const trimmed = tag.trim();
+      if (trimmed.length === 0) {
+        continue;
+      }
+
+      ids.add(idOf(trimmed));
+    }
+
+    const nextEntry: Record<string, unknown> = { ...entry };
+    if (ids.size === 0) {
+      delete nextEntry.tags;
+    } else {
+      nextEntry.tags = [...ids].sort((a, b) => a - b);
+    }
+
+    // 名字与标签都没了：这一条整个收掉（与 `pruneAudioMeta` 同一个口径）
+    if (nextEntry.name === undefined && nextEntry.tags === undefined) {
+      continue;
+    }
+
+    nextMeta[clipId] = nextEntry;
+  }
+
+  if (!changed) {
+    return { raw, changed: false };
+  }
+
+  const next: Record<string, unknown> = { ...raw };
+  if (Object.keys(nextMeta).length === 0) {
+    delete next.audioMeta;
+  } else {
+    next.audioMeta = nextMeta;
+  }
+
+  if (table.length > 0) {
+    next.audioTags = table;
+  }
+
+  return { raw: next, changed: true };
+}
+
+/**
  * 文件里写的 `formatVersion`（没写就按 v1 算）。
  *
  * **判断迁移不能拿它跟 `DOCUMENT_FORMAT_VERSION` 比**：版本号一涨，所有旧文件都会被
@@ -433,7 +698,7 @@ function formatVersionOf(raw: Record<string, unknown>): number {
 const WORLD_POSITION_VERSION = 5;
 
 /**
- * 版本迁移。当前最高 v6；遇到更高版本明确拒绝
+ * 版本迁移。遇到高于本编辑器支持的版本明确拒绝
  * （避免高版本字段被静默丢弃后回存造成数据损坏）。
  */
 export function migrateProjectDoc(doc: ProjectDoc): ProjectDoc {
@@ -464,19 +729,36 @@ export interface ProjectFileLoad {
  */
 export function parseProjectFile(raw: unknown): ProjectFileLoad {
   const upgraded = upgradeRawDocument(raw);
-  const result = projectDocSchema.safeParse(upgraded);
+  // v16：背景音乐的歌单 / 默认曲 / 名字 / 循环从工程文件里拿掉（只留音量）。
+  // 先显式删再交给 schema：schema 的「丢掉不认识的键」是静默的，这里要留下 changed。
+  const bgm = isRecord(upgraded)
+    ? migrateBgmSettings(upgraded)
+    : { raw: upgraded, changed: false };
+  // v18：音频标签从字符串换成整数 ID + `audioTags` 标签表（同样要留下 changed）
+  const tags = isRecord(bgm.raw)
+    ? migrateAudioTags(bgm.raw)
+    : { raw: bgm.raw, changed: false };
+  const result = projectDocSchema.safeParse(tags.raw);
   if (!result.success) {
     throw new Error(`项目文档校验失败: ${formatIssues(result.error)}`);
   }
 
   // v2（以及经 v1 升级后的 v2）的工程文件里还有内联场景；v3 起没有
-  const scenes = isRecord(upgraded) && Array.isArray(upgraded.scenes) ? upgraded.scenes : [];
+  const scenes = isRecord(tags.raw) && Array.isArray(tags.raw.scenes) ? tags.raw.scenes : [];
   const migratedScenes: SceneDoc[] = scenes.map((scene) => {
     const file = parseSceneFile(scene).file;
     return { name: scene.name, objects: file.objects };
   });
 
-  const needsRewrite = migratedScenes.length > 0 || result.data.formatVersion < DOCUMENT_FORMAT_VERSION;
+  // v15：老工程文件里没有 `settings`——schema 补一份缺省的，但**磁盘上还是缺**，
+  // 所以也要标记回写一次（与场景那边「补过就回写」同一条规矩：不留「内存里有、文件里没有」）
+  const settingsFilled = isRecord(tags.raw) && !isRecord(tags.raw.settings);
+  const needsRewrite =
+    migratedScenes.length > 0 ||
+    settingsFilled ||
+    bgm.changed ||
+    tags.changed ||
+    result.data.formatVersion < DOCUMENT_FORMAT_VERSION;
   const doc = migrateProjectDoc({
     ...(result.data as ProjectDoc),
     ...(needsRewrite ? { formatVersion: DOCUMENT_FORMAT_VERSION } : {}),
@@ -526,14 +808,16 @@ export function parseSceneFile(raw: unknown, size?: SceneSizeHint): SceneFileLoa
     const filled = withFilledObjectFields(migrated);
     // v12：传送阵的「单目标」搬成「候选清单 + 选中的那一个」（中间那一版写下的文件要读得回来）
     const teleport = migrateTeleportTarget(filled.raw);
+    // v15：声音层级四档 → 三档（环境音并进背景音乐）
+    const layers = migrateSoundLayers(teleport.raw);
     // v13：战争雾的总开关（`fog.enabled`）**不用单独迁移**——schema 给它默认值 `true`
     // （v10–v12 的文件里「有 fog」就等于「开着」），而版本号一升就会回写一次，
     // 于是磁盘上的文件重新变得自描述。
     // v14：地图 / 精灵上的视频列表（`video`）同样**不用补壳**——整个字段是可选的，
     // 「没有它」就是「这个对象不放视频」，版本号 +1 触发一次回写即可。
     // 读出来的文档一律是当前版本（v6 起网格里不再存 `cellSize`，顺手被 schema 丢掉）
-    normalized = { ...teleport.raw, formatVersion: DOCUMENT_FORMAT_VERSION };
-    needsRewrite = version < DOCUMENT_FORMAT_VERSION || filled.changed || teleport.changed;
+    normalized = { ...layers.raw, formatVersion: DOCUMENT_FORMAT_VERSION };
+    needsRewrite = version < DOCUMENT_FORMAT_VERSION || filled.changed || teleport.changed || layers.changed;
   }
 
   const result = sceneFileSchema.safeParse(normalized);

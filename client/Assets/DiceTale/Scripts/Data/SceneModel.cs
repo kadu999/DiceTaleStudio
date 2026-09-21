@@ -122,4 +122,58 @@ namespace DiceTale
         /// <summary>是否放视频自带的声音（缺省 false = 静音）。</summary>
         public bool audio;
     }
+
+    /// <summary>
+    /// 项目级**全局设置**（v7 起）：前端不解释业务，照着调三档音量。
+    ///
+    /// 它**不在场景里**（跨场景有效、换场景不该丢），由服务端单独一条 `project_settings` 下发，
+    /// 通常比 `scene_sync` 先到。目前只有音频；后面加别的全局参数就挂在这里。
+    /// </summary>
+    public class MirrorSettings
+    {
+        public MirrorAudioSettings audio = new MirrorAudioSettings();
+
+        /// <summary>把三档音量夹进 `0..1`（手写文件 / 旧版本可能给出界值；Unity 的 `AudioSource.volume` 也只要这一段）。</summary>
+        public void ClampVolumes()
+        {
+            audio.bgm.volume = Clamp01(audio.bgm.volume);
+            audio.sfxVolume = Clamp01(audio.sfxVolume);
+            audio.voiceVolume = Clamp01(audio.voiceVolume);
+        }
+
+        private static float Clamp01(float value)
+        {
+            if (float.IsNaN(value))
+            {
+                return 0f;
+            }
+
+            return value < 0f ? 0f : value > 1f ? 1f : value;
+        }
+    }
+
+    /// <summary>三档音频参数：背景音乐音量 + 音效 / 旁白各自的音量。</summary>
+    public class MirrorAudioSettings
+    {
+        public readonly MirrorBgmSettings bgm = new MirrorBgmSettings();
+
+        /// <summary>音效通道音量（缺省 0.8，与编辑器那边同一份缺省值）。</summary>
+        public float sfxVolume = 0.8f;
+
+        /// <summary>旁白通道音量（缺省 1）。</summary>
+        public float voiceVolume = 1f;
+    }
+
+    /// <summary>
+    /// 全局背景音乐通道：**只剩音量**（v16 起）。
+    ///
+    /// 歌单 / 默认曲 / 循环都不再进文档：曲目清单就是编辑器弹框里列出来的项目音频，
+    /// 点一首就发一条 `play_bgm{clip}`——放哪一首由**命令**说（`Logic/CommandRouter.cs` 接），
+    /// 前端自己**不自动播**（单一真源，不会双播）。背景音乐**恒循环**，响到被换掉 / 停掉为止。
+    /// </summary>
+    public class MirrorBgmSettings
+    {
+        /// <summary>背景音乐通道音量（缺省 0.6）。</summary>
+        public float volume = 0.6f;
+    }
 }

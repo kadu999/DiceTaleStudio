@@ -1,10 +1,41 @@
 {
-  "formatVersion": 14,
+  "formatVersion": 18,
   "name": "测试项目",
   "items": {
     "source": "item.xlsx",
     "updatedAt": "2026-09-18",
     "count": 0,
     "items": []
-  }
+  },
+  "settings": {
+    "audio": {
+      "bgm": {
+        "volume": 0.6
+      },
+      "sfx": {
+        "volume": 0.8
+      },
+      "voice": {
+        "volume": 1
+      }
+    }
+  },
+  "audioMeta": {
+    "project:测试项目/Assets/audio/act-2-to-act-3/06-altar-transition.mp3": {
+      "tags": [
+        0,
+        2
+      ]
+    },
+    "project:测试项目/Assets/audio/act-2/01-bird-capture-part-1.mp3": {
+      "tags": [
+        0
+      ]
+    }
+  },
+  "audioTags": [
+    "场景1",
+    "场景2",
+    "场景3"
+  ]
 }

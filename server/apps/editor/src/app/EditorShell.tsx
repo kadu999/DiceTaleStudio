@@ -13,6 +13,9 @@ import { ImagePickerDialog } from "./ImagePickerDialog";
 import { SoundEditDialog } from "./SoundEditDialog";
 import { TeleportEditDialog } from "./TeleportEditDialog";
 import { VideoEditDialog } from "./VideoEditDialog";
+import { AudioTagEditorDialog } from "./AudioTagEditorDialog";
+import { BgmDialog } from "./BgmDialog";
+import { GlobalSettingsDialog } from "./GlobalSettingsDialog";
 import { MenuBar } from "./MenuBar";
 import { StatusBar } from "./StatusBar";
 
@@ -299,6 +302,15 @@ export function EditorShell(): React.JSX.Element {
         objectId={videoEditorTarget}
         onClose={() => openVideoEditor(null)}
       />
+
+      {/* 背景音乐（v16 起）：项目音频清单 + 点一首就播 / 暂停 · 继续 / 停止（顶栏「音乐」唤出） */}
+      <BgmDialog />
+
+      {/* 标签（v18 起）：标签表本身——tag 是整数，这里给每个值起名字 / 删除 */}
+      <AudioTagEditorDialog />
+
+      {/* 全局设置（项目级）：三档音量（背景音乐的清单不在这里） */}
+      <GlobalSettingsDialog />
 
       {/* 战争雾 Mask 窗口：在贴图上按雾区涂 / 擦（目标地图由属性面板指定） */}
       <FogMaskDialog

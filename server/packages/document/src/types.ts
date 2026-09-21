@@ -30,7 +30,23 @@ import type { RleRun } from "@dts/grid";
  *   （谁画在前面；大的盖住小的，相同则按场景里的先后顺序）。
  */
 
-export const DOCUMENT_FORMAT_VERSION = 14;
+/**
+ * 文档格式版本。每次**结构不兼容**的改动 +1（读得回来但要换形状的，靠 `schema.ts` 的迁移）。
+ *
+ * v16（2026-09-22）：背景音乐与项目设置解耦——`settings.audio.bgm` 从
+ * 「歌单 + 默认曲 + 名字 + 循环 + 音量」收敛成**只有音量**；曲目清单不再进文档，
+ * 编辑器「音乐」弹框直接列项目 `Assets/audio/` 下的音频。v7 的协议侧同步升到 v8。
+ *
+ * v17（2026-09-22）：工程文件多了可选的 **`audioMeta`**（音频文件的显示名 + 标签）。
+ * 它是纯编辑器的标注（不进协议、不下发 Unity），可选且**不补空壳**——
+ * 与 v14 的 `video` 同一条规矩：版本号 +1 只是让老文件回写一次、从此自描述，不需要迁移函数。
+ *
+ * v18（2026-09-22）：标签从**字符串**改成**整数 ID + 项目级标签表**
+ * （`audioTags`：下标即 tag ID，值即名字；对齐 Unity 的 TagManager）——
+ * 文件里只记 `[0, 2]` 这样的 ID，改标签名只改那张表。v17 的字符串标签由
+ * `migrateAudioTags` 按出现顺序建成表并换成 ID，只做一次。
+ */
+export const DOCUMENT_FORMAT_VERSION = 18;
 
 /** 网格行序：`bottom-up` 表示 cells 第 0 行是图片最下面一行（与 Unity GridMap 一致）。 */
 export type RowOrder = "bottom-up";
@@ -150,23 +166,37 @@ export interface MapFogDoc {
 }
 
 /**
- * 声音层级：**固定四档**（同层同时只响一条，后来的顶掉先前的）。
+ * 声音层级：**固定三档**（同层同时只响一条，后来的顶掉先前的）。
  *
  * 文档里存英文 slug（与其它枚举同一个口径），中文名只在界面上出现
- * （`SOUND_LAYER_LABELS`）。分层是**声道分组**：前端按层占用声源——「背景音乐」
- * 起了新的，旧的那条自然停；想要两件事同时响就得分到两层。
+ * （`SOUND_LAYER_LABELS`）。分层是**声道分组**：前端按层占用声源——新的一条起了，
+ * 同一层旧的那条自然停；想要两件事同时响就得分到两层。
+ *
+ * v15 起是**三种类型**（原「环境音 `ambient`」已删掉，老文件里的 `ambient` 在迁移时
+ * 并进 `bgm`）。其中 **`bgm` 不再属于对象**：背景音乐由顶栏「音乐」弹框管
+ * （点一首 → `play_bgm{clip}`），声音对象的层级只剩 `OBJECT_SOUND_LAYERS`。
+ * 这一档留着是因为协议里它仍是**声道名**（前端按它选声源），
+ * 也是老文件里 `layer: "bgm"` 的对象能读回来的依据。
  */
-export const SOUND_LAYERS = ["bgm", "ambient", "sfx", "voice"] as const;
+export const SOUND_LAYERS = ["bgm", "sfx", "voice"] as const;
 
 export type SoundLayer = (typeof SOUND_LAYERS)[number];
 
 /** 层级的中文名（面板上的下拉框；只有这里写中文）。 */
 export const SOUND_LAYER_LABELS: Record<SoundLayer, string> = {
   bgm: "背景音乐",
-  ambient: "环境音",
   sfx: "音效",
-  voice: "语音",
+  voice: "旁白",
 };
+
+/**
+ * **声音对象**能选的层级（v15 起）：背景音乐已经改成全局的，对象不该再选它。
+ *
+ * 与 `SOUND_LAYERS` 分开是有意的：协议与迁移还要认 `bgm`（它仍是声道名），
+ * 但界面上给对象的选项只有这两档（`validateScene` 会对 `layer: "bgm"` 的老对象报一条警告，
+ * 让作者自己把它改成音效 / 旁白）。
+ */
+export const OBJECT_SOUND_LAYERS = ["sfx", "voice"] as const;
 
 /**
  * 播放声音（动作对象）的数据：**加进来的音频列表 + 当前选中的那条 + 层级**。
@@ -376,11 +406,98 @@ export interface SceneObjectDoc {
   readonly image?: ImageRef;
 }
 
+/**
+ * 背景音乐通道（v15 起）：**只剩音量**。
+ *
+ * v16 之前这里还有歌单（`clips` / `picked` / `names`）与 `loop`。那些现在都不在文档里：
+ * 曲目清单**就是项目 `Assets/audio/` 下的音频文件**，由编辑器顶栏「音乐」弹框列出来给 DM 点，
+ * 点一首就发一条 `play_bgm{clip}`——播放是运行动作，不需要任何声明。背景音乐恒循环。
+ *
+ * 于是「背景音乐与项目设置分离」这条落在这里：工程文件里关于它只剩「这条声道多大声」。
+ */
+export type BgmSettingsDoc = ChannelVolumeDoc;
+
+/** 单通道音量（音效 / 旁白）：全局参数，进项目设置、不进任何对象。 */
+export interface ChannelVolumeDoc {
+  readonly volume: number;
+}
+
+/**
+ * 项目级**全局设置**（v15 起）：目前只有音频，后面要加别的全局参数就挂在这里。
+ *
+ * 它整份随 `project_settings` 下发到前端：前端不解释业务，只照着调音量。
+ * 前端**收到即生效**（音量不需要命令）；背景音乐「现在放哪一首」是命令，与它无关。
+ */
+export interface ProjectSettingsDoc {
+  readonly audio: {
+    /** 背景音乐通道音量（v16 起只剩这一项：歌单在编辑器弹框里，不进文档）。 */
+    readonly bgm: BgmSettingsDoc;
+    /** 音效通道音量。 */
+    readonly sfx: ChannelVolumeDoc;
+    /** 旁白通道音量。 */
+    readonly voice: ChannelVolumeDoc;
+  };
+}
+
+/**
+ * 一个**音频文件**的标注（v17 起；v18 起标签换成整数 ID）：显示名 + 标签 ID 列表。
+ *
+ * 它**只是编辑器里给人看 / 找的**：不进协议、不下发给 Unity、不参与播放
+ * （`play_bgm{clip}` 里仍然是资源逻辑 ID）。用途是现场快速找到那一首：
+ * 「音频文件」窗口里批量起名字 / 选标签，背景音乐弹框按名字与标签搜 / 筛。
+ *
+ * 两条缺省语义（**都不补空壳**，与 `video` 同一个口径）：
+ * - `name` 缺省 = 用素材文件名；
+ * - `tags` 缺省 = 还没打标签。
+ * 两项都空时这一条会被删掉（见 `commands.ts` 的 `setAudioMetaName` / `setAudioMetaTags`）。
+ */
+export interface AudioMetaDoc {
+  /** 显示名（空 = 用素材文件名）。 */
+  readonly name?: string;
+  /**
+   * **标签 ID 列表**——ID 就是 `ProjectDoc.audioTags` 的下标（对齐 Unity：**tag 是个整数**，
+   * 名字只是它的显示文本）。规范化：去重 + 升序，改标签名不会动这里一个字节。
+   */
+  readonly tags?: number[];
+}
+
+/**
+ * 项目级**标签表**（v18 起）：**下标就是 tag 的整数 ID**，值是这个 ID 的名字。
+ *
+ * 为什么这样存（Unity 的 TagManager 也是这一套）：**改名字只改这张表**，所有引用它的音频文件
+ * 一个字节都不用动；反过来，如果文件里存的是字符串，改一次名字就得把每个文件都改一遍
+ * （还会因为「战斗」与「战斗 」这种写法分裂成两个标签）。
+ *
+ * `null` = 这个 ID **被删掉了**（**留洞**）：ID 不位移，别的标签与文件上的引用都不受影响；
+ * 新建标签时**优先复用第一个洞**，没有洞才往后追加。
+ * 空数组 / 全 null **不写这个字段**（没标签就是「没有这一项」，不补空壳）。
+ */
+export type AudioTagTableDoc = (string | null)[];
+
 /** 项目文件（project.json）：只有项目级数据；场景在 Assets/scenes/ 下各自成文件。 */
 export interface ProjectDoc {
   readonly formatVersion: number;
   readonly name: string;
   readonly items: ItemLibraryDoc;
+  /**
+   * 项目级全局设置（v15 起）。schema **给默认值**：老 `project.json` 里没有这一项时，
+   * 补一份默认的（三档音量用缺省值）并随版本升级回写一次。
+   */
+  readonly settings: ProjectSettingsDoc;
+  /**
+   * **音频文件标注**（v17 起，可选）：`资源逻辑 ID → { 显示名, 标签 ID 列表 }`。
+   *
+   * 缺省 = 这个项目还没整理过音频（**不补空壳**：`{}` 与「没有这一项」是两回事，
+   * 后者才是事实）。它**不在 `settings` 里**——「项目设置」仍然只有三档音量；
+   * 标注是**项目级数据**，与 `items`（道具库）同一档。
+   */
+  readonly audioMeta?: Record<string, AudioMetaDoc>;
+  /**
+   * **音频标签表**（v18 起，可选）：下标 = tag ID，值 = 名字（`null` = 已删除的洞）。
+   *
+   * 与 `audioMeta` 并列（都是项目级数据、都不进协议）。没有标签时**不写这一项**。
+   */
+  readonly audioTags?: AudioTagTableDoc;
 }
 
 /** 场景文件（Assets/scenes/<场景名>.json）的内容：场景名就是文件名，文件里不存名字。 */

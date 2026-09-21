@@ -20,7 +20,7 @@ export type LogLevel = "info" | "warn" | "error";
 export type HubLogger = (level: LogLevel, message: string) => void;
 
 /** 命令下发后等回执的超时（超时向编辑器报错，避免界面一直转圈）。 */
-const COMMAND_RESULT_TIMEOUT_MS = 5000;
+const COMMAND_RESULT_TIMEOUT_MS = 15000;
 /** 前端心跳间隔与容忍的连续丢失次数（两拍没回 = 半开连接，断开清理）。 */
 const CLIENT_PING_INTERVAL_MS = 15000;
 const CLIENT_MAX_MISSED_PINGS = 2;
@@ -205,6 +205,8 @@ export class RuntimeHub {
     // 先把「当前是哪个项目」告诉前端：它据此**先下资源包、再载入场景**。
     // 必须在 scene_sync 之前发——顺序反了就成了「场景先到、资源后下」。
     this.prepareClientResources(ws);
+    // 全局设置（音量 / 歌单 / 默认曲）也走在前头：它是「出声之前就该知道的事」
+    this.sendTo(ws, { type: "project_settings", settings: this.session.settings });
     // 立刻补一份场景：前端后连上也能拿到全量镜像
     this.sendTo(ws, { type: "scene_sync", scene: this.session.scene });
 
@@ -470,6 +472,19 @@ export class RuntimeHub {
         return;
       }
 
+      case "settings_push": {
+        // 项目级全局设置：与场景同命（缓存一份，前端一连上就补发），但**跨场景有效**
+        this.session.setSettings(message.settings);
+
+        if (this.client !== undefined) {
+          this.sendTo(this.client.ws, { type: "project_settings", settings: message.settings });
+        }
+
+        // 音量是滑杆拖出来的，推送同样频繁：只更新状态、不写日志
+        this.broadcastEditorState();
+        return;
+      }
+
       case "editor_command": {
         if (!this.session.runtimeActive) {
           this.sendTo(ws, {
@@ -560,6 +575,7 @@ export class RuntimeHub {
       client: snapshot.client,
       scene: snapshot.scene,
       resources: snapshot.resources,
+      settings: snapshot.settings,
       serverTime: Date.now(),
     };
   }

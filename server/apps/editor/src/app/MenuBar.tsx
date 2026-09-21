@@ -2,6 +2,7 @@ import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { ProjectDialog } from "./ProjectDialog";
 import { SceneDialog } from "./SceneDialog";
 import { ObjectDialog } from "./ObjectDialog";
+import { BgmControl } from "./BgmControl";
 import { TOOL_OPTIONS } from "../panels/scene/ScenePanel";
 import { useEditorStore } from "../state/editor-store";
 
@@ -36,6 +37,10 @@ export function MenuBar({ compact }: MenuBarProps): React.JSX.Element {
   const deleteObjects = useEditorStore((state) => state.deleteObjects);
   const saveSceneNow = useEditorStore((state) => state.saveSceneNow);
   const saveState = useEditorStore((state) => state.sceneSaveState);
+  const saveProjectNow = useEditorStore((state) => state.saveProjectNow);
+  const projectSaveState = useEditorStore((state) => state.projectSaveState);
+  const openGlobalSettings = useEditorStore((state) => state.openGlobalSettings);
+  const openAudioTags = useEditorStore((state) => state.openAudioTags);
   // 运行态下不写盘：保存入口要挡住（改动退出运行时会整体还原）
   const runtimeActive = useEditorStore((state) => state.runtime.runtimeActive);
   const objectDialog = useEditorStore((state) => state.objectDialog);
@@ -68,6 +73,22 @@ export function MenuBar({ compact }: MenuBarProps): React.JSX.Element {
       <Menu label="工程">
         <MenuItem label="新建项目…" onSelect={() => openProjectDialog("create")} />
         <MenuItem label="打开项目…" onSelect={() => openProjectDialog("open")} />
+        <MenuSeparator />
+        <MenuItem
+          label="全局设置…"
+          disabled={currentProject === null}
+          onSelect={() => openGlobalSettings(true)}
+        />
+        {/*
+          项目级数据（与「全局设置」并列，但**不在设置里**）：标签表——tag 是整数（#0、#1…），
+          这里给每个值起名字。音频自己的**显示名与「挂了哪些标签」**在属性面板里改
+          （选中 `Assets/audio/` 下的文件即可）。
+        */}
+        <MenuItem
+          label="标签…"
+          disabled={currentProject === null}
+          onSelect={() => openAudioTags(true)}
+        />
         <MenuSeparator />
         <MenuItem
           label={currentProject === null ? "关闭当前项目" : `关闭项目（${currentProject}）`}
@@ -138,6 +159,12 @@ export function MenuBar({ compact }: MenuBarProps): React.JSX.Element {
           disabled={runtimeActive || activeSceneName === null || saveState === "saved"}
           onSelect={() => void saveSceneNow()}
         />
+        {/* 工程文件（全局设置）是另一份文件，所以另有一个入口；两个都「改了就存」，这只是提前 */}
+        <MenuItem
+          label={runtimeActive ? "运行中不保存（工程）" : "保存工程"}
+          disabled={runtimeActive || currentProject === null || projectSaveState === "saved"}
+          onSelect={() => void saveProjectNow()}
+        />
       </Menu>
 
       <Menu label="视图">
@@ -191,6 +218,9 @@ export function MenuBar({ compact }: MenuBarProps): React.JSX.Element {
             </ToolbarToggle>
           </>
         ) : null}
+
+        {/* 全局背景音乐：换一首 / 停一下是现场最常做的两件事，所以它常驻顶栏 */}
+        <BgmControl />
 
         <ModeSwitch mode={mode} onChange={setMode} />
         <ClientBadge />

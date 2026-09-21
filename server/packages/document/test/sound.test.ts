@@ -6,6 +6,7 @@ import { parseSceneFile } from "../src/schema";
 import { formatIssues, hasErrors, validateScene } from "../src/validation";
 import {
   DOCUMENT_FORMAT_VERSION,
+  OBJECT_SOUND_LAYERS,
   SOUND_LAYERS,
   type SceneDoc,
   type SceneObjectDoc,
@@ -64,8 +65,12 @@ describe("声音对象的工厂", () => {
     expect(sound.position).toEqual({ x: -120, y: 80 });
   });
 
-  it("层级四档就是文档里允许的全部取值", () => {
-    expect(SOUND_LAYERS).toEqual(["bgm", "ambient", "sfx", "voice"]);
+  it("层级三档就是文档里允许的全部取值（v15 起：环境音已并进背景音乐）", () => {
+    expect(SOUND_LAYERS).toEqual(["bgm", "sfx", "voice"]);
+  });
+
+  it("对象界面上只给音效 / 旁白：背景音乐已经改成项目级全局设置", () => {
+    expect(OBJECT_SOUND_LAYERS).toEqual(["sfx", "voice"]);
   });
 });
 
@@ -235,10 +240,10 @@ describe("声音对象的命令", () => {
     delete (broken as { sound?: unknown }).sound;
 
     const scene = mutate(sceneWith([broken]), (draft) => {
-      expect(setSoundLayer(draft, "s1", "ambient")).toBe(true);
+      expect(setSoundLayer(draft, "s1", "voice")).toBe(true);
     });
 
-    expect(objectOf(scene, "s1")?.sound).toEqual({ clips: [], layer: "ambient" });
+    expect(objectOf(scene, "s1")?.sound).toEqual({ clips: [], layer: "voice" });
   });
 });
 

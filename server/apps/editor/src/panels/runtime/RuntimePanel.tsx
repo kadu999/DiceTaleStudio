@@ -155,6 +155,41 @@ export function RuntimePanel(): React.JSX.Element {
             </button>
           </div>
 
+          {/*
+            全局设置（项目级：三档音量）：与场景分开一条通道，
+            所以单独一行——「我调的音量到底推下去没有」是现场真的会问的问题。
+          */}
+          <div
+            data-testid="runtime-settings"
+            data-pushed={runtime.settings === null ? "no" : "yes"}
+            className="flex flex-wrap items-center gap-x-3 gap-y-0.5 border-b border-[var(--color-editor-border)] px-2 py-1 text-[11px]"
+          >
+            <span className="flex items-center gap-1.5">
+              <span
+                className="inline-block h-2 w-2 rounded-full"
+                style={{
+                  background:
+                    runtime.settings === null
+                      ? "var(--color-editor-text-dim)"
+                      : "var(--color-editor-ok)",
+                }}
+              />
+              <span
+                style={{
+                  color:
+                    runtime.settings === null
+                      ? "var(--color-editor-text-dim)"
+                      : "var(--color-editor-ok)",
+                }}
+              >
+                全局设置（音量）：{runtime.settings === null ? "还没推过" : "已下发"}
+              </span>
+            </span>
+            {runtime.settings === null ? null : (
+              <span className="text-[var(--color-editor-text-dim)]">前端收到即生效</span>
+            )}
+          </div>
+
           {runtime.lastError.length > 0 ? (
             <div className="border-b border-[var(--color-editor-border)] px-2 py-1 text-[11px] text-[var(--color-editor-danger)]">
               {runtime.lastError}
@@ -228,6 +263,14 @@ export function RuntimePanel(): React.JSX.Element {
                 .map(([slug, label]) => `${slug}=${label}`)
                 .join(" / ")}
               ）。
+            </div>
+            <div className="mt-1">
+              背景音乐不属于任何对象、也不在项目设置里：顶栏「音乐」弹框直接列项目
+              <code> Assets/audio/ </code>
+              下的音频，点一首就发一条带曲子的命令（
+              <code>play_bgm</code>），暂停 / 继续 / 停止是另外三条（
+              <code>pause_bgm</code> / <code>resume_bgm</code> / <code>stop_bgm</code>）；
+              音量随设置下发、收到即生效。
             </div>
             <div className="mt-1">
               地图 / 精灵的「视频」组同理：命令只带 <code>objectId</code>
