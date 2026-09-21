@@ -21,8 +21,17 @@ namespace DiceTale
         /// v3（2026-09-21）：新增战争雾两条命令（`erase_mask` / `reveal_fog_region`）。
         /// 版本必须与服务端**完全一致**（不一致时服务端以 close `4002` 断开并写明原因），
         /// 所以编辑器和前端要一起更新——这条规矩正是为了不让「新旧混着跑」悄悄失效。
+        ///
+        /// v4（2026-09-21）：战争雾多一个**总开关**（`map.fog.enabled`）：只有开着才建那一层雾。
+        /// 老前端不认这个字段会把它丢掉，于是「编辑器里关掉了」在前端照样生成雾——必须一起更新。
+        ///
+        /// v5（2026-09-21）：地图 / 精灵多了**视频**（`video` + `play_video` / `pause_video` /
+        /// `resume_video` / `stop_video` 四条命令）。
+        ///
+        /// v6（2026-09-21）：声音补齐 `pause_sound` / `resume_sound`——编辑器里「播放声音对象」与
+        /// 「视频」两组 UI 的控件行完全一致（播放 / 暂停 / 停止）。
         /// </summary>
-        public const int Version = 3;
+        public const int Version = 6;
 
         // 服务端 → 前端
         public const string TypeServerHello = "server_hello";
@@ -48,10 +57,22 @@ namespace DiceTale
         // 命令种类
         public const string CommandPlaySound = "play_sound";
         public const string CommandStopSound = "stop_sound";
+        /// <summary>声音：暂停某一层（同层只响一条，所以「暂停这一层」= 暂停当前那条）。</summary>
+        public const string CommandPauseSound = "pause_sound";
+        /// <summary>声音：从暂停处继续放某一层。</summary>
+        public const string CommandResumeSound = "resume_sound";
         /// <summary>战争雾：沿一笔轨迹擦掉地图对象上的雾（载荷是**轨迹**，不是整张遮罩）。</summary>
         public const string CommandEraseMask = "erase_mask";
         /// <summary>战争雾：整片揭示 / 整片盖回某个区域（区域位取自 `map.fog.regions`）。</summary>
         public const string CommandRevealFogRegion = "reveal_fog_region";
+        /// <summary>视频：在对象自己的矩形上放它 `video.picked` 那一条（命令里不带数据）。</summary>
+        public const string CommandPlayVideo = "play_video";
+        /// <summary>视频：暂停在当前帧。</summary>
+        public const string CommandPauseVideo = "pause_video";
+        /// <summary>视频：从暂停处续播。</summary>
+        public const string CommandResumeVideo = "resume_video";
+        /// <summary>视频：停止并拆掉那一层（露出对象原来的贴图）。</summary>
+        public const string CommandStopVideo = "stop_video";
 
         /// <summary>关闸（编辑器退出运行态）时服务端用的 close code。</summary>
         public const int CloseRuntimeStopped = 4003;

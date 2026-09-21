@@ -51,7 +51,8 @@ Assets/
 │  │                    SceneObjectView.cs       **一个镜像对象 = 一块贴地面片**（位置/缩放/激活/顺序/取图）
 │  │                    ResourceImageLoader.cs   按资源逻辑 ID 取图（缓存 / 去重 / 失败记忆）
 │  │                    GridMap.cs               地图格子数据 + 网格渲染（+ .bytes 读取）
-│  │                    FogOfWar.cs              战争雾（按 map.fog.regions/cells 建遮罩、GPU 羽化、按后台轨迹揭示）
+│  │                    FogOfWar.cs              战争雾（按 map.fog.enabled/regions + cells 建遮罩、GPU 羽化、按后台轨迹揭示）
+│  │                    VideoOverlay.cs          视频层（按 URL 放；本地资源包优先，盖在那个对象自己的矩形上）
 │  │                    BirdWanderer.cs          装饰物区域随机游荡
 │  │                    TextureRenderer.cs 贴地面的纹理面片（**只认运行时纹理**）
 │  │                    PhotoClickGlow.cs        拍照指针点地时的点光
@@ -210,8 +211,11 @@ Assets/
   否则对象会被摆到远超自身尺寸的地方）。
   默认 `0.01` → 地图 19.2×10.8 单位、精灵 2.56×2.56 单位；改成 `0.02` → 全部翻倍（实测确认）。
   想连格子、连雾一起缩放请改**场景根节点**的 Transform（那是另一层，`localPosition` 会跟着走）。
-- **战争雾已实现（2026-09-21）**：地图上绑了雾区（`map.fog.regions`）就多一层 `FogOverlay`
-  （`Presentation/FogOfWar.cs`）——它**与地图同级**挂在场景根节点下（不是地图的子物体，
+- **战争雾已实现（2026-09-21）**：地图**开着战争雾**（`map.fog.enabled`，协议 v4 起的总开关）
+  并且绑了雾区（`map.fog.regions`）才多一层 `FogOverlay`（`Presentation/FogOfWar.cs`）——
+  **两个条件缺一不可**：编辑器里把开关关掉，前端是真的把这一层拆掉（不是画了再藏起来）；
+  没写 `enabled` 的老场景按**开着**算（那时「有 `fog`」就等于「有雾」）。
+  它**与地图同级**挂在场景根节点下（不是地图的子物体，
   位置与角度按地图同一份数值各摆一遍），显示顺序取**最前面**（`short.MaxValue`）：
   未探索的地方连地图上的对象一起盖住，揭示过的部分雾是透明的、照常看得见。
   雾按 `map.cells` 里含这些区域位的格子生成一张像素遮罩
@@ -230,6 +234,23 @@ Assets/
   ⚠️ **`GridMap` / `DynamicObstacle` 仍按世界坐标算格子**，而且运行时不建 `GridMap`
   （它只服务 `.bytes` 那套旧资产，`map.cells` 现在由战争雾那层消费）；
   以后要用「缩放后的场景」做格子交互时，这两处得改成按场景根节点换算。
+- **视频：地图 / 精灵上的视频层（2026-09-21，协议 v5 / 文档 v14）**：对象上可能带
+  `video`（`enabled` / `clips` / `picked` / `loop` / `audio`）。收到 `play_video` 时
+  `SceneObjectView` 给这个对象加一个 **`VideoOverlay` 子物体**（`Presentation/VideoOverlay.cs`）：
+  一块与**对象自己矩形同尺寸**的面片，`sortingOrder = short.MaxValue - 1`（**在战争雾之下**——
+  未探索的地方连视频一起盖住），抬升比对象高 `0.0015`、比雾的 `0.002` 低。
+  - **按 URL 播，不用 `VideoClip`**：视频是资源逻辑 ID，字节在本地资源包（`file://`，见
+    `ResourceBundleCache.LocalUrlOf`）或服务端 `/api/resources/raw`（边下边播），两条路都靠
+    `VideoPlayer.url`；`renderMode = MaterialOverride` 写进材质的 `_MainTex`
+    （`DiceTale/TextureRenderer` 的主纹理，与 `SmartVideoPlayer` 同一套做法）。
+  - **首帧之前不显示**：`TextureRenderer` 没纹理时会画占位色，所以 renderer 先关着，
+    `prepareCompleted` 才打开——否则会先闪一块白底。等首帧有 15 秒看门狗，超时打一条明确错误。
+  - **开关即时生效**：文档一变（`scene_push`）就把 `loop` / `audio` 同步到正在放的那一条；
+    `audio` 缺省静音（对应 `VideoPlayer.audioOutputMode`）。**「启用」关掉（或列表清空）时正在放的
+    那一层会被拆掉**（与战争雾「关掉开关就拆雾层」同一条规矩）；`stop_video` 同样**拆掉整个子物体**，
+    露出对象原来的贴图。**能不能解码看运行平台**：Windows 上稳的是 H.264 的 `.mp4`，`.webm` 多半不行。
+  - `Presentation/SmartVideoPlayer.cs`（老项目搬来的，按 Inspector 里的 `VideoClip[]` 播、带交叉淡化）
+    **没有动**，也还没有任何 prefab / scene 引用它——文档驱动这条走的是 `VideoOverlay`。
 - **缩放：`scale` 是等比，单轴字段可选（2026-09-20）**：文档 v11 起，对象上可能多出
   **可选**的 `scaleX` / `scaleY`（编辑器里拖缩放手柄的**边**、或关掉属性面板的等比锁后改单轴时会写）。
   客户端目前**按 `scale` 等比渲染**——`SceneObjectView` 把它们忽略掉是**正确**的（协议里它们是可选字段，
@@ -256,7 +277,9 @@ Assets/
   `(1,1,1)`（`SceneObjectView` 不再设 `localScale`）。这样「对象多大」只有一处来源——网格自己，
   不会出现「网格比例 × 缩放」两处都能改大小、改错一个就变形。实测：地图声明 1920×1080 → 
   网格 bounds 1920×1080、scale (1,1,1)；精灵声明 256×256 → 网格 256×256、scale (1,1,1)。
-- **镜像协议已实现**（**协议 v3**，见 `server/docs/specs/2026-09-19-runtime-mirror-protocol.md`）：
+- **镜像协议已实现**（**协议 v6**：v5 起战争雾的总开关与视频随场景下发，v6 起声音补齐
+  `pause_sound` / `resume_sound`，见
+  `server/docs/specs/2026-09-19-runtime-mirror-protocol.md`）：
   编辑器点「运行」→ 服务端开闸 → 前端连上 → **先下资源包** → 再整份推场景 → 按 `id` 建 / 改 / 删对象
   （位置 / 缩放 / 旋转 / **激活** / 显示顺序 / 取图都同步）。
 - **资源包已实现**（见上一节）：连上即按项目拉整包到本地，之后图片从本地读；

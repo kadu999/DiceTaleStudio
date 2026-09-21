@@ -46,6 +46,13 @@ namespace DiceTale
         /// <summary>仅 <c>kind == "PlaySound"</c>：加进来的音频 + 当前选中的那条 + 层级。</summary>
         public MirrorSound sound;
 
+        /// <summary>
+        /// 仅地图 / 精灵（`Map` / `SceneObject`）：加进来的视频 + 选中的那条 + 循环 / 声音。
+        ///
+        /// 为 null = 这个对象不放视频（没加过，或这份场景来自还没这个字段的旧编辑器）。
+        /// </summary>
+        public MirrorVideo video;
+
         /// <summary>要显示的图（地图对象取 <c>map.image</c>）。</summary>
         public MirrorImage DisplayImage => image ?? map?.image;
     }
@@ -70,6 +77,13 @@ namespace DiceTale
 
         /// <summary>被指定为战争雾的区域位（空 = 没指定）。</summary>
         public int[] fogRegions = new int[0];
+
+        /// <summary>
+        /// 战争雾的**总开关**（`map.fog.enabled`）：**只有开着才建那一层雾**。
+        ///
+        /// 缺省算开（老场景里「有 fog」就等于「开着」——那时候还没有这个字段）。
+        /// </summary>
+        public bool fogEnabled = true;
     }
 
     /// <summary>声音对象的数据：前端播的就是 <see cref="picked"/> 那一条。</summary>
@@ -78,5 +92,34 @@ namespace DiceTale
         public readonly List<string> clips = new List<string>();
         public string picked = "";
         public string layer = "sfx";
+    }
+
+    /// <summary>
+    /// 地图 / 精灵上的**视频**（v14 起）：一组视频 + 选中的那条 + 循环 / 声音两个开关。
+    ///
+    /// 前端放的永远是 <see cref="picked"/> 那一条（命令 `play_video` 只给 `objectId`）：
+    /// 命令是触发器，数据在镜像里。视频画面盖在**这个对象自己的矩形**上，见
+    /// <see cref="VideoOverlay"/>。
+    /// </summary>
+    public class MirrorVideo
+    {
+        /// <summary>
+        /// **总开关**（`video.enabled`）：关着 = 这个对象现在不放视频（前端连那一层都不建，
+        /// 播放类命令会被明确拒掉）。缺省算开（老编辑器不发这一项，而「有 video 字段」本来
+        /// 就等于「在用」——与 `map.fog.enabled` 同一个口径）。
+        /// </summary>
+        public bool enabled = true;
+
+        /// <summary>加进来的视频（资源逻辑 ID，如 `project:C/Assets/video/opening.mp4`）。</summary>
+        public readonly List<string> clips = new List<string>();
+
+        /// <summary>当前选中的那一条（空 = 还没选，前端会拒掉 `play_video`）。</summary>
+        public string picked = "";
+
+        /// <summary>循环播放（缺省 false = 放完停在最后一帧）。</summary>
+        public bool loop;
+
+        /// <summary>是否放视频自带的声音（缺省 false = 静音）。</summary>
+        public bool audio;
     }
 }

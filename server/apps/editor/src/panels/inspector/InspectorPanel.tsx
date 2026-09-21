@@ -5,6 +5,7 @@ import {
   isUniformScale,
   normalizeDegrees,
   objectImage,
+  supportsVideo,
   type SceneObjectDoc,
 } from "@dts/document";
 import { cellPixelSize } from "@dts/grid";
@@ -19,6 +20,7 @@ import { FogFields } from "./FogFields";
 import { GridAnnotationFields } from "./GridAnnotationFields";
 import { SoundFields } from "./SoundFields";
 import { TeleportFields } from "./TeleportFields";
+import { VideoFields } from "./VideoFields";
 
 /** 右侧属性面板：当前选中对象 / 场景 / **资源文件**的属性。编辑能力在 M2/M3 接入。 */
 export function InspectorPanel(): React.JSX.Element {
@@ -131,6 +133,17 @@ export function InspectorPanel(): React.JSX.Element {
             {selected.map !== undefined ? (
               <FieldGroup title="战争雾" group="fog">
                 <FogFields object={selected} />
+              </FieldGroup>
+            ) : null}
+
+            {/*
+              「视频」只对**地图与精灵**出现（`supportsVideo`）：视频画面盖在对象自己的矩形上，
+              所以它属于那个对象；在窗口里加一组视频，运行时在这里选一条放。
+              排在最后一组：它是**运行时要用的东西**（与战争雾同一档），摆场景时用不到。
+            */}
+            {supportsVideo(selected.kind) ? (
+              <FieldGroup title="视频" group="video">
+                <VideoFields object={selected} />
               </FieldGroup>
             ) : null}
           </div>
@@ -869,29 +882,32 @@ function GridDisplayField(): React.JSX.Element {
 
   return (
     <FieldRow label="显示">
+      {/* 两个都是「名称在左、勾选框在右」：与激活 / 锁定 / 启用那些开关同一套写法 */}
       <div className="flex min-w-0 flex-1 items-center gap-3 text-[11px]">
         <label className="flex items-center gap-1.5" title="在画布上画网格线（所有地图；只影响显示）">
+          <span>网格线</span>
           <input
             type="checkbox"
             data-testid="grid-lines-toggle"
+            aria-label="网格线"
             checked={showGridLines}
             className="h-3.5 w-3.5 flex-none accent-[var(--color-editor-accent)]"
             onChange={(event) => setGridLinesVisible(event.target.checked)}
           />
-          <span>网格线</span>
         </label>
         <label
           className="flex items-center gap-1.5"
           title="在画布上给格子着色（所有地图；只影响显示，标出来的数据不会动）"
         >
+          <span>网格标注</span>
           <input
             type="checkbox"
             data-testid="grid-annotations-toggle"
+            aria-label="网格标注"
             checked={showAnnotations}
             className="h-3.5 w-3.5 flex-none accent-[var(--color-editor-accent)]"
             onChange={(event) => setGridAnnotationsVisible(event.target.checked)}
           />
-          <span>网格标注</span>
         </label>
       </div>
     </FieldRow>

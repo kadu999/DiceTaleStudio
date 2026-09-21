@@ -30,7 +30,7 @@ import type { RleRun } from "@dts/grid";
  *   （谁画在前面；大的盖住小的，相同则按场景里的先后顺序）。
  */
 
-export const DOCUMENT_FORMAT_VERSION = 12;
+export const DOCUMENT_FORMAT_VERSION = 14;
 
 /** 网格行序：`bottom-up` 表示 cells 第 0 行是图片最下面一行（与 Unity GridMap 一致）。 */
 export type RowOrder = "bottom-up";
@@ -117,20 +117,34 @@ export interface MapDataDoc {
   readonly rowOrder: RowOrder;
   readonly cells: CellRuns;
   /**
-   * 战争雾配置（v10 起）。
+   * 战争雾配置（v10 起；v13 起多一个总开关）。
    *
    * 格子上的 8 个类型位是**中性的「区域」**（面板上叫区域1–区域8），不与任何玩法绑定——
    * 哪个区域算雾区由这里**手动指定**。指定的区域里那些格子就是战争雾：运行时
-   * （`Scripts/Map/FogOfWar.cs`）按「玩家进入某区域 → 揭示整片区域」处理。
+   * （`Scripts/Presentation/FogOfWar.cs`）按「玩家进入某区域 → 揭示整片区域」处理。
    *
-   * 缺省（字段不存在）= 一个雾区都没指定，与 `{ regions: [] }` 同义；没指定时**不写这个字段**，
-   * 免得文件里留一个空壳。
+   * 缺省（字段不存在）= **没开战争雾**，与「开关关着、也没指定雾区」同义；没开也没指定时
+   * **不写这个字段**，免得文件里留一个空壳。
    */
   readonly fog?: MapFogDoc;
 }
 
-/** 战争雾：把哪些「区域」当成雾区（区域位取自 `@dts/grid` 的可绘制位）。 */
+/**
+ * 战争雾：**总开关** + 把哪些「区域」当成雾区（区域位取自 `@dts/grid` 的可绘制位）。
+ *
+ * `enabled` 是 v13 起的**总开关**：只有开着，前端才生成那一层雾（`FogOfWar`）。
+ * 关掉它 = 「这张地图现在没有战争雾」，但**雾区绑定留着**——再打开就回来，
+ * 不必重新指定一遍（见 `setMapFogEnabled`）。
+ */
 export interface MapFogDoc {
+  /**
+   * 是否启用战争雾。
+   *
+   * schema 给默认值 `true`（与 v7 的 `active` 同理）：v10–v12 的文件里只有 `regions`——
+   * 那时候**写下 `fog` 就等于「这张地图有雾」**，补成 `false` 会把老场景的雾全关掉。
+   * 读出来一律带上这一项并回写一次，磁盘上的文件从此是自描述的。
+   */
+  readonly enabled: boolean;
   /** 指定的雾区位（如 `[8, 16]` = 区域4 + 区域5）；空数组 = 一个都没指定。 */
   readonly regions: number[];
 }
@@ -221,6 +235,61 @@ export interface TeleportDataDoc {
   readonly picked?: string;
 }
 
+/**
+ * 视频列表（v14 起）：**地图与精灵对象**上的「放一组视频、运行时选一条播」。
+ *
+ * 形状与 `SoundDataDoc` 完全同一套（列表 + 选中 + 名字），另加两个**逐对象的开关**：
+ * 循环与声音。区别在**归属**：声音是单独一种动作对象（`kind: "PlaySound"`），
+ * 而视频挂在**对象自己身上**——因为「谁在放视频」本来就是那个地图 / 精灵的属性
+ * （视频画面盖在它自己的矩形上，见 `client/.../VideoOverlay.cs`）。
+ *
+ * 编辑器**不播放**（没有预览、不解码）：它声明的是「告诉前端放什么」，点「播放」只是
+ * 记账 + 尽力下发命令（与声音一致）。
+ *
+ * 分工（界面上两处，别混）：
+ * - **视频列表**（`clips`）在「编辑视频」窗口里加 / 删 / 起名字；
+ * - **选中哪条**（`picked`）与两个开关在属性面板上点——前端放的就是它。
+ */
+export interface VideoDataDoc {
+  /**
+   * 视频的**总开关**：只有开着前端才在放视频（关掉 = 这张地图 / 精灵现在不放视频）。
+   *
+   * schema 给默认值 `true`（与 `map.fog.enabled` 同一个口径）：`video` 这个字段只有
+   * 「加过视频」才会写出来，所以「字段在」本来就等于「在用」——补成 `false` 会把已有的
+   * 视频静默关掉。编辑器里把它呈现为「视频」那一组的**启用**开关：关着时整组只剩这一个开关，
+   * 雾区 / 视频列表那些设置都收起来（与战争雾那一组的行为一致）。
+   */
+  readonly enabled: boolean;
+  /**
+   * **加进来的**视频（资源逻辑 ID，如 `project:我的项目/Assets/video/opening.mp4`）。
+   *
+   * 顺序 = 加进来的先后（不排序、不代表优先级）；空数组 = 这个对象还没有视频可放。
+   */
+  readonly clips: string[];
+  /** 加进来的视频里**当前选中的那一条**（必须是 `clips` 里的一个）；缺省 = 还没选。 */
+  readonly picked?: string;
+  /**
+   * 视频文件（资源逻辑 ID）→ **显示用的名字**；缺省 = 用素材文件名去掉扩展名。
+   *
+   * 与声音的 `names` 一样只是编辑器里给人看的标签：**不参与播放、也不进协议**，按文件记。
+   */
+  readonly names?: Record<string, string>;
+  /**
+   * 循环播放（v14 起）：`false`（缺省）= 播完停在最后一帧，`true` = 一直循环到按「停止」。
+   *
+   * 它是**这张地图 / 精灵自己的设置**（进文档、可撤销、随场景下发），不是界面偏好：
+   * 背景视频要循环、过场视频只放一遍，都是场景数据的一部分。
+   */
+  readonly loop: boolean;
+  /**
+   * 是否放视频自带的声音（v14 起）：`false`（缺省）= 静音。
+   *
+   * 缺省静音是有意的：现场跑团时「不小心点开视频就轰一声」比听不到更糟；
+   * 要出声就在面板上打开。前端对应 `VideoPlayer.audioOutputMode`。
+   */
+  readonly audio: boolean;
+}
+
 export interface SceneObjectDoc {
   readonly id: string;
   readonly name: string;
@@ -290,6 +359,14 @@ export interface SceneObjectDoc {
    * `teleport` 整个缺失 = 数据坏了（`validateScene` 报错），界面上按「还没加目标」显示。
    */
   readonly teleport?: TeleportDataDoc;
+  /**
+   * **只有地图与精灵**（`kind === "Map"` / `"SceneObject"`）携带（v14 起，可选）：
+   * 视频列表 + 选中哪条 + 循环 / 声音两个开关。
+   *
+   * 缺省（字段不存在）= 这个对象不放视频，与「列表是空的」同义——没加视频时**不写这个字段**，
+   * 免得每个对象文件里都留一个空壳。运行时前端据此决定「要不要建那一层视频」。
+   */
+  readonly video?: VideoDataDoc;
   /**
    * 对象要显示的图片（**精灵**就靠它显示图片；地图的贴图在 `map.image` 里）。
    *

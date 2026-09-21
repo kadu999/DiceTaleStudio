@@ -4,11 +4,12 @@ import type { SoundLayer } from "@dts/document";
  * 声音的**期望播放状态**：编辑器记账「哪一层现在应该响什么」。
  *
  * 它是「后台希望前端现在响什么」，**不写文档、不进撤销栈**（与 `runtime` 镜像一样属于运行态）。
- * 点「播放 / 停止」只改这里 + **尽力**下发命令：
+ * 点「播放 / 暂停 / 继续 / 停止」只改这里 + **尽力**下发命令：
  * - 编辑器还没连上服务端（编辑态）或前端没连 → 只记账，写明白原因；
  * - 等**前端连上**的那一刻补发一次，所以「点的时候前端不在」也不会丢。
  *
- * 这份状态是按**层级**记的（同层同时只响一条），与前端「同层顶替」的语义对得上。
+ * 这份状态是按**层级**记的（同层同时只响一条），与前端「同层顶替」的语义对得上；
+ * 视频那边是按对象记的（`video-playback.ts`）——两组的**界面**一样，**记账口径**各按自己的语义。
  */
 
 /**
@@ -21,6 +22,13 @@ export interface SoundPlaybackEntry {
   readonly objectId: string;
   readonly layer: SoundLayer;
   readonly clips: readonly string[];
+  /**
+   * 暂停态（v6 起）：`true` = 这一层现在是**暂停**着的。
+   *
+   * 补发时要「先播再暂停」，否则前端会从头响——与视频那边同一个口径
+   * （两组 UI 的控件行完全一致：播放 / 暂停 · 继续 / 停止）。
+   */
+  readonly paused: boolean;
 }
 
 export interface SoundPlaybackState {
@@ -35,9 +43,28 @@ export function emptySoundPlayback(): SoundPlaybackState {
 /** 记下「这一层要播这个」；同一层再点别的就顶掉（与前端同层顶替一致）。 */
 export function withPlaying(
   state: SoundPlaybackState,
-  entry: SoundPlaybackEntry,
+  entry: Omit<SoundPlaybackEntry, "paused">,
 ): SoundPlaybackState {
-  return { layers: { ...state.layers, [entry.layer]: entry } };
+  return { layers: { ...state.layers, [entry.layer]: { ...entry, paused: false } } };
+}
+
+/**
+ * 记下「这一层暂停 / 继续」。
+ *
+ * 没在记账里的那一层**什么都不做**（没播过就谈不上暂停）——返回原状态，
+ * 于是调用方可以据此判断「这次点按有没有意义」（与视频的 `withVideoPaused` 同一套）。
+ */
+export function withSoundPaused(
+  state: SoundPlaybackState,
+  layer: SoundLayer,
+  paused: boolean,
+): SoundPlaybackState {
+  const entry = state.layers[layer];
+  if (entry === undefined || entry.paused === paused) {
+    return state;
+  }
+
+  return { layers: { ...state.layers, [layer]: { ...entry, paused } } };
 }
 
 /** 记下「这一层要停」：把那一层从记账里删掉。 */

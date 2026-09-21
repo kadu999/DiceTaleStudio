@@ -51,10 +51,17 @@ export function listAudioAssets(nodes: readonly ResourceTreeNode[]): ResourceTre
   return found.sort((a, b) => a.path.localeCompare(b.path, "zh-Hans-CN"));
 }
 
+/** 资源面板里当前项目下的全部视频（按路径排序）。 */
+export function listVideoAssets(nodes: readonly ResourceTreeNode[]): ResourceTreeNode[] {
+  const found: ResourceTreeNode[] = [];
+  collectByKind(nodes, "video", found);
+  return found.sort((a, b) => a.path.localeCompare(b.path, "zh-Hans-CN"));
+}
+
 /** 按预览类别（图片 / 音频 / 视频）收资源：判断扩展名的地方只有 `asset-info` 一处。 */
 function collectByKind(
   nodes: readonly ResourceTreeNode[],
-  kind: "image" | "audio",
+  kind: "image" | "audio" | "video",
   into: ResourceTreeNode[],
 ): void {
   for (const node of nodes) {

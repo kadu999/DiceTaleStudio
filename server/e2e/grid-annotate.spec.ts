@@ -196,7 +196,7 @@ test.describe("网格标注：画布显示", () => {
         encoding: "rle",
         runs: [[1, GRID.width * GRID.height]],
       };
-      (mapDoc.map as { fog?: unknown }).fog = { regions: [1] };
+      (mapDoc.map as { fog?: unknown }).fog = { enabled: true, regions: [1] };
 
       await seedProjectDoc(request, project, [sceneDoc(SCENE, [mapDoc])]);
       await uploadSceneImage(request, project, SCENE, solidPng(4, 4, [255, 255, 255]));
@@ -210,9 +210,8 @@ test.describe("网格标注：画布显示", () => {
       const before = await canvasAverageColor(page, point);
       expect(before.g).toBeGreaterThan(90);
 
-      // 打开战争雾：画布上**不该**多出任何一层（雾只在 Mask 窗口里看）
-      await page.getByTestId("fog-enable").check();
-      await expect(page.getByTestId("fog-region-1")).toBeVisible(); // 等界面稳住再采样
+      // 战争雾开着（文件里 `fog.enabled`）：画布上**不该**多出任何一层（雾只在 Mask 窗口里看）
+      await expect(page.getByTestId("fog-region-1")).toBeVisible();
       const after = await canvasAverageColor(page, point);
       expect(Math.abs(after.g - before.g)).toBeLessThanOrEqual(2);
 

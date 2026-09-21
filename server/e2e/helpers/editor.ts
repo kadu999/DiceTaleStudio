@@ -19,7 +19,7 @@ export type LeftTab = "assets" | "hierarchy";
  * 升级场景格式时忘了改这一处，`hierarchy` / `scene-menu` 里那几条「旧文件自动回写」
  * 的用例会立刻指出来。
  */
-export const CURRENT_SCENE_FORMAT_VERSION = 12;
+export const CURRENT_SCENE_FORMAT_VERSION = 14;
 
 /** 用接口建一个真项目（含 `project.json`），返回项目名。 */
 export async function newProject(request: APIRequestContext): Promise<string> {
@@ -159,8 +159,8 @@ export function sceneDoc(
  * 造一个场景里的普通对象（形状与 `createSceneObject` 一致，无组件无动作）。
  *
  * `position` 是**世界坐标**（场景中心为原点，x 向右、y 向上，单位像素）；不传即未放置。
- * `active` / `sortingOrder` 是 v7 起、`scale` 是 v8 起、`locked` 是 v9 起、地图的 `map.fog`（战争雾）
- * 是 v10 起的显式字段（默认「显示、顺序 0、缩放 1、不锁、没指定雾区」）。
+ * `active` / `sortingOrder` 是 v7 起、`scale` 是 v8 起、`locked` 是 v9 起、地图的 `map.fog`（战争雾；
+ * v13 起里面还有总开关 `enabled`）是 v10 起的显式字段（默认「显示、顺序 0、缩放 1、不锁、没开战争雾」）。
  */
 export function sceneObjectDoc(
   name: string,
@@ -404,16 +404,16 @@ export async function readSceneMap(
 }
 
 /**
- * 读场景文件里地图对象的**战争雾绑定**（指定的雾区位）。
+ * 读场景文件里地图对象的**战争雾配置**（总开关 + 指定的雾区位）。
  *
- * 没指定过雾区就是 `undefined`——「没指定」在文件里是**没有 `map.fog` 这个字段**，
- * 不是 `{ regions: [] }`（见 `setMapFogRegions`）。
+ * 没开过战争雾就是 `undefined`——「没开也没指定」在文件里是**没有 `map.fog` 这个字段**
+ * （见 `setMapFogEnabled` / `setMapFogRegions`）。
  */
-export async function readSceneFogRegions(
+export async function readSceneFog(
   request: APIRequestContext,
   project: string,
   sceneName: string,
-): Promise<readonly number[] | undefined> {
+): Promise<{ enabled?: boolean; regions?: readonly number[] } | undefined> {
   const id = `project:${project}/Assets/scenes/${sceneName}.json`;
   const response = await request.get(`/api/resources/text?id=${encodeURIComponent(id)}`);
   if (!response.ok()) {
@@ -421,10 +421,62 @@ export async function readSceneFogRegions(
   }
 
   const file = JSON.parse(await response.text()) as {
-    objects?: Array<{ kind?: string; map?: { fog?: { regions?: number[] } } }>;
+    objects?: Array<{ kind?: string; map?: { fog?: { enabled?: boolean; regions?: number[] } } }>;
   };
 
-  return file.objects?.find((object) => object.kind === "Map")?.map?.fog?.regions;
+  return file.objects?.find((object) => object.kind === "Map")?.map?.fog;
+}
+
+/**
+ * 读场景文件里地图对象的**战争雾绑定**（指定的雾区位）。
+ *
+ * 没指定过雾区就是 `undefined`——「没指定」在文件里是**没有 `map.fog` 这个字段**
+ * （见 `setMapFogRegions`）。
+ */
+export async function readSceneFogRegions(
+  request: APIRequestContext,
+  project: string,
+  sceneName: string,
+): Promise<readonly number[] | undefined> {
+  return (await readSceneFog(request, project, sceneName))?.regions;
+}
+
+/**
+ * 读场景文件里**某个对象**的视频配置（地图 / 精灵上的 `video`），按 `kind` 找——
+ * 不按数组下标：用例里对象顺序不是契约，`readSceneFog` 也是这么做的。
+ *
+ * 没加过视频就是 `undefined`——「没加」在文件里是**没有 `video` 这个字段**（见 `setVideoClips`）。
+ */
+export async function readSceneVideo(
+  request: APIRequestContext,
+  project: string,
+  sceneName: string,
+  kind: "Map" | "SceneObject" = "Map",
+): Promise<
+  | {
+      clips?: readonly string[];
+      picked?: string;
+      names?: Record<string, string>;
+      loop?: boolean;
+      audio?: boolean;
+    }
+  | undefined
+> {
+  const id = `project:${project}/Assets/scenes/${sceneName}.json`;
+  const response = await request.get(`/api/resources/text?id=${encodeURIComponent(id)}`);
+  if (!response.ok()) {
+    // 读不到就是读不到：在这些用例里场景文件一定存在，静默返回 undefined 只会把失败说成「没加视频」
+    throw new Error(`读场景文件失败：HTTP ${response.status()}（${id}）`);
+  }
+
+  const file = JSON.parse(await response.text()) as {
+    objects?: Array<{
+      kind?: string;
+      video?: { clips?: string[]; picked?: string; names?: Record<string, string>; loop?: boolean; audio?: boolean };
+    }>;
+  };
+
+  return file.objects?.find((object) => object.kind === kind)?.video;
 }
 
 /** 把 RLE 游程展开成掩码数组（断言某一格画上了什么）。 */

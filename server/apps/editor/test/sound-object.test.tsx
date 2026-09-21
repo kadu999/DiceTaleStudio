@@ -452,19 +452,21 @@ describe("播放 / 停止：能不能点", () => {
   });
 });
 
-describe("播放 / 停止：面板上看得见的状态", () => {
+describe("播放 / 暂停 / 停止：面板上看得见的状态", () => {
   const playButton = (): HTMLElement => screen.getByTestId("sound-play");
+  const pauseButton = (): HTMLElement => screen.getByTestId("sound-pause");
   const status = (): HTMLElement => screen.getByTestId("sound-status");
 
-  it("点「播放」→ 按钮写成「播放中」并高亮、跳出会动的声音条，旁边写明本层在播什么；点「停止」→ 回到原样", () => {
+  it("播放 → 暂停 → 继续 → 停止：按钮文案与状态行一路跟着走（与视频那组同一套）", () => {
     seedScene([sound([CLIP])], ["sound-1"]);
     render(<InspectorPanel />);
 
-    // 还没点：按钮是「播放」，状态写明这一层没在播，也没有动效图标
+    // 还没点：按钮是「播放」，状态写明没在播放，也没有动效图标；「暂停」点不动
     expect(playButton().textContent).toBe("▶ 播放");
     expect(playButton().getAttribute("data-playing")).toBe("false");
     expect(status().getAttribute("data-state")).toBe("idle");
-    expect(status().textContent).toBe("本层没在播");
+    expect(status().textContent).toBe("没在播放");
+    expect(pauseButton().hasAttribute("disabled")).toBe(true);
     expect(screen.queryByTestId("sound-wave")).toBeNull();
 
     act(() => useEditorStore.getState().playSound("sound-1"));
@@ -476,14 +478,25 @@ describe("播放 / 停止：面板上看得见的状态", () => {
     expect(wave.querySelectorAll("span")).toHaveLength(3);
     expect(playButton().contains(wave)).toBe(true);
     expect(status().getAttribute("data-state")).toBe("playing");
-    expect(status().textContent).toBe("本层正在播：step1");
+    expect(status().textContent).toBe("正在播放：step1");
+
+    // 暂停：按钮变成「继续」，状态行改成「已暂停」，动效停掉（播放键不再高亮）
+    act(() => useEditorStore.getState().pauseSound("sound-1"));
+    expect(pauseButton().textContent).toBe("▶ 继续");
+    expect(pauseButton().getAttribute("data-paused")).toBe("true");
+    expect(status().getAttribute("data-state")).toBe("paused");
+    expect(status().textContent).toBe("已暂停：step1");
+
+    act(() => useEditorStore.getState().resumeSound("sound-1"));
+    expect(pauseButton().textContent).toBe("⏸ 暂停");
+    expect(status().getAttribute("data-state")).toBe("playing");
 
     act(() => useEditorStore.getState().stopSound("sound-1"));
     expect(playButton().textContent).toBe("▶ 播放");
     expect(playButton().getAttribute("data-playing")).toBe("false");
     expect(screen.queryByTestId("sound-wave")).toBeNull();
     expect(status().getAttribute("data-state")).toBe("idle");
-    expect(status().textContent).toBe("本层没在播");
+    expect(status().textContent).toBe("没在播放");
   });
 
   it("本层被**别的对象**占着时，写明是谁占的（同层同时只响一条）", () => {
@@ -500,7 +513,7 @@ describe("播放 / 停止：面板上看得见的状态", () => {
     expect(status().textContent).toBe("本层正被「开门」占着");
   });
 
-  it("「播放中」是运行态：不写文档、不进撤销栈；切场景就回到「本层没在播」", () => {
+  it("「播放中」是运行态：不写文档、不进撤销栈；切场景就回到「没在播放」", () => {
     seedScene([sound([CLIP])], ["sound-1"]);
     render(<InspectorPanel />);
 
@@ -514,7 +527,7 @@ describe("播放 / 停止：面板上看得见的状态", () => {
     act(() => useEditorStore.getState().setActiveScene("Map001"));
     act(() => useEditorStore.setState({ selectedObjectIds: ["sound-1"] }));
     expect(status().getAttribute("data-state")).toBe("idle");
-    expect(status().textContent).toBe("本层没在播");
+    expect(status().textContent).toBe("没在播放");
   });
 });
 
@@ -579,6 +592,40 @@ describe("播放 / 停止：store 的记账与日志", () => {
     act(() => useEditorStore.getState().playSound("sound-1"));
 
     expect(useEditorStore.getState().flushSoundPlayback()).toBe(0);
+  });
+
+  it("暂停 / 继续：只改 paused 那一档，也走「记账 + 等连上补发」这条路", () => {
+    seedScene([sound([CLIP])], ["sound-1"]);
+
+    // 没播过就点暂停：写明原因，不记账（与视频那边同一套）
+    expect(useEditorStore.getState().pauseSound("sound-1")).toBeUndefined();
+    expect(logs().at(-1)).toMatch(/暂停失败/);
+    expect(playback().layers).toEqual({});
+
+    act(() => useEditorStore.getState().playSound("sound-1"));
+    expect(playback().layers.sfx?.paused).toBe(false);
+
+    expect(useEditorStore.getState().pauseSound("sound-1")).toBeUndefined();
+    expect(playback().layers.sfx?.paused).toBe(true);
+    expect(logs().at(-1)).toMatch(/已记录暂停：层级 音效/);
+
+    expect(useEditorStore.getState().resumeSound("sound-1")).toBeUndefined();
+    expect(playback().layers.sfx?.paused).toBe(false);
+    expect(logs().at(-1)).toMatch(/已记录继续播放：层级 音效/);
+  });
+
+  it("本层是**别的对象**在响时：暂停被明确拒掉（同层只响一条）", () => {
+    const other = { ...sound([CLIP]), id: "sound-2", name: "开门" };
+    seedScene([sound([CLIP]), other], ["sound-1"]);
+
+    act(() => useEditorStore.getState().playSound("sound-2"));
+    expect(playback().layers.sfx?.objectId).toBe("sound-2");
+    expect(playback().layers.sfx?.paused).toBe(false);
+
+    // 面板还停在 sound-1 上：它所在的这一层不是它在响，暂停无从谈起
+    expect(useEditorStore.getState().pauseSound("sound-1")).toBeUndefined();
+    expect(logs().at(-1)).toMatch(/暂停失败：.*这一层是别的对象在响/);
+    expect(playback().layers.sfx?.paused).toBe(false);
   });
 
   it("切场景会清掉记账（记的对象属于上一个场景）", () => {

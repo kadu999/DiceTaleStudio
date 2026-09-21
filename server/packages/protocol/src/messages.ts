@@ -30,8 +30,21 @@ import { z } from "zod";
  * 「消息校验失败」、命令凭空消失（现场就是这么踩了一次：服务端进程没重启）。
  * 所以这里仍然 +1——版本握手（两端都要相等）会在连上的那一刻就说清「新旧不同步」，
  * 而不是等第一条新命令发出去才暴露。
+ *
+ * v4（2026-09-21）：战争雾多一个**总开关**（`map.fog.enabled`）。对前端**不是**无害的加法：
+ * 老前端不认这个字段，会把它静默丢掉，于是「编辑器里关掉了战争雾」在前端照样生成那一层雾——
+ * 这正是要修的那个 bug（两边看到的不是同一件事）。所以照旧 +1，让新旧混跑在连上时就断掉。
+ *
+ * v5（2026-09-21）：地图 / 精灵多了**视频**（`video` 字段 + `play_video` / `pause_video` /
+ * `resume_video` / `stop_video` 四条命令）。字段本身对老前端是无害的加法（丢掉 = 这个对象不放视频），
+ * 但**命令不是**：老服务端的入站 schema 会把不认识的命令判成非法消息丢掉（v3 踩过这个坑），
+ * 所以按同一条纪律 +1。
+ *
+ * v6（2026-09-21）：声音补齐**暂停 / 继续**（`pause_sound` / `resume_sound`）——编辑器里
+ * 「播放声音对象」与「地图 / 精灵的视频」两组 UI 的控件行现在完全一致（播放 / 暂停 / 停止）。
+ * 同样是新增命令，所以 +1。
  */
-export const PROTOCOL_VERSION = 3;
+export const PROTOCOL_VERSION = 6;
 
 /** 未进入运行态时拒绝 `/client` 升级的 HTTP 状态与原因头。 */
 export const RUNTIME_INACTIVE_STATUS = 503;
@@ -76,13 +89,17 @@ export const cellRunsSchema = z.object({
 });
 
 /**
- * 战争雾：把哪些「区域」当成雾区（区域位取自 `@dts/grid` 的可绘制位，`[1, 8]` = 区域1 + 区域4）。
+ * 战争雾：**总开关** + 把哪些「区域」当成雾区（区域位取自 `@dts/grid` 的可绘制位，
+ * `[1, 8]` = 区域1 + 区域4）。
  *
- * 前端据此从 `cells` 里挑出**雾格子**、生成一张像素遮罩（只盖雾区、其余透明）。
+ * 前端据此从 `cells` 里挑出**雾格子**、生成一张像素遮罩（只盖雾区、其余透明）；
+ * `enabled` 是 v13 起的总开关，**关着时前端一层的雾都不建**（不是建了再隐藏）——
+ * 与文档 schema 同一口径，缺省算开（v10–v12 的文件里「有 fog」就等于「开着」）。
  * **哪个格子被揭示了不在数据里**：那是运行态，由 `erase_mask` / `reveal_fog_region` 命令驱动，
  * 不写文档、也不随 `scene_sync` 走。
  */
 export const mapFogSchema = z.object({
+  enabled: z.boolean().default(true),
   regions: z.array(z.number().int()),
 });
 /** 地图对象携带的数据（贴图 + 网格；`rowOrder` 固定 bottom-up）。 */
@@ -102,6 +119,26 @@ export const soundDataSchema = z.object({
   clips: z.array(z.string()),
   picked: z.string().optional(),
   layer: soundLayerSchema,
+});
+
+/**
+ * 地图 / 精灵上的**视频列表**（v14 起）：加进来的视频 + 当前选中的那条 + 循环 / 声音两个开关。
+ *
+ * 与文档 schema 同一口径：`clips` / `loop` / `audio` 给默认值（老编辑器不会发这一项时语义只能是
+ * 「还没加视频、不循环、静音」），`picked` 可选（「没写」= 还没选）。
+ *
+ * 前端据此建那一层视频（盖在**这个对象自己的矩形**上，见 `Presentation/VideoOverlay.cs`）：
+ * 命令里只有 `objectId`，放哪一条 / 循环 / 声音都从这里读——与 `play_sound` 同一条「命令只是触发器」。
+ * `names`（显示名）**不进协议**：它只是编辑器里给人看的标签。
+ */
+export const videoDataSchema = z.object({
+  // 总开关：关着 = 这个对象现在不放视频（前端连那一层都不建）。缺省算开——`video` 只有
+  // 加过视频才写出来，「字段在」本来就等于「在用」（与 `map.fog.enabled` 同一个口径）
+  enabled: z.boolean().default(true),
+  clips: z.array(z.string()).default([]),
+  picked: z.string().optional(),
+  loop: z.boolean().default(false),
+  audio: z.boolean().default(false),
 });
 
 /**
@@ -145,6 +182,9 @@ export const sceneObjectSchema = z.object({
   // v12 起文档里可能带传送阵的目标场景（可选）：**前端不用它**（切场景靠整份 `scene_push`），
   // 但它是 SceneObjectDoc 的一部分，缺了就等于在这一层丢了字段。
   teleport: teleportDataSchema.optional(),
+  // v14 起文档里可能带视频列表（可选，只有地图 / 精灵会带）：前端据此在**那个对象自己的矩形**上
+  // 建一层视频，命令（`play_video` 等）只给 `objectId`。
+  video: videoDataSchema.optional(),
   image: imageRefSchema.optional(),
 });
 
@@ -197,6 +237,8 @@ export const eraseStrokeSchema = z.object({
  *
  * **载荷里不带数据**：`play_sound` 只说「让这个对象在它自己声明的层上播」，
  * 前端从**镜像里的那个对象**读 `sound.picked`——数据在场景里，命令只是触发器。
+ * `pause_sound` / `resume_sound` 按**层级**给（同层只响一条，所以「暂停这一层」= 暂停当前那条）。
+ * 视频同理：`play_video{objectId}` 只说「现在放」，放哪一条 / 循环 / 声音在那个对象的 `video` 里。
  * 战争雾同理：`erase_mask` 只给**轨迹**，雾层本身在推下去的那个地图对象里
  * （`map.fog.regions` + `map.cells`）。
  */
@@ -209,6 +251,46 @@ export const commandRequestSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("stop_sound"),
     layer: soundLayerSchema,
+  }),
+  /**
+   * 声音：**暂停 / 继续**（v6 起，与视频那两条对称）。
+   *
+   * 按**层级**管（不是按对象）：同层同时只响一条，所以「暂停这一层」就是暂停当前那条。
+   * 编辑器里「播放声音对象」与「视频」两组 UI 的控件行因此完全一致。
+   */
+  z.object({
+    kind: z.literal("pause_sound"),
+    layer: soundLayerSchema,
+  }),
+  z.object({
+    kind: z.literal("resume_sound"),
+    layer: soundLayerSchema,
+  }),
+  /**
+   * 视频（v5 起）：在**这个对象自己的矩形**上放它 `video.picked` 那一条。
+   *
+   * 与 `play_sound` 同一条规矩：**命令里不带数据**（没有 clip、没有 loop/audio），
+   * 前端从镜像里的那个对象读 `video.picked` / `video.loop` / `video.audio`。
+   * 「放哪一条」由编辑器面板上那一排小方块决定，命令只是「现在放」这个动作。
+   */
+  z.object({
+    kind: z.literal("play_video"),
+    objectId: z.string().min(1),
+  }),
+  /** 视频：暂停在当前帧（再 `resume_video` 从这一帧续播）。 */
+  z.object({
+    kind: z.literal("pause_video"),
+    objectId: z.string().min(1),
+  }),
+  /** 视频：从暂停处续播（对没在播的对象 = 从头放）。 */
+  z.object({
+    kind: z.literal("resume_video"),
+    objectId: z.string().min(1),
+  }),
+  /** 视频：停止并**拆掉那一层**（露出对象自己原来的贴图）。 */
+  z.object({
+    kind: z.literal("stop_video"),
+    objectId: z.string().min(1),
   }),
   /** 战争雾：沿这笔轨迹擦掉地图对象上的雾。 */
   z.object({

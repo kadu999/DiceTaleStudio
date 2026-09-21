@@ -230,6 +230,12 @@ export function RuntimePanel(): React.JSX.Element {
               ）。
             </div>
             <div className="mt-1">
+              地图 / 精灵的「视频」组同理：命令只带 <code>objectId</code>
+              （<code>play_video</code> / <code>pause_video</code> / <code>resume_video</code> /{" "}
+              <code>stop_video</code>），放哪一条、循环、声音都在那个对象的 <code>video</code> 数据里；
+              每个对象各自一条，互不影响。
+            </div>
+            <div className="mt-1">
               本地调试：先切到运行态，再跑 <code>pnpm --filter @dts/backend mock</code>（它会自动重试到连上）。
             </div>
           </div>

@@ -130,3 +130,75 @@ export function FieldRow({
     </div>
   );
 }
+
+/* ------------------------------------------------------------------
+   播放类按钮：**「声音」与「视频」两个播放组共用同一套**
+   （播放 / 暂停 · 继续 / 停止 + 下面那行状态）。
+
+   为什么单独抽出来：
+   1. **统一**：两组是同一件事（后台记账 + 尽力下发，编辑器自己不出声 / 不放画面），
+      长得不一样只会让人以为是两套用法——类名放在一处，改一次两边一起变；
+   2. **好点**：这几个键是跑团现场真的在按的（平板上尤其），所以比面板里其它小按钮
+      大一圈：高度 34px、字 13px、左右内距宽一些、键与键之间留 8px。
+      其它按钮暂不跟着放大（要放大的是「手在点的这几个」）。
+   ------------------------------------------------------------------ */
+
+const PLAYBACK_BUTTON_BASE =
+  "inline-flex flex-none items-center justify-center gap-1 rounded border px-3 text-[13px] min-h-[34px]";
+
+/** 常态（次级操作：没在播时的「播放」「停止」）。 */
+export const PLAYBACK_BUTTON_CLASS = `${PLAYBACK_BUTTON_BASE} border-[var(--color-editor-border)] hover:bg-[var(--color-editor-panel-alt)] disabled:opacity-40 disabled:hover:bg-transparent`;
+
+/** 高亮（当前状态的那一个：「播放中」/「已暂停」）。 */
+export const PLAYBACK_BUTTON_ACTIVE_CLASS = `${PLAYBACK_BUTTON_BASE} border-[var(--color-editor-accent)] bg-[var(--color-editor-accent-dim)] text-white hover:bg-[var(--color-editor-panel-alt)] disabled:opacity-40`;
+
+/**
+ * 播放那一行：**三个键铺满整行**（不占左边那 80px 的标签列）。
+ *
+ * 为什么不用 `FieldRow`：这几个键比面板里其它控件大一圈，再让出标签列的话，
+ * 窄面板（抽屉收窄、平板竖屏）上「播放 / 暂停 / 停止」会折成两行——一排三个键才是
+ * 现场要的手感。行名由按钮自己（「▶ 播放」）与下面那行状态（「正在播放：…」）说清楚。
+ */
+export function PlaybackRow({ children }: { readonly children: React.ReactNode }): React.JSX.Element {
+  return (
+    <div className="flex flex-wrap items-center gap-2 px-2 py-1" data-testid="playback-row">
+      {children}
+    </div>
+  );
+}
+
+/** 状态行的四种状态（`busy` = 本层被别的对象占着，只有按层级管的声音才有这一档）。 */
+export type PlaybackState = "playing" | "paused" | "idle" | "busy";
+
+/**
+ * 播放状态那一行（自己占一行，与上面几个键左对齐）。
+ *
+ * 这行字是「点下去到底有没有生效」的答案，所以两组用**同一套措辞**：
+ * 正在播放 / 已暂停 / 没在播放（+ 声音那组多一档「本层正被「X」占着」）。
+ */
+export function PlaybackStatus({
+  testId,
+  state,
+  note,
+}: {
+  readonly testId: string;
+  readonly state: PlaybackState;
+  readonly note: string;
+}): React.JSX.Element {
+  return (
+    <FieldRow label="">
+      <span
+        data-testid={testId}
+        data-state={state}
+        title={note}
+        className={`min-w-0 flex-1 truncate text-[11px] ${
+          state === "idle" || state === "busy"
+            ? "text-[var(--color-editor-text-dim)]"
+            : "text-[var(--color-editor-accent)]"
+        }`}
+      >
+        {note}
+      </span>
+    </FieldRow>
+  );
+}

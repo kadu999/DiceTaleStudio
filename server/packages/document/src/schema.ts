@@ -38,14 +38,19 @@ export const cellRunsSchema = z.object({
 });
 
 /**
- * 战争雾（v10 起）：指定哪些区域算雾区。
+ * 战争雾（v10 起：雾区；v13 起：总开关）：**开不开**，以及哪些区域算雾区。
  *
  * `regions` 给默认值 `[]` 是有意的（与 v7 的 `active` 同理）：**字段在、内容空**和
  * 「字段整个不在」在语义上是一回事（没指定任何雾区），给默认值省掉一处三元判断。
  * 位值范围只挡到 1–255（与格子掩码同一个口径）；「必须是已知的可绘制位」属于语义校验，
  * 由 `validateScene` 报 warning——手写文件里的越界位要在界面上看得见，而不是读不开文件。
+ *
+ * `enabled` 同样**给默认值 `true`**：v10–v12 的文件里没有这一项，而那时候写下 `fog`
+ * 就等于「这张地图有雾」——补成 `false` 会把老场景的雾静默关掉。读出旧文件时补进内存，
+ * 并随迁移回写一次（版本升到 13 时本来就要回写）。
  */
 export const mapFogSchema = z.object({
+  enabled: z.boolean().default(true),
   regions: z.array(z.number().int().min(1).max(255)).default([]),
 });
 
@@ -86,6 +91,28 @@ export const soundDataSchema = z.object({
 export const teleportDataSchema = z.object({
   targets: z.array(z.string().min(1)).default([]),
   picked: z.string().min(1).optional(),
+});
+
+/**
+ * 视频列表（v14 起，可选）：地图 / 精灵上的「一组视频 + 选中哪条 + 循环 / 声音」。
+ *
+ * 与 `soundDataSchema` 同一套口径：`clips` / `loop` / `audio` **给默认值**（手写文件里少写一项时，
+ * 语义只能是「还没加视频、不循环、静音」），`picked` **不给**——「没写」本身有意义（还没选，
+ * 播放按钮点不了）；`names` 只是给人看的标签，缺省 = 用素材文件名。
+ * `enabled`（总开关）同样给默认值 `true`，理由见下面那一行。
+ *
+ * **不需要补壳迁移**：整个 `video` 字段是可选的，「没有它」就等于「这个对象不放视频」，
+ * 所以 v13 → v14 只是版本号 +1 触发一次回写，不像 `fog.enabled` 那样要往老文件里填默认值。
+ */
+export const videoDataSchema = z.object({
+  // v14 起，与 `map.fog.enabled` 同一个口径：老编辑器不发这一项时语义只能是「在用」
+  // （`video` 只有加过视频才写出来），补成 false 会把已有的视频静默关掉
+  enabled: z.boolean().default(true),
+  clips: z.array(z.string().min(1)).default([]),
+  picked: z.string().min(1).optional(),
+  names: z.record(z.string(), z.string()).optional(),
+  loop: z.boolean().default(false),
+  audio: z.boolean().default(false),
 });
 
 export const conditionSchema = z.object({
@@ -137,6 +164,8 @@ export const sceneObjectSchema = z.object({
   // v12 起：动作对象「传送阵」携带的目标场景（可选）。同样**不给默认值**——
   // 「没写」的语义是「还没指定目标」，别拿空壳冒充；类型见 `ObjectKind`。
   teleport: teleportDataSchema.optional(),
+  // v14 起：地图 / 精灵上的视频列表（可选）。缺省 = 这个对象不放视频（见 `videoDataSchema`）
+  video: videoDataSchema.optional(),
   // 对象要显示的图片（精灵用；地图的贴图在 map.image 里）
   image: imageRefSchema.optional(),
 });
@@ -497,6 +526,11 @@ export function parseSceneFile(raw: unknown, size?: SceneSizeHint): SceneFileLoa
     const filled = withFilledObjectFields(migrated);
     // v12：传送阵的「单目标」搬成「候选清单 + 选中的那一个」（中间那一版写下的文件要读得回来）
     const teleport = migrateTeleportTarget(filled.raw);
+    // v13：战争雾的总开关（`fog.enabled`）**不用单独迁移**——schema 给它默认值 `true`
+    // （v10–v12 的文件里「有 fog」就等于「开着」），而版本号一升就会回写一次，
+    // 于是磁盘上的文件重新变得自描述。
+    // v14：地图 / 精灵上的视频列表（`video`）同样**不用补壳**——整个字段是可选的，
+    // 「没有它」就是「这个对象不放视频」，版本号 +1 触发一次回写即可。
     // 读出来的文档一律是当前版本（v6 起网格里不再存 `cellSize`，顺手被 schema 丢掉）
     normalized = { ...teleport.raw, formatVersion: DOCUMENT_FORMAT_VERSION };
     needsRewrite = version < DOCUMENT_FORMAT_VERSION || filled.changed || teleport.changed;

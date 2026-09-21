@@ -74,7 +74,6 @@ afterEach(() => {
       colors: {},
       showGridLines: true,
       showAnnotations: true,
-      showFog: false,
     },
   });
   window.localStorage.clear();

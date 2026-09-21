@@ -3,7 +3,12 @@
 > 状态：**已实现**（2026-09-19；2026-09-20 升到 **协议 v2**：新增 `resources_prepare`，让前端
 > **先下资源包、再载入场景**；2026-09-21 升到 **协议 v3**：新增战争雾的 `erase_mask` /
 > `reveal_fog_region`——对前端是加法，但**老服务端的入站 schema 会把新命令判成非法消息丢掉**，
-> 所以照样 +1，靠版本握手把「新旧混着跑」挡在连上的那一刻）。取代
+> 所以照样 +1，靠版本握手把「新旧混着跑」挡在连上的那一刻；同一天升到 **协议 v4**：战争雾多了
+> **总开关** `map.fog.enabled`——老前端不认这个字段会静默丢掉，「编辑器里关掉了、前端照样有雾」，
+> 所以同样靠版本握手拦住；同日再升到 **协议 v5**：地图 / 精灵多了**视频**
+> （`video` + `play_video` / `pause_video` / `resume_video` / `stop_video`），理由与 v3 完全相同；
+> 再升到 **协议 v6**：声音补齐 `pause_sound` / `resume_sound`（编辑器里「播放声音对象」与「视频」
+> 两组 UI 的控件行完全一致），同样是新增命令）。取代
 > [`2026-09-18-frontend-integration-contract.md`](2026-09-18-frontend-integration-contract.md)
 > （那份写的是「前端上报数据、后台按 id 寻址动作」的老模型，已整层删除）。
 
@@ -103,8 +108,9 @@
 | `sortingOrder` | `MeshRenderer.sortingOrder` + 按序微小离地（避免共面闪烁） |
 | `image` / `map.image` | 资源逻辑 ID → `GET /api/resources/raw?id=…` 取纹理；没图时按 `kind` 上色占位 |
 | `map.cells` | RLE（`[[掩码, 格数], …]`）——掩码值与 `@dts/grid` 的 `CellMask` / Unity 的 `GridCellType` 完全一致 |
-| `map.fog` | **战争雾**：`regions` = 哪几个「区域位」算雾区（区域位就是 `cells` 里那些位，任意可绘制位都行，如 `[1, 8]` = 区域1 + 区域4）。前端据此挑出**雾格子**、生成一张像素遮罩；**哪里被揭示了不在数据里**——那是运行态，由下面两条命令驱动，不写文档、也不随 `scene_sync` 回来 |
+| `map.fog` | **战争雾**：`enabled` = **总开关**（协议 v4 起；缺省算开，v10–v12 的文件里「有 `fog`」就等于「开着」），`regions` = 哪几个「区域位」算雾区（区域位就是 `cells` 里那些位，任意可绘制位都行，如 `[1, 8]` = 区域1 + 区域4）。**只有 `enabled && regions.length > 0` 前端才建那一层雾**（关掉是真的拆掉，不是画了再藏），据此挑出**雾格子**、生成一张像素遮罩；**哪里被揭示了不在数据里**——那是运行态，由下面两条命令驱动，不写文档、也不随 `scene_sync` 回来 |
 | `sound` | `{ clips, picked, layer }`：前端播的就是 `picked` 那条；`layer` ∈ `bgm/ambient/sfx/voice`，同层同时只响一条 |
+| `video` | **视频**（v14 起，只有地图 / 精灵会带）：`{ enabled, clips, picked, loop, audio }`——总开关、加进来的视频、放哪一条、循不循环、出不出视频自带的声音。收到 `play_video` 时前端在**这个对象自己的矩形**上建一层视频（`Presentation/VideoOverlay.cs`）；`enabled` 缺省 `true`、`loop` / `audio` 缺省 `false`（放一遍、静音）；关掉 `enabled` 时前端连那一层都不建，播放类命令会被明确拒掉。`names`（显示名）**不进协议** |
 | `teleport { targets, picked }` | **传送阵**：`targets` = 候选场景名清单，`picked` = 现在选中的那一张（与 `sound.clips` / `sound.picked` 同一套形状）。**前端不用它**：触发传送阵 = 编辑器切换当前场景 → 整份 `scene_push` 下来，前端只管换镜像。前端也**不给它建可见物**（和 `PlaySound` 一样：动作对象一个 GameObject 都不建），数据留在镜像里即可 |
 
 ## 命令
@@ -113,8 +119,14 @@
 |---|---|---|
 | `play_sound` | `{ objectId, layer }` | 从**镜像里的那个对象**读 `sound.picked`，在该层播放（同层顶替） |
 | `stop_sound` | `{ layer }` | 停掉该层 |
+| `pause_sound` | `{ layer }` | **暂停**该层（v6 起；同层只响一条，所以「暂停这一层」= 暂停当前那条） |
+| `resume_sound` | `{ layer }` | 从暂停处**继续**放该层（v6 起） |
 | `erase_mask` | `{ objectId, stroke: { points, radius, softness } }` | 在**镜像里那张地图**的雾层上，沿这笔**轨迹**擦出一条软边（见下） |
 | `reveal_fog_region` | `{ objectId, region, revealed }` | 含该区域位的格子**整片揭示**（`true`）/ **整片盖回**（`false`） |
+| `play_video` | `{ objectId }` | 在这个对象自己的矩形上放它 `video.picked` 那一条（**命令里不带数据**：放哪条 / 循环 / 声音都从镜像里读） |
+| `pause_video` | `{ objectId }` | 暂停在当前帧 |
+| `resume_video` | `{ objectId }` | 从暂停处续播 |
+| `stop_video` | `{ objectId }` | 停止并**拆掉那一层**（露出对象原来的贴图） |
 
 **战争雾发的是轨迹，不是整张遮罩**（照参考实现 `backend_diceTale` 的 `erase_mask` / `EraseStroke`）：
 - `points`：鼠标拖过的归一化轨迹点（`[0,1]`、**y 向下**）。前端把它翻成纹理的自下而上（`(1 - y) × 高`），
@@ -133,6 +145,8 @@
 编辑器在同一次运行里会把记下的轨迹补发一遍）。
 前端 `play_sound` 的**真出声**（取音频 + 按层播放）是下一步——现在它如实回 `ok:false` 并说明
 「镜像里该播哪一条」，编辑器日志里看得见失败原因，不会假装成功、也不会超时。
+**视频四条命令也已经实现**（v5）：前端按 URL 放本地资源包 / 服务端里的那份视频，画面盖在对象
+自己的矩形上；解码失败只在 Unity 控制台报（回执是同步的，协议里没有「晚到的失败」这条通道）。
 
 ## 客户端实现位置（`client/`）
 
@@ -145,6 +159,7 @@
 | `Network/ClientSession.cs` | 握手 / 心跳 / 把消息变成事件 |
 | `Logic/SceneMirror.cs` | 按 id 增 / 改 / 删视图 |
 | `Logic/CommandRouter.cs` | 命令 → 动作 → 回执 |
-| `Presentation/SceneObjectView.cs` | 一个对象一块贴地面片（位置 / 缩放 / 激活 / 显示顺序 / 取图）；**绑了雾区的地图**再多一个 `FogOverlay` 子物体 |
+| `Presentation/SceneObjectView.cs` | 一个对象一块贴地面片（位置 / 缩放 / 激活 / 显示顺序 / 取图）；**开着战争雾且指定了雾区的地图**再多一个 `FogOverlay` 子物体（`map.fog.enabled` 关着就拆掉） |
 | `Presentation/FogOfWar.cs` | 战争雾层：按 `map.fog.regions` + `map.cells` 生成像素遮罩（与编辑器预览同一张尺寸），按 `erase_mask` / `reveal_fog_region` 揭示；揭示状态留在组件里，数据变了「重填 + 重放」 |
+| `Presentation/VideoOverlay.cs` | 视频层：按 URL 放（本地资源包优先、否则服务端原始字节），盖在**对象自己的矩形**上、显示顺序在战争雾之下；首帧就绪前不显示，`stop_video` 拆掉整个子物体 |
 | `Presentation/ResourceImageLoader.cs` | 按逻辑 ID 取图（带缓存 / 去重 / 失败记忆） |

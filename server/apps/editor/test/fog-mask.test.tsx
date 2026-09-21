@@ -1,21 +1,23 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen, act } from "@testing-library/react";
 import { CellMask } from "@dts/grid";
-import { createMapObject, createSceneObject, type SceneObjectDoc } from "@dts/document";
+import { createMapObject, createSceneObject, isMapFogEnabled, type SceneObjectDoc } from "@dts/document";
 import { InspectorPanel } from "../src/panels/inspector/InspectorPanel";
 import { sceneHistory, useEditorStore } from "../src/state/editor-store";
 import { emptyFogReveal } from "../src/services/fog-reveal";
 
 /**
- * 战争雾：**属性面板的开关 / 指定雾区**（雾区是文档数据，开关是编辑器偏好）。
+ * 战争雾：**属性面板的开关 / 指定雾区**（两者都是文档数据，跟着场景存盘下发）。
  *
  * Mask 窗口本身不在这里驱动：它是**像素级**的（真 canvas + ImageData），jsdom 里
  * `getContext("2d")` 返回 null，与场景画布一样由 e2e 覆盖；它用到的那几个纯函数
  * （补点 / 软边擦除 / 把雾格画成区域色）在 `mask-math.test.ts` 里钉。
  *
- * 这里钉住两件事：
- * 1. 「战争雾」开关是整组的闸门（关着时雾区设置与编辑入口都不显示），并且写进编辑器偏好；
- * 2. 「指定雾区」把哪几个区域写进文档（规范化、可撤销、解除绑定不删数据）。
+ * 这里钉住三件事：
+ * 1. 「战争雾」开关是整组的闸门（关着时雾区设置与编辑入口都不显示），并且写进**文档**——
+ *    只有它跟着场景下发，前端才知道该不该生成那一层雾（它不再是浏览器本地偏好）；
+ * 2. 关掉开关**不清雾区绑定**（再打开就回来）；
+ * 3. 「指定雾区」把哪几个区域写进文档（规范化、可撤销、解除绑定不删数据）。
  *
  * **画布与战争雾无关**：雾用的是区域数据（`map.cells` 的 8 个区域位），画布上只画区域着色，
  * 雾只在它自己的 Mask 窗口里看——所以这里没有「雾罩图层」可钉（见 `ScenePanel`）。
@@ -28,7 +30,7 @@ function mapObject(): SceneObjectDoc {
   return createMapObject({ id: "map-1", name: "网格地图", image: IMAGE, grid: GRID });
 }
 
-/** 一张**绑了「区域4」**的地图（揭示记账只认绑了雾区的地图）。 */
+/** 一张**开了战争雾、绑了「区域4」**的地图（揭示记账只认这样的地图）。 */
 function fogMap(): SceneObjectDoc {
   const object = mapObject();
   const map = object.map;
@@ -36,7 +38,23 @@ function fogMap(): SceneObjectDoc {
     throw new Error("createMapObject 应当带 map 数据");
   }
 
-  return { ...object, map: { ...map, fog: { regions: [CellMask.Fog1] } } };
+  return { ...object, map: { ...map, fog: { enabled: true, regions: [CellMask.Fog1] } } };
+}
+
+/** 一张**开了战争雾、但还没指定雾区**的地图（揭示记账会明确拒绝它，与「开关关着」不是一回事）。 */
+function enabledMapWithoutRegions(): SceneObjectDoc {
+  const object = mapObject();
+  const map = object.map;
+  if (map === undefined) {
+    throw new Error("createMapObject 应当带 map 数据");
+  }
+
+  return {
+    ...object,
+    id: "map-2",
+    name: "开了没绑的地图",
+    map: { ...map, fog: { enabled: true, regions: [] } },
+  };
 }
 
 /**
@@ -62,6 +80,12 @@ const mapFog = (): readonly number[] =>
   useEditorStore.getState().scenes[0]?.objects.find((item) => item.id === "map-1")?.map?.fog
     ?.regions ?? [];
 
+/** 场景里那张地图的战争雾开关（缺省 = 没开）。 */
+const mapFogEnabled = (): boolean => {
+  const map = useEditorStore.getState().scenes[0]?.objects.find((item) => item.id === "map-1")?.map;
+  return map !== undefined && isMapFogEnabled(map);
+};
+
 afterEach(() => {
   cleanup();
   sceneHistory.reset([]);
@@ -70,7 +94,6 @@ afterEach(() => {
     activeSceneName: null,
     selectedObjectIds: [],
     selectedAssetId: null,
-    // 开关也是**编辑器偏好**，会跨用例留着：每个用例都从「没开战争雾」开始
     gridPaint: {
       mask: CellMask.Obstacle,
       brushSize: 1,
@@ -78,7 +101,6 @@ afterEach(() => {
       colors: {},
       showGridLines: true,
       showAnnotations: true,
-      showFog: false,
     },
     fogMask: false,
     fogMaskTarget: null,
@@ -106,29 +128,31 @@ describe("属性面板：战争雾开关与雾区", () => {
     expect(screen.queryByTestId("fog-enable")).toBeNull();
   });
 
-  it("打开开关才露出雾区设置；关掉又收起来（偏好落盘、不动文档）", () => {
+  it("打开开关才露出雾区设置；关掉又收起来，但雾区绑定留着（开关是文档数据、可撤销）", () => {
     seedScene([mapObject()], ["map-1"]);
     render(<InspectorPanel />);
 
-    expect(useEditorStore.getState().gridPaint.showFog).toBe(false);
+    expect(mapFogEnabled()).toBe(false);
     fireEvent.click(screen.getByTestId("fog-enable"));
 
-    expect(useEditorStore.getState().gridPaint.showFog).toBe(true);
+    // 开关写的是**文档**：只有它跟着场景存盘下发，前端才知道该不该生成那一层雾
+    expect(mapFogEnabled()).toBe(true);
     expect(screen.getByTestId("fog-region-1")).toBeDefined();
     expect(screen.getByTestId("fog-mask-open")).toBeDefined();
 
-    // 偏好落在浏览器本地：不改文档，也不进撤销栈
-    const stored = JSON.parse(window.localStorage.getItem("dts.editor.gridPaint") ?? "{}") as {
-      showFog?: boolean;
-    };
-    expect(stored.showFog).toBe(true);
-    expect(useEditorStore.getState().canUndo).toBe(false);
-
-    // 关掉：设置收起来，但文档里那套绑定一个字节不动（偏好不是文档数据）
     act(() => useEditorStore.getState().setFogRegions("map-1", [CellMask.Fog1]));
     fireEvent.click(screen.getByTestId("fog-enable"));
     expect(screen.queryByTestId("fog-region-1")).toBeNull();
+    // 「关掉」= 现在没有雾，不是把雾区删了：绑定还在，再打开就回来
     expect(mapFog()).toEqual([CellMask.Fog1]);
+    expect(mapFogEnabled()).toBe(false);
+
+    // 它不是编辑器偏好：浏览器本地那份记录里没有这一项（旧版本写下的 showFog 也不再被读）
+    expect(window.localStorage.getItem("dts.editor.gridPaint") ?? "").not.toContain("showFog");
+
+    // 开关也是一次文档编辑：撤销就回到「开着」
+    useEditorStore.getState().undo();
+    expect(mapFogEnabled()).toBe(true);
   });
 
   it("点区域按钮指定 / 取消雾区，并写进文档（可撤销）", () => {
@@ -147,12 +171,15 @@ describe("属性面板：战争雾开关与雾区", () => {
     expect(screen.getByTestId(`fog-region-${CellMask.Fog1}`).getAttribute("data-bound")).toBe("true");
     expect(screen.getByTestId("fog-mask-open").hasAttribute("disabled")).toBe(false);
 
-    // 再点一下取消：**字段整个删掉**（没指定 = 没有这个配置）
+    // 再点一下取消：绑定回到空——但**开关还开着**，字段留着（「开着但还没指定雾区」），
+    // 面板那一组不会因为取消最后一个雾区就整个塌掉
     fireEvent.click(screen.getByTestId(`fog-region-${CellMask.Fog1}`));
     expect(mapFog()).toEqual([]);
-    expect(
-      useEditorStore.getState().scenes[0]?.objects[0]?.map?.fog,
-    ).toBeUndefined();
+    expect(useEditorStore.getState().scenes[0]?.objects[0]?.map?.fog).toEqual({
+      enabled: true,
+      regions: [],
+    });
+    expect(screen.getByTestId("fog-mask-open").hasAttribute("disabled")).toBe(true);
 
     // 指定是一次文档编辑：撤销就回到「没指定」
     fireEvent.click(screen.getByTestId(`fog-region-${CellMask.Obstacle}`));
@@ -242,14 +269,19 @@ describe("战争雾：揭示记账（运行态才下发给前端）", () => {
     expect(logs().at(-1)).toMatch(/没把 区域1 指定为雾区/);
   });
 
-  it("目标不对时给明确原因、不记账（对象不存在 / 不是地图 / 还没指定雾区）", () => {
-    seedScene([mapObject(), createSceneObject({ id: "sprite", name: "精灵" })], ["map-1"]);
+  it("目标不对时给明确原因、不记账（对象不存在 / 不是地图 / 开关关着 / 还没指定雾区）", () => {
+    seedScene(
+      [mapObject(), enabledMapWithoutRegions(), createSceneObject({ id: "sprite", name: "精灵" })],
+      ["map-1"],
+    );
     act(() => useEditorStore.setState({ mode: "run" }));
 
     for (const [objectId, expected] of [
       ["不存在", /找不到这个对象/],
       ["sprite", /不是地图/],
-      ["map-1", /还没指定雾区/],
+      // 开关关着与「开着但还没指定雾区」是两回事，日志要说清是哪一种
+      ["map-1", /战争雾开关关着/],
+      ["map-2", /还没指定雾区/],
     ] as const) {
       act(() => useEditorStore.getState().eraseFogMask(objectId, [{ x: 0.1, y: 0.1 }], true));
       expect(logs().at(-1)).toMatch(expected);

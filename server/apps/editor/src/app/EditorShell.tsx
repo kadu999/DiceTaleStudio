@@ -12,6 +12,7 @@ import { GridEditDialog } from "./GridEditDialog";
 import { ImagePickerDialog } from "./ImagePickerDialog";
 import { SoundEditDialog } from "./SoundEditDialog";
 import { TeleportEditDialog } from "./TeleportEditDialog";
+import { VideoEditDialog } from "./VideoEditDialog";
 import { MenuBar } from "./MenuBar";
 import { StatusBar } from "./StatusBar";
 
@@ -43,6 +44,9 @@ export function EditorShell(): React.JSX.Element {
   const teleportEditor = useEditorStore((state) => state.teleportEditor);
   const teleportEditorTarget = useEditorStore((state) => state.teleportEditorTarget);
   const openTeleportEditor = useEditorStore((state) => state.openTeleportEditor);
+  const videoEditor = useEditorStore((state) => state.videoEditor);
+  const videoEditorTarget = useEditorStore((state) => state.videoEditorTarget);
+  const openVideoEditor = useEditorStore((state) => state.openVideoEditor);
   const fogMask = useEditorStore((state) => state.fogMask);
   const fogMaskTarget = useEditorStore((state) => state.fogMaskTarget);
   const openFogMask = useEditorStore((state) => state.openFogMask);
@@ -287,6 +291,13 @@ export function EditorShell(): React.JSX.Element {
         open={teleportEditor && teleportEditorTarget !== null}
         objectId={teleportEditorTarget}
         onClose={() => openTeleportEditor(null)}
+      />
+
+      {/* 编辑视频：地图 / 精灵的视频列表（放哪条在属性面板上点小方块选） */}
+      <VideoEditDialog
+        open={videoEditor && videoEditorTarget !== null}
+        objectId={videoEditorTarget}
+        onClose={() => openVideoEditor(null)}
       />
 
       {/* 战争雾 Mask 窗口：在贴图上按雾区涂 / 擦（目标地图由属性面板指定） */}

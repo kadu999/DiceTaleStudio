@@ -1,15 +1,15 @@
 import { PAINTABLE_MASKS, maskToLabel, regionsToMask } from "@dts/grid";
-import type { SceneObjectDoc } from "@dts/document";
+import { isMapFogEnabled, type SceneObjectDoc } from "@dts/document";
 import { useEditorStore } from "../../state/editor-store";
 import { FieldRow } from "./fields";
 
 /**
  * 战争雾的**编辑区**：放进属性面板的「战争雾」分组里（分组标题由外面给，这里只出行）。
  *
- * 整组由**第一行的开关**管着：关着时只留那一个开关，打开以后才露出雾区设置——
- * 「没开战争雾的地图」不该摆着一排用不上的按钮。它是**编辑器偏好**
- * （`services/grid-paint-prefs` 的 `showFog`：与网格线 / 网格标注同一份本地偏好、不进文档），
- * 而这张地图到底有没有雾由文档里的 `map.fog.regions` 说了算。
+ * 整组由**第一行的总开关**管着：关着时只留那一个开关，打开以后才露出雾区设置——
+ * 「没开战争雾的地图」不该摆着一排用不上的按钮。这个开关是**这张地图的文档数据**
+ * （`map.fog.enabled`，可撤销、跟着场景存盘下发）：**只有开着前端才生成那一层雾**，
+ * 所以它不能记在浏览器本地——那是「新旧看到的不是同一件事」的老 bug。
  *
  * **雾不在画布上画**：战争雾用的就是区域数据（`map.cells` 的 8 个区域位），画布上只有
  * 「区域」那一套着色；雾的呈现（未探索的罩子 + 擦除）全在它自己的 Mask 窗口里。
@@ -20,9 +20,8 @@ import { FieldRow } from "./fields";
  */
 export function FogFields({ object }: { readonly object: SceneObjectDoc }): React.JSX.Element {
   const setFogRegions = useEditorStore((state) => state.setFogRegions);
+  const setFogEnabled = useEditorStore((state) => state.setFogEnabled);
   const openFogMask = useEditorStore((state) => state.openFogMask);
-  const showFog = useEditorStore((state) => state.gridPaint.showFog);
-  const setFogVisible = useEditorStore((state) => state.setFogVisible);
 
   const map = object.map;
   if (map === undefined) {
@@ -32,6 +31,7 @@ export function FogFields({ object }: { readonly object: SceneObjectDoc }): Reac
   // 绑定可能来自手写文件（含未知位）：这里只做展示与判断，规范化交给文档命令
   const regions = map.fog?.regions ?? [];
   const fogMask = regionsToMask(regions);
+  const enabled = isMapFogEnabled(map);
 
   const toggle = (bit: number): void => {
     setFogRegions(
@@ -40,14 +40,15 @@ export function FogFields({ object }: { readonly object: SceneObjectDoc }): Reac
     );
   };
 
-  // 关着就只留开关：没开战争雾的地图不该摆一排用不上的按钮
-  if (!showFog) {
-    return <FogSwitch checked={false} onChange={setFogVisible} />;
+  // 关着就只留开关：没开战争雾的地图不该摆一排用不上的按钮。
+  // 注意这张地图**存着的雾区还在**（关掉只是不生成雾），再打开就回来。
+  if (!enabled) {
+    return <FogSwitch checked={false} onChange={(next) => setFogEnabled(object.id, next)} />;
   }
 
   return (
     <>
-      <FogSwitch checked onChange={setFogVisible} />
+      <FogSwitch checked onChange={(next) => setFogEnabled(object.id, next)} />
 
       <FieldRow label="指定雾区">
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
@@ -75,13 +76,7 @@ export function FogFields({ object }: { readonly object: SceneObjectDoc }): Reac
         </div>
       </FieldRow>
 
-      {/* 指定结果写出来：按钮点亮是「选了」，这行才是「于是会怎样」 */}
-      <div className="px-2 pb-1 text-[10px] text-[var(--color-editor-text-dim)]">
-        {fogMask === 0
-          ? "还没指定雾区：先点上面的区域按钮，Mask 窗口才会打开"
-          : `已指定 ${regions.map((bit) => maskToLabel(bit)).join("、")}：玩家进入这些区域会揭示整片区域（运行时的按区域揭示）`}
-      </div>
-
+      {/* 指定结果不用再写一遍：小方块自己亮着就是「选了」，其余交给 tooltip */}
       {/* 入口：真正的编辑（擦除 / 整区开合）在 Mask 窗口里做 */}
       <FieldRow label="雾格子">
         <button
@@ -100,10 +95,13 @@ export function FogFields({ object }: { readonly object: SceneObjectDoc }): Reac
 }
 
 /**
- * 「战争雾」开关：整组的闸门。
+ * 「战争雾」开关：整组的闸门，也是**这张地图的文档数据**（`map.fog.enabled`）。
  *
- * 只决定**这一组设置露不露面**——雾罩本身不画在画布上（画布只有区域着色），
- * 要看雾就打开 Mask 窗口。它是编辑器偏好，不进文档。
+ * 行名在左（就叫**启用**）、右边只有勾选框——与「基础」组里的激活 / 锁定、以及「视频」组里
+ * 那个开关同一套写法；说明收进 title，不在行里再写一遍。
+ *
+ * 它决定的不只是这一组设置露不露面——**关着时前端一层的雾都不生成**。
+ * 雾罩本身仍然不画在画布上（画布只有区域着色），要看雾就打开 Mask 窗口。
  */
 function FogSwitch({
   checked,
@@ -113,20 +111,16 @@ function FogSwitch({
   readonly onChange: (next: boolean) => void;
 }): React.JSX.Element {
   return (
-    <FieldRow label="战争雾">
-      <label
-        className="flex min-w-0 flex-1 items-center gap-1.5 text-[11px]"
-        title="打开以后才显示雾区设置（雾本身在 Mask 窗口里看，画布上不画；只影响编辑器显示，不动数据）"
-      >
-        <input
-          type="checkbox"
-          data-testid="fog-enable"
-          checked={checked}
-          className="h-3.5 w-3.5 flex-none accent-[var(--color-editor-accent)]"
-          onChange={(event) => onChange(event.target.checked)}
-        />
-        <span>启用</span>
-      </label>
+    <FieldRow label="启用">
+      <input
+        type="checkbox"
+        data-testid="fog-enable"
+        aria-label="启用战争雾"
+        checked={checked}
+        title="这张地图开不开战争雾；只有打开才生成雾层（关掉不等于删掉雾区——指定的雾区留着，再打开就回来）"
+        className="h-3.5 w-3.5 flex-none accent-[var(--color-editor-accent)]"
+        onChange={(event) => onChange(event.target.checked)}
+      />
     </FieldRow>
   );
 }

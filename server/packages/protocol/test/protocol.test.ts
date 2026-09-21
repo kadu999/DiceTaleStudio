@@ -81,6 +81,74 @@ describe("协议：场景（镜像的那份对象数据）", () => {
     expect(scene.objects[2]?.sound?.layer).toBe("sfx");
   });
 
+  it("战争雾的总开关（v13）：缺省算开（老场景只有 regions），关着时原样传给前端", () => {
+    const mapObject = sampleScene().objects[0] as Record<string, unknown>;
+    const parseWithFog = (fog: unknown): ReturnType<typeof sceneSchema.parse> =>
+      sceneSchema.parse({
+        name: "s",
+        objects: [{ ...mapObject, map: { ...(mapObject.map as Record<string, unknown>), fog } }],
+      });
+
+    // 老场景（协议 v3 及更早）里只有 regions：「有 fog」就等于「开着」
+    expect(parseWithFog({ regions: [8] }).objects[0]?.map?.fog).toEqual({
+      enabled: true,
+      regions: [8],
+    });
+
+    // 编辑器关掉了：前端看到的就是关着（**不是**建了再藏起来）
+    expect(parseWithFog({ enabled: false, regions: [8] }).objects[0]?.map?.fog).toEqual({
+      enabled: false,
+      regions: [8],
+    });
+  });
+
+  it("视频（v14）：列表 / 选中 / 循环 / 声音原样传给前端；显示名不进协议", () => {
+    const mapObject = sampleScene().objects[0] as Record<string, unknown>;
+    const clip = "project:测试项目/Assets/video/opening.mp4";
+
+    const parsed = sceneSchema.parse({
+      name: "s",
+      objects: [
+        {
+          ...mapObject,
+          video: { clips: [clip], picked: clip, names: { [clip]: "开场" }, loop: true, audio: true },
+        },
+      ],
+    });
+
+    expect(parsed.objects[0]?.video).toEqual({
+      // 总开关缺省算开（与文档 schema 同一口径）
+      enabled: true,
+      clips: [clip],
+      picked: clip,
+      loop: true,
+      audio: true,
+    });
+
+    // 老编辑器（还没这个字段）不发，前端的 `video` 就是 undefined（= 这个对象不放视频）
+    expect(sceneSchema.parse(sampleScene()).objects[0]?.video).toBeUndefined();
+
+    // 手写的少写几个开关：默认开着、不循环、静音
+    const minimal = sceneSchema.parse({
+      name: "s",
+      objects: [{ ...mapObject, video: { clips: [clip] } }],
+    });
+    expect(minimal.objects[0]?.video).toEqual({ enabled: true, clips: [clip], loop: false, audio: false });
+
+    // 关掉总开关：原样传给前端（前端据此连那一层都不建）
+    const disabled = sceneSchema.parse({
+      name: "s",
+      objects: [{ ...mapObject, video: { enabled: false, clips: [clip], picked: clip } }],
+    });
+    expect(disabled.objects[0]?.video).toEqual({
+      enabled: false,
+      clips: [clip],
+      picked: clip,
+      loop: false,
+      audio: false,
+    });
+  });
+
   it("传送阵（动作对象）也接得住：kind 是字符串、teleport 是「候选 + 选中的那个」", () => {
     const withTeleport = sceneSchema.parse({
       name: "s",
@@ -285,6 +353,66 @@ describe("协议：编辑器 → 服务端", () => {
         region: 8,
         revealed: false,
       });
+    }
+  });
+
+  it("声音（v6）：暂停 / 继续按**层级**给（同层只响一条，所以暂停这一层 = 暂停当前那条）", () => {
+    for (const kind of ["pause_sound", "resume_sound"] as const) {
+      const parsed = parseEditorToServer({
+        type: "editor_command",
+        requestId: `sound-${kind}`,
+        command: { kind, layer: "bgm" },
+      });
+
+      expect(parsed.type).toBe("editor_command");
+      if (parsed.type === "editor_command") {
+        // 命令里**没有数据**：只有层级（响的是哪一条由前端从镜像里读）
+        expect(parsed.command).toEqual({ kind, layer: "bgm" });
+        expect(JSON.stringify(parsed.command)).not.toContain("clips");
+      }
+    }
+
+    // 层级只认四档，别的值 / 缺字段都拒
+    for (const command of [
+      { kind: "pause_sound", layer: "bogus" },
+      { kind: "pause_sound" },
+      { kind: "resume_sound", layer: "" },
+    ] as const) {
+      expect(() =>
+        parseEditorToServer({ type: "editor_command", requestId: "sound-bad", command }),
+      ).toThrow();
+    }
+  });
+
+  it("视频（v5）：四条命令都只带 objectId（放哪一条 / 循环 / 声音在对象数据里）", () => {
+    for (const kind of ["play_video", "pause_video", "resume_video", "stop_video"] as const) {
+      const parsed = parseEditorToServer({
+        type: "editor_command",
+        requestId: `video-${kind}`,
+        command: { kind, objectId: "map_01" },
+      });
+
+      expect(parsed.type).toBe("editor_command");
+      if (parsed.type === "editor_command") {
+        // 命令里**没有**视频数据：没有 clip、没有循环 / 声音开关
+        expect(parsed.command).toEqual({ kind, objectId: "map_01" });
+        const wire = JSON.stringify(parsed.command);
+        expect(wire).not.toContain("clips");
+        expect(wire).not.toContain("loop");
+      }
+    }
+  });
+
+  it("视频：缺 objectId / 空 id 都拒（畸形结构不进管线）", () => {
+    for (const command of [
+      { kind: "play_video" },
+      { kind: "play_video", objectId: "" },
+      { kind: "stop_video", objectId: "" },
+      { kind: "pause_video" },
+    ] as const) {
+      expect(() =>
+        parseEditorToServer({ type: "editor_command", requestId: "video-bad", command }),
+      ).toThrow();
     }
   });
 

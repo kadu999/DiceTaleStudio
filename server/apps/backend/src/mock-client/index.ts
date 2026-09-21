@@ -94,10 +94,17 @@ class MockClient {
 
       case "command": {
         const { requestId, command } = message;
-        // 真出声在 Unity 里；这里只证明「后台控制前端」这条链路通了 + 回执
+        // 真出声 / 真放视频在 Unity 里；这里只证明「后台控制前端」这条链路通了 + 回执
         const effects = [`mock 收到 ${command.kind}`];
         console.log(`[mock] 命令：${command.kind} ${JSON.stringify(command)}`);
-        this.send({ type: "command_result", requestId, ok: false, reason: "mock 前端不出声（真实播放器是 Unity）" });
+        this.send({
+          type: "command_result",
+          requestId,
+          ok: false,
+          reason: command.kind.endsWith("_video")
+            ? "mock 前端不放视频（真实播放器是 Unity）"
+            : "mock 前端不出声（真实播放器是 Unity）",
+        });
         console.log(`[mock] 已回执 ${requestId}（effects: ${effects.join("，")}）`);
         return;
       }
@@ -125,7 +132,10 @@ class MockClient {
         `[mock]   ${object.id}  kind=${object.kind}  active=${object.active}  pos=${position}  ` +
           `scale=${object.scale}  order=${object.sortingOrder}` +
           (object.image === undefined ? "" : `  image=${object.image.id}`) +
-          (object.sound === undefined ? "" : `  sound=${object.sound.picked ?? "(未选)"}@${object.sound.layer}`),
+          (object.sound === undefined ? "" : `  sound=${object.sound.picked ?? "(未选)"}@${object.sound.layer}`) +
+          (object.video === undefined
+            ? ""
+            : `  video=${object.video.picked || "(未选)"}（${object.video.clips.length} 条，循环=${object.video.loop}，声音=${object.video.audio}）`),
       );
     }
   }

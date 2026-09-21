@@ -1,6 +1,6 @@
 import { PAINTABLE_MASKS, decodeRle } from "@dts/grid";
 import { findComponentType, isKnownComponentType } from "./components";
-import { collectActionIds } from "./commands";
+import { collectActionIds, isMapFogEnabled, supportsVideo } from "./commands";
 import type { ProjectDoc, SceneDoc, SceneObjectDoc } from "./types";
 
 /**
@@ -103,6 +103,25 @@ function validateObject(
           level: "warning",
           path: `${path}/map/fog/regions`,
           message: `战争雾指定的 ${unknownRegions.join(", ")} 不是可绘制的区域位（会被忽略）`,
+        });
+      }
+
+      // 「开关开着但一个雾区都没指定」= 前端不会建雾层，也不会有雾：这不是错，
+      // 但画面上什么都不会发生，得说一句（属性面板 → 战争雾 → 指定雾区）
+      if (isMapFogEnabled(object.map) && fogRegions.length === 0) {
+        issues.push({
+          level: "warning",
+          path: `${path}/map/fog/regions`,
+          message: "战争雾开着但没指定雾区（不会有雾）",
+        });
+      }
+
+      // 反过来同理：开关关着时绑定是留着的（再打开就回来），但「现在没有雾」这件事要说清
+      if (!isMapFogEnabled(object.map) && fogRegions.length > 0) {
+        issues.push({
+          level: "warning",
+          path: `${path}/map/fog/enabled`,
+          message: "战争雾关着：指定的雾区不会生成雾（打开开关才生效）",
         });
       }
     }
@@ -244,6 +263,57 @@ function validateObject(
       path: `${path}/teleport`,
       message: `非传送阵（kind=${object.kind}）不应携带传送数据`,
     });
+  }
+
+  /*
+    视频列表（v14 起）：**只有地图与精灵**能带（`supportsVideo`）。
+    与声音那几条同一个口径——错了都是「按没加 / 按没选处理」，所以只报警告不拦运行。
+    **扩展名不在这里校验**：webm 在 Windows 上多半解不了属于「这台机器的解码器」问题，
+    提醒放在界面上（选择器 / 面板），免得每次打开场景都报一遍。
+  */
+  if (object.video !== undefined) {
+    const video = object.video;
+
+    if (!supportsVideo(object.kind)) {
+      issues.push({
+        level: "warning",
+        path: `${path}/video`,
+        message: `只有地图与精灵能放视频（kind=${object.kind} 的 video 字段会被忽略）`,
+      });
+    }
+
+    if (video.clips.some((clip) => clip.trim().length === 0)) {
+      issues.push({
+        level: "warning",
+        path: `${path}/video/clips`,
+        message: "视频列表里有空条目（会被忽略）",
+      });
+    }
+
+    if (video.picked !== undefined && !video.clips.includes(video.picked)) {
+      issues.push({
+        level: "warning",
+        path: `${path}/video/picked`,
+        message: "选中的那条视频不在视频列表里（按还没选处理）",
+      });
+    }
+
+    const namedClips = video.names === undefined ? [] : Object.entries(video.names);
+    for (const [clipId, name] of namedClips) {
+      if (name.trim().length === 0) {
+        issues.push({
+          level: "warning",
+          path: `${path}/video/names/${clipId}`,
+          message: "视频名字是空的（会退回素材文件名）",
+        });
+      } else if (!video.clips.includes(clipId)) {
+        issues.push({
+          level: "warning",
+          path: `${path}/video/names/${clipId}`,
+          message: "这条名字对应的视频不在视频列表里（会被忽略）",
+        });
+      }
+    }
   }
 
   const componentIds = new Set<string>();

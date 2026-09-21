@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assetDisplayPath, findAssetById, listAudioAssets, listImageAssets } from "../src/panels/asset-picker";
+import { assetDisplayPath, findAssetById, listAudioAssets, listImageAssets, listVideoAssets } from "../src/panels/asset-picker";
 import type { ResourceTreeNode } from "../src/services/project-api";
 
 /** 资源树的小样例：一张图、一个视频、一层子目录。 */
@@ -98,6 +98,14 @@ describe("音频素材列表（选择音频弹框用）", () => {
     expect(listAudioAssets(TREE).map((node) => node.id)).toEqual([
       "project:我的项目/Assets/audio/bgm.mp3",
       "project:我的项目/Assets/audio/step1.wav",
+    ]);
+  });
+});
+
+describe("视频素材列表（选择视频弹框用）", () => {
+  it("只挑视频（mp4 / webm），图片与音频都不算", () => {
+    expect(listVideoAssets(TREE).map((node) => node.id)).toEqual([
+      "project:我的项目/Assets/video/Map001.mp4",
     ]);
   });
 });

@@ -39,22 +39,25 @@ test.describe("属性分组", () => {
       await openProject(page, project);
       await openLeftTab(page, "hierarchy");
 
-      // 选中地图（列表第一行）→ 属性面板应有四个分组
+      // 选中地图（列表第一行）→ 属性面板应有五个分组
       await selectObject(page, 0);
 
       const basic = page.locator('[data-group="basic"]');
       const render = page.locator('[data-group="render"]');
       const edit = page.locator('[data-group="edit"]');
       const fog = page.locator('[data-group="fog"]');
+      const video = page.locator('[data-group="video"]');
       await expect(basic).toBeVisible();
       await expect(render).toBeVisible();
       await expect(edit).toBeVisible();
       await expect(fog).toBeVisible();
+      await expect(video).toBeVisible();
       // 默认都展开
       await expect(basic).toHaveAttribute("data-open", "true");
       await expect(render).toHaveAttribute("data-open", "true");
       await expect(edit).toHaveAttribute("data-open", "true");
       await expect(fog).toHaveAttribute("data-open", "true");
+      await expect(video).toHaveAttribute("data-open", "true");
       await expect(basic).toContainText("名称");
       await expect(render).toContainText("贴图");
       await expect(edit).toContainText("区域");
@@ -62,6 +65,10 @@ test.describe("属性分组", () => {
       // 战争雾那一组关着时只有开关（打开才露出雾区设置，见 fog-mask.spec.ts）
       await expect(fog).toContainText("战争雾");
       await expect(fog).toContainText("启用");
+      // 视频那一组还没开时只剩「启用」那一个开关（打开之后的样子见 video-object.spec.ts）
+      await expect(video).toContainText("视频");
+      await expect(video.getByTestId("video-enable")).toBeVisible();
+      await expect(video.getByTestId("video-edit")).toHaveCount(0);
 
       const renderHeader = render.getByTestId("field-group-header");
       await expect(renderHeader).toHaveAttribute("aria-expanded", "true");
@@ -82,7 +89,7 @@ test.describe("属性分组", () => {
       const order = await page
         .locator('[data-testid="object-properties"] [data-group]')
         .evaluateAll((sections) => sections.map((section) => section.getAttribute("data-group")));
-      expect(order).toEqual(["basic", "render", "edit", "fog"]);
+      expect(order).toEqual(["basic", "render", "edit", "fog", "video"]);
 
       // 收起「渲染」：内容整块消失，但分组标题还在（还能再展开）
       await renderHeader.click();
@@ -122,10 +129,21 @@ test.describe("属性分组", () => {
       await expect(fog).toHaveAttribute("data-open", "true");
       await expect(fog.getByTestId("fog-enable")).toBeVisible();
 
-      // 精灵：有「基础 / 渲染」（每个对象都能显示图片），没有「区域 / 战争雾」（都是地图独有的）
+      // 收起「视频」：那一个开关也消失，标题还在
+      const videoHeader = video.getByTestId("field-group-header");
+      await videoHeader.click();
+      await expect(video).toHaveAttribute("data-open", "false");
+      await expect(video.getByTestId("video-enable")).toHaveCount(0);
+      await videoHeader.click();
+      await expect(video).toHaveAttribute("data-open", "true");
+      await expect(video.getByTestId("video-enable")).toBeVisible();
+
+      // 精灵：有「基础 / 渲染 / 视频」（视频盖在它自己的矩形上），
+      // 没有「区域 / 战争雾」（都是地图独有的）
       await selectObject(page, 1);
       await expect(page.locator('[data-group="basic"]')).toBeVisible();
       await expect(page.locator('[data-group="render"]')).toBeVisible();
+      await expect(page.locator('[data-group="video"]')).toBeVisible();
       await expect(page.locator('[data-group="edit"]')).toHaveCount(0);
       await expect(page.locator('[data-group="fog"]')).toHaveCount(0);
     } finally {

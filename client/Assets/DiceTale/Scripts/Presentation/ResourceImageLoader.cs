@@ -120,10 +120,8 @@ namespace DiceTale
         private IEnumerator Fetch(string logicalId)
         {
             // 本地优先：资源包已就绪且这一版里有这个文件，就不再问服务端
-            var localPath = bundleCache != null && bundleCache.Ready
-                ? LocalResourceStore.LocalPathOf(bundleCache.VersionRoot, logicalId)
-                : null;
-            var isLocal = localPath != null && File.Exists(localPath);
+            var localUrl = bundleCache != null ? bundleCache.LocalUrlOf(logicalId) : null;
+            var isLocal = localUrl != null;
 
             if (!isLocal && string.IsNullOrEmpty(httpBaseUrl))
             {
@@ -134,7 +132,7 @@ namespace DiceTale
 
             // file:// 让同一条 UnityWebRequestTexture 链路既能读本地也能读远程
             var url = isLocal
-                ? new Uri(localPath).AbsoluteUri
+                ? localUrl
                 : $"{httpBaseUrl}/api/resources/raw?id={UnityWebRequest.EscapeURL(logicalId)}";
 
             using (var request = UnityWebRequestTexture.GetTexture(url))

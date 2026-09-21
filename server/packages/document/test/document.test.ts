@@ -13,6 +13,7 @@ import {
   collectActionIds,
   createSceneObject,
   findMapObject,
+  isMapFogEnabled,
   listMapObjects,
   mapFogMask,
   objectImage,
@@ -22,6 +23,7 @@ import {
   removeAction,
   removeObject,
   setMapCells,
+  setMapFogEnabled,
   setMapFogRegions,
   setMapGrid,
   setObjectActive,
@@ -831,6 +833,16 @@ describe("战争雾：手动指定雾区", () => {
     return decodeRle(map.cells.runs, map.grid.width * map.grid.height);
   }
 
+  /** 场景里那张地图的地图数据（断言用；没有就抛，免得断言在 `undefined` 上空转）。 */
+  function firstMap(file: { readonly objects: readonly SceneObjectDoc[] }): NonNullable<SceneObjectDoc["map"]> {
+    const map = file.objects[0]?.map;
+    if (map === undefined) {
+      throw new Error("场景里没有地图对象");
+    }
+
+    return map;
+  }
+
   it("指定雾区：写进 map.fog.regions，规范化后落盘", () => {
     let scene = withMapObject(makeScene());
 
@@ -854,20 +866,27 @@ describe("战争雾：手动指定雾区", () => {
     ).toBe(scene);
   });
 
-  it("解除绑定：字段整个删掉，但格子数据不动", () => {
+  it("解除绑定：雾区清空、格子数据不动；开关关着时才把字段整个摘掉", () => {
     let scene = withMapObject(makeScene());
     scene = mutate(scene, (draft) => {
       setMapFogRegions(draft, "map-1", [8]);
       paintMapCells(draft, "map-1", { x: 1, y: 1 }, { x: 1, y: 1 }, { mask: CellMask.Fog1, brushSize: 1 });
     });
-    expect(scene.objects[0]?.map?.fog?.regions).toEqual([8]);
+    expect(scene.objects[0]?.map?.fog).toEqual({ enabled: true, regions: [8] });
 
     scene = mutate(scene, (draft) => {
       setMapFogRegions(draft, "map-1", []);
     });
-    // 「没指定任何雾区」在文件里就是**没有这个字段**，不留空壳
-    expect(scene.objects[0]?.map?.fog).toBeUndefined();
+    // 开关还开着：字段留着（「开着但还没指定雾区」）——属性面板那一组不会整个塌掉
+    expect(scene.objects[0]?.map?.fog).toEqual({ enabled: true, regions: [] });
     // 解除绑定 ≠ 清数据：画好的雾格子还在，重新绑定就回来
+    expect(mapCells(scene)[1 * GRID.width + 1]).toBe(CellMask.Fog1);
+
+    // 关掉开关：没有内容要记了，字段整个摘掉（与「从没开过」同义）
+    scene = mutate(scene, (draft) => {
+      setMapFogEnabled(draft, "map-1", false);
+    });
+    expect(scene.objects[0]?.map?.fog).toBeUndefined();
     expect(mapCells(scene)[1 * GRID.width + 1]).toBe(CellMask.Fog1);
   });
 
@@ -879,7 +898,7 @@ describe("战争雾：手动指定雾区", () => {
     }
 
     expect(mapFogMask(map)).toBe(0);
-    expect(mapFogMask({ ...map, fog: { regions: [8, 32] } })).toBe(40);
+    expect(mapFogMask({ ...map, fog: { enabled: true, regions: [8, 32] } })).toBe(40);
   });
 
   it("清空战争雾：只清绑定位，其它区域位保留", () => {
@@ -944,6 +963,82 @@ describe("战争雾：手动指定雾区", () => {
     });
     expect(mapCells(whole)[2 * GRID.width + 2]).toBe(0);
   });
+
+  it("总开关：打开写下一份空绑定，关掉时雾区留着——一个都没指定才把字段摘掉", () => {
+    let scene = withMapObject(makeScene());
+    expect(isMapFogEnabled(firstMap(scene))).toBe(false);
+    expect(mapFogMask(firstMap(scene))).toBe(0);
+
+    // 打开：**开关状态本身也是要存的数据**，不然下次打开项目它又变回关着
+    scene = mutate(scene, (draft) => {
+      expect(setMapFogEnabled(draft, "map-1", true)).toBe(true);
+    });
+    expect(scene.objects[0]?.map?.fog).toEqual({ enabled: true, regions: [] });
+    expect(isMapFogEnabled(firstMap(scene))).toBe(true);
+
+    // 同一个状态再写一次 = 没变更（不进撤销栈）
+    expect(
+      mutate(scene, (draft) => {
+        setMapFogEnabled(draft, "map-1", true);
+      }),
+    ).toBe(scene);
+
+    // 指定雾区：开关原样不动（绑定与开关是两件事）
+    scene = mutate(scene, (draft) => {
+      setMapFogRegions(draft, "map-1", [CellMask.Fog1]);
+    });
+    expect(scene.objects[0]?.map?.fog).toEqual({ enabled: true, regions: [CellMask.Fog1] });
+
+    // 关掉：**雾区绑定留着**（先关掉看看效果、再打开不该逼人重新指定一遍）
+    scene = mutate(scene, (draft) => {
+      expect(setMapFogEnabled(draft, "map-1", false)).toBe(true);
+    });
+    expect(scene.objects[0]?.map?.fog).toEqual({ enabled: false, regions: [CellMask.Fog1] });
+    expect(isMapFogEnabled(firstMap(scene))).toBe(false);
+
+    // 关着的时候照样能改绑定
+    scene = mutate(scene, (draft) => {
+      setMapFogRegions(draft, "map-1", [CellMask.Fog1, CellMask.Fog2]);
+    });
+    expect(scene.objects[0]?.map?.fog).toEqual({
+      enabled: false,
+      regions: [CellMask.Fog1, CellMask.Fog2],
+    });
+
+    // 关掉且一个雾区都没指定：`fog` 整个摘掉（与「从没开过」同义，文件里不留空壳）
+    const off = mutate(withMapObject(makeScene()), (draft) => {
+      setMapFogEnabled(draft, "map-1", true);
+      setMapFogEnabled(draft, "map-1", false);
+    });
+    expect(off.objects[0]?.map?.fog).toBeUndefined();
+
+    // 关掉一个本来就没开的 = 没变更
+    const fresh = withMapObject(makeScene());
+    expect(
+      mutate(fresh, (draft) => {
+        setMapFogEnabled(draft, "map-1", false);
+      }),
+    ).toBe(fresh);
+  });
+
+  it("v13 之前的老文件：`fog` 里没有 enabled，读出来算**开着**并补进内存", () => {
+    const object = withMapObject(makeScene()).objects[0];
+    if (object?.map === undefined) {
+      throw new Error("场景里没有地图对象");
+    }
+
+    // v12 的文件：那时写下 fog 就等于「这张地图有雾」（补成 false 会把老场景的雾全关掉）
+    const load = parseSceneFile({
+      formatVersion: 12,
+      objects: [{ ...object, map: { ...object.map, fog: { regions: [CellMask.Fog1] } } }],
+    });
+
+    expect(load.file.formatVersion).toBe(DOCUMENT_FORMAT_VERSION);
+    expect(load.file.objects[0]?.map?.fog).toEqual({ enabled: true, regions: [CellMask.Fog1] });
+    expect(isMapFogEnabled(firstMap(load.file))).toBe(true);
+    // 版本号从 12 涨到 13 → 要求回写一次，磁盘上的文件从此自描述（带 enabled）
+    expect(load.needsRewrite).toBe(true);
+  });
 });
 
 describe("文档校验", () => {
@@ -961,13 +1056,36 @@ describe("文档校验", () => {
       const map = draft.objects[0]?.map;
       if (map !== undefined) {
         // 3 = 两位之和、256 = 越界：手写文件里可能出现，编辑器读取时会被 normalizeRegions 丢掉
-        map.fog = { regions: [8, 3, 256] };
+        map.fog = { enabled: true, regions: [8, 3, 256] };
       }
     });
 
     // 只是警告：读得开、画得出，别把文件判成读不了
     expect(hasErrors(validateScene(scene))).toBe(false);
     expect(formatIssues(validateScene(scene))).toMatch(/战争雾指定的 3, 256 不是可绘制的区域位/);
+  });
+
+  it("战争雾开着却没指定雾区、或关着却指定了雾区：都只是警告（都不会有雾）", () => {
+    // 开着但一个雾区都没指定：前端不会建雾层，画面上什么都不会发生
+    const on = mutate(withMapObject(makeScene()), (draft) => {
+      setMapFogEnabled(draft, "map-1", true);
+    });
+    expect(hasErrors(validateScene(on))).toBe(false);
+    expect(formatIssues(validateScene(on))).toMatch(/战争雾开着但没指定雾区（不会有雾）/);
+
+    // 关着但绑定留着：「明明指定了却不生效」得说出来
+    const off = mutate(withMapObject(makeScene()), (draft) => {
+      setMapFogRegions(draft, "map-1", [CellMask.Fog1]);
+      setMapFogEnabled(draft, "map-1", false);
+    });
+    expect(hasErrors(validateScene(off))).toBe(false);
+    expect(formatIssues(validateScene(off))).toMatch(/战争雾关着：指定的雾区不会生成雾/);
+
+    // 开着 + 指定了：一句警告都没有
+    const ready = mutate(withMapObject(makeScene()), (draft) => {
+      setMapFogRegions(draft, "map-1", [CellMask.Fog1]);
+    });
+    expect(formatIssues(validateScene(ready))).not.toMatch(/战争雾/);
   });
 
   it("地图对象缺少地图数据时报错", () => {

@@ -5,6 +5,7 @@ import {
   mapObjectDoc,
   newProject,
   openFirstObject,
+  readSceneFog,
   readSceneFogRegions,
   readSceneMap,
   sceneDoc,
@@ -72,7 +73,10 @@ async function eraseAcross(
 }
 
 test.describe("战争雾 Mask 窗口", () => {
-  test("开关：关着只有开关，打开才露出雾区设置", async ({ page, request }) => {
+  test("开关：关着只有开关，打开才露出雾区设置；开关是**文档数据**（前端按它决定生不生成雾）", async ({
+    page,
+    request,
+  }) => {
     const project = await newProject(request);
     try {
       await seedProjectDoc(request, project, [
@@ -85,16 +89,35 @@ test.describe("战争雾 Mask 窗口", () => {
       await expect(fog.getByTestId("fog-enable")).not.toBeChecked();
       await expect(fog.getByTestId("fog-region-1")).toHaveCount(0);
       await expect(fog.getByTestId("fog-mask-open")).toHaveCount(0);
+      // 没开过 = 文件里没有 `map.fog` 这个字段
+      await expect.poll(() => readSceneFog(request, project, SCENE)).toBeUndefined();
 
-      // 打开以后才露出「指定雾区」与编辑入口
+      // 打开以后才露出「指定雾区」与编辑入口，而且**开关落进了场景文件**
       await fog.getByTestId("fog-enable").check();
       await expect(fog.getByTestId("fog-region-1")).toBeVisible();
       await expect(fog.getByTestId("fog-mask-open")).toBeVisible();
+      await expect
+        .poll(() => readSceneFog(request, project, SCENE))
+        .toEqual({ enabled: true, regions: [] });
 
-      // 关掉又收起来（绑的是编辑器偏好，文档里那套配置一个字节不动）
+      // 关掉又收起来
       await fog.getByTestId("fog-enable").uncheck();
       await expect(fog.getByTestId("fog-region-1")).toHaveCount(0);
       await expect(fog.getByTestId("fog-mask-open")).toHaveCount(0);
+      // 一个雾区都没指定：关掉 = 没有内容要记，字段整个摘掉（与「从没开过」同义）
+      await expect.poll(() => readSceneFog(request, project, SCENE)).toBeUndefined();
+
+      // 指定了雾区再关掉：**绑定留着**、只是把开关写 false（再打开就回来）
+      await fog.getByTestId("fog-enable").check();
+      await fog.getByTestId("fog-region-1").click();
+      await expect.poll(() => readSceneFogRegions(request, project, SCENE)).toEqual([1]);
+      await fog.getByTestId("fog-enable").uncheck();
+      await expect
+        .poll(() => readSceneFog(request, project, SCENE))
+        .toEqual({ enabled: false, regions: [1] });
+      // 关着只是「现在没有雾」：重新打开，绑定还在
+      await fog.getByTestId("fog-enable").check();
+      await expect(fog.getByTestId("fog-region-1")).toHaveAttribute("data-bound", "true");
     } finally {
       await dropProject(request, project);
     }

@@ -60,7 +60,8 @@ namespace DiceTale
             mirror.Initialize(session, imageLoader, bundleCache);
 
             commandRouter = gameObject.AddComponent<CommandRouter>();
-            commandRouter.Initialize(session, mirror);
+            // 命令路由要资源包与 HTTP 地址：视频的「本地优先、远程兜底」在这里解析（见 `VideoUrlOf`）
+            commandRouter.Initialize(session, mirror, bundleCache, HttpBaseUrl);
 
             // 立刻开始连：编辑器还没点「运行」时会被服务端拒（正常现象，连接会一直重试）
             connection.Connect(serverUrl);

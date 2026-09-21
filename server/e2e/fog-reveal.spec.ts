@@ -80,7 +80,7 @@ async function connectFakeClient(page: Page, port: number): Promise<void> {
           type: "client_hello",
           // 与 `@dts/protocol` 的 `PROTOCOL_VERSION` 一致（这里写死：e2e 不是 workspace 包，
           // 拿不到那个常量；版本一升这里会连不上、用例会当场失败，提醒同步改）
-          protocolVersion: 3,
+          protocolVersion: 6,
           name: "e2e 假前端",
           version: "0.0.0",
         }),
@@ -143,7 +143,7 @@ function fogMapDoc(project: string): Record<string, unknown> {
       [0, GRID.width * GRID.height - FOG_CELLS],
     ],
   };
-  (mapDoc.map as { fog?: unknown }).fog = { regions: [1] };
+  (mapDoc.map as { fog?: unknown }).fog = { enabled: true, regions: [1] };
   return mapDoc;
 }
 
@@ -165,9 +165,9 @@ test.describe("战争雾：轨迹下发给前端", { tag: "@runtime" }, () => {
       await uploadSceneImage(request, project, SCENE, solidPng(4, 4, [60, 60, 60]));
       await openFirstObject(page, project, "网格地图");
 
-      // 战争雾那一组是编辑器偏好：打开它，「编辑」入口才露面
+      // 战争雾那一组是**文档数据**（种子文件里 `fog.enabled = true`）：开着才有「编辑」入口
       const fog = page.locator('[data-group="fog"]');
-      await fog.getByTestId("fog-enable").check();
+      await expect(fog.getByTestId("fog-enable")).toBeChecked();
       await expect(fog.getByTestId("fog-mask-open")).toBeVisible();
 
       // 进入运行态：没点「运行」之前，前端根本连不上（503 拒握手）

@@ -80,6 +80,7 @@ namespace DiceTale
             obj.image = ParseImage(JsonParser.GetObject(node, "image"));
             obj.map = ParseMap(JsonParser.GetObject(node, "map"));
             obj.sound = ParseSound(JsonParser.GetObject(node, "sound"));
+            obj.video = ParseVideo(JsonParser.GetObject(node, "video"));
             return obj;
         }
 
@@ -132,6 +133,8 @@ namespace DiceTale
             var fog = JsonParser.GetObject(node, "fog");
             if (fog != null)
             {
+                // 总开关缺省算开：老场景（协议 v3 及更早）只有 regions，「有 fog」就等于「开着」
+                map.fogEnabled = JsonParser.GetBool(fog, "enabled", true);
                 map.fogRegions = GridRle.FlattenInts(JsonParser.GetArray(fog, "regions"));
             }
 
@@ -164,6 +167,42 @@ namespace DiceTale
             }
 
             return sound;
+        }
+
+        /// <summary>
+        /// 视频列表（地图 / 精灵上的 `video`）；没有这个字段时返回 null（= 这个对象不放视频）。
+        ///
+        /// 三个开关**缺省**都有各自的默认：**开着**（老编辑器不发这一项，而「有 video 字段」
+        /// 就等于「在用」）、不循环、静音。
+        /// </summary>
+        private static MirrorVideo ParseVideo(Dictionary<string, object> node)
+        {
+            if (node == null)
+            {
+                return null;
+            }
+
+            var video = new MirrorVideo
+            {
+                enabled = JsonParser.GetBool(node, "enabled", true),
+                picked = JsonParser.GetString(node, "picked") ?? "",
+                loop = JsonParser.GetBool(node, "loop", false),
+                audio = JsonParser.GetBool(node, "audio", false),
+            };
+
+            var clips = JsonParser.GetArray(node, "clips");
+            if (clips != null)
+            {
+                foreach (var raw in clips)
+                {
+                    if (raw is string clip && !string.IsNullOrEmpty(clip))
+                    {
+                        video.clips.Add(clip);
+                    }
+                }
+            }
+
+            return video;
         }
     }
 }

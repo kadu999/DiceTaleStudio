@@ -77,6 +77,27 @@ namespace DiceTale
         /// <summary>当前可用版本的目录（传给 <see cref="LocalResourceStore"/>）；没就绪时为空串。</summary>
         public string VersionRoot { get; private set; } = "";
 
+        /// <summary>
+        /// 逻辑 ID → **本地包里的 `file://` 地址**（包就绪、且这个文件真的在磁盘上时）；否则 null。
+        ///
+        /// 「本地优先」这条规矩只有这一个入口：取图（<see cref="ResourceImageLoader"/>）与
+        /// 放视频（<see cref="VideoOverlay"/> 的 `VideoPlayer.url`）都走它——本地有就一个字节的
+        /// 网络都不走，本地没有才回退到服务端的 `/api/resources/raw`。
+        ///
+        /// 用 `Uri` 而不是手拼 `file://` 前缀：盘符与中文路径要靠它正确转义，而
+        /// `UnityWebRequest` 与 `VideoPlayer.url` 都认这种 `file:///D:/…` 形式。
+        /// </summary>
+        public string LocalUrlOf(string logicalId)
+        {
+            if (!Ready)
+            {
+                return null;
+            }
+
+            var path = LocalResourceStore.LocalPathOf(VersionRoot, logicalId);
+            return path != null && File.Exists(path) ? new Uri(path).AbsoluteUri : null;
+        }
+
         /// <summary>当前版本的指纹（就绪时 = 服务端指纹）。</summary>
         public string Fingerprint { get; private set; } = "";
 

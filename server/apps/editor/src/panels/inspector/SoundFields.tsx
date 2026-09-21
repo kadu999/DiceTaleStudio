@@ -9,7 +9,14 @@ import { useEditorStore, type EditorMode } from "../../state/editor-store";
 import type { RuntimeStatus } from "../../services/runtime-client";
 import { assetDisplayName } from "../asset-info";
 import { assetDisplayPath, findAssetById } from "../asset-picker";
-import { FieldRow } from "./fields";
+import {
+  FieldRow,
+  PLAYBACK_BUTTON_ACTIVE_CLASS,
+  PLAYBACK_BUTTON_CLASS,
+  PlaybackRow,
+  PlaybackStatus,
+  type PlaybackState,
+} from "./fields";
 
 /**
  * 声音对象（动作对象）的「声音」组：**层级 → 音频 → 编辑音频… → 播放**。
@@ -25,7 +32,10 @@ import { FieldRow } from "./fields";
  * 三条语义（前端按同一套实现）：
  * - **层级 = 声道分组**：同层同时只响一条，播新的时旧的停；
  * - **一条声音对象一次只播一条**（面板单选）：命令里带的就是选中的那条；
- * - **停止**按层级停（不是按对象）。
+ * - **停止 / 暂停按层级**（不是按对象）。
+ *
+ * **控件行与「视频」那一组完全一致**（`PlaybackRow` + 同一套按钮）：播放 / 暂停 · 继续 / 停止
+ * + 一行状态；两组的措辞也一样（正在播放 / 已暂停 / 没在播放）。
  */
 
 /** 「播放」现在能不能点：一条音频都没加 → 先去窗口里加；加了但没选 → 先选一条。 */
@@ -71,6 +81,8 @@ export function SoundFields({ object }: { readonly object: SceneObjectDoc }): Re
   const setSoundLayer = useEditorStore((state) => state.setSoundLayer);
   const playSound = useEditorStore((state) => state.playSound);
   const stopSound = useEditorStore((state) => state.stopSound);
+  const pauseSound = useEditorStore((state) => state.pauseSound);
+  const resumeSound = useEditorStore((state) => state.resumeSound);
   const mode = useEditorStore((state) => state.mode);
   const status = useEditorStore((state) => state.runtime.status);
   const clientConnected = useEditorStore((state) => state.runtime.client !== null);
@@ -98,6 +110,7 @@ export function SoundFields({ object }: { readonly object: SceneObjectDoc }): Re
   */
   const layerEntry = playback.layers[layer];
   const playingHere = layerEntry?.objectId === object.id;
+  const pausedHere = playingHere && layerEntry !== undefined && layerEntry.paused;
   const holder =
     layerEntry === undefined || playingHere
       ? ""
@@ -105,16 +118,25 @@ export function SoundFields({ object }: { readonly object: SceneObjectDoc }): Re
           .find((scene) => scene.name === activeSceneName)
           ?.objects.find((item) => item.id === layerEntry.objectId)?.name ?? layerEntry.objectId);
 
-  const playbackState = playingHere ? "playing" : layerEntry === undefined ? "idle" : "busy";
+  /*
+    状态只有四档，措辞与「视频」那一组**完全一致**（正在播放 / 已暂停 / 没在播放），
+    多出来的 `busy` 是「按层级管」这件事特有的：本层被**别的**声音对象占着。
+  */
+  const playbackState: PlaybackState = !playingHere
+    ? layerEntry === undefined
+      ? "idle"
+      : "busy"
+    : pausedHere
+      ? "paused"
+      : "playing";
   const playbackNote =
     playbackState === "playing"
-      ? `本层正在播：${pickedName}`
-      : playbackState === "busy"
-        ? `本层正被「${holder}」占着`
-        : "本层没在播";
-
-  const buttonClass =
-    "flex-none rounded border border-[var(--color-editor-border)] px-1.5 py-0.5 text-[10px] hover:bg-[var(--color-editor-panel-alt)] disabled:opacity-40 disabled:hover:bg-transparent";
+      ? `正在播放：${pickedName}`
+      : playbackState === "paused"
+        ? `已暂停：${pickedName}`
+        : playbackState === "busy"
+          ? `本层正被「${holder}」占着`
+          : "没在播放";
 
   return (
     <>
@@ -196,7 +218,12 @@ export function SoundFields({ object }: { readonly object: SceneObjectDoc }): Re
         </button>
       </FieldRow>
 
-      <FieldRow label="播放">
+      {/*
+        播放 / 暂停 · 继续 / 停止：与「视频」那一组**完全同一套**（同一个 `PlaybackRow`、
+        同一套按钮类名），连状态那行字的措辞都对得上。这三个键是现场真的在按的，所以比
+        面板里其它小按钮大一圈（尺寸在 `fields.tsx` 的 `PLAYBACK_BUTTON_CLASS` 里定）。
+      */}
+      <PlaybackRow>
         <button
           type="button"
           data-testid="sound-play"
@@ -205,47 +232,43 @@ export function SoundFields({ object }: { readonly object: SceneObjectDoc }): Re
           title={
             playBlocked ??
             (playingHere
-              ? `本层正在播「${pickedName}」；再点一次让前端从头播一遍`
+              ? `正在播放「${pickedName}」；再点一次让前端从头播一遍`
               : (delivery ?? `让前端播放「${pickedName}」（编辑器自己不出声）`))
           }
-          className={
-            playingHere
-              ? "flex-none rounded border border-[var(--color-editor-accent)] bg-[var(--color-editor-accent-dim)] px-1.5 py-0.5 text-[10px] text-white hover:bg-[var(--color-editor-panel-alt)] disabled:opacity-40"
-              : buttonClass
-          }
+          className={playingHere ? PLAYBACK_BUTTON_ACTIVE_CLASS : PLAYBACK_BUTTON_CLASS}
           onClick={() => playSound(object.id)}
         >
           {playingHere ? <SoundWaveBars /> : "▶"} {playingHere ? "播放中" : "播放"}
         </button>
+
+        <button
+          type="button"
+          data-testid="sound-pause"
+          data-paused={pausedHere}
+          disabled={!playingHere}
+          title={
+            !playingHere
+              ? "这一层没在播它（先点「播放」；本层被别的对象占着时去选中那个对象）"
+              : (delivery ?? (pausedHere ? "从暂停的那一帧继续放" : "暂停在当前帧（再点一次继续）"))
+          }
+          className={pausedHere ? PLAYBACK_BUTTON_ACTIVE_CLASS : PLAYBACK_BUTTON_CLASS}
+          onClick={() => (pausedHere ? resumeSound(object.id) : pauseSound(object.id))}
+        >
+          {pausedHere ? "▶ 继续" : "⏸ 暂停"}
+        </button>
+
         <button
           type="button"
           data-testid="sound-stop"
           title={delivery ?? `让前端停掉「${SOUND_LAYER_LABELS[layer]}」这一层的声音`}
-          className={buttonClass}
+          className={PLAYBACK_BUTTON_CLASS}
           onClick={() => stopSound(object.id)}
         >
           ■ 停止
         </button>
-      </FieldRow>
+      </PlaybackRow>
 
-      {/*
-        状态自己一行（与上面两个按钮左对齐）：挤在按钮后面时，稍长的音频名就被截没了——
-        而这行字正是「点下去到底有没有生效」的答案。
-      */}
-      <FieldRow label="">
-        <span
-          data-testid="sound-status"
-          data-state={playbackState}
-          title={playbackNote}
-          className={`min-w-0 flex-1 truncate text-[10px] ${
-            playbackState === "playing"
-              ? "text-[var(--color-editor-accent)]"
-              : "text-[var(--color-editor-text-dim)]"
-          }`}
-        >
-          {playbackNote}
-        </span>
-      </FieldRow>
+      <PlaybackStatus testId="sound-status" state={playbackState} note={playbackNote} />
     </>
   );
 }

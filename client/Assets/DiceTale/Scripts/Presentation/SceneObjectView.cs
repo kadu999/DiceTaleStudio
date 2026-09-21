@@ -26,10 +26,16 @@ namespace DiceTale
     /// 它们的数据留在镜像里就够了，所以 <see cref="SceneMirror"/> 根本不会为它们调
     /// <see cref="Create"/>（见 <see cref="NeedsView"/>）——这里的每一行都假定「自己是个实体」。
     ///
-    /// **绑了雾区的地图多一个同级的 `FogOverlay`**（<see cref="FogOfWar"/>）：它挂在**场景根节点**下
-    /// （与地图并列，不是地图的子物体）、尺寸与地图面片同大、位置与角度按地图同一份数值各摆一遍，
-    /// 显示顺序取<a cref="FogSortingOrder">最前面</a>——未探索的地方连对象一起盖住。
-    /// 没绑雾区的地图不会有它（见 <see cref="ApplyFog"/>）。
+    /// **开着战争雾、也指定了雾区的地图**多一个同级的 `FogOverlay`（<see cref="FogOfWar"/>）：
+    /// 它挂在**场景根节点**下（与地图并列，不是地图的子物体）、尺寸与地图面片同大、
+    /// 位置与角度按地图同一份数值各摆一遍，显示顺序取<a cref="FogSortingOrder">最前面</a>——
+    /// 未探索的地方连对象一起盖住。开关关着（`map.fog.enabled = false`）或没指定雾区的地图
+    /// 都不会有它（见 <see cref="ApplyFog"/>）。
+    ///
+    /// **收到 `play_video` 的对象多一个 `VideoOverlay` 子物体**（<see cref="VideoOverlay"/>）：
+    /// 它放的是地图 / 精灵上选中的那条视频，画面**正好盖住这个对象自己的矩形**，
+    /// `stop_video` 就拆掉（露出对象原来的贴图）。挂成子物体是为了跟着对象的位置 / 旋转走，
+    /// 并在对象隐藏时一起隐藏；显示顺序在**战争雾之下**（见 <see cref="VideoLift"/>）。
     /// </summary>
     public class SceneObjectView : MonoBehaviour
     {
@@ -72,14 +78,28 @@ namespace DiceTale
         /// </summary>
         private const float FogLift = 0.002f;
 
+        /// <summary>
+        /// 视频层比它盖着的那个对象高多少（**世界单位**）：在对象之上、**雾的 0.002 之下**，
+        /// 于是「未探索的雾」照样盖得住视频（与 <see cref="VideoOverlay.SortingOrder"/> 同一个次序）。
+        /// </summary>
+        private const float VideoLift = 0.0015f;
+
         private TextureRenderer quad;
         private ResourceImageLoader imageLoader;
 
-        /// <summary>这张对象的地图数据（仅 `Map`；`map.fog.regions` 非空时才会建雾层）。</summary>
+        /// <summary>这张对象的地图数据（仅 `Map`；`fogEnabled` 且 `map.fog.regions` 非空时才会建雾层）。</summary>
         private MirrorMap currentMap;
 
         /// <summary>雾层（仅绑了雾区的地图有；**与地图同级**，命令路由经 <see cref="Fog"/> 找到它）。</summary>
         private FogOfWar fog;
+
+        /// <summary>
+        /// 视频层（只有正在放视频时有；**是本视图的子物体**，命令路由经 <see cref="Video"/> 找到它）。
+        ///
+        /// 与雾层不同，它不盖整个场景、只盖**这个对象自己的矩形**，所以挂成子物体最贴切：
+        /// 位置 / 旋转自动跟着对象走，对象被隐藏（`active=false` / 未落位）时一起隐藏。
+        /// </summary>
+        private VideoOverlay video;
 
         /// <summary>对象在文档里的位置 / 角度（雾层与地图同级，要各自摆一遍，所以留一份）。</summary>
         private float currentX;
@@ -156,6 +176,21 @@ namespace DiceTale
             currentSortingOrder = obj.sortingOrder;
             currentMap = obj.map;
 
+            /*
+              视频：开关关掉 / 列表清空时，**正在放的那一层也要拆掉**——与战争雾「关掉开关就把
+              雾层拆掉」同一条规矩。注意「放哪一条」不在这里动：换片要等 `play_video` 命令。
+            */
+            if (video != null && (obj.video == null || !obj.video.enabled || obj.video.clips.Count == 0))
+            {
+                StopVideo();
+            }
+
+            // 循环 / 声音是**文档数据**：运行中拨开关时，正在放的那一条要即时跟着变
+            if (video != null && obj.video != null)
+            {
+                ApplyVideoSwitches(obj.video.loop, obj.video.audio);
+            }
+
             ApplyVisual();
 
             if (image != null && imageLoader != null && currentTextureId != currentImageId)
@@ -203,10 +238,14 @@ namespace DiceTale
                 lift);
 
             ApplyFog(lift);
+            ApplyVideoGeometry(lift);
         }
 
         /// <summary>
-        /// 雾层：**这张地图绑了雾区就建 / 刷，没绑就把旧的拆掉**（每次重画都会走这里）。
+        /// 雾层：**这张地图开着战争雾、也指定了雾区才建 / 刷，否则把旧的拆掉**（每次重画都会走这里）。
+        ///
+        /// 两个条件缺一不可——`map.fog.enabled` 是编辑器里那个总开关（关掉 = 这张地图现在没有战争雾，
+        /// 哪怕雾区绑定还留着），`map.fog.regions` 是「哪些区域算雾区」。
         ///
         /// 雾层与地图**同级**（都挂在场景根节点下，见 <see cref="FogOverlayName"/>）：
         /// 它不是地图的一部分，而是盖在整个场景之上的一层——所以位置 / 角度要**自己摆一遍**
@@ -218,13 +257,18 @@ namespace DiceTale
         private void ApplyFog(float mapLift)
         {
             var map = currentMap;
-            var hasFog = map != null && map.fogRegions != null && map.fogRegions.Length > 0;
+            var hasFog =
+                map != null
+                && map.fogEnabled
+                && map.fogRegions != null
+                && map.fogRegions.Length > 0;
 
             if (!hasFog)
             {
                 if (fog != null)
                 {
-                    // 绑定被解开了（或本来就不是地图）：把雾层拆掉，别留一块盖着旧遮罩的面片
+                    // 开关被关掉 / 绑定被解开（或本来就不是地图）：把雾层拆掉，
+                    // 别留一块盖着旧遮罩的面片
                     Destroy(fog.gameObject);
                     fog = null;
                 }
@@ -252,6 +296,103 @@ namespace DiceTale
         }
 
         /// <summary>
+        /// 视频层：**收到 `play_video` 才建，`stop_video` 就拆**（这里是它这一帧的几何：
+        /// 尺寸 = 对象自己那块矩形，抬升比对象高一点、比雾低一点）。
+        ///
+        /// 独立于雾层：视频**只盖自己这个对象**（所以是子物体、`SortingOrder` 取
+        /// <see cref="VideoOverlay.SortingOrder"/> = 雾之下），而雾要盖住整个场景。
+        /// 对象尺寸 / 缩放变了就跟着变——`ApplyVisual` 每次都会走这里。
+        /// </summary>
+        private void ApplyVideoGeometry(float lift)
+        {
+            if (video == null)
+            {
+                return;
+            }
+
+            var scale = GlobalScale;
+            video.ApplyGeometry(currentWidth * scale, currentHeight * scale, lift + VideoLift);
+        }
+
+        /// <summary>
+        /// 放某个对象上选中的那条视频（命令 `play_video` 走到这里）。
+        ///
+        /// `url` 由命令路由解析好（本地资源包优先，见 <see cref="ResourceBundleCache.LocalUrlOf"/>）：
+        /// 这里只管画面，不碰资源。
+        /// </summary>
+        public void PlayVideo(string url, string logicalId, bool loop, bool audio)
+        {
+            if (video == null)
+            {
+                video = VideoOverlay.Create(
+                    transform,
+                    currentWidth * GlobalScale,
+                    currentHeight * GlobalScale,
+                    LiftFor(currentSortingOrder) + VideoLift,
+                    logicalId);
+            }
+
+            video.Play(url, loop, audio);
+        }
+
+        /// <summary>循环 / 声音开关变了（文档数据一变，正在放的这条即时生效）。</summary>
+        public void ApplyVideoSwitches(bool loop, bool audio)
+        {
+            if (video == null)
+            {
+                return;
+            }
+
+            video.SetLoop(loop);
+            video.SetAudioEnabled(audio);
+        }
+
+        /// <summary>暂停（没在放时什么都不做）。</summary>
+        public void PauseVideo()
+        {
+            video?.Pause();
+        }
+
+        /// <summary>从暂停处继续（没在建这一层时什么都不做）。</summary>
+        public void ResumeVideo()
+        {
+            video?.Resume();
+        }
+
+        /// <summary>停止并**拆掉视频层**（露出对象自己原来的贴图）。</summary>
+        public void StopVideo()
+        {
+            if (video == null)
+            {
+                return;
+            }
+
+            video.StopPlayback();
+            DestroyOwned(video.gameObject);
+            video = null;
+        }
+
+        /// <summary>
+        /// 销毁这一层自己建的物体：运行时 `Destroy`，**编辑器里 `DestroyImmediate`**
+        /// （编辑器里调 `Destroy` 会报「Destroy may not be called from edit mode」——
+        /// `PlayVideo` / `StopVideo` 也会被编辑器侧的工具调用，不该留一条假错误）。
+        /// </summary>
+        private static void DestroyOwned(UnityEngine.Object target)
+        {
+            if (Application.isPlaying)
+            {
+                Destroy(target);
+            }
+            else
+            {
+                DestroyImmediate(target);
+            }
+        }
+
+        /// <summary>这一层的视频（没在放时返回 null）；命令路由用它执行 `pause_video` / `resume_video`。</summary>
+        public VideoOverlay Video => video;
+
+        /// <summary>
         /// 把一个面片摆到「这个对象在世界里的位置与角度」（**局部坐标**：相对所在场景的根节点）。
         ///
         /// 地图视图与它的雾层是**两个同级物体**，位置 / 角度必须各自摆——摆的是同一份数值
@@ -270,14 +411,15 @@ namespace DiceTale
             target.localRotation = Quaternion.Euler(0f, currentRotation * Mathf.Rad2Deg, 0f);
         }
 
-        /// <summary>这一层的雾（没绑雾区的地图返回 null）；命令路由用它执行 `erase_mask` / `reveal_fog_region`。</summary>
+        /// <summary>这一层的雾（开关关着 / 没指定雾区的地图返回 null）；命令路由用它执行 `erase_mask` / `reveal_fog_region`。</summary>
         public FogOfWar Fog => fog;
 
         /// <summary>
-        /// 视图被销毁（对象被删 / 换场景）时，把雾层一起带走。
+        /// 视图被销毁（对象被删 / 换场景）时，把雾层与视频层一起带走。
         ///
         /// 雾层是**同级**物体、不是子物体，Unity 不会跟着销毁——不在这里收，它会留在地图上
-        /// 盖着一块谁也点不到、也擦不掉的旧雾。
+        /// 盖着一块谁也点不到、也擦不掉的旧雾。视频层虽然是子物体（会跟着走），但它自己
+        /// 占着一个 `VideoPlayer` 与一块面片，主动收掉更干净（也顺手停掉解码）。
         /// </summary>
         private void OnDestroy()
         {
@@ -286,6 +428,8 @@ namespace DiceTale
                 Destroy(fog.gameObject);
                 fog = null;
             }
+
+            StopVideo();
         }
 
         /// <summary>按显示顺序错开离地高度：大的略高一点，避免同平面共面闪烁（真正的遮挡靠 sortingOrder）。</summary>

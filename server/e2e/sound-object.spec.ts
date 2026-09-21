@@ -1,9 +1,10 @@
-import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Page, type TestInfo } from "@playwright/test";
 import {
   closeDrawers,
   dropProject,
   enterEditor,
   newProject,
+  openFirstObject,
   openInspector,
   openLeftTab,
   openProject,
@@ -133,7 +134,11 @@ test.describe("动作对象：播放声音", () => {
       // **编辑器不播放**：页面上没有任何播放器（音频试听不在这个功能里）
       await expect(page.locator("audio")).toHaveCount(0);
 
-      // 面板行序是 层级 → 音频 → 编辑音频… → 播放（层级在上面）；一条都没加时写明「还没加音频」
+      /*
+        面板行序是 层级 → 音频 → 编辑音频… → 播放（层级在上面）；
+        控件行与「视频」那一组**完全一致**：播放 / 暂停 / 停止 + 一行状态。
+        一条都没加时写明「还没加音频」。
+      */
       const panelOrder = await page
         .locator('[data-group="sound"] [data-testid^="sound-"]')
         .evaluateAll((elements) => elements.map((element) => element.getAttribute("data-testid")));
@@ -145,8 +150,9 @@ test.describe("动作对象：播放声音", () => {
         // 开窗口的按钮自己一行（挨着小方块容易点错）
         "sound-edit",
         "sound-play",
+        "sound-pause",
         "sound-stop",
-        // 按钮旁边那行小字：本层现在在播什么（点下去有没有生效一眼看得见）
+        // 按钮下面那行小字：现在在播什么（点下去有没有生效一眼看得见）
         "sound-status",
       ]);
       await expect(page.getByTestId("sound-empty")).toHaveText("还没加音频");
@@ -401,16 +407,16 @@ test.describe("动作对象：播放声音", () => {
       await expect(play).toBeEnabled();
       await expect(play).toHaveAttribute("title", /已记录：编辑器还没连上服务端/);
 
-      // 点「播放」：**看得见的变化** —— 按钮写成「播放中」并高亮，旁边写明白本层在播什么；
+      // 点「播放」：**看得见的变化** —— 按钮写成「播放中」并高亮，旁边写明正在播放什么；
       // 只记账 + 下发指令 —— 页面上仍然没有播放器，保存状态也还是「已保存」（不写文档）
       await expect(page.getByTestId("sound-status")).toHaveAttribute("data-state", "idle");
-      await expect(page.getByTestId("sound-status")).toHaveText("本层没在播");
+      await expect(page.getByTestId("sound-status")).toHaveText("没在播放");
 
       await play.click();
       await expect(play).toHaveText("播放中");
       await expect(play).toHaveAttribute("data-playing", "true");
       await expect(page.getByTestId("sound-status")).toHaveAttribute("data-state", "playing");
-      await expect(page.getByTestId("sound-status")).toHaveText("本层正在播：step1");
+      await expect(page.getByTestId("sound-status")).toHaveText("正在播放：step1");
 
       // 会动的那个图标：三根声音条**真在跑动画**（不是只放了一张静态图）
       // —— 先关掉「跟随系统减少动效」，否则系统偏好会让它按规范停下来（那时靠文字表达）
@@ -427,13 +433,13 @@ test.describe("动作对象：播放声音", () => {
       await expect(page.locator("audio")).toHaveCount(0);
       await expect(page.getByTestId("status-scene-save")).toHaveAttribute("data-state", "saved");
 
-      // 点「停止」：状态回落到「本层没在播」，按钮也变回「播放」
+      // 点「停止」：状态回落到「没在播放」，按钮也变回「播放」
       await stop.click();
       await expect(play).toHaveText("▶ 播放");
       await expect(play).toHaveAttribute("data-playing", "false");
       await expect(page.getByTestId("sound-wave")).toHaveCount(0);
       await expect(page.getByTestId("sound-status")).toHaveAttribute("data-state", "idle");
-      await expect(page.getByTestId("sound-status")).toHaveText("本层没在播");
+      await expect(page.getByTestId("sound-status")).toHaveText("没在播放");
 
       /*
         「切到运行态、前端还没连 → 照样点得动，title 换成『前端未连接，等它连上补发』」这条
@@ -495,6 +501,162 @@ test.describe("动作对象：播放声音", () => {
       await page.waitForTimeout(200);
       expect((await canvas.screenshot()).equals(stopped)).toBe(true);
     } finally {
+      await dropProject(request, project);
+    }
+  });
+});
+
+/* ------------------------------------------------------------------
+   声音命令真的会下发到前端（`play_sound` / `pause_sound` / `resume_sound` / `stop_sound`）。
+
+   与 `video-object.spec.ts` 同一套做法：浏览器里再开一条**假前端** WebSocket（`/client`，
+   与 Unity 走同一条协议），把收到的命令记在 `window` 上并按协议回执。
+   编辑器自己不出声，所以这里钉的是「按下去的那几个键确实发出去了」这一半。
+   ------------------------------------------------------------------ */
+
+/** 假前端收到的一条命令（这条用例只关心 kind / objectId / layer）。 */
+interface FakeSoundCommand {
+  readonly kind?: string;
+  readonly objectId?: string;
+  readonly layer?: string;
+}
+
+interface FakeSoundWindow {
+  __soundCommands?: FakeSoundCommand[];
+  __soundScene?: boolean;
+  __soundSocket?: WebSocket;
+}
+
+/** 运行态是服务端全局单例：只在一个档位上跑，免得并行档位互相开关。 */
+function skipOutsideDesktop(testInfo: TestInfo): void {
+  test.skip(
+    !testInfo.project.name.startsWith("desktop"),
+    "运行态是全局状态：只在一个档位上跑，免得并行档位互相开关",
+  );
+}
+
+/** 在页面里开一条**假前端**连接：握手、收场景、把命令记下来并按协议回执。 */
+async function connectFakeSoundClient(page: Page, port: number): Promise<void> {
+  await page.evaluate((clientPort) => {
+    const scope = window as unknown as FakeSoundWindow;
+    scope.__soundCommands = [];
+    scope.__soundScene = false;
+
+    const socket = new WebSocket(`ws://127.0.0.1:${clientPort}/client`);
+    scope.__soundSocket = socket;
+
+    socket.addEventListener("open", () => {
+      socket.send(
+        JSON.stringify({
+          type: "client_hello",
+          // 与 `@dts/protocol` 的 `PROTOCOL_VERSION` 一致（这里写死：e2e 不是 workspace 包，
+          // 拿不到那个常量；版本一升这里会连不上、用例会当场失败，提醒同步改）
+          protocolVersion: 6,
+          name: "e2e 假前端",
+          version: "0.0.0",
+        }),
+      );
+    });
+
+    socket.addEventListener("message", (event) => {
+      const parsed = JSON.parse(String(event.data)) as {
+        type?: string;
+        requestId?: string;
+        command?: FakeSoundCommand;
+      };
+
+      if (parsed.type === "scene_sync") {
+        scope.__soundScene = true;
+        return;
+      }
+
+      if (parsed.type === "command") {
+        scope.__soundCommands?.push(parsed.command ?? {});
+        socket.send(
+          JSON.stringify({
+            type: "command_result",
+            requestId: parsed.requestId,
+            ok: true,
+            effects: ["e2e 假前端收到声音命令"],
+          }),
+        );
+      }
+    });
+  }, port);
+}
+
+const fakeSoundCommands = async (page: Page): Promise<readonly FakeSoundCommand[]> =>
+  page.evaluate(() => (window as unknown as FakeSoundWindow).__soundCommands ?? []);
+
+test.describe("声音：命令下发给前端", { tag: "@runtime" }, () => {
+  test.describe.configure({ mode: "serial" });
+
+  test("播放 / 暂停 / 继续 / 停止 → 前端收到四条命令（控件行与视频那组一致）", async ({
+    page,
+    request,
+  }, testInfo) => {
+    skipOutsideDesktop(testInfo);
+
+    const port = Number(process.env.E2E_PORT ?? 1421);
+    const project = await newProject(request);
+
+    try {
+      const clip = await uploadAudio(request, project, "step1.mp3");
+      const soundDoc = sceneObjectDoc("脚步", "PlaySound", { x: 0, y: 0 }, {
+        sound: { clips: [clip], picked: clip, layer: "sfx" },
+      });
+      await seedProjectDoc(request, project, [sceneDoc(SCENE, [soundDoc])]);
+      await openFirstObject(page, project, "脚步");
+
+      // 进入运行态：没点「运行」之前，前端根本连不上（503 拒握手）
+      await page.getByTestId("mode-run").click();
+      await expect(page.getByTestId("status-mode")).toHaveAttribute("data-mode", "run");
+
+      await connectFakeSoundClient(page, port);
+      await page.waitForFunction(() => (window as unknown as FakeSoundWindow).__soundScene === true);
+      await expect(page.getByTestId("client-badge")).toHaveAttribute("data-connected", "yes");
+
+      const kinds = async (): Promise<string[]> =>
+        (await fakeSoundCommands(page)).map((item) => item.kind ?? "");
+
+      // 播放 → play_sound{objectId, layer}（播哪一条由前端从镜像里读，命令里不带）
+      await page.getByTestId("sound-play").click();
+      await expect.poll(async () => (await kinds()).filter((kind) => kind === "play_sound").length).toBe(1);
+      await expect(page.getByTestId("sound-status")).toHaveAttribute("data-state", "playing");
+      expect((await fakeSoundCommands(page)).find((item) => item.kind === "play_sound")).toEqual({
+        kind: "play_sound",
+        objectId: String(soundDoc.id),
+        layer: "sfx",
+      });
+
+      // 暂停 / 继续：按**层级**给（同层只响一条，所以不带 objectId）
+      await page.getByTestId("sound-pause").click();
+      await expect.poll(async () => (await kinds()).filter((kind) => kind === "pause_sound").length).toBe(1);
+      await expect(page.getByTestId("sound-status")).toHaveAttribute("data-state", "paused");
+      expect((await fakeSoundCommands(page)).find((item) => item.kind === "pause_sound")).toEqual({
+        kind: "pause_sound",
+        layer: "sfx",
+      });
+
+      await page.getByTestId("sound-pause").click();
+      await expect.poll(async () => (await kinds()).filter((kind) => kind === "resume_sound").length).toBe(1);
+      await expect(page.getByTestId("sound-status")).toHaveAttribute("data-state", "playing");
+
+      // 停止 → stop_sound{layer}
+      await page.getByTestId("sound-stop").click();
+      await expect.poll(async () => (await kinds()).filter((kind) => kind === "stop_sound").length).toBe(1);
+      await expect(page.getByTestId("sound-status")).toHaveAttribute("data-state", "idle");
+
+      // 回执 ok:true → 编辑器日志里看得见「命令 执行成功」
+      await expect(page.getByText(/命令\s*执行成功/).first()).toBeVisible();
+
+      // 收尾：退出运行态（前端会被踢下线）
+      await page.getByTestId("mode-edit").click();
+      await expect(page.getByTestId("status-mode")).toHaveAttribute("data-mode", "edit");
+    } finally {
+      await page.evaluate(() => {
+        (window as unknown as FakeSoundWindow).__soundSocket?.close();
+      });
       await dropProject(request, project);
     }
   });

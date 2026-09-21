@@ -16,6 +16,10 @@ namespace DiceTale
     /// 就是雾格——**不写死 `Fog1..Fog5`**：编辑器里可以指定任意可绘制区域位
     /// （例如区域1/2/3 = 位 `1|2|4`，旧实现一格都不会盖）。
     ///
+    /// **这一层只在开关开着时才存在**：`map.fog.enabled` 是编辑器里那个总开关，
+    /// <see cref="SceneObjectView"/> 按它决定建不建本组件（关掉 = 这张地图现在没有战争雾）。
+    /// 所以这里不必再判开关——能拿到这个组件，就说明那时它是开着的；关掉时整个物体被拆掉。
+    ///
     /// **怎么揭示**：后台只发**轨迹**（`erase_mask`：归一化点 + 归一化半径 + 软边比例），前端照轨迹擦；
     /// 「整区开关」发 `reveal_fog_region`。擦除公式与编辑器 Mask 窗口**逐字对齐**
     /// （`apps/editor/src/services/mask-math.ts`，也就是参考实现 `MaskImage.ApplyEraseStroke`

@@ -20,6 +20,7 @@ import type {
   MapDataDoc,
   SoundDataDoc,
   SoundLayer,
+  VideoDataDoc,
   WorldPosition,
   ObjectKind,
   SceneDoc,
@@ -56,6 +57,27 @@ export const MAP_DEFAULT_SORTING_ORDER = -10;
  * 分到两层。四档的取值与中文名见 `types.ts` 的 `SOUND_LAYERS` / `SOUND_LAYER_LABELS`。
  */
 export const DEFAULT_SOUND_LAYER: SoundLayer = "sfx";
+
+/**
+ * 视频的默认开关（v14 起）：**开着、不循环、静音**。
+ *
+ * 开着 = 加过视频就默认会用（`video` 字段本身就是「在用」的意思）；
+ * 不循环 = 过场视频放一遍停在最后一帧（要循环的背景视频在面板上打开）；
+ * 静音 = 现场跑团时「不小心点开视频就轰一声」比听不到更糟。
+ */
+export const DEFAULT_VIDEO_ENABLED = true;
+export const DEFAULT_VIDEO_LOOP = false;
+export const DEFAULT_VIDEO_AUDIO = false;
+
+/**
+ * 哪些对象能带视频列表：**地图与精灵**。
+ *
+ * 只有这一处判据（面板显示哪一组、文档命令认不认、校验报不报都走它）——
+ * 加新种类时只改这里，不会出现「面板给了入口、命令却拒了」的半套状态。
+ */
+export function supportsVideo(kind: ObjectKind): boolean {
+  return kind === "Map" || kind === "SceneObject";
+}
 
 /** `sortingOrder` 的取值范围：足够表达「垫底 / 顶层」，又不至于让界面上的数字失控。 */
 const SORTING_ORDER_LIMIT = 9999;
@@ -693,6 +715,17 @@ export function clearMapCells(scene: Draft<SceneDoc>, mapObjectId: string): bool
 // ---------------------------------------------------------------- 战争雾（地图）
 
 /**
+ * 这张地图的战争雾**开着没有**（v13 起的总开关）。
+ *
+ * 判据只有这一处，编辑器与校验都走它：`fog` 整个不在 = 没开（也没雾区）；
+ * `fog` 在就按 `enabled` 算——`enabled` **缺省算开**，那是 v10–v12 的文件
+ * （schema 会把 `true` 补进去，这里的兜底只是给内存里手写的对象用）。
+ */
+export function isMapFogEnabled(map: MapDataDoc): boolean {
+  return map.fog !== undefined && map.fog.enabled !== false;
+}
+
+/**
  * 地图指定的雾区 → 掩码（`0` = 一个雾区都没指定）。
  *
  * 「这一格算不算雾」只有这一个判断入口：绘制预览、数雾格、擦除范围全走它，
@@ -703,14 +736,65 @@ export function mapFogMask(map: MapDataDoc): number {
 }
 
 /**
+ * 打开 / 关掉战争雾的**总开关**（v13 起）。
+ *
+ * 关掉**不清雾区绑定**——「先关掉看看效果、再打开」不该逼人重新指定一遍；
+ * 前端（`FogOfWar`）按这个开关决定建不建那一层雾，所以关掉 = 这张地图现在没有战争雾。
+ *
+ * - 打开：`fog` 先在（只是关着）就把 `enabled` 翻回来，绑定原样留着；`fog` 不在
+ *   （新地图）就写一份 `{ enabled: true, regions: [] }`——**开关状态本身也是要存的数据**，
+ *   不落盘的话下次打开项目开关又变回关着。雾区一个都没指定时**不会有雾**（也不会建层），
+ *   由 `validateScene` 提醒。
+ * - 关掉：还有雾区绑定就写 `{ enabled: false, regions }`；一个雾区都没指定时
+ *   **把 `fog` 整个删掉**（与「从没开过」同义，文件里不留空壳）。
+ *
+ * 返回 `false` 表示没有变更（不是地图对象、或开关本来就是这个状态）。
+ */
+export function setMapFogEnabled(
+  scene: Draft<SceneDoc>,
+  mapObjectId: string,
+  enabled: boolean,
+): boolean {
+  const map = findObject(scene, mapObjectId)?.map;
+  if (map === undefined) {
+    return false;
+  }
+
+  const current = map.fog;
+  if (enabled) {
+    if (current !== undefined && isMapFogEnabled(map)) {
+      return false;
+    }
+
+    map.fog = { enabled: true, regions: current?.regions ?? [] };
+    return true;
+  }
+
+  if (current === undefined || !isMapFogEnabled(map)) {
+    return false;
+  }
+
+  if (current.regions.length === 0) {
+    delete map.fog;
+    return true;
+  }
+
+  map.fog = { enabled: false, regions: current.regions };
+  return true;
+}
+
+/**
  * 指定哪些区域算战争雾。
  *
  * 格子上的类型位是**中性区域**，所以「哪个区域是雾」是地图自己的配置，不是类型自带的语义。
- * 写入前先规范化（只留可绘制位、去重、升序），保证同一份选择永远写出同一个文件内容；
- * 规范化后为空就把 `fog` 字段整个删掉——文件里不留 `{ regions: [] }` 这种空壳
- * （读出来与「没有这个字段」同义）。
+ * 写入前先规范化（只留可绘制位、去重、升序），保证同一份选择永远写出同一个文件内容。
+ *
+ * 规范化后为空时：**开关开着**就留一份 `{ enabled: true, regions: [] }`（「开着但还没指定雾区」，
+ * 属性面板那一组与开关状态都还在）；**开关关着**才把 `fog` 整个删掉（没有内容要记了，
+ * 与「从没开过」同义——文件里不留空壳）。
  *
  * **只改绑定，不动格子数据**：解除绑定不会连带清掉已经画好的雾格子，改回来还在。
+ * **也不动总开关**：关着的时候指定雾区照样写得进去（绑定与开关是两件事）。
  *
  * 返回 `false` 表示没有变更（不是地图对象、或绑定没变）。
  */
@@ -731,11 +815,22 @@ export function setMapFogRegions(
   }
 
   if (next.length === 0) {
-    delete map.fog;
+    // （走到这里 `fog` 一定在：`next` 与 `current` 都是空数组的话，上面那条「没变更」已经拦住了。）
+    // 开关**开着**：留着字段（`{ enabled: true, regions: [] }` = 「开着但还没指定雾区」）——
+    // 取消最后一个雾区不该把属性面板那一组整个塌掉，开关状态也得有地方记。
+    // 关着：没有内容要记了，字段整个摘掉，与「从没开过」同义。
+    if (map.fog?.enabled === false) {
+      delete map.fog;
+      return true;
+    }
+
+    map.fog = { enabled: true, regions: [] };
     return true;
   }
 
-  map.fog = { regions: next };
+  // 开关状态原样保留（关着的时候绑定也写得进去）；本来没有 `fog`（新建地图）时按**开着**建——
+  // 会走到「指定雾区」这一步，本来就是想用战争雾；写成关着只会让人以为没生效
+  map.fog = { enabled: map.fog?.enabled !== false, regions: next };
   return true;
 }
 
@@ -1290,5 +1385,318 @@ export function setTeleportPicked(
   }
 
   teleport.picked = target;
+  return true;
+}
+
+// ---------------------------------------------------------------- 视频（地图 / 精灵）
+
+/**
+ * 这个对象的视频**开着没有**（总开关）。
+ *
+ * 判据只有这一处，编辑器与校验都走它：`video` 整个不在 = 没开（也没列表）；
+ * `video` 在就按 `enabled` 算——`enabled` **缺省算开**（schema 会给 `true`，
+ * 这里的兜底只是给内存里手写的对象用）。与 `isMapFogEnabled` 同一个口径。
+ */
+export function isVideoEnabled(object: SceneObjectDoc): boolean {
+  return object.video !== undefined && object.video.enabled !== false;
+}
+
+/**
+ * 地图 / 精灵的「视频数据」；**缺字段就补一份默认的**。
+ *
+ * 手写文件里可能整个 `video` 都没有（schema 里它是可选的）：那种对象语义上就是
+ * 「还没加视频、不循环、静音」，所以在第一次编辑时把字段补出来，而不是让编辑静默失败。
+ * 不是地图 / 精灵的对象返回 `undefined`（`supportsVideo`：只有这两种能带视频）。
+ */
+function videoDataOf(object: Draft<SceneObjectDoc>): Draft<VideoDataDoc> | undefined {
+  if (!supportsVideo(object.kind)) {
+    return undefined;
+  }
+
+  if (object.video === undefined) {
+    object.video = {
+      enabled: DEFAULT_VIDEO_ENABLED,
+      clips: [],
+      loop: DEFAULT_VIDEO_LOOP,
+      audio: DEFAULT_VIDEO_AUDIO,
+    };
+  }
+
+  return object.video;
+}
+
+/**
+ * 打开 / 关掉这个对象的**视频总开关**。
+ *
+ * 与战争雾的总开关（`setMapFogEnabled`）完全同一套规矩：
+ * - **关掉不清列表**——「先关掉看看效果、再打开」不该逼人重新加一遍（`{ enabled: false, clips }`）；
+ * - **打开**：`video` 先在（只是关着）就把 `enabled` 翻回来；不在就写一份
+ *   `{ enabled: true, clips: [] }`（开关状态本身也是要存的数据）；
+ * - 一个视频都没加的时候关掉：`video` 整个删掉（与「从没开过」同义，文件里不留空壳）；
+ * - 关着时前端不建视频层，`play_video` 这类命令会被明确拒掉（前端读 `video.enabled`）。
+ *
+ * 返回 `false` 表示没有变更（不是地图 / 精灵、或开关本来就是这个状态）。
+ */
+export function setVideoEnabled(
+  scene: Draft<SceneDoc>,
+  objectId: string,
+  enabled: boolean,
+): boolean {
+  const object = findObject(scene, objectId);
+  if (object === undefined) {
+    return false;
+  }
+
+  const video = object.video;
+  if (!supportsVideo(object.kind)) {
+    return false;
+  }
+
+  if (enabled) {
+    if (video !== undefined && video.enabled !== false) {
+      return false;
+    }
+
+    // **整份留着、只把开关翻回来**：`clips` / `picked` / `names` / `loop` / `audio` 一个都不能丢
+    // （`map.fog.enabled` 那边能重建是因为它只有 regions；视频字段多，重建会悄悄丢掉选中与名字）
+    object.video =
+      video === undefined
+        ? {
+            enabled: true,
+            clips: [],
+            loop: DEFAULT_VIDEO_LOOP,
+            audio: DEFAULT_VIDEO_AUDIO,
+          }
+        : { ...video, enabled: true };
+    return true;
+  }
+
+  if (video === undefined || video.enabled === false) {
+    return false;
+  }
+
+  if (video.clips.length === 0) {
+    // 没加过视频：没有内容要记了，字段整个摘掉（与「从没开过」同义）
+    delete object.video;
+    return true;
+  }
+
+  object.video = { ...video, enabled: false };
+  return true;
+}
+
+/**
+ * 替换视频列表（资源逻辑 ID）。
+ *
+ * 这是「**加进来 / 移出去**」那件事（界面上在「编辑视频」窗口里做）：只保证内容是去空、
+ * 去重后的逻辑 ID，不排序——顺序是用户加进来的顺序，没有语义。
+ *
+ * 列表一变，**挂在具体文件上的东西跟着走**（见 `syncVideoSideData`）。
+ *
+ * 清空时（**开关开着**）留一份 `{ enabled: true, clips: [] }`——「开着但还没加视频」，
+ * 属性面板那一组与开关状态都还在；**开关关着**才把 `video` 整个删掉（与 `setMapFogRegions`
+ * 收尾雾区的方式同一条规矩）。
+ */
+export function setVideoClips(
+  scene: Draft<SceneDoc>,
+  objectId: string,
+  clips: readonly string[],
+): boolean {
+  const object = findObject(scene, objectId);
+  if (object === undefined) {
+    return false;
+  }
+
+  const video = videoDataOf(object);
+  if (video === undefined) {
+    return false;
+  }
+
+  const next: string[] = [];
+  for (const clip of clips) {
+    const trimmed = clip.trim();
+    if (trimmed.length > 0 && !next.includes(trimmed)) {
+      next.push(trimmed);
+    }
+  }
+
+  if (next.length === video.clips.length && next.every((id, index) => id === video.clips[index])) {
+    return false;
+  }
+
+  if (next.length === 0 && video.enabled === false) {
+    // 关着且一个都不剩：没有内容要记了，字段整个摘掉（与「从没开过」同义）
+    delete object.video;
+    return true;
+  }
+
+  video.clips = next;
+  syncVideoSideData(video);
+  return true;
+}
+
+/**
+ * 列表变更后收拾「按文件记」的副作用：移出去的名字不留（不然文件里攒下一堆看不见的孤儿
+ * 名字），选中的那条还在列表里就行。
+ *
+ * 兜底「没选就默认选第一条」与声音 / 传送同一条理由：加进来一条视频却没被选上时，
+ * 面板上看着有东西、「播放」却是灰的，很容易以为是坏的。
+ */
+function syncVideoSideData(video: Draft<VideoDataDoc>): void {
+  if (video.names !== undefined) {
+    for (const clipId of Object.keys(video.names)) {
+      if (!video.clips.includes(clipId)) {
+        delete video.names[clipId];
+      }
+    }
+
+    if (Object.keys(video.names).length === 0) {
+      // 一条名字都不剩：字段整个删掉，不留空壳
+      delete video.names;
+    }
+  }
+
+  const fallback = video.clips[0];
+  if (video.picked === undefined) {
+    if (fallback !== undefined) {
+      video.picked = fallback;
+    }
+
+    return;
+  }
+
+  if (!video.clips.includes(video.picked)) {
+    // 移出去的正好是选中的那条：顺到剩下的第一条；一条不剩就不留这个字段
+    if (fallback === undefined) {
+      delete video.picked;
+    } else {
+      video.picked = fallback;
+    }
+  }
+}
+
+/**
+ * 选中 / 取消选中「加进来的视频里放哪一条」（`null` = 取消选中）。
+ *
+ * 只能选 `clips` 里的（不在列表里 = 数据对不上，直接拒掉，不悄悄把它加进去）；
+ * 值没变返回 false，于是连点同一条不会往撤销栈里塞空记录。
+ */
+export function setVideoPicked(
+  scene: Draft<SceneDoc>,
+  objectId: string,
+  clipId: string | null,
+): boolean {
+  const object = findObject(scene, objectId);
+  if (object === undefined) {
+    return false;
+  }
+
+  const video = videoDataOf(object);
+  if (video === undefined) {
+    return false;
+  }
+
+  if (clipId === null) {
+    if (video.picked === undefined) {
+      return false;
+    }
+
+    delete video.picked;
+    return true;
+  }
+
+  if (!video.clips.includes(clipId) || video.picked === clipId) {
+    return false;
+  }
+
+  video.picked = clipId;
+  return true;
+}
+
+/**
+ * 给**某一个视频文件**起显示名（空 = 删掉这个名字，退回素材文件名）。
+ *
+ * 与 `setSoundClipName` 同一套：名字按文件记、只是编辑器里给人看的标签
+ * （不参与播放、不进协议），`video` 字段缺失时先补出来。
+ */
+export function setVideoClipName(
+  scene: Draft<SceneDoc>,
+  objectId: string,
+  clipId: string,
+  name: string,
+): boolean {
+  const object = findObject(scene, objectId);
+  if (object === undefined) {
+    return false;
+  }
+
+  const video = videoDataOf(object);
+  if (video === undefined) {
+    return false;
+  }
+
+  const trimmed = name.trim();
+  if (!video.clips.includes(clipId)) {
+    // 名字挂在**加进来的视频**上：不在列表里就是数据对不上（列表变更时这类名字也会被清掉）
+    return false;
+  }
+
+  const current = video.names?.[clipId] ?? "";
+  if (trimmed === current) {
+    return false;
+  }
+
+  if (trimmed.length === 0) {
+    // 留空 = 不要这个自定义名（文件里不留空字符串）
+    if (video.names !== undefined) {
+      delete video.names[clipId];
+      if (Object.keys(video.names).length === 0) {
+        delete video.names;
+      }
+    }
+  } else {
+    video.names = { ...(video.names ?? {}), [clipId]: trimmed };
+  }
+
+  return true;
+}
+
+/** 循环播放开关（前端 `VideoPlayer.isLooping`）；值没变返回 false。 */
+export function setVideoLoop(
+  scene: Draft<SceneDoc>,
+  objectId: string,
+  loop: boolean,
+): boolean {
+  const object = findObject(scene, objectId);
+  if (object === undefined) {
+    return false;
+  }
+
+  const video = videoDataOf(object);
+  if (video === undefined || video.loop === loop) {
+    return false;
+  }
+
+  video.loop = loop;
+  return true;
+}
+
+/** 视频自带声音的开关（前端 `VideoPlayer.audioOutputMode`）；值没变返回 false。 */
+export function setVideoAudio(
+  scene: Draft<SceneDoc>,
+  objectId: string,
+  audio: boolean,
+): boolean {
+  const object = findObject(scene, objectId);
+  if (object === undefined) {
+    return false;
+  }
+
+  const video = videoDataOf(object);
+  if (video === undefined || video.audio === audio) {
+    return false;
+  }
+
+  video.audio = audio;
   return true;
 }

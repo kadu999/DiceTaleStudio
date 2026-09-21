@@ -16,6 +16,7 @@ import {
   createTeleportObject,
   effectiveScaleX,
   effectiveScaleY,
+  isMapFogEnabled,
   isSceneNameTaken,
   nextObjectName,
   paintMapCells,
@@ -23,6 +24,7 @@ import {
   parseSceneFile,
   removeObject as removeSceneObject,
   renameObject as renameSceneObject,
+  setMapFogEnabled as setSceneMapFogEnabled,
   setMapFogRegions as setSceneMapFogRegions,
   setMapGrid as setSceneMapGrid,
   setObjectActive as setSceneObjectActive,
@@ -39,6 +41,14 @@ import {
   setTeleportTargets as setSceneTeleportTargets,
   setTeleportPicked as setSceneTeleportPicked,
   setSoundPicked as setSceneSoundPicked,
+  setVideoAudio as setSceneVideoAudio,
+  setVideoClipName as setSceneVideoClipName,
+  setVideoClips as setSceneVideoClips,
+  setVideoEnabled as setSceneVideoEnabled,
+  setVideoLoop as setSceneVideoLoop,
+  setVideoPicked as setSceneVideoPicked,
+  isVideoEnabled,
+  supportsVideo,
   validateSceneName,
   type ImageRef,
   type ObjectKind,
@@ -110,10 +120,20 @@ import {
   emptySoundPlayback,
   soundPlaybackResendPlan,
   withPlaying,
+  withSoundPaused,
   withStopped,
   type SoundPlaybackEntry,
   type SoundPlaybackState,
 } from "../services/sound-playback";
+import {
+  emptyVideoPlayback,
+  videoPlaybackResendPlan,
+  withVideoPaused,
+  withVideoPlaying,
+  withVideoStopped,
+  type VideoPlaybackEntry,
+  type VideoPlaybackState,
+} from "../services/video-playback";
 import {
   emptyFogReveal,
   fogRevealResendPlan,
@@ -190,9 +210,12 @@ export type SceneSaveState = "saved" | "pending" | "saving" | "error" | "runtime
 /**
  * 网格标注（地图编辑）状态。
  *
- * 「怎么画 / 怎么显示」那一半（画笔类型 / 大小 / 每类的显示与颜色 / 网格线、网格标注、战争雾三个总开关）
+ * 「怎么画 / 怎么显示」那一半（画笔类型 / 大小 / 每类的显示与颜色 / 网格线、网格标注两个总开关）
  * 是**编辑器偏好**，会写进浏览器本地（对齐 Unity 把这几项存在编辑窗口的序列化字段里）。
  * 落笔的地方只有**编辑窗口**（`GridEditDialog`）——画布上不再有「标注模式」。
+ *
+ * 战争雾**不在这里**：开关与雾区都是文档数据（`map.fog`），因为它决定前端生不生成那一层雾
+ * （见 `setFogEnabled`）。
  *
  * 画笔类型直接用格子掩码位表示，`CellMask.Empty`(=0) 就是橡皮擦——与 Unity 的
  * 「橡皮擦 (0)」是同一件事，不必再造一个布尔字段。
@@ -209,8 +232,6 @@ export interface GridPaintState {
   readonly showGridLines: boolean;
   /** 画布上是否给格子着色（所有地图；纯显示）。 */
   readonly showAnnotations: boolean;
-  /** 战争雾那一组设置是否露出来（编辑器偏好；画布上不画雾，要看雾去 Mask 窗口）。 */
-  readonly showFog: boolean;
 }
 
 export interface EditorStoreState {
@@ -253,6 +274,10 @@ export interface EditorStoreState {
   readonly teleportEditor: boolean;
   /** 正在编辑哪个传送阵的候选目标；null 表示窗口没打开 */
   readonly teleportEditorTarget: string | null;
+  /** 「编辑视频」窗口是否打开（地图 / 精灵属性面板「视频」组上的按钮唤出） */
+  readonly videoEditor: boolean;
+  /** 正在编辑哪个对象的视频列表；null 表示窗口没打开 */
+  readonly videoEditorTarget: string | null;
   /** 「战争雾 Mask 窗口」是否打开（属性面板的按钮唤出） */
   readonly fogMask: boolean;
   /** Mask 窗口正在编辑哪张地图；null 表示窗口没打开 */
@@ -272,6 +297,14 @@ export interface EditorStoreState {
    * 不写文档、不进撤销栈；点播放 / 停止只改它 + 尽力下发，前端连上时补发。
    */
   readonly soundPlayback: SoundPlaybackState;
+  /**
+   * 视频的**期望播放状态**（编辑器记账，见 `services/video-playback`）。
+   *
+   * 与 `soundPlayback` 一样是运行态：不写文档、不进撤销栈；点播放 / 暂停 / 停止只改它 + 尽力下发，
+   * 前端连上时补发。**按对象记**（不是按层级）：每个对象各自一条、互不影响；
+   * **切场景清**（记账里的对象属于上一个场景），与 `soundPlayback` 同一处。
+   */
+  readonly videoPlayback: VideoPlaybackState;
   /**
    * 战争雾的**揭示记账**（编辑器记账，见 `services/fog-reveal`）。
    *
@@ -346,11 +379,62 @@ export interface EditorStoreState {
   /** 让前端**停掉**某个声音对象所在的层级（同层只响一条，所以按层停）。 */
   stopSound(objectId: string): string | undefined;
   /**
+   * 让前端**暂停**某个声音对象所在的层级（v6 起，与视频那组对称）。
+   *
+   * 按**层级**管：同层只响一条，所以「暂停这一层」= 暂停当前那条。这一层不是这个对象在响时
+   * 写一条说明原因的运行日志（去选中那个正在响的对象，或直接按「停止」）。
+   */
+  pauseSound(objectId: string): string | undefined;
+  /** 从暂停的那一帧继续放这个对象所在的层级。 */
+  resumeSound(objectId: string): string | undefined;
+  /**
    * 把记着的期望状态补发一遍（前端刚连上时调用）。
    *
    * 返回补发的层数；编辑器的服务端连接没开、或前端没连时什么都不做（返回 0）。
    */
   flushSoundPlayback(): number;
+  /**
+   * 让**前端**在某个地图 / 精灵上放它选中的那一条视频（编辑器自己不放，只**记账** + 尽力下发）。
+   *
+   * 命令里只有 `objectId`：**放哪一条、循环、声音都由前端从镜像里的那个对象读**
+   * （数据在场景里，命令只是触发器）。编辑器还没连上服务端 / 前端没连时**照样能点**：
+   * 状态记在 `videoPlayback` 里，等前端连上补发。
+   */
+  playVideo(objectId: string): string | undefined;
+  /** 让前端把某个对象上的视频**暂停在当前帧**（没在放就写一条说明原因的日志）。 */
+  pauseVideo(objectId: string): string | undefined;
+  /** 从暂停的那一帧继续放（对没在播的对象语义由前端决定：从头放）。 */
+  resumeVideo(objectId: string): string | undefined;
+  /** 让前端**停掉**某个对象上的视频并拆掉那一层（露出对象自己原来的贴图）。 */
+  stopVideo(objectId: string): string | undefined;
+  /**
+   * 把记着的期望播放状态补发一遍（前端刚连上时调用）。
+   *
+   * 返回补发的对象数；编辑器的服务端连接没开、或前端没连时什么都不做（返回 0）。
+   * 暂停态的对象会补「先放再暂停」，前端因此回到同一帧。
+   */
+  flushVideoPlayback(): number;
+  /** 打开 / 关闭「编辑视频」窗口（`null` = 关闭）。 */
+  openVideoEditor(objectId: string | null): void;
+  /**
+   * 视频：**启用 / 关掉**这个对象的视频（文档数据）。
+   *
+   * 关掉 = 前端不建视频层（播放类命令会被拒），但**已经加的视频留着**（再打开就回来）；
+   * 一个视频都没加时关掉会把 `video` 字段整个摘掉（与「从没开过」同义）。
+   */
+  setVideoEnabled(objectId: string, enabled: boolean): boolean;
+  /** 视频：往里加一条（已经在列表里就不重复加；原来没选过就把它选上）。 */
+  addVideoClip(objectId: string, clipId: string): boolean;
+  /** 视频：移出一条（名字与「选中的那条」由文档命令一起收拾）。 */
+  removeVideoClip(objectId: string, clipId: string): boolean;
+  /** 视频：选中 / 取消选中「放哪一条」（`null` = 取消选中）。 */
+  selectVideoClip(objectId: string, clip: string | null): boolean;
+  /** 视频：给某个文件起显示名（空 = 退回素材文件名）。 */
+  setVideoClipName(objectId: string, clipId: string, name: string): boolean;
+  /** 视频：循环播放开关（文档数据）。 */
+  setVideoLoop(objectId: string, loop: boolean): boolean;
+  /** 视频：是否放视频自带的声音（文档数据）。 */
+  setVideoAudio(objectId: string, audio: boolean): boolean;
   clearRuntimeLogs(): void;
 
   /**
@@ -578,11 +662,18 @@ export interface EditorStoreState {
   /**
    * 指定哪些区域算战争雾（只改绑定，不动格子数据）。
    *
-   * 传进来的位先规范化（只留可绘制位、去重、升序）；一个都不指定 = 删掉这个配置。
+   * 传进来的位先规范化（只留可绘制位、去重、升序）；一个都不指定时：开关**开着**就留一份空的
+   * 绑定（面板那一组与开关状态都还在），**关着**才把这份配置整个删掉。
    */
   setFogRegions(mapObjectId: string, regions: readonly number[]): boolean;
-  /** 战争雾那一组设置是否露出来（编辑器偏好；纯界面，不动文档、也不画到画布上）。 */
-  setFogVisible(visible: boolean): void;
+  /**
+   * 打开 / 关掉这张地图的**战争雾总开关**（文档数据，可撤销、跟着场景存盘下发）。
+   *
+   * 只有开着，前端才生成那一层雾——关掉是**真的不建**，不是画了再藏起来。
+   * 关掉**不清雾区绑定**（再打开就回来）；一个雾区都没指定时会把 `map.fog` 整个摘掉。
+   * 正开着的 Mask 窗口跟着关掉（它编辑的那张地图现在没有雾了）。
+   */
+  setFogEnabled(mapObjectId: string, enabled: boolean): boolean;
   /**
    * 战争雾：在 Mask 窗口里**擦一笔**（运行态才下发给前端）。
    *
@@ -896,7 +987,9 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       if (status === "open") {
         pushLog(makeLog("info", `已连接服务端${detail === undefined ? "" : ` ${detail}`}`));
       } else if (status === "closed") {
-        pushLog(makeLog("warn", "与服务端断开，正在尝试重连"));
+        // **一定带上原因**：服务端在 close reason 里写明了为什么踢人（协议版本不一致最常见），
+        // 只写「断开，正在尝试重连」会让人对着重连风暴无从下手（见 `describeSocketClose`）
+        pushLog(makeLog("warn", `与服务端断开：${detail ?? "原因不明"}，正在尝试重连`));
       } else if (status === "error") {
         pushLog(makeLog("error", detail ?? "连接出错"));
       }
@@ -937,7 +1030,7 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       if (!snapshot.runtimeActive && wasRuntimeActive) {
         restoreRunBaseline();
         // 揭示记账也是运行态：关闸就清掉（前端已经被踢下线，下次运行重新开始）
-        set({ fogReveal: emptyFogReveal() });
+        set({ fogReveal: emptyFogReveal(), videoPlayback: emptyVideoPlayback() });
       }
 
       // 前端刚连上：把记着的期望播放状态补发一遍（「点的时候前端不在」也不会丢）
@@ -948,6 +1041,16 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       });
       if (plan.length > 0) {
         get().flushSoundPlayback();
+      }
+
+      // 视频同理：按对象补发（暂停态的先放再暂停）
+      const videoPlan = videoPlaybackResendPlan({
+        wasClientConnected,
+        isClientConnected: snapshot.client !== null,
+        playback: get().videoPlayback,
+      });
+      if (videoPlan.length > 0) {
+        get().flushVideoPlayback();
       }
 
       // 战争雾同理：前端（重）连上时，把它还没看到的那些揭示轨迹补发一遍
@@ -1047,7 +1150,7 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
    * 编辑器没连服务端 / 前端不在时**不发**（状态已经记下），只写明白原因——
    * 等前端连上由 `flushSoundPlayback()` 补发，所以「点的时候前端不在」也不会丢。
    */
-  const deliverSoundPlay = (entry: SoundPlaybackEntry): string | undefined => {
+  const deliverSoundPlay = (entry: Omit<SoundPlaybackEntry, "paused">): string | undefined => {
     const label = `层级 ${SOUND_LAYER_LABELS[entry.layer]}`;
     const what = entry.clips[0] ?? "(空)";
 
@@ -1072,10 +1175,39 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
   };
 
   /**
-   * 找出「能揭示战争雾」的对象：当前场景里那张**绑了雾区**的地图。
+   * 把一条**按层级**的声音命令尽力发给前端（停止 / 暂停 / 继续走它；播放那条还带「播哪一条」的说明，
+   * 留在 `deliverSoundPlay` 里）。
+   *
+   * 与 `deliverSoundPlay` 同一套规矩：编辑器没连服务端 / 前端不在时**不发**（状态已经记下），
+   * 只写明白原因，等前端连上由 `flushSoundPlayback()` 补发。
+   */
+  const deliverSoundControl = (
+    kind: "stop_sound" | "pause_sound" | "resume_sound",
+    layer: SoundLayer,
+    what: string,
+  ): string | undefined => {
+    const label = `层级 ${SOUND_LAYER_LABELS[layer]}`;
+
+    if (!runtimeClient.connected) {
+      pushLog(makeLog("info", `已记录${what}：${label}（编辑器还没连上服务端，连上后自动补发）`));
+      return undefined;
+    }
+
+    if (get().runtime.client === null) {
+      pushLog(makeLog("info", `已记录${what}：${label}（前端未连接，等它连上后自动补发）`));
+      return undefined;
+    }
+
+    const requestId = runtimeClient.sendCommand({ kind, layer });
+    pushLog(makeLog("info", `下发${what}：${label}`));
+    return requestId;
+  };
+
+  /**
+   * 找出「能揭示战争雾」的对象：当前场景里那张**开了战争雾、也指定了雾区**的地图。
    *
    * 找不到就写一条**说明原因**的运行日志并返回 null（不静默失败）：
-   * 这类失败恰恰说明瞄准的目标不对（对象被删了 / 拿精灵去擦雾 / 还没指定雾区）。
+   * 这类失败恰恰说明瞄准的目标不对（对象被删了 / 拿精灵去擦雾 / 开关关着 / 还没指定雾区）。
    */
   const fogTargetOf = (objectId: string, what: string): SceneObjectDoc | null => {
     const object = findSceneByName(get().scenes, get().activeSceneName)?.objects.find(
@@ -1092,7 +1224,12 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       return null;
     }
 
-    if ((object.map?.fog?.regions ?? []).length === 0) {
+    if (object.map === undefined || !isMapFogEnabled(object.map)) {
+      pushLog(makeLog("warn", `${what}失败：「${object.name}」的战争雾开关关着（属性面板 → 战争雾）`));
+      return null;
+    }
+
+    if ((object.map.fog?.regions ?? []).length === 0) {
       pushLog(makeLog("warn", `${what}失败：「${object.name}」还没指定雾区（属性面板 → 战争雾）`));
       return null;
     }
@@ -1106,7 +1243,94 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       (item) => item.id === objectId,
     );
 
-    return object !== undefined && object.kind === "Map" && (object.map?.fog?.regions ?? []).length > 0;
+    return (
+      object !== undefined &&
+      object.kind === "Map" &&
+      object.map !== undefined &&
+      isMapFogEnabled(object.map) &&
+      (object.map.fog?.regions ?? []).length > 0
+    );
+  };
+
+  /**
+   * 找出「能放视频」的对象：当前场景里的**地图或精灵**，且**加了视频也选了那一条**。
+   *
+   * 与 `fogTargetOf` 同一个口径：找不到就写一条**说明原因**的运行日志并返回 null（不静默失败）。
+   * 「能放视频」的判据只有 `supportsVideo` 一处（文档命令与校验走的是同一个函数）。
+   */
+  const videoTargetOf = (objectId: string, what: string): SceneObjectDoc | null => {
+    const object = findSceneByName(get().scenes, get().activeSceneName)?.objects.find(
+      (item) => item.id === objectId,
+    );
+
+    if (object === undefined) {
+      pushLog(makeLog("warn", `${what}失败：找不到这个对象（${objectId}）`));
+      return null;
+    }
+
+    if (!supportsVideo(object.kind)) {
+      pushLog(makeLog("warn", `${what}失败：「${object.name}」不是地图或精灵，放不了视频`));
+      return null;
+    }
+
+    // 与战争雾那条一模一样的第三种拒绝：开关关着（不是没加视频，也不是没选）
+    if (!isVideoEnabled(object)) {
+      pushLog(makeLog("warn", `${what}失败：「${object.name}」的视频开关关着（属性面板 → 视频 → 启用）`));
+      return null;
+    }
+
+    const clips = object.video?.clips ?? [];
+    if (clips.length === 0) {
+      pushLog(makeLog("warn", `${what}失败：「${object.name}」还没加视频（属性面板 → 视频）`));
+      return null;
+    }
+
+    const picked = object.video?.picked;
+    if (picked === undefined || !clips.includes(picked)) {
+      pushLog(makeLog("warn", `${what}失败：「${object.name}」还没选要放哪一条视频`));
+      return null;
+    }
+
+    return object;
+  };
+
+  /**
+   * 把一条视频命令**尽力**发给前端（`play_video` / `pause_video` / `resume_video` / `stop_video`）。
+   *
+   * 与 `deliverSoundPlay` 同一套：编辑器没连服务端 / 前端不在时**不发**（状态已经记下），
+   * 只写明白原因——等前端连上由 `flushVideoPlayback()` 补发。
+   * 命令里只有 `objectId`：放哪一条 / 循环 / 声音由前端从镜像里那个对象读。
+   *
+   * `quiet` 给**补发**用：补发时逐条写日志会把运行日志刷屏，成功与否由调用方汇总一条。
+   */
+  const deliverVideo = (
+    kind: "play_video" | "pause_video" | "resume_video" | "stop_video",
+    objectId: string,
+    label: string,
+    quiet = false,
+  ): string | undefined => {
+    if (!runtimeClient.connected) {
+      if (!quiet) {
+        pushLog(makeLog("info", `${label}：已记录（编辑器还没连上服务端，连上后自动补发）`));
+      }
+
+      return undefined;
+    }
+
+    if (get().runtime.client === null) {
+      if (!quiet) {
+        pushLog(makeLog("info", `${label}：已记录（前端未连接，等它连上后自动补发）`));
+      }
+
+      return undefined;
+    }
+
+    const requestId = runtimeClient.sendCommand({ kind, objectId });
+    if (!quiet) {
+      pushLog(makeLog("info", `下发${label}：${objectId}`));
+    }
+
+    return requestId;
   };
 
   /**
@@ -1132,7 +1356,7 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
   };
 
   /** 前端在不在（编辑器连着服务端 **且** 前端连着）。 */
-  const fogFrontendReady = (): boolean => runtimeClient.connected && get().runtime.client !== null;
+  const frontendReady = (): boolean => runtimeClient.connected && get().runtime.client !== null;
 
   const syncHistoryFlags = (): void => {
     set({
@@ -1294,7 +1518,6 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       colors: gridPaint.colors,
       showGridLines: gridPaint.showGridLines,
       showAnnotations: gridPaint.showAnnotations,
-      showFog: gridPaint.showFog,
     };
     writeGridPaintPrefs(prefs);
   };
@@ -1324,10 +1547,20 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       if (previous !== null) {
         sceneViewports.set(previous, get().viewport);
       }
+
+      /*
+        真的换场景时**先把上一个场景的视频停掉**（尽力而为，逐条按对象发 `stop_video`）。
+        为什么不像声音那样只清记账就走：客户端把别的场景整棵子树 `SetActive(false)` 藏起来，
+        画面是看不见了，但**开了声音的视频会继续响**——现场表现就是「换了台还有声音」。
+        调用方不写日志（补发汇总一条），免得切场景刷一串。
+      */
+      for (const entry of Object.values(get().videoPlayback.objects)) {
+        deliverVideo("stop_video", entry.objectId, "停止视频", true);
+      }
     }
 
     // 清选中 / 关窗口 / 清记账这一套**照旧无条件执行**（切到同一个场景时也一样）：
-    // 记账记的是「这个场景现在该响什么」，重新打开它就该从「没在播」开始
+    // 记账记的是「这个场景现在该响什么 / 放什么」，重新打开它就该从「没在播」开始
     set({
       activeSceneName: name,
       selectedObjectIds: [],
@@ -1338,6 +1571,7 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       gridEditorTarget: null,
       // 切场景：记账里的对象属于上一个场景，清掉（前端那边由使用方自己按新场景重播）
       soundPlayback: emptySoundPlayback(),
+      videoPlayback: emptyVideoPlayback(),
     });
 
     // **视口跟着场景走**：回到这个场景上次的样子；没来过就适配（整张地图铺满）。
@@ -1388,6 +1622,8 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
     soundEditorTarget: null,
     teleportEditor: false,
     teleportEditorTarget: null,
+    videoEditor: false,
+    videoEditorTarget: null,
     fogMask: false,
     fogMaskTarget: null,
     gridEditor: false,
@@ -1401,9 +1637,9 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       colors: storedGridPaint.colors,
       showGridLines: storedGridPaint.showGridLines,
       showAnnotations: storedGridPaint.showAnnotations,
-      showFog: storedGridPaint.showFog,
     },
     soundPlayback: emptySoundPlayback(),
+    videoPlayback: emptyVideoPlayback(),
     fogReveal: emptyFogReveal(),
     transformStart: null,
     runtime: {
@@ -1457,6 +1693,10 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
         gridEditorTarget: null,
         // 换了文档：记着的「哪一层该播什么」盯的是上一个项目的对象，清掉
         soundPlayback: emptySoundPlayback(),
+        // 视频的记账同理（它是按对象记的），窗口也跟着关
+        videoPlayback: emptyVideoPlayback(),
+        videoEditor: false,
+        videoEditorTarget: null,
         // 战争雾的揭示记账同理：瞄准的对象已经不存在了
         fogReveal: emptyFogReveal(),
       });
@@ -1636,7 +1876,7 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
 
       // 先记账（「这一层现在该播什么」），再尽力下发——所以编辑器没连服务端 / 前端不在
       // 也点得动：状态记着，等前端连上补发
-      const entry: SoundPlaybackEntry = {
+      const entry: Omit<SoundPlaybackEntry, "paused"> = {
         objectId,
         layer: sound?.layer ?? DEFAULT_SOUND_LAYER,
         clips: [picked],
@@ -1658,20 +1898,59 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       const layer = object.sound?.layer ?? DEFAULT_SOUND_LAYER;
       set({ soundPlayback: withStopped(get().soundPlayback, layer) });
 
+      return deliverSoundControl("stop_sound", layer, "停止");
+    },
+
+    pauseSound(objectId) {
+      const object = findSceneByName(get().scenes, get().activeSceneName)?.objects.find(
+        (item) => item.id === objectId,
+      );
+      if (object === undefined || object.kind !== "PlaySound") {
+        pushLog(makeLog("error", "找不到这个声音对象"));
+        return undefined;
+      }
+
+      const layer = object.sound?.layer ?? DEFAULT_SOUND_LAYER;
       const label = `层级 ${SOUND_LAYER_LABELS[layer]}`;
-      if (!runtimeClient.connected) {
-        pushLog(makeLog("info", `已记录停止：${label}（编辑器还没连上服务端，连上后自动补发）`));
+
+      // 同层只响一条：这一层不是它在响时，暂停无从谈起——写明是谁在响，别发一条注定没意义的命令
+      const holder = get().soundPlayback.layers[layer];
+      if (holder === undefined || holder.objectId !== objectId) {
+        pushLog(
+          makeLog(
+            "warn",
+            `暂停失败：「${object.name}」所在的${label}没在播它（${
+              holder === undefined ? "这一层没在播" : "这一层是别的对象在响"
+            }）`,
+          ),
+        );
         return undefined;
       }
 
-      if (get().runtime.client === null) {
-        pushLog(makeLog("info", `已记录停止：${label}（前端未连接，等它连上后自动补发）`));
+      set({ soundPlayback: withSoundPaused(get().soundPlayback, layer, true) });
+      return deliverSoundControl("pause_sound", layer, "暂停");
+    },
+
+    resumeSound(objectId) {
+      const object = findSceneByName(get().scenes, get().activeSceneName)?.objects.find(
+        (item) => item.id === objectId,
+      );
+      if (object === undefined || object.kind !== "PlaySound") {
+        pushLog(makeLog("error", "找不到这个声音对象"));
         return undefined;
       }
 
-      const requestId = runtimeClient.sendCommand({ kind: "stop_sound", layer });
-      pushLog(makeLog("info", `下发停止：${label}`));
-      return requestId;
+      const layer = object.sound?.layer ?? DEFAULT_SOUND_LAYER;
+      const entry = get().soundPlayback.layers[layer];
+      if (entry === undefined || entry.objectId !== objectId) {
+        pushLog(
+          makeLog("warn", `继续播放失败：「${object.name}」所在的层级 ${SOUND_LAYER_LABELS[layer]} 没在播它`),
+        );
+        return undefined;
+      }
+
+      set({ soundPlayback: withSoundPaused(get().soundPlayback, layer, false) });
+      return deliverSoundControl("resume_sound", layer, "继续播放");
     },
 
     flushSoundPlayback() {
@@ -1687,10 +1966,126 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
           objectId: entry.objectId,
           layer: entry.layer,
         });
+
+        // 暂停态：先播再暂停，前端才停在原处（只发 pause 的话它根本没在响）——与视频同一套
+        if (entry.paused) {
+          runtimeClient.sendCommand({ kind: "pause_sound", layer: entry.layer });
+        }
+
         pushLog(
           makeLog(
             "info",
-            `补发播放：层级 ${SOUND_LAYER_LABELS[entry.layer]}（${entry.clips[0] ?? "(空)"}）`,
+            `补发播放：层级 ${SOUND_LAYER_LABELS[entry.layer]}（${entry.clips[0] ?? "(空)"}${
+              entry.paused ? "，暂停态" : ""
+            }）`,
+          ),
+        );
+      }
+
+      return entries.length;
+    },
+
+    // ---------------------------------------------------------------- 视频（地图 / 精灵）
+
+    playVideo(objectId) {
+      const object = videoTargetOf(objectId, "播放视频");
+      if (object === null) {
+        return undefined;
+      }
+
+      const video = object.video;
+      const clip = video?.picked;
+      if (clip === undefined) {
+        // `videoTargetOf` 已经拦过这种情况，这里只是把类型收窄（同时兜住手写文件的坏数据）
+        pushLog(makeLog("warn", `播放视频失败：「${object.name}」还没选要放哪一条视频`));
+        return undefined;
+      }
+
+      // 先记账（「这个对象现在该放什么」），再尽力下发——所以编辑器没连服务端 / 前端不在
+      // 也点得动：状态记着，等前端连上补发
+      const entry: Omit<VideoPlaybackEntry, "paused"> = {
+        objectId,
+        clip,
+        loop: video?.loop ?? false,
+        audio: video?.audio ?? false,
+      };
+      set({ videoPlayback: withVideoPlaying(get().videoPlayback, entry) });
+
+      return deliverVideo("play_video", objectId, `播放视频（${clip}）`);
+    },
+
+    pauseVideo(objectId) {
+      const object = videoTargetOf(objectId, "暂停视频");
+      if (object === null) {
+        return undefined;
+      }
+
+      // 没在记账里 = 这个对象没在放：写明白，别发一条注定被前端拒的命令
+      if (get().videoPlayback.objects[objectId] === undefined) {
+        pushLog(makeLog("warn", `暂停视频失败：「${object.name}」没在放视频`));
+        return undefined;
+      }
+
+      set({ videoPlayback: withVideoPaused(get().videoPlayback, objectId, true) });
+      return deliverVideo("pause_video", objectId, "暂停视频");
+    },
+
+    resumeVideo(objectId) {
+      const object = videoTargetOf(objectId, "继续播放视频");
+      if (object === null) {
+        return undefined;
+      }
+
+      if (get().videoPlayback.objects[objectId] === undefined) {
+        pushLog(makeLog("warn", `继续播放失败：「${object.name}」没在放视频（先点「播放」）`));
+        return undefined;
+      }
+
+      set({ videoPlayback: withVideoPaused(get().videoPlayback, objectId, false) });
+      return deliverVideo("resume_video", objectId, "继续播放视频");
+    },
+
+    stopVideo(objectId) {
+      // 停**不要求**还选着一条视频 / 还是地图或精灵：对象被改成别的类型之后，
+      // 前端那一层还挂着，「停止」得照样能拆掉它
+      const object = findSceneByName(get().scenes, get().activeSceneName)?.objects.find(
+        (item) => item.id === objectId,
+      );
+
+      const tracked = get().videoPlayback.objects[objectId] !== undefined;
+      if (object === undefined && !tracked) {
+        pushLog(makeLog("warn", `停止视频失败：找不到这个对象（${objectId}）`));
+        return undefined;
+      }
+
+      set({ videoPlayback: withVideoStopped(get().videoPlayback, objectId) });
+      return deliverVideo("stop_video", objectId, "停止视频");
+    },
+
+    flushVideoPlayback() {
+      const { runtime, videoPlayback } = get();
+      if (!runtimeClient.connected || runtime.client === null) {
+        return 0;
+      }
+
+      const entries = Object.values(videoPlayback.objects);
+      for (const entry of entries) {
+        // 补发不发日志（逐条写会把运行日志刷屏），末尾汇总一条
+        deliverVideo("play_video", entry.objectId, "补发视频", true);
+
+        // 暂停态：先放再暂停，前端才回到同一帧（只发 pause 的话它根本没在放）
+        if (entry.paused) {
+          deliverVideo("pause_video", entry.objectId, "补发视频（暂停）", true);
+        }
+      }
+
+      if (entries.length > 0) {
+        const paused = entries.filter((entry) => entry.paused).length;
+        pushLog(
+          makeLog(
+            "info",
+            `补发视频：${entries.length} 个对象${paused === 0 ? "" : `（其中 ${paused} 个是暂停态）`}` +
+              "（前端刚连上，把它还没看到的那些放送补过去）",
           ),
         );
       }
@@ -2898,6 +3293,168 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       });
     },
 
+    // ------------------------------------------------------------ 视频（地图 / 精灵）
+
+    openVideoEditor(objectId) {
+      set({ videoEditor: objectId !== null, videoEditorTarget: objectId });
+      if (objectId !== null) {
+        // 与「选择音频」同一条规矩：素材由外部提交进 Assets/video/，打开时刷一次目录
+        void get().refreshTree();
+      }
+    },
+
+    setVideoEnabled(objectId, enabled) {
+      const sceneName = get().activeSceneName;
+      if (sceneName === null) {
+        return false;
+      }
+
+      const changed = get().applyScenes(enabled ? "启用视频" : "关闭视频", (draft) => {
+        const scene = draft.find((item) => item.name === sceneName);
+        if (scene !== undefined) {
+          setSceneVideoEnabled(scene, objectId, enabled);
+        }
+      });
+
+      // 关掉了：正开着的「编辑视频」窗口跟着关（那一组已经收起来了）
+      if (!enabled && get().videoEditorTarget === objectId) {
+        set({ videoEditor: false, videoEditorTarget: null });
+      }
+
+      return changed;
+    },
+
+    addVideoClip(objectId, clipId) {
+      const sceneName = get().activeSceneName;
+      if (sceneName === null) {
+        return false;
+      }
+
+      const object = findSceneByName(get().scenes, sceneName)?.objects.find(
+        (item) => item.id === objectId,
+      );
+      if (object === undefined || !supportsVideo(object.kind)) {
+        return false;
+      }
+
+      const video = object.video;
+      const already = (video?.clips ?? []).includes(clipId);
+      // 原来选中的那条要是还在，就不抢（正放着 A 加一条 B，选择不该被顶掉）
+      const hadPicked = video?.picked;
+
+      return get().applyScenes("添加视频", (draft) => {
+        const scene = draft.find((item) => item.name === sceneName);
+        if (scene === undefined) {
+          return;
+        }
+
+        if (!already) {
+          setSceneVideoClips(scene, objectId, [...(video?.clips ?? []), clipId]);
+        }
+
+        if (hadPicked === undefined) {
+          // 之前一条都没选（或列表本来是空的）：加进来的这条就是现在要放的
+          setSceneVideoPicked(scene, objectId, clipId);
+        }
+      });
+    },
+
+    removeVideoClip(objectId, clipId) {
+      const sceneName = get().activeSceneName;
+      if (sceneName === null) {
+        return false;
+      }
+
+      const object = findSceneByName(get().scenes, sceneName)?.objects.find(
+        (item) => item.id === objectId,
+      );
+      if (object === undefined) {
+        return false;
+      }
+
+      const clips = object.video?.clips ?? [];
+      if (!clips.includes(clipId)) {
+        return false;
+      }
+
+      // 名字与「选中的那条」由 `setVideoClips` 一起收拾（见 `syncVideoSideData`）
+      return get().applyScenes("移除视频", (draft) => {
+        const scene = draft.find((item) => item.name === sceneName);
+        if (scene !== undefined) {
+          setSceneVideoClips(
+            scene,
+            objectId,
+            clips.filter((id) => id !== clipId),
+          );
+        }
+      });
+    },
+
+    selectVideoClip(objectId, clip) {
+      const sceneName = get().activeSceneName;
+      if (sceneName === null) {
+        return false;
+      }
+
+      const object = findSceneByName(get().scenes, sceneName)?.objects.find(
+        (item) => item.id === objectId,
+      );
+      if (object === undefined || !supportsVideo(object.kind)) {
+        return false;
+      }
+
+      // 单选：只能选**加进来的**那几条（`setVideoPicked` 会把不在列表里的拒掉）。
+      // 名字按文件记，换选不动它。
+      return get().applyScenes("选择视频", (draft) => {
+        const scene = draft.find((item) => item.name === sceneName);
+        if (scene !== undefined) {
+          setSceneVideoPicked(scene, objectId, clip);
+        }
+      });
+    },
+
+    setVideoClipName(objectId, clipId, name) {
+      const sceneName = get().activeSceneName;
+      if (sceneName === null) {
+        return false;
+      }
+
+      return get().applyScenes("修改视频名字", (draft) => {
+        const scene = draft.find((item) => item.name === sceneName);
+        if (scene !== undefined) {
+          setSceneVideoClipName(scene, objectId, clipId, name);
+        }
+      });
+    },
+
+    setVideoLoop(objectId, loop) {
+      const sceneName = get().activeSceneName;
+      if (sceneName === null) {
+        return false;
+      }
+
+      return get().applyScenes("修改视频循环", (draft) => {
+        const scene = draft.find((item) => item.name === sceneName);
+        if (scene !== undefined) {
+          setSceneVideoLoop(scene, objectId, loop);
+        }
+      });
+    },
+
+    setVideoAudio(objectId, audio) {
+      const sceneName = get().activeSceneName;
+      if (sceneName === null) {
+        return false;
+      }
+
+      return get().applyScenes("修改视频声音", (draft) => {
+        const scene = draft.find((item) => item.name === sceneName);
+        if (scene !== undefined) {
+          setSceneVideoAudio(scene, objectId, audio);
+        }
+      });
+    },
+
     // ------------------------------------------------------------ 传送阵（动作对象）
 
     setTeleportTargets(objectId, targets) {
@@ -3121,10 +3678,26 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       });
     },
 
-    setFogVisible(visible) {
-      const gridPaint: GridPaintState = { ...get().gridPaint, showFog: visible };
-      set({ gridPaint });
-      persistGridPaint(gridPaint);
+    setFogEnabled(mapObjectId, enabled) {
+      const sceneName = get().activeSceneName;
+      if (sceneName === null) {
+        return false;
+      }
+
+      const changed = get().applyScenes(enabled ? "打开战争雾" : "关闭战争雾", (draft) => {
+        const scene = draft.find((item) => item.name === sceneName);
+        if (scene !== undefined) {
+          // 开关写的是**文档数据**：只有它跟着场景下发，前端才知道该不该生成那一层雾
+          setSceneMapFogEnabled(scene, mapObjectId, enabled);
+        }
+      });
+
+      // 关掉了：正开着的 Mask 窗口跟着关（它编辑的那张地图已经没有雾了，留着只会擦空气）
+      if (!enabled && get().fogMaskTarget === mapObjectId) {
+        set({ fogMask: false, fogMaskTarget: null });
+      }
+
+      return changed;
     },
 
     eraseFogMask(objectId, points, done) {
@@ -3155,7 +3728,7 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       const what = `「${map.name}」第 ${strokes} 笔（${total} 个落点）`;
 
       pushLog(
-        fogFrontendReady()
+        frontendReady()
           ? makeLog("info", `下发擦除：${what}（请前端沿轨迹擦掉雾）`)
           : makeLog(
               "info",
@@ -3186,7 +3759,7 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
       set({ fogReveal: withRegion(get().fogReveal, objectId, region, revealed) });
 
       const what = `${maskToLabel(region)}${revealed ? "整片揭示" : "整片盖回"}`;
-      if (!fogFrontendReady()) {
+      if (!frontendReady()) {
         pushLog(
           makeLog(
             "info",
@@ -3210,11 +3783,11 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
 
     flushFogReveal() {
       const { fogReveal } = get();
-      if (!fogFrontendReady()) {
+      if (!frontendReady()) {
         return 0;
       }
 
-      // 先按当前文档筛掉没意义的记录（对象被删了 / 不是地图 / 解绑了雾区），免得补发一堆注定失败的命令
+      // 先按当前文档筛掉没意义的记录（对象被删了 / 不是地图 / 开关关着 / 解绑了雾区），免得补发一堆注定失败的命令
       const pruned = pruneFogReveal(fogReveal, canRevealFog);
       const entries: Array<{ objectId: string; entry: FogRevealEntry }> = Object.entries(
         pruned.objects,
