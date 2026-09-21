@@ -1,5 +1,5 @@
 {
-  "formatVersion": 12,
+  "formatVersion": 14,
   "objects": [
     {
       "id": "map_mu6uln3x1l7fg",
@@ -320,6 +320,7 @@
           ]
         },
         "fog": {
+          "enabled": false,
           "regions": [
             1,
             2,

@@ -1,5 +1,5 @@
 {
-  "formatVersion": 12,
+  "formatVersion": 14,
   "objects": [
     {
       "id": "map_mu7t58za2yr2b",
@@ -35,6 +35,17 @@
             ]
           ]
         }
+      },
+      "video": {
+        "enabled": false,
+        "clips": [
+          "project:测试项目/Assets/video/Map003_1.mp4",
+          "project:测试项目/Assets/video/Map003_2.mp4",
+          "project:测试项目/Assets/video/Map003_3.mp4"
+        ],
+        "picked": "project:测试项目/Assets/video/Map003_1.mp4",
+        "loop": false,
+        "audio": false
       }
     }
   ]
