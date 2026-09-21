@@ -1,6 +1,23 @@
 # 统一换行符：仓库内默认 LF，避免 Windows 上反复出现 CRLF 改动
 * text=auto eol=lf
 
+# ---------------------------------------------------------------- 属性宏（**必须定义在顶层**）
+#
+# 宏（`[attr]xxx …`）**只能在顶层 gitattributes 里定义**——`gitattributes(5)`：
+# 「Custom macro attributes can be defined only in top-level gitattributes files …
+#   not in .gitattributes files in working tree subdirectories」。
+# `client/.gitattributes` 用的是 Unity 官方模板，模板头几行就是三条宏定义，
+# 但那个文件在子目录里 —— 放那儿 git 会整条拒掉（`[attr]lfs … not allowed`），
+# 于是模板里满篇的 `*.png lfs` / `*.mp4 lfs` / `*.meta unity-yaml` **一个都不生效**
+# （`git check-attr filter -- client/Assets/x.png` 会是 `unspecified`，而不是 `lfs`）。
+# 所以这三条定义挪到本文件（顶层），`client/.gitattributes` 里只留使用它们的规则。
+#
+# `lfs` = 交给 Git LFS 存（大文件不进仓库本体）；`unity-yaml` / `unity-json` 只是
+# 合并方式与 GitHub 语言统计的提示，不影响内容。
+[attr]lfs               filter=lfs diff=lfs merge=lfs -text
+[attr]unity-json        eol=lf linguist-language=json
+[attr]unity-yaml        merge=unityyamlmerge eol=lf linguist-language=yaml
+
 # Windows 批处理必须保持 CRLF：cmd.exe 对 LF 结尾的 .bat/.cmd 支持不可靠
 # （多行括号块、goto/label 等会出问题），因此这两类文件单独指定
 *.bat text eol=crlf

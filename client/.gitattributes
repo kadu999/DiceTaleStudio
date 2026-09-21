@@ -6,10 +6,10 @@
 # This template is maintained from the gitattributes/gitattributes repository
 # and distributed under MIT License.
 
-# Define macros (only works in top-level gitattributes files)
-[attr]lfs               filter=lfs diff=lfs merge=lfs -text
-[attr]unity-json        eol=lf linguist-language=json
-[attr]unity-yaml        merge=unityyamlmerge eol=lf linguist-language=yaml
+# 属性宏（`lfs` / `unity-json` / `unity-yaml`）**定义在仓库顶层 `.gitattributes` 里**——
+# 宏只能在顶层文件定义，写在子目录文件里 git 会把整条定义拒掉
+# （`[attr]lfs … not allowed`），于是下面所有 `xxx lfs` / `xxx unity-yaml` 全都不生效。
+# 这个模板原本的头三行就是那三条定义，已挪到顶层；这里只留使用它们的规则。
 
 # Optionally collapse Unity YAML files on GitHub diffs
 # [attr]unity-yaml        merge=unityyamlmerge text linguist-language=yaml linguist-generated
