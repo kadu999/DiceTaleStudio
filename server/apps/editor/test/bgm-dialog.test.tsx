@@ -12,8 +12,9 @@ import type { ResourceTreeNode } from "../src/services/project-api";
  *
  * 两个位置分工（这一份钉住，真浏览器在 `e2e/global-bgm.spec.ts`）：
  * 1. **顶栏按钮**：只显示状态（`♫ 曲名（播放中 / 已暂停）`）并**打开弹框**；
- * 2. **弹框**：列出项目 `Assets/audio/` 下的音频（按目录分组 + 搜索），**点一首就播**，
- *    底部是暂停 · 继续 / 停止 / 关闭，外加一行「现在在放什么」；
+ * 2. **弹框**：列出项目 `Assets/audio/` 下的音频（**按显示名排序、不分组**，一行只有
+ *    「哪一首 + 路径」；标签靠清单上方那一排**勾**），**点一首就播**，底部是暂停 · 继续 /
+ *    停止 / 关闭，外加一行「现在在放什么」；这一页**不写说明文字**（v19 起）；
  * 3. **音量不在这里**：那是项目级设置（「工程 → 全局设置…」）。
  *
  * **菜单里的点按交给 e2e**：Radix 的下拉靠指针序列开合，jsdom 里只有第一条用例开得起来
@@ -94,13 +95,15 @@ function seed(input?: {
     bgmPlayback: { clip: null, paused: false },
     bgmDialog: false,
     globalSettings: false,
+    // 路径开关是**浏览器本地偏好**、存在 store 里：用例之间不会互相影响
+    ui: { ...useEditorStore.getState().ui, bgmPaths: false },
   });
 }
 
 const playback = (): ReturnType<typeof useEditorStore.getState>["bgmPlayback"] =>
   useEditorStore.getState().bgmPlayback;
 
-/** 某一首那一行（列表的顺序由「目录分组 + 路径排序」决定，用例不依赖它）。 */
+/** 某一首那一行（列表按显示名排序，用例不依赖它）。 */
 const rowFor = (clip: string): HTMLElement => {
   const row = screen
     .getAllByTestId("bgm-track")
@@ -112,26 +115,32 @@ const rowFor = (clip: string): HTMLElement => {
   return row;
 };
 
-/** 点行上的「播这一首」（标签 chip 是筛选用途，不触发播放）。 */
-const playRowFor = (clip: string): void => {
-  const button = rowFor(clip).querySelector('[data-testid="bgm-track-play"]');
-  if (button === null) {
-    throw new Error(`这一行没有播放按钮：${clip}`);
-  }
+/** 列表顺序（找那一首时不靠位置，验排序时才用它）。 */
+const listedClips = (): (string | null)[] =>
+  screen.getAllByTestId("bgm-track").map((row) => row.getAttribute("data-clip"));
 
-  fireEvent.click(button);
+/** 勾选那一排里的某个标签（`undefined` = 标签表里没有它）。 */
+const tagOptionFor = (tag: string): HTMLElement | undefined =>
+  screen.queryAllByTestId("bgm-tag-option").find((item) => item.getAttribute("data-tag") === tag);
+
+/**
+ * 选中某一首（**点行只选中，不出声**）。
+ *
+ * 弹框里唯一会出声的键是底部那一排的「播放」——所以「放某一首」= 选中它 + 按播放。
+ */
+const selectRowFor = (clip: string): void => {
+  fireEvent.click(rowFor(clip));
 };
 
-/** 行上的某个标签 chip。 */
-const tagChipFor = (clip: string, tag: string): HTMLElement => {
-  const chip = [...rowFor(clip).querySelectorAll<HTMLElement>('[data-testid="bgm-tag"]')].find(
-    (item) => item.getAttribute("data-tag") === tag,
-  );
-  if (chip === undefined) {
-    throw new Error(`这一行没有标签 ${tag}：${clip}`);
-  }
+/** 点底部那一枚「播放」（唯一的一枚：作用在选中的那一首上）。 */
+const clickPlay = (): void => {
+  fireEvent.click(screen.getByTestId("bgm-play"));
+};
 
-  return chip;
+/** 选中某一首再按播放。 */
+const playRowFor = (clip: string): void => {
+  selectRowFor(clip);
+  clickPlay();
 };
 
 const logs = (): string[] => useEditorStore.getState().runtime.logs.map((entry) => entry.message);
@@ -219,17 +228,45 @@ describe("顶栏「音乐」按钮", () => {
 });
 
 describe("「背景音乐」弹框", () => {
-  it("列出项目里的全部音频（按目录分组，图片不出现）", () => {
+  it("列出项目里的全部音频：按**显示名**排序、不分组（路径默认不露），图片不出现", () => {
     seed();
     useEditorStore.setState({ bgmDialog: true });
     render(<BgmDialog />);
 
-    // 目录分组：`audio/` 底下的两首先列（目录内按路径排序），再是 `audio/environment/`
-    const clips = screen.getAllByTestId("bgm-track").map((row) => row.getAttribute("data-clip"));
-    expect(clips).toEqual([CLIP_B, CLIP_A, CLIP_C]);
-    expect(screen.getByTestId("bgm-dialog").textContent).toContain("audio");
-    expect(screen.getByTestId("bgm-dialog").textContent).toContain("audio/environment");
+    // 显示名排序：battle < rain < theme（与目录无关）
+    expect(listedClips()).toEqual([CLIP_B, CLIP_C, CLIP_A]);
     expect(screen.getByTestId("bgm-dialog").textContent).not.toContain("Map001");
+    // 路径**默认不显示**（开关在搜索框右边）
+    expect(screen.getByTestId("bgm-dialog").textContent).not.toContain("audio/environment");
+    expect(screen.getByTestId("bgm-paths-toggle").getAttribute("data-shown")).toBe("false");
+    // 没有目录分组那一层：清单里只有行，没有分组标题
+    const list = screen.getByTestId("bgm-list");
+    expect(list.children).toHaveLength(1);
+  });
+
+  it("「路径」开关：点开才在行右边显示路径（默认关）", () => {
+    seed();
+    useEditorStore.setState({ bgmDialog: true });
+    render(<BgmDialog />);
+
+    fireEvent.click(screen.getByTestId("bgm-paths-toggle"));
+
+    expect(screen.getByTestId("bgm-paths-toggle").getAttribute("data-shown")).toBe("true");
+    expect(useEditorStore.getState().ui.bgmPaths).toBe(true);
+    expect(rowFor(CLIP_C).textContent).toContain("audio/environment/rain.ogg");
+
+    fireEvent.click(screen.getByTestId("bgm-paths-toggle"));
+
+    expect(screen.getByTestId("bgm-paths-toggle").getAttribute("data-shown")).toBe("false");
+    expect(rowFor(CLIP_C).textContent).not.toContain("audio/environment");
+  });
+
+  it("起过显示名的按显示名排（分组那层壳没了，名字就是唯一的顺序）", () => {
+    seed({ meta: { [CLIP_C]: { name: "aaa 雨声" } } });
+    useEditorStore.setState({ bgmDialog: true });
+    render(<BgmDialog />);
+
+    expect(listedClips()).toEqual([CLIP_C, CLIP_B, CLIP_A]);
   });
 
   it("项目里一个音频都没有：说清去哪儿放素材", () => {
@@ -243,40 +280,117 @@ describe("「背景音乐」弹框", () => {
     expect(screen.getByTestId("bgm-empty").textContent).toContain("Assets/audio/");
   });
 
-  it("搜索按文件名 / 路径过滤；搜不到说「没有匹配的音频」", () => {
-    seed();
+  it("搜索按文件名 / 路径过滤（标签不归它管）；搜不到说「没有匹配的音频」", () => {
+    seed({ tags: ["战斗"], meta: { [CLIP_B]: { tags: [0] } } });
     useEditorStore.setState({ bgmDialog: true });
     render(<BgmDialog />);
 
     fireEvent.change(screen.getByTestId("bgm-search"), { target: { value: "rain" } });
-    expect(screen.getAllByTestId("bgm-track").map((row) => row.getAttribute("data-clip"))).toEqual([
-      CLIP_C,
-    ]);
+    expect(listedClips()).toEqual([CLIP_C]);
 
     fireEvent.change(screen.getByTestId("bgm-search"), { target: { value: "environment" } });
-    expect(screen.getAllByTestId("bgm-track").map((row) => row.getAttribute("data-clip"))).toEqual([
-      CLIP_C,
-    ]);
+    expect(listedClips()).toEqual([CLIP_C]);
+
+    // 标签名搜不到：标签是**勾的**（那一排），不是敲的
+    fireEvent.change(screen.getByTestId("bgm-search"), { target: { value: "战斗" } });
+    expect(screen.queryAllByTestId("bgm-track")).toEqual([]);
 
     fireEvent.change(screen.getByTestId("bgm-search"), { target: { value: "nope" } });
     expect(screen.queryAllByTestId("bgm-track")).toEqual([]);
     expect(screen.getByTestId("bgm-empty").textContent).toContain("没有匹配的音频");
   });
 
-  it("点一行就播（一条命令，命令里带 clip）；当前那一首标出来", () => {
+  it("点行只**选中**、不出声；出声的是底部那一枚「播放」", () => {
+    seed();
+    useEditorStore.setState({ bgmDialog: true });
+    render(<BgmDialog />);
+
+    // 选中不等于播放：点一下只把这一首选上（什么命令都不发）
+    expect((screen.getByTestId("bgm-play") as HTMLButtonElement).disabled).toBe(true);
+    selectRowFor(CLIP_B);
+    expect(rowFor(CLIP_B).getAttribute("data-selected")).toBe("true");
+    expect(playback()).toEqual({ clip: null, paused: false });
+
+    clickPlay();
+
+    expect(playback()).toEqual({ clip: CLIP_B, paused: false });
+    // 选中与「真的在放」是两件事，各画各的
+    expect(rowFor(CLIP_B).getAttribute("data-selected")).toBe("true");
+    expect(rowFor(CLIP_B).getAttribute("data-playing")).toBe("true");
+    expect(rowFor(CLIP_A).getAttribute("data-playing")).toBe("false");
+    expect(rowFor(CLIP_B).textContent).toContain("●");
+    expect(screen.getByTestId("bgm-status").textContent).toContain("battle");
+  });
+
+  it("选中另一首不会把正在放的那一首掐了（选中 = 让它等着）", () => {
     seed();
     useEditorStore.setState({ bgmDialog: true });
     render(<BgmDialog />);
 
     playRowFor(CLIP_B);
+    selectRowFor(CLIP_A);
 
     expect(playback()).toEqual({ clip: CLIP_B, paused: false });
-    expect(rowFor(CLIP_B).getAttribute("data-active")).toBe("true");
-    expect(rowFor(CLIP_A).getAttribute("data-active")).toBe("false");
+    expect(rowFor(CLIP_A).getAttribute("data-selected")).toBe("true");
+    expect(rowFor(CLIP_A).getAttribute("data-playing")).toBe("false");
+    expect(rowFor(CLIP_B).getAttribute("data-playing")).toBe("true");
     expect(screen.getByTestId("bgm-status").textContent).toContain("battle");
   });
 
-  it("暂停 · 继续 / 停止：没在放时暂停点不动；停止后回到「没在放」", () => {
+  it("打开弹框时恢复「正在放的那一首」：选中 / 播放态都在，并滚到它上面", () => {
+    seed();
+    // 弹框没开的时候就点过一首，而且是暂停态（这正是「恢复」要还原的两件事）
+    useEditorStore.setState({
+      bgmPlayback: { clip: CLIP_A, paused: true },
+      bgmDialog: true,
+    });
+
+    // jsdom 不实现滚动：把两个原型上的 scrollIntoView 都换成记账的桩（元素实际挂在哪个上
+    // 跟着 jsdom 版本走，两边都盖住最稳），断言完把原来的属性描述符还回去
+    // （jsdom 里本来就没有这个方法 → 还回去 = 删掉我们加的那个）
+    const scrolled: Element[] = [];
+    const spy = function spyScrollIntoView(this: Element): void {
+      scrolled.push(this);
+    };
+    const targets: Array<Element | HTMLElement> = [Element.prototype, HTMLElement.prototype];
+    const originals = targets.map((proto) => Object.getOwnPropertyDescriptor(proto, "scrollIntoView"));
+    for (const proto of targets) {
+      Object.defineProperty(proto, "scrollIntoView", {
+        value: spy,
+        writable: true,
+        configurable: true,
+      });
+    }
+
+    try {
+      render(<BgmDialog />);
+
+      // 选中态：那一首被选上（播放键因此可用），行上带 ⏸ 标记
+      expect(rowFor(CLIP_A).getAttribute("data-selected")).toBe("true");
+      expect(rowFor(CLIP_A).getAttribute("data-playing")).toBe("true");
+      expect(rowFor(CLIP_A).textContent).toContain("⏸");
+      expect(rowFor(CLIP_B).getAttribute("data-selected")).toBe("false");
+      expect((screen.getByTestId("bgm-play") as HTMLButtonElement).disabled).toBe(false);
+      // 播放态：底部那三个键与状态行都在说「暂停着」
+      expect((screen.getByTestId("bgm-pause") as HTMLButtonElement).disabled).toBe(false);
+      expect(screen.getByTestId("bgm-pause").textContent).toContain("继续");
+      expect(screen.getByTestId("bgm-status").textContent).toContain("theme");
+      expect(screen.getByTestId("bgm-status").textContent).toContain("已暂停");
+      // 滚到正在放的那一行（清单长了才看得见「现在放的是哪首」）
+      expect(scrolled).toEqual([rowFor(CLIP_A)]);
+    } finally {
+      targets.forEach((proto, index) => {
+        const descriptor = originals[index];
+        if (descriptor === undefined) {
+          delete (proto as { scrollIntoView?: unknown }).scrollIntoView;
+        } else {
+          Object.defineProperty(proto, "scrollIntoView", descriptor);
+        }
+      });
+    }
+  });
+
+  it("播放 · 暂停 · 继续 / 停止：没在放时暂停点不动；停掉之后状态行什么都不写", () => {
     seed();
     useEditorStore.setState({ bgmDialog: true });
     render(<BgmDialog />);
@@ -297,10 +411,16 @@ describe("「背景音乐」弹框", () => {
 
     fireEvent.click(screen.getByTestId("bgm-stop"));
     expect(playback()).toEqual({ clip: null, paused: false });
-    expect(screen.getByTestId("bgm-status").textContent).toContain("没在放");
+    // 没在放就什么都不说（以前那句「没在放」是废话：按钮灰着已经说明了）
+    expect(screen.getByTestId("bgm-status").textContent).toBe("");
+    // 选中的那一首还在：再按播放 = 从头放
+    expect(rowFor(CLIP_A).getAttribute("data-selected")).toBe("true");
+    expect((screen.getByTestId("bgm-play") as HTMLButtonElement).disabled).toBe(false);
+    clickPlay();
+    expect(playback()).toEqual({ clip: CLIP_A, paused: false });
   });
 
-  it("显示名优先，行上带标签（按 tag ID 解出名字）：起过名的显示名字，没起名的显示文件名", () => {
+  it("行上只有「哪一首」：显示名优先，没起名字的显示文件名（标签不上行）", () => {
     seed({
       tags: ["战斗", "环境"],
       meta: { [CLIP_A]: { name: "开场曲", tags: [0] }, [CLIP_C]: { tags: [1] } },
@@ -309,37 +429,55 @@ describe("「背景音乐」弹框", () => {
     render(<BgmDialog />);
 
     expect(rowFor(CLIP_A).textContent).toContain("开场曲");
-    expect(rowFor(CLIP_A).getAttribute("data-tags")).toBe("战斗");
     expect(rowFor(CLIP_C).textContent).toContain("rain");
-    expect(rowFor(CLIP_C).textContent).toContain("环境");
     expect(rowFor(CLIP_B).textContent).toContain("battle");
+
+    // 一行就是一整块「选中」的命中区（行本身就是按钮，里面不再套按钮），
+    // 标签 chip 只在清单上方那一排（行 = 标记 + 显示名，路径默认也不露）
+    for (const row of screen.getAllByTestId("bgm-track")) {
+      expect(row.tagName).toBe("BUTTON");
+      expect(row.querySelectorAll("button")).toHaveLength(0);
+      expect(row.textContent).not.toContain("战斗");
+      expect(row.textContent).not.toContain("环境");
+    }
   });
 
-  it("按标签搜到；点行上的标签 = 筛它；「清除筛选」把列表放回去", () => {
+  it("标签是**勾的**：那一排列的是标签表里的全部标签（含没人用的），点一下筛、再点一下取消", () => {
     seed({
-      tags: ["战斗"],
-      meta: { [CLIP_A]: { name: "开场曲", tags: [0] }, [CLIP_C]: { tags: [0] } },
+      tags: ["战斗", "环境", "紧张"],
+      meta: { [CLIP_A]: { name: "opening", tags: [0] }, [CLIP_C]: { tags: [0] } },
     });
     useEditorStore.setState({ bgmDialog: true });
     render(<BgmDialog />);
 
-    fireEvent.change(screen.getByTestId("bgm-search"), { target: { value: "战斗" } });
-    expect(screen.getAllByTestId("bgm-track").map((row) => row.getAttribute("data-clip"))).toEqual([
-      CLIP_C,
-      CLIP_A,
-    ]);
+    const optionNames = (): (string | null)[] =>
+      screen.getAllByTestId("bgm-tag-option").map((item) => item.getAttribute("data-tag"));
 
-    fireEvent.change(screen.getByTestId("bgm-search"), { target: { value: "" } });
-    fireEvent.click(tagChipFor(CLIP_A, "战斗"));
+    // 表里的标签全在（按名字排 = 拼音序），**没人用**的那个也列——先建后用是正常用法
+    expect(optionNames()).toEqual(["环境", "紧张", "战斗"]);
 
-    expect(screen.getAllByTestId("bgm-track").map((row) => row.getAttribute("data-clip"))).toEqual([
-      CLIP_C,
-      CLIP_A,
-    ]);
-    expect(screen.getByTestId("bgm-tag-filter").getAttribute("data-tag")).toBe("战斗");
+    fireEvent.click(tagOptionFor("战斗") as HTMLElement);
+    expect(listedClips()).toEqual([CLIP_A, CLIP_C]);
+    expect(tagOptionFor("战斗")?.getAttribute("data-selected")).toBe("true");
 
-    fireEvent.click(screen.getByTestId("bgm-clear-filter"));
-    expect(screen.getAllByTestId("bgm-track")).toHaveLength(3);
+    // 多选 = AND：再勾一个没人用的标签，就没有匹配的了
+    fireEvent.click(tagOptionFor("紧张") as HTMLElement);
+    expect(screen.queryAllByTestId("bgm-track")).toEqual([]);
+    expect(screen.getByTestId("bgm-empty").textContent).toContain("没有匹配的音频");
+
+    // 取消（再点一下）
+    fireEvent.click(tagOptionFor("紧张") as HTMLElement);
+    expect(listedClips()).toEqual([CLIP_A, CLIP_C]);
+    fireEvent.click(tagOptionFor("战斗") as HTMLElement);
+    expect(listedClips()).toEqual([CLIP_B, CLIP_A, CLIP_C]);
+  });
+
+  it("标签表是空的：那一排不画（没有可勾的东西）", () => {
+    seed();
+    useEditorStore.setState({ bgmDialog: true });
+    render(<BgmDialog />);
+
+    expect(screen.queryByTestId("bgm-tag-picker")).toBeNull();
   });
 
   it("标注指向已经删掉的文件：不列出来（点了只会发出一条注定失败的命令）", () => {
@@ -347,24 +485,23 @@ describe("「背景音乐」弹框", () => {
     useEditorStore.setState({ bgmDialog: true });
     render(<BgmDialog />);
 
-    // 目录分组后的 DOM 顺序：audio 底下的两首（战斗、主题）在前，再是 audio/environment 的雨声
-    expect(screen.queryAllByTestId("bgm-track").map((row) => row.getAttribute("data-clip"))).toEqual([
-      CLIP_B,
-      CLIP_A,
-      CLIP_C,
-    ]);
+    // 名字排序后的清单：battle < rain < theme（删掉的那首不在里面）
+    expect(listedClips()).toEqual([CLIP_B, CLIP_C, CLIP_A]);
     expect(screen.getByTestId("bgm-dialog").textContent).not.toContain("删掉的那首");
   });
 
-  it("弹框只负责「找 + 播」：名字 / 标签的编辑入口在属性面板与「标签」窗口（这里不再有「编辑…」按钮）", () => {
+  it("弹框只负责「找 + 播」：没有编辑入口，也没有一句说明文字", () => {
     seed({ meta: { [CLIP_B]: { name: "战斗曲" } } });
     useEditorStore.setState({ bgmDialog: true });
     render(<BgmDialog />);
 
     expect(screen.queryByTestId("bgm-edit-files")).toBeNull();
-    // 提示里写清了去哪儿配
-    expect(screen.getByTestId("bgm-dialog").textContent).toContain("属性面板");
-    expect(screen.getByTestId("bgm-dialog").textContent).toContain("标签");
+
+    // 说明文字一律不写（名字 / 标签去哪儿配是另一件事，写在清单上只会占地方）
+    const text = screen.getByTestId("bgm-dialog").textContent ?? "";
+    for (const noise of ["属性面板", "工程 →", "编辑器自己不出声", "标签表"]) {
+      expect(text).not.toContain(noise);
+    }
   });
 
   it("「关闭」把弹框关掉（状态在 store 里，下次还能再开）", () => {

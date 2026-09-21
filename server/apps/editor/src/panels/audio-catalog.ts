@@ -4,11 +4,11 @@ import { assetDisplayName } from "./asset-info";
 import { assetDisplayPath, listAudioAssets } from "./asset-picker";
 
 /**
- * **音频清单 + 标注（含标签表）→ 列表行**（BGM 弹框与「音频文件」窗口共用一份）。
+ * **音频清单 + 标注（含标签表）→ 列表行**（「背景音乐」「选择音频」「选择标签」三个窗口共用一份）。
  *
- * 两个窗口看的是同一批东西，但关注点不同：一个是「现在放哪一首」，一个是「给文件起名字 / 打标签」。
- * 所以筛选与归一化做成纯函数放在这里，界面只管画——不然「按名字 / 标签找」这件事会被抄成两套，
- * 两边行为迟早不一样（而且不好单测）。
+ * 几处界面看的是同一批东西，但关注点不同：一个是「现在放哪一首」，一个是「挑一条加进声音对象」，
+ * 一个是「给文件挑标签」。所以筛选 / 排序 / 归一化做成纯函数放在这里，界面只管画——
+ * 不然「按名字找」「按标签筛」这件事会被抄成几套，行为迟早不一样（而且不好单测）。
  *
  * 标签这套学 Unity：**tag 是个整数**（就是 `doc.audioTags` 的下标），名字住在表里。
  * 所以这里对外给的是 `{ id, name }` 引用：**显示用名字、编辑用 ID**——改名字只改表，
@@ -25,7 +25,7 @@ export interface AudioTagRef {
   readonly name: string;
 }
 
-/** 表里的一个标签 + 用量（给「标签」「选择标签」窗口用）。 */
+/** 表里的一个标签 + 用量（给「选择标签」窗口用）。 */
 export interface AudioTagEntry extends AudioTagRef {
   /** 有多少个音频文件在用（含「文件已经没了」的标注行）。 */
   readonly count: number;
@@ -42,18 +42,10 @@ export interface AudioCatalogRow {
   readonly customName: string;
   /** 项目内相对路径（`audio/act-2/x.mp3`）。 */
   readonly path: string;
-  /** 目录（`audio`、`audio/act-2`）；直接躺在 `Assets/` 下的是「（根目录）」。 */
-  readonly dir: string;
   /** 标签（已解析：跳过越界 / 已删 / 没名字的 ID；顺序按 ID 升序）。 */
   readonly tags: readonly AudioTagRef[];
   /** 项目里找不到这个文件（只剩标注；在「音频文件」窗口里列出来，好清理）。 */
   readonly missing: boolean;
-}
-
-/** 目录名：`audio/act-2/x.mp3` → `audio/act-2`（没有目录就是「（根目录）」）。 */
-function dirOf(path: string): string {
-  const slash = path.lastIndexOf("/");
-  return slash <= 0 ? "（根目录）" : path.slice(0, slash);
 }
 
 /** 表里的标签（跳过洞）；名字已 trim。 */
@@ -124,7 +116,6 @@ export function audioCatalog(
       displayName: customName.length > 0 ? customName : assetDisplayName(asset.name),
       customName,
       path,
-      dir: dirOf(path),
       tags: tagsOfClip(table, meta?.[asset.id]?.tags),
       missing: false,
     });
@@ -144,7 +135,6 @@ export function audioCatalog(
       customName,
       // 素材已经不在树里：拿逻辑 ID 当路径显示（比空着强，至少能看出它在哪个项目 / 目录）
       path: assetDisplayPath(id),
-      dir: dirOf(assetDisplayPath(id)),
       tags: tagsOfClip(table, entry.tags),
       missing: true,
     });
@@ -178,8 +168,17 @@ export function audioDisplayName(
   return audioNameOf(meta, id) ?? assetDisplayName(id.slice(id.lastIndexOf("/") + 1));
 }
 
-/** 搜索命中：显示名 / 自定义名 / 文件名 / 路径 / 标签名（大小写不敏感）。 */
-export function matchesAudioQuery(row: AudioCatalogRow, query: string): boolean {
+/**
+ * 搜索命中：显示名 / 自定义名 / 文件名 / 路径（大小写不敏感）。
+ *
+ * `searchTags = false` 时**连标签名也不搜**：BGM 弹框里标签是**勾的**（清单上方那一排），
+ * 不需要再让搜索框兼职——一个框搜两件事，敲进去的是标签还是名字只能靠猜。
+ */
+export function matchesAudioQuery(
+  row: AudioCatalogRow,
+  query: string,
+  searchTags = true,
+): boolean {
   const needle = query.trim().toLowerCase();
   if (needle.length === 0) {
     return true;
@@ -190,7 +189,7 @@ export function matchesAudioQuery(row: AudioCatalogRow, query: string): boolean 
     row.customName,
     row.fileName,
     row.path,
-    ...row.tags.map((tag) => tag.name),
+    ...(searchTags ? row.tags.map((tag) => tag.name) : []),
   ]
     .join(" ")
     .toLowerCase();
@@ -198,15 +197,39 @@ export function matchesAudioQuery(row: AudioCatalogRow, query: string): boolean 
   return haystack.includes(needle);
 }
 
-/** 先按标签名筛（**AND**：每个都要有），再按搜索词筛（两件事叠加）。 */
+/**
+ * 先按标签名筛（**AND**：每个都要有），再按搜索词筛（两件事叠加）。
+ *
+ * 标签名是**名字**不是 ID——筛选是界面上的一次性动作，不进文档；改标签名时选中态跟着名字走
+ * （与行上那些 chip 同一套）。
+ */
 export function filterAudioRows(
   rows: readonly AudioCatalogRow[],
-  input: { readonly query: string; readonly tags: readonly string[] },
+  input: {
+    readonly query: string;
+    readonly tags: readonly string[];
+    /** 搜索词是否也匹配标签名（默认匹配，见 `matchesAudioQuery`）。 */
+    readonly searchTags?: boolean;
+  },
 ): AudioCatalogRow[] {
   return rows.filter(
     (row) =>
       input.tags.every((name) => row.tags.some((tag) => tag.name === name)) &&
-      matchesAudioQuery(row, input.query),
+      matchesAudioQuery(row, input.query, input.searchTags ?? true),
+  );
+}
+
+/**
+ * 按**显示名**排序（BGM 弹框：清单不分组，靠名字扫）。
+ *
+ * 同名的两首（比如两个目录下都叫 `theme`）按路径定序——排序要**稳**，
+ * 每次打开顺序都跳一下，人就不敢用「第几行」这个记忆了。
+ */
+export function sortAudioRowsByName(rows: readonly AudioCatalogRow[]): AudioCatalogRow[] {
+  return [...rows].sort(
+    (a, b) =>
+      a.displayName.localeCompare(b.displayName, "zh-Hans-CN", { numeric: true }) ||
+      a.path.localeCompare(b.path, "zh-Hans-CN", { numeric: true }),
   );
 }
 
@@ -232,29 +255,19 @@ export function allTagsOf(
     .sort((a, b) => b.count - a.count || a.id - b.id);
 }
 
-/** 按目录分组（目录首次出现的顺序；目录内保持传入顺序 = 按路径排过序的）。 */
-export function groupByDir(
-  rows: readonly AudioCatalogRow[],
-): Array<[string, AudioCatalogRow[]]> {
-  const byDir = new Map<string, AudioCatalogRow[]>();
-  for (const row of rows) {
-    const bucket = byDir.get(row.dir);
-    if (bucket === undefined) {
-      byDir.set(row.dir, [row]);
-    } else {
-      bucket.push(row);
-    }
-  }
-
-  return [...byDir.entries()];
-}
-
 /**
- * 输入框里敲进来的一串文本 → 一个标签名（`undefined` = 空，别加）。
+ * 标签表里的标签按**名字**排（给「勾标签」那一排用）。
  *
- * 只做去首尾空白：不加别的规矩（名字是自由的），重名由「新建」那条路自己判。
+ * 与 `allTagsOf` 的分工：那里按用量排（「哪个标签用得多」），这里就是一排可勾的按钮，
+ * 顺序只求**可预期**——名字排，找哪个标签不用先想它被用了几次。
+ * 空名字的槽（还没起名字）**不列**：按它筛不出任何东西（`tagsOfClip` 本来就跳过空名字）。
  */
-export function tagFromInput(raw: string): string | undefined {
-  const tag = raw.trim();
-  return tag.length === 0 ? undefined : tag;
+export function tagOptionsOf(table: ProjectDoc["audioTags"]): AudioTagRef[] {
+  return tagEntriesOf(table)
+    .filter((tag) => tag.name.length > 0)
+    .sort(
+      (a, b) =>
+        a.name.localeCompare(b.name, "zh-Hans-CN", { numeric: true }) ||
+        a.id - b.id,
+    );
 }

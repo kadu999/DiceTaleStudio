@@ -15,8 +15,8 @@ import {
  */
 
 describe("默认值", () => {
-  it("默认是「拖动」——正是手柄出现之前那个行为", () => {
-    expect(defaultEditorPrefs()).toEqual({ tool: "none" });
+  it("默认是「拖动」——正是手柄出现之前那个行为；路径默认不显示", () => {
+    expect(defaultEditorPrefs()).toEqual({ tool: "none", bgmPaths: false });
   });
 });
 
@@ -40,6 +40,13 @@ describe("解析", () => {
     }
   });
 
+  it("路径开关：旧记录（还没有这一项时）退回「不显示」，只有布尔值才算数", () => {
+    expect(parseEditorPrefs({ tool: "none" }).bgmPaths).toBe(false);
+    expect(parseEditorPrefs({ tool: "none", bgmPaths: true }).bgmPaths).toBe(true);
+    expect(parseEditorPrefs({ tool: "none", bgmPaths: false }).bgmPaths).toBe(false);
+    expect(parseEditorPrefs({ tool: "none", bgmPaths: "yes" }).bgmPaths).toBe(false);
+  });
+
   it("用具名判定函数而不是内联比较（存储是外部输入）", () => {
     expect(isTransformTool("rotate")).toBe(true);
     expect(isTransformTool("Rotate")).toBe(false);
@@ -49,15 +56,15 @@ describe("解析", () => {
 
 describe("读写", () => {
   it("写进去能读回来", () => {
-    writeEditorPrefs({ tool: "rotate" });
+    writeEditorPrefs({ tool: "rotate", bgmPaths: true });
 
-    expect(readEditorPrefs().tool).toBe("rotate");
+    expect(readEditorPrefs()).toEqual({ tool: "rotate", bgmPaths: true });
   });
 
   it("没有记录时读默认值", () => {
     window.localStorage.clear();
 
-    expect(readEditorPrefs().tool).toBe("none");
+    expect(readEditorPrefs()).toEqual({ tool: "none", bgmPaths: false });
   });
 
   it("内容损坏（不是 JSON）时读默认值，不抛错", () => {

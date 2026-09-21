@@ -5,17 +5,18 @@ import {
   audioDisplayName,
   audioNameOf,
   filterAudioRows,
-  groupByDir,
   matchesAudioQuery,
+  sortAudioRowsByName,
   tagEntriesOf,
   tagNameOf,
+  tagOptionsOf,
   tagsOfClip,
   type AudioCatalogRow,
 } from "../src/panels/audio-catalog";
 import type { ResourceTreeNode } from "../src/services/project-api";
 
 /**
- * 音频清单 + 标注（含**整数标签表**）→ 列表行（BGM 弹框与「音频文件」窗口共用的纯逻辑）。
+ * 音频清单 + 标注（含**整数标签表**）→ 列表行（几个音频窗口共用的纯逻辑）。
  *
  * 标签学 Unity：**tag 是个整数**（`audioTags` 的下标），名字住在表里。这里钉住：
  * 标签按名字显示、按 ID 编辑；越界 / 指向洞 / 没名字的 ID 一律跳过（不给界面画空标签）；
@@ -26,6 +27,8 @@ const PROJECT = "测试";
 const CLIP_A = `project:${PROJECT}/Assets/audio/theme.mp3`;
 const CLIP_B = `project:${PROJECT}/Assets/audio/battle.wav`;
 const CLIP_C = `project:${PROJECT}/Assets/audio/environment/rain.ogg`;
+/** 另一个目录下的同名素材（给「同名按路径定序」用）。 */
+const TWIN = `project:${PROJECT}/Assets/audio/act-2/theme.mp3`;
 const GONE = `project:${PROJECT}/Assets/audio/deleted.mp3`;
 
 const TREE: ResourceTreeNode[] = [
@@ -90,19 +93,67 @@ const rowOf = (rows: readonly AudioCatalogRow[], id: string): AudioCatalogRow =>
 };
 
 describe("清单：项目音频 + 标注", () => {
-  it("只列音频（图片不进来），按路径排序，目录分组跟着走", () => {
+  it("只列音频（图片不进来），按路径排序", () => {
     const rows = audioCatalog(TREE, undefined, undefined);
 
     // 路径排序：`audio/battle.wav` < `audio/environment/rain.ogg` < `audio/theme.mp3`
     expect(rows.map((row) => row.id)).toEqual([CLIP_B, CLIP_C, CLIP_A]);
-    expect(rows.map((row) => row.dir)).toEqual(["audio", "audio/environment", "audio"]);
     expect(rows.every((row) => !row.missing)).toBe(true);
+  });
 
-    // 分组按「目录首次出现的顺序」：audio 底下的两首先列，再是 audio/environment
-    const groups = groupByDir(rows);
-    expect(groups.map(([dir]) => dir)).toEqual(["audio", "audio/environment"]);
-    expect(groups[0]?.[1].map((row) => row.id)).toEqual([CLIP_B, CLIP_A]);
-    expect(groups[1]?.[1].map((row) => row.id)).toEqual([CLIP_C]);
+  it("sortAudioRowsByName：按**显示名**排（BGM 弹框的口径）；同名按路径定序", () => {
+    const rows = audioCatalog(
+      TREE,
+      // 起过名的按显示名排：与路径序（battle / rain / theme）**故意不同**
+      { [CLIP_A]: { name: "charlie" }, [CLIP_B]: { name: "zulu" }, [CLIP_C]: { name: "alpha" } },
+      undefined,
+    );
+
+    expect(sortAudioRowsByName(rows).map((row) => row.id)).toEqual([CLIP_C, CLIP_A, CLIP_B]);
+
+    // 两个目录下都叫 theme：显示名一样，按路径定序（排序要稳，不然顺序每次跳）
+    const twins = audioCatalog(
+      [
+        {
+          name: "Assets",
+          path: "Assets",
+          id: `project:${PROJECT}/Assets`,
+          type: "folder",
+          children: [
+            {
+              name: "audio",
+              path: "Assets/audio",
+              id: `project:${PROJECT}/Assets/audio`,
+              type: "folder",
+              children: [
+                { name: "theme.mp3", path: "Assets/audio/theme.mp3", id: CLIP_A, type: "file" },
+                {
+                  name: "act-2",
+                  path: "Assets/audio/act-2",
+                  id: `project:${PROJECT}/Assets/audio/act-2`,
+                  type: "folder",
+                  children: [
+                    {
+                      name: "theme.mp3",
+                      path: "Assets/audio/act-2/theme.mp3",
+                      id: TWIN,
+                      type: "file",
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      undefined,
+      undefined,
+    );
+
+    expect(sortAudioRowsByName(twins).map((row) => row.path)).toEqual([
+      "audio/act-2/theme.mp3",
+      "audio/theme.mp3",
+    ]);
   });
 
   it("显示名 = 全局标注的名字；没起名字就退回素材文件名（去扩展名）", () => {
@@ -210,8 +261,8 @@ describe("搜索与标签筛选", () => {
     ["战斗", "紧张", "环境"],
   );
 
-  it("搜索面 = 显示名 / 自定义名 / 文件名 / 路径 / 标签名，大小写不敏感", () => {
-    for (const query of ["开场", "battle", "theme", "environment", "雨声", "环境"]) {
+  it("搜索面 = 显示名 / 自定义名 / 文件名 / 路径，大小写不敏感", () => {
+    for (const query of ["开场", "battle", "theme", "environment", "雨声"]) {
       const hit = rows.filter((row) => matchesAudioQuery(row, query)).map((row) => row.id);
       expect(hit.length).toBeGreaterThan(0);
     }
@@ -220,6 +271,19 @@ describe("搜索与标签筛选", () => {
     expect(rows.filter((row) => matchesAudioQuery(row, "没有这个"))).toEqual([]);
     // 空搜索 = 不筛
     expect(rows.filter((row) => matchesAudioQuery(row, "  "))).toHaveLength(3);
+    // 默认也搜标签名（「选择音频」那个窗口要用：它没有勾选那一排）
+    expect(rows.filter((row) => matchesAudioQuery(row, "环境")).map((row) => row.id)).toEqual([
+      CLIP_C,
+    ]);
+  });
+
+  it("searchTags = false：搜索框只管名字 / 路径，标签交给勾选那一排", () => {
+    expect(
+      filterAudioRows(rows, { query: "环境", tags: [], searchTags: false }),
+    ).toEqual([]);
+    expect(
+      filterAudioRows(rows, { query: "雨", tags: [], searchTags: false }).map((row) => row.id),
+    ).toEqual([CLIP_C]);
   });
 
   it("标签筛选是 AND（每个选中的标签名都要有），与搜索词叠加", () => {
@@ -234,5 +298,14 @@ describe("搜索与标签筛选", () => {
     expect(filterAudioRows(rows, { query: "开场", tags: ["战斗"] }).map((row) => row.id)).toEqual([
       CLIP_A,
     ]);
+  });
+
+  it("tagOptionsOf：给「勾选那一排」用——按名字排、空名字的槽不列", () => {
+    expect(tagOptionsOf(["战斗", "  ", null, "环境", "紧张"])).toEqual([
+      { id: 3, name: "环境" },
+      { id: 4, name: "紧张" },
+      { id: 0, name: "战斗" },
+    ]);
+    expect(tagOptionsOf(undefined)).toEqual([]);
   });
 });

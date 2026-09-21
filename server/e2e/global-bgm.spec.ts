@@ -20,7 +20,8 @@ import {
  * **背景音乐**（v16）：顶栏「音乐」弹框 + 四条命令，与项目设置**分离**。
  *
  * 这一份走**真浏览器**钉四件事（措辞与纯逻辑在 `apps/editor/test/bgm-*.test.*`）：
- * 1. 弹框里列出的就是**项目 `Assets/audio/` 下的音频**（可搜），点一首就发一条 `play_bgm{clip}`；
+ * 1. 弹框里列出的就是**项目 `Assets/audio/` 下的音频**（按名字排、可搜、标签靠勾），
+ *    点一首就发一条 `play_bgm{clip}`；
  * 2. **工程文件里没有歌单**：`settings.audio.bgm` 只有 `volume`，也没有默认曲 / 循环 / 名字；
  * 3. 进运行态**不会自动出声**（没有「默认曲」这回事了），播放权全在 DM 手上；
  * 4. 暂停 / 继续 / 停止各一条命令；前端（重）连上后补发记账里的那一首。
@@ -178,10 +179,18 @@ test.describe("背景音乐：清单来自项目音频，与项目设置分离",
 
       await openBgmDialog(page);
 
-      // 清单 = 项目音频（按目录分组：audio 两首、audio/environment 一首）
+      // 清单 = 项目音频（按显示名排序：battle < rain < theme）；路径**默认不露**
       await expect(page.getByTestId("bgm-track")).toHaveCount(3);
       await expect(page.getByTestId("bgm-list")).toContainText("battle");
+      await expect(page.getByTestId("bgm-track").nth(0)).toContainText("battle");
+      await expect(page.getByTestId("bgm-track").nth(1)).toContainText("rain");
+      await expect(page.getByTestId("bgm-list")).not.toContainText("audio/environment");
+
+      // 「路径」开关：点开才在行右边显示路径，再点一下收回去
+      await page.getByTestId("bgm-paths-toggle").click();
       await expect(page.getByTestId("bgm-list")).toContainText("audio/environment");
+      await page.getByTestId("bgm-paths-toggle").click();
+      await expect(page.getByTestId("bgm-list")).not.toContainText("audio/environment");
 
       // 搜索按文件名 / 路径过滤
       await page.getByTestId("bgm-search").fill("rain");
@@ -266,7 +275,7 @@ test.describe("背景音乐：命令下发给前端", { tag: "@runtime" }, () =>
     const project = await newProject(request);
 
     try {
-      // 排序是 `battle.wav` < `theme.mp3`：第一行是 battle
+      // 排序按**显示名**：`battle` < `theme`，第一行是 battle
       const battle = await uploadAudio(request, project, "battle.wav");
       await uploadAudio(request, project, "theme.mp3");
       await seedProjectDoc(request, project, [{ name: SCENE, objects: [] }]);
@@ -307,34 +316,53 @@ test.describe("背景音乐：命令下发给前端", { tag: "@runtime" }, () =>
         await expect(page.getByTestId("bgm-control")).toContainText("背景音乐");
       });
 
-      await test.step("按名字 / 标签找到它，点一首就发一条 play_bgm{clip}", async () => {
+      await test.step("按名字找到它，点一首就发一条 play_bgm{clip}；标签靠勾选筛", async () => {
         await openBgmDialog(page);
 
-        // 按标签搜（搜索面含显示名 / 标签 / 文件名 / 路径）
-        await page.getByTestId("bgm-search").fill("战斗");
+        // 搜索框只管名字 / 路径 / 文件名（标签不归它管，v19 起）
+        await page.getByTestId("bgm-search").fill("战斗曲");
         await expect(page.getByTestId("bgm-track")).toHaveCount(1);
         await expect(page.getByTestId("bgm-track").first()).toContainText("战斗曲");
         await page.getByTestId("bgm-search").fill("");
 
-        // 点行上的标签 = 按它筛，再点一次取消
-        await page.getByTestId("bgm-tag").first().click();
-        await expect(page.getByTestId("bgm-tag-filter")).toHaveAttribute("data-tag", "战斗");
+        // 标签是**勾的**：清单上方那一排点一下 = 按它筛，再点一下取消
+        await page.getByTestId("bgm-tag-option").click();
+        await expect(page.getByTestId("bgm-tag-option")).toHaveAttribute("data-selected", "true");
         await expect(page.getByTestId("bgm-track")).toHaveCount(1);
-        await page.getByTestId("bgm-clear-filter").click();
+        await page.getByTestId("bgm-tag-option").click();
+        await expect(page.getByTestId("bgm-tag-option")).toHaveAttribute("data-selected", "false");
         await expect(page.getByTestId("bgm-track")).toHaveCount(2);
 
-        await page.getByTestId("bgm-track-play").first().click();
+        // 点行只**选中**，不出声：会出声的键只有底部那一排（播放 / 暂停 / 停止）
+        await page.getByTestId("bgm-track").first().click();
+        await expect(page.getByTestId("bgm-track").first()).toHaveAttribute("data-selected", "true");
+        await page.waitForTimeout(200);
+        expect((await fakeBgmKinds(page)).filter((kind) => kind === "play_bgm")).toHaveLength(0);
+
+        await page.getByTestId("bgm-play").click();
 
         await expect
           .poll(async () => (await fakeBgmKinds(page)).filter((kind) => kind === "play_bgm").length)
           .toBe(1);
         expect((await fakeBgmCommands(page)).at(-1)).toEqual({ kind: "play_bgm", clip: battle });
 
-        // 再点同一首：还是真发一条（前端从头重播）
-        await page.getByTestId("bgm-track-play").first().click();
+        // 再按一次播放：还是真发一条（前端从头重播）
+        await page.getByTestId("bgm-play").click();
         await expect
           .poll(async () => (await fakeBgmKinds(page)).filter((kind) => kind === "play_bgm").length)
           .toBe(2);
+      });
+
+      await test.step("关掉再打开：正在放的那一首还是「选中的」", async () => {
+        await closeBgmDialog(page);
+        await openBgmDialog(page);
+
+        // 选中 / 播放态都在 store 里：弹框只是把它画出来（不靠弹框自己记）
+        await expect(page.getByTestId("bgm-track").first()).toHaveAttribute("data-selected", "true");
+        await expect(page.getByTestId("bgm-track").first()).toHaveAttribute("data-playing", "true");
+        await expect(page.getByTestId("bgm-track").first()).toContainText("●");
+        await expect(page.getByTestId("bgm-status")).toContainText("正在放");
+        await expect(page.getByTestId("bgm-pause")).toContainText("暂停");
       });
 
       await test.step("暂停 / 继续 / 停止各一条", async () => {
@@ -352,11 +380,14 @@ test.describe("背景音乐：命令下发给前端", { tag: "@runtime" }, () =>
         await expect
           .poll(async () => (await fakeBgmKinds(page)).filter((kind) => kind === "stop_bgm").length)
           .toBe(1);
-        await expect(page.getByTestId("bgm-status")).toContainText("没在放");
+        // 没在放就什么都不写（那句「没在放」是废话：暂停 / 停止灰着已经说明了），选中还在
+        await expect(page.getByTestId("bgm-status")).toHaveText("");
+        await expect(page.getByTestId("bgm-play")).toBeEnabled();
       });
 
       await test.step("掉线重连：补发记账里的那一首", async () => {
-        await page.getByTestId("bgm-track-play").first().click();
+        // 停过一次之后那一首还选着：再按播放 = 从头放
+        await page.getByTestId("bgm-play").click();
         await expect
           .poll(async () => (await fakeBgmKinds(page)).filter((kind) => kind === "play_bgm").length)
           .toBe(3);

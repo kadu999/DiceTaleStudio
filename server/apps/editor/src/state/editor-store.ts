@@ -195,6 +195,13 @@ export interface EditorUiState {
    * 不该让场景文件因为点了一下按钮就变脏。默认 `move`——正是手柄出现之前那个行为。
    */
   readonly tool: TransformTool;
+  /**
+   * 「背景音乐」弹框里**在行右边显示路径**吗（默认不显示）。
+   *
+   * 同样是**编辑器偏好**而不是文档内容：清单想看得多细是「我怎么看」，
+   * 记在浏览器本地（`services/editor-prefs`），换个项目也还在。
+   */
+  readonly bgmPaths: boolean;
 }
 
 export interface RuntimeUiState {
@@ -661,6 +668,8 @@ export interface EditorStoreState {
   endObjectDrag(): void;
   /** 换变换工具（移动 / 旋转 / 缩放）；写进浏览器本地偏好，不进文档。 */
   setTool(tool: TransformTool): void;
+  /** 「背景音乐」弹框显不显示路径；同样写进浏览器本地偏好，不进文档。 */
+  setBgmPaths(show: boolean): void;
   /**
    * 开始一次变换拖拽：把当前状态拍成快照（世界中心、角度、两轴有效缩放、
    * 按下时的指针位置、缩放锚点）。
@@ -833,12 +842,14 @@ function initialUi(): EditorUiState {
   const compact =
     typeof window !== "undefined" &&
     (window.matchMedia("(pointer: coarse)").matches || window.innerWidth < 1024);
+  const prefs = readEditorPrefs();
 
   return {
     leftOpen: !compact,
     rightOpen: !compact,
     runtimeOpen: false,
-    tool: readEditorPrefs().tool,
+    tool: prefs.tool,
+    bgmPaths: prefs.bgmPaths,
   };
 }
 
@@ -3607,7 +3618,13 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
 
     setTool(tool) {
       set((state) => ({ ui: { ...state.ui, tool } }));
-      writeEditorPrefs({ tool });
+      // 写偏好要**整份**写（存储里是一整个对象）：漏掉别的字段 = 把它悄悄还原成默认值
+      writeEditorPrefs({ tool, bgmPaths: get().ui.bgmPaths });
+    },
+
+    setBgmPaths(show) {
+      set((state) => ({ ui: { ...state.ui, bgmPaths: show } }));
+      writeEditorPrefs({ tool: get().ui.tool, bgmPaths: show });
     },
 
     beginObjectTransform(id, handle, pointer, halfWidth, halfHeight) {
