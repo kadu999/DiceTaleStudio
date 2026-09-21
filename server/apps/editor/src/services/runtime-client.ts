@@ -59,10 +59,69 @@ export function defaultEditorSocketUrl(): string {
 
 const MAX_RECONNECT_DELAY_MS = 10_000;
 
+/**
+ * 连上以后**活过这么久**才算「真的连上了」。
+ *
+ * 不这样判的话会出现「连上 → 立刻被踢 → 500ms 后再连」的死循环：`reconnectAttempt` 在
+ * `open` 那一刻就清零了，退避永远长不起来（现场踩过一次：服务端还是旧协议、每次都回
+ * `close 4002`，运行日志里一秒一次「已连接 / 已断开」刷屏）。短命的连接现在算**失败的尝试**，
+ * 退避照常翻倍。
+ */
+const STABLE_CONNECTION_MS = 3_000;
+
+/** 服务端因**协议版本不一致**踢掉编辑器时用的 close code（见 `@dts/protocol` 与后端 hub）。 */
+export const CLOSE_PROTOCOL_MISMATCH = 4002;
+
+/**
+ * 这一次重连要等多久（毫秒）：500ms 起步、翻倍、封顶 10s。
+ *
+ * `jumpToMax` 给「重连也不会好」的原因用（协议版本不一致只有重启服务端才能解决）——
+ * 那种情况按 10s 慢慢探，别拿 500ms 去捶一个注定拒绝你的服务端。
+ */
+export function reconnectDelayMs(attempt: number, jumpToMax = false): number {
+  if (jumpToMax) {
+    return MAX_RECONNECT_DELAY_MS;
+  }
+
+  return Math.min(MAX_RECONNECT_DELAY_MS, 500 * 2 ** attempt);
+}
+
+/**
+ * 把一次断开翻成一句人话（写进运行日志）。
+ *
+ * **服务端会在 close reason 里写明为什么踢人**（例如「协议版本不一致：编辑器 4，服务端 3」），
+ * 这里必须把它带出来：只写「与服务端断开」的话，现场看到的是一秒一次的重连风暴，
+ * 完全看不出根因是「旧服务端在拒绝新编辑器」。
+ *
+ * `code` / `reason` 都按**可能缺**处理：浏览器一定给，但测试里的假 socket 未必
+ * （少一个字段就抛异常会连带把整条断线流程打断——这比少一句话严重得多）。
+ */
+export function describeSocketClose(code: number | undefined, reason: string | undefined): string {
+  const closeCode = typeof code === "number" ? code : 0;
+  const detail = (reason ?? "").trim();
+
+  if (closeCode === CLOSE_PROTOCOL_MISMATCH) {
+    const what = detail.length > 0 ? detail : "服务端与本编辑器的协议版本不同";
+    return `${what}——**服务端要重启**（旧进程还在跑旧协议），重启后会自动连回来`;
+  }
+
+  if (detail.length > 0) {
+    return `${detail}（close ${closeCode}）`;
+  }
+
+  if (closeCode === 1006) {
+    return "连接被断开且没有说明（多半是服务端没在跑）：稍后自动重连";
+  }
+
+  return closeCode === 1005 ? "服务端关闭了连接" : `连接被关闭（close ${closeCode}）`;
+}
+
 export class RuntimeClient {
   private socket: WebSocket | null = null;
   private reconnectAttempt = 0;
   private reconnectTimer: number | null = null;
+  /** 「这次连接已经稳定」的定时器：活到点才把退避清零（见 `STABLE_CONNECTION_MS`）。 */
+  private stableTimer: number | null = null;
   private manualClose = false;
   private url = "";
 
@@ -96,7 +155,13 @@ export class RuntimeClient {
     this.socket = socket;
 
     socket.addEventListener("open", () => {
-      this.reconnectAttempt = 0;
+      this.clearStableTimer();
+      // 「连上」不等于「连稳」：撑过 STABLE_CONNECTION_MS 才把退避清零
+      this.stableTimer = window.setTimeout(() => {
+        this.stableTimer = null;
+        this.reconnectAttempt = 0;
+      }, STABLE_CONNECTION_MS);
+
       this.handlers.onStatus("open", url);
       this.send({ type: "editor_hello", protocolVersion: PROTOCOL_VERSION });
       // 要一份当前运行态（重连时尤其重要：前端可能已经连/断过）
@@ -108,11 +173,16 @@ export class RuntimeClient {
       this.onMessage(event.data);
     });
 
-    socket.addEventListener("close", () => {
+    socket.addEventListener("close", (event: CloseEvent | undefined) => {
       this.socket = null;
-      this.handlers.onStatus("closed");
+      this.clearStableTimer();
+
+      // 服务端把「为什么踢你」写在 reason 里：带出去，别让它烂在这里
+      const code = event?.code;
+      this.handlers.onStatus("closed", describeSocketClose(code, event?.reason));
+
       if (!this.manualClose) {
-        this.scheduleReconnect();
+        this.scheduleReconnect(code === CLOSE_PROTOCOL_MISMATCH);
       }
     });
 
@@ -128,6 +198,7 @@ export class RuntimeClient {
       window.clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
+    this.clearStableTimer();
 
     this.socket?.close();
     this.socket = null;
@@ -218,16 +289,24 @@ export class RuntimeClient {
     this.socket.send(JSON.stringify(message));
   }
 
-  private scheduleReconnect(): void {
+  private scheduleReconnect(jumpToMaxDelay = false): void {
     if (this.reconnectTimer !== null) {
       return;
     }
 
-    const delay = Math.min(MAX_RECONNECT_DELAY_MS, 500 * 2 ** this.reconnectAttempt);
+    const wait = reconnectDelayMs(this.reconnectAttempt, jumpToMaxDelay);
     this.reconnectAttempt += 1;
     this.reconnectTimer = window.setTimeout(() => {
       this.reconnectTimer = null;
       this.connect(this.url);
-    }, delay);
+    }, wait);
+  }
+
+  /** 清掉「连接已稳定」的定时器（断开 / 手动关闭 / 重连时都要清，否则会把退避悄悄清零）。 */
+  private clearStableTimer(): void {
+    if (this.stableTimer !== null) {
+      window.clearTimeout(this.stableTimer);
+      this.stableTimer = null;
+    }
   }
 }

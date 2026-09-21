@@ -65,7 +65,8 @@ class FakeSocket {
     }
 
     this.readyState = FakeSocket.CLOSED;
-    this.emit("close");
+    // 按真实形状给 close 事件（`code` / `reason` 是诊断「为什么断开」的唯一来源）
+    this.emit("close", { code: 1006, reason: "" });
   }
 
   /** 测试用：连上了。 */
