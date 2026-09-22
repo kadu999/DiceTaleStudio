@@ -2,10 +2,16 @@ import { PAINTABLE_MASKS, decodeRle } from "@dts/grid";
 import { findComponentType, isKnownComponentType } from "./components";
 import { collectActionIds, isMapFogEnabled } from "./commands";
 import { imageOf, mapDataOf, soundDataOf, teleportDataOf, videoDataOf } from "./access";
-import type { AssetMetas } from "./asset-meta";
+import type { AssetMetaDoc, AssetMetas } from "./asset-meta";
 import { FEATURE_COMPONENT, carriesKind } from "./features";
 import { spriteSheetOf } from "./sprites";
-import type { ProjectDoc, ProjectSettingsDoc, SceneDoc, SceneObjectDoc } from "./types";
+import type {
+  AudioTagTableDoc,
+  ProjectDoc,
+  ProjectSettingsDoc,
+  SceneDoc,
+  SceneObjectDoc,
+} from "./types";
 
 /**
  * 结构性校验（**不依赖动作注册表**，因此放在 document 包内）。
@@ -583,58 +589,61 @@ function validateAudioTags(table: ProjectDoc["audioTags"], issues: ValidationIss
 }
 
 /**
- * 音频文件标注（v17 起；v18 起标签是整数 ID）：空显示名、标签 ID 越界 / 指向已删的标签 / 重复。
+ * **素材 meta** 的校验（v24 起）：音频那一段里的标签引用是否还站得住。
  *
- * 全部只报 **warning**：这些是「数据对不上」，不该把工程文件拦在门外；
- * 界面上会把这些引用**忽略掉**照常显示其它标签，作者在「标签」窗口里改一下就好。
+ * 这些原来长在 `validateProject` 里（v17–v23，那条 `audioMeta` 住在工程文件里）：
+ * v24 把「哪个文件用了哪个标签」搬进**那个文件自己的 `.meta`** 之后，工程文件那一边
+ * 已经无从校验，所以校验跟着数据一起搬过来——`tags` 参数就是工程文件里的那张表。
+ *
+ * 全部只报 **warning**：这些是「数据对不上」，不该把项目拦在门外；界面上会把这些引用
+ * **忽略掉**照常显示其它标签，作者在「标签」窗口里改一下就好。
+ * guid 的重复 / 悬空引用暂不在这里查（那要看整份 meta 表，见 README 的已知缺口）。
  */
-function validateAudioMeta(
-  meta: ProjectDoc["audioMeta"],
-  table: ProjectDoc["audioTags"],
-  issues: ValidationIssue[],
-): void {
-  if (meta === undefined) {
-    return;
-  }
+export function validateAssetMetas(
+  entries: ReadonlyArray<{ readonly id: string; readonly meta: AssetMetaDoc }>,
+  tags: AudioTagTableDoc | undefined,
+): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
 
-  for (const [clipId, entry] of Object.entries(meta)) {
-    if (entry.name !== undefined && entry.name.trim().length === 0) {
+  for (const { id, meta } of entries) {
+    const name = meta.audio?.name;
+    if (name !== undefined && name.trim().length === 0) {
       issues.push({
         level: "warning",
-        path: `audioMeta/${clipId}/name`,
+        path: `${id}/audio/name`,
         message: "显示名是空的（会退回素材文件名）",
       });
     }
 
-    const tags = entry.tags;
-    if (tags === undefined) {
+    const ids = meta.audio?.tags;
+    if (ids === undefined) {
       continue;
     }
 
-    if (tags.length === 0) {
+    if (ids.length === 0) {
       issues.push({
         level: "warning",
-        path: `audioMeta/${clipId}/tags`,
+        path: `${id}/audio/tags`,
         message: "标签列表是空的（会被忽略）",
       });
       continue;
     }
 
     const seen = new Set<number>();
-    for (const [index, tagId] of tags.entries()) {
-      if (!Number.isInteger(tagId) || tagId < 0 || tagId >= (table?.length ?? 0)) {
+    for (const [index, tagId] of ids.entries()) {
+      if (!Number.isInteger(tagId) || tagId < 0 || tagId >= (tags?.length ?? 0)) {
         issues.push({
           level: "warning",
-          path: `audioMeta/${clipId}/tags/${index}`,
+          path: `${id}/audio/tags/${index}`,
           message: `标签 ID ${String(tagId)} 不在标签表里（会被忽略）`,
         });
         continue;
       }
 
-      if (table?.[tagId] === null) {
+      if (tags?.[tagId] === null) {
         issues.push({
           level: "warning",
-          path: `audioMeta/${clipId}/tags/${index}`,
+          path: `${id}/audio/tags/${index}`,
           message: `标签 ID ${tagId} 已经被删掉了（会被忽略）`,
         });
         continue;
@@ -643,7 +652,7 @@ function validateAudioMeta(
       if (seen.has(tagId)) {
         issues.push({
           level: "warning",
-          path: `audioMeta/${clipId}/tags/${index}`,
+          path: `${id}/audio/tags/${index}`,
           message: `标签 ID ${tagId} 重复（会被去掉）`,
         });
         continue;
@@ -652,6 +661,8 @@ function validateAudioMeta(
       seen.add(tagId);
     }
   }
+
+  return issues;
 }
 
 /**
@@ -659,6 +670,7 @@ function validateAudioMeta(
  *
  * 场景已各自成文件、由 `validateScene` 逐个校验，所以这里不再遍历场景；
  * 场景名唯一性也由文件系统保证（同名即同文件）。
+ * **音频文件的标注不在这里**：v24 起它住在各素材的 `.meta` 里，由 `validateAssetMetas` 查。
  */
 export function validateProject(doc: ProjectDoc): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
@@ -673,7 +685,6 @@ export function validateProject(doc: ProjectDoc): ValidationIssue[] {
 
   validateAudioSettings(doc.settings, issues);
   validateAudioTags(doc.audioTags, issues);
-  validateAudioMeta(doc.audioMeta, doc.audioTags, issues);
 
   return issues;
 }

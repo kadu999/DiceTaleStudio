@@ -1,4 +1,5 @@
-import { PROJECT_SCENE_FILE_EXTENSION } from "@dts/resources";
+import type { AssetImporter } from "@dts/document";
+import { PROJECT_FOLDERS, PROJECT_SCENE_FILE_EXTENSION } from "@dts/resources";
 
 /**
  * 资源文件的展示辅助（资源面板与属性面板共用）。
@@ -73,6 +74,33 @@ export function assetIconKind(fileName: string): AssetIconKind {
   }
 
   return "file";
+}
+
+/**
+ * 这个素材该配哪种 meta 导入器（`<素材>.meta` 的 `importer`）；`undefined` = **不给它生成 meta**
+ * （项目里只有图片 / 音频 / 视频 / 场景这四种素材）。
+ *
+ * `path` 是**项目内相对路径**（`Assets/audio/x.mp3`，与资源树节点上的 `path` 同口径）。
+ * 后缀那一半与 `assetIconKind` 共用同一张表：同一个文件不能这边算「图片」、那边算「文件」，
+ * 否则会出现「有图标、没 meta」这种谁也说不清的状态。
+ *
+ * `.json` 必须落在 **`Assets/scenes/`** 里才算场景：那个目录之外的 `.json`（该项目自己的配置）
+ * 是配置而不是素材，不配 meta。图标那一层按扩展名一律画成「场景」，所以这里比它严一档。
+ */
+export function assetImporterKind(path: string): AssetImporter | undefined {
+  const fileName = path.slice(path.lastIndexOf("/") + 1);
+  switch (assetIconKind(fileName)) {
+    case "image":
+      return "texture";
+    case "audio":
+      return "audio";
+    case "video":
+      return "video";
+    case "scene":
+      return path.startsWith(`${PROJECT_FOLDERS.scenes}/`) ? "scene" : undefined;
+    default:
+      return undefined;
+  }
 }
 
 /** 能不能在属性面板里预览，以及用哪种元素预览。 */

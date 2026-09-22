@@ -98,6 +98,14 @@ export type SceneSaveState = "saved" | "pending" | "saving" | "error" | "runtime
 export type AssetMetaTable = Readonly<Record<string, AssetMetaDoc>>;
 
 /**
+ * 素材 meta 表的**可写草稿**（`applyMetas` 的配方拿到的就是它）。
+ *
+ * 与 `AssetMetaTable` 只差「能不能写」：真源表对外是只读的（写只能经撤销轨道），
+ * 而配方拿到的那一份正是要就地改的 draft——与 `SceneListDraft` 同一个道理。
+ */
+export type AssetMetaDraft = Record<string, AssetMetaDoc>;
+
+/**
  * 网格标注（地图编辑）状态。
  *
  * 「怎么画 / 怎么显示」那一半（画笔类型 / 大小 / 每类的显示与颜色 / 网格线、网格标注两个总开关）
@@ -268,13 +276,27 @@ export interface EditorStoreState {
     options?: { coalesceKey?: string },
   ): boolean;
   /**
-   * **工程文件**（项目级数据：全局设置）的编辑走这里：进撤销栈，并触发工程文件的自动落盘。
+   * **工程文件**（项目级数据：全局设置、音频标签表）的编辑走这里：进撤销栈，并触发工程文件的自动落盘。
    *
    * 与 `applyScenes` 并列（两份文件、两套历史），但**撤销入口只有一个**——见 `undo`。
    */
   applyProject(
     label: string,
     recipe: (draft: ProjectDoc) => void,
+    options?: { coalesceKey?: string },
+  ): boolean;
+  /**
+   * **素材 meta**（`<素材>.meta`）的编辑走这里：第三条轨道，落盘是「每份一个文件」。
+   *
+   * 图片的切分 / 导入设置与音频的显示名 / 标签都经它（写入口径是 `@dts/document` 的
+   * `withMetaSprite*` / `withMetaAudio*` 纯函数）。之所以要有一个统一入口，而不是各处直接调
+   * `metaHistory.apply`：三条轨道**共用一个撤销入口**，撤销要作用在「最近改过的那条」上
+   * （见 `undo`）——每一次真的产生改动的编辑都得把这条轨道记下来，否则撤销会跑错轨道
+   * （例如「改完标签表再摘一个文件的标签」按撤销会去撤标签表那一下）。
+   */
+  applyMetas(
+    label: string,
+    recipe: (draft: AssetMetaDraft) => void,
     options?: { coalesceKey?: string },
   ): boolean;
   undo(): void;

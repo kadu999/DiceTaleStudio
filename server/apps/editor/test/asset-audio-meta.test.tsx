@@ -1,12 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { createEmptyProject } from "@dts/document";
+import { createAssetMetas, createEmptyProject, emptyAssetMetas } from "@dts/document";
 import { InspectorPanel } from "../src/panels/inspector/InspectorPanel";
+import { metaHistory } from "../src/state/store-core";
 import { projectHistory, sceneHistory, useEditorStore } from "../src/state/editor-store";
 import type { ResourceTreeNode } from "../src/services/project-api";
+import { audioMetaTable } from "./asset-meta-fixtures";
 
 /**
- * **音频文件的属性面板**（v17 / v18）：显示名 + 标签**就地改**。
+ * **音频文件的属性面板**（v17 / v18；v24 起数据落在文件自己的 `.meta`）：显示名 + 标签**就地改**。
  *
  * 「音频文件」那个列表窗口在 v18 删掉了——「选中哪个就改哪个」本来就是这个面板的用法，
  * 多一个窗口只是让人多跳一次。所以这一份钉住：
@@ -14,6 +16,10 @@ import type { ResourceTreeNode } from "../src/services/project-api";
  * 2. 标签按**名字**显示（文档里是整数 ID），`×` = 只从这个文件上摘掉；
  * 3. 「＋ 标签」打开**选择标签**框（给这个文件勾 / 去）；「标签…」打开**标签表**窗口；
  * 4. 图片 / 视频资源不出现这两行。
+ *
+ * 数据住哪（v24 起）：显示名与标签在**那个音频文件自己的 `.meta`**（`audio` 段），
+ * 所以这里种的是 `assetMetaTable`；改动落在**素材 meta 那条轨道**上（`metaHistory`），
+ * 标签的**名字**仍在工程文件的 `audioTags` 里。
  */
 
 const PROJECT = "测试";
@@ -59,10 +65,15 @@ function seed(input: {
   projectHistory.reset({
     ...createEmptyProject(PROJECT),
     ...(input.tags === undefined ? {} : { audioTags: [...input.tags] }),
-    ...(input.meta === undefined ? {} : { audioMeta: input.meta }),
   });
+  // v24 起显示名与标签住在**那个文件自己的 `.meta`** 里：种一张「路径 ID → meta」的表，
+  // 再派生出索引（属性面板读真源表，别的面板读索引——与真实打开项目后的样子一致）
+  const table = audioMetaTable(input.meta ?? {});
+  metaHistory.reset(table);
   useEditorStore.setState({
     doc: projectHistory.current,
+    assetMetaTable: table,
+    assetMetas: createAssetMetas(Object.entries(table).map(([id, meta]) => ({ id, meta }))),
     scenes: [],
     activeSceneName: null,
     selectedObjectIds: [],
@@ -73,6 +84,13 @@ function seed(input: {
 
 const docOf = (): ReturnType<typeof useEditorStore.getState>["doc"] =>
   useEditorStore.getState().doc;
+
+/** 素材 meta 的真源表（v24 起音频的显示名 / 标签就在它的 `audio` 段里）。 */
+const metas = (): ReturnType<typeof useEditorStore.getState>["assetMetaTable"] =>
+  useEditorStore.getState().assetMetaTable;
+
+const audioOf = (id: string): { name?: string; tags?: number[] } | undefined =>
+  metas()[id]?.audio;
 
 const nameField = (): HTMLInputElement =>
   screen.getByTestId("asset-audio-name") as HTMLInputElement;
@@ -93,6 +111,9 @@ afterEach(() => {
   vi.restoreAllMocks();
   sceneHistory.reset([]);
   projectHistory.reset(createEmptyProject());
+  // 素材 meta 是**第三条轨道**：不重置它，上一个用例写下的显示名 / 标签会漏到下一个用例
+  metaHistory.reset({});
+  useEditorStore.setState({ assetMetaTable: {}, assetMetas: emptyAssetMetas() });
   useEditorStore.setState({
     scenes: [],
     activeSceneName: null,
@@ -119,7 +140,7 @@ describe("显示名", () => {
     fireEvent.change(nameField(), { target: { value: "开场曲" } });
     fireEvent.keyDown(nameField(), { key: "Enter" });
 
-    expect(docOf().audioMeta?.[CLIP_A]).toEqual({ name: "开场曲", tags: [0] });
+    expect(audioOf(CLIP_A)).toEqual({ name: "开场曲", tags: [0] });
 
     // Esc 还原（改一半不提交）
     fireEvent.change(nameField(), { target: { value: "改一半" } });
@@ -129,21 +150,22 @@ describe("显示名", () => {
     // 留空 = 清掉名字（标签留着，于是这一条不消失）
     fireEvent.change(nameField(), { target: { value: "   " } });
     fireEvent.keyDown(nameField(), { key: "Enter" });
-    expect(docOf().audioMeta?.[CLIP_A]).toEqual({ tags: [0] });
+    expect(audioOf(CLIP_A)).toEqual({ tags: [0] });
   });
 
-  it("属性面板是**可撤销**的（走工程文件那条历史）", () => {
+  it("属性面板是**可撤销**的（走素材 meta 那条历史）", () => {
     seed({ assetId: CLIP_A });
     render(<InspectorPanel />);
 
     fireEvent.change(nameField(), { target: { value: "开场曲" } });
     fireEvent.keyDown(nameField(), { key: "Enter" });
-    expect(docOf().audioMeta?.[CLIP_A]?.name).toBe("开场曲");
+    expect(audioOf(CLIP_A)?.name).toBe("开场曲");
 
     act(() => {
       useEditorStore.getState().undo();
     });
-    expect(docOf().audioMeta).toBeUndefined();
+    // 撤销把那份 meta 整个撤掉（种下来时这个文件还没有 meta）
+    expect(audioOf(CLIP_A)).toBeUndefined();
   });
 });
 
@@ -169,8 +191,9 @@ describe("标签", () => {
       tagChip(0).querySelector('[data-testid="asset-audio-tag-remove"]') as HTMLElement,
     );
 
-    expect(docOf().audioMeta?.[CLIP_A]).toBeUndefined();
-    expect(docOf().audioMeta?.[CLIP_B]?.tags).toEqual([0]);
+    // 这个文件那份 meta 的 `audio` 段整个摘掉（没名字也没标签了），别的文件一个字节不动
+    expect(audioOf(CLIP_A)).toBeUndefined();
+    expect(audioOf(CLIP_B)?.tags).toEqual([0]);
     expect(docOf().audioTags).toEqual(["战斗"]);
   });
 
@@ -191,7 +214,7 @@ describe("标签", () => {
         .getAllByTestId("audio-tag-toggle")
         .find((item) => item.getAttribute("data-id") === "0") as HTMLElement,
     );
-    expect(docOf().audioMeta?.[CLIP_A]?.tags).toEqual([0]);
+    expect(audioOf(CLIP_A)?.tags).toEqual([0]);
 
     fireEvent.click(screen.getByTestId("asset-audio-open-tags"));
     expect(useEditorStore.getState().audioTags).toBe(true);

@@ -1,16 +1,18 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { createEmptyProject } from "@dts/document";
+import { createAssetMetas, createEmptyProject, emptyAssetMetas } from "@dts/document";
 import { AudioTagEditorDialog } from "../src/app/AudioTagEditorDialog";
+import { metaHistory } from "../src/state/store-core";
 import { projectHistory, sceneHistory, useEditorStore } from "../src/state/editor-store";
 import type { ResourceTreeNode } from "../src/services/project-api";
+import { audioMetaTable } from "./asset-meta-fixtures";
 
 /**
  * **「标签」窗口**（v18）：标签表本身的编辑页——**序号预先定好，只填名字**（对齐 Unity 的 TagManager）。
  *
  * 这一份钉住：
  * 1. 一列 `#0`…`#7` 一开始就在，已有槽位（哪怕超过一页）也全列出来；洞不画；
- * 2. **改名字只改表**：文件里记的 ID 一个字节都不动；
+ * 2. **改名字只改表**：文件里记的 ID 一个字节都不动（v24 起那些 ID 在**各自文件的 `.meta`** 里）；
  * 3. 往哪个格子填名字，那个序号就是 ID（中间的空槽一起补出来），填满最后格自动续一页；
  * 4. 界面上**没有**新建输入框 / 新建按钮 / 删除按钮；
  * 5. 空名字不写进数据，Esc 还原。
@@ -48,10 +50,15 @@ function seed(input?: {
   projectHistory.reset({
     ...createEmptyProject(PROJECT),
     ...(input?.tags === undefined ? {} : { audioTags: [...input.tags] }),
-    ...(input?.meta === undefined ? {} : { audioMeta: input.meta }),
   });
+  // 文件里记的标签 ID 住在**那个文件自己的 `.meta`** 里（v24）：窗口只跟表打交道，
+  // 但「改名字不动 ID」这条要用它来验，所以也种一份
+  const table = audioMetaTable(input?.meta ?? {});
+  metaHistory.reset(table);
   useEditorStore.setState({
     doc: projectHistory.current,
+    assetMetaTable: table,
+    assetMetas: createAssetMetas(Object.entries(table).map(([id, meta]) => ({ id, meta }))),
     scenes: [],
     activeSceneName: null,
     selectedObjectIds: [],
@@ -62,6 +69,10 @@ function seed(input?: {
 
 const docOf = (): ReturnType<typeof useEditorStore.getState>["doc"] =>
   useEditorStore.getState().doc;
+
+/** 素材 meta 的真源表（文件上记的标签 ID 在 `audio.tags` 里）。 */
+const metas = (): ReturnType<typeof useEditorStore.getState>["assetMetaTable"] =>
+  useEditorStore.getState().assetMetaTable;
 
 const rowFor = (id: number): HTMLElement => {
   const row = screen
@@ -82,6 +93,9 @@ afterEach(() => {
   vi.restoreAllMocks();
   sceneHistory.reset([]);
   projectHistory.reset(createEmptyProject());
+  // 素材 meta 是**第三条轨道**：不重置它，上一个用例种下的 ID 会漏到下一个用例
+  metaHistory.reset({});
+  useEditorStore.setState({ assetMetaTable: {}, assetMetas: emptyAssetMetas() });
   useEditorStore.setState({
     scenes: [],
     activeSceneName: null,
@@ -208,7 +222,7 @@ describe("改名（只改表）", () => {
     fireEvent.keyDown(input, { key: "Enter" });
 
     expect(docOf().audioTags).toEqual(["交战", "紧张"]);
-    expect(docOf().audioMeta?.[CLIP_A]?.tags).toEqual([0, 1]);
+    expect(metas()[CLIP_A]?.audio?.tags).toEqual([0, 1]);
     expect(nameInputFor(0).value).toBe("交战");
   });
 

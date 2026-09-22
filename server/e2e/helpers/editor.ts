@@ -1,4 +1,5 @@
 import { expect, type APIRequestContext, type Page } from "@playwright/test";
+import { randomUUID } from "node:crypto";
 import { deflateSync } from "node:zlib";
 
 /**
@@ -22,7 +23,7 @@ export type LeftTab = "assets" | "hierarchy";
  * 要有意制造「旧版本文件」时别用它：自己写那个版本号（`formatVersion: 4` 之类），
  * 并预期编辑器会把它升上来回写一次。
  */
-export const CURRENT_SCENE_FORMAT_VERSION = 23;
+export const CURRENT_SCENE_FORMAT_VERSION = 24;
 
 /**
  * **承载对象特性的组件类型名**（v19 起特性住在 `object.components[]` 里）。
@@ -526,7 +527,13 @@ export async function seedProjectDoc(
   request: APIRequestContext,
   project: string,
   scenes: readonly Record<string, unknown>[],
-  /** 额外塞进工程文件的**项目级数据**（如 v20 的 `spriteSheets` 切分表）。 */
+  /**
+   * 额外塞进工程文件的**项目级数据**。
+   *
+   * 也用来有意造出**旧形状**的字段（如 v20–v22 的 `spriteSheets` 切分表）：
+   * 编辑器打开时会按迁移把它们搬进各素材自己的 `.meta` 并回写工程文件——
+   * 所以这种用例的断言要读**素材 meta**，而不是工程文件（见 `readSpriteSheet`）。
+   */
   projectPatch?: Record<string, unknown>,
 ): Promise<void> {
   // 工程文件：项目级数据，场景不在里面
@@ -825,26 +832,46 @@ export async function readProjectSettings(
 }
 
 /**
- * 读**工程文件**里的音频文件标注（`project.json` 的 `audioMeta`，v17 起；v18 起标签是**整数 ID**）。
+ * 读某个素材**自己那份 `<素材>.meta`** 的原文对象；没有那一份时返回 `undefined`。
  *
- * 形状：`资源逻辑 ID → { name?, tags?: number[] }`；没整理过音频时整个字段不在文件里 → `undefined`
- * （**不补空壳**：`{}` 与「没有这一项」是两回事）。
+ * v23 起素材级数据（图片的切分 / 导入设置、v24 起音频的显示名与标签）都住在这里，
+ * 不再住工程文件；`.meta` 本身不进资源树，但走 `/api/resources/text` 读得到。
  */
-export async function readProjectAudioMeta(
+export async function readAssetMeta(
   request: APIRequestContext,
-  project: string,
-): Promise<Record<string, { name?: string; tags?: number[] }> | undefined> {
-  const id = `project:${project}/project.json`;
-  const response = await request.get(`/api/resources/text?id=${encodeURIComponent(id)}`);
-  if (!response.ok()) {
-    throw new Error(`读工程文件失败：HTTP ${response.status()}（${id}）`);
+  assetId: string,
+): Promise<Record<string, unknown> | undefined> {
+  const response = await request.get(
+    `/api/resources/text?id=${encodeURIComponent(`${assetId}.meta`)}`,
+  );
+  if (response.status() === 404) {
+    return undefined;
   }
 
-  const file = JSON.parse(await response.text()) as {
-    audioMeta?: Record<string, { name?: string; tags?: number[] }>;
-  };
+  if (!response.ok()) {
+    throw new Error(`读素材 meta 失败：HTTP ${response.status()}（${assetId}.meta）`);
+  }
 
-  return file.audioMeta;
+  return JSON.parse(await response.text()) as Record<string, unknown>;
+}
+
+/**
+ * 读某个**音频素材** meta 里的 `audio` 段（显示名 + 标签 ID 列表）；没有这一段 → `undefined`。
+ *
+ * 「没有这一段」才是「这个文件还没整理过」（**不补空壳**）：每个素材都有 meta，
+ * 但只有起了名字 / 勾了标签才会写出 `audio`。
+ */
+export async function readAudioMeta(
+  request: APIRequestContext,
+  assetId: string,
+): Promise<{ name?: string; tags?: number[] } | undefined> {
+  const meta = await readAssetMeta(request, assetId);
+  const audio = meta?.["audio"];
+  if (typeof audio !== "object" || audio === null) {
+    return undefined;
+  }
+
+  return audio as { name?: string; tags?: number[] };
 }
 
 /**
@@ -865,24 +892,30 @@ export async function readProjectAudioTags(
 }
 
 /**
- * 读工程文件里的**图片切分表**（`spriteSheets`，v20 起）：`图片逻辑 ID → { columns, rows }`。
+ * 读一个图片素材 meta 里的**切分**（`sprite.sheet`）：v23 起它住在 `<素材>.meta` 里，
+ * 工程文件里已经没有那张 `spriteSheets` 表了。
  *
  * 这是「一张图按几行几列切」的**唯一一份**（对象身上只存「引用哪张图 + 第几格」），
- * 所以断言「切分落在工程文件而不是场景文件」就用它。
+ * 所以断言「切分落在素材的 `.meta` 而不是场景文件 / 工程文件」就用它。
+ * `sprite` / `sheet` 缺省时返回 `undefined`（= 整图）。
  */
-export async function readProjectSpriteSheets(
+export async function readSpriteSheet(
   request: APIRequestContext,
-  project: string,
-): Promise<Record<string, { columns: number; rows: number }> | undefined> {
-  const id = `project:${project}/project.json`;
-  const response = await request.get(`/api/resources/text?id=${encodeURIComponent(id)}`);
-  if (!response.ok()) {
-    throw new Error(`读工程文件失败：HTTP ${response.status()}（${id}）`);
+  assetId: string,
+): Promise<{ columns: number; rows: number } | undefined> {
+  const meta = await readAssetMeta(request, assetId);
+  const sprite = meta?.["sprite"];
+  if (typeof sprite !== "object" || sprite === null) {
+    return undefined;
   }
 
-  return (JSON.parse(await response.text()) as {
-    spriteSheets?: Record<string, { columns: number; rows: number }>;
-  }).spriteSheets;
+  const sheet = (sprite as { sheet?: unknown }).sheet;
+  if (typeof sheet !== "object" || sheet === null) {
+    return undefined;
+  }
+
+  const { columns, rows } = sheet as { columns?: unknown; rows?: unknown };
+  return typeof columns === "number" && typeof rows === "number" ? { columns, rows } : undefined;
 }
 
 /**
@@ -908,10 +941,14 @@ export async function readObjectSprite(
 }
 
 /**
- * 直接把**音频标注 + 标签表**写进工程文件（v18 形状：`audioTags` 下标 = tag ID，文件里记整数）。
+ * 直接把**标签表 + 若干音频文件的标注**写下去（v24 形状）。
+ *
+ * 标签表是**项目级**数据，仍住工程文件（`audioTags`：下标 = tag ID）；
+ * 显示名与标签 ID 是**素材级**数据，v24 起写在那个音频文件自己的 `<素材>.meta` 里
+ * （`importer: "audio"` 的 `audio` 段）。工程文件版本故意写 4：编辑器打开时会升到当前版本
+ * 并回写一次（与 `seedProjectDoc` 同一条规矩），缺的素材 meta 也由它补齐。
  *
  * 给「只关心按标签找 / 播」的用例用（编辑那套界面在 `audio-meta.spec.ts` 里单独验）。
- * 版本故意写 4：编辑器打开时会升到当前版本并回写一次（与 `seedProjectDoc` 同一条规矩）。
  */
 export async function seedProjectAudioMeta(
   request: APIRequestContext,
@@ -926,7 +963,6 @@ export async function seedProjectAudioMeta(
     name: project,
     items: { source: "item.xlsx", updatedAt: "2026-09-18", count: 0, items: [] },
     audioTags: [...input.tags],
-    audioMeta: input.meta,
   };
 
   const response = await request.put(
@@ -937,6 +973,29 @@ export async function seedProjectAudioMeta(
     },
   );
   expect(response.ok()).toBeTruthy();
+
+  // 标注各写各的 `<素材>.meta`：**空壳不写**（既没名字也没标签时整个 `audio` 段不存在）
+  for (const [assetId, entry] of Object.entries(input.meta)) {
+    const audio = {
+      ...(entry.name === undefined ? {} : { name: entry.name }),
+      ...(entry.tags === undefined ? {} : { tags: [...entry.tags] }),
+    };
+    const meta = {
+      formatVersion: 1,
+      guid: randomUUID().replaceAll("-", ""),
+      importer: "audio",
+      ...(Object.keys(audio).length === 0 ? {} : { audio }),
+    };
+
+    const metaResponse = await request.put(
+      `/api/resources/text?id=${encodeURIComponent(`${assetId}.meta`)}`,
+      {
+        headers: { "content-type": "text/plain; charset=utf-8" },
+        data: `${JSON.stringify(meta, null, 2)}\n`,
+      },
+    );
+    expect(metaResponse.ok()).toBeTruthy();
+  }
 }
 
 /** 读工程文件的 `formatVersion`（迁移有没有把新形状回写进文件，看它）。 */

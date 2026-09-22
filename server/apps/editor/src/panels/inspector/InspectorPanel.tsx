@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import {
   FEATURE_COMPONENT,
+  audioNameOfMeta,
+  audioTagsOfMeta,
   carriesKind,
   isSpriteMeta,
   metaOfImage,
@@ -127,16 +129,17 @@ function AssetProperties({
 }): React.JSX.Element {
   const [imageSize, setImageSize] = useState<{ width: number; height: number } | null>(null);
   const [spriteEditorOpen, setSpriteEditorOpen] = useState(false);
-  const meta = useEditorStore((state) => state.doc.audioMeta);
+  // 音频文件的显示名与标签住在**那个文件自己的 `.meta`** 里（v24 起），标签名仍在工程文件的表里
+  const metaTable = useEditorStore((state) => state.assetMetaTable);
   // 精灵相关的三件事（类型 / 模式 / 切分）全在**这个素材自己的 `.meta`** 里（v23 起）
   const assetMetas = useEditorStore((state) => state.assetMetas);
   const setSpriteImportSettings = useEditorStore((state) => state.setSpriteImportSettings);
   const table = useEditorStore((state) => state.doc.audioTags);
   const preview = assetPreviewKind(asset.name);
   const src = `/api/resources/raw?id=${encodeURIComponent(asset.id)}`;
-  const audioMeta = preview === "audio" ? meta?.[asset.id] : undefined;
+  const audioMeta = preview === "audio" ? metaTable[asset.id] : undefined;
   // 标签在文档里是**整数 ID**（tag 是整数、名字住在标签表里），界面上一律按名字显示
-  const tags = tagsOfClip(table, audioMeta?.tags);
+  const tags = tagsOfClip(table, audioTagsOfMeta(audioMeta));
   const assetMeta = metaOfImage(assetMetas, { id: asset.id });
   const sheet = spriteSheetOfMeta(assetMeta);
   const isSprite = isSpriteMeta(assetMeta);
@@ -169,7 +172,7 @@ function AssetProperties({
         )}
         {preview !== "audio" ? null : (
           <>
-            <AudioDisplayNameField assetId={asset.id} fileName={asset.name} storedName={audioMeta?.name ?? ""} />
+            <AudioDisplayNameField assetId={asset.id} fileName={asset.name} storedName={audioNameOfMeta(audioMeta) ?? ""} />
             <AudioTagsField assetId={asset.id} tags={tags} />
           </>
         )}

@@ -1,5 +1,10 @@
-import type { ProjectDoc } from "@dts/document";
+import {
+  audioNameOfMeta,
+  audioTagsOfMeta,
+  type ProjectDoc,
+} from "@dts/document";
 import type { ResourceTreeNode } from "../services/project-api";
+import type { AssetMetaTable } from "../state/store-types";
 import { assetDisplayName } from "./asset-info";
 import { assetDisplayPath, listAudioAssets } from "./asset-picker";
 
@@ -10,12 +15,17 @@ import { assetDisplayPath, listAudioAssets } from "./asset-picker";
  * 一个是「给文件挑标签」。所以筛选 / 排序 / 归一化做成纯函数放在这里，界面只管画——
  * 不然「按名字找」「按标签筛」这件事会被抄成几套，行为迟早不一样（而且不好单测）。
  *
- * 标签这套学 Unity：**tag 是个整数**（就是 `doc.audioTags` 的下标），名字住在表里。
- * 所以这里对外给的是 `{ id, name }` 引用：**显示用名字、编辑用 ID**——改名字只改表，
- * 文件里的 `[0, 2]` 一个字节都不动。
+ * 数据住哪（v24 起）：**显示名与标签住在那个音频文件自己的 `.meta`**（`audio` 段），
+ * 标签的**名字**住在工程文件那张表里（`doc.audioTags`）。所以这里对外给的是 `{ id, name }` 引用：
+ * **显示用名字、编辑用 ID**——改名字只改表，meta 里的 `[0, 2]` 一个字节都不动。
  *
- * 一句话口径：**显示名 = 全局标注的名字，没有就退回素材文件名**；标签只在编辑器里用
+ * 一句话口径：**显示名 = 素材 meta 里的名字，没有就退回素材文件名**；标签只在编辑器里用
  * （不进协议、不下发 Unity），资源面板的文件树仍然显示真实文件名（那是文件浏览器）。
+ *
+ * **没有「文件已经没了、标注还在」这一类行了**（v23 之前有）：素材级数据现在只存在于
+ * **素材旁边那份 `.meta`**，而后端只按素材找 meta（`.meta` 本身不进资源列表，
+ * 见 `FsResourceProvider.list`）——素材一删，那份 `.meta` 就成了谁也看不见的孤儿，
+ * 与图片那一侧同一条（见 README 的已知缺口）。所以清单**就是树里的音频**。
  */
 
 /** 一个标签的引用：ID 是身份（进文档），名字只是显示文本（住在标签表里）。 */
@@ -44,8 +54,6 @@ export interface AudioCatalogRow {
   readonly path: string;
   /** 标签（已解析：跳过越界 / 已删 / 没名字的 ID；顺序按 ID 升序）。 */
   readonly tags: readonly AudioTagRef[];
-  /** 项目里找不到这个文件（只剩标注；在「音频文件」窗口里列出来，好清理）。 */
-  readonly missing: boolean;
 }
 
 /** 表里的标签（跳过洞）；名字已 trim。 */
@@ -71,7 +79,7 @@ export function tagNameOf(table: ProjectDoc["audioTags"], id: number): string | 
 /**
  * 解析一个文件的标签：把 `number[]` 变成 `{ id, name }[]`。
  *
- * 越界、指向已删（洞）、名字是空的 ID 一律**跳过**（`validateProject` 会为前两种报 warning）——
+ * 越界、指向已删（洞）、名字是空的 ID 一律**跳过**（`validateAssetMetas` 会为前两种报 warning）——
  * 界面不该画一个点不动的空标签出来。
  */
 export function tagsOfClip(
@@ -92,71 +100,49 @@ export function tagsOfClip(
 }
 
 /**
- * 组装清单：**项目里的音频 ∪ 标注里有、项目里已经没有的 key**。
+ * 组装清单：**树里的音频**（每个素材一行）。
  *
- * 后者（`missing`）只在「音频文件」窗口里露面——标注还在、文件没了，得让人看得见才清得掉；
- * BGM 弹框不列它们（点了只会发出一条注定失败的命令）。
+ * 名字与标签经 `assetMetaTable`（路径 ID → 那份 `.meta`）读：一个素材没有 meta
+ * （理论上不该发生——编辑器打开项目时会补，见 `loadAssetMetas`）时按「没整理过」算。
  * 顺序按路径排（与 `listAudioAssets` 同一套：中文拼音序 + 数字按数值比）。
  */
 export function audioCatalog(
   tree: readonly ResourceTreeNode[],
-  meta: ProjectDoc["audioMeta"],
+  metas: AssetMetaTable,
   table: ProjectDoc["audioTags"],
 ): AudioCatalogRow[] {
   const rows: AudioCatalogRow[] = [];
-  const known = new Set<string>();
 
   for (const asset of listAudioAssets(tree)) {
-    known.add(asset.id);
-    const path = assetDisplayPath(asset.id);
-    const customName = meta?.[asset.id]?.name?.trim() ?? "";
+    const meta = metas[asset.id];
+    const customName = audioNameOfMeta(meta)?.trim() ?? "";
     rows.push({
       id: asset.id,
       fileName: assetDisplayName(asset.name),
       displayName: customName.length > 0 ? customName : assetDisplayName(asset.name),
       customName,
-      path,
-      tags: tagsOfClip(table, meta?.[asset.id]?.tags),
-      missing: false,
-    });
-  }
-
-  for (const [id, entry] of Object.entries(meta ?? {})) {
-    if (known.has(id)) {
-      continue;
-    }
-
-    const fileName = assetDisplayName(id.slice(id.lastIndexOf("/") + 1));
-    const customName = entry.name?.trim() ?? "";
-    rows.push({
-      id,
-      fileName,
-      displayName: customName.length > 0 ? customName : fileName,
-      customName,
-      // 素材已经不在树里：拿逻辑 ID 当路径显示（比空着强，至少能看出它在哪个项目 / 目录）
-      path: assetDisplayPath(id),
-      tags: tagsOfClip(table, entry.tags),
-      missing: true,
+      path: assetDisplayPath(asset.id),
+      tags: tagsOfClip(table, audioTagsOfMeta(meta)),
     });
   }
 
   return rows.sort((a, b) => a.path.localeCompare(b.path, "zh-Hans-CN", { numeric: true }));
 }
 
-/** 标注里的显示名（没起名字 / 只有空白 → `undefined`）。给名字兜底链用。 */
-export function audioNameOf(meta: ProjectDoc["audioMeta"], id: string): string | undefined {
-  const name = meta?.[id]?.name?.trim();
+/** 素材 meta 里的显示名（没起名字 / 只有空白 → `undefined`）。给名字兜底链用。 */
+export function audioNameOf(metas: AssetMetaTable, id: string): string | undefined {
+  const name = audioNameOfMeta(metas[id])?.trim();
   return name === undefined || name.length === 0 ? undefined : name;
 }
 
 /**
- * 名字兜底链：**对象自己的名字 → 全局显示名 → 素材文件名**。
+ * 名字兜底链：**对象自己的名字 → 素材 meta 里的显示名 → 素材文件名**。
  *
  * 「对象自己的名字」是 `sound.names`（「编辑声音」窗口里按对象起的），它是**覆盖**；
- * 留空就跟随音频文件自己的名字（在「音频文件」窗口里改）——三处口径只有这一处实现。
+ * 留空就跟随音频文件自己的名字（属性面板里选中那个音频文件时改）——三处口径只有这一处实现。
  */
 export function audioDisplayName(
-  meta: ProjectDoc["audioMeta"],
+  metas: AssetMetaTable,
   id: string,
   objectName?: string,
 ): string {
@@ -165,7 +151,7 @@ export function audioDisplayName(
     return override;
   }
 
-  return audioNameOf(meta, id) ?? assetDisplayName(id.slice(id.lastIndexOf("/") + 1));
+  return audioNameOf(metas, id) ?? assetDisplayName(id.slice(id.lastIndexOf("/") + 1));
 }
 
 /**

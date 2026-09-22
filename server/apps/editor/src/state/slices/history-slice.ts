@@ -1,7 +1,7 @@
 /**
  * 本文件从 `editor-store.ts` 拆出（纯搬运，行为不变）。
  *
- * 场景列表 / 工程文件两条历史的编辑入口。
+ * 场景列表 / 工程文件 / 素材 meta **三条历史**的编辑入口（撤销入口只有一个，见 `undo`）。
  */
 import { emptyBgmPlayback } from "../../services/bgm-playback";
 import { emptySoundPlayback } from "../../services/sound-playback";
@@ -23,19 +23,43 @@ export function createHistorySlice(
   set: StoreSet,
   _get: StoreGet,
   ctx: StoreContext,
-): Pick<EditorStoreState, "applyScenes" | "applyProject" | "undo" | "redo" | "resetDoc"> {
+): Pick<
+  EditorStoreState,
+  "applyScenes" | "applyProject" | "applyMetas" | "undo" | "redo" | "resetDoc"
+> {
   // 共享的闭包状态与局部工具都在 ctx 里：这里解构一次，方法体与拆分前逐字一致
   const { refreshRunBaseline, savedScenes, savedMetas, sceneViewports } = ctx;
 
   return {
     applyScenes(label, recipe, options) {
       // 订阅里会同步 scenes 与撤销/重做标记，并安排自动落盘
-      return sceneHistory.apply(label, recipe, options ?? {});
+      const changed = sceneHistory.apply(label, recipe, options ?? {});
+      // **真的产生改动才算「最近改过这条轨道」**（无改动时历史根本没入栈）
+      if (changed) {
+        setLastEditTrack("scenes");
+      }
+
+      return changed;
     },
 
     applyProject(label, recipe, options) {
       // 与 applyScenes 对称：订阅里会同步 doc、撤销/重做标记与工程文件的落盘
-      return projectHistory.apply(label, recipe, options ?? {});
+      const changed = projectHistory.apply(label, recipe, options ?? {});
+      if (changed) {
+        setLastEditTrack("project");
+      }
+
+      return changed;
+    },
+
+    applyMetas(label, recipe, options) {
+      // 第三条轨道（素材 meta）：订阅里会重建索引、并在去抖后把**变过的那几份**写回盘
+      const changed = metaHistory.apply(label, recipe, options ?? {});
+      if (changed) {
+        setLastEditTrack("metas");
+      }
+
+      return changed;
     },
 
     undo() {

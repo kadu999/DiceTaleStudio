@@ -23,17 +23,19 @@ export function AudioTagDialog({
   readonly onClose: () => void;
 }): React.JSX.Element {
   const tree = useEditorStore((state) => state.project.tree);
-  const meta = useEditorStore((state) => state.doc.audioMeta);
+  const metas = useEditorStore((state) => state.assetMetaTable);
   const table = useEditorStore((state) => state.doc.audioTags);
   const setAudioTags = useEditorStore((state) => state.setAudioTags);
 
-  const rows = useMemo(() => audioCatalog(tree, meta, table), [tree, meta, table]);
+  const rows = useMemo(() => audioCatalog(tree, metas, table), [tree, metas, table]);
   const target = clipId === null ? undefined : rows.find((row) => row.id === clipId);
   const entries = useMemo(() => allTagsOf(table, rows), [table, rows]);
 
   const selected = target?.tags.map((tag) => tag.id) ?? [];
   const toggle = (tagId: number): void => {
-    if (clipId === null) {
+    // 目标**不在资源树里**（素材已经被删）就什么都不做：给它勾标签等于凭空造一份
+    // 没有归属的 `.meta`（还落盘）。窗口开着时那一行只显示「已经不在了」，不该能写。
+    if (clipId === null || target === undefined) {
       return;
     }
 

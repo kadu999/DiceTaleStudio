@@ -6,7 +6,8 @@ import {
   openLeftTab,
   openMenu,
   openProject,
-  readProjectAudioMeta,
+  readAssetMeta,
+  readAudioMeta,
   readProjectAudioTags,
   seedProjectDoc,
 } from "./helpers/editor";
@@ -17,7 +18,8 @@ import {
  * v18 把那个「音频文件」列表窗口删掉了——「选中哪个就改哪个」本来就是这个面板的用法，
  * 多一个窗口只是让人多跳一次。标签学 Unity：**tag 是个整数**（`audioTags` 的下标），
  * 名字住在表里，音频文件只记 ID。所以这一份钉住：
- * 1. 资源面板选中一个音频 → 属性面板里就地改**显示名**、右下角那个 **「＋」** 勾标签 → 落进 `project.json`；
+ * 1. 资源面板选中一个音频 → 属性面板里就地改**显示名**、右下角那个 **「＋」** 勾标签
+ *    → 落进**那个音频文件自己的 `.meta`**（v24 起；v17–v23 是 `project.json` 的 `audioMeta`）；
  * 2. 标签表在「工程 → 标签…」：**序号预先列好，只填名字**（改名字只改表，文件里的 ID 不动；没有新建 / 删除）；
  * 3. 行上 chip 的 `×` 只从这个文件上摘掉，标签本身还在表里；撤销能把他们一起还原。
  */
@@ -71,7 +73,7 @@ async function closeAudioTagsDialog(page: Page): Promise<void> {
 }
 
 test.describe("音频标注：在属性面板里改", () => {
-  test("显示名 + 新标签 + 摘标签：全部落进 project.json，撤销能回去", async ({ page, request }) => {
+  test("显示名 + 新标签 + 摘标签：标注落进素材自己的 .meta，撤销能回去", async ({ page, request }) => {
     const project = await newProject(request);
 
     try {
@@ -82,8 +84,15 @@ test.describe("音频标注：在属性面板里改", () => {
       await enterEditor(page);
       await openProject(page, project);
 
-      // 一开始没有任何标注（不补空壳）
-      expect(await readProjectAudioMeta(request, project)).toBeUndefined();
+      // 每个素材打开项目时都会补上自己那一份 `.meta`（v24：`importer: "audio"`），
+      // 但**没有标注就没有 `audio` 段**（不补空壳）
+      await expect
+        .poll(async () => (await readAssetMeta(request, battle))?.["importer"], {
+          timeout: 8000,
+          message: "等待编辑器为素材补齐 .meta",
+        })
+        .toBe("audio");
+      expect(await readAudioMeta(request, battle)).toBeUndefined();
       expect(await readProjectAudioTags(request, project)).toBeUndefined();
 
       await selectAudioAsset(page, "battle");
@@ -97,7 +106,7 @@ test.describe("音频标注：在属性面板里改", () => {
       await page.getByTestId("asset-audio-name").press("Enter");
 
       await expect
-        .poll(async () => (await readProjectAudioMeta(request, project))?.[battle]?.name, {
+        .poll(async () => (await readAudioMeta(request, battle))?.name, {
           timeout: 8000,
           message: "等待显示名落盘",
         })
@@ -124,7 +133,7 @@ test.describe("音频标注：在属性面板里改", () => {
       await expect(page.getByTestId("audio-tag-dialog")).toBeHidden();
 
       await expect
-        .poll(async () => (await readProjectAudioMeta(request, project))?.[battle]?.tags, {
+        .poll(async () => (await readAudioMeta(request, battle))?.tags, {
           timeout: 8000,
           message: "等待标签引用落盘",
         })
@@ -138,7 +147,7 @@ test.describe("音频标注：在属性面板里改", () => {
       // 3) chip 上的 × = 只从这个文件上摘掉；标签本身还在表里
       await page.locator('[data-testid="asset-audio-tag-remove"][data-id="0"]').click();
       await expect
-        .poll(async () => (await readProjectAudioMeta(request, project))?.[battle]?.tags, {
+        .poll(async () => (await readAudioMeta(request, battle))?.tags, {
           timeout: 8000,
           message: "等待摘标签落盘",
         })
@@ -148,7 +157,7 @@ test.describe("音频标注：在属性面板里改", () => {
       // 4) 撤销：把引用拿回来
       await page.keyboard.press("Control+z");
       await expect
-        .poll(async () => (await readProjectAudioMeta(request, project))?.[battle]?.tags, {
+        .poll(async () => (await readAudioMeta(request, battle))?.tags, {
           timeout: 8000,
           message: "等待撤销落盘",
         })
@@ -196,7 +205,7 @@ test.describe("音频标注：在属性面板里改", () => {
       await page.locator('[data-testid="audio-tag-toggle"][data-id="0"]').click();
       await page.getByTestId("audio-tag-close").click();
       await expect
-        .poll(async () => (await readProjectAudioMeta(request, project))?.[battle]?.tags, {
+        .poll(async () => (await readAudioMeta(request, battle))?.tags, {
           timeout: 8000,
           message: "等待引用落盘",
         })
@@ -213,7 +222,7 @@ test.describe("音频标注：在属性面板里改", () => {
         })
         .toBe("交战");
       // 文件里记的还是那个整数（一个字节都没动）
-      expect((await readProjectAudioMeta(request, project))?.[battle]?.tags).toEqual([0]);
+      expect((await readAudioMeta(request, battle))?.tags).toEqual([0]);
 
       // 4) 换个序号填名字：那个序号就是它的 ID
       await tagName(1).fill("追击");

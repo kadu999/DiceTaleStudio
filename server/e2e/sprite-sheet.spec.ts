@@ -11,8 +11,8 @@ import {
   openLeftTab,
   openProject,
   readObjectSprite,
-  readProjectSpriteSheets,
   readSceneFile,
+  readSpriteSheet,
   sceneDoc,
   sceneObjectDoc,
   seedProjectDoc,
@@ -26,8 +26,8 @@ import { canvasAverageColor, exactWorldPoint } from "./helpers/canvas";
  *
  * 三条口径在这里钉住（也用画布像素证明，而不只是看文件）：
  *
- * 1. **切分只有一份**：住在工程文件（`project.json` 的 `spriteSheets`），对象身上只有
- *    「引用哪张图 + 第几格」——改切分，所有引用它的对象一起变；
+ * 1. **切分只有一份**：住在**素材自己的 `.meta`**（`A.png.meta` 的 `sprite.sheet`，v23 起），
+ *    对象身上只有「引用哪张图 + 第几格」——改切分，所有引用它的对象一起变；
  * 2. **只画那一格**：画布上对象那块矩形里刷的是**选中那一格**的像素
  *    （图集四格四种颜色，采样就能分辨画的是哪一块）；
  * 3. **地图不给子图**：贴图住在 `GridMap` 里、格子按整张贴图算，选择窗口里没有切分面板。
@@ -125,7 +125,7 @@ test.describe("精灵：把图集切成子图", () => {
       await expectColorAt(page, { x: -10, y: 10 }, GREEN);
       await expectColorAt(page, { x: 10, y: -10 }, GREEN);
 
-      // 落盘：**场景文件只记「第几格」**（行列在工程文件里，另有断言）
+      // 落盘：**场景文件只记「第几格」**（行列在素材自己的 `.meta` 里，另有断言）
       await expect
         .poll(async () => readObjectSprite(request, project, SCENE, { objectId: "object_精灵" }))
         .toEqual({ column: 1, row: 0 });
@@ -136,11 +136,12 @@ test.describe("精灵：把图集切成子图", () => {
           return { width: data?.["width"], height: data?.["height"] };
         })
         .toEqual({ width: CELL, height: CELL });
-      await expect
-        .poll(async () => readProjectSpriteSheets(request, project))
-        .toEqual({ [imageId]: { columns: 2, rows: 2 } });
+      await expect.poll(async () => readSpriteSheet(request, imageId)).toEqual({
+        columns: 2,
+        rows: 2,
+      });
 
-      // 场景文件里不该出现行列（那是工程文件的字段）
+      // 场景文件里不该出现行列（那是素材自己的 `.meta` 里的字段）
       const text = JSON.stringify(await readSceneFile(request, project, SCENE));
       expect(text).not.toContain("columns");
     } finally {
@@ -205,9 +206,10 @@ test.describe("精灵：把图集切成子图", () => {
       await expectColorAt(page, { x: -8, y: 3 }, GREEN);
       await expectColorAt(page, { x: 8, y: -3 }, GREEN);
 
-      await expect
-        .poll(async () => readProjectSpriteSheets(request, project))
-        .toEqual({ [imageId]: { columns: 4, rows: 1 } });
+      await expect.poll(async () => readSpriteSheet(request, imageId)).toEqual({
+        columns: 4,
+        rows: 1,
+      });
       // 对象侧照旧：还是 (1, 0)
       expect(await readObjectSprite(request, project, SCENE, { objectId: "object_精灵" })).toEqual({
         column: 1,

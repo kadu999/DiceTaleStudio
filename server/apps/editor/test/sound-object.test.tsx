@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import {
   FEATURE_COMPONENT,
   createSoundObject,
+  emptyAssetMetas,
   imageOf,
   soundDataOf,
   withFeature,
@@ -13,9 +14,11 @@ import { InspectorPanel } from "../src/panels/inspector/InspectorPanel";
 import { soundDeliveryHint, soundPlayBlockedReason } from "../src/panels/inspector/SoundFields";
 import { displayRectOf } from "../src/panels/scene/display";
 import { KIND_LABELS, OBJECT_CATEGORIES, creatableObjects } from "../src/panels/object-kinds";
+import { metaHistory } from "../src/state/store-core";
 import { sceneHistory, useEditorStore, type EditorMode } from "../src/state/editor-store";
 import type { RuntimeStatus } from "../src/services/runtime-client";
 import type { ResourceTreeNode } from "../src/services/project-api";
+import { audioMetaTable } from "./asset-meta-fixtures";
 
 /**
  * **声音对象**（动作对象）：弹框里「动作」种类下的「播放声音」。
@@ -102,6 +105,9 @@ const hasGroup = (slug: string): boolean =>
 afterEach(() => {
   cleanup();
   sceneHistory.reset([]);
+  // 素材 meta 是**第三条轨道**：不重置它，上一条用例种下的显示名会漏到后面的状态行断言里
+  metaHistory.reset({});
+  useEditorStore.setState({ assetMetaTable: {}, assetMetas: emptyAssetMetas() });
   useEditorStore.setState({
     scenes: [],
     activeSceneName: null,
@@ -282,12 +288,10 @@ describe("属性面板：声音组", () => {
     expect(chips()[1]?.getAttribute("data-selected")).toBe("false");
   });
 
-  it("对象自己没起名字时：小方块显示**音频文件自己的显示名**（「音频文件」窗口里配的）", () => {
+  it("对象自己没起名字时：小方块显示**音频文件自己的显示名**（属性面板里配的）", () => {
     seedScene([sound([CLIP, CLIP2])], ["sound-1"]);
-    // 项目级标注：只给第一条起名，第二条不动
-    useEditorStore.setState({
-      doc: { ...useEditorStore.getState().doc, audioMeta: { [CLIP]: { name: "开场曲" } } },
-    });
+    // 文件自己的显示名住在**那个文件自己的 `.meta`** 里（v24）：只给第一条起名，第二条不动
+    metaHistory.reset(audioMetaTable({ [CLIP]: { name: "开场曲" } }));
     render(<InspectorPanel />);
 
     expect(chips()[0]?.textContent).toBe("开场曲");

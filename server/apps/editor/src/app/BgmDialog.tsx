@@ -41,7 +41,8 @@ export function BgmDialog(): React.JSX.Element {
   const open = useEditorStore((state) => state.bgmDialog);
   const openBgmDialog = useEditorStore((state) => state.openBgmDialog);
   const tree = useEditorStore((state) => state.project.tree);
-  const meta = useEditorStore((state) => state.doc.audioMeta);
+  // 显示名与标签住在**各音频文件自己的 `.meta`** 里（v24 起），标签的**名字**仍在工程文件的表里
+  const metas = useEditorStore((state) => state.assetMetaTable);
   const table = useEditorStore((state) => state.doc.audioTags);
   const playback = useEditorStore((state) => state.bgmPlayback);
   const playBgm = useEditorStore((state) => state.playBgm);
@@ -66,11 +67,8 @@ export function BgmDialog(): React.JSX.Element {
    */
   const [selected, setSelected] = useState<string | null>(null);
 
-  /** 项目里**还在**的音频（标注指向已删文件的那些不列：点了必然失败）。 */
-  const rows = useMemo(
-    () => audioCatalog(tree, meta, table).filter((row) => !row.missing),
-    [tree, meta, table],
-  );
+  /** 项目里的音频（清单就是资源树里那些文件；没有「标注指向已删文件」这类行了）。 */
+  const rows = useMemo(() => audioCatalog(tree, metas, table), [tree, metas, table]);
   const visible = useMemo(
     () =>
       sortAudioRowsByName(

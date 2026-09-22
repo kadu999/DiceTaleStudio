@@ -14,13 +14,19 @@ import {
   type AudioCatalogRow,
 } from "../src/panels/audio-catalog";
 import type { ResourceTreeNode } from "../src/services/project-api";
+import { audioMetaTable } from "./asset-meta-fixtures";
 
 /**
  * 音频清单 + 标注（含**整数标签表**）→ 列表行（几个音频窗口共用的纯逻辑）。
  *
- * 标签学 Unity：**tag 是个整数**（`audioTags` 的下标），名字住在表里。这里钉住：
+ * 数据住在哪（v24 起）：显示名与标签在**那个音频文件自己的 `.meta`** 的 `audio` 段里
+ * （第二个参数就是那张「素材路径 ID → meta」的表），标签的**名字**仍在工程文件的 `audioTags` 里。
+ * 标签学 Unity：**tag 是个整数**（`audioTags` 的下标）。这里钉住：
  * 标签按名字显示、按 ID 编辑；越界 / 指向洞 / 没名字的 ID 一律跳过（不给界面画空标签）；
  * 「表里有、没人用」的标签照列（count = 0）；搜索 / 筛选按名字。
+ *
+ * 清单**就是树里的音频**：素材一删，它那份 `.meta` 就成了谁也看不见的孤儿（v24 删掉了
+ * 旧版那种「标注还在、文件没了」的 `missing` 行）。
  */
 
 const PROJECT = "测试";
@@ -94,18 +100,23 @@ const rowOf = (rows: readonly AudioCatalogRow[], id: string): AudioCatalogRow =>
 
 describe("清单：项目音频 + 标注", () => {
   it("只列音频（图片不进来），按路径排序", () => {
-    const rows = audioCatalog(TREE, undefined, undefined);
+    const rows = audioCatalog(TREE, {}, undefined);
 
     // 路径排序：`audio/battle.wav` < `audio/environment/rain.ogg` < `audio/theme.mp3`
     expect(rows.map((row) => row.id)).toEqual([CLIP_B, CLIP_C, CLIP_A]);
-    expect(rows.every((row) => !row.missing)).toBe(true);
+    // 一条素材一行：树里的三条音频都在，图片不在
+    expect(rows).toHaveLength(3);
   });
 
   it("sortAudioRowsByName：按**显示名**排（BGM 弹框的口径）；同名按路径定序", () => {
     const rows = audioCatalog(
       TREE,
       // 起过名的按显示名排：与路径序（battle / rain / theme）**故意不同**
-      { [CLIP_A]: { name: "charlie" }, [CLIP_B]: { name: "zulu" }, [CLIP_C]: { name: "alpha" } },
+      audioMetaTable({
+        [CLIP_A]: { name: "charlie" },
+        [CLIP_B]: { name: "zulu" },
+        [CLIP_C]: { name: "alpha" },
+      }),
       undefined,
     );
 
@@ -146,7 +157,7 @@ describe("清单：项目音频 + 标注", () => {
           ],
         },
       ],
-      undefined,
+      {},
       undefined,
     );
 
@@ -156,10 +167,10 @@ describe("清单：项目音频 + 标注", () => {
     ]);
   });
 
-  it("显示名 = 全局标注的名字；没起名字就退回素材文件名（去扩展名）", () => {
+  it("显示名 = 那个文件自己 meta 里的名字；没起名字就退回素材文件名（去扩展名）", () => {
     const rows = audioCatalog(
       TREE,
-      { [CLIP_A]: { name: "开场曲" }, [CLIP_B]: { name: "   " } },
+      audioMetaTable({ [CLIP_A]: { name: "开场曲" }, [CLIP_B]: { name: "   " } }),
       undefined,
     );
 
@@ -172,7 +183,7 @@ describe("清单：项目音频 + 标注", () => {
   it("标签解析成 { id, name }：越界 / 指向洞 / 没名字的 ID 一律跳过", () => {
     const rows = audioCatalog(
       TREE,
-      { [CLIP_A]: { tags: [0, 1, 3, 9, 2] } },
+      audioMetaTable({ [CLIP_A]: { tags: [0, 1, 3, 9, 2] } }),
       // #2 名字是空的（表里写了空白）→ 也跳过
       ["战斗", "紧张", "  ", null],
     );
@@ -183,18 +194,17 @@ describe("清单：项目音频 + 标注", () => {
     ]);
   });
 
-  it("标注还在、文件没了：列成 missing 行（路径退回逻辑 ID），标签照常解析", () => {
+  it("素材删了、它那份 .meta 还在盘上：清单里不出现（孤儿 meta 看不见，没有 missing 行）", () => {
     const rows = audioCatalog(
       TREE,
-      { [GONE]: { name: "删掉的那首", tags: [0] } },
+      audioMetaTable({ [GONE]: { name: "删掉的那首", tags: [0] } }),
       ["战斗"],
     );
 
-    expect(rows).toHaveLength(4);
-    expect(rowOf(rows, GONE).missing).toBe(true);
-    expect(rowOf(rows, GONE).displayName).toBe("删掉的那首");
-    expect(rowOf(rows, GONE).path).toBe("audio/deleted.mp3");
-    expect(rowOf(rows, GONE).tags).toEqual([{ id: 0, name: "战斗" }]);
+    // 清单**就是树里的音频**：那条被删的不在树里，所以也不在清单里——
+    // 它那份 `.meta` 成了谁也看不见的孤儿（真正的清理在盘上，编辑器不做猜测）
+    expect(rows).toHaveLength(3);
+    expect(rows.map((row) => row.id)).toEqual([CLIP_B, CLIP_C, CLIP_A]);
   });
 });
 
@@ -221,10 +231,10 @@ describe("标签表与文件的标签", () => {
   it("allTagsOf：含**没人用到**的标签（count = 0），用量降序、同量按 ID 升序", () => {
     const rows = audioCatalog(
       TREE,
-      {
+      audioMetaTable({
         [CLIP_A]: { tags: [0, 1] },
         [CLIP_B]: { tags: [0] },
-      },
+      }),
       TABLE,
     );
 
@@ -238,26 +248,26 @@ describe("标签表与文件的标签", () => {
 });
 
 describe("名字兜底链", () => {
-  it("对象名 → 全局名 → 文件名；空白一律当作没写", () => {
-    const meta = { [CLIP_A]: { name: "开场曲" } };
+  it("对象名 → 文件自己的显示名 → 文件名；空白一律当作没写", () => {
+    const meta = audioMetaTable({ [CLIP_A]: { name: "开场曲" } });
 
     expect(audioDisplayName(meta, CLIP_A, "序幕")).toBe("序幕");
     expect(audioDisplayName(meta, CLIP_A, "   ")).toBe("开场曲");
     expect(audioDisplayName(meta, CLIP_A)).toBe("开场曲");
     expect(audioDisplayName(meta, CLIP_B)).toBe("battle");
     expect(audioNameOf(meta, CLIP_B)).toBeUndefined();
-    expect(audioNameOf({ [CLIP_B]: { name: " " } }, CLIP_B)).toBeUndefined();
+    expect(audioNameOf(audioMetaTable({ [CLIP_B]: { name: " " } }), CLIP_B)).toBeUndefined();
   });
 });
 
 describe("搜索与标签筛选", () => {
   const rows = audioCatalog(
     TREE,
-    {
+    audioMetaTable({
       [CLIP_A]: { name: "开场曲", tags: [0, 1] },
       [CLIP_B]: { tags: [0] },
       [CLIP_C]: { name: "雨声", tags: [2] },
-    },
+    }),
     ["战斗", "紧张", "环境"],
   );
 

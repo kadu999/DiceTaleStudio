@@ -8,7 +8,7 @@ import {
   openBgmDialog,
   openMenu,
   openProject,
-  readProjectAudioMeta,
+  readAudioMeta,
   readProjectAudioTags,
   readProjectFormatVersion,
   readProjectSettings,
@@ -280,8 +280,8 @@ test.describe("背景音乐：命令下发给前端", { tag: "@runtime" }, () =>
       await uploadAudio(request, project, "theme.mp3");
       await seedProjectDoc(request, project, [{ name: SCENE, objects: [] }]);
 
-      // 标注要在**进运行态之前**配好：运行态里改工程文件不落盘（退出运行会还原）。
-      // 这一条只关心「按名字 / 标签找 → 点播」，所以标注直接写进工程文件
+      // 标注要在**进运行态之前**配好：运行态里改素材 meta 不落盘（退出运行会还原）。
+      // 这一条只关心「按名字 / 标签找 → 点播」，所以标签表与各音频文件的标注直接写盘
       // （在界面里改的那条路走 `audio-meta.spec.ts`）。
       await seedProjectAudioMeta(request, project, {
         tags: ["战斗"],
@@ -291,14 +291,15 @@ test.describe("背景音乐：命令下发给前端", { tag: "@runtime" }, () =>
       await enterEditor(page);
       await openProject(page, project);
 
-      await test.step("工程文件里读得到标注（文件记整数 ID，名字在标签表里）", async () => {
+      await test.step("素材 meta 里读得到标注（音频文件记整数 ID，名字在标签表里）", async () => {
         await expect
-          .poll(
-            async () => (await readProjectAudioMeta(request, project))?.[battle]?.name,
-            { timeout: 8000, message: "等待工程文件读出标注" },
-          )
+          .poll(async () => (await readAudioMeta(request, battle))?.name, {
+            timeout: 8000,
+            message: "等待素材 meta 读出标注",
+          })
           .toBe("战斗曲");
-        expect((await readProjectAudioMeta(request, project))?.[battle]?.tags).toEqual([0]);
+        expect((await readAudioMeta(request, battle))?.tags).toEqual([0]);
+        // 标签表是**项目级**数据，仍在工程文件里
         expect(await readProjectAudioTags(request, project)).toEqual(["战斗"]);
       });
 

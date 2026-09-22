@@ -5,6 +5,7 @@
  */
 import {
   DOCUMENT_FORMAT_VERSION,
+  createAssetMeta,
   createEmptyProject,
   parseAssetMetaFile,
   parseProjectFile,
@@ -20,9 +21,39 @@ import {
 import { projectApi, contentTypeFor } from "../../services/project-api";
 import { clearLastProject, readLastProject, writeLastProject } from "../../services/session";
 import { clearSceneImageCache } from "../../services/scene-image";
+import { assetImporterKind } from "../../panels/asset-info";
 import { type StoreSet, type StoreGet, type EditorStoreState } from "../store-types";
 import { makeLog, serializeSceneFile, serializeProjectFile, findResourceNode, metaHistory } from "../store-core";
 import { type StoreContext } from "../store-context";
+
+/**
+ * 资源树里全部**文件**节点（目录不参与：`.meta` 只配给文件）。
+ *
+ * 树里本来就没有 `.meta` / `.gitkeep` / `project.json`（后端的 `list()` 与
+ * `PROJECT_SPECIAL_FILES` 各自滤掉了），所以这里不需要再挡一遍。
+ */
+function fileNodesOf(nodes: readonly ResourceTreeNodeLike[]): ResourceTreeNodeLike[] {
+  const files: ResourceTreeNodeLike[] = [];
+  for (const node of nodes) {
+    if (node.type === "file") {
+      files.push(node);
+      continue;
+    }
+
+    files.push(...fileNodesOf(node.children ?? []));
+  }
+
+  return files;
+}
+
+/** 只用得到节点的这几个字段（避免把 store 的类型拖进这个纯工具里）。 */
+interface ResourceTreeNodeLike {
+  readonly name: string;
+  readonly path: string;
+  readonly id: string;
+  readonly type: "folder" | "file";
+  readonly children?: readonly ResourceTreeNodeLike[];
+}
 
 export function createProjectSlice(
   set: StoreSet,
@@ -49,22 +80,42 @@ export function createProjectSlice(
   /**
    * 读回一个项目的**全部素材 meta**，装配第三条轨道（真源表 + 派生索引都由订阅重建）。
    *
-   * 三件事，顺序是有意的：
+   * 四件事，顺序是有意的：
    * 1. 逐条解析（`parseAssetMetaFile`）：**读不懂的那一份跳过并说明是哪一份**——一份坏 meta
-   *    不该让整个项目打不开（与后端「坏 JSON 跳过」同一条口径），那份素材按普通图片处理；
+   *    不该让整个项目打不开（与后端「坏 JSON 跳过」同一条口径），那份素材按没有 meta 处理；
    * 2. `needsRewrite` 的（缺 guid 的、手写的）**收集起来回写一次**——与场景 / 工程文件
    *    「补过就回写」同一条规矩，磁盘上的文件从此自描述；
-   * 3. 先把「磁盘上的样子」记进 `savedMetas`，再 `reset` 进轨道：订阅按内容差异安排落盘，
+   * 3. **给每个还没有 meta 的素材补一份**（v24 的口径：每个素材旁边一个 `<素材>.meta`）。
+   *    种类按**项目内相对路径**定（`assetImporterKind`：图片 / 音频 / 视频 / 场景；`.json`
+   *    只有落在 `Assets/scenes/` 里才算场景），项目里的其它文件（配置、文本）不是素材，
+   *    不配 meta。三条细节：
+   *    - 写盘**失败只报 warn**（磁盘只读 / 没权限）：补 meta 是「整理」，不该让项目打不开；
+   *      写不成的那一份**不记进 `savedMetas`**，于是它算「有未保存改动」，由去抖落盘再试一次；
+   *    - 建成之后**记进 `savedMetas`**（下面那一步），所以它不会被当成「有未保存改动」重写一遍；
+   *    - 只补**缺的**：已经有 meta 的素材一个字节都不动（改名后的 `.meta` 也跟着素材改了名，
+   *      这里按新的路径 ID 找到它，guid 照旧）。
+   * 4. 先把「磁盘上的样子」记进 `savedMetas`，再 `reset` 进轨道：订阅按内容差异安排落盘，
    *    少了这一步，刚读回来的表会被当成「全都有未保存改动」而整体重写一遍。
    *
    * 打开项目与刷新资源树都走它：索引的唯一来源是**盘上的 meta**，不靠内存拼。
+   * `tree` 由调用方传进来（打开项目时它比这一步先拿到，见 `openProject`）。
    */
-  async function loadAssetMetas(project: string): Promise<void> {
+  async function loadAssetMetas(
+    project: string,
+    tree: readonly ResourceTreeNodeLike[],
+  ): Promise<void> {
     const raw = await projectApi.readMetas(project);
     const table: Record<string, AssetMetaDoc> = {};
     const rewrites: Array<{ readonly id: string; readonly meta: AssetMetaDoc }> = [];
+    /*
+      盘上有 meta、但读不出来的素材（后端 JSON 就坏了，或这份 meta 根本不是这一版写的）：
+      **不给它们补新的**——补一份就是新 GUID，那会把盘上那份盖掉，引用旧 GUID 的地方一起断。
+      「读不懂」这件事有两个来源，都要挡住：后端解析不了 JSON（`raw.unreadable`），
+      以及 JSON 是好的、但过不了 meta 的 schema（下面 catch 里补进去）。
+    */
+    const unreadable = new Set<string>(raw.unreadable);
 
-    for (const [id, value] of Object.entries(raw)) {
+    for (const [id, value] of Object.entries(raw.metas)) {
       try {
         const loaded = parseAssetMetaFile(value);
         table[id] = loaded.doc;
@@ -73,13 +124,44 @@ export function createProjectSlice(
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        pushLog(makeLog("warn", `素材 meta 读取失败（${id}）：${message}；这份素材按普通图片处理`));
+        unreadable.add(id);
+        pushLog(
+          makeLog("warn", `素材 meta 读取失败（${id}）：${message}；这一份保持原样不动，请手工修`),
+        );
       }
     }
 
+    // 每个素材一份 `.meta`：缺的那几份现建（新 GUID + 按素材种类定的导入器）并立刻落盘
+    let created = 0;
+    const failed: Array<{ readonly id: string; readonly message: string }> = [];
+    for (const node of fileNodesOf(tree)) {
+      if (table[node.id] !== undefined || unreadable.has(node.id)) {
+        continue;
+      }
+
+      const importer = assetImporterKind(node.path);
+      if (importer === undefined) {
+        continue;
+      }
+
+      const meta = createAssetMeta(importer);
+      table[node.id] = meta;
+      try {
+        await projectApi.writeText(assetMetaIdOf(node.id), serializeAssetMetaFile(meta));
+        created += 1;
+      } catch (error) {
+        failed.push({ id: node.id, message: `${node.path}（${error instanceof Error ? error.message : String(error)}）` });
+      }
+    }
+
+    // 写失败的那几份**不记进 `savedMetas`**：于是它们在订阅里算「有未保存改动」，
+    // 由那条去抖落盘再试一次（磁盘只读时它只试一次，不会反复刷）
+    const failedIds = new Set(failed.map((item) => item.id));
     savedMetas.clear();
     for (const [id, meta] of Object.entries(table)) {
-      savedMetas.set(id, serializeAssetMetaFile(meta));
+      if (!failedIds.has(id)) {
+        savedMetas.set(id, serializeAssetMetaFile(meta));
+      }
     }
 
     for (const { id, meta } of rewrites) {
@@ -87,6 +169,15 @@ export function createProjectSlice(
     }
 
     metaHistory.reset(table);
+
+    if (created > 0) {
+      pushLog(makeLog("info", `已为 ${created} 个素材生成 .meta`));
+    }
+
+    // 写不进去（磁盘只读 / 没权限）**只报出来**：补 meta 是整理，不该让项目打不开
+    for (const item of failed) {
+      pushLog(makeLog("warn", `素材 meta 写不进去：${item.message}`));
+    }
   }
 
   return {
@@ -189,8 +280,8 @@ export function createProjectSlice(
         clearSceneImageCache();
         get().resetDoc(load.doc);
 
-        // v22 → v23：把工程文件里那份 `spriteSheets` / `spriteSettings` 搬出来的 meta
-        // **各自落盘**。落盘放在 `loadAssetMetas` 之前是有意的：下面读回来的就是刚写下的，
+        // 迁移搬出来的素材 meta（v23 的图片切分 / 导入设置、v24 的音频标注）**各自落盘**。
+        // 落盘放在 `loadAssetMetas` 之前是有意的：下面读回来的就是刚写下的，
         // 于是「盘上的 .meta」始终是唯一来源，不需要在内存里再拼一次
         const orphans: string[] = [];
         for (const { id, meta } of load.migratedMetas) {
@@ -204,6 +295,7 @@ export function createProjectSlice(
 
         // 旧版工程文件：把内联场景落成独立文件，工程文件按新格式回写（只做一次）。
         // v15 起「缺 `settings`」也算需要回写（全局设置会被补一份默认的落进文件）。
+        let currentTree = tree;
         if (load.migratedScenes.length > 0 || load.needsRewrite) {
           for (const scene of load.migratedScenes) {
             await projectApi.writeText(
@@ -216,13 +308,23 @@ export function createProjectSlice(
           pushLog(
             makeLog("info", `工程文件已升级到 v${DOCUMENT_FORMAT_VERSION}（场景拆成 ${load.migratedScenes.length} 个文件）`),
           );
+
+          /*
+            迁移**刚写下**的场景文件不在上面那份资源树里（它是写文件之前取的）：
+            场景列表是照着树里的 `Assets/scenes/` 读的，不重取就会显示「场景 0」；
+            而且这些新文件也该各配一份自己的 `.meta`（每个素材一份，不分是谁写下的）。
+            只在真的写了新文件时重取一次，平常打开不付这份钱。
+          */
+          if (load.migratedScenes.length > 0) {
+            currentTree = await projectApi.tree(name);
+          }
         }
 
         if (load.migratedMetas.length > orphans.length) {
           pushLog(
             makeLog(
               "info",
-              `图片的导入设置与切分已搬进各自的 .meta（${load.migratedMetas.length - orphans.length} 个素材）`,
+              `素材级数据已搬进各自的 .meta（${load.migratedMetas.length - orphans.length} 个素材：切分 / 导入设置 / 音频标注）`,
             ),
           );
         }
@@ -232,14 +334,32 @@ export function createProjectSlice(
           pushLog(
             makeLog(
               "warn",
-              `改名留下的孤儿：工程文件里的切分 / 导入设置「${id}」找不到对应素材，已丢弃（「.meta」要跟着素材一起改名）`,
+              `改名留下的孤儿：工程文件里的素材数据「${id}」找不到对应素材，已丢弃（「.meta」要跟着素材一起改名）`,
             ),
           );
         }
 
-        set((state) => ({ project: { ...state.project, current: name, tree, busy: false } }));
-        // 索引要在 `loadScenes` 之前建好：场景里的子图引用（越界提示）靠它解析
-        await loadAssetMetas(name);
+        set((state) => ({
+          project: { ...state.project, current: name, tree: currentTree, busy: false },
+        }));
+        /*
+          索引要在 `loadScenes` 之前建好：场景里的子图引用（越界提示）靠它解析；
+          顺便把「还没有 meta」的素材补上各自那一份（v24：每个素材旁边一个 `.meta`）。
+
+          **这一段失败不许把项目弄成打不开**：素材 meta 是**辅助数据**（图片的切分、音频的
+          显示名 / 标签），场景才是内容。所以单独兜一层——读 / 写 meta 出错时记一条日志，
+          照旧往下读场景。外面那个 catch 只管真正的失败（工程文件读不出来、校验过不去），
+          那种才该返回 false；少了这一层，一次 meta 抖动就会变成「项目打开了、场景 0 个」。
+        */
+        try {
+          await loadAssetMetas(name, currentTree);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          pushLog(
+            makeLog("warn", `素材 meta 装配失败：${message}；场景照常加载，切分与音频标注这次先用不上`),
+          );
+        }
+
         await get().loadScenes();
         // 记住了下次启动才能自动回到它
         writeLastProject(name);
@@ -300,8 +420,9 @@ export function createProjectSlice(
         const tree = await projectApi.tree(project);
         set((state) => ({ project: { ...state.project, tree, error: "" } }));
         // 素材可能在编辑器外面被加进来 / 改名 / 删掉了：索引跟着资源树重建
-        // （`.meta` 与素材成对改名时，键跟着换、guid 不变，引用照样指得对）
-        await loadAssetMetas(project);
+        // （`.meta` 与素材成对改名时，键跟着换、guid 不变，引用照样指得对），
+        // 新加进来的素材也在这里补上自己那一份 `.meta`
+        await loadAssetMetas(project, tree);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         set((state) => ({ project: { ...state.project, error: message } }));

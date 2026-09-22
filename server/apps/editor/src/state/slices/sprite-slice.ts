@@ -29,7 +29,6 @@ import {
 } from "@dts/document";
 import { findAssetById } from "../../panels/asset-picker";
 import { type StoreSet, type StoreGet, type EditorStoreState } from "../store-types";
-import { metaHistory } from "../store-core";
 import { type StoreContext } from "../store-context";
 
 export function createSpriteSlice(
@@ -110,7 +109,7 @@ export function createSpriteSlice(
     /**
      * 改一张图的**切分**（列 × 行）；`null` = 恢复整图（等于把这一项摘掉）。
      *
-     * 落在**素材 meta** 那条轨道上（`metaHistory.apply`）：切分是「这张图自己的属性」，
+     * 落在**素材 meta** 那条轨道上（`applyMetas`）：切分是「这张图自己的属性」，
      * 跟着素材走（v23 起），与场景文件、工程文件都无关。路径名只用于日志与撤销标签。
      * **不动任何对象**——口径是「改切分，所有引用它的对象一起变」，那个「变」发生在渲染与推送
      * 解析里（同一份引用按新的切分算出来的矩形换了）。
@@ -124,12 +123,12 @@ export function createSpriteSlice(
       const label =
         sheet === null ? `恢复整图：${name}` : `切分 ${name} 为 ${sheet.columns}×${sheet.rows}`;
 
-      return metaHistory.apply(
+      return get().applyMetas(
         label,
         (draft) => {
           const existing = draft[imageId];
           if (existing === undefined) {
-            const created = createAssetMeta();
+            const created = createAssetMeta("texture");
             const next = withMetaSpriteSheet(created, sheet);
             if (next !== created) {
               draft[imageId] = next;
@@ -159,10 +158,10 @@ export function createSpriteSlice(
     setSpriteImportSettings(imageId, settings: SpriteImportSettingsDoc | null) {
       const name = assetName(imageId);
       const label = settings?.type === "Sprite" ? `启用精灵 ${name}` : `关闭精灵 ${name}`;
-      return metaHistory.apply(label, (draft) => {
+      return get().applyMetas(label, (draft) => {
         const existing = draft[imageId];
         if (existing === undefined) {
-          const created = createAssetMeta();
+          const created = createAssetMeta("texture");
           const next = withMetaSpriteSettings(created, settings);
           if (next !== created) {
             draft[imageId] = next;
@@ -191,8 +190,8 @@ export function createSpriteSlice(
         return existing;
       }
 
-      const meta = createAssetMeta();
-      metaHistory.apply(`新建素材 meta：${assetName(imageId)}`, (draft) => {
+      const meta = createAssetMeta("texture");
+      get().applyMetas(`新建素材 meta：${assetName(imageId)}`, (draft) => {
         draft[imageId] = meta;
       });
 

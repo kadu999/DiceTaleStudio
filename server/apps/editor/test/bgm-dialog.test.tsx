@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { createEmptyProject } from "@dts/document";
+import { createAssetMetas, createEmptyProject, emptyAssetMetas } from "@dts/document";
 import { MenuBar } from "../src/app/MenuBar";
 import { BgmControl, bgmDeliveryHint } from "../src/app/BgmControl";
 import { BgmDialog } from "../src/app/BgmDialog";
+import { metaHistory } from "../src/state/store-core";
 import { projectHistory, sceneHistory, useEditorStore } from "../src/state/editor-store";
 import type { ResourceTreeNode } from "../src/services/project-api";
+import { audioMetaTable } from "./asset-meta-fixtures";
 
 /**
  * **背景音乐**（v16）的界面：顶栏「音乐」按钮 + 「背景音乐」弹框。
@@ -25,7 +27,7 @@ const PROJECT = "测试";
 const CLIP_A = `project:${PROJECT}/Assets/audio/theme.mp3`;
 const CLIP_B = `project:${PROJECT}/Assets/audio/battle.wav`;
 const CLIP_C = `project:${PROJECT}/Assets/audio/environment/rain.ogg`;
-/** 标注里还留着、盘上已经没有的那个文件（只在「音频文件」窗口里露面）。 */
+/** 盘上已经没有、但旧工程文件 / 旧 `.meta` 里还留着标注的那个文件（v24 起是看不见的孤儿）。 */
 const GONE = `project:${PROJECT}/Assets/audio/deleted.mp3`;
 
 const TREE: ResourceTreeNode[] = [
@@ -84,10 +86,14 @@ function seed(input?: {
   projectHistory.reset({
     ...createEmptyProject(PROJECT),
     ...(input?.tags === undefined ? {} : { audioTags: [...input.tags] }),
-    ...(input?.meta === undefined ? {} : { audioMeta: input.meta }),
   });
+  // 显示名与标签住在**那个文件自己的 `.meta`** 里（v24）：种表 + 派生索引
+  const table = audioMetaTable(input?.meta ?? {});
+  metaHistory.reset(table);
   useEditorStore.setState({
     doc: projectHistory.current,
+    assetMetaTable: table,
+    assetMetas: createAssetMetas(Object.entries(table).map(([id, meta]) => ({ id, meta }))),
     scenes: [],
     activeSceneName: null,
     selectedObjectIds: [],
@@ -149,6 +155,9 @@ afterEach(() => {
   cleanup();
   sceneHistory.reset([]);
   projectHistory.reset(createEmptyProject());
+  // 素材 meta 是**第三条轨道**：不重置它，上一个用例种下的显示名 / 标签会漏到下一个用例
+  metaHistory.reset({});
+  useEditorStore.setState({ assetMetaTable: {}, assetMetas: emptyAssetMetas() });
   useEditorStore.setState({
     scenes: [],
     activeSceneName: null,
@@ -480,12 +489,12 @@ describe("「背景音乐」弹框", () => {
     expect(screen.queryByTestId("bgm-tag-picker")).toBeNull();
   });
 
-  it("标注指向已经删掉的文件：不列出来（点了只会发出一条注定失败的命令）", () => {
+  it("素材已经删了、那份 `.meta` 还留在盘上：不列出来（看不见的孤儿，点了只会发一条注定失败的命令）", () => {
     seed({ tags: ["战斗"], meta: { [GONE]: { name: "删掉的那首", tags: [0] } } });
     useEditorStore.setState({ bgmDialog: true });
     render(<BgmDialog />);
 
-    // 名字排序后的清单：battle < rain < theme（删掉的那首不在里面）
+    // 名字排序后的清单：battle < rain < theme（删掉的那首不在树里，所以也不在清单里）
     expect(listedClips()).toEqual([CLIP_B, CLIP_C, CLIP_A]);
     expect(screen.getByTestId("bgm-dialog").textContent).not.toContain("删掉的那首");
   });

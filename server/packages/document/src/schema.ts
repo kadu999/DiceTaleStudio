@@ -1,5 +1,11 @@
 import { z } from "zod";
-import { createAssetMeta, withMetaSpriteSettings, withMetaSpriteSheet } from "./asset-meta";
+import {
+  createAssetMeta,
+  withMetaAudioName,
+  withMetaAudioTags,
+  withMetaSpriteSettings,
+  withMetaSpriteSheet,
+} from "./asset-meta";
 import type { AssetMetaDoc } from "./asset-meta";
 import { COMPONENT_TYPES, FEATURE_COMPONENT_TYPES, componentId, hasLegacyFeatureField } from "./components";
 import {
@@ -333,34 +339,22 @@ export const projectSettingsSchema = z.object({
 });
 
 /**
- * 一个音频文件的标注（v17 起；v18 起标签是**整数 ID**）：显示名 + 标签 ID 列表。
- *
- * **两项都不给默认值**（与 `video` / `teleport` 同一个口径）：「没写」本身有语义——
- * 显示名空着 = 用素材文件名，标签空着 = 还没打标签。补成 `""` / `[]` 只会让
- * 「没整理过」和「整理成空」变得分不清。脏值（空名字、越界 / 重复的标签 ID）由
- * `validateProject` 报 warning。
- */
-export const audioMetaEntrySchema = z.object({
-  name: z.string().optional(),
-  tags: z.array(z.number().int()).optional(),
-});
-
-/**
  * 项目级**标签表**（v18 起）：下标 = tag ID，值 = 名字（`null` = 已删除的洞）。
  *
- * 逐项校验只保证「是字符串或 null」；空名字 / 重名 / 文件引用越界都由 `validateProject` 报 warning
- * （读不开比标签显示不出来更糟）。
+ * 逐项校验只保证「是字符串或 null」；空名字 / 重名 / 文件引用越界都由 `validateProject`
+ * 与 `validateAssetMetas` 报 warning（读不开比标签显示不出来更糟）。
  */
 export const audioTagTableSchema = z.array(z.string().nullable());
 
 /**
  * 工程文件：只有项目级数据，场景在 `Assets/scenes/` 下各自成文件。
  *
- * `audioMeta` / `audioTags` **可选且不给默认值**：缺省 = 这个项目还没整理过音频
+ * `audioTags` **可选且不给默认值**：缺省 = 这个项目根本没有标签
  * （v14 的 `video` 同一条规矩：不拿空壳冒充「有这个字段」）。
  *
- * v23 起这里**没有**图片的切分与导入设置：它们搬到**素材自己的 `.meta`** 里
- * （`asset-meta.ts`），由 `parseProjectFile` 的 v22 → v23 迁移按路径合并出来交给调用方落盘。
+ * v23 起这里**没有**图片的切分与导入设置，v24 起也**没有**音频文件的标注：
+ * 两者都搬到了**素材自己的 `.meta`** 里（`asset-meta.ts`），由 `parseProjectFile` 的
+ * 迁移按路径合并出来交给调用方落盘。**每个素材旁边的 `.meta` 才是素材级数据的家**。
  */
 export const projectDocSchema = z.object({
   formatVersion: z.number().int().positive(),
@@ -369,9 +363,7 @@ export const projectDocSchema = z.object({
   // v15 起：项目级全局设置（目前是音频）。**给默认值**：老 `project.json` 里没有它，
   // 语义只能是「全用缺省参数」；版本升到 15 时本来就会回写一次，磁盘上的文件从此自描述。
   settings: projectSettingsSchema.default(() => defaultProjectSettings()),
-  // v17 起：音频文件标注（显示名 + 标签 ID）。纯编辑器数据，不进协议、不下发 Unity。
-  audioMeta: z.record(z.string(), audioMetaEntrySchema).optional(),
-  // v18 起：音频标签表（下标 = tag ID，值 = 名字）。与 audioMeta 一起构成「标签」这一套。
+  // v18 起：音频标签表（下标 = tag ID，值 = 名字）。**项目级**，所以留在这里。
   audioTags: audioTagTableSchema.optional(),
 });
 
@@ -849,7 +841,7 @@ function migrateSpriteMetas(raw: Record<string, unknown>): {
 
     const sheet = legacySheetOf(sheets[id]);
     const importSettings = legacySettingsOf(settings[id]);
-    let meta = createAssetMeta();
+    let meta = createAssetMeta("texture");
     if (importSettings !== undefined) {
       meta = withMetaSpriteSettings(meta, importSettings);
     }
@@ -862,6 +854,85 @@ function migrateSpriteMetas(raw: Record<string, unknown>): {
   }
 
   return { metas, changed };
+}
+
+/**
+ * v23 → v24：把工程文件里的 `audioMeta`（路径 ID → `{ 显示名, 标签 ID }`）按路径搬进
+ * 各自音频文件的 `.meta` 的 `audio` 段，交给调用方写进那一份 `.meta`。
+ *
+ * 四条口径：
+ * - **标签 ID 要过表**：越界 / 指向已删的洞 / 重复的 ID 由 `withMetaAudioTags` 丢掉
+ *   （与界面上的写路径共用同一份归一化），落盘的 meta 天生干净；
+ * - **空壳不搬**：不是对象的项、以及搬完既没名字也没标签的项（旧版本留下的 `{}`）**不为它造 meta**
+ *   ——素材自己那份 meta 由调用方按「每个素材一份」统一补（`loadAssetMetas`），
+ *   这里不替它写一份只有 GUID 的空壳（那是这次要消掉的噪声）；
+ * - **`audioTags` 留在工程文件里**：它是项目级数据，不是某一个文件的属性（见 `types.ts` 的 v24）；
+ * - **不判断素材还在不在**：与 `migrateSpriteMetas` 同一条——孤儿键交给调用方按资源树丢弃并报 warning。
+ */
+function migrateAudioMetas(
+  raw: Record<string, unknown>,
+  table: readonly (string | null)[],
+): {
+  readonly metas: Array<{ readonly id: string; readonly meta: AssetMetaDoc }>;
+  readonly changed: boolean;
+} {
+  const legacy = raw.audioMeta;
+  const changed = legacy !== undefined;
+  if (!isRecord(legacy)) {
+    return { metas: [], changed };
+  }
+
+  const metas: Array<{ readonly id: string; readonly meta: AssetMetaDoc }> = [];
+  for (const [id, entry] of Object.entries(legacy)) {
+    // 空路径 ID 不可能是素材（手写文件的噪声）：跳过，不为它造一份没有归属的 meta
+    if (id.trim().length === 0 || !isRecord(entry)) {
+      continue;
+    }
+
+    const name = typeof entry.name === "string" ? entry.name : undefined;
+    const tags = Array.isArray(entry.tags)
+      ? entry.tags.filter((tag): tag is number => typeof tag === "number")
+      : undefined;
+
+    let meta = createAssetMeta("audio");
+    if (name !== undefined) {
+      meta = withMetaAudioName(meta, name);
+    }
+
+    if (tags !== undefined) {
+      meta = withMetaAudioTags(meta, tags, table);
+    }
+
+    // 搬完什么都不剩（空壳 / 名字全空白 / 标签全越界）：不为它造 meta
+    if (meta.audio === undefined) {
+      continue;
+    }
+
+    metas.push({ id, meta });
+  }
+
+  return { metas, changed };
+}
+
+/**
+ * 合并两次迁移搬出来的 meta（v23 的图片 + v24 的音频），**同一个键先到的赢**。
+ *
+ * 路径带扩展名，所以同一个键不可能既是图片又是这些数据；真撞上（手写文件）时先到的赢，
+ * 与 `createAssetMetas` 面对重复 guid 时同一条取舍：稳定地写出一份，比两份互相覆盖好。
+ */
+function mergeMigratedMetas(
+  ...groups: ReadonlyArray<ReadonlyArray<{ readonly id: string; readonly meta: AssetMetaDoc }>>
+): Array<{ readonly id: string; readonly meta: AssetMetaDoc }> {
+  const byId = new Map<string, AssetMetaDoc>();
+  for (const group of groups) {
+    for (const entry of group) {
+      if (!byId.has(entry.id)) {
+        byId.set(entry.id, entry.meta);
+      }
+    }
+  }
+
+  return [...byId].map(([id, meta]) => ({ id, meta }));
 }
 
 /**
@@ -898,8 +969,9 @@ export interface ProjectFileLoad {
   /** 旧版工程文件里内联的场景：调用方需要把它们写成 scenes/ 下的独立文件。 */
   readonly migratedScenes: readonly SceneDoc[];
   /**
-   * v22 → v23 迁移搬出来的素材 meta（`id` = 素材的路径 ID）：调用方要把每一份写进
-   * `<素材>.meta`（没有就新建）。**文档层不判断素材还在不在**——孤儿键由调用方按资源树过滤。
+   * 迁移从工程文件里搬出来的素材 meta（`id` = 素材的路径 ID）：调用方要把每一份写进
+   * `<素材>.meta`（没有就新建）。两条迁移都走这里——v22 → v23 的图片切分 / 导入设置，
+   * 以及 v23 → v24 的音频标注。**文档层不判断素材还在不在**——孤儿键由调用方按资源树过滤。
    */
   readonly migratedMetas: ReadonlyArray<{ readonly id: string; readonly meta: AssetMetaDoc }>;
   /** 工程文件是旧版本，需要按新格式回写。 */
@@ -928,6 +1000,15 @@ export function parseProjectFile(raw: unknown): ProjectFileLoad {
   const spriteMetas = isRecord(tags.raw)
     ? migrateSpriteMetas(tags.raw)
     : { metas: [], changed: false };
+  // v24：音频文件的标注（显示名 + 标签 ID）搬进各自音频文件的 `.meta`。
+  // 标签 ID 要按**工程文件里那张表**归一化，所以这里先把表取出来（迁移 v18 已经建好了）
+  const audioTable =
+    isRecord(tags.raw) && Array.isArray(tags.raw.audioTags)
+      ? (tags.raw.audioTags as (string | null)[])
+      : [];
+  const audioMetas = isRecord(tags.raw)
+    ? migrateAudioMetas(tags.raw, audioTable)
+    : { metas: [], changed: false };
   const result = projectDocSchema.safeParse(tags.raw);
   if (!result.success) {
     throw new Error(`项目文档校验失败: ${formatIssues(result.error)}`);
@@ -949,13 +1030,19 @@ export function parseProjectFile(raw: unknown): ProjectFileLoad {
     bgm.changed ||
     tags.changed ||
     spriteMetas.changed ||
+    audioMetas.changed ||
     result.data.formatVersion < DOCUMENT_FORMAT_VERSION;
   const doc = migrateProjectDoc({
     ...(result.data as ProjectDoc),
     ...(needsRewrite ? { formatVersion: DOCUMENT_FORMAT_VERSION } : {}),
   });
 
-  return { doc, migratedScenes, migratedMetas: spriteMetas.metas, needsRewrite };
+  return {
+    doc,
+    migratedScenes,
+    migratedMetas: mergeMigratedMetas(spriteMetas.metas, audioMetas.metas),
+    needsRewrite,
+  };
 }
 
 /** 读工程文件，只要项目级数据（调用方不关心迁移时用它）。 */

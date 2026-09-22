@@ -103,7 +103,7 @@ function SoundEditBody({
   const setSoundClipName = useEditorStore((state) => state.setSoundClipName);
   const addSoundClip = useEditorStore((state) => state.addSoundClip);
   const removeSoundClip = useEditorStore((state) => state.removeSoundClip);
-  const audioMeta = useEditorStore((state) => state.doc.audioMeta);
+  const audioMetas = useEditorStore((state) => state.assetMetaTable);
 
   /** 「选择音频」弹框开着没有（换个对象就收起来）。 */
   const [picking, setPicking] = useState(false);
@@ -125,7 +125,7 @@ function SoundEditBody({
       fileName: assetDisplayName(asset?.name ?? fileNameOf(id)),
       // 输入框的占位 = **跟随的那一层**（音频文件自己的名字，没有才用文件名）：
       // 留空时这一条会显示成它，作者一眼看得出「不改就是这个名字」
-      fallbackName: audioNameOf(audioMeta, id) ?? assetDisplayName(asset?.name ?? fileNameOf(id)),
+      fallbackName: audioNameOf(audioMetas, id) ?? assetDisplayName(asset?.name ?? fileNameOf(id)),
       path: assetDisplayPath(id),
       missing: asset === undefined,
     };

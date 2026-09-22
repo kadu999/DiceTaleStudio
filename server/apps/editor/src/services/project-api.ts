@@ -83,13 +83,19 @@ export const projectApi = {
    *
    * 原文（不在这里解析）是有意的：解析、"缺 guid 就补"是文档层的规矩
    * （`@dts/document` 的 `parseAssetMetaFile`）——这一层只管把后端的字节搬回来，
-   * 与「读盘只发生在后端」同一条分工。没有 meta 的素材不出现在这里。
+   * 与「读盘只发生在后端」同一条分工。没有 meta 的素材不出现在 `metas` 里。
+   *
+   * `unreadable` 是**盘上有那份 meta、但读不出来**（坏 JSON）的素材 ID：它和「压根没有 meta」
+   * 在后端返回里长得不一样，正是为了**别给它们补一份新的**（新 GUID 会盖掉盘上那份，
+   * 引用它的旧 GUID 一起断）。调用方只对 `metas` 里没有、`unreadable` 里也没有的素材补建。
    */
-  async readMetas(name: string): Promise<Record<string, unknown>> {
-    const body = await request<{ metas: Record<string, unknown> }>(
+  async readMetas(
+    name: string,
+  ): Promise<{ metas: Record<string, unknown>; unreadable: readonly string[] }> {
+    const body = await request<{ metas: Record<string, unknown>; unreadable?: string[] }>(
       `/api/projects/meta?name=${encodeURIComponent(name)}`,
     );
-    return body.metas;
+    return { metas: body.metas, unreadable: body.unreadable ?? [] };
   },
 
   async createFolder(project: string, path: string): Promise<void> {

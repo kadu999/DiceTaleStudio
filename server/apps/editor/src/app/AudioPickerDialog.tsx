@@ -30,15 +30,12 @@ export function AudioPickerDialog({
   onPick,
 }: AudioPickerDialogProps): React.JSX.Element {
   const tree = useEditorStore((state) => state.project.tree);
-  const meta = useEditorStore((state) => state.doc.audioMeta);
+  const metas = useEditorStore((state) => state.assetMetaTable);
   const table = useEditorStore((state) => state.doc.audioTags);
   const [query, setQuery] = useState("");
 
-  // 只列**还在项目里**的音频（标注指向已删文件的不该出现在「挑素材」的地方）
-  const rows = useMemo(
-    () => audioCatalog(tree, meta, table).filter((row) => !row.missing),
-    [tree, meta, table],
-  );
+  // 清单就是项目里的音频（每个素材一行，名字 / 标签来自它自己那份 `.meta`）
+  const rows = useMemo(() => audioCatalog(tree, metas, table), [tree, metas, table]);
   const visible = useMemo(
     () => filterAudioRows(rows, { query, tags: [] }),
     [rows, query],

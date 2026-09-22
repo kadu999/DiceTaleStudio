@@ -85,8 +85,17 @@ import type { ObjectKind } from "./kinds";
  *   与下发前端的换算——前端/协议因此一个字节都不用改（推送时仍换算回路径 ID）；
  * - 为什么要改：那三份数据原来都以**文件名**为键，外部一改名就同时失联（见
  *   `docs/specs/2026-09-23-asset-meta.md` 里记的真实案例）。改完 `.meta` 与素材成对改名 = 不断链。
+ *
+ * v24（2026-09-23）：**素材 meta 覆盖到每一种素材，工程文件不再存任何「按文件记」的数据**。
+ * - **每个素材旁边必有一份 `<素材>.meta`**（图片 / 音频 / 视频 / 场景）：编辑器打开项目、
+ *   刷新资源树时，缺的那几份按素材种类现建（`importer` = `texture` / `audio` / `video` / `scene`）；
+ * - 工程文件里的 `audioMeta`**删除**（`migrateAudioMetas` 把它按路径搬进各自音频文件的
+ *   `.meta` 的 `audio` 段：显示名 + 标签 ID 列表）；`audioTags`（标签表）**留在工程文件里**，
+ *   它是**项目级**数据，不是某一个文件的属性；
+ * - 于是口径统一成一句话：**项目级数据在 `project.json`，素材级数据跟着素材走**。
+ *   协议 / 前端仍然一个字节都不用改（音频引用一直是资源逻辑 ID）。
  */
-export const DOCUMENT_FORMAT_VERSION = 23;
+export const DOCUMENT_FORMAT_VERSION = 24;
 
 /** 网格行序：`bottom-up` 表示 cells 第 0 行是图片最下面一行（与 Unity GridMap 一致）。 */
 export type RowOrder = "bottom-up";
@@ -516,27 +525,11 @@ export interface ProjectSettingsDoc {
   };
 }
 
-/**
- * 一个**音频文件**的标注（v17 起；v18 起标签换成整数 ID）：显示名 + 标签 ID 列表。
- *
- * 它**只是编辑器里给人看 / 找的**：不进协议、不下发给 Unity、不参与播放
- * （`play_bgm{clip}` 里仍然是资源逻辑 ID）。用途是现场快速找到那一首：
- * 「音频文件」窗口里批量起名字 / 选标签，背景音乐弹框按名字与标签搜 / 筛。
- *
- * 两条缺省语义（**都不补空壳**，与 `video` 同一个口径）：
- * - `name` 缺省 = 用素材文件名；
- * - `tags` 缺省 = 还没打标签。
- * 两项都空时这一条会被删掉（见 `commands.ts` 的 `setAudioMetaName` / `setAudioMetaTags`）。
+/*
+ * v24 起这里**没有** `AudioMetaDoc` 了：音频文件的标注（显示名 + 标签 ID 列表）住在
+ * **那个音频文件自己的 `.meta`** 里（`asset-meta.ts` 的 `AssetMetaAudioDoc`）——
+ * 它和图片的切分 / 导入设置同一档：**素材级数据跟着素材走**，键不再是路径。
  */
-export interface AudioMetaDoc {
-  /** 显示名（空 = 用素材文件名）。 */
-  readonly name?: string;
-  /**
-   * **标签 ID 列表**——ID 就是 `ProjectDoc.audioTags` 的下标（对齐 Unity：**tag 是个整数**，
-   * 名字只是它的显示文本）。规范化：去重 + 升序，改标签名不会动这里一个字节。
-   */
-  readonly tags?: number[];
-}
 
 /**
  * 项目级**标签表**（v18 起）：**下标就是 tag 的整数 ID**，值是这个 ID 的名字。
@@ -562,23 +555,18 @@ export interface ProjectDoc {
    */
   readonly settings: ProjectSettingsDoc;
   /**
-   * **音频文件标注**（v17 起，可选）：`资源逻辑 ID → { 显示名, 标签 ID 列表 }`。
-   *
-   * 缺省 = 这个项目还没整理过音频（**不补空壳**：`{}` 与「没有这一项」是两回事，
-   * 后者才是事实）。它**不在 `settings` 里**——「项目设置」仍然只有三档音量；
-   * 标注是**项目级数据**，与 `items`（道具库）同一档。
-   */
-  readonly audioMeta?: Record<string, AudioMetaDoc>;
-  /**
    * **音频标签表**（v18 起，可选）：下标 = tag ID，值 = 名字（`null` = 已删除的洞）。
    *
-   * 与 `audioMeta` 并列（都是项目级数据、都不进协议）。没有标签时**不写这一项**。
+   * 它是**项目级**数据（一张表管全项目），所以**留在工程文件里**；文件那一侧只记
+   * `[0, 2]` 这样的整数 ID，而那些 ID 住在**那个文件自己的 `.meta`** 里（v24 起，
+   * 见 `asset-meta.ts` 的 `AssetMetaAudioDoc`）。没有标签时**不写这一项**。
    */
   readonly audioTags?: AudioTagTableDoc;
   /*
    * v23 起这里**没有** `spriteSheets` / `spriteSettings` 了：图片的导入设置与切分搬到
    * **素材自己的 `.meta`** 里（`Assets/images/A.png.meta`，见 `asset-meta.ts`）——
    * 名字即键那套会让「外部改个文件名」把图、切分、格子引用三份一起打断（实测踩过）。
+   * v24 起 `audioMeta` 也走了同一条路（搬进 `Assets/audio/x.mp3.meta` 的 `audio` 段）。
    * 工程文件里只剩**项目级**数据；素材级数据跟着素材走。
    */
 }

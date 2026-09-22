@@ -122,7 +122,7 @@ describe("项目 API", () => {
     expect(folderNames).not.toContain("items");
   });
 
-  it("素材 meta：一个项目一次拿全，坏 meta 跳过，`.meta` 不进资源树", async () => {
+  it("素材 meta：一个项目一次拿全，坏 meta 跳过但单独列出来，`.meta` 不进资源树", async () => {
     await postJson("/api/projects", { name: TEST_PROJECT });
     const imageId = projectAssetId(TEST_PROJECT, "Assets/images/A.png");
     const guid = "a".repeat(32);
@@ -138,11 +138,21 @@ describe("项目 API", () => {
     await provider.writeText(assetMetaIdOf(brokenId), "{ 这不是 JSON");
 
     const response = await fetch(`${baseUrl}/api/projects/meta?name=${encodeURIComponent(TEST_PROJECT)}`);
-    const body = (await response.json()) as { metas: Record<string, unknown> };
+    const body = (await response.json()) as {
+      metas: Record<string, unknown>;
+      unreadable: string[];
+    };
     expect(response.status).toBe(200);
     // 键是**素材**的逻辑 ID（不是 meta 文件自己的 ID）
     expect(Object.keys(body.metas)).toEqual([imageId]);
     expect(body.metas[imageId]).toMatchObject({ guid, importer: "texture" });
+
+    /*
+      读不出来的那一份要**单独列出来**：调用方据此知道「盘上有 meta、只是读不懂」——
+      不列的话它跟「压根没有 meta」长得一样，调用方会给它补一份新 meta（新 GUID），
+      把用户盘上那份盖掉、引用旧 GUID 的地方一起断。
+    */
+    expect(body.unreadable).toEqual([brokenId]);
 
     // meta 是元数据：资源树里看不到它，但按 ID 读得到（写 meta 走的就是资源接口）
     const nodes = await tree(TEST_PROJECT);

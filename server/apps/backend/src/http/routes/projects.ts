@@ -90,7 +90,7 @@ export async function getProjectTreeRoute(ctx: RouteContext): Promise<void> {
 /**
  * `GET /api/projects/meta?name=`：一个项目里**所有素材 meta**（一次拿全）。
  *
- * 返回 `{ name, metas: { <素材逻辑 ID>: <meta 原文> } }`：
+ * 返回 `{ name, metas: { <素材逻辑 ID>: <meta 原文> }, unreadable: [素材逻辑 ID] }`：
  * - 键是**素材**的逻辑 ID（不是 meta 文件自己的 ID），调用方拿到就能按素材查；
  * - 值是**原文对象**（这里不解析）：解析、"缺 guid 就补"是文档层的规矩
  *   （`@dts/document` 的 `parseAssetMetaFile`）——后端只管把文件读出来，
@@ -98,7 +98,10 @@ export async function getProjectTreeRoute(ctx: RouteContext): Promise<void> {
  * - 找法：**从素材找它的 meta**（`<素材>.meta`）。meta 本身不在资源列表里（它是元数据，
  *   见 `FsResourceProvider.list`），所以不靠列目录枚举；反过来，**没有素材的孤儿 meta
  *   自然看不见**——它本来就该由人去清掉；
- * - 读不出 / 坏 JSON 的条目**跳过并记日志**：一个坏 meta 不该把整次加载打掉。
+ * - 读不出 / 坏 JSON 的条目**跳过并记日志**：一个坏 meta 不该把整次加载打掉。**但要单独列出来**
+ *   （`unreadable`）：调用方据此知道「这份素材**盘上是有 meta 的**，只是读不懂」——
+ *   不列的话它跟「压根没有 meta」长得一模一样，而调用方会给后者补一份新 meta
+ *   （新 GUID），那就把用户盘上那份（以及引用它的旧 GUID）**盖掉了**。
  */
 export async function getProjectMetasRoute(ctx: RouteContext): Promise<void> {
   const name = queryRaw(ctx.url, "name");
@@ -108,6 +111,7 @@ export async function getProjectMetasRoute(ctx: RouteContext): Promise<void> {
 
   const entries = await readProjectEntries(ctx.provider, name);
   const metas: Record<string, unknown> = {};
+  const unreadable: string[] = [];
   for (const entry of entries) {
     if (entry.type !== "file") {
       continue;
@@ -121,6 +125,7 @@ export async function getProjectMetasRoute(ctx: RouteContext): Promise<void> {
     try {
       metas[entry.id] = JSON.parse(await ctx.provider.readText(metaId)) as unknown;
     } catch (error) {
+      unreadable.push(entry.id);
       ctx.log(
         "warn",
         `素材 meta 读不出来，已跳过：${entry.path}（${error instanceof Error ? error.message : String(error)}）`,
@@ -128,7 +133,7 @@ export async function getProjectMetasRoute(ctx: RouteContext): Promise<void> {
     }
   }
 
-  sendJson(ctx.response, 200, { name, metas });
+  sendJson(ctx.response, 200, { name, metas, unreadable });
 }
 
 /** `POST /api/projects/folder`：在项目里建一个目录（路径必须过项目内相对路径校验）。 */export async function createProjectFolderRoute(ctx: RouteContext): Promise<void> {

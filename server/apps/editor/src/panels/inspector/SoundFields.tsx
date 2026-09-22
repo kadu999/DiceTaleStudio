@@ -73,7 +73,7 @@ export function soundDeliveryHint(input: {
 }
 
 export function SoundFields({ object }: { readonly object: SceneObjectDoc }): React.JSX.Element {
-  const audioMeta = useEditorStore((state) => state.doc.audioMeta);
+  const audioMetas = useEditorStore((state) => state.assetMetaTable);
   const scenes = useEditorStore((state) => state.scenes);
   const activeSceneName = useEditorStore((state) => state.activeSceneName);
   const playback = useEditorStore((state) => state.soundPlayback);
@@ -97,10 +97,11 @@ export function SoundFields({ object }: { readonly object: SceneObjectDoc }): Re
   /**
    * 面板上显示什么名字：**这个对象自己起的 → 音频文件自己的显示名 → 素材文件名**。
    *
-   * 中间那一层是「音频文件」窗口里的项目级标注（v17 起）：同一个文件在别处（BGM 弹框、
-   * 选择音频）也叫这个名字，所以对象这边留空就自动跟随，不必每个对象再起一遍。
+   * 中间那一层是那个音频文件**自己的 `.meta`** 里的显示名（v17 起是项目级标注、v24 起跟着文件走）：
+   * 同一个文件在别处（BGM 弹框、选择音频）也叫这个名字，所以对象这边留空就自动跟随，
+   * 不必每个对象再起一遍。
    */
-  const nameOf = (clip: string): string => audioDisplayName(audioMeta, clip, sound?.names?.[clip]);
+  const nameOf = (clip: string): string => audioDisplayName(audioMetas, clip, sound?.names?.[clip]);
 
   const pickedName = picked === undefined ? "" : nameOf(picked);
   const playBlocked = soundPlayBlockedReason({ clips: clips.length, picked });

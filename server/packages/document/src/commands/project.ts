@@ -1,18 +1,19 @@
-// 本文件从 `commands.ts` 拆出（纯搬运，行为不变）：项目级全局设置与音频标注 / 标签表命令。
+// 本文件从 `commands.ts` 拆出（纯搬运，行为不变）：项目级全局设置与音频**标签表**命令。
 //
 // 图片的切分与导入设置（旧的 `setSpriteSheet` / `setSpriteImportSettings`）**已经从这里删掉**：
 // v23 起它们不再住在工程文件里，而是写在各自素材的 `.meta` 里，写入口径是 `asset-meta.ts` 的
-// `withMetaSpriteSheet` / `withMetaSpriteSettings`（纯函数，返回新 meta）。编辑器的 meta 轨道
-// 拿它们做一次编辑、自己去抖落盘——不经这里的项目文档 draft，所以这三个命令在这里没有立足点。
+// `withMetaSpriteSheet` / `withMetaSpriteSettings`（纯函数，返回新 meta）。
+//
+// 音频文件的标注（旧的 `setAudioMetaName` / `setAudioMetaTags`）**v24 起也走了同一条路**：
+// 它们现在住在**那个音频文件自己的 `.meta`** 的 `audio` 段里，写入口径是 `asset-meta.ts` 的
+// `withMetaAudioName` / `withMetaAudioTags` / `withoutMetaAudioTag`。
+// 留在这里的只有**项目级**的标签表（下标 = tag ID）：一张表管全项目，与某一个文件无关。
+// 编辑器拿那些纯函数在**素材 meta 那条轨道**上做一次编辑、自己按撤销与去抖落盘——
+// 不经这里的项目文档 draft，所以那些命令在这里没有立足点。
 import type { Draft } from "immer";
 // 全局设置的缺省值（形状 + 默认值都住在 schema 里）：命令在遇到缺字段的手搭文档时补一份可用的
 import { defaultAudioSettings, defaultProjectSettings } from "../schema";
-import type {
-  AudioMetaDoc,
-  AudioTagTableDoc,
-  ProjectDoc,
-  ProjectSettingsDoc,
-} from "../types";
+import type { AudioTagTableDoc, ProjectDoc, ProjectSettingsDoc } from "../types";
 
 // ---------------------------------------------------------------- 项目级全局设置：三档音量
 
@@ -89,35 +90,7 @@ export function setVoiceVolume(project: Draft<ProjectDoc>, volume: number): bool
   return true;
 }
 
-// ---------------------------------------------------------------- 项目级数据：音频文件标注（显示名 + 标签）
-
-/**
- * 归一化一组标签 ID：丢掉越界的、指向已删（`null`）槽的、重复的，再升序。
- *
- * 升序是有意的：ID 是**身份**（不是顺序），排一下让「同一组标签」在文件里长得一样，
- * 「值没变」的判断也就成了逐项比较。
- */
-function normalizeTagIds(tags: readonly number[], table: readonly (string | null)[]): number[] {
-  const seen = new Set<number>();
-  for (const raw of tags) {
-    if (!Number.isInteger(raw) || raw < 0 || raw >= table.length || table[raw] === null) {
-      continue;
-    }
-
-    seen.add(raw);
-  }
-
-  return [...seen].sort((a, b) => a - b);
-}
-
-/** 标注容器；**缺就补一个**（第一次编辑时，而不是让编辑静默失败）。 */
-function audioMetaOf(project: Draft<ProjectDoc>): Record<string, Draft<AudioMetaDoc>> {
-  if (project.audioMeta === undefined) {
-    project.audioMeta = {};
-  }
-
-  return project.audioMeta;
-}
+// ---------------------------------------------------------------- 项目级数据：音频**标签表**（下标 = tag ID）
 
 /**
  * 标签表（缺就补一个空表）。
@@ -131,97 +104,6 @@ function audioTagsOf(project: Draft<ProjectDoc>): Draft<AudioTagTableDoc> {
 
   return project.audioTags;
 }
-
-/**
- * 收拾空壳：这一条既没名字也没标签就把 entry 删掉；整个 `audioMeta` 空了就把字段删掉。
- *
- * 「不留空壳」是与 `video` / `teleport` 同一套规矩：`{}` 与「没有这一项」是两回事，
- * 后者才是「这个项目还没整理过音频」的事实；留着空壳会让工程文件白白变脏。
- */
-function pruneAudioMeta(project: Draft<ProjectDoc>, clipId: string): void {
-  const meta = project.audioMeta;
-  if (meta === undefined) {
-    return;
-  }
-
-  const entry = meta[clipId];
-  if (entry !== undefined && entry.name === undefined && entry.tags === undefined) {
-    delete meta[clipId];
-  }
-
-  if (Object.keys(meta).length === 0) {
-    delete project.audioMeta;
-  }
-}
-
-/**
- * 给一个音频文件起**显示名**（`""` = 退回素材文件名）。
- *
- * 名字只是编辑器里给人看的（找不到素材时也靠它认），**不进协议、不参与播放**。
- * `clipId` 空 / 值没变返回 `false`（不进撤销栈）。
- */
-export function setAudioMetaName(project: Draft<ProjectDoc>, clipId: string, name: string): boolean {
-  const id = clipId.trim();
-  if (id.length === 0) {
-    return false;
-  }
-
-  const trimmed = name.trim();
-  const current = project.audioMeta?.[id]?.name;
-  if (trimmed === (current ?? "")) {
-    return false;
-  }
-
-  const meta = audioMetaOf(project);
-  const entry = meta[id] ?? {};
-  if (trimmed.length === 0) {
-    delete entry.name;
-  } else {
-    entry.name = trimmed;
-  }
-
-  meta[id] = entry;
-  pruneAudioMeta(project, id);
-  return true;
-}
-
-/**
- * 替换一个音频文件的**整份标签 ID 清单**（与 `setTeleportTargets` 同一个口径：
- * 界面那边只看得到「现在勾了哪些」，传整份最直接）。
- *
- * 归一化（丢掉越界 / 已删 / 重复的 ID，升序）后与原值逐项比较：没变返回 `false`；
- * 清空 = 删掉 `tags` 字段。
- */
-export function setAudioMetaTags(
-  project: Draft<ProjectDoc>,
-  clipId: string,
-  tags: readonly number[],
-): boolean {
-  const id = clipId.trim();
-  if (id.length === 0) {
-    return false;
-  }
-
-  const next = normalizeTagIds(tags, project.audioTags ?? []);
-  const current = project.audioMeta?.[id]?.tags ?? [];
-  if (next.length === current.length && next.every((tag, index) => tag === current[index])) {
-    return false;
-  }
-
-  const meta = audioMetaOf(project);
-  const entry = meta[id] ?? {};
-  if (next.length === 0) {
-    delete entry.tags;
-  } else {
-    entry.tags = next;
-  }
-
-  meta[id] = entry;
-  pruneAudioMeta(project, id);
-  return true;
-}
-
-// ---------------------------------------------------------------- 项目级数据：音频**标签表**（下标 = tag ID）
 
 /**
  * 新建一个标签（或复用同名的那个）：返回它的 **ID**；名字为空返回 `null`。
@@ -325,13 +207,19 @@ export function setAudioTagName(
 }
 
 /**
- * 删掉一个标签（按 tag ID）：从**所有**音频文件上摘掉这个 ID，表里把槽设成 `null`（**留洞**）。
+ * 删掉一个标签（按 tag ID）：表里把槽设成 `null`（**留洞**）。
  *
  * 为什么留洞而不是把后面的标签往前挪：ID 是身份，一挪就会把别的标签的 ID 改掉，
  * 文件里那些引用全成了另一个标签——Unity 的 TagManager 也是「列表 + 下标」，
  * 我们这边明确留洞，新建时优先复用。
  *
- * 该 ID 越界 / 已经是洞 / 没被任何文件用到 → `false`（不进撤销栈）。
+ * **引用不在这里摘**：v24 起「哪个文件用了这个标签」住在**那个文件自己的 `.meta`** 里，
+ * 而这一条命令只拿得到工程文件。摘引用的那一半是 `asset-meta.ts` 的 `withoutMetaAudioTag`
+ * （纯函数，一文件一次），由调用方在 meta 轨道上与这一条合起来做——
+ * 两条轨道各撤各的，不会出现「撤销一半」的中间态。
+ * （界面上目前没有删除入口，见 README「标签」那一节；这条命令留给工具与迁移。）
+ *
+ * 该 ID 越界 / 已经是洞 → `false`（不进撤销栈）。
  */
 export function deleteAudioTag(project: Draft<ProjectDoc>, tagId: number): boolean {
   const table = project.audioTags;
@@ -346,25 +234,6 @@ export function deleteAudioTag(project: Draft<ProjectDoc>, tagId: number): boole
   }
 
   table[tagId] = null;
-
-  const meta = project.audioMeta;
-  if (meta !== undefined) {
-    for (const [clipId, entry] of Object.entries(meta)) {
-      const tags = entry.tags;
-      if (tags === undefined || !tags.includes(tagId)) {
-        continue;
-      }
-
-      const next = tags.filter((item) => item !== tagId);
-      if (next.length === 0) {
-        delete entry.tags;
-      } else {
-        entry.tags = next;
-      }
-
-      pruneAudioMeta(project, clipId);
-    }
-  }
 
   // 表里一个名字都不剩（全是洞 / 空表）：整个字段删掉，不留空壳
   if (table.every((name) => name === null)) {
