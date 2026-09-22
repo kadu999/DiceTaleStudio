@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import type { SceneObjectDoc } from "@dts/document";
+import { soundDataOf, type SceneObjectDoc } from "@dts/document";
 import { useEditorStore } from "../state/editor-store";
 import { audioNameOf } from "../panels/audio-catalog";
 import { assetDisplayName } from "../panels/asset-info";
@@ -111,7 +111,7 @@ function SoundEditBody({
     setPicking(false);
   }, [object.id]);
 
-  const sound = object.sound;
+  const sound = soundDataOf(object);
   const clips = sound?.clips ?? [];
 
   // 加进来的音频：能找到素材的用素材名，找不到的（素材被删 / 手写文件）也留一行，

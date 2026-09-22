@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import {
+  FEATURE_COMPONENT,
   createTeleportObject,
+  teleportDataOf,
+  withFeature,
   type SceneDoc,
   type SceneObjectDoc,
 } from "@dts/document";
@@ -57,8 +60,10 @@ const objectOf = (id: string): SceneObjectDoc | undefined =>
     .scenes.flatMap((scene) => scene.objects)
     .find((object) => object.id === id);
 
-const targetsOf = (id: string): { targets?: readonly string[]; picked?: string } | undefined =>
-  objectOf(id)?.teleport;
+const targetsOf = (id: string): { targets?: readonly string[]; picked?: string } | undefined => {
+  const object = objectOf(id);
+  return object === undefined ? undefined : teleportDataOf(object);
+};
 
 afterEach(() => {
   cleanup();
@@ -103,7 +108,7 @@ describe("创建传送阵", () => {
 
     const object = useEditorStore.getState().scenes[0]?.objects[0];
     expect(object?.kind).toBe("Teleport");
-    expect(object?.teleport).toEqual({ targets: [] });
+    expect(object === undefined ? undefined : teleportDataOf(object)).toEqual({ targets: [] });
     expect(object?.position).toEqual({ x: 0, y: 0 });
     // 画布上给的是**固定徽标**那块 64×64 的矩形（它没有贴图；挂了贴图也不认）
     expect(object === undefined ? undefined : displayRectOf(object)?.size).toEqual({
@@ -169,10 +174,10 @@ describe("属性面板：候选小方块 + ＋ + 传送", () => {
   });
 
   it("选中的场景不在候选里（手写文件）：按钮写「先选一个目标」", () => {
-    const handWritten: SceneObjectDoc = {
-      ...teleport([A]),
-      teleport: { targets: [A], picked: B },
-    };
+    const handWritten: SceneObjectDoc = withFeature(teleport([A]), FEATURE_COMPONENT.teleport, {
+      targets: [A],
+      picked: B,
+    });
     seedScene([handWritten]);
     render(<InspectorPanel />);
 
@@ -292,7 +297,7 @@ describe("触发传送：按一下换台（不改文档）", () => {
     // 四种「点不动」与面板上的护栏是同一套判断，理由要对得上
     const cases: ReadonlyArray<readonly [string, SceneObjectDoc, RegExp]> = [
       ["候选空", teleport(), /还没有加目标场景/],
-      ["没选", { ...teleport([A]), teleport: { targets: [A] } }, /还没选要传送到哪一张/],
+      ["没选", withFeature(teleport([A]), FEATURE_COMPONENT.teleport, { targets: [A] }), /还没选要传送到哪一张/],
       ["目标不存在", teleport(["Map999"], "Map999"), /不存在/],
       ["目标是自己", teleport(["Map001"], "Map001"), /目标就是当前场景/],
     ];

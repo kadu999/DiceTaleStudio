@@ -1,4 +1,5 @@
 import * as Dialog from "@radix-ui/react-dialog";
+import { teleportDataOf } from "@dts/document";
 import { useEditorStore } from "../state/editor-store";
 
 /**
@@ -32,7 +33,7 @@ export function TeleportEditDialog({
       ? undefined
       : scenes.find((scene) => scene.name === activeSceneName)?.objects.find((item) => item.id === objectId);
 
-  const targets = object?.teleport?.targets ?? [];
+  const targets = (object === undefined ? undefined : teleportDataOf(object))?.targets ?? [];
   const stale = targets.filter((name) => !names.includes(name));
 
   const toggle = (name: string, on: boolean): void => {

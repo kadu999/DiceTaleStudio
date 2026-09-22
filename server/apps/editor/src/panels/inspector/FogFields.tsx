@@ -1,5 +1,5 @@
 import { PAINTABLE_MASKS, maskToLabel, regionsToMask } from "@dts/grid";
-import { isMapFogEnabled, type SceneObjectDoc } from "@dts/document";
+import { isMapFogEnabled, mapDataOf, type SceneObjectDoc } from "@dts/document";
 import { useEditorStore } from "../../state/editor-store";
 import { FieldRow } from "./fields";
 
@@ -23,7 +23,7 @@ export function FogFields({ object }: { readonly object: SceneObjectDoc }): Reac
   const setFogEnabled = useEditorStore((state) => state.setFogEnabled);
   const openFogMask = useEditorStore((state) => state.openFogMask);
 
-  const map = object.map;
+  const map = mapDataOf(object);
   if (map === undefined) {
     return <></>;
   }

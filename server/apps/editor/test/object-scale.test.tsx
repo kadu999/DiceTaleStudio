@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { DEFAULT_OBJECT_SCALE, MAX_OBJECT_SCALE, MIN_OBJECT_SCALE } from "@dts/document";
+import {
+  DEFAULT_OBJECT_SCALE,
+  FEATURE_COMPONENT,
+  MAX_OBJECT_SCALE,
+  MIN_OBJECT_SCALE,
+  featureComponent,
+} from "@dts/document";
 import { createMapObject, createSceneObject, type SceneObjectDoc } from "@dts/document";
 import { InspectorPanel } from "../src/panels/inspector/InspectorPanel";
 import { displayRectOf } from "../src/panels/scene/display";
@@ -21,7 +27,14 @@ const GRID = { width: 8, height: 6 };
 function sprite(scale = 1): SceneObjectDoc {
   return {
     ...createSceneObject({ id: "sprite-1", name: "精灵", position: { x: 100, y: 50 } }),
-    image: { id: "project:测试/Assets/images/Sprite.png", width: 120, height: 80 },
+    // 贴图是它的 `TextureRenderer` 组件（v19 起）
+    components: [
+      featureComponent("sprite-1", FEATURE_COMPONENT.image, {
+        id: "project:测试/Assets/images/Sprite.png",
+        width: 120,
+        height: 80,
+      }),
+    ],
     scale,
   };
 }

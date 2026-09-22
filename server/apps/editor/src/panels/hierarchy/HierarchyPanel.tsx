@@ -1,5 +1,14 @@
 import { useState } from "react";
-import { DEFAULT_SOUND_LAYER, SOUND_LAYER_LABELS, type SceneObjectDoc } from "@dts/document";
+import {
+  DEFAULT_SOUND_LAYER,
+  FEATURE_COMPONENT,
+  SOUND_LAYER_LABELS,
+  carriesKind,
+  mapDataOf,
+  soundDataOf,
+  teleportDataOf,
+  type SceneObjectDoc,
+} from "@dts/document";
 import { useEditorStore } from "../../state/editor-store";
 import { EmptyState } from "../EmptyState";
 import { KIND_LABELS, OBJECT_CATEGORIES, categoryOfKind } from "../object-kinds";
@@ -252,16 +261,15 @@ function ObjectRow({
   // 声音对象（动作对象）和实体一样摆在世界里，行尾显示它落在**哪一层**——那是这条声音
   // 除了名字之外最该一眼看到的东西。
   // 「未放置」是额外的一枚标记（位置为 null，只可能来自手写文件），所以不能顶掉这些信息
-  const hint =
-    object.kind === "Map"
-      ? `${object.map?.grid.width ?? 0}×${object.map?.grid.height ?? 0}`
-      : object.kind === "PlaySound"
-        ? SOUND_LAYER_LABELS[object.sound?.layer ?? DEFAULT_SOUND_LAYER]
-        : object.kind === "Teleport"
-          ? // 传送阵：行尾写它当前会把人送到哪张图（没加 / 没选就明说，别留白）
-            (object.teleport?.picked ??
-              (object.teleport?.targets.length === 0 ? "未加目标" : "未选目标"))
-          : null;
+  const hint = carriesKind(FEATURE_COMPONENT.map, object.kind)
+    ? `${mapDataOf(object)?.grid.width ?? 0}×${mapDataOf(object)?.grid.height ?? 0}`
+    : carriesKind(FEATURE_COMPONENT.sound, object.kind)
+      ? SOUND_LAYER_LABELS[soundDataOf(object)?.layer ?? DEFAULT_SOUND_LAYER]
+      : carriesKind(FEATURE_COMPONENT.teleport, object.kind)
+        ? // 传送阵：行尾写它当前会把人送到哪张图（没加 / 没选就明说，别留白）
+          (teleportDataOf(object)?.picked ??
+          (teleportDataOf(object)?.targets.length === 0 ? "未加目标" : "未选目标"))
+        : null;
 
   return (
     <div

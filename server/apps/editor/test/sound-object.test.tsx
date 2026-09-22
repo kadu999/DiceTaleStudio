@@ -1,6 +1,14 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { createSoundObject, type SceneObjectDoc, type SoundLayer } from "@dts/document";
+import {
+  FEATURE_COMPONENT,
+  createSoundObject,
+  imageOf,
+  soundDataOf,
+  withFeature,
+  type SceneObjectDoc,
+  type SoundLayer,
+} from "@dts/document";
 import { InspectorPanel } from "../src/panels/inspector/InspectorPanel";
 import { soundDeliveryHint, soundPlayBlockedReason } from "../src/panels/inspector/SoundFields";
 import { displayRectOf } from "../src/panels/scene/display";
@@ -62,7 +70,7 @@ function sound(clips: readonly string[] = [], layer: SoundLayer = "sfx"): SceneO
 /** 手写文件里那种「有音频列表、但没写选了哪条」的样子（播放按钮该点不动）。 */
 function unpicked(clips: readonly string[]): SceneObjectDoc {
   const object = sound(clips);
-  return { ...object, sound: { clips: [...clips], layer: "sfx" } };
+  return withFeature(object, FEATURE_COMPONENT.sound, { clips: [...clips], layer: "sfx" });
 }
 
 function seedScene(objects: SceneObjectDoc[], selected: readonly string[]): void {
@@ -80,7 +88,10 @@ function seedScene(objects: SceneObjectDoc[], selected: readonly string[]): void
 const objectOf = (id: string): SceneObjectDoc | undefined =>
   useEditorStore.getState().scenes[0]?.objects.find((item) => item.id === id);
 
-const soundOf = (id: string) => objectOf(id)?.sound;
+const soundOf = (id: string) => {
+  const object = objectOf(id);
+  return object === undefined ? undefined : soundDataOf(object);
+};
 
 /** 面板上的音频小方块（顺序 = 加进来的先后）。 */
 const chips = (): HTMLElement[] => screen.queryAllByTestId("sound-clip");
@@ -120,11 +131,11 @@ describe("创建声音对象", () => {
 
     const created = useEditorStore.getState().scenes[0]?.objects[0];
     expect(created?.kind).toBe("PlaySound");
-    expect(created?.sound).toEqual({ clips: [], layer: "sfx" });
+    expect(created === undefined ? undefined : soundDataOf(created)).toEqual({ clips: [], layer: "sfx" });
     // 和实体同一个落点：世界原点（画布正中）
     expect(created?.position).toEqual({ x: 0, y: 0 });
     // 没有默认贴图：画布上画的是内置音频徽标
-    expect(created?.image).toBeUndefined();
+    expect(created === undefined ? undefined : imageOf(created)).toBeUndefined();
   });
 
   it("画布上和实体共用那一块矩形：摆了位置就有显示矩形（能点、能拖）", () => {

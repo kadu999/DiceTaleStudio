@@ -1,5 +1,5 @@
 import { useShallow } from "zustand/react/shallow";
-import type { SceneObjectDoc } from "@dts/document";
+import { teleportDataOf, type SceneObjectDoc } from "@dts/document";
 import { useEditorStore } from "../../state/editor-store";
 import { FieldRow } from "./fields";
 
@@ -26,7 +26,7 @@ export function TeleportFields({ object }: { readonly object: SceneObjectDoc }):
   const openTeleportEditor = useEditorStore((state) => state.openTeleportEditor);
   const teleportNow = useEditorStore((state) => state.teleport);
 
-  const teleport = object.teleport;
+  const teleport = teleportDataOf(object);
   // 手写文件里可能整个 teleport 都没有（`validateScene` 会报错）：这里按「还没加目标」显示
   const targets = teleport?.targets ?? [];
   const picked = teleport?.picked;

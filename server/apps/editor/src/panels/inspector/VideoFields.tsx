@@ -2,7 +2,7 @@ import { assetDisplayName } from "../asset-info";
 import { assetDisplayPath, findAssetById } from "../asset-picker";
 import { useEditorStore, type EditorMode } from "../../state/editor-store";
 import type { RuntimeStatus } from "../../services/runtime-client";
-import { isVideoEnabled, type SceneObjectDoc } from "@dts/document";
+import { isVideoEnabled, videoDataOf, type SceneObjectDoc } from "@dts/document";
 import {
   FieldRow,
   PLAYBACK_BUTTON_ACTIVE_CLASS,
@@ -89,7 +89,7 @@ export function VideoFields({ object }: { readonly object: SceneObjectDoc }): Re
   const status = useEditorStore((state) => state.runtime.status);
   const clientConnected = useEditorStore((state) => state.runtime.client !== null);
 
-  const video = object.video;
+  const video = videoDataOf(object);
   // 手写文件里可能整个 video 都没有：这里按「没开、还没加视频、不循环、静音」显示
   const enabled = isVideoEnabled(object);
   const clips = video?.clips ?? [];

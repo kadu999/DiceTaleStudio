@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import type { SceneObjectDoc } from "@dts/document";
+import { videoDataOf, type SceneObjectDoc } from "@dts/document";
 import { useEditorStore } from "../state/editor-store";
 import { assetDisplayName } from "../panels/asset-info";
 import { assetDisplayPath, listVideoAssets } from "../panels/asset-picker";
@@ -109,7 +109,7 @@ function VideoEditBody({
     setPicking(false);
   }, [object.id]);
 
-  const video = object.video;
+  const video = videoDataOf(object);
   const clips = video?.clips ?? [];
 
   // 加进来的视频：能找到素材的用素材名，找不到的（素材被删 / 手写文件）也留一行，

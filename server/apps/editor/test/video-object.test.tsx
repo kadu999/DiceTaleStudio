@@ -1,10 +1,13 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import {
+  FEATURE_COMPONENT,
   createMapObject,
   createSceneObject,
   createSoundObject,
   createTeleportObject,
+  videoDataOf,
+  withFeature,
   type SceneObjectDoc,
   type VideoDataDoc,
 } from "@dts/document";
@@ -58,12 +61,13 @@ const TREE: ResourceTreeNode[] = [
 
 function mapWith(video?: VideoDataDoc, id = "map-1"): SceneObjectDoc {
   const object = createMapObject({ id, name: "网格地图", image: IMAGE, grid: GRID });
-  return video === undefined ? object : { ...object, video };
+  // 视频是它的 `VideoOverlay` 组件（v19 起）
+  return video === undefined ? object : withFeature(object, FEATURE_COMPONENT.video, video);
 }
 
 function spriteWith(video?: VideoDataDoc, id = "sprite-1"): SceneObjectDoc {
   const object = createSceneObject({ id, name: "精灵" });
-  return video === undefined ? object : { ...object, video };
+  return video === undefined ? object : withFeature(object, FEATURE_COMPONENT.video, video);
 }
 
 /** 一条视频（默认开着、选中、不循环、静音）。 */
@@ -105,7 +109,10 @@ function seedRuntime(input: { status: RuntimeStatus; clientConnected: boolean })
 const objectOf = (id: string): SceneObjectDoc | undefined =>
   useEditorStore.getState().scenes[0]?.objects.find((item) => item.id === id);
 
-const videoOf = (id: string): VideoDataDoc | undefined => objectOf(id)?.video;
+const videoOf = (id: string): VideoDataDoc | undefined => {
+  const object = objectOf(id);
+  return object === undefined ? undefined : videoDataOf(object);
+};
 
 const logs = (): string[] => useEditorStore.getState().runtime.logs.map((entry) => entry.message);
 

@@ -9,6 +9,7 @@ import {
   visibleMaskBits,
   type GridSize,
 } from "@dts/grid";
+import { mapDataOf } from "@dts/document";
 import { assetRawUrl } from "../panels/asset-picker";
 import { decodeCellsCached } from "../panels/scene/grid-paint";
 import {
@@ -78,7 +79,7 @@ export function FogMaskDialog({
       : scenes
           .find((scene) => scene.name === activeSceneName)
           ?.objects.find((item) => item.id === objectId);
-  const map = object?.map;
+  const map = object === undefined ? undefined : mapDataOf(object);
   const imageRef = map?.image;
 
   const regions = map?.fog?.regions ?? [];

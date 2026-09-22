@@ -8,6 +8,10 @@ import type { AssetIconKind } from "../asset-info";
  * 描边 + 明确尺寸，深色主题下三种设备看起来才一致。
  *
  * 图标一律 `aria-hidden`：它只是行的装饰，行的可读文本与测试断言都不该因此变化。
+ *
+ * 每枚图标另带一个 `data-icon`（`chevron` / `folder` / 文件类型名）：一行里可能同时有
+ * **展开三角与类型图标**两枚 SVG（目录树的行就是这样），e2e 要能分别断言它们各自在不在
+ * ——按 `svg` 数量断言会在下次加图标时变成假红。
  */
 
 /** 图标尺寸（= 1rem 的 3/4；行高 12px 文字下的视觉平衡点）。 */
@@ -34,6 +38,7 @@ const FILE_COLORS: Record<AssetIconKind, string> = {
 export function AssetChevron({ expanded }: { readonly expanded: boolean }): React.JSX.Element {
   return (
     <svg
+      data-icon="chevron"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -54,6 +59,7 @@ export function AssetChevron({ expanded }: { readonly expanded: boolean }): Reac
 export function FolderIcon({ open }: { readonly open: boolean }): React.JSX.Element {
   return (
     <svg
+      data-icon="folder"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -84,6 +90,7 @@ export function FolderIcon({ open }: { readonly open: boolean }): React.JSX.Elem
 export function AssetFileIcon({ kind }: { readonly kind: AssetIconKind }): React.JSX.Element {
   return (
     <svg
+      data-icon={kind}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"

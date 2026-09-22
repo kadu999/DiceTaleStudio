@@ -8,7 +8,7 @@ import {
   maskToLabel,
   type RleRun,
 } from "@dts/grid";
-import { createMapObject, createSceneObject, type SceneObjectDoc } from "@dts/document";
+import { createMapObject, createSceneObject, mapDataOf, type SceneObjectDoc } from "@dts/document";
 import { InspectorPanel } from "../src/panels/inspector/InspectorPanel";
 import { cellColorsOf } from "../src/panels/scene/grid-paint";
 import { sceneHistory, useEditorStore } from "../src/state/editor-store";
@@ -53,12 +53,13 @@ function seedScene(objects: SceneObjectDoc[], selected: readonly string[]): void
 
 const mapCells = (): Uint8Array => {
   const object = useEditorStore.getState().scenes[0]?.objects.find((item) => item.id === "map-1");
-  return decodeRle(object?.map?.cells.runs ?? [], GRID.width * GRID.height);
+  return decodeRle((object === undefined ? undefined : mapDataOf(object))?.cells.runs ?? [], GRID.width * GRID.height);
 };
 
-const mapRuns = (): readonly RleRun[] =>
-  useEditorStore.getState().scenes[0]?.objects.find((item) => item.id === "map-1")?.map?.cells.runs ??
-  [];
+const mapRuns = (): readonly RleRun[] => {
+  const object = useEditorStore.getState().scenes[0]?.objects.find((item) => item.id === "map-1");
+  return (object === undefined ? undefined : mapDataOf(object))?.cells.runs ?? [];
+};
 
 afterEach(() => {
   cleanup();

@@ -1,4 +1,4 @@
-import type { SceneObjectDoc } from "@dts/document";
+import { mapDataOf, type SceneObjectDoc } from "@dts/document";
 import { useEditorStore } from "../../state/editor-store";
 import { FieldRow } from "./fields";
 
@@ -16,7 +16,7 @@ export function GridAnnotationFields({
 }): React.JSX.Element {
   const openGridEditor = useEditorStore((state) => state.openGridEditor);
 
-  if (object.map === undefined) {
+  if (mapDataOf(object) === undefined) {
     return <></>;
   }
 

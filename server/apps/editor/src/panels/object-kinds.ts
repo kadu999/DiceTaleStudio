@@ -1,4 +1,4 @@
-import type { ObjectKind } from "@dts/document";
+import { FEATURE_COMPONENT, carriesKind, type ObjectKind } from "@dts/document";
 
 /**
  * 对象类型表：**先分种类，种类下再放对象**。
@@ -86,11 +86,11 @@ export function categoryOfKind(kind: ObjectKind): ObjectCategoryDef | undefined 
  * 3. 列表行尾显示什么提示（层级 / 目标场景）。
  */
 export function badgeIconOf(kind: ObjectKind): "audio" | "teleport" | undefined {
-  if (kind === "PlaySound") {
+  if (carriesKind(FEATURE_COMPONENT.sound, kind)) {
     return "audio";
   }
 
-  return kind === "Teleport" ? "teleport" : undefined;
+  return carriesKind(FEATURE_COMPONENT.teleport, kind) ? "teleport" : undefined;
 }
 
 /** 对象类型的展示名（弹框的瓦片、面板的提示共用）。**只有这里写中文**，代码一律用英文。 */

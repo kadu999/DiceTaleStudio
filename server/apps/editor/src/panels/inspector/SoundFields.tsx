@@ -2,6 +2,7 @@ import {
   DEFAULT_SOUND_LAYER,
   OBJECT_SOUND_LAYERS,
   SOUND_LAYER_LABELS,
+  soundDataOf,
   type SceneObjectDoc,
   type SoundLayer,
 } from "@dts/document";
@@ -87,7 +88,7 @@ export function SoundFields({ object }: { readonly object: SceneObjectDoc }): Re
   const status = useEditorStore((state) => state.runtime.status);
   const clientConnected = useEditorStore((state) => state.runtime.client !== null);
 
-  const sound = object.sound;
+  const sound = soundDataOf(object);
   // 手写文件里可能整个 sound 都没有（`validateScene` 会报错）：这里按「还没加音频、音效层」显示
   const clips = sound?.clips ?? [];
   const layer: SoundLayer = sound?.layer ?? DEFAULT_SOUND_LAYER;

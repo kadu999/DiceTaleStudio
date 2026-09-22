@@ -15,6 +15,7 @@ import {
   type GridPoint,
   type WorldRect,
 } from "@dts/grid";
+import { mapDataOf } from "@dts/document";
 import {
   createCanvasSceneRenderer,
   fitViewport,
@@ -89,7 +90,7 @@ export function GridEditDialog({
       : scenes
           .find((scene) => scene.name === activeSceneName)
           ?.objects.find((item) => item.id === objectId);
-  const map = object?.map;
+  const map = object === undefined ? undefined : mapDataOf(object);
   const grid = map?.grid;
   const imageRef = map?.image;
 

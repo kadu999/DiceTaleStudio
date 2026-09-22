@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import {
+  mapDataOf,
   objectsInDrawOrder,
   type SceneDoc,
   type SceneObjectDoc,
@@ -919,7 +920,7 @@ export function ScenePanel(): React.JSX.Element {
           );
         }
 
-        const map = object.map;
+        const map = mapDataOf(object);
         const grid = map?.grid;
         // 「网格标注」总开关：关掉就整层不着色（只是不画，格子数据不动）
         const colored = map !== undefined && gridPaint.showAnnotations;
