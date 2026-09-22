@@ -72,10 +72,21 @@ Windows 下也可以直接双击批处理（`server/` 目录内，GBK + CRLF，�
 server/
 ├─ apps/
 │  ├─ editor/          # React 编辑器（四区布局、画布、属性面板、运行态 UI）
+│  │  └─ src/
+│  │     ├─ app/            # 外壳、菜单栏、状态栏、各种弹框
+│  │     ├─ panels/         # 左栏 / 场景画布 / 属性面板 / 运行态面板
+│  │     │  ├─ inspector/   #   registry.tsx（分组注册表）+ object-fields.tsx（字段控件）+ 各组视图
+│  │     │  └─ scene/       #   画布、显示矩形、手柄变换、网格标注（纯逻辑）
+│  │     ├─ services/       # HTTP / WS 客户端与「运行态记账」（不依赖 store 与 React）
+│  │     └─ state/          # zustand store：分片（slices/）+ 共享上下文 + 组装
 │  └─ backend/         # Node/TS：静态托管 + 资源 REST + 运行态 WS 中枢 + Mock 前端
+│     └─ src/
+│        ├─ http/           #   一条协议一个函数（server.ts + router + routes/*）
+│        ├─ ws/             #   一条消息一个函数（hub.ts 只管传输 + handlers/*）
+│        └─ resources/      #   FsResourceProvider（唯一碰磁盘）+ 资源包与缓存
 ├─ packages/           # 可独立测试的内部模块
 │  ├─ grid/            # 网格位掩码、坐标转换、RLE、.bytes 编解码（零依赖）
-│  ├─ document/        # 文档模型、zod 校验、组件注册表、补丁式撤销重做
+│  ├─ document/        # 文档模型、特性表 + 访问器、组件注册表、zod 校验、命令（按特性分模块）、补丁式撤销
 │  ├─ actions/         # 动作注册表、条件求值、动作图校验
 │  ├─ protocol/        # WS 消息契约（编辑器与后端共用同一份 zod schema）
 │  ├─ resources/       # 资源逻辑 ID 规则、ResourceProvider 抽象、内存实现
@@ -107,17 +118,28 @@ protocol, resources, grid → （无）
 
 ---
 
-## 文档模型：项目 → 场景 → 对象
+## 文档模型：项目 → 场景 → 对象（实体 + 组件）
 
 ```
 项目 project.json             ← 只有项目级数据（名称、道具库、v17 起的音频标注 + v18 起的标签表）
 └─ 场景 Assets/scenes/<场景名>.json   ← 容器：所有对象都在场景上；**场景名就是文件名**
-   ├─ 对象 SceneObjectDoc[]     ← 地图、门、宝箱、玩家、事件…都是普通对象
-   │  ├─ 地图对象（kind=Map）    ← 携带贴图（map.image）+ 网格数据
-   │  ├─ 精灵 / 玩家 / 道具…     ← 可携带一张**图片**（image），显示在世界里
-   │  └─ 其它对象                ← 携带若干能力组件与动作
-   └─ （场景文件只有 objects；传送落点属于**运行态**，由前端上报，不在场景配置里）
+   └─ 对象 SceneObjectDoc[]     ← 地图、门、宝箱、玩家、事件…都是普通对象
+      ├─ 实体自身               ← id / name / kind / active / locked / sortingOrder /
+      │                            position / rotation / scale（+ 可选 scaleX / scaleY）
+      └─ components[]           ← **对象身上挂的组件**（v19 起，对象特性也在这里）
+         ├─ 前端组件体系：OptionValue / Backpack / ItemExchange / MaskImage /
+         │                 FloatValue / IntValue / BoolValue（条件与动作挂在它们上面）
+         └─ 对象特性：GridMap（贴图 + 网格）/ TextureRenderer（显示哪张图）/
+                       PlaySound（播什么 + 哪一层）/ Teleport（传到哪张场景）/
+                       VideoOverlay（一组视频 + 循环 / 声音）
+   （场景文件只有 objects；传送落点属于**运行态**，由前端上报，不在场景配置里）
 ```
+
+**v19 起是「实体 + 组件」**：`kind`（`Map` / `SceneObject` / `PlaySound` / `Teleport` …）只是
+**创建原型**标签（新建弹框归类、列表过滤、占位色），**行为一律看组件**——「这个对象画不画得出来」
+「能不能放视频」「有没有雾层」都从它带的组件推。加一个新特性 = 加一个组件，而不是去十几处
+`kind === "…"` 里插分支。**读 / 写特性只能经 `packages/document/src/access.ts` 的访问器**
+（`mapDataOf` / `soundDataOf` / `ensureVideoData` …），别在调用处 `components.find(...)`。
 
 **关键：对象挂在场景上，不挂在地图上**——所以没有地图也能在场景里放对象；
 地图只是众多对象之一（可以有多个，也可以一个都没有）。
@@ -130,7 +152,9 @@ protocol, resources, grid → （无）
 地图的 `map.fog`（战争雾）是 v10 起的**可选**字段，**不补空壳**；单轴缩放 `scaleX` / `scaleY`
 是 v11 起的**可选**字段，同样**不补空壳**；工程文件的 `settings`（全局设置）是 v15 起的字段，
 **给默认值**，所以老工程文件读出来就有一份可用的设置；`audioMeta`（音频文件标注）是 v17 起的
-**可选**字段、`audioTags`（标签表：下标 = tag ID）是 v18 起的**可选**字段，两者都**不补空壳**），只做一次。
+**可选**字段、`audioTags`（标签表：下标 = tag ID）是 v18 起的**可选**字段，两者都**不补空壳**；
+**v19 把 `map` / `image` / `sound` / `teleport` / `video` 这 5 个扁平字段搬进 `components[]`**
+——只搬键、不解释内容，且**幂等**，跑第二遍不会多出组件），只做一次。
 
 **出生点（传送落点）已经不在代码里**：它既不属于场景配置，也不由前端上报。`Teleport` /
 `TeleportZone` 动作的「目标标记点」参数仍然存在（那是发给前端的字符串，编辑器没有对应数据可校验）。

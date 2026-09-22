@@ -13,7 +13,12 @@
 > `resume_bgm` / `stop_bgm` 四条命令，声音层级从四档收成三档；2026-09-22 升到 **协议 v8**：
 > **背景音乐与项目设置解耦**——`project_settings.audio.bgm` 只剩音量（歌单 / 默认曲 / 循环不再下发），
 > 曲目清单**就是项目 `Assets/audio/` 下的音频**，由编辑器弹框点一首、发一条 `play_bgm{clip}`；
-> 命令那一组不变，但载荷形状变了，所以照旧 +1）。取代
+> 命令那一组不变，但载荷形状变了，所以照旧 +1）。
+> 2026-09-22 再升到 **协议 v9**：**对象特性搬进组件**——场景对象上的 `map` / `image` / `sound` /
+> `teleport` / `video` 这 5 个扁平字段没了，改成 `components[]` 里的组件实例
+> （`GridMap` / `TextureRenderer` / `PlaySound` / `Teleport` / `VideoOverlay`，与文档格式 v19 同一批）。
+> 老前端按扁平字段读，迁移后的场景在它眼里会变成「一个什么都不带的空对象」，所以必须 +1。
+> **命令那一组一个字节都没动。** 取代
 > [`2026-09-18-frontend-integration-contract.md`](2026-09-18-frontend-integration-contract.md)
 > （那份写的是「前端上报数据、后台按 id 寻址动作」的老模型，已整层删除）。
 
@@ -104,25 +109,42 @@
 ## 场景数据（`SceneDoc`）与前端映射
 
 `SceneDoc = { name, objects: SceneObjectDoc[] }`，字段口径取自 `@dts/document`（协议包内复刻只读 schema，
-不反向依赖文档包）。前端按需取用，`components` / `locked` 这类编辑器侧字段忽略。
+不反向依赖文档包）。
+
+**v9 起对象是「实体 + 组件」**：`id` / `name` / `kind` / `active` / `locked` / `sortingOrder` /
+`position` / `rotation` / `scale`（+ 可选 `scaleX` / `scaleY`）留在对象上，**其余全在 `components[]` 里**
+（`{ id, type, data, actions? }`）。`kind` 只是**创建原型**标签，**行为看组件**：
+前端按 `type` 分派，不认识的类型安静忽略即可（数据留在镜像里）。
+
+| 组件 `type` | 前端行为 |
+|---|---|
+| `GridMap` | 地图面片 + 网格 + 战争雾（`data` = `{image, grid, rowOrder, cells, fog?}`） |
+| `TextureRenderer` | 对象自己的贴图（`data` = `{id, width, height}`） |
+| `PlaySound` | **不建可见物**：数据留在镜像里（`play_sound` 时从 `data.picked` 取播哪一条） |
+| `Teleport` | **不建可见物**：数据留在镜像里（触发传送 = 编辑器换场景，整份 `scene_push`） |
+| `VideoOverlay` | 运行时在**对象自己的矩形**上建视频层（见下） |
+| 其余（`OptionValue` 等编辑器组件 / 将来的新组件） | 忽略 |
+
+前端按需取用：
 
 | `SceneObjectDoc` | 前端 |
 |---|---|
 | `id` | 镜像字典的 key：新 id 建对象、老 id 更新、名单里没有的销毁；场景名变了则整场景换 |
 | `name` | GameObject 名字 |
-| `kind` | `Map` / `SceneObject` / `Player` / `Item` / `Event` → 一块贴地面片；`PlaySound` / `Teleport`（两个动作对象）→ **不建可见物**（一个 GameObject 都不建，数据只留在镜像里） |
+| `kind` | **只用来取占位色 / 排查**（不再决定建不建可见物） |
+| `components` | **决定这个对象有什么**：`map` / `image` 这两个强类型字段由 `GridMap` / `TextureRenderer` 填；`sound` / `video` 由 `PlaySound` / `VideoOverlay` 填 |
 | `position {x,y}` | `(x, 0, y)`：文档 y 向上 → 客户端 +Z（与 `GridMap.WorldToGrid` 同口径）；`null` = 未落位 → 不建视图 |
 | `active` | 是否显示（编辑器那个勾选框一改，前端就出现 / 消失） |
 | `scale` | 面片尺寸 = 声明尺寸（`image` / `map.image`）× `scale` |
 | `rotation` | 绕 +Y（按 `-rotation`） |
 | `sortingOrder` | `MeshRenderer.sortingOrder` + 按序微小离地（避免共面闪烁） |
-| `image` / `map.image` | 资源逻辑 ID → `GET /api/resources/raw?id=…` 取纹理；没图时按 `kind` 上色占位 |
-| `map.cells` | RLE（`[[掩码, 格数], …]`）——掩码值与 `@dts/grid` 的 `CellMask` / Unity 的 `GridCellType` 完全一致 |
-| `map.fog` | **战争雾**：`enabled` = **总开关**（协议 v4 起；缺省算开，v10–v12 的文件里「有 `fog`」就等于「开着」），`regions` = 哪几个「区域位」算雾区（区域位就是 `cells` 里那些位，任意可绘制位都行，如 `[1, 8]` = 区域1 + 区域4）。**只有 `enabled && regions.length > 0` 前端才建那一层雾**（关掉是真的拆掉，不是画了再藏），据此挑出**雾格子**、生成一张像素遮罩；**哪里被揭示了不在数据里**——那是运行态，由下面两条命令驱动，不写文档、也不随 `scene_sync` 回来 |
-| `sound` | `{ clips, picked, layer }`：前端播的就是 `picked` 那条；`layer` ∈ `bgm/sfx/voice`（v7 起三档——原「环境音」并进背景音乐），同层同时只响一条。`layer: "bgm"` 的老对象前端会**明确拒掉**（背景音乐已改成编辑器顶栏「音乐」弹框，走 `play_bgm` 那一组） |
-| `video` | **视频**（v14 起，只有地图 / 精灵会带）：`{ enabled, clips, picked, loop, audio }`——总开关、加进来的视频、放哪一条、循不循环、出不出视频自带的声音。收到 `play_video` 时前端在**这个对象自己的矩形**上建一层视频（`Presentation/VideoOverlay.cs`）；`enabled` 缺省 `true`、`loop` / `audio` 缺省 `false`（放一遍、静音）；关掉 `enabled` 时前端连那一层都不建，播放类命令会被明确拒掉。`names`（显示名）**不进协议** |
-| `teleport { targets, picked }` | **传送阵**：`targets` = 候选场景名清单，`picked` = 现在选中的那一张（与 `sound.clips` / `sound.picked` 同一套形状）。**前端不用它**：触发传送阵 = 编辑器切换当前场景 → 整份 `scene_push` 下来，前端只管换镜像。前端也**不给它建可见物**（和 `PlaySound` 一样：动作对象一个 GameObject 都不建），数据留在镜像里即可 |
-| `project_settings` | **项目级全局设置**（v7 起，**不在场景里**，由上面那条单独下发）。**v8 起只有三档音量**：`{ audio: { bgm: { volume }, sfx: { volume }, voice: { volume } } }`（v7 那版里的 `bgm.clips` / `picked` / `loop` 已删除——曲目清单就是项目 `Assets/audio/` 下的音频，放哪一首由 `play_bgm{clip}` 说）。前端**收到即生效**，不需要命令；背景音乐**恒循环** |
+| `GridMap.data.image` | 资源逻辑 ID → `GET /api/resources/raw?id=…` 取纹理；没图时按 `kind` 上色占位 |
+| `GridMap.data.cells` | RLE（`[[掩码, 格数], …]`）——掩码值与 `@dts/grid` 的 `CellMask` / Unity 的 `GridCellType` 完全一致 |
+| `GridMap.data.fog` | **战争雾**：`enabled` = **总开关**（缺省算开），`regions` = 哪几个「区域位」算雾区。**只有 `enabled && regions.length > 0` 前端才建那一层雾**；**哪里被揭示了不在数据里**——那是运行态，由 `erase_mask` / `reveal_fog_region` 驱动，不写文档、也不随 `scene_sync` 回来 |
+| `PlaySound.data` | `{ clips, picked, layer }`：前端播的就是 `picked` 那条；`layer` ∈ `bgm/sfx/voice`（三档），同层同时只响一条。`layer: "bgm"` 的老对象前端会**明确拒掉**（背景音乐走 `play_bgm` 那一组） |
+| `VideoOverlay.data` | `{ enabled, clips, picked, loop, audio }`——总开关、加进来的视频、放哪一条、循不循环、出不出视频自带的声音。收到 `play_video` 时前端在**这个对象自己的矩形**上建一层视频（`Presentation/VideoOverlay.cs`）；**关掉 `enabled` 时连那一层都不建**。`names`（显示名）**不进协议** |
+| `Teleport.data` | `{ targets, picked }`。**前端不用它**：触发传送阵 = 编辑器切换当前场景 → 整份 `scene_push` 下来，前端只管换镜像 |
+| `project_settings` | **项目级全局设置**（v7 起，**不在场景里**）。v8 起只有三档音量：`{ audio: { bgm: { volume }, sfx: { volume }, voice: { volume } } }`。前端**收到即生效**，不需要命令；背景音乐**恒循环** |
 
 ## 命令
 
