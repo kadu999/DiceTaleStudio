@@ -126,3 +126,24 @@ export function AssetFileIcon({ kind }: { readonly kind: AssetIconKind }): React
     </svg>
   );
 }
+
+/** 子精灵图标：与父图片的山景图标区分，表示它是图集里的一个裁剪格。 */
+export function SpriteIcon(): React.JSX.Element {
+  return (
+    <svg
+      data-icon="sprite"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className="h-3.5 w-3.5 flex-none text-[var(--color-editor-accent)]"
+    >
+      <rect x="4" y="4" width="16" height="16" rx="1.5" />
+      <path d="M4 12h16M12 4v16" />
+      <path d="M8 8h.01M16 16h.01" strokeWidth={2.6} />
+    </svg>
+  );
+}

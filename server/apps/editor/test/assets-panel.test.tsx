@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";import { AssetsPanel } from "../src/panels/assets/AssetsPanel";
+import { createEmptyProject } from "@dts/document";
 import { useEditorStore } from "../src/state/editor-store";
 import type { ResourceTreeNode } from "../src/services/project-api";
 
@@ -133,6 +134,7 @@ function stubFetch(): string[] {
 
 beforeEach(() => {
   useEditorStore.setState({
+    doc: createEmptyProject("娴嬭瘯"),
     project: { list: [], current: "测试", tree: TREE, busy: false, error: "" },
     selectedAssetId: null,
     activeSceneName: null,
@@ -284,5 +286,99 @@ describe("资源面板：定位选中的文件", () => {
     expect(calls[0]).toBe(
       'POST /api/projects/reveal {"name":"测试","path":"Assets/audio","selectFile":false}',
     );
+  });
+});
+
+describe("资源面板：精灵子项", () => {
+  it("同名文件夹里的同名图集不再重复显示文件层", () => {
+    const imageId = "project:测试/Assets/images/20260922-141046/20260922-141046.png";
+    const nestedTree: ResourceTreeNode[] = [
+      {
+        name: "Assets",
+        path: "Assets",
+        id: "project:测试/Assets",
+        type: "folder",
+        children: [
+          {
+            name: "images",
+            path: "Assets/images",
+            id: "project:测试/Assets/images",
+            type: "folder",
+            children: [
+              {
+                name: "20260922-141046",
+                path: "Assets/images/20260922-141046",
+                id: "project:测试/Assets/images/20260922-141046",
+                type: "folder",
+                children: [
+                  {
+                    name: "20260922-141046.png",
+                    path: "Assets/images/20260922-141046/20260922-141046.png",
+                    id: imageId,
+                    type: "file",
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    ];
+    useEditorStore.setState((state) => ({
+      project: { ...state.project, tree: nestedTree },
+      doc: {
+        ...state.doc,
+        spriteSettings: { [imageId]: { type: "Sprite", mode: "Multiple" } },
+        spriteSheets: { [imageId]: { columns: 2, rows: 1 } },
+      },
+    }));
+    render(<AssetsPanel />);
+
+    fireEvent.click(contentButton("Assets/images"));
+    fireEvent.click(contentButton("Assets/images/20260922-141046"));
+
+    expect(screen.queryByTestId("folder-content-row")).toBeNull();
+    expect(screen.getAllByTestId("sprite-content-row")).toHaveLength(2);
+  });
+
+  it("Multiple 图集在图片文件下面显示编号子精灵，点击后选中虚拟子项", () => {
+    const imageId = TREE[0]?.children?.find((node) => node.path === "Assets/images")?.children?.find(
+      (node) => node.name === "Map001.png",
+    )?.id;
+    if (imageId === undefined) {
+      throw new Error("test image asset missing");
+    }
+
+    useEditorStore.setState((state) => ({
+      doc: {
+        ...state.doc,
+        spriteSettings: {
+          [imageId]: { type: "Sprite", mode: "Multiple" },
+          ["project:娴嬭瘯/Assets/images/Map001.png"]: { type: "Sprite", mode: "Multiple" },
+        },
+        spriteSheets: {
+          [imageId]: { columns: 2, rows: 2 },
+          ["project:娴嬭瘯/Assets/images/Map001.png"]: { columns: 2, rows: 2 },
+        },
+      },
+    }));
+    render(<AssetsPanel />);
+
+    fireEvent.click(contentButton("Assets/images"));
+    fireEvent.click(screen.getByTestId("sprite-tree-toggle"));
+
+    const sprites = screen.getAllByTestId("sprite-content-row");
+    expect(sprites).toHaveLength(4);
+    expect(sprites.map((row) => row.textContent?.trim())).toEqual(["1", "2", "3", "4"]);
+    expect(screen.queryByTestId("sprite-folder-row")).toBeNull();
+    expect(sprites.every((row) => row.querySelector('[data-icon="sprite"]') !== null)).toBe(true);
+
+    const thirdSprite = sprites.at(2);
+    if (thirdSprite === undefined) {
+      throw new Error("third sprite missing");
+    }
+    fireEvent.click(thirdSprite.querySelector('[data-testid="sprite-content-label"]') as HTMLElement);
+    expect(useEditorStore.getState().selectedAssetId).toBe(`${imageId}::sprite:2`);
+    expect(thirdSprite.getAttribute("data-selected")).toBe("true");
   });
 });

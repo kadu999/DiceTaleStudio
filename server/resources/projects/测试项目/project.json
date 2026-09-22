@@ -41,10 +41,22 @@
     "场景2",
     "场景3"
   ],
-  "spriteSheets": {
+  "spriteSettings": {
+    "project:测试项目/Assets/images/20260922-141046.png": {
+      "type": "Sprite",
+      "mode": "Multiple"
+    },
+    "project:测试项目/Assets/images/20260922-141051.png": {
+      "type": "Default"
+    },
     "project:测试项目/Assets/images/20260922-141038.png": {
+      "type": "Default"
+    }
+  },
+  "spriteSheets": {
+    "project:测试项目/Assets/images/20260922-141046.png": {
       "columns": 2,
-      "rows": 2
+      "rows": 1
     }
   }
 }

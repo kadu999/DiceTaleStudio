@@ -136,6 +136,11 @@ export interface SpriteSheetDoc {
   readonly rows: number;
 }
 
+export interface SpriteImportSettingsDoc {
+  readonly type: "Default" | "Sprite";
+  readonly mode?: "Single" | "Multiple";
+}
+
 /**
  * 解析后的子图：**几行几列 + 第几格**（格评夹取之后）。
  *
@@ -565,6 +570,7 @@ export interface ProjectDoc {
    * `1×1` = 整图，**不写这种表项**；整个表空了就把字段删掉。
    */
   readonly spriteSheets?: Record<string, SpriteSheetDoc>;
+  readonly spriteSettings?: Record<string, SpriteImportSettingsDoc>;
 }
 
 /** 场景文件（Assets/scenes/<场景名>.json）的内容：场景名就是文件名，文件里不存名字。 */

@@ -11,6 +11,7 @@ import {
   type SceneDoc,
   type SceneListDraft,
   type SoundLayer,
+  type SpriteImportSettingsDoc,
   type SpriteSheetDoc,
   type WorldPosition,
 } from "@dts/document";
@@ -568,6 +569,7 @@ export interface EditorStoreState {
    * 切分只有这一份（`ProjectDoc.spriteSheets`），所以「改它 = 所有引用它的对象一起变」。
    */
   setSpriteSheet(imageId: string, sheet: SpriteSheetDoc | null): boolean;
+  setSpriteImportSettings(imageId: string, settings: SpriteImportSettingsDoc | null): boolean;
   /**
    * 替换声音对象的音频列表（资源逻辑 ID；去空去重，值没变不算变更）。
    *

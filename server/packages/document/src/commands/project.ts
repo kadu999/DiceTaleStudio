@@ -8,6 +8,7 @@ import type {
   AudioTagTableDoc,
   ProjectDoc,
   ProjectSettingsDoc,
+  SpriteImportSettingsDoc,
   SpriteSheetDoc,
 } from "../types";
 
@@ -425,5 +426,40 @@ export function setSpriteSheet(
   }
 
   project.spriteSheets[id] = next;
+  return true;
+}
+
+/** 更新一张图片的精灵导入类型；Default 会显式记录为普通图片。 */
+export function setSpriteImportSettings(
+  project: Draft<ProjectDoc>,
+  imageId: string,
+  settings: SpriteImportSettingsDoc | null,
+): boolean {
+  const id = imageId.trim();
+  if (id.length === 0) {
+    return false;
+  }
+
+  const current = project.spriteSettings?.[id];
+  const next =
+    settings === null || settings.type === "Default"
+      ? { type: "Default" as const }
+      : { type: "Sprite" as const, mode: settings.mode ?? ("Single" as const) };
+  const sheets = project.spriteSheets;
+  const hasSheet = sheets?.[id] !== undefined;
+  const shouldKeepSheet = next.type === "Sprite" && next.mode === "Multiple";
+  if (current?.type === next.type && current.mode === next.mode && (!hasSheet || shouldKeepSheet)) {
+    return false;
+  }
+
+  project.spriteSettings ??= {};
+  project.spriteSettings[id] = next;
+  // Single/Default 不使用网格切分；清掉旧表项，避免导入设置与渲染结果分叉。
+  if (!shouldKeepSheet && sheets !== undefined && hasSheet) {
+    delete sheets[id];
+    if (Object.keys(sheets).length === 0) {
+      delete project.spriteSheets;
+    }
+  }
   return true;
 }

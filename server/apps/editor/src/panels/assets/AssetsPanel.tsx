@@ -1,4 +1,5 @@
 import {
+  Fragment,
   memo,
   useCallback,
   useEffect,
@@ -7,11 +8,13 @@ import {
   useRef,
   useState,
 } from "react";
+import { spriteSheetOf } from "@dts/document";
 import { PROJECT_FOLDERS, PROJECT_SCENE_FILE_EXTENSION } from "@dts/resources";
 import type { ResourceTreeNode } from "../../services/project-api";
 import { useEditorStore } from "../../state/editor-store";
 import { assetDisplayName, assetIconKind, formatSize } from "../asset-info";
-import { AssetChevron, AssetFileIcon, FolderIcon } from "./AssetIcon";
+import { parseSpriteAssetId, spriteAssetId } from "../asset-picker";
+import { AssetChevron, AssetFileIcon, FolderIcon, SpriteIcon } from "./AssetIcon";
 
 /**
  * 资源面板（对齐 Unity 的 Project 窗口：**左目录树 + 右内容**）。
@@ -36,6 +39,8 @@ export function AssetsPanel(): React.JSX.Element {
   const refreshTree = useEditorStore((state) => state.refreshTree);
   const openProjectFolder = useEditorStore((state) => state.openProjectFolder);
   const selectedAssetId = useEditorStore((state) => state.selectedAssetId);
+  const spriteSettings = useEditorStore((state) => state.doc.spriteSettings);
+  const spriteSheets = useEditorStore((state) => state.doc.spriteSheets);
   const selectAsset = useEditorStore((state) => state.selectAsset);
   const activeSceneName = useEditorStore((state) => state.activeSceneName);
   const openScene = useEditorStore((state) => state.openScene);
@@ -54,6 +59,7 @@ export function AssetsPanel(): React.JSX.Element {
    */
   const [expanded, setExpanded] = useState<readonly string[]>([""]);
   const expandedRef = useRef<readonly string[]>(expanded);
+  const [expandedSprites, setExpandedSprites] = useState<readonly string[]>([]);
 
   const commitExpanded = useCallback((next: readonly string[]) => {
     expandedRef.current = next;
@@ -91,6 +97,7 @@ export function AssetsPanel(): React.JSX.Element {
   useEffect(() => {
     setSelectedPath("");
     commitExpanded([""]);
+    setExpandedSprites([]);
   }, [project.current, commitExpanded]);
 
   /**
@@ -157,10 +164,11 @@ export function AssetsPanel(): React.JSX.Element {
    * 可能只是他上一站待过的目录。这一点弄反了，「打开目录」就会开成你浏览的目录而不是
    * 文件所在的目录（这正是它之前不听话的原因）。
    */
+  const selectedSprite = selectedAssetId === null ? undefined : parseSpriteAssetId(selectedAssetId);
   const selectedFile =
     selectedAssetId === null
       ? undefined
-      : findNode(project.tree, (node) => node.id === selectedAssetId && node.type === "file");
+      : findNode(project.tree, (node) => node.id === (selectedSprite?.imageId ?? selectedAssetId) && node.type === "file");
 
   /**
    * 当前「所在目录」：选中文件就是它所在的那一层；否则就是进过的那个目录；
@@ -364,19 +372,43 @@ export function AssetsPanel(): React.JSX.Element {
           <div className="min-h-0 flex-1 overflow-auto py-1 text-[12px]">
             {contents.map((node) => {
               const sceneName = sceneNameOf(node);
+              const spriteCount = spriteCountOf(node, spriteSettings, spriteSheets);
+              const spriteExpanded = expandedSprites.includes(node.id);
+              const duplicateSpriteFile = spriteCount > 0 && isSameNameAsFolder(node, currentPath);
+              const selectedParent = node.id === (selectedSprite?.imageId ?? selectedAssetId);
               return (
-                <ContentRow
-                  key={node.path}
-                  node={node}
-                  // 当前场景的那一行也高亮：目录里一眼看出自己在哪个场景
-                  selected={
-                    node.id === selectedAssetId ||
-                    (sceneName !== undefined && sceneName === activeSceneName)
-                  }
-                  onEnter={enterCallbacks(node.path)}
-                  onSelect={selectAsset}
-                  onOpenScene={openScene}
-                />
+                <Fragment key={node.path}>
+                  {duplicateSpriteFile ? null : (
+                    <ContentRow
+                      node={node}
+                      // 当前场景的那一行也高亮：目录里一眼看出自己在哪个场景
+                      selected={selectedParent || (sceneName !== undefined && sceneName === activeSceneName)}
+                      spriteCount={spriteCount}
+                      spriteExpanded={spriteExpanded}
+                      onToggleSprites={() =>
+                        setExpandedSprites((previous) =>
+                          previous.includes(node.id)
+                            ? previous.filter((id) => id !== node.id)
+                            : [...previous, node.id],
+                        )
+                      }
+                      onEnter={enterCallbacks(node.path)}
+                      onSelect={selectAsset}
+                      onOpenScene={openScene}
+                    />
+                  )}
+                  {(spriteExpanded || duplicateSpriteFile) && spriteCount > 0
+                    ? Array.from({ length: spriteCount }, (_, index) => (
+                        <SpriteContentRow
+                          key={spriteAssetId(node.id, index)}
+                          node={node}
+                          index={index}
+                          selected={selectedAssetId === spriteAssetId(node.id, index)}
+                          onSelect={selectAsset}
+                        />
+                      ))
+                    : null}
+                </Fragment>
               );
             })}
           </div>
@@ -458,6 +490,9 @@ const FolderRow = function FolderRow({
 interface ContentRowProps {
   readonly node: ResourceTreeNode;
   readonly selected: boolean;
+  readonly spriteCount: number;
+  readonly spriteExpanded: boolean;
+  readonly onToggleSprites: () => void;
   readonly onEnter: () => void;
   readonly onSelect: (id: string) => void;
   readonly onOpenScene: (name: string) => void;
@@ -467,6 +502,9 @@ interface ContentRowProps {
 const ContentRow = memo(function ContentRow({
   node,
   selected,
+  spriteCount,
+  spriteExpanded,
+  onToggleSprites,
   onEnter,
   onSelect,
   onOpenScene,
@@ -505,6 +543,18 @@ const ContentRow = memo(function ContentRow({
           : "hover:bg-[var(--color-editor-panel-alt)]"
       }`}
     >
+      {spriteCount > 0 ? (
+        <button
+          type="button"
+          data-testid="sprite-tree-toggle"
+          aria-expanded={spriteExpanded}
+          aria-label={spriteExpanded ? "收起精灵" : "展开精灵"}
+          className="asset-row-button flex h-[18px] w-[18px] flex-none items-center justify-center rounded text-[var(--color-editor-text-dim)] hover:bg-[var(--color-editor-panel-alt)] hover:text-[var(--color-editor-text)]"
+          onClick={onToggleSprites}
+        >
+          <AssetChevron expanded={spriteExpanded} />
+        </button>
+      ) : null}
       <button
         type="button"
         data-testid="folder-content-label"
@@ -522,6 +572,74 @@ const ContentRow = memo(function ContentRow({
     </div>
   );
 });
+
+function SpriteContentRow({
+  node,
+  index,
+  selected,
+  onSelect,
+}: {
+  readonly node: ResourceTreeNode;
+  readonly index: number;
+  readonly selected: boolean;
+  readonly onSelect: (id: string) => void;
+}): React.JSX.Element {
+  return (
+    <div
+      data-testid="sprite-content-row"
+      data-parent={node.id}
+      data-index={index}
+      data-selected={selected}
+      className={`flex items-center rounded px-1 pl-8 ${
+        selected
+          ? "bg-[var(--color-editor-accent-dim)] text-white"
+          : "hover:bg-[var(--color-editor-panel-alt)]"
+      }`}
+    >
+      <button
+        type="button"
+        data-testid="sprite-content-label"
+        className="asset-row-button flex min-w-0 flex-1 items-center gap-1 py-0.5 text-left"
+        onClick={() => onSelect(spriteAssetId(node.id, index))}
+      >
+        <SpriteIcon />
+        <span className="truncate">{index + 1}</span>
+      </button>
+    </div>
+  );
+}
+
+function spriteCountOf(
+  node: ResourceTreeNode,
+  settings: ReturnType<typeof useEditorStore.getState>["doc"]["spriteSettings"],
+  sheets: ReturnType<typeof useEditorStore.getState>["doc"]["spriteSheets"],
+): number {
+  if (node.type !== "file" || assetIconKind(node.name) !== "image") {
+    return 0;
+  }
+
+  const setting = settings?.[node.id];
+  const isMultiple = setting?.type === "Sprite" && setting.mode === "Multiple";
+  const isLegacyMultiple = setting === undefined && sheets?.[node.id] !== undefined;
+  if (!isMultiple && !isLegacyMultiple) {
+    return 0;
+  }
+
+  const sheet = spriteSheetOf(sheets, node.id);
+  const count = sheet.columns * sheet.rows;
+  return count > 1 ? count : 0;
+}
+
+/** 同名文件夹内的同名图集已经由文件夹提供父级，避免显示 `目录/文件/编号` 的重复层级。 */
+function isSameNameAsFolder(node: ResourceTreeNode, folderPath: string): boolean {
+  if (node.type !== "file" || folderPath.length === 0) {
+    return false;
+  }
+
+  const separator = folderPath.lastIndexOf("/");
+  const folderName = separator < 0 ? folderPath : folderPath.slice(separator + 1);
+  return assetDisplayName(node.name) === folderName;
+}
 
 /**
  * 某个目录的**直属**文件夹行（不含面板根），并按「父目录是否展开」往下列；文件不进左树。

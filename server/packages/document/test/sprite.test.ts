@@ -4,6 +4,7 @@ import {
   createSceneObject,
   setObjectImage,
   setObjectSprite,
+  setSpriteImportSettings,
   setSpriteSheet,
 } from "../src/commands";
 import { createEmptyProject, createEmptyScene, createMapObject } from "../src/factory";
@@ -80,6 +81,47 @@ function sheetOf(width: number, height: number): { columns: number; rows: number
 }
 
 describe("切分：一张图几行几列（只有这一份数据）", () => {
+  it("图片导入设置能在 Default 与 Sprite 之间切换，并关闭时清理旧切分", () => {
+    const project = createEmptyProject("P");
+    setSpriteSheet(project as Draft<ProjectDoc>, IMAGE_ID, sheetOf(2, 2));
+
+    expect(
+      setSpriteImportSettings(project as Draft<ProjectDoc>, IMAGE_ID, {
+        type: "Sprite",
+        mode: "Multiple",
+      }),
+    ).toBe(true);
+    expect(project.spriteSettings?.[IMAGE_ID]).toEqual({ type: "Sprite", mode: "Multiple" });
+
+    expect(setSpriteImportSettings(project as Draft<ProjectDoc>, IMAGE_ID, null)).toBe(true);
+    expect(project.spriteSettings?.[IMAGE_ID]).toEqual({ type: "Default" });
+    expect(project.spriteSheets?.[IMAGE_ID]).toBeUndefined();
+  });
+
+  it("Single 模式不保留旧的网格切分，并且重复设置仍会报告变更", () => {
+    const project = {
+      ...createEmptyProject("P"),
+      spriteSheets: { [IMAGE_ID]: sheetOf(2, 2) },
+      spriteSettings: { [IMAGE_ID]: { type: "Sprite" as const, mode: "Multiple" as const } },
+    };
+
+    expect(
+      setSpriteImportSettings(project as Draft<ProjectDoc>, IMAGE_ID, {
+        type: "Sprite",
+        mode: "Single",
+      }),
+    ).toBe(true);
+    expect(project.spriteSettings?.[IMAGE_ID]).toEqual({ type: "Sprite", mode: "Single" });
+    expect(project.spriteSheets).toBeUndefined();
+
+    expect(
+      setSpriteImportSettings(project as Draft<ProjectDoc>, IMAGE_ID, {
+        type: "Sprite",
+        mode: "Single",
+      }),
+    ).toBe(false);
+  });
+
   it("没有表项 = 整图（1×1），所以这种表项不写进工程文件", () => {
     expect(spriteSheetOf(undefined, IMAGE_ID)).toEqual(DEFAULT_SPRITE_SHEET);
     expect(isTrivialSpriteSheet(DEFAULT_SPRITE_SHEET)).toBe(true);

@@ -249,16 +249,68 @@ describe("入口：图片资源上也能切（精灵是这张图自己的属性�
 
     render(<InspectorPanel />);
 
-    const panel = screen.getByTestId("sprite-sheet-panel");
-    expect(panel.textContent).toContain("切成精灵（子图）");
-    // 资源这一档：预览只看不选（格子由用它的对象各自挑）
-    expect(screen.getByTestId("sprite-preview").getAttribute("data-pickable")).toBe("false");
-    expect(screen.queryByTestId("sprite-current-cell")).toBeNull();
+    expect(screen.queryByTestId("sprite-sheet-panel")).toBeNull();
+    expect((screen.getByTestId("sprite-type-toggle") as HTMLInputElement).checked).toBe(false);
+    expect(screen.queryByTestId("sprite-edit")).toBeNull();
+  });
 
-    const columns = screen.getByTestId("sprite-sheet-columns");
-    fireEvent.change(columns, { target: { value: "4" } });
-    fireEvent.blur(columns);
-    expect(useEditorStore.getState().doc.spriteSheets).toEqual({ [IMAGE_ID]: { columns: 4, rows: 1 } });
+  it("切换 Sprite 模式并打开编辑器；取消不写入，应用才写入切分", () => {
+    projectHistory.reset(createEmptyProject("测试"));
+    useEditorStore.setState({
+      doc: projectHistory.current,
+      scenes: [],
+      activeSceneName: null,
+      selectedObjectIds: [],
+      selectedAssetId: IMAGE_ID,
+      project: { list: [], current: "测试", tree: TREE, busy: false, error: "" },
+    });
+
+    render(<InspectorPanel />);
+    fireEvent.click(screen.getByTestId("sprite-type-toggle"));
+    expect(useEditorStore.getState().doc.spriteSettings?.[IMAGE_ID]).toEqual({
+      type: "Sprite",
+      mode: "Single",
+    });
+    expect(screen.queryByTestId("sprite-edit")).toBeNull();
+
+    fireEvent.change(screen.getByTestId("sprite-import-mode"), { target: { value: "Multiple" } });
+    expect(screen.getByTestId("sprite-edit")).not.toBeNull();
+    fireEvent.click(screen.getByTestId("sprite-edit"));
+    expect(screen.getByTestId("sprite-editor-dialog")).not.toBeNull();
+
+    fireEvent.change(screen.getByTestId("sprite-editor-columns"), { target: { value: "4" } });
+    fireEvent.change(screen.getByTestId("sprite-editor-rows"), { target: { value: "2" } });
+    fireEvent.click(screen.getByTestId("sprite-editor-cancel"));
+    expect(useEditorStore.getState().doc.spriteSheets).toBeUndefined();
+
+    fireEvent.click(screen.getByTestId("sprite-edit"));
+    fireEvent.change(screen.getByTestId("sprite-editor-columns"), { target: { value: "4" } });
+    fireEvent.change(screen.getByTestId("sprite-editor-rows"), { target: { value: "2" } });
+    fireEvent.click(screen.getByTestId("sprite-editor-apply"));
+    expect(useEditorStore.getState().doc.spriteSheets).toEqual({
+      [IMAGE_ID]: { columns: 4, rows: 2 },
+    });
+  });
+
+  it("从旧版切分表切到 Single 时会隐藏编辑入口并清理切分", () => {
+    projectHistory.reset({
+      ...createEmptyProject("测试"),
+      spriteSheets: { [IMAGE_ID]: { columns: 2, rows: 2 } },
+    });
+    useEditorStore.setState({
+      doc: projectHistory.current,
+      scenes: [],
+      activeSceneName: null,
+      selectedObjectIds: [],
+      selectedAssetId: IMAGE_ID,
+      project: { list: [], current: "测试", tree: TREE, busy: false, error: "" },
+    });
+
+    render(<InspectorPanel />);
+    expect(screen.getByTestId("sprite-edit")).not.toBeNull();
+    fireEvent.change(screen.getByTestId("sprite-import-mode"), { target: { value: "Single" } });
+    expect(useEditorStore.getState().doc.spriteSheets).toBeUndefined();
+    expect(screen.queryByTestId("sprite-edit")).toBeNull();
   });
 });
 

@@ -332,6 +332,20 @@
             }
           },
           "actions": []
+        },
+        {
+          "id": "map_mu6uln3x1l7fg__VideoOverlay",
+          "type": "VideoOverlay",
+          "data": {
+            "enabled": true,
+            "clips": [
+              "project:测试项目/Assets/video/Map001.mp4"
+            ],
+            "loop": true,
+            "audio": true,
+            "picked": "project:测试项目/Assets/video/Map001.mp4"
+          },
+          "actions": []
         }
       ]
     },
@@ -344,7 +358,7 @@
       "locked": false,
       "position": {
         "x": -596.029508686826,
-        "y": 119.78948145825444
+        "y": 120.68109669970805
       },
       "rotation": 0,
       "scale": 0.1,

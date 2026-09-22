@@ -358,6 +358,11 @@ export const spriteSheetSchema = z.object({
   rows: z.number().int().min(1).max(SPRITE_SHEET_MAX),
 });
 
+export const spriteImportSettingsSchema = z.object({
+  type: z.enum(["Default", "Sprite"]),
+  mode: z.enum(["Single", "Multiple"]).optional(),
+});
+
 /**
  * 工程文件：只有项目级数据，场景在 `Assets/scenes/` 下各自成文件。
  *
@@ -377,6 +382,7 @@ export const projectDocSchema = z.object({
   audioTags: audioTagTableSchema.optional(),
   // v20 起：图片切分表（图片逻辑 ID → 列×行）。**切分只有这一份**，对象只存「引用哪张图 + 第几格」。
   spriteSheets: z.record(z.string(), spriteSheetSchema).optional(),
+  spriteSettings: z.record(z.string(), spriteImportSettingsSchema).optional(),
 });
 
 function isRecord(value: unknown): value is Record<string, unknown> {

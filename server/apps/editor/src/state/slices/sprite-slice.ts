@@ -14,9 +14,11 @@ import {
   setObjectImage as setSceneObjectImage,
   setObjectSprite as setSceneObjectSprite,
   setSpriteSheet as setProjectSpriteSheet,
+  setSpriteImportSettings as setProjectSpriteImportSettings,
   type ImageRef,
   type ImageSpriteRef,
   type SceneListDraft,
+  type SpriteImportSettingsDoc,
   type SpriteSheetDoc,
 } from "@dts/document";
 import { findAssetById } from "../../panels/asset-picker";
@@ -27,7 +29,7 @@ export function createSpriteSlice(
   _set: StoreSet,
   get: StoreGet,
   _ctx: StoreContext,
-): Pick<EditorStoreState, "setObjectImageSprite" | "setObjectSprite" | "setSpriteSheet"> {
+): Pick<EditorStoreState, "setObjectImageSprite" | "setObjectSprite" | "setSpriteSheet" | "setSpriteImportSettings"> {
   /** 当前场景的 draft（没打开场景 / 找不到就是 `undefined`）。 */
   const sceneOf = (draft: SceneListDraft): SceneListDraft[number] | undefined => {
     const name = get().activeSceneName;
@@ -99,6 +101,14 @@ export function createSpriteSlice(
         // 在输入框里连着改行 / 列（4 → 4×…）合成一条撤销记录
         { coalesceKey: `sprite-sheet:${imageId}` },
       );
+    },
+
+    setSpriteImportSettings(imageId, settings: SpriteImportSettingsDoc | null) {
+      const name = findAssetById(get().project.tree, imageId)?.path ?? imageId;
+      const label = settings?.type === "Sprite" ? `启用精灵 ${name}` : `关闭精灵 ${name}`;
+      return get().applyProject(label, (draft) => {
+        setProjectSpriteImportSettings(draft, imageId, settings);
+      });
     },
   };
 }

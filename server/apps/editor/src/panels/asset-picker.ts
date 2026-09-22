@@ -1,6 +1,33 @@
 import type { ResourceTreeNode } from "../services/project-api";
 import { assetPreviewKind } from "./asset-info";
 
+const SPRITE_ASSET_MARKER = "::sprite:";
+
+export interface SpriteAssetSelection {
+  readonly imageId: string;
+  readonly index: number;
+}
+
+/** 虚拟子精灵使用稳定 ID，底层仍然指向父图片，不会伪造资源文件。 */
+export function spriteAssetId(imageId: string, index: number): string {
+  return `${imageId}${SPRITE_ASSET_MARKER}${index}`;
+}
+
+export function parseSpriteAssetId(id: string): SpriteAssetSelection | undefined {
+  const marker = id.lastIndexOf(SPRITE_ASSET_MARKER);
+  if (marker < 0) {
+    return undefined;
+  }
+
+  const imageId = id.slice(0, marker);
+  const index = Number(id.slice(marker + SPRITE_ASSET_MARKER.length));
+  if (imageId.length === 0 || !Number.isInteger(index) || index < 0) {
+    return undefined;
+  }
+
+  return { imageId, index };
+}
+
 /**
  * 资源在界面上的**显示路径**：省掉 `project:` 类别前缀、项目名与 `Assets/`。
  *
