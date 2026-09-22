@@ -1,5 +1,6 @@
 import {
   createRequestId,
+  resourceIdsOfObject,
   type ProjectSettingsInfo,
   type ProjectSettingsPayload,
   type ResourcesInfo,
@@ -53,12 +54,14 @@ export interface RuntimeSnapshot {
  * 场景对象上的资源是逻辑 ID（`project:测试项目/Assets/…`），项目名就在里面；取第一个带
  * `project:` 前缀的即可（同一场景必属同一项目）。推不出来就返回 null——那时前端只能等
  * `scene_sync` 到了再自己推（退回到「场景先到、资源后下」的老路）。
+ *
+ * 「一个对象引用了哪些资源」由协议包的 `resourceIdsOfObject` 回答（v9 起资源挂在组件里，
+ * 那件事只该有一个地方知道）。
  */
 export function projectNameOfScene(scene: ScenePayload | null): string | null {
   for (const object of scene?.objects ?? []) {
-    const candidates = [object.image?.id, object.map?.image?.id, ...(object.sound?.clips ?? [])];
-    for (const id of candidates) {
-      if (id === undefined || !id.startsWith("project:")) {
+    for (const id of resourceIdsOfObject(object)) {
+      if (!id.startsWith("project:")) {
         continue;
       }
 

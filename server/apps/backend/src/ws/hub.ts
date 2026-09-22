@@ -2,7 +2,6 @@ import type { IncomingMessage, Server } from "node:http";
 import type { Duplex } from "node:stream";
 import WebSocket, { WebSocketServer } from "ws";
 import {
-  PROTOCOL_MISMATCH_CODE,
   PROTOCOL_VERSION,
   RUNTIME_INACTIVE_REASON,
   RUNTIME_INACTIVE_STATUS,
@@ -11,13 +10,17 @@ import {
   parseClientToServer,
   parseEditorToServer,
   parseJsonMessage,
+  type ClientToServerMessage,
+  type EditorToServerMessage,
   type ServerToClientMessage,
   type ServerToEditorMessage,
 } from "@dts/protocol";
-import { RuntimeSession, projectNameOfScene, type RuntimeClientInfo } from "./runtime-session";
+import type { HubContext } from "./hub-context";
+import { CLIENT_HANDLERS, EDITOR_HANDLERS } from "./handlers";
+import { RuntimeSession } from "./runtime-session";
+import type { HubLogger, LogLevel } from "./types";
 
-export type LogLevel = "info" | "warn" | "error";
-export type HubLogger = (level: LogLevel, message: string) => void;
+export type { HubLogger, LogLevel } from "./types";
 
 /** 命令下发后等回执的超时（超时向编辑器报错，避免界面一直转圈）。 */
 const COMMAND_RESULT_TIMEOUT_MS = 15000;
@@ -66,8 +69,11 @@ interface PendingCommand {
  * 而服务端本来该记得「现在是在运行」。只有服务端重启才会清掉（那时要重新点一次「运行」）。
  *
  * 数据方向是单向的：编辑器 / 服务端 → 前端。前端只回 `client_hello`、`command_result`、`pong`。
+ *
+ * **这个类只管传输**：升级分流、连接表、心跳、命令等待表、序列化发送。
+ * 「每种消息来了做什么」在 `./handlers/`（一条消息一个函数），通过 `HubContext` 反向调用这里。
  */
-export class RuntimeHub {
+export class RuntimeHub implements HubContext {
   private readonly wss = new WebSocketServer({ noServer: true });
   private readonly editors = new Set<WebSocket>();
   private client: ClientSession | undefined;
@@ -76,8 +82,11 @@ export class RuntimeHub {
   private rejectedWhileInactive = false;
 
   readonly session = new RuntimeSession();
+  readonly log: HubLogger;
 
-  constructor(private readonly log: HubLogger = () => {}) {}
+  constructor(log: HubLogger = () => {}) {
+    this.log = log;
+  }
 
   /** 挂到 HTTP server 上，按路径分流。`/client` 在未开闸时直接以 HTTP 503 拒绝。 */
   attach(server: Server): void {
@@ -115,6 +124,14 @@ export class RuntimeHub {
 
   get clientConnected(): boolean {
     return this.client !== undefined && this.client.ws.readyState === WebSocket.OPEN;
+  }
+
+  get clientSocket(): WebSocket | undefined {
+    return this.client?.ws;
+  }
+
+  get clientAddress(): string {
+    return this.client?.address ?? "";
   }
 
   get runtimeActive(): boolean {
@@ -167,7 +184,7 @@ export class RuntimeHub {
     socket.destroy();
   }
 
-  // ------------------------------------------------------------ 前端
+  // ------------------------------------------------------------ 前端连接
 
   private acceptClient(ws: WebSocket, request: IncomingMessage): void {
     // 单客户端架构：新连接顶掉旧的
@@ -205,7 +222,7 @@ export class RuntimeHub {
     // 先把「当前是哪个项目」告诉前端：它据此**先下资源包、再载入场景**。
     // 必须在 scene_sync 之前发——顺序反了就成了「场景先到、资源后下」。
     this.prepareClientResources(ws);
-    // 全局设置（音量 / 歌单 / 默认曲）也走在前头：它是「出声之前就该知道的事」
+    // 全局设置（三档音量）也走在前头：它是「出声之前就该知道的事」
     this.sendTo(ws, { type: "project_settings", settings: this.session.settings });
     // 立刻补一份场景：前端后连上也能拿到全量镜像
     this.sendTo(ws, { type: "scene_sync", scene: this.session.scene });
@@ -233,8 +250,9 @@ export class RuntimeHub {
     });
   }
 
+  /** 校验入站消息，然后交给 `CLIENT_HANDLERS`。校验失败只记日志（前端没有可回的错误通道）。 */
   private onClientMessage(ws: WebSocket, text: string): void {
-    let message;
+    let message: ClientToServerMessage;
     try {
       message = parseClientToServer(parseJsonMessage(text));
     } catch (error) {
@@ -242,95 +260,59 @@ export class RuntimeHub {
       return;
     }
 
-    switch (message.type) {
-      case "client_hello": {
-        if (message.protocolVersion !== PROTOCOL_VERSION) {
-          const reason = `协议版本不一致：前端 ${message.protocolVersion}，服务端 ${PROTOCOL_VERSION}`;
-          this.log("warn", reason);
-          this.logToEditors("error", reason);
-          ws.close(PROTOCOL_MISMATCH_CODE, reason);
-          return;
-        }
-
-        const info: RuntimeClientInfo = {
-          name: message.name,
-          version: message.version,
-          connectedAt: this.session.client?.connectedAt ?? Date.now(),
-          address: this.client?.address ?? "",
-        };
-
-        this.session.setClient(info);
-        this.log("info", `前端已标识：${message.name} v${message.version}`);
-        this.broadcastEditorState();
-        this.logToEditors("info", `前端已标识：${message.name} v${message.version}`);
-        return;
-      }
-
-      case "command_result": {
-        const pending = this.pending.get(message.requestId);
-        if (pending !== undefined) {
-          clearTimeout(pending.timer);
-          this.pending.delete(message.requestId);
-        }
-
-        this.log(
-          message.ok ? "info" : "warn",
-          `命令回执 ${message.requestId}: ${message.ok ? "成功" : `失败(${message.reason ?? "未知"})`}`,
-        );
-        this.broadcastToEditors({
-          type: "editor_command_result",
-          requestId: message.requestId,
-          ok: message.ok,
-          ...(message.reason === undefined ? {} : { reason: message.reason }),
-          ...(message.effects === undefined ? {} : { effects: message.effects }),
-        });
-        this.logToEditors(
-          message.ok ? "info" : "warn",
-          `命令 ${message.ok ? "执行成功" : `执行失败：${message.reason ?? "未知原因"}`}`,
-        );
-        return;
-      }
-
-      case "pong": {
-        if (this.client !== undefined) {
-          this.client.missedPongs = 0;
-        }
-
-        return;
-      }
-
-      case "resources_ready": {
-        // 前端报它本地资源包的结果：只记状态 + 广播给编辑器，不参与任何寻址
-        const info = {
-          project: message.project,
-          fingerprint: message.fingerprint,
-          fileCount: message.fileCount,
-          bytes: message.bytes,
-          ok: message.ok,
-          at: Date.now(),
-          ...(message.reason === undefined ? {} : { reason: message.reason }),
-        };
-
-        this.session.setResources(info);
-        this.log(
-          message.ok ? "info" : "warn",
-          `前端资源包「${message.project}」${message.ok ? "就绪" : "失败"}` +
-            `（${message.fileCount} 个文件 / ${message.bytes} 字节 / ${message.fingerprint}）` +
-            `${message.reason === undefined ? "" : `：${message.reason}`}`,
-        );
-        this.broadcastEditorState();
-        this.logToEditors(
-          message.ok ? "info" : "warn",
-          `前端资源包${message.ok ? "已就绪" : "失败"}：「${message.project}」${message.fileCount} 个文件` +
-            `${message.reason === undefined ? "" : `（${message.reason}）`}`,
-        );
-        return;
-      }
-
-      default:
-        return;
-    }
+    CLIENT_HANDLERS[message.type](this, ws, message);
   }
+
+  // ------------------------------------------------------------ 编辑器连接
+
+  private acceptEditor(ws: WebSocket): void {
+    this.editors.add(ws);
+    this.log("info", `编辑器已连接（当前 ${this.editors.size} 个）`);
+    this.sendEditorState(ws);
+
+    ws.on("message", (data) => {
+      this.onEditorMessage(ws, typeof data === "string" ? data : data.toString());
+    });
+
+    ws.on("close", () => {
+      this.editors.delete(ws);
+      // 编辑器断开**不影响运行态**：刷新页面 / 关掉编辑器，前端照样连着、镜像也还在。
+      // 要关闸只有两条路：有人点「编辑」（runtime_stop），或服务端重启。
+      this.log("info", `编辑器已断开（运行态不受影响，当前 ${this.editors.size} 个编辑器）`);
+    });
+
+    ws.on("error", (error: Error) => {
+      this.log("error", `编辑器连接异常: ${error.message}`);
+    });
+  }
+
+  /** 校验入站消息，然后交给 `EDITOR_HANDLERS`。校验失败**尽力挂到那条命令上**（见下）。 */
+  private onEditorMessage(ws: WebSocket, text: string): void {
+    let raw: unknown;
+    let message: EditorToServerMessage;
+    try {
+      raw = parseJsonMessage(text);
+      message = parseEditorToServer(raw);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      // **能对上号的错误要挂到那条命令上**：消息没通过校验时它同样带 `requestId`（JSON 是合法的，
+      // 只是字段/判别值不认识，例如服务端进程还是旧的、不认识新增的命令种类）。
+      // 只发一行无主的「消息校验失败」的话，编辑器那边那条命令就成了「发出去、永远没回音」——
+      // 现场的表现就是「点了有报错、前端一动不动」。
+      const requestId = requestIdOf(raw);
+      this.sendTo(
+        ws,
+        requestId === undefined
+          ? { type: "editor_error", reason }
+          : { type: "editor_error", requestId, reason },
+      );
+      return;
+    }
+
+    EDITOR_HANDLERS[message.type](this, ws, message);
+  }
+
+  // ------------------------------------------------------------ 心跳
 
   private startClientPing(session: ClientSession): void {
     session.pingTimer = setInterval(() => {
@@ -354,8 +336,16 @@ export class RuntimeHub {
     }
   }
 
+  resetMissedPongs(): void {
+    if (this.client !== undefined) {
+      this.client.missedPongs = 0;
+    }
+  }
+
+  // ------------------------------------------------------------ HubContext（对处理器开放）
+
   /** 踢掉前端（退出运行态 / 被顶替 / 心跳超时）。 */
-  private kickClient(reason: string): void {
+  kickClient(reason: string): void {
     const session = this.client;
     if (session === undefined) {
       return;
@@ -367,172 +357,11 @@ export class RuntimeHub {
     session.ws.close(RUNTIME_STOPPED_CODE, reason);
   }
 
-  // ------------------------------------------------------------ 编辑器
-
-  private acceptEditor(ws: WebSocket): void {
-    this.editors.add(ws);
-    this.log("info", `编辑器已连接（当前 ${this.editors.size} 个）`);
-    this.sendEditorState(ws);
-
-    ws.on("message", (data) => {
-      this.onEditorMessage(ws, typeof data === "string" ? data : data.toString());
-    });
-
-    ws.on("close", () => {
-      this.editors.delete(ws);
-      // 编辑器断开**不影响运行态**：刷新页面 / 关掉编辑器，前端照样连着、镜像也还在。
-      // 要关闸只有两条路：有人点「编辑」（runtime_stop），或服务端重启。
-      this.log("info", `编辑器已断开（运行态不受影响，当前 ${this.editors.size} 个编辑器）`);
-    });
-
-    ws.on("error", (error: Error) => {
-      this.log("error", `编辑器连接异常: ${error.message}`);
-    });
-  }
-
-  private onEditorMessage(ws: WebSocket, text: string): void {
-    let raw: unknown;
-    let message;
-    try {
-      raw = parseJsonMessage(text);
-      message = parseEditorToServer(raw);
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error);
-      // **能对上号的错误要挂到那条命令上**：消息没通过校验时它同样带 `requestId`（JSON 是合法的，
-      // 只是字段/判别值不认识，例如服务端进程还是旧的、不认识新增的命令种类）。
-      // 只发一行无主的「消息校验失败」的话，编辑器那边那条命令就成了「发出去、永远没回音」——
-      // 现场的表现就是「点了有报错、前端一动不动」。
-      const requestId = requestIdOf(raw);
-      this.sendTo(
-        ws,
-        requestId === undefined
-          ? { type: "editor_error", reason }
-          : { type: "editor_error", requestId, reason },
-      );
-      return;
-    }
-
-    switch (message.type) {
-      case "editor_hello": {
-        if (message.protocolVersion !== PROTOCOL_VERSION) {
-          const reason = `协议版本不一致：编辑器 ${message.protocolVersion}，服务端 ${PROTOCOL_VERSION}`;
-          this.log("warn", reason);
-          ws.close(PROTOCOL_MISMATCH_CODE, reason);
-          return;
-        }
-
-        this.sendEditorState(ws);
-        return;
-      }
-
-      case "runtime_start": {
-        // 幂等：服务端只记「现在在运行」，重复点不会重置场景缓存
-        if (!this.session.runtimeActive) {
-          this.session.start();
-          this.rejectedWhileInactive = false;
-          this.log("info", "进入运行态：已开闸（前端现在可以连接）");
-        }
-
-        this.broadcastEditorState();
-        return;
-      }
-
-      case "runtime_stop": {
-        if (this.session.runtimeActive) {
-          this.session.stop();
-          this.kickClient("编辑器已退出运行态");
-          this.log("info", "退出运行态：已关闸（前端会被断开，且连不回来直到再次点运行）");
-          this.logToEditors("warn", "已退出运行态：前端连接已关闭");
-        }
-
-        this.broadcastEditorState();
-        return;
-      }
-
-      case "editor_refresh": {
-        this.sendEditorState(ws);
-        return;
-      }
-
-      case "scene_push": {
-        const projectChanged = projectNameOfScene(message.scene) !== this.session.resourceProject;
-        this.session.setScene(message.scene);
-
-        if (this.client !== undefined) {
-          // 项目换了（或编辑器第一次推场景）→ 先让前端换资源包，再给场景
-          if (projectChanged) {
-            this.prepareClientResources(this.client.ws);
-          }
-
-          this.sendTo(this.client.ws, { type: "scene_sync", scene: message.scene });
-        }
-
-        // 推送很频繁（编辑器去抖后每次编辑一份），所以只更新状态、不写日志
-        this.broadcastEditorState();
-        return;
-      }
-
-      case "settings_push": {
-        // 项目级全局设置：与场景同命（缓存一份，前端一连上就补发），但**跨场景有效**
-        this.session.setSettings(message.settings);
-
-        if (this.client !== undefined) {
-          this.sendTo(this.client.ws, { type: "project_settings", settings: message.settings });
-        }
-
-        // 音量是滑杆拖出来的，推送同样频繁：只更新状态、不写日志
-        this.broadcastEditorState();
-        return;
-      }
-
-      case "editor_command": {
-        if (!this.session.runtimeActive) {
-          this.sendTo(ws, {
-            type: "editor_error",
-            requestId: message.requestId,
-            reason: "未进入运行态，无法下发命令",
-          });
-          return;
-        }
-
-        if (!this.clientConnected) {
-          this.sendTo(ws, {
-            type: "editor_error",
-            requestId: message.requestId,
-            reason: "前端未连接，无法下发命令",
-          });
-          return;
-        }
-
-        const forwarded = this.forwardToClient({
-          type: "command",
-          requestId: message.requestId,
-          command: message.command,
-        });
-
-        if (!forwarded) {
-          this.sendTo(ws, {
-            type: "editor_error",
-            requestId: message.requestId,
-            reason: "下发失败：前端连接不可用",
-          });
-          return;
-        }
-
-        this.trackCommand(message.requestId, ws, message.command.kind);
-        return;
-      }
-
-      default:
-        return;
-    }
-  }
-
   /**
    * 记一笔「等着前端回执」的命令。超时后向编辑器报错，**不静默失败**：
    * 前端没实现这条命令时，界面上要看得见原因（而不是点了没反应）。
    */
-  private trackCommand(requestId: string, editor: WebSocket, label: string): void {
+  trackCommand(requestId: string, editor: WebSocket, label: string): void {
     const existing = this.pending.get(requestId);
     if (existing !== undefined) {
       clearTimeout(existing.timer);
@@ -550,9 +379,15 @@ export class RuntimeHub {
     this.pending.set(requestId, { timer });
   }
 
-  /** 生成一个请求 id（编辑器与测试都用它，格式统一）。 */
-  newRequestId(): string {
-    return createRequestId("cmd");
+  /** 清掉某条命令的等待记录（收到回执时）。没记过就当没发生。 */
+  settleCommand(requestId: string): void {
+    const pending = this.pending.get(requestId);
+    if (pending === undefined) {
+      return;
+    }
+
+    clearTimeout(pending.timer);
+    this.pending.delete(requestId);
   }
 
   /**
@@ -561,8 +396,17 @@ export class RuntimeHub {
    * 在 `scene_sync` **之前**发。项目还不知道（编辑器没推过场景）时发 `null`，
    * 前端就照旧等场景到了再从镜像里推项目名。
    */
-  private prepareClientResources(ws: WebSocket): void {
+  prepareClientResources(ws: WebSocket): void {
     this.sendTo(ws, { type: "resources_prepare", project: this.session.resourceProject });
+  }
+
+  resetInactiveRejectionLog(): void {
+    this.rejectedWhileInactive = false;
+  }
+
+  /** 生成一个请求 id（编辑器与测试都用它，格式统一）。 */
+  newRequestId(): string {
+    return createRequestId("cmd");
   }
 
   // ------------------------------------------------------------ 发送
@@ -580,15 +424,15 @@ export class RuntimeHub {
     };
   }
 
-  private sendEditorState(ws: WebSocket): void {
+  sendEditorState(ws: WebSocket): void {
     this.sendTo(ws, this.editorStateMessage());
   }
 
-  private broadcastEditorState(): void {
+  broadcastEditorState(): void {
     this.broadcastToEditors(this.editorStateMessage());
   }
 
-  private logToEditors(level: LogLevel, message: string): void {
+  logToEditors(level: LogLevel, message: string): void {
     this.broadcastToEditors({
       type: "editor_log",
       level,
@@ -603,7 +447,7 @@ export class RuntimeHub {
     }
   }
 
-  private forwardToClient(message: ServerToClientMessage): boolean {
+  forwardToClient(message: ServerToClientMessage): boolean {
     const client = this.client;
     if (client === undefined || client.ws.readyState !== WebSocket.OPEN) {
       return false;
@@ -613,7 +457,7 @@ export class RuntimeHub {
     return true;
   }
 
-  private sendTo(ws: WebSocket, message: ServerToEditorMessage | ServerToClientMessage): void {
+  sendTo(ws: WebSocket, message: ServerToEditorMessage | ServerToClientMessage): void {
     if (ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify(message));
     }

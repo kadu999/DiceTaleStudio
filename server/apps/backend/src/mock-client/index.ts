@@ -1,6 +1,8 @@
 import WebSocket from "ws";
 import {
+  COMPONENT_TYPE,
   PROTOCOL_VERSION,
+  componentDataOf,
   parseJsonMessage,
   parseServerToClient,
   type ClientToServerMessage,
@@ -136,14 +138,27 @@ class MockClient {
     console.log(`[mock] 镜像场景「${scene.name}」：${scene.objects.length} 个对象`);
     for (const object of scene.objects) {
       const position = object.position === null ? "(未落位)" : `(${object.position.x}, ${object.position.y})`;
+      // 组件名（v9 起对象特性住在组件里）：先列出来，再补几个重点组件的关键字段
+      const components = object.components.map((item) => item.type).join("+") || "(无组件)";
+      const image = componentDataOf<{ id: string }>(object, COMPONENT_TYPE.image);
+      const map = componentDataOf<{ grid?: { width: number; height: number } }>(object, COMPONENT_TYPE.map);
+      const sound = componentDataOf<{ picked?: string; layer: string }>(object, COMPONENT_TYPE.sound);
+      const video = componentDataOf<{
+        picked?: string;
+        clips: readonly string[];
+        loop: boolean;
+        audio: boolean;
+      }>(object, COMPONENT_TYPE.video);
+
       console.log(
         `[mock]   ${object.id}  kind=${object.kind}  active=${object.active}  pos=${position}  ` +
-          `scale=${object.scale}  order=${object.sortingOrder}` +
-          (object.image === undefined ? "" : `  image=${object.image.id}`) +
-          (object.sound === undefined ? "" : `  sound=${object.sound.picked ?? "(未选)"}@${object.sound.layer}`) +
-          (object.video === undefined
+          `scale=${object.scale}  order=${object.sortingOrder}  components=${components}` +
+          (image === undefined ? "" : `  image=${image.id}`) +
+          (map?.grid === undefined ? "" : `  grid=${map.grid.width}×${map.grid.height}`) +
+          (sound === undefined ? "" : `  sound=${sound.picked ?? "(未选)"}@${sound.layer}`) +
+          (video === undefined
             ? ""
-            : `  video=${object.video.picked || "(未选)"}（${object.video.clips.length} 条，循环=${object.video.loop}，声音=${object.video.audio}）`),
+            : `  video=${video.picked ?? "(未选)"}（${video.clips.length} 条，循环=${video.loop}，声音=${video.audio}）`),
       );
     }
   }

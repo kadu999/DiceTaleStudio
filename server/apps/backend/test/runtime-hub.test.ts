@@ -3,6 +3,7 @@ import type { Server } from "node:http";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import {
+  COMPONENT_TYPE,
   PROTOCOL_VERSION,
   RUNTIME_STOPPED_CODE,
   type ScenePayload,
@@ -103,6 +104,14 @@ function connectExpectFailure(url: string): Promise<string> {
 
 const typeOf = (message: unknown): string => (message as { type?: string }).type ?? "";
 
+/** 造一个组件实例（v9 起对象特性住在 `components` 里）。 */
+function feature(
+  type: string,
+  data: Record<string, unknown>,
+): { id: string; type: string; data: Record<string, unknown> } {
+  return { id: `c_${type}`, type, data };
+}
+
 /** 一份最小场景：一个地图对象（激活）+ 一个精灵对象（激活状态可调）。 */
 function sampleScene(name: string, spriteActive: boolean): ScenePayload {
   return {
@@ -117,12 +126,14 @@ function sampleScene(name: string, spriteActive: boolean): ScenePayload {
         position: { x: 0, y: 0 },
         rotation: 0,
         scale: 1,
-        map: {
-          image: { id: "project:P/Assets/images/map.png", width: 1920, height: 1080 },
-          grid: { width: 64, height: 36 },
-          rowOrder: "bottom-up",
-          cells: { encoding: "rle", runs: [[0, 2304]] },
-        },
+        components: [
+          feature(COMPONENT_TYPE.map, {
+            image: { id: "project:P/Assets/images/map.png", width: 1920, height: 1080 },
+            grid: { width: 64, height: 36 },
+            rowOrder: "bottom-up",
+            cells: { encoding: "rle", runs: [[0, 2304]] },
+          }),
+        ],
       },
       {
         id: "sprite_01",
@@ -133,6 +144,7 @@ function sampleScene(name: string, spriteActive: boolean): ScenePayload {
         position: { x: -345, y: 118 },
         rotation: 0,
         scale: 1,
+        components: [],
       },
     ],
   };
@@ -733,12 +745,14 @@ describe("运行态：门控 + 场景镜像中继", () => {
 
     // 换成另一个项目的场景（同样的对象结构，只换资源 ID 里的项目名）
     const other = sampleScene("场景1", true);
-    other.objects[0]!.map = {
-      image: { id: "project:Q/Assets/images/map.png", width: 1920, height: 1080 },
-      grid: { width: 64, height: 36 },
-      rowOrder: "bottom-up",
-      cells: { encoding: "rle", runs: [[0, 2304]] },
-    };
+    other.objects[0]!.components = [
+      feature(COMPONENT_TYPE.map, {
+        image: { id: "project:Q/Assets/images/map.png", width: 1920, height: 1080 },
+        grid: { width: 64, height: 36 },
+        rowOrder: "bottom-up",
+        cells: { encoding: "rle", runs: [[0, 2304]] },
+      }),
+    ];
     send(editor.socket, { type: "scene_push", scene: other });
 
     const again = await client.inbox.waitFor<ServerToClientMessage>(

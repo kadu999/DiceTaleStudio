@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ScenePayload } from "@dts/protocol";
+import { COMPONENT_TYPE, type ScenePayload } from "@dts/protocol";
 import { RuntimeSession, projectNameOfScene } from "../src/ws/runtime-session";
 
 /**
@@ -8,6 +8,14 @@ import { RuntimeSession, projectNameOfScene } from "../src/ws/runtime-session";
  * 旧模型里那套「对象 / 玩家 / 动作清单镜像」的合并语义测试已经删掉——那份镜像不存在了
  * （数据在后台，前端不再上报）。
  */
+
+/** 造一个组件实例（v9 起对象特性住在 `components` 里）。 */
+function feature(
+  type: string,
+  data: Record<string, unknown>,
+): { id: string; type: string; data: Record<string, unknown> } {
+  return { id: `c_${type}`, type, data };
+}
 
 function scene(name: string, objectCount: number): ScenePayload {
   return {
@@ -21,6 +29,7 @@ function scene(name: string, objectCount: number): ScenePayload {
       position: { x: index, y: index },
       rotation: 0,
       scale: 1,
+      components: [],
     })),
   };
 }
@@ -148,7 +157,13 @@ describe("RuntimeSession", () => {
           position: { x: 0, y: 0 },
           rotation: 0,
           scale: 1,
-          image: { id: "project:我的项目/Assets/images/a.png", width: 10, height: 10 },
+          components: [
+            feature(COMPONENT_TYPE.image, {
+              id: "project:我的项目/Assets/images/a.png",
+              width: 10,
+              height: 10,
+            }),
+          ],
         },
       ],
     };
@@ -167,7 +182,13 @@ describe("RuntimeSession", () => {
           position: { x: 0, y: 0 },
           rotation: 0,
           scale: 1,
-          sound: { clips: ["project:音效库/Assets/audio/step1.mp3"], picked: "project:音效库/Assets/audio/step1.mp3", layer: "sfx" },
+          components: [
+            feature(COMPONENT_TYPE.sound, {
+              clips: ["project:音效库/Assets/audio/step1.mp3"],
+              picked: "project:音效库/Assets/audio/step1.mp3",
+              layer: "sfx",
+            }),
+          ],
         },
       ],
     };
@@ -191,12 +212,14 @@ describe("RuntimeSession", () => {
           position: { x: 0, y: 0 },
           rotation: 0,
           scale: 1,
-          map: {
-            image: { id: "config:something.png", width: 10, height: 10 },
-            grid: { width: 1, height: 1 },
-            rowOrder: "bottom-up",
-            cells: { encoding: "rle", runs: [[0, 1]] },
-          },
+          components: [
+            feature(COMPONENT_TYPE.map, {
+              image: { id: "config:something.png", width: 10, height: 10 },
+              grid: { width: 1, height: 1 },
+              rowOrder: "bottom-up",
+              cells: { encoding: "rle", runs: [[0, 1]] },
+            }),
+          ],
         },
       ],
     };
@@ -219,7 +242,13 @@ describe("RuntimeSession", () => {
           position: { x: 0, y: 0 },
           rotation: 0,
           scale: 1,
-          image: { id: "project:甲/Assets/images/a.png", width: 10, height: 10 },
+          components: [
+            feature(COMPONENT_TYPE.image, {
+              id: "project:甲/Assets/images/a.png",
+              width: 10,
+              height: 10,
+            }),
+          ],
         },
       ],
     });
