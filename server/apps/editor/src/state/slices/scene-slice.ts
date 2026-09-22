@@ -115,9 +115,10 @@ export function createSceneSlice(
             objects: parsed.file.objects,
           };
 
-          // 语义校验（zod 只管形状，不管业务）：把项目当前的 spriteSheets 传进去，
-          // 格子越界这类子图 warning 才认得出来；warning 落进日志，不拦加载
-          for (const issue of validateScene(scene, { spriteSheets: get().doc.spriteSheets })) {
+          // 语义校验（zod 只管形状，不管业务）：把当前的**素材 meta 索引**传进去，
+          // 格子越界这类子图 warning 才认得出来（「几行几列」现在住在素材自己的 `.meta` 里）；
+          // warning 落进日志，不拦加载
+          for (const issue of validateScene(scene, { metas: get().assetMetas })) {
             if (issue.level === "warning") {
               pushLog(makeLog("warn", `场景「${scene.name}」：${issue.message}`));
             }

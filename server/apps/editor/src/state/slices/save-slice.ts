@@ -1,9 +1,10 @@
 /**
  * 本文件从 `editor-store.ts` 拆出（纯搬运，行为不变）。
  *
- * 两份文件（场景 / 工程文件）的立即落盘与 flush。
+ * 三份文件（场景 / 工程文件 / 每个素材的 `.meta`）的立即落盘与 flush。
  */
-import { projectFileId, projectSceneFileId } from "@dts/resources";
+import { serializeAssetMetaFile } from "@dts/document";
+import { assetMetaIdOf, projectFileId, projectSceneFileId } from "@dts/resources";
 import { projectApi } from "../../services/project-api";
 import { type StoreSet, type StoreGet, type EditorStoreState } from "../store-types";
 import { projectHistory, makeLog, serializeSceneFile, serializeProjectFile } from "../store-core";
@@ -19,15 +20,20 @@ export function createSaveSlice(
   | "flushSceneSave"
   | "saveProjectNow"
   | "flushProjectSave"
+  | "saveMetasNow"
+  | "flushMetaSave"
 > {
   // 共享的闭包状态与局部工具都在 ctx 里：这里解构一次，方法体与拆分前逐字一致
   const {
     pushLog,
     projectDirty,
     dirtySceneNames,
+    metaDirtyIds,
     clearSceneSaveTimer,
     clearProjectSaveTimer,
+    clearMetaSaveTimer,
     savedScenes,
+    savedMetas,
   } = ctx;
 
   return {
@@ -138,6 +144,66 @@ export function createSaveSlice(
       }
 
       await get().saveProjectNow();
+    },
+
+    // ---------------------------------------------------------------- 素材 meta（切分 / 导入设置）
+
+    async saveMetasNow() {
+      if (get().project.current === null) {
+        return false;
+      }
+
+      // 运行态下不写盘：与场景 / 工程文件同一条口径（那些改动退出运行时会整体还原）
+      if (get().runtime.runtimeActive) {
+        clearMetaSaveTimer();
+
+        set({ metaSaveState: "runtime" });
+        pushLog(
+          makeLog("info", "运行态：素材 meta（切分 / 导入设置）不会保存（点「编辑」退出运行会还原）"),
+        );
+        return false;
+      }
+
+      clearMetaSaveTimer();
+
+      // 同步取快照：只写内容真的变了的那些——一个素材一个文件，切一张图不该碰别的素材的盘
+      const dirty = metaDirtyIds();
+      if (dirty.length === 0) {
+        set({ metaSaveState: "saved", metaSaveError: "" });
+        return true;
+      }
+
+      set({ metaSaveState: "saving", metaSaveError: "" });
+      try {
+        for (const id of dirty) {
+          const meta = get().assetMetaTable[id];
+          if (meta === undefined) {
+            continue;
+          }
+
+          const text = serializeAssetMetaFile(meta);
+          await projectApi.writeText(assetMetaIdOf(id), text);
+          savedMetas.set(id, text);
+        }
+
+        set({ metaSaveState: "saved" });
+        return true;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        set({ metaSaveState: "error", metaSaveError: message });
+        pushLog(makeLog("error", `保存素材 meta 失败：${message}`));
+        return false;
+      }
+    },
+
+    async flushMetaSave() {
+      clearMetaSaveTimer();
+
+      if (get().project.current === null || metaDirtyIds().length === 0) {
+        return;
+      }
+
+      await get().saveMetasNow();
     },
   };
 }

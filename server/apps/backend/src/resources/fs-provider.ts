@@ -3,6 +3,7 @@ import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import {
   RESOURCE_KINDS,
   formatResourceId,
+  isAssetMetaPath,
   parseResourceId,
   type ResourceDirs,
   type ResourceEntry,
@@ -54,6 +55,12 @@ export class FsResourceProvider implements ResourceProvider {
 
         const path = name.split(sep).join("/");
         if (path.endsWith(".gitkeep")) {
+          continue;
+        }
+
+        // 素材的 meta（`A.png.meta`）是元数据、不是素材：资源树与素材清单里都不该出现
+        // （它与 `project.json` 同一档，见 `docs/specs/2026-09-23-asset-meta.md`）
+        if (isAssetMetaPath(path)) {
           continue;
         }
 

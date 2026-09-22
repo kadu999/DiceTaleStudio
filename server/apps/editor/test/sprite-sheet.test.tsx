@@ -3,13 +3,17 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { vi } from "vitest";
 import {
   SPRITE_COMPONENT,
+  createAssetMetas,
   createEmptyProject,
   createSceneObject,
   featureComponent,
+  spriteSettingsOfMeta,
+  type AssetMetaDoc,
   type SceneObjectDoc,
 } from "@dts/document";
 import { ImagePickerDialog } from "../src/app/ImagePickerDialog";
 import { InspectorPanel } from "../src/panels/inspector/InspectorPanel";
+import { metaHistory } from "../src/state/store-core";
 import { projectHistory, sceneHistory, useEditorStore } from "../src/state/editor-store";
 import type { ResourceTreeNode } from "../src/services/project-api";
 
@@ -56,10 +60,25 @@ function spriteWith(image: SceneObjectDoc["components"][number]["data"]): SceneO
 function seed(objects: SceneObjectDoc[], spriteSheets?: Record<string, { columns: number; rows: number }>): void {
   const scenes = [{ name: "Map001", objects }];
   sceneHistory.reset(scenes);
-  const doc = { ...createEmptyProject("测试"), ...(spriteSheets === undefined ? {} : { spriteSheets }) };
+  const doc = createEmptyProject("测试");
   projectHistory.reset(doc);
+  // v23 起切分住在**素材自己的 `.meta`** 里：种一份「路径 ID → meta」的表，再派生出索引
+  const table: Record<string, AssetMetaDoc> = {};
+  let sequence = 0;
+  for (const [id, sheet] of Object.entries(spriteSheets ?? {})) {
+    sequence += 1;
+    table[id] = {
+      formatVersion: 1,
+      guid: String(sequence).padStart(32, "0"),
+      importer: "texture",
+      sprite: { mode: "Multiple", sheet },
+    };
+  }
+  metaHistory.reset(table);
   useEditorStore.setState({
     doc,
+    assetMetaTable: table,
+    assetMetas: createAssetMetas(Object.entries(table).map(([id, meta]) => ({ id, meta }))),
     scenes,
     activeSceneName: "Map001",
     selectedObjectIds: ["sprite-1"],
@@ -109,7 +128,7 @@ describe("属性面板：子图那一行", () => {
 
     const image = objectOf("sprite-1")?.components[0]?.data as Record<string, unknown>;
     expect(image.sprite).toBeUndefined();
-    expect(useEditorStore.getState().doc.spriteSheets).toEqual({ [IMAGE_ID]: { columns: 2, rows: 2 } });
+    expect(useEditorStore.getState().assetMetas.byId[IMAGE_ID]?.sprite?.sheet).toEqual({ columns: 2, rows: 2 });
 
     // 一条撤销记录就退回去（还是原来那一格）
     useEditorStore.getState().undo();
@@ -152,7 +171,7 @@ describe("选择窗口：切分与选格", () => {
     fireEvent.blur(columns);
     fireEvent.change(rows, { target: { value: "2" } });
     fireEvent.blur(rows);
-    expect(useEditorStore.getState().doc.spriteSheets).toEqual({ [IMAGE_ID]: { columns: 2, rows: 2 } });
+    expect(useEditorStore.getState().assetMetas.byId[IMAGE_ID]?.sprite?.sheet).toEqual({ columns: 2, rows: 2 });
 
     // 点预览的右下角那一格（比例 0.75 / 0.75 → 列 1、行 1）
     const preview = screen.getByTestId("sprite-preview");
@@ -267,7 +286,7 @@ describe("入口：图片资源上也能切（精灵是这张图自己的属性�
 
     render(<InspectorPanel />);
     fireEvent.click(screen.getByTestId("sprite-type-toggle"));
-    expect(useEditorStore.getState().doc.spriteSettings?.[IMAGE_ID]).toEqual({
+    expect(spriteSettingsOfMeta(useEditorStore.getState().assetMetas.byId[IMAGE_ID])).toEqual({
       type: "Sprite",
       mode: "Single",
     });
@@ -281,24 +300,31 @@ describe("入口：图片资源上也能切（精灵是这张图自己的属性�
     fireEvent.change(screen.getByTestId("sprite-editor-columns"), { target: { value: "4" } });
     fireEvent.change(screen.getByTestId("sprite-editor-rows"), { target: { value: "2" } });
     fireEvent.click(screen.getByTestId("sprite-editor-cancel"));
-    expect(useEditorStore.getState().doc.spriteSheets).toBeUndefined();
+    expect(useEditorStore.getState().assetMetas.byId[IMAGE_ID]).toBeUndefined();
 
     fireEvent.click(screen.getByTestId("sprite-edit"));
     fireEvent.change(screen.getByTestId("sprite-editor-columns"), { target: { value: "4" } });
     fireEvent.change(screen.getByTestId("sprite-editor-rows"), { target: { value: "2" } });
     fireEvent.click(screen.getByTestId("sprite-editor-apply"));
-    expect(useEditorStore.getState().doc.spriteSheets).toEqual({
-      [IMAGE_ID]: { columns: 4, rows: 2 },
+    expect(useEditorStore.getState().assetMetas.byId[IMAGE_ID]?.sprite?.sheet).toEqual({
+      columns: 4,
+      rows: 2,
     });
   });
 
   it("从旧版切分表切到 Single 时会隐藏编辑入口并清理切分", () => {
-    projectHistory.reset({
-      ...createEmptyProject("测试"),
-      spriteSheets: { [IMAGE_ID]: { columns: 2, rows: 2 } },
-    });
+    const legacy: AssetMetaDoc = {
+      formatVersion: 1,
+      guid: "0".repeat(32),
+      importer: "texture",
+      sprite: { mode: "Multiple", sheet: { columns: 2, rows: 2 } },
+    };
+    metaHistory.reset({ [IMAGE_ID]: legacy });
+    projectHistory.reset(createEmptyProject("测试"));
     useEditorStore.setState({
       doc: projectHistory.current,
+      assetMetaTable: { [IMAGE_ID]: legacy },
+      assetMetas: createAssetMetas([{ id: IMAGE_ID, meta: legacy }]),
       scenes: [],
       activeSceneName: null,
       selectedObjectIds: [],
@@ -309,7 +335,7 @@ describe("入口：图片资源上也能切（精灵是这张图自己的属性�
     render(<InspectorPanel />);
     expect(screen.getByTestId("sprite-edit")).not.toBeNull();
     fireEvent.change(screen.getByTestId("sprite-import-mode"), { target: { value: "Single" } });
-    expect(useEditorStore.getState().doc.spriteSheets).toBeUndefined();
+    expect(useEditorStore.getState().assetMetas.byId[IMAGE_ID]).toBeUndefined();
     expect(screen.queryByTestId("sprite-edit")).toBeNull();
   });
 });
@@ -337,10 +363,10 @@ describe("两条轨道：图 + 格子是一条撤销记录，切分自己一条"
       .getState()
       .setSpriteSheet(IMAGE_ID, { columns: 4, rows: 4 });
     expect(changed).toBe(true);
-    expect(useEditorStore.getState().doc.spriteSheets).toEqual({ [IMAGE_ID]: { columns: 4, rows: 4 } });
+    expect(useEditorStore.getState().assetMetas.byId[IMAGE_ID]?.sprite?.sheet).toEqual({ columns: 4, rows: 4 });
 
     useEditorStore.getState().undo();
-    expect(useEditorStore.getState().doc.spriteSheets).toBeUndefined();
+    expect(useEditorStore.getState().assetMetas.byId[IMAGE_ID]).toBeUndefined();
     // 对象上那一格照旧（切分没了 = 按整图算，但引用本身没被谁改过）
     expect(
       (objectOf("sprite-1")?.components[0]?.data as { sprite?: unknown }).sprite,

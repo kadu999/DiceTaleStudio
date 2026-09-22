@@ -77,15 +77,31 @@ import type { ObjectKind } from "./kinds";
  * （层级住在 `kinds.ts`，判据走 `kindIsA`）。数据形状一个字没动，改名与层级都不动内容。
  * 协议侧同步升到 v12：老前端（v11）不认这两个值，占位色会退成灰（图照常显示，因为
  * 显示走组件名）——属于「不是崩，是画面错」，按同一条纪律靠握手挡住。
+ *
+ * v23（2026-09-23）：**图片的导入设置与切分从工程文件搬进素材自己的 `.meta`**。
+ * - 工程文件里 `spriteSheets` / `spriteSettings` 两项**删除**（`migrateSpriteMetas` 把键按路径
+ *   找到素材、生成各自的 `.meta` 交给调用方落盘）；
+ * - `ImageRef` 多一项 `guid`：**有 guid 就以 guid 为准**，`id`（路径）留给显示、老文件兜底
+ *   与下发前端的换算——前端/协议因此一个字节都不用改（推送时仍换算回路径 ID）；
+ * - 为什么要改：那三份数据原来都以**文件名**为键，外部一改名就同时失联（见
+ *   `docs/specs/2026-09-23-asset-meta.md` 里记的真实案例）。改完 `.meta` 与素材成对改名 = 不断链。
  */
-export const DOCUMENT_FORMAT_VERSION = 22;
+export const DOCUMENT_FORMAT_VERSION = 23;
 
 /** 网格行序：`bottom-up` 表示 cells 第 0 行是图片最下面一行（与 Unity GridMap 一致）。 */
 export type RowOrder = "bottom-up";
 
 export interface ImageRef {
-  /** 资源逻辑 ID，例如 `project:我的项目/Assets/images/Map001.png`。 */
+  /** 资源逻辑 ID，例如 `project:我的项目/Assets/images/Map001.png`（**显示与下发用**）。 */
   readonly id: string;
+  /**
+   * 素材的**稳定身份**（v23 起，可选）：素材旁边那份 `<素材>.meta` 里的 GUID。
+   *
+   * 有它就以它为准（`id` 只是"上次见到的路径"）：素材与 `.meta` 成对改名 / 移动之后，
+   * 引用照样指得对——这正是 v23 要买到的东西。手写的老文件没有它，按 `id` 兜底解析，
+   * 编辑器读到时顺手补上（`asset-meta.ts` 的索引）。
+   */
+  readonly guid?: string;
   /**
    * 在场景里占多宽（**换算前的声明尺寸**；实际尺寸还要乘对象 scale）。
    *
@@ -98,9 +114,9 @@ export interface ImageRef {
   /**
    * 取这张图（图集）里的**哪一格**；缺省 = 整张图。
    *
-   * 这里**只存引用**：「几行几列」住在工程文件的 `ProjectDoc.spriteSheets` 里，
-   * 只有那一份——所以改切分，所有引用它的对象一起变（对齐 Unity：Sprite 的矩形住在
-   * 资源自己的导入设置里，场景只引用它）。
+   * 这里**只存引用**：「几行几列」住在**素材自己的 `.meta`** 里（v23 起；v22 及更早住在
+   * 工程文件的 `spriteSheets`），只有那一份——所以改切分，所有引用它的对象一起变
+   * （对齐 Unity：Sprite 的矩形住在资源自己的导入设置里，场景只引用它）。
    *
    * **不存像素矩形**：矩形 = 格子 ÷ 加载到的纹理尺寸，由编辑器画布与前端各算一次，
    * 于是两侧不可能各差一像素（与「`GridSpec` 不存 `cellSize`」同一条规矩）。
@@ -126,9 +142,9 @@ export interface ImageSpriteRef {
 }
 
 /**
- * 一张图片的**切分**（工程级，`ProjectDoc.spriteSheets` 的值）：按列 × 行切成网格。
+ * 一张图片的**切分**（素材级，v23 起住在 `<素材>.meta` 的 `sprite.sheet` 里）：按列 × 行切成网格。
  *
- * `1×1` = 整图（等同于没有这项），所以**不写这种表项**（不留空壳，与 `video` / `audioMeta`
+ * `1×1` = 整图（等同于没开精灵），所以**不写这种值**（不留空壳，与 `video` / `audioMeta`
  * 同一个口径）。上限 `SPRITE_SHEET_MAX`（64）：再密就没有「一格」可言了。
  */
 export interface SpriteSheetDoc {
@@ -136,6 +152,7 @@ export interface SpriteSheetDoc {
   readonly rows: number;
 }
 
+/** 一张图的**导入设置**（v23 起是 `<素材>.meta` 里 `sprite` 那一份的反向翻译）。 */
 export interface SpriteImportSettingsDoc {
   readonly type: "Default" | "Sprite";
   readonly mode?: "Single" | "Multiple";
@@ -144,7 +161,7 @@ export interface SpriteImportSettingsDoc {
 /**
  * 解析后的子图：**几行几列 + 第几格**（格评夹取之后）。
  *
- * 这是「引用 + 切分表」算出来的形状，有两个消费者：
+ * 这是「引用 + 素材 meta」算出来的形状，有两个消费者：
  * 编辑器画布（算像素矩形）与协议载荷（`sprite` + `spriteGrid` 一起下发，见 `messages.ts`）。
  */
 export interface ResolvedSprite {
@@ -558,19 +575,12 @@ export interface ProjectDoc {
    * 与 `audioMeta` 并列（都是项目级数据、都不进协议）。没有标签时**不写这一项**。
    */
   readonly audioTags?: AudioTagTableDoc;
-  /**
-   * **图片切分表**（v20 起，可选）：`图片资源逻辑 ID → { 列, 行 }`。
-   *
-   * 这是「一张图按几行几列切」的**唯一一份**数据：对象身上只存「引用哪张图 + 第几格」
-   * （`ImageRef.sprite`），改这里 = 所有引用它的对象一起变——对齐 Unity（Sprite 的矩形住在
-   * 资源自己的导入设置里，场景文件只引用它）。
-   *
-   * 与 `audioMeta` / `audioTags` 并列（都是项目级数据）。**不进协议**：前端的载荷里由编辑器
-   * 把切分解析成 `spriteGrid` 一起下发（客户端没有工程文件，见 `@dts/protocol` 的 `imageRefSchema`）。
-   * `1×1` = 整图，**不写这种表项**；整个表空了就把字段删掉。
+  /*
+   * v23 起这里**没有** `spriteSheets` / `spriteSettings` 了：图片的导入设置与切分搬到
+   * **素材自己的 `.meta`** 里（`Assets/images/A.png.meta`，见 `asset-meta.ts`）——
+   * 名字即键那套会让「外部改个文件名」把图、切分、格子引用三份一起打断（实测踩过）。
+   * 工程文件里只剩**项目级**数据；素材级数据跟着素材走。
    */
-  readonly spriteSheets?: Record<string, SpriteSheetDoc>;
-  readonly spriteSettings?: Record<string, SpriteImportSettingsDoc>;
 }
 
 /** 场景文件（Assets/scenes/<场景名>.json）的内容：场景名就是文件名，文件里不存名字。 */

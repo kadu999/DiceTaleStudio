@@ -843,7 +843,6 @@ export function ScenePanel(): React.JSX.Element {
         gridPaint,
         soundPlayback,
         ui,
-        doc,
       } = useEditorStore.getState();
 
       // 光标：悬停手柄 = 手；拖拽中 = 抓住（拖本体也算，那一下同样是「抓住了东西」）。
@@ -914,7 +913,7 @@ export function ScenePanel(): React.JSX.Element {
         // 子图（v20）：只画图集里的那一格。源矩形按**加载到的图片尺寸**算（真实像素说了算），
         // 声明尺寸只决定「铺多大」；图片还没加载好时先不传（这一帧仍是棋盘格/占位色）。
         // 「地图贴图不支持子图」的口径在 `displaySpriteOf` 里，这里不再判一次 kind
-        const sprite = displaySpriteOf(object, doc.spriteSheets);
+        const sprite = displaySpriteOf(object, useEditorStore.getState().assetMetas);
 
         // 图片实际像素与引用里声明的尺寸不一致时说一声：画面会被拉伸到声明的尺寸。
         // 精灵豁免：它的声明尺寸是一格的尺寸，自然尺寸是整张图集，对不上是常态（见上面子图逻辑）

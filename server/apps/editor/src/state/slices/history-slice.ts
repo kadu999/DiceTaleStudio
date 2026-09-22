@@ -11,6 +11,7 @@ import { type StoreSet, type StoreGet, type EditorStoreState } from "../store-ty
 import {
   sceneHistory,
   projectHistory,
+  metaHistory,
   setLastEditTrack,
   activeTrack,
   historyOf,
@@ -24,7 +25,7 @@ export function createHistorySlice(
   ctx: StoreContext,
 ): Pick<EditorStoreState, "applyScenes" | "applyProject" | "undo" | "redo" | "resetDoc"> {
   // 共享的闭包状态与局部工具都在 ctx 里：这里解构一次，方法体与拆分前逐字一致
-  const { refreshRunBaseline, savedScenes, sceneViewports } = ctx;
+  const { refreshRunBaseline, savedScenes, savedMetas, sceneViewports } = ctx;
 
   return {
     applyScenes(label, recipe, options) {
@@ -38,7 +39,7 @@ export function createHistorySlice(
     },
 
     undo() {
-      // 两套历史共用一个撤销入口：作用在**最近改过的那条轨道**上，撤完了轮到另一条
+      // 三套历史共用一个撤销入口：作用在**最近改过的那条轨道**上，撤完了轮到另一条
       // （顺序判定只有 `activeTrack` 一处，菜单文案也用它）
       const track = activeTrack("undo");
       const history = historyOf(track);
@@ -70,6 +71,11 @@ export function createHistorySlice(
       // 工程文件同理：换项目时这份 doc 就是新的磁盘内容（`openProject` 里已经读过它了）
       projectHistory.reset(doc);
       ctx.savedProjectText = serializeProjectFile(doc);
+      // 素材 meta 也是**换文档 = 换磁盘内容**：先把「磁盘上的样子」清掉，
+      // 免得空表与旧快照一比变成「有未保存改动」；接着清空表（订阅里重建索引与保存状态）。
+      // 真正的内容由 `openProject` / `refreshTree` 读完 meta 后 reset 进来
+      savedMetas.clear();
+      metaHistory.reset({});
       set({
         doc,
         canUndo: false,
@@ -85,6 +91,8 @@ export function createHistorySlice(
         sceneSaveError: "",
         projectSaveState: "saved",
         projectSaveError: "",
+        metaSaveState: "saved",
+        metaSaveError: "",
         // 换了文档：两个格子编辑窗口盯着的地图对象必然失效（偏好留着，下个项目接着用）
         // 两个格子编辑窗口同理：它们指向的地图对象已经不存在了
         fogMask: false,

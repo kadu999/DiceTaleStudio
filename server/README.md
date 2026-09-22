@@ -139,10 +139,13 @@ protocol, resources, grid → （无）
 **精灵（子图，v20）**：一张图可以按**行 × 列**切成格子，对象引用其中一格（`image.sprite`）。
 两条口径不能忘：
 
-- **切分只有一份**：`project.json` 的 `spriteSheets`（`图片逻辑 ID → { columns, rows }`）——
-  对象身上**只有「引用哪张图 + 第几格」**，所以改切分 = 所有引用它的对象一起变
-  （对齐 Unity：Sprite 的矩形住在资源自己的导入设置里，场景只引用它）。
-  推送时编辑器把切分解析成 `spriteGrid` 一起下发（前端没有工程文件），见 `packages/document/src/sprites.ts`；
+- **切分只有一份**：住在**素材自己的 `.meta`** 里（`Assets/images/A.png.meta` 的 `sprite.sheet`，
+  文档 v23 起；v20–v22 是 `project.json` 的 `spriteSheets`）——对象身上**只有「引用哪张图 + 第几格」**，
+  所以改切分 = 所有引用它的对象一起变（对齐 Unity：Sprite 的矩形住在资源自己的导入设置里，
+  场景只引用它）。推送时编辑器把切分解析成 `spriteGrid` 一起下发（前端没有工程文件），
+  见 `packages/document/src/sprites.ts`；素材身份是 `.meta` 里的 **GUID**，
+  所以素材与 `.meta` 成对改名 / 移动之后引用照样指得对（见
+  [`docs/specs/2026-09-23-asset-meta.md`](docs/specs/2026-09-23-asset-meta.md)）；
 - **矩形不存像素**：格子 ÷ 加载到的纹理尺寸，编辑器画布与前端各算一次，两侧不可能各差一像素。
   **格序数从左上数**（`row: 0` = 最上面一行，对齐 Unity 的 Sprite Editor）；地图贴图**不支持**子图
   （它的格子按整张贴图算，取一块会让已有格子标注的含义静默改变）。
@@ -919,6 +922,13 @@ Playwright 跑在临时资源根上（见 `playwright.config.ts` 的 `DTS_RESOUR
 - **特殊文件不出现在资源面板里**：`project.json` 是项目元数据、不是项目内容，
   资源树会跳过它（`PROJECT_SPECIAL_FILES`）——因此它既不显示，也无法从面板里被删掉
   （删掉它项目就不成立了）。只挡项目根的那一个，子目录里同名的文件照常显示。
+- **素材 meta 同理**：每个素材旁边一个 `<素材>.meta`（`Assets/images/A.png.meta`：GUID +
+  导入设置 + 切分，文档 v23 起），它是元数据、不是素材——资源树与素材清单都会跳过它，
+  但它按 ID 读得到、也写得进（写 meta 走的就是 `/api/resources/text`）。
+  改素材名时把 `.meta` 一起改，引用（GUID）就不会断，见
+  [`docs/specs/2026-09-23-asset-meta.md`](docs/specs/2026-09-23-asset-meta.md)。
+- `GET /api/projects/meta?name=`：一个项目的素材 meta **一次拿全**（键 = 素材逻辑 ID，
+  值是 meta 原文；坏 JSON 的条目跳过并记日志）。
 - 项目文件夹名、标准子目录名与项目文件名集中在 `packages/resources/src/ids.ts`
   （`PROJECT_FOLDERS`、`PROJECT_FILE_NAME`）；资源根与 `projects` 目录名由 `config/app.json` 的 `dirs` 声明。
 - 逻辑 ID → 真实路径的解析只发生在 `ResourceProvider` 实现里（后端 `FsResourceProvider`、编辑器 `HTTP`、测试 `Memory`）。
@@ -1307,6 +1317,22 @@ v22 **两种实体的 kind 各归其位，并给对象类型立了层级**（文
 - **前端要跟**：老前端（协议 v11）不认这两个新值，`KindColor` 匹配不上会退回灰色占位色
    （图照常显示——显示走组件名），按同一条「不是崩、是画面错」的纪律 +1。Unity 侧只改了
    占位色的 `case` 与缺省 kind，`MirrorObject.kind` 仍然只是个标签，行为看组件。
+
+v23 **图片的导入设置与切分搬进素材自己的 `.meta`**（文档格式 **22 → 23**；**协议不变**）：
+
+- **工程文件里没有 `spriteSheets` / `spriteSettings` 了**：它们**按文件名做键**，
+  在编辑器外面改一次文件名就同时打断三份数据（图分、切分、场景里的格子引用）——实测踩过，
+  详见 [`docs/specs/2026-09-23-asset-meta.md`](docs/specs/2026-09-23-asset-meta.md)；
+- **每个素材旁边一个 `<素材>.meta`**（`Assets/images/A.png.meta`，对齐 Unity）：里面是
+  **稳定 GUID** + `importer` + `sprite`（`mode` 与 `sheet`）。`sprite` 缺省 = 普通图片
+  （`{ "type": "Default" }` 那种空壳不再写）、`1×1` = 整图（`sheet` 不写）；
+- **引用多了 GUID**：`ImageRef.guid`（**有 guid 就以 guid 为准**，`id` 留着做显示与老文件兜底），
+  于是素材与 `.meta` 成对改名 / 移动之后，场景引用照样指得对；
+- **协议与前端不变**：推送时编辑器把 GUID 换算回路径 ID（`resolveSceneSprites`），
+  载荷形状与 v22 逐字相同——所以这次**只升文档格式，不升协议**；
+- **迁移**：读 v22 工程文件时按路径把两份表合并成各自的 `.meta`（GUID 现生成），
+  找不到素材的键**丢弃并报 warning**（不猜），场景里的引用按路径补上 `guid`；
+- **`.meta` 不是素材**：资源树 / 素材清单都不显示它，但它按 ID 读得到、也写得进。
 
 **更高版本的文件直接拒绝打开**（读不懂的字段被静默丢掉再回存，等于把数据毁掉）。
 

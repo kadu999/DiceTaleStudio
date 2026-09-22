@@ -1,5 +1,13 @@
 import { useEffect, useState } from "react";
-import { FEATURE_COMPONENT, carriesKind, spriteCellSizeOf, spriteSheetOf } from "@dts/document";
+import {
+  FEATURE_COMPONENT,
+  carriesKind,
+  isSpriteMeta,
+  metaOfImage,
+  spriteCellSizeOf,
+  spriteSettingsOfMeta,
+  spriteSheetOfMeta,
+} from "@dts/document";
 import { PROJECT_FOLDERS, PROJECT_SCENE_FILE_EXTENSION } from "@dts/resources";
 import type { ResourceTreeNode } from "../../services/project-api";
 import { findResourceNode, useEditorStore } from "../../state/editor-store";
@@ -120,8 +128,8 @@ function AssetProperties({
   const [imageSize, setImageSize] = useState<{ width: number; height: number } | null>(null);
   const [spriteEditorOpen, setSpriteEditorOpen] = useState(false);
   const meta = useEditorStore((state) => state.doc.audioMeta);
-  const spriteSettings = useEditorStore((state) => state.doc.spriteSettings);
-  const spriteSheets = useEditorStore((state) => state.doc.spriteSheets);
+  // 精灵相关的三件事（类型 / 模式 / 切分）全在**这个素材自己的 `.meta`** 里（v23 起）
+  const assetMetas = useEditorStore((state) => state.assetMetas);
   const setSpriteImportSettings = useEditorStore((state) => state.setSpriteImportSettings);
   const table = useEditorStore((state) => state.doc.audioTags);
   const preview = assetPreviewKind(asset.name);
@@ -129,12 +137,21 @@ function AssetProperties({
   const audioMeta = preview === "audio" ? meta?.[asset.id] : undefined;
   // 标签在文档里是**整数 ID**（tag 是整数、名字住在标签表里），界面上一律按名字显示
   const tags = tagsOfClip(table, audioMeta?.tags);
-  const storedSprite = spriteSettings?.[asset.id];
-  const legacySheet = spriteSheets?.[asset.id];
-  const isSprite = storedSprite === undefined ? legacySheet !== undefined : storedSprite.type === "Sprite";
-  const spriteMode = storedSprite?.mode ?? (legacySheet === undefined ? "Single" : "Multiple");
+  const assetMeta = metaOfImage(assetMetas, { id: asset.id });
+  const sheet = spriteSheetOfMeta(assetMeta);
+  const isSprite = isSpriteMeta(assetMeta);
+  /**
+   * 面板上的模式：meta 里 `mode` 与 `sheet` 是两个独立字段（`withMetaSpriteSheet` 明确
+   * 「改切分不碰导入设置」），所以**有非 1×1 的切分就按 Multiple 显示**——否则在挑图窗口里
+   * 切好的图集在这块面板上会退回 Single、「编辑」入口跟着消失（老编辑器里「只切了、没开精灵」
+   * 也是按 Multiple 显示的）。1×1 不是切分（那是整图），照旧看 `mode`。
+   */
+  const spriteMode: "Single" | "Multiple" =
+    spriteSettingsOfMeta(assetMeta).mode === "Multiple" || sheet.columns * sheet.rows > 1
+      ? "Multiple"
+      : "Single";
   const isMultipleSprite = isSprite && spriteMode === "Multiple";
-  const spriteSheet = spriteIndex === undefined ? undefined : spriteSheetOf(spriteSheets, asset.id);
+  const spriteSheet = spriteIndex === undefined ? undefined : sheet;
   const spriteCellSize =
     spriteSheet === undefined || imageSize === null ? undefined : spriteCellSizeOf(spriteSheet, imageSize);
 

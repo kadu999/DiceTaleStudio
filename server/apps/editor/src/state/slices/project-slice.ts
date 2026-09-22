@@ -1,15 +1,27 @@
 /**
  * 本文件从 `editor-store.ts` 拆出（纯搬运，行为不变）。
  *
- * 项目：建 / 开 / 关 / 删、资源树与文件操作。
+ * 项目：建 / 开 / 关 / 删、资源树与文件操作，以及**素材 meta 的装配与迁移**。
  */
-import { DOCUMENT_FORMAT_VERSION, createEmptyProject, parseProjectFile } from "@dts/document";
-import { projectAssetId, projectFileId, projectSceneFileId } from "@dts/resources";
+import {
+  DOCUMENT_FORMAT_VERSION,
+  createEmptyProject,
+  parseAssetMetaFile,
+  parseProjectFile,
+  serializeAssetMetaFile,
+  type AssetMetaDoc,
+} from "@dts/document";
+import {
+  assetMetaIdOf,
+  projectAssetId,
+  projectFileId,
+  projectSceneFileId,
+} from "@dts/resources";
 import { projectApi, contentTypeFor } from "../../services/project-api";
 import { clearLastProject, readLastProject, writeLastProject } from "../../services/session";
 import { clearSceneImageCache } from "../../services/scene-image";
 import { type StoreSet, type StoreGet, type EditorStoreState } from "../store-types";
-import { makeLog, serializeSceneFile, serializeProjectFile } from "../store-core";
+import { makeLog, serializeSceneFile, serializeProjectFile, findResourceNode, metaHistory } from "../store-core";
 import { type StoreContext } from "../store-context";
 
 export function createProjectSlice(
@@ -32,7 +44,50 @@ export function createProjectSlice(
   | "deleteResource"
 > {
   // 共享的闭包状态与局部工具都在 ctx 里：这里解构一次，方法体与拆分前逐字一致
-  const { pushLog } = ctx;
+  const { pushLog, savedMetas } = ctx;
+
+  /**
+   * 读回一个项目的**全部素材 meta**，装配第三条轨道（真源表 + 派生索引都由订阅重建）。
+   *
+   * 三件事，顺序是有意的：
+   * 1. 逐条解析（`parseAssetMetaFile`）：**读不懂的那一份跳过并说明是哪一份**——一份坏 meta
+   *    不该让整个项目打不开（与后端「坏 JSON 跳过」同一条口径），那份素材按普通图片处理；
+   * 2. `needsRewrite` 的（缺 guid 的、手写的）**收集起来回写一次**——与场景 / 工程文件
+   *    「补过就回写」同一条规矩，磁盘上的文件从此自描述；
+   * 3. 先把「磁盘上的样子」记进 `savedMetas`，再 `reset` 进轨道：订阅按内容差异安排落盘，
+   *    少了这一步，刚读回来的表会被当成「全都有未保存改动」而整体重写一遍。
+   *
+   * 打开项目与刷新资源树都走它：索引的唯一来源是**盘上的 meta**，不靠内存拼。
+   */
+  async function loadAssetMetas(project: string): Promise<void> {
+    const raw = await projectApi.readMetas(project);
+    const table: Record<string, AssetMetaDoc> = {};
+    const rewrites: Array<{ readonly id: string; readonly meta: AssetMetaDoc }> = [];
+
+    for (const [id, value] of Object.entries(raw)) {
+      try {
+        const loaded = parseAssetMetaFile(value);
+        table[id] = loaded.doc;
+        if (loaded.needsRewrite) {
+          rewrites.push({ id, meta: loaded.doc });
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        pushLog(makeLog("warn", `素材 meta 读取失败（${id}）：${message}；这份素材按普通图片处理`));
+      }
+    }
+
+    savedMetas.clear();
+    for (const [id, meta] of Object.entries(table)) {
+      savedMetas.set(id, serializeAssetMetaFile(meta));
+    }
+
+    for (const { id, meta } of rewrites) {
+      await projectApi.writeText(assetMetaIdOf(id), serializeAssetMetaFile(meta));
+    }
+
+    metaHistory.reset(table);
+  }
 
   return {
     // ---------------------------------------------------------------- 项目
@@ -117,17 +172,35 @@ export function createProjectSlice(
     },
 
     async openProject(name) {
-      // 切项目前先把上一个项目里未保存的改动写回
+      // 切项目前先把上一个项目里未保存的改动写回（场景与素材 meta 各有一份）
       await get().flushSceneSave();
+      await get().flushMetaSave();
 
       set((state) => ({ project: { ...state.project, busy: true, error: "" } }));
       try {
         const text = await projectApi.readText(projectFileId(name));
         const load = parseProjectFile(JSON.parse(text) as unknown);
 
+        // 资源树先拿到手：v22 → v23 的迁移要按它判断「这个键还有没有对应的素材」
+        // （没有的就是改名留下的孤儿键，丢弃并报 warning——不猜它属于谁）
+        const tree = await projectApi.tree(name);
+
         // 上一个项目的贴图不该继续占内存（缓存按逻辑 ID，跨项目也不会互相命中）
         clearSceneImageCache();
         get().resetDoc(load.doc);
+
+        // v22 → v23：把工程文件里那份 `spriteSheets` / `spriteSettings` 搬出来的 meta
+        // **各自落盘**。落盘放在 `loadAssetMetas` 之前是有意的：下面读回来的就是刚写下的，
+        // 于是「盘上的 .meta」始终是唯一来源，不需要在内存里再拼一次
+        const orphans: string[] = [];
+        for (const { id, meta } of load.migratedMetas) {
+          if (findResourceNode(tree, (node) => node.id === id) === undefined) {
+            orphans.push(id);
+            continue;
+          }
+
+          await projectApi.writeText(assetMetaIdOf(id), serializeAssetMetaFile(meta));
+        }
 
         // 旧版工程文件：把内联场景落成独立文件，工程文件按新格式回写（只做一次）。
         // v15 起「缺 `settings`」也算需要回写（全局设置会被补一份默认的落进文件）。
@@ -145,8 +218,28 @@ export function createProjectSlice(
           );
         }
 
-        const tree = await projectApi.tree(name);
+        if (load.migratedMetas.length > orphans.length) {
+          pushLog(
+            makeLog(
+              "info",
+              `图片的导入设置与切分已搬进各自的 .meta（${load.migratedMetas.length - orphans.length} 个素材）`,
+            ),
+          );
+        }
+
+        // 孤儿键：**说清是哪一个**，人才知道盘上哪个旧名字留下的、要不要手工捡回来
+        for (const id of orphans) {
+          pushLog(
+            makeLog(
+              "warn",
+              `改名留下的孤儿：工程文件里的切分 / 导入设置「${id}」找不到对应素材，已丢弃（「.meta」要跟着素材一起改名）`,
+            ),
+          );
+        }
+
         set((state) => ({ project: { ...state.project, current: name, tree, busy: false } }));
+        // 索引要在 `loadScenes` 之前建好：场景里的子图引用（越界提示）靠它解析
+        await loadAssetMetas(name);
         await get().loadScenes();
         // 记住了下次启动才能自动回到它
         writeLastProject(name);
@@ -161,8 +254,9 @@ export function createProjectSlice(
     },
 
     closeProject() {
-      // 待保存的改动先写回：flush 内部会**同步**取好场景快照，所以随后的清空不会把它丢掉
+      // 待保存的改动先写回：flush 内部会**同步**取好快照，所以随后的清空不会把它丢掉
       void get().flushSceneSave();
+      void get().flushMetaSave();
       clearSceneImageCache();
       set((state) => ({ project: { ...state.project, current: null, tree: [], error: "" } }));
       // 主动关闭 = 不想再看到它，下次启动不该又把它拉回来
@@ -198,9 +292,16 @@ export function createProjectSlice(
         return;
       }
 
+      // 重新读盘之前先把手上未保存的 meta 写回：不然刚切的图集会被盘上的旧内容冲掉
+      // （与场景操作前那一串 `flushSceneSave` 同一条规矩）
+      await get().flushMetaSave();
+
       try {
         const tree = await projectApi.tree(project);
         set((state) => ({ project: { ...state.project, tree, error: "" } }));
+        // 素材可能在编辑器外面被加进来 / 改名 / 删掉了：索引跟着资源树重建
+        // （`.meta` 与素材成对改名时，键跟着换、guid 不变，引用照样指得对）
+        await loadAssetMetas(project);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         set((state) => ({ project: { ...state.project, error: message } }));

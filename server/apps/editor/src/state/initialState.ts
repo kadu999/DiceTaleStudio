@@ -3,8 +3,7 @@
  *
  * 初始状态（`EditorStoreState` 里**不是 action** 的那一半）。
  */
-import { createEmptyProject } from "@dts/document";
-import { createViewport } from "@dts/renderer";
+import { createEmptyProject, emptyAssetMetas } from "@dts/document";import { createViewport } from "@dts/renderer";
 import { emptyBgmPlayback } from "../services/bgm-playback";
 import { type GridPaintPrefs } from "../services/grid-paint-prefs";
 import { emptySoundPlayback } from "../services/sound-playback";
@@ -18,6 +17,9 @@ export function createInitialState(storedGridPaint: GridPaintPrefs): EditorStore
     mode: "edit",
     doc: createEmptyProject(),
     scenes: [],
+    // 还没打开项目：一份 meta 都没读到（索引与真源表都空）
+    assetMetas: emptyAssetMetas(),
+    assetMetaTable: {},
     activeSceneName: null,
     canUndo: false,
     canRedo: false,
@@ -52,6 +54,8 @@ export function createInitialState(storedGridPaint: GridPaintPrefs): EditorStore
     sceneSaveError: "",
     projectSaveState: "saved",
     projectSaveError: "",
+    metaSaveState: "saved",
+    metaSaveError: "",
     gridPaint: {
       mask: storedGridPaint.mask,
       brushSize: storedGridPaint.brushSize,

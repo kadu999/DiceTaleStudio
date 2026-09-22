@@ -78,6 +78,20 @@ export const projectApi = {
     return body.tree;
   },
 
+  /**
+   * 一个项目里**所有素材 meta**（一次拿全）：键是素材逻辑 ID，值是 meta **原文**。
+   *
+   * 原文（不在这里解析）是有意的：解析、"缺 guid 就补"是文档层的规矩
+   * （`@dts/document` 的 `parseAssetMetaFile`）——这一层只管把后端的字节搬回来，
+   * 与「读盘只发生在后端」同一条分工。没有 meta 的素材不出现在这里。
+   */
+  async readMetas(name: string): Promise<Record<string, unknown>> {
+    const body = await request<{ metas: Record<string, unknown> }>(
+      `/api/projects/meta?name=${encodeURIComponent(name)}`,
+    );
+    return body.metas;
+  },
+
   async createFolder(project: string, path: string): Promise<void> {
     await request("/api/projects/folder", {
       method: "POST",

@@ -1,4 +1,4 @@
-import { parseResourceId, type ResourceKind } from "./ids";
+import { isAssetMetaPath, parseResourceId, type ResourceKind } from "./ids";
 import type { ResourceEntry, ResourceProvider } from "./provider";
 
 /**
@@ -34,6 +34,11 @@ export class MemoryResourceProvider implements ResourceProvider {
         continue;
       }
 
+      // 素材的 meta 与文件系统实现同一条口径：元数据不进资源树 / 素材清单
+      if (isAssetMetaPath(parsed.path)) {
+        continue;
+      }
+
       entries.push({
         id,
         kind: parsed.kind,
@@ -50,6 +55,10 @@ export class MemoryResourceProvider implements ResourceProvider {
 
       const parsed = parseResourceId(id);
       if (kind !== undefined && parsed.kind !== kind) {
+        continue;
+      }
+
+      if (isAssetMetaPath(parsed.path)) {
         continue;
       }
 

@@ -1,14 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { produce, type Draft } from "immer";
-import {
-  createSceneObject,
-  setObjectImage,
-  setObjectSprite,
-  setSpriteImportSettings,
-  setSpriteSheet,
-} from "../src/commands";
-import { createEmptyProject, createEmptyScene, createMapObject } from "../src/factory";
+import { createSceneObject, setObjectImage, setObjectSprite } from "../src/commands";
+import { createEmptyScene, createMapObject } from "../src/factory";
 import { imageOf } from "../src/access";
+import {
+  ASSET_META_FORMAT_VERSION,
+  createAssetMetas,
+  emptyAssetMetas,
+  type AssetMetaDoc,
+  type AssetMetas,
+} from "../src/asset-meta";
 import {
   DEFAULT_SPRITE_SHEET,
   SPRITE_SHEET_MAX,
@@ -24,28 +25,35 @@ import {
   spriteSheetOf,
   spriteUvRectOf,
 } from "../src/sprites";
-import { parseProjectFile, parseSceneFile } from "../src/schema";
-import { formatIssues, validateProject, validateScene } from "../src/validation";
+import { parseSceneFile } from "../src/schema";
+import { formatIssues, validateScene } from "../src/validation";
 import {
   DOCUMENT_FORMAT_VERSION,
   type ImageRef,
-  type ProjectDoc,
   type SceneDoc,
   type SceneObjectDoc,
+  type SpriteSheetDoc,
 } from "../src/types";
 
 /**
  * **精灵（子图）**（v20 起）：一张图按「行×列」切，对象引用其中一格。
  *
  * 三条贯穿全篇的口径（都在这一个文件里钉住）：
- * 1. **切分只有一份**——住在工程文件的 `spriteSheets` 里，对象只存「引用哪张图 + 第几格」，
- *    所以「改切分，所有引用它的对象一起变」；
+ * 1. **切分只有一份**——住在**素材自己的 `.meta`** 里（v23 起；v22 及更早住在工程文件），
+ *    查它一律经索引 `AssetMetas`（**guid 优先、路径兜底**），所以「改切分，所有引用它的
+ *    对象一起变」，而「素材改名」也不断链；
  * 2. **格序数从左上数**（`row: 0` = 最上），且矩形是**算出来的**（不存像素）；
  * 3. **地图贴图不支持子图**（`displaySpriteOf` 是唯一判据）。
+ *
+ * meta 自己的读写（解析 / 序列化 / 纯函数写入 / v22 → v23 迁移）由 `asset-meta.test.ts` 管，
+ * 这里只管「精灵这条链路上，切分是被谁按什么口径查出来的」。
  */
 
 const IMAGE_ID = "project:C/Assets/images/hero.png";
+const IMAGE_GUID = "1f".repeat(16);
 const IMAGE = { id: IMAGE_ID, width: 400, height: 300 };
+/** 第二张图（测「几张图各一份」）。 */
+const OTHER_ID = "project:C/Assets/images/tiles.png";
 
 function sceneWith(objects: readonly SceneObjectDoc[]): SceneDoc {
   return { ...createEmptyScene("Map001"), objects: [...objects] };
@@ -55,8 +63,26 @@ function mutateScene(scene: SceneDoc, recipe: (draft: Draft<SceneDoc>) => void):
   return produce(scene, recipe);
 }
 
-function mutateProject(project: ProjectDoc, recipe: (draft: Draft<ProjectDoc>) => void): ProjectDoc {
-  return produce(project, recipe);
+/** 一份素材 meta（`sheet` 不写 = 整图）；guid 由测试给定，改名之后才断言得了同一份。 */
+function metaWith(guid: string, sheet?: SpriteSheetDoc): AssetMetaDoc {
+  return sheet === undefined
+    ? { formatVersion: ASSET_META_FORMAT_VERSION, guid, importer: "texture" }
+    : {
+        formatVersion: ASSET_META_FORMAT_VERSION,
+        guid,
+        importer: "texture",
+        sprite: { mode: "Multiple", sheet },
+      };
+}
+
+/** 一张图的索引（两个方向指向同一份 meta）。 */
+function metasFor(id: string, guid: string, sheet?: SpriteSheetDoc): AssetMetas {
+  return createAssetMetas([{ id, meta: metaWith(guid, sheet) }]);
+}
+
+/** `IMAGE_ID` 那一份切分索引（最常用的输入）。 */
+function imageMetas(sheet?: SpriteSheetDoc): AssetMetas {
+  return metasFor(IMAGE_ID, IMAGE_GUID, sheet);
 }
 
 /** 一个挑了图的精灵（子图的宿主）。 */
@@ -80,113 +106,50 @@ function sheetOf(width: number, height: number): { columns: number; rows: number
   return { columns: width, rows: height };
 }
 
-describe("切分：一张图几行几列（只有这一份数据）", () => {
-  it("图片导入设置能在 Default 与 Sprite 之间切换，并关闭时清理旧切分", () => {
-    const project = createEmptyProject("P");
-    setSpriteSheet(project as Draft<ProjectDoc>, IMAGE_ID, sheetOf(2, 2));
-
-    expect(
-      setSpriteImportSettings(project as Draft<ProjectDoc>, IMAGE_ID, {
-        type: "Sprite",
-        mode: "Multiple",
-      }),
-    ).toBe(true);
-    expect(project.spriteSettings?.[IMAGE_ID]).toEqual({ type: "Sprite", mode: "Multiple" });
-
-    expect(setSpriteImportSettings(project as Draft<ProjectDoc>, IMAGE_ID, null)).toBe(true);
-    expect(project.spriteSettings?.[IMAGE_ID]).toEqual({ type: "Default" });
-    expect(project.spriteSheets?.[IMAGE_ID]).toBeUndefined();
-  });
-
-  it("Single 模式不保留旧的网格切分，并且重复设置仍会报告变更", () => {
-    const project = {
-      ...createEmptyProject("P"),
-      spriteSheets: { [IMAGE_ID]: sheetOf(2, 2) },
-      spriteSettings: { [IMAGE_ID]: { type: "Sprite" as const, mode: "Multiple" as const } },
-    };
-
-    expect(
-      setSpriteImportSettings(project as Draft<ProjectDoc>, IMAGE_ID, {
-        type: "Sprite",
-        mode: "Single",
-      }),
-    ).toBe(true);
-    expect(project.spriteSettings?.[IMAGE_ID]).toEqual({ type: "Sprite", mode: "Single" });
-    expect(project.spriteSheets).toBeUndefined();
-
-    expect(
-      setSpriteImportSettings(project as Draft<ProjectDoc>, IMAGE_ID, {
-        type: "Sprite",
-        mode: "Single",
-      }),
-    ).toBe(false);
-  });
-
-  it("没有表项 = 整图（1×1），所以这种表项不写进工程文件", () => {
-    expect(spriteSheetOf(undefined, IMAGE_ID)).toEqual(DEFAULT_SPRITE_SHEET);
+describe("切分：按 meta 索引查（只有这一份数据）", () => {
+  it("没有 meta / meta 里没写 sheet = 整图（1×1）", () => {
+    expect(spriteSheetOf(emptyAssetMetas(), IMAGE)).toEqual(DEFAULT_SPRITE_SHEET);
+    expect(spriteSheetOf(imageMetas(), IMAGE)).toEqual(DEFAULT_SPRITE_SHEET);
+    expect(spriteSheetOf(imageMetas(), undefined)).toEqual(DEFAULT_SPRITE_SHEET);
     expect(isTrivialSpriteSheet(DEFAULT_SPRITE_SHEET)).toBe(true);
-
-    const project = mutateProject(createEmptyProject("P"), (draft) => {
-      // 1×1 与 null 是同一种状态：什么都不写
-      expect(setSpriteSheet(draft, IMAGE_ID, sheetOf(1, 1))).toBe(false);
-      expect(setSpriteSheet(draft, IMAGE_ID, null)).toBe(false);
-    });
-    expect(project.spriteSheets).toBeUndefined();
   });
 
-  it("写进去、改回来、再删掉——值没变的一系列操作都不算变更", () => {
-    const written = mutateProject(createEmptyProject("P"), (draft) => {
-      expect(setSpriteSheet(draft, IMAGE_ID, sheetOf(4, 4))).toBe(true);
-    });
-    expect(written.spriteSheets).toEqual({ [IMAGE_ID]: sheetOf(4, 4) });
-
-    // 同一个值再写一次：不是变更（不进撤销栈）
+  it("有 sheet 就用它；坏数字收干净（取整 + 夹到 1..64）", () => {
+    expect(spriteSheetOf(imageMetas(sheetOf(2, 2)), IMAGE)).toEqual(sheetOf(2, 2));
     expect(
-      mutateProject(written, (draft) => {
-        expect(setSpriteSheet(draft, IMAGE_ID, sheetOf(4, 4))).toBe(false);
-      }),
-    ).toEqual(written);
+      spriteSheetOf(metasFor(IMAGE_ID, IMAGE_GUID, { columns: 999, rows: 3.4 }), IMAGE),
+    ).toEqual({ columns: SPRITE_SHEET_MAX, rows: 3 });
 
-    // 改行数：变更
-    const taller = mutateProject(written, (draft) => {
-      expect(setSpriteSheet(draft, IMAGE_ID, sheetOf(4, 8))).toBe(true);
-    });
-    expect(taller.spriteSheets?.[IMAGE_ID]).toEqual(sheetOf(4, 8));
-
-    // 恢复整图（null 与 1×1 同一个效果）：表项删掉、整个字段也删掉（不留空壳）
-    const cleared = mutateProject(taller, (draft) => {
-      expect(setSpriteSheet(draft, IMAGE_ID, null)).toBe(true);
-    });
-    expect(cleared.spriteSheets).toBeUndefined();
-
-    // 已经没有了：再删一次什么都不做
-    expect(
-      mutateProject(cleared, (draft) => {
-        expect(setSpriteSheet(draft, IMAGE_ID, null)).toBe(false);
-      }),
-    ).toEqual(cleared);
-  });
-
-  it("几张图各自一份；只删一张时字段留着", () => {
-    const other = "project:C/Assets/images/tiles.png";
-    const project = mutateProject(createEmptyProject("P"), (draft) => {
-      setSpriteSheet(draft, IMAGE_ID, sheetOf(2, 2));
-      setSpriteSheet(draft, other, sheetOf(8, 8));
-    });
-
-    const one = mutateProject(project, (draft) => {
-      expect(setSpriteSheet(draft, other, null)).toBe(true);
-    });
-    expect(one.spriteSheets).toEqual({ [IMAGE_ID]: sheetOf(2, 2) });
-  });
-
-  it("坏数字收干净：取整 + 夹到 1..64", () => {
     expect(normalizeSpriteSheet({ columns: 3.4, rows: 0 })).toEqual({ columns: 3, rows: 1 });
     expect(normalizeSpriteSheet({ columns: 999, rows: Number.NaN })).toEqual({
       columns: SPRITE_SHEET_MAX,
       rows: 1,
     });
     expect(SPRITE_SHEET_MAX).toBe(64);
+  });
+
+  it("先按 guid 查：素材改名（引用上的 id 是旧路径）之后切分照样找得到", () => {
+    const renamedId = "project:C/Assets/images/A/B/C/D.png";
+    const renamed = metasFor(renamedId, IMAGE_GUID, sheetOf(2, 2));
+
+    // guid 是身份、路径只是「上次见到的位置」
+    expect(spriteSheetOf(renamed, { id: IMAGE_ID, guid: IMAGE_GUID })).toEqual(sheetOf(2, 2));
+    // 老文件只有路径：按 id 兜底
+    expect(spriteSheetOf(renamed, { id: renamedId })).toEqual(sheetOf(2, 2));
+    // guid 在索引里查不到（手写的怪值）时退回 id——两个都落空才是整图
+    expect(spriteSheetOf(renamed, { id: IMAGE_ID, guid: "b".repeat(32) })).toEqual(
+      DEFAULT_SPRITE_SHEET,
+    );
+  });
+
+  it("几张图各自一份：查哪张就是哪张", () => {
+    const metas = createAssetMetas([
+      { id: IMAGE_ID, meta: metaWith(IMAGE_GUID, sheetOf(2, 2)) },
+      { id: OTHER_ID, meta: metaWith("2f".repeat(16), sheetOf(8, 8)) },
+    ]);
+
+    expect(spriteSheetOf(metas, { id: OTHER_ID })).toEqual(sheetOf(8, 8));
+    expect(spriteSheetOf(metas, { id: IMAGE_ID })).toEqual(sheetOf(2, 2));
   });
 });
 
@@ -197,7 +160,7 @@ describe("对象：引用哪一格", () => {
       expect(setObjectSprite(draft, "sprite-1", { column: 2, row: 1 })).toBe(true);
     });
 
-    // 对象只记「引用哪张图 + 第几格」——行列在工程文件里，一个字节都不在场景文件里
+    // 对象只记「引用哪张图 + 第几格」——行列在素材的 `.meta` 里，一个字节都不在场景文件里
     expect(imageOf(picked.objects[0]!)).toEqual({ ...IMAGE, sprite: { column: 2, row: 1 } });
     expect(JSON.stringify(picked)).not.toMatch(/columns|spriteGrid/);
 
@@ -268,6 +231,34 @@ describe("对象：引用哪一格", () => {
     });
     expect(imageOf(scene.objects[0]!)?.sprite).toEqual({ column: 0, row: 2 });
   });
+
+  it("换图带上 guid；同一个 id 再挑一次（没给 guid）时原引用的 guid 留着", () => {
+    const withGuid = { ...IMAGE, guid: IMAGE_GUID };
+    const scene = sceneWith([spriteObject("sprite-1", withGuid)]);
+
+    // 调用方给了 guid（刚挑的图带着 meta 的 guid）就用它
+    const picked = mutateScene(scene, (draft) => {
+      setObjectImage(draft, "sprite-1", { ...withGuid, width: 100, height: 75 });
+    });
+    expect(imageOf(picked.objects[0]!)).toEqual({
+      id: IMAGE_ID,
+      guid: IMAGE_GUID,
+      width: 100,
+      height: 75,
+    });
+
+    // 只给 id（老调用方 / 只改尺寸）：稳定身份不该被抹掉——改名之后全靠它
+    const resized = mutateScene(scene, (draft) => {
+      setObjectImage(draft, "sprite-1", { id: IMAGE_ID, width: 100, height: 75 });
+    });
+    expect(imageOf(resized.objects[0]!)?.guid).toBe(IMAGE_GUID);
+
+    // 换了另一张图：旧的 guid 跟着旧图一起丢掉
+    const swapped = mutateScene(scene, (draft) => {
+      setObjectImage(draft, "sprite-1", { id: OTHER_ID, width: 64, height: 64 });
+    });
+    expect(imageOf(swapped.objects[0]!)?.guid).toBeUndefined();
+  });
 });
 
 describe("解析：格子落在图片的哪块矩形", () => {
@@ -286,18 +277,18 @@ describe("解析：格子落在图片的哪块矩形", () => {
 
   it("越界的格子在解析时夹到最后一格（切分改小之后老对象仍然画得出来）", () => {
     expect(clampSpriteCell({ column: 9, row: 9 }, sheetOf(4, 2))).toEqual({ column: 3, row: 1 });
-    expect(resolvedSpriteOf({ ...IMAGE, sprite: { column: 5, row: 0 } }, { [IMAGE_ID]: sheetOf(2, 2) })).toEqual(
-      { columns: 2, rows: 2, column: 1, row: 0 },
-    );
+    expect(
+      resolvedSpriteOf({ ...IMAGE, sprite: { column: 5, row: 0 } }, imageMetas(sheetOf(2, 2))),
+    ).toEqual({ columns: 2, rows: 2, column: 1, row: 0 });
   });
 
   it("没有 sprite 时解析为 undefined（整图）", () => {
-    expect(resolvedSpriteOf(IMAGE, { [IMAGE_ID]: sheetOf(4, 4) })).toBeUndefined();
-    expect(resolvedSpriteOf(undefined, undefined)).toBeUndefined();
+    expect(resolvedSpriteOf(IMAGE, imageMetas(sheetOf(4, 4)))).toBeUndefined();
+    expect(resolvedSpriteOf(undefined, emptyAssetMetas())).toBeUndefined();
   });
 
   it("地图贴图一律没有子图（判据只有 displaySpriteOf 一处）", () => {
-    const sheets = { [IMAGE_ID]: sheetOf(4, 4) };
+    const metas = imageMetas(sheetOf(4, 4));
     const map = setImage(
       createMapObject({ id: "map-1", name: "网格地图", image: IMAGE, grid: { width: 8, height: 6 } }),
       "map-1",
@@ -308,10 +299,10 @@ describe("解析：格子落在图片的哪块矩形", () => {
     });
 
     // 数据留在文件里（不静默删），但两边都不认它：编辑器与前端都按整图渲染
-    expect(displaySpriteOf(mapWithSprite, sheets)).toBeUndefined();
-    expect(displaySpriteOf(spriteObject("sprite-1", { ...IMAGE, sprite: { column: 1, row: 1 } }), sheets)).toEqual(
-      { columns: 4, rows: 4, column: 1, row: 1 },
-    );
+    expect(displaySpriteOf(mapWithSprite, metas)).toBeUndefined();
+    expect(
+      displaySpriteOf(spriteObject("sprite-1", { ...IMAGE, sprite: { column: 1, row: 1 } }), metas),
+    ).toEqual({ columns: 4, rows: 4, column: 1, row: 1 });
   });
 
   it("一格的声明尺寸 = 图片尺寸 ÷ 行列（四舍五入，至少 1）", () => {
@@ -354,20 +345,17 @@ describe("落盘：schema 与版本", () => {
     expect(imageOf(upgraded.file.objects[0]!)?.sprite).toEqual({ column: 3, row: 2 });
   });
 
-  it("工程文件往返：切分表读得回来；v19 的文件升到 v20 并需要回写", () => {
-    const project = mutateProject(createEmptyProject("P"), (draft) => {
-      setSpriteSheet(draft, IMAGE_ID, sheetOf(4, 4));
+  it("场景文件往返：图片引用上的 guid 读得回来（v23 的 schema 必须认它）", () => {
+    // schema 是白名单：不认 guid 就会把它静默丢掉——那等于「改名之后引用照样断」，
+    // 整个 v23 白做，所以这一条钉在落盘这一层。
+    const scene = sceneWith([spriteObject("sprite-1", { ...IMAGE, guid: IMAGE_GUID })]);
+    const loaded = parseSceneFile({
+      formatVersion: DOCUMENT_FORMAT_VERSION,
+      objects: JSON.parse(JSON.stringify(scene.objects)) as unknown[],
     });
 
-    const loaded = parseProjectFile(JSON.parse(JSON.stringify(project)));
-    expect(loaded.doc.spriteSheets).toEqual({ [IMAGE_ID]: sheetOf(4, 4) });
+    expect(imageOf(loaded.file.objects[0]!)?.guid).toBe(IMAGE_GUID);
     expect(loaded.needsRewrite).toBe(false);
-
-    const legacy = { ...JSON.parse(JSON.stringify(project)), formatVersion: 19 };
-    delete (legacy as Record<string, unknown>).spriteSheets;
-    const upgraded = parseProjectFile(legacy);
-    expect(upgraded.needsRewrite).toBe(true);
-    expect(upgraded.doc.spriteSheets).toBeUndefined();
   });
 
   it("格子写成负数 / 小数：schema 直接拒（不给画布喂坏数据）", () => {
@@ -387,13 +375,13 @@ describe("落盘：schema 与版本", () => {
 });
 
 describe("推送用的解析：切分随载荷走", () => {
-  it("对象那份图片上补出 spriteGrid；引用的图不在表里时按整图（不加）", () => {
-    const sheets = { [IMAGE_ID]: sheetOf(4, 4) };
+  it("对象那份图片上补出 spriteGrid；引用的图不在索引里时按整图（不加）", () => {
+    const metas = imageMetas(sheetOf(4, 4));
     const scene = mutateScene(sceneWith([spriteObject()]), (draft) => {
       setObjectSprite(draft, "sprite-1", { column: 1, row: 2 });
     });
 
-    expect(resolveSceneSprites(scene, sheets).objects[0]!.components).toEqual([
+    expect(resolveSceneSprites(scene, metas).objects[0]!.components).toEqual([
       {
         id: "sprite-1__SpriteLayer",
         type: "SpriteLayer",
@@ -404,7 +392,29 @@ describe("推送用的解析：切分随载荷走", () => {
 
     // 整图（没有引用）：一个字节都不多，载荷与 v9 完全一样
     const plain = sceneWith([spriteObject()]);
-    expect(resolveSceneSprites(plain, sheets)).toBe(plain);
+    expect(resolveSceneSprites(plain, metas)).toBe(plain);
+  });
+
+  it("素材改过名：载荷里写索引里的**当前路径**，guid 不下发", () => {
+    const renamedId = "project:C/Assets/images/A/B/C/D.png";
+    const metas = metasFor(renamedId, IMAGE_GUID, sheetOf(2, 1));
+    const scene = mutateScene(
+      sceneWith([spriteObject("sprite-1", { ...IMAGE, guid: IMAGE_GUID })]),
+      (draft) => {
+        setObjectSprite(draft, "sprite-1", { column: 1, row: 0 });
+      },
+    );
+
+    const resolved = resolveSceneSprites(scene, metas);
+    expect(resolved.objects[0]!.components[0]!.data).toEqual({
+      id: renamedId,
+      width: 400,
+      height: 300,
+      sprite: { column: 1, row: 0 },
+      spriteGrid: sheetOf(2, 1),
+    });
+    // 载荷只有路径 ID 这一种身份（协议与前端都不认 guid）
+    expect(JSON.stringify(resolved)).not.toMatch(/guid/);
   });
 
   it("越界的格子在推送时夹到最后一格（协议会拒越界值）", () => {
@@ -412,7 +422,7 @@ describe("推送用的解析：切分随载荷走", () => {
       setObjectSprite(draft, "sprite-1", { column: 9, row: 9 });
     });
 
-    const resolved = resolveSceneSprites(scene, { [IMAGE_ID]: sheetOf(2, 3) });
+    const resolved = resolveSceneSprites(scene, imageMetas(sheetOf(2, 3)));
     const data = resolved.objects[0]!.components[0]!.data as Record<string, unknown>;
     expect(data.sprite).toEqual({ column: 1, row: 2 });
     expect(data.spriteGrid).toEqual({ columns: 2, rows: 3 });
@@ -426,33 +436,45 @@ describe("推送用的解析：切分随载荷走", () => {
       grid: { width: 8, height: 6 },
     });
 
-    const resolved = resolveSceneSprites(sceneWith([map]), { [IMAGE_ID]: sheetOf(4, 4) });
+    const resolved = resolveSceneSprites(sceneWith([map]), imageMetas(sheetOf(4, 4)));
     const data = resolved.objects[0]!.components[0]!.data as { image: Record<string, unknown> };
     expect(data.image).toEqual(IMAGE);
     expect(JSON.stringify(resolved)).not.toMatch(/spriteGrid/);
   });
 
   it("不改输入文档：解析出来的是新对象，原文档一个字段都没多", () => {
-    const sheets = { [IMAGE_ID]: sheetOf(4, 4) };
+    const metas = imageMetas(sheetOf(4, 4));
     const scene = mutateScene(sceneWith([spriteObject()]), (draft) => {
       setObjectSprite(draft, "sprite-1", { column: 0, row: 1 });
     });
     const before = JSON.stringify(scene);
 
-    resolveSceneSprites(scene, sheets);
+    resolveSceneSprites(scene, metas);
     expect(JSON.stringify(scene)).toBe(before);
   });
 });
 
 describe("校验：只提醒，不算错", () => {
-  it("格子超出切分 → warning（按最后一格显示）", () => {
+  it("格子超出切分 → warning（按最后一格显示）；没传索引就不查这条", () => {
     const scene = mutateScene(sceneWith([spriteObject()]), (draft) => {
       setObjectSprite(draft, "sprite-1", { column: 3, row: 3 });
     });
 
-    const issues = validateScene(scene, { spriteSheets: { [IMAGE_ID]: sheetOf(2, 2) } });
+    const issues = validateScene(scene, { metas: imageMetas(sheetOf(2, 2)) });
     expect(formatIssues(issues)).toMatch(/超出这张图的切分 2×2/);
     expect(validateScene(scene).map((issue) => issue.message).join()).not.toMatch(/切分/);
+  });
+
+  it("按 guid 查切分：素材改过名也照样查得出越界", () => {
+    const scene = mutateScene(
+      sceneWith([spriteObject("sprite-1", { ...IMAGE, guid: IMAGE_GUID })]),
+      (draft) => {
+        setObjectSprite(draft, "sprite-1", { column: 3, row: 0 });
+      },
+    );
+
+    const metas = metasFor("project:C/Assets/images/A/B/C/D.png", IMAGE_GUID, sheetOf(2, 2));
+    expect(formatIssues(validateScene(scene, { metas }))).toMatch(/超出这张图的切分 2×2/);
   });
 
   it("地图贴图带了 sprite → warning（会被忽略）", () => {
@@ -464,16 +486,6 @@ describe("校验：只提醒，不算错", () => {
     });
 
     expect(formatIssues(validateScene(sceneWith([map])))).toMatch(/地图贴图不支持子图/);
-  });
-
-  it("工程里的切分表：1×1 是多余的项、图片 ID 不能空", () => {
-    const project = {
-      ...createEmptyProject("P"),
-      spriteSheets: { [IMAGE_ID]: sheetOf(1, 1), " ": sheetOf(2, 2) },
-    };
-    const paths = validateProject(project).map((issue) => issue.path);
-    expect(paths).toContain(`spriteSheets/${IMAGE_ID}`);
-    expect(paths).toContain("spriteSheets");
   });
 });
 

@@ -316,6 +316,10 @@ export function objectsInDrawOrder(scene: SceneDoc): SceneObjectDoc[] {
  * 换图之后那格子指的是另一张图上的位置——留着只会画出莫名其妙的一块，所以一并清掉，
  * 由调用方按需要再挑一格（同一个 id 再挑一次则原样留着）。调用方**显式给了** `image.sprite`
  * 时就用它（这一条命令于是也能一次把「图 + 格子」写进去，测试与批量脚本省一次调用）。
+ *
+ * **稳定身份（v23 的 `guid`）走同一个口径**：调用方给了就用它（刚挑的图带着 `.meta` 的 guid），
+ * 只给 `id` 时（同一个 id 再挑一次、或还没接 guid 的调用方）沿用原引用上的 guid——
+ * 「同一个 id 再挑一次」不该把身份弄丢（那正是改名之后还能找回来的东西），换图才丢掉。
  */
 export function setObjectImage(
   scene: Draft<SceneDoc>,
@@ -330,9 +334,11 @@ export function setObjectImage(
   const current = objectImage(object);
   // 给什么用什么；没给（调用方只关心换图）就沿用同一个 id 上原有的那一格，换图则丢掉
   const sprite = image.sprite ?? (current?.id === image.id ? current.sprite : undefined);
+  const guid = image.guid ?? (current?.id === image.id ? current.guid : undefined);
   if (
     current !== undefined &&
     current.id === image.id &&
+    current.guid === guid &&
     current.width === image.width &&
     current.height === image.height &&
     sameSpriteRef(current.sprite, sprite)
@@ -340,7 +346,15 @@ export function setObjectImage(
     return false;
   }
 
-  const next = withSpriteRef({ id: image.id, width: image.width, height: image.height }, sprite);
+  const next = withSpriteRef(
+    {
+      id: image.id,
+      ...(guid === undefined ? {} : { guid }),
+      width: image.width,
+      height: image.height,
+    },
+    sprite,
+  );
   if (displayImageField(object.kind) === "map") {
     const map = mapDataOf(object);
     if (map === undefined) {
@@ -401,11 +415,19 @@ function normalizeSpriteRef(sprite: ImageSpriteRef): ImageSpriteRef {
   };
 }
 
-/** 带 / 不带格子引用的一份新图片引用（删字段，不留 `sprite: undefined` 去污染 JSON）。 */
+/**
+ * 带 / 不带格子引用的一份新图片引用（删字段，不留 `sprite: undefined` / `guid: undefined`
+ * 去污染 JSON）。身份 `guid` 原样带过去——它本来就是「这份引用指向哪个素材」的一部分。
+ */
 function withSpriteRef(image: ImageRef, sprite: ImageSpriteRef | undefined): ImageRef {
-  return sprite === undefined
-    ? { id: image.id, width: image.width, height: image.height }
-    : { id: image.id, width: image.width, height: image.height, sprite };
+  const base = {
+    id: image.id,
+    ...(image.guid === undefined ? {} : { guid: image.guid }),
+    width: image.width,
+    height: image.height,
+  };
+
+  return sprite === undefined ? base : { ...base, sprite };
 }
 
 /** 两份格子引用是不是同一格（都不在也算同一格）。 */

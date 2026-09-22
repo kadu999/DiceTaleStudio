@@ -2,8 +2,9 @@ import { PAINTABLE_MASKS, decodeRle } from "@dts/grid";
 import { findComponentType, isKnownComponentType } from "./components";
 import { collectActionIds, isMapFogEnabled } from "./commands";
 import { imageOf, mapDataOf, soundDataOf, teleportDataOf, videoDataOf } from "./access";
+import type { AssetMetas } from "./asset-meta";
 import { FEATURE_COMPONENT, carriesKind } from "./features";
-import { isTrivialSpriteSheet, spriteSheetOf } from "./sprites";
+import { spriteSheetOf } from "./sprites";
 import type { ProjectDoc, ProjectSettingsDoc, SceneDoc, SceneObjectDoc } from "./types";
 
 /**
@@ -27,28 +28,29 @@ export function hasErrors(issues: readonly ValidationIssue[]): boolean {
 /**
  * `validateScene` 的可选输入：**跨文件的知识**。
  *
- * 场景文件里只有「引用哪张图 + 第几格」，而「几行几列」住在工程文件里——不把那张表传进来，
- * 就只能校验格子是非负整数（schema 那一层已经做了），查不出「格子超出这张图的切分」。
- * 不传 = 跳过这条（只读场景文件、手上没有工程文件的调用方不必伪造一份）。
+ * 场景文件里只有「引用哪张图 + 第几格」，而「几行几列」住在**素材自己的 `.meta`** 里——
+ * 不把那份索引（`AssetMetas`）传进来，就只能校验格子是非负整数（schema 那一层已经做了），
+ * 查不出「格子超出这张图的切分」。不传 = 跳过这条（只读场景文件、手上没有 meta 的调用方
+ * 不必伪造一份）。
  */
 export interface SceneValidationOptions {
-  readonly spriteSheets?: ProjectDoc["spriteSheets"];
+  readonly metas?: AssetMetas;
 }
 
 /**
  * 子图引用的校验（v20）：格子必须落在那张图的切分范围内。
  *
- * 越界**不算错**：切分可能先被改小（改的是工程文件，对象留在场景文件里没动），
+ * 越界**不算错**：切分可能先被改小（改的是素材的 `.meta`，对象留在场景文件里没动），
  * 而渲染与推送会统一夹到最后一格——所以这里只提醒「你看到的不是你要的那一格」。
  * 地图对象走的是 `map.image`，由 `validateObject` 里那条「不支持子图」管。
  */
 function validateObjectSprite(
   object: SceneObjectDoc,
   path: string,
-  spriteSheets: ProjectDoc["spriteSheets"],
+  metas: AssetMetas | undefined,
   issues: ValidationIssue[],
 ): void {
-  if (spriteSheets === undefined) {
+  if (metas === undefined) {
     return;
   }
 
@@ -58,7 +60,8 @@ function validateObjectSprite(
     return;
   }
 
-  const sheet = spriteSheetOf(spriteSheets, image.id);
+  // 按引用查（guid 优先）：素材改过名时引用上的路径是旧的，切分在 guid 那一份上
+  const sheet = spriteSheetOf(metas, image);
   if (sprite.column >= sheet.columns || sprite.row >= sheet.rows) {
     issues.push({
       level: "warning",
@@ -491,7 +494,7 @@ export function validateScene(
     }
 
     validateObject(object, path, issues, scene.name);
-    validateObjectSprite(object, path, options.spriteSheets, issues);
+    validateObjectSprite(object, path, options.metas, issues);
   }
 
   // 动作 id 全场景唯一（运行态靠 actionId 寻址，重名会触发到错误动作）
@@ -671,39 +674,8 @@ export function validateProject(doc: ProjectDoc): ValidationIssue[] {
   validateAudioSettings(doc.settings, issues);
   validateAudioTags(doc.audioTags, issues);
   validateAudioMeta(doc.audioMeta, doc.audioTags, issues);
-  validateSpriteSheets(doc.spriteSheets, issues);
 
   return issues;
-}
-
-/**
- * 切分表（v20）：`图片逻辑 ID → 列×行`。
- *
- * 只查**表自己**能看出来的问题：图片没指定、`1×1`（= 整图，这一项多余）。
- * 「表项指向的图片已经不在项目里」查不出来——校验拿不到资源树（与 `audioMeta` 的孤儿记录
- * 同一个缺口，见 README 的已知不一致）。格子越界是场景那一侧的规则（`validateObjectSprite`）。
- */
-function validateSpriteSheets(
-  sheets: ProjectDoc["spriteSheets"],
-  issues: ValidationIssue[],
-): void {
-  if (sheets === undefined) {
-    return;
-  }
-
-  for (const [imageId, sheet] of Object.entries(sheets)) {
-    if (imageId.trim().length === 0) {
-      issues.push({ level: "warning", path: "spriteSheets", message: "切分表的图片 ID 不能为空" });
-    }
-
-    if (isTrivialSpriteSheet(sheet)) {
-      issues.push({
-        level: "warning",
-        path: `spriteSheets/${imageId}`,
-        message: "1×1 等于整图，这一项多余（会被忽略）",
-      });
-    }
-  }
 }
 
 /** 把问题列表整理成可读多行文本（进入运行态被阻止时展示）。 */

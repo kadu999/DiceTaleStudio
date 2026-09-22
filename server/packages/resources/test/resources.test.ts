@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   PROJECT_FOLDERS,
+  assetIdOfMetaId,
+  assetMetaIdOf,
   configId,
   formatResourceId,
+  isAssetMetaPath,
   parseResourceId,
   projectAssetId,
   projectFileId,
@@ -217,5 +220,31 @@ describe("应用配置", () => {
   it("非法配置抛出带路径的错误", () => {
     expect(() => parseAppConfig({ server: { port: 99999 } })).toThrow(/app 配置校验失败/);
     expect(() => parseAppConfig({ resourceRoot: "" })).toThrow(/app 配置校验失败/);
+  });
+});
+
+describe("素材 meta（每个素材旁边一个 .meta）", () => {
+  it("meta 的文件名与 ID 都由素材路径派生，能双向还原", () => {
+    const asset = projectAssetId("我的项目", "Assets/images/A.png");
+    const meta = assetMetaIdOf(asset);
+
+    expect(meta).toBe("project:我的项目/Assets/images/A.png.meta");
+    expect(isAssetMetaPath("Assets/images/A.png.meta")).toBe(true);
+    expect(isAssetMetaPath("Assets/images/A.png")).toBe(false);
+    // 反推回素材（键少了后缀那一截）
+    expect(assetIdOfMetaId(meta)).toBe(asset);
+    expect(assetIdOfMetaId(asset)).toBeUndefined();
+  });
+
+  it("meta 不出现在资源列表里（它是元数据，不是素材）", async () => {
+    const provider = createMemoryResourceProvider();
+    const asset = projectAssetId("我的项目", "Assets/images/A.png");
+    await provider.writeText(asset, "png-bytes-as-text");
+    await provider.writeText(assetMetaIdOf(asset), '{"formatVersion":1}');
+
+    const listed = await provider.list("project");
+    expect(listed.map((entry) => entry.path)).toEqual(["我的项目/Assets/images/A.png"]);
+    // 但按 ID 直接读得到（写 meta 走的就是这条路）
+    expect(await provider.readText(assetMetaIdOf(asset))).toBe('{"formatVersion":1}');
   });
 });

@@ -79,6 +79,41 @@ export const PROJECT_FILE_NAME = "project.json";
  */
 export const PROJECT_SPECIAL_FILES: readonly string[] = [PROJECT_FILE_NAME];
 
+/**
+ * **素材元数据**文件的后缀：每个素材旁边一个 `<素材>.meta`（对齐 Unity）。
+ *
+ * 里面是**素材自己的数据**（稳定 GUID + 导入设置 + 切分），不是素材本身：
+ * 和 `project.json` 一样属于"元数据"，**不进资源树、也不进素材清单**，
+ * 由编辑器按需要写（见 `docs/specs/2026-09-23-asset-meta.md`）。
+ */
+export const ASSET_META_SUFFIX = ".meta";
+
+/** 这个路径是不是 meta 文件（`Assets/images/A.png.meta` → `true`）。 */
+export function isAssetMetaPath(path: string): boolean {
+  return normalizePath(path).endsWith(ASSET_META_SUFFIX);
+}
+
+/** 素材的 meta 文件路径（`Assets/images/A.png` → `Assets/images/A.png.meta`）。 */
+export function assetMetaPathOf(assetPath: string): string {
+  return `${normalizePath(assetPath)}${ASSET_META_SUFFIX}`;
+}
+
+/** 素材的 meta 文件 ID（键与素材本身同一套 `kind:path`，只是路径多了 `.meta`）。 */
+export function assetMetaIdOf(id: string): string {
+  const { kind, path } = parseResourceId(id);
+  return formatResourceId(kind, assetMetaPathOf(path));
+}
+
+/** 由 meta 文件 ID 反推素材 ID；不是 meta 文件就返回 `undefined`。 */
+export function assetIdOfMetaId(id: string): string | undefined {
+  const { kind, path } = parseResourceId(id);
+  if (!isAssetMetaPath(path)) {
+    return undefined;
+  }
+
+  return formatResourceId(kind, path.slice(0, -ASSET_META_SUFFIX.length));
+}
+
 /** 解析后的资源 ID。 */
 export interface ResourceId {
   readonly kind: ResourceKind;

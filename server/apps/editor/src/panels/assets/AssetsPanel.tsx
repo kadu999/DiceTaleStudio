@@ -8,7 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { spriteSheetOf } from "@dts/document";
+import { isSpriteMeta, metaOfImage, spriteSheetOfMeta, type AssetMetas } from "@dts/document";
 import { PROJECT_FOLDERS, PROJECT_SCENE_FILE_EXTENSION } from "@dts/resources";
 import type { ResourceTreeNode } from "../../services/project-api";
 import { useEditorStore } from "../../state/editor-store";
@@ -39,8 +39,9 @@ export function AssetsPanel(): React.JSX.Element {
   const refreshTree = useEditorStore((state) => state.refreshTree);
   const openProjectFolder = useEditorStore((state) => state.openProjectFolder);
   const selectedAssetId = useEditorStore((state) => state.selectedAssetId);
-  const spriteSettings = useEditorStore((state) => state.doc.spriteSettings);
-  const spriteSheets = useEditorStore((state) => state.doc.spriteSheets);
+  // 精灵（子图）的判据在**素材自己的 `.meta`** 里（v23 起）：索引由 store 维护，
+  // 面板只管按路径 ID 查（`metaOfImage`）
+  const assetMetas = useEditorStore((state) => state.assetMetas);
   const selectAsset = useEditorStore((state) => state.selectAsset);
   const activeSceneName = useEditorStore((state) => state.activeSceneName);
   const openScene = useEditorStore((state) => state.openScene);
@@ -372,7 +373,7 @@ export function AssetsPanel(): React.JSX.Element {
           <div className="min-h-0 flex-1 overflow-auto py-1 text-[12px]">
             {contents.map((node) => {
               const sceneName = sceneNameOf(node);
-              const spriteCount = spriteCountOf(node, spriteSettings, spriteSheets);
+              const spriteCount = spriteCountOf(node, assetMetas);
               const spriteExpanded = expandedSprites.includes(node.id);
               const duplicateSpriteFile = spriteCount > 0 && isSameNameAsFolder(node, currentPath);
               const selectedParent = node.id === (selectedSprite?.imageId ?? selectedAssetId);
@@ -609,23 +610,25 @@ function SpriteContentRow({
   );
 }
 
-function spriteCountOf(
-  node: ResourceTreeNode,
-  settings: ReturnType<typeof useEditorStore.getState>["doc"]["spriteSettings"],
-  sheets: ReturnType<typeof useEditorStore.getState>["doc"]["spriteSheets"],
-): number {
+/**
+ * 这个图片素材要显示几个编号子精灵（0 = 不显示、也没有展开用的三角）。
+ *
+ * 判据只有一条：**这个素材切了网格**（`.meta` 里有非 1×1 的切分）。
+ * 「导入设置是不是精灵 / 模式是不是 Multiple」不在这里再判一次：v23 的 meta 里
+ * `mode` 与 `sheet` 是两个独立字段（改切分不碰导入设置），而**有切分就是有子图**——
+ * 没有切分的精灵本来也列不出格子来（切分住在素材自己身上，与「面板说 Single」不再互相打架）。
+ */
+function spriteCountOf(node: ResourceTreeNode, metas: AssetMetas): number {
   if (node.type !== "file" || assetIconKind(node.name) !== "image") {
     return 0;
   }
 
-  const setting = settings?.[node.id];
-  const isMultiple = setting?.type === "Sprite" && setting.mode === "Multiple";
-  const isLegacyMultiple = setting === undefined && sheets?.[node.id] !== undefined;
-  if (!isMultiple && !isLegacyMultiple) {
+  const meta = metaOfImage(metas, { id: node.id });
+  if (!isSpriteMeta(meta)) {
     return 0;
   }
 
-  const sheet = spriteSheetOf(sheets, node.id);
+  const sheet = spriteSheetOfMeta(meta);
   const count = sheet.columns * sheet.rows;
   return count > 1 ? count : 0;
 }

@@ -6,12 +6,15 @@
 import {
   FEATURE_COMPONENT,
   carriesKind,
+  createAssetMetas,
   mapDataOf,
+  serializeAssetMetaFile,
   videoDataOf,
   SOUND_LAYER_LABELS,
   isMapFogEnabled,
   isVideoEnabled,
   supportsVideo,
+  type AssetMetas,
   type ProjectDoc,
   type ProjectSettingsDoc,
   type SceneDoc,
@@ -51,12 +54,14 @@ import {
 import { emptyVideoPlayback, videoPlaybackResendPlan } from "../services/video-playback";
 import { emptyFogReveal, fogRevealResendPlan, type FogRevealPoint } from "../services/fog-reveal";
 import { MASK_BRUSH_RATIO, MASK_BRUSH_SOFTNESS } from "../services/mask-math";
-import { type StoreSet, type StoreGet, type GridPaintState } from "./store-types";
+import { type StoreSet, type StoreGet, type AssetMetaTable, type GridPaintState } from "./store-types";
 import {
   sceneHistory,
   projectHistory,
+  metaHistory,
   activeTrack,
   historyOf,
+  EDIT_TRACKS,
   makeLog,
   MAX_LOGS,
   SCENE_SAVE_DEBOUNCE_MS,
@@ -147,14 +152,20 @@ export interface StoreContext {
   projectDirty(): boolean;
   /** 内存里与磁盘不一致的场景名（顺序与 scenes 一致）。 */
   dirtySceneNames(): string[];
+  /** 内存里与磁盘不一致的素材 meta 的**路径 ID**（只写这几份）。 */
+  metaDirtyIds(): string[];
   /** 有改动就延迟回写场景文件。 */
   scheduleSceneSave(): void;
   /** 有改动就延迟回写**工程文件**。 */
   scheduleProjectSave(): void;
+  /** 有改动就延迟回写**素材 meta**（每份一个文件，只写内容变了的那些）。 */
+  scheduleMetaSave(): void;
   /** 取消待写的场景落盘定时器（切片里手动保存 / flush 时用）。 */
   clearSceneSaveTimer(): void;
   /** 取消待写的工程文件落盘定时器。 */
   clearProjectSaveTimer(): void;
+  /** 取消待写的素材 meta 落盘定时器。 */
+  clearMetaSaveTimer(): void;
   /** 标注偏好的落盘（画笔类型 / 大小 / 每类的显示与颜色）。 */
   persistGridPaint(gridPaint: GridPaintState): void;
   /** 当前场景里按 id 找一个对象（画布与变换用）。 */
@@ -178,6 +189,13 @@ export interface StoreContext {
 
   /** 上次成功写盘时的场景内容（场景名 → 序列化文本）。 */
   readonly savedScenes: Map<string, string>;
+  /**
+   * 上次成功写盘时的**素材 meta**（素材路径 ID → 序列化文本）。
+   *
+   * 与 `savedScenes` 同一个用途：按内容差异算出「哪几份 meta 真的变了」——
+   * meta 是一素材一个文件，比整表更省事（切一张图只写那一份，别的素材一个字节都不动）。
+   */
+  readonly savedMetas: Map<string, string>;
   /** 每个场景上次的视口（**只在本次会话里记住**，不落盘）。 */
   readonly sceneViewports: Map<string, Viewport>;
   /** 读回来的网格标注偏好（初始状态用）。 */
@@ -371,20 +389,21 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
   });
 
   /**
-   * 图片切分表（工程文件里的那一份）。
+   * 当前的**素材 meta 索引**（v23 起替换了原来那份「工程文件里的切分表」）。
    *
    * 场景载荷要用它把「第几格」解析成「几行几列 + 第几格」（见 `resolveSceneSprites`），
-   * 所以推送路径上每一处都得带上；没打开项目时是 `undefined`（不解析子图）。
+   * 所以推送路径上每一处都得带上；没打开项目时是空索引（不解析子图）。
+   * 读的是 store 里那份派生索引（由 `metaHistory` 的订阅重建），于是**推送与面板看到的是同一份**。
    */
-  const currentSpriteSheets = (): ProjectDoc["spriteSheets"] => projectHistory.current.spriteSheets;
+  const currentAssetMetas = (): AssetMetas => get().assetMetas;
 
   /** 去抖推送：连续拖动 / 连续输入只推最后一次。 */
   const pushScheduler = new ScenePushScheduler({
     // 去抖到点后**重新读一次当前文档**（比排队时那份更新），再决定推不推
     push: (_text) => {
       const scene = currentSceneDoc();
-      const sheets = currentSpriteSheets();
-      const nextText = scenePayloadText(scene, sheets);
+      const metas = currentAssetMetas();
+      const nextText = scenePayloadText(scene, metas);
       if (
         !shouldPushScene({
           mode: get().mode,
@@ -398,14 +417,14 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
 
       // 文档模型与协议模型结构一致，只差子图解析出来的 `spriteGrid` 与 `RleRun` 的 readonly 标注
       // （服务端还会用 zod 校验一遍）
-      runtimeClient.pushScene(scenePayloadOf(scene, sheets) as ScenePayload | null);
+      runtimeClient.pushScene(scenePayloadOf(scene, metas) as ScenePayload | null);
       lastPushedSceneText = nextText;
     },
   });
 
   /** 立刻推一份全量（进运行态、重连补发用）。 */
   const pushSceneNow = (): void => {
-    pushScheduler.flush(scenePayloadText(currentSceneDoc(), currentSpriteSheets()));
+    pushScheduler.flush(scenePayloadText(currentSceneDoc(), currentAssetMetas()));
   };
 
   /** 文档变了就安排一次推送（运行态 + 连着服务端才有意义，由 shouldPushScene 判定）。 */
@@ -414,7 +433,7 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
       return;
     }
 
-    pushScheduler.schedule(scenePayloadText(currentSceneDoc(), currentSpriteSheets()));
+    pushScheduler.schedule(scenePayloadText(currentSceneDoc(), currentAssetMetas()));
   };
 
   /** 当前项目的全局设置（没打开项目 = null：推上去等于让前端清掉手上的设置）。 */
@@ -780,8 +799,10 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
     set({
       scenes: sceneHistory.current,
       doc: projectHistory.current,
-      canUndo: historyOf("scenes").canUndo || historyOf("project").canUndo,
-      canRedo: historyOf("scenes").canRedo || historyOf("project").canRedo,
+      // 三条轨道共用一个撤销入口：只要还有一条能撤 / 能重做，菜单项就是亮的
+      // （`EDIT_TRACKS` 是三条轨道的唯一清单，加轨道不用回来补这里）
+      canUndo: EDIT_TRACKS.some((track) => historyOf(track).canUndo),
+      canRedo: EDIT_TRACKS.some((track) => historyOf(track).canRedo),
       undoLabel: undoHistory.canUndo ? (undoHistory.undoLabel ?? "") : "",
       redoLabel: redoHistory.canRedo ? (redoHistory.redoLabel ?? "") : "",
     });
@@ -796,11 +817,14 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
    *
    * v15 起快照里**也带着工程文件**：全局设置（三档音量）同样是文档数据，
    * 「运行态改音量立刻生效、退出运行还原」这条规矩靠它落地。
+   * v23 起**再带上素材 meta**（切分 / 导入设置）：同一条规矩——运行态里切过的图集
+   * 退出运行也该回到切之前的样子（何况运行态本来就不落盘）。
    */
   let runBaseline: {
     readonly scenes: readonly SceneDoc[];
     readonly activeSceneName: string | null;
     readonly doc: ProjectDoc;
+    readonly metas: AssetMetaTable;
   } | null = null;
 
   /** 拍下当前文档作为运行基线（不动状态、不记日志）。 */
@@ -809,6 +833,7 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
       scenes: get().scenes,
       activeSceneName: get().activeSceneName,
       doc: projectHistory.current,
+      metas: metaHistory.current,
     };
   };
 
@@ -846,6 +871,8 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
     sceneHistory.reset(baseline.scenes);
     // 工程文件（全局设置）一起还原：运行态里拖过的音量不留痕（要留下就先退出运行再调）
     projectHistory.reset(baseline.doc);
+    // 素材 meta（切分 / 导入设置）同理：运行态里切过的图集回到切之前的样子
+    metaHistory.reset(baseline.metas);
 
     const restoredNames = new Set(baseline.scenes.map((scene) => scene.name));
     set((state) => ({
@@ -959,6 +986,48 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
     }, SCENE_SAVE_DEBOUNCE_MS);
   };
 
+  /**
+   * 上次成功写盘的**素材 meta**（素材路径 ID → 序列化文本），用来算「哪几份 meta 有未保存改动」。
+   *
+   * 与 `savedScenes` 同一个用途，只是键是素材的路径 ID、值是那一份 `.meta` 的原文。
+   */
+  const savedMetas = new Map<string, string>();
+  let metaSaveTimer: number | null = null;
+
+  /** 内存里与磁盘不一致的素材 meta（返回它们的路径 ID）。 */
+  const metaDirtyIds = (): string[] =>
+    Object.entries(metaHistory.current)
+      .filter(([id, meta]) => savedMetas.get(id) !== serializeAssetMetaFile(meta))
+      .map(([id]) => id);
+
+  /**
+   * 有改动就延迟回写**素材 meta**（每份一个 `<素材>.meta`）。
+   *
+   * 与场景 / 工程文件同一套：拖切分的行列、连点导入设置都会连着改文档，但只该写一次盘；
+   * 写的时候**只写内容变了的那几份**（比对 `savedMetas`），所以切一张图不会去碰别的素材的文件。
+   * 运行态下不写（见 `saveMetasNow`）。
+   */
+  const scheduleMetaSave = (): void => {
+    if (get().project.current === null) {
+      return;
+    }
+
+    if (get().runtime.runtimeActive) {
+      set({ metaSaveState: "runtime" });
+      return;
+    }
+
+    set({ metaSaveState: "pending" });
+    if (metaSaveTimer !== null) {
+      window.clearTimeout(metaSaveTimer);
+    }
+
+    metaSaveTimer = window.setTimeout(() => {
+      metaSaveTimer = null;
+      void get().saveMetasNow();
+    }, SCENE_SAVE_DEBOUNCE_MS);
+  };
+
   sceneHistory.subscribe(() => {
     syncHistoryFlags();
     // 运行态下文档一改就（去抖）把整份场景推给服务端 → 前端镜像跟着变
@@ -981,9 +1050,8 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
    * 工程文件（全局设置）的变更：与场景那套对称——同步 doc 与撤销标记、运行态下推给服务端、
    * 编辑态下（去抖）落盘。
    *
-   * **除了设置，还要重推一次场景**：工程文件里的**图片切分表**参与场景载荷的解析
-   * （子图的「几行几列」随载荷走，见 `resolveSceneSprites`），所以切分一改，
-   * 引用它的对象在前端那边也该跟着变。文本比对保证「改的是别的项目级数据」时一个字节都不发。
+   * **除了设置，还要重推一次场景**：全局设置随载荷走（前端收到即生效），所以设置一改，
+   * 前端那边也该跟着变。文本比对保证「改的是别的项目级数据」时一个字节都不发。
    */
   projectHistory.subscribe(() => {
     syncHistoryFlags();
@@ -1001,6 +1069,43 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
     }
 
     scheduleProjectSave();
+  });
+
+  /**
+   * **素材 meta**的变更（第三条轨道）：重建派生索引 → 同步真源表与撤销标记 →
+   * 重推场景（切分参与场景载荷的解析）→ 编辑态下（去抖）只回写变了的那几份。
+   *
+   * 为什么改了切分要重推场景：子图引用上只写着「第几格」，「几行几列」得随载荷走
+   * （前端没有 `.meta`，见 `resolveSceneSprites`），所以切分一改，引用它的对象在前端那边
+   * 也该跟着变——这正是「改切分，所有引用它的对象一起变」的落地。文本比对保证
+   * 「改的是别的素材」时一个字节都不发。
+   *
+   * 索引在这里**重建**而不是让每个 action 自己维护：任何一处写 meta（切分 / 导入设置 /
+   * 新建 / 撤销 / 重做 / 读盘）都经这条订阅，两个方向（guid、路径 ID）因此永远一致。
+   */
+  metaHistory.subscribe(() => {
+    const table = metaHistory.current;
+    set({
+      assetMetaTable: table,
+      assetMetas: createAssetMetas(
+        Object.entries(table).map(([id, meta]) => ({ id, meta })),
+      ),
+    });
+
+    syncHistoryFlags();
+    scheduleRuntimePush();
+
+    if (get().runtime.runtimeActive) {
+      set({ metaSaveState: "runtime" });
+      return;
+    }
+
+    if (metaDirtyIds().length === 0) {
+      set({ metaSaveState: "saved" });
+      return;
+    }
+
+    scheduleMetaSave();
   });
 
   /**
@@ -1111,6 +1216,14 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
     }
   };
 
+  /** 取消待写的素材 meta 落盘定时器（与上两份对称）。 */
+  const clearMetaSaveTimer = (): void => {
+    if (metaSaveTimer !== null) {
+      window.clearTimeout(metaSaveTimer);
+      metaSaveTimer = null;
+    }
+  };
+
   return {
     pushLog,
     currentSceneDoc,
@@ -1145,14 +1258,18 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
     restoreRunBaseline,
     projectDirty,
     dirtySceneNames,
+    metaDirtyIds,
     scheduleSceneSave,
     scheduleProjectSave,
+    scheduleMetaSave,
     clearSceneSaveTimer,
     clearProjectSaveTimer,
+    clearMetaSaveTimer,
     persistGridPaint,
     currentObjectOf,
     switchScene,
     savedScenes,
+    savedMetas,
     sceneViewports,
     storedGridPaint,
     quietCommandIds,

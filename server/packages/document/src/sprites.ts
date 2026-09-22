@@ -1,10 +1,10 @@
 import type { ImageSize } from "@dts/grid";
 import { imageOf, mapDataOf } from "./access";
+import type { AssetMetaDoc, AssetMetas } from "./asset-meta";
 import { FEATURE_COMPONENT, carriesFeatureComponent, carriesKind } from "./features";
 import type {
   ImageRef,
   ImageSpriteRef,
-  ProjectDoc,
   ResolvedSprite,
   SceneDoc,
   SceneObjectDoc,
@@ -18,7 +18,8 @@ import type {
  * 「精灵 = 纹理 + 一块矩形」（Unity 也是这么定义 Sprite 的），而这个仓库里
  * **切分只有一份、矩形一像素都不存**：
  *
- * - 切分住在工程文件（`ProjectDoc.spriteSheets`，key = 图片逻辑 ID）；
+ * - 切分住在**素材自己的 `.meta`** 里（v23 起；v22 及更早住在工程文件的 `spriteSheets`），
+ *   调用方把它读成索引 `AssetMetas` 交进来，这里**按引用查**（guid 优先、路径兜底）；
  * - 对象只存「引用哪张图 + 第几格」（`ImageRef.sprite`），改切分 = 所有引用它的对象一起变；
  * - 矩形由**格序数 ÷ 加载到的纹理尺寸**算出来——编辑器画布与前端各算一次，
  *   两侧不可能各差一像素（存像素就会和事实不一致，与 `GridSpec` 不存 `cellSize` 同一条规矩）。
@@ -43,7 +44,7 @@ import type {
  */
 export const SPRITE_SHEET_MAX = 64;
 
-/** 缺省切分：**整图**（1×1）。没有表项 = 这一份，所以这种表项不写进工程文件。 */
+/** 缺省切分：**整图**（1×1）。meta 里没写 `sheet` = 这一份，所以这种值不写进文件。 */
 export const DEFAULT_SPRITE_SHEET: SpriteSheetDoc = { columns: 1, rows: 1 };
 
 /**
@@ -66,16 +67,35 @@ export function isTrivialSpriteSheet(sheet: SpriteSheetDoc): boolean {
 }
 
 /**
- * 这张图的切分（**没有表项 / 没打开项目时就是整图**）。
+ * 一份「按引用查 meta」的最小输入：对象身上的 `ImageRef` 与只知道 id 的调用方都合用。
+ *
+ * 有 `guid` 就以它为准（素材改过名时 `id` 是旧路径）；没有就按 `id` 兜底（老文件）。
+ */
+type ImageLookup = { readonly guid?: string; readonly id?: string };
+
+/**
+ * 按引用查 meta：**先 guid、再 id**。
+ *
+ * `asset-meta.ts` 的 `metaOfImage` 是同一条口径，但那边是**上一层**（它要 import 这里的
+ * 切分工具），反向 import 会成环——所以这三行在这里就地写一遍，两处都是「先 guid 再 id」。
+ */
+function metaOf(metas: AssetMetas, image: ImageLookup | undefined): AssetMetaDoc | undefined {
+  if (image === undefined) {
+    return undefined;
+  }
+
+  const byGuid = image.guid === undefined ? undefined : metas.byGuid[image.guid];
+  return byGuid ?? (image.id === undefined ? undefined : metas.byId[image.id]);
+}
+
+/**
+ * 这张图的切分（**没有 meta / 没开精灵 / 没切时就是整图**）。
  *
  * 「没有表项 = 1×1」这条语义只在这里判：调用方一律拿一份合法的 `SpriteSheetDoc`，
  * 不必到处 `?? DEFAULT_SPRITE_SHEET`。
  */
-export function spriteSheetOf(
-  spriteSheets: ProjectDoc["spriteSheets"],
-  imageId: string,
-): SpriteSheetDoc {
-  const sheet = spriteSheets?.[imageId];
+export function spriteSheetOf(metas: AssetMetas, image: ImageLookup | undefined): SpriteSheetDoc {
+  const sheet = metaOf(metas, image)?.sprite?.sheet;
   return sheet === undefined ? DEFAULT_SPRITE_SHEET : normalizeSpriteSheet(sheet);
 }
 
@@ -96,14 +116,14 @@ export function clampSpriteCell(cell: ImageSpriteRef, sheet: SpriteSheetDoc): Im
  */
 export function resolvedSpriteOf(
   image: ImageRef | undefined,
-  spriteSheets: ProjectDoc["spriteSheets"],
+  metas: AssetMetas,
 ): ResolvedSprite | undefined {
   const sprite = image?.sprite;
   if (image === undefined || sprite === undefined) {
     return undefined;
   }
 
-  const sheet = spriteSheetOf(spriteSheets, image.id);
+  const sheet = spriteSheetOf(metas, image);
   const cell = clampSpriteCell(sprite, sheet);
   return { columns: sheet.columns, rows: sheet.rows, column: cell.column, row: cell.row };
 }
@@ -117,14 +137,14 @@ export function resolvedSpriteOf(
  */
 export function displaySpriteOf(
   object: SceneObjectDoc,
-  spriteSheets: ProjectDoc["spriteSheets"],
+  metas: AssetMetas,
 ): ResolvedSprite | undefined {
   // 地图的贴图住在 GridMap 里，格子按整张贴图算：取一块会让已有标注的含义静默改变
   if (carriesKind(FEATURE_COMPONENT.map, object.kind)) {
     return undefined;
   }
 
-  return resolvedSpriteOf(imageOf(object), spriteSheets);
+  return resolvedSpriteOf(imageOf(object), metas);
 }
 
 /**
@@ -216,12 +236,43 @@ function clampInt(value: number, min: number, max: number): number {
 // ---------------------------------------------------------------- 推送用的解析
 
 /**
+ * 推送时写进载荷的**路径 ID**：有 guid 就以索引里的路径为准。
+ *
+ * `ImageRef.id` 只是「上次见到的路径」：素材与 `.meta` 成对改名之后它已经过期，而 guid
+ * 还是对的——`byId` 的键就是当前路径（`createAssetMetas` 那两向索引指向同一份 meta），
+ * 所以反查一次即得。名字没改时 `byId[id]` 就是那一份，不必扫（改名是少数）。
+ */
+function payloadIdOf(metas: AssetMetas, image: ImageRef): string {
+  if (image.guid === undefined) {
+    return image.id;
+  }
+
+  const meta = metaOf(metas, image);
+  if (meta === undefined || metas.byId[image.id] === meta) {
+    return image.id;
+  }
+
+  for (const [id, candidate] of Object.entries(metas.byId)) {
+    if (candidate === meta) {
+      return id;
+    }
+  }
+
+  // 索引里只有 guid 那一份（这张图没进 byId）：路径无从得知，保留引用上写的那个
+  return image.id;
+}
+
+/**
  * 把场景解析成**推给前端的那一份**：对象身上的子图引用多一项 `spriteGrid`（这张图几列几行）。
  *
- * 为什么要在推送时解析：切分在编辑器这边**只有一份**（工程文件的 `spriteSheets`），而前端
- * 手上没有工程文件——所以「几行几列」必须随载荷走。这是「文档 → 线上形状」的**唯一**转换点：
- * 载荷与文档的差别只有 `spriteGrid` 这一项，其余逐字相同（协议包的 `sceneSchema` 因此也
- * 只是把 `imageRefSchema` 多写一项，两份 schema 仍然对得上）。
+ * 为什么要在推送时解析：切分在编辑器这边**只有一份**（素材自己的 `.meta`），而前端
+ * 手上没有 `.meta`——所以「几行几列」必须随载荷走。这是「文档 → 线上形状」的**唯一**转换点：
+ * 载荷与文档的差别只有两处，其余逐字相同（协议包的 `sceneSchema` 因此也只是把
+ * `imageRefSchema` 多写一项 `spriteGrid`，两份 schema 仍然对得上）：
+ *
+ * - **多一项** `spriteGrid`（几行几列）；
+ * - **少一项** `guid`、并把 `id` 写成索引里的当前路径——协议与前端只认路径 ID，
+ *   所以 guid 在这里换算回路径下发（这正是「wire 保持路径 ID」那条口径的落点）。
  *
  * 两件事在这里做干净：
  * - **夹格子**：切分被改小之后，老对象可能指向越界的格子——推送时统一夹到最后一格
@@ -231,14 +282,11 @@ function clampInt(value: number, min: number, max: number): number {
  *
  * 返回的是**新对象**（不改输入文档）：推送路径上同时要文本比对，按值比较才不会产生假变更。
  */
-export function resolveSceneSprites(
-  scene: SceneDoc,
-  spriteSheets: ProjectDoc["spriteSheets"],
-): SceneDoc {
+export function resolveSceneSprites(scene: SceneDoc, metas: AssetMetas): SceneDoc {
   let changed = false;
   const objects = scene.objects.map((object) => {
     // 对象自己那份图片的子图（地图对象一律没有——`displaySpriteOf` 是那条口径的唯一判据）
-    const sprite = displaySpriteOf(object, spriteSheets);
+    const sprite = displaySpriteOf(object, metas);
     const mapSprite = mapDataOf(object)?.image.sprite;
     if (sprite === undefined && mapSprite === undefined) {
       return object;
@@ -256,9 +304,12 @@ export function resolveSceneSprites(
 
         return {
           ...component,
-          // 格子按解析结果写回（越界的已夹），切分一并带上
+          // 格子按解析结果写回（越界的已夹），切分一并带上；路径按索引里的当前值写、
+          // guid 不下发（载荷只有路径 ID 这一种身份）
           data: {
-            ...image,
+            id: payloadIdOf(metas, image),
+            width: image.width,
+            height: image.height,
             sprite: { column: sprite.column, row: sprite.row },
             spriteGrid: { columns: sprite.columns, rows: sprite.rows },
           },
@@ -276,7 +327,11 @@ export function resolveSceneSprites(
           ...component,
           data: {
             ...(component.data as Record<string, unknown>),
-            image: { id: map.image.id, width: map.image.width, height: map.image.height },
+            image: {
+              id: payloadIdOf(metas, map.image),
+              width: map.image.width,
+              height: map.image.height,
+            },
           },
         };
       }

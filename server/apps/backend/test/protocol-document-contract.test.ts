@@ -9,6 +9,7 @@ import {
   type SceneObjectPayload,
 } from "@dts/protocol";
 import {
+  ASSET_META_FORMAT_VERSION,
   COMPONENT_TYPES,
   DOCUMENT_FORMAT_VERSION,
   FEATURE_COMPONENT,
@@ -18,6 +19,7 @@ import {
   SPRITE_COMPONENT,
   SPRITE_SHEET_MAX,
   componentId,
+  createAssetMetas,
   createEmptyScene,
   createMapObject,
   createSceneObject,
@@ -174,13 +176,26 @@ describe("契约：协议与文档的组件口径一致", () => {
         }),
       ],
     };
-    const spriteSheets = { [imageId]: { columns: 4, rows: 2 } };
+    // v23 起切分住在**素材自己的 `.meta`** 里，文档侧拿到的是它的索引：
+    // guid（身份）与路径 ID 两个方向都查得到同一份（`createAssetMetas`）
+    const metas = createAssetMetas([
+      {
+        id: imageId,
+        meta: {
+          formatVersion: ASSET_META_FORMAT_VERSION,
+          guid: "0".repeat(32),
+          importer: "texture",
+          sprite: { mode: "Multiple", sheet: { columns: 4, rows: 2 } },
+        },
+      },
+    ]);
 
     // 文档侧：语义校验没有 error（格子落在切分范围内）
-    expect(hasErrors(validateScene(scene, { spriteSheets }))).toBe(false);
+    expect(hasErrors(validateScene(scene, { metas }))).toBe(false);
 
-    // 推送时的解析：切分随载荷走（前端没有工程文件），协议侧收下
-    const payload = { name: scene.name, objects: resolveSceneSprites(scene, spriteSheets).objects };
+    // 推送时的解析：切分随载荷走（前端没有工程文件），协议侧收下。
+    // 载荷里**只有路径 ID**（guid 在这里换算回路径），所以协议不需要认 guid
+    const payload = { name: scene.name, objects: resolveSceneSprites(scene, metas).objects };
     const parsed = sceneSchema.parse(JSON.parse(JSON.stringify(payload)) as unknown);
     expect(componentDataOf(parsed.objects[0]!, COMPONENT_TYPE.sprite)).toEqual({
       id: imageId,

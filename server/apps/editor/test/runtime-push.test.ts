@@ -90,7 +90,17 @@ describe("scenePayloadText", () => {
 
   it("精灵：子图的切分随载荷走；改切分文本就变（没有子图的对象不受影响）", () => {
     const imageId = "project:P/Assets/images/sheet.png";
-    const sheets = { [imageId]: { columns: 4, rows: 2 } };
+    const sheets = {
+      byGuid: {},
+      byId: {
+        [imageId]: {
+          formatVersion: 1,
+          guid: "0".repeat(32),
+          importer: "texture" as const,
+          sprite: { mode: "Multiple" as const, sheet: { columns: 4, rows: 2 } },
+        },
+      },
+    };
 
     expect(scenePayloadOf(sceneWithSprite(imageId, { column: 1, row: 0 }), sheets)).toMatchObject({
       objects: [
@@ -114,7 +124,17 @@ describe("scenePayloadText", () => {
 
     // 改切分（4×2 → 2×1）：文本必须变——这就是「改切分，所有引用它的对象一起变」
     expect(scenePayloadText(withSprite, sheets)).not.toBe(
-      scenePayloadText(withSprite, { [imageId]: { columns: 2, rows: 1 } }),
+      scenePayloadText(withSprite, {
+        byGuid: {},
+        byId: {
+          [imageId]: {
+            formatVersion: 1,
+            guid: "0".repeat(32),
+            importer: "texture",
+            sprite: { mode: "Multiple", sheet: { columns: 2, rows: 1 } },
+          },
+        },
+      }),
     );
 
     // 越界的格子在载荷里被夹到最后一格（协议会拒越界值）

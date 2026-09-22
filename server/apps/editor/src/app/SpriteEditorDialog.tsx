@@ -18,7 +18,7 @@ export function SpriteEditorDialog({
   imageSize,
   onClose,
 }: SpriteEditorDialogProps): React.JSX.Element {
-  const stored = useEditorStore((state) => state.doc.spriteSheets?.[imageId]);
+  const stored = useEditorStore((state) => state.assetMetas.byId[imageId]?.sprite?.sheet);
   const setSpriteSheet = useEditorStore((state) => state.setSpriteSheet);
   const [columns, setColumns] = useState("1");
   const [rows, setRows] = useState("1");

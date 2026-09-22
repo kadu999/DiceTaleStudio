@@ -2,6 +2,7 @@ import { stat } from "node:fs/promises";
 import { dirname, resolve, sep } from "node:path";
 import { createEmptyProject } from "@dts/document";
 import {
+  assetMetaIdOf,
   buildResourceTree,
   createProject,
   deleteProject,
@@ -86,8 +87,51 @@ export async function getProjectTreeRoute(ctx: RouteContext): Promise<void> {
   });
 }
 
-/** `POST /api/projects/folder`：在项目里建一个目录（路径必须过项目内相对路径校验）。 */
-export async function createProjectFolderRoute(ctx: RouteContext): Promise<void> {
+/**
+ * `GET /api/projects/meta?name=`：一个项目里**所有素材 meta**（一次拿全）。
+ *
+ * 返回 `{ name, metas: { <素材逻辑 ID>: <meta 原文> } }`：
+ * - 键是**素材**的逻辑 ID（不是 meta 文件自己的 ID），调用方拿到就能按素材查；
+ * - 值是**原文对象**（这里不解析）：解析、"缺 guid 就补"是文档层的规矩
+ *   （`@dts/document` 的 `parseAssetMetaFile`）——后端只管把文件读出来，
+ *   与「逻辑 ID → 真实路径只在这里解析」同一条分工；
+ * - 找法：**从素材找它的 meta**（`<素材>.meta`）。meta 本身不在资源列表里（它是元数据，
+ *   见 `FsResourceProvider.list`），所以不靠列目录枚举；反过来，**没有素材的孤儿 meta
+ *   自然看不见**——它本来就该由人去清掉；
+ * - 读不出 / 坏 JSON 的条目**跳过并记日志**：一个坏 meta 不该把整次加载打掉。
+ */
+export async function getProjectMetasRoute(ctx: RouteContext): Promise<void> {
+  const name = queryRaw(ctx.url, "name");
+  if (name.length === 0) {
+    throw badRequest("缺少 name 参数");
+  }
+
+  const entries = await readProjectEntries(ctx.provider, name);
+  const metas: Record<string, unknown> = {};
+  for (const entry of entries) {
+    if (entry.type !== "file") {
+      continue;
+    }
+
+    const metaId = assetMetaIdOf(entry.id);
+    if (!(await ctx.provider.exists(metaId))) {
+      continue;
+    }
+
+    try {
+      metas[entry.id] = JSON.parse(await ctx.provider.readText(metaId)) as unknown;
+    } catch (error) {
+      ctx.log(
+        "warn",
+        `素材 meta 读不出来，已跳过：${entry.path}（${error instanceof Error ? error.message : String(error)}）`,
+      );
+    }
+  }
+
+  sendJson(ctx.response, 200, { name, metas });
+}
+
+/** `POST /api/projects/folder`：在项目里建一个目录（路径必须过项目内相对路径校验）。 */export async function createProjectFolderRoute(ctx: RouteContext): Promise<void> {
   const body = await readJsonBody(ctx.request);
   const project = bodyString(body, "project");
   const folderPath = bodyString(body, "path");

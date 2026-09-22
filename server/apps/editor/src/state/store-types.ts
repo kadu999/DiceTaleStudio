@@ -4,6 +4,8 @@
  * 编辑器状态的**类型**：界面态 / 运行态 / 项目态，以及总状态 `EditorStoreState`。
  */
 import {
+  type AssetMetaDoc,
+  type AssetMetas,
   type ImageRef,
   type ImageSpriteRef,
   type ObjectKind,
@@ -87,6 +89,15 @@ export type SceneDialogMode = "create" | "rename" | null;
 export type SceneSaveState = "saved" | "pending" | "saving" | "error" | "runtime";
 
 /**
+ * 素材 meta 的**真源表**：键 = 素材的路径 ID（v23 起，第三条撤销轨道上的那份）。
+ *
+ * 为什么按路径 ID 当键：撤销补丁要落在**具体某一项**上，而 `AssetMetas` 索引里同一份 meta
+ * 有 guid 与路径两个键（两个方向指向同一份对象）；挑一个当写入口径才不会「补丁打在 guid 上、
+ * 按路径读不到」。路径 ID 同时是后端那份 `metas` 字典的键、也是挑图时手上那个键，所以选它。
+ */
+export type AssetMetaTable = Readonly<Record<string, AssetMetaDoc>>;
+
+/**
  * 网格标注（地图编辑）状态。
  *
  * 「怎么画 / 怎么显示」那一半（画笔类型 / 大小 / 每类的显示与颜色 / 网格线、网格标注两个总开关）
@@ -119,6 +130,23 @@ export interface EditorStoreState {
   readonly doc: ProjectDoc;
   /** 当前项目里的场景（来自 `Assets/scenes/*.json`，名字就是文件名） */
   readonly scenes: readonly SceneDoc[];
+  /**
+   * **素材 meta 的索引**（`guid → meta` 与 `路径 ID → meta` 两个方向，v23 起）。
+   *
+   * 它是**派生出来给读的地方用的那一份**：画布、属性面板、资源面板、校验、推送一律经它解析
+   * （`metaOfImage` / `spriteSheetOfMeta`…），于是「按 guid 查到的」与「按路径查到的」
+   * 永远是同一份。真源是下一条 `assetMetaTable`（进撤销栈的那份），
+   * 这里跟着它重建（见 `store-context.ts` 对 `metaHistory` 的订阅）。
+   */
+  readonly assetMetas: AssetMetas;
+  /**
+   * 素材 meta 的**真源表**（键 = 素材的路径 ID，v23 起）：进撤销栈、被落盘比对的那一份。
+   *
+   * 与 `assetMetas` 分成两份是有意的：撤销补丁要打在**具体某一项**上，而索引里同一份 meta
+   * 有 guid 与路径两个键——挑路径 ID 当写入口径（它同时是后端那份 `metas` 字典的键、
+   * 也是挑图时手上那个键），索引只负责读。
+   */
+  readonly assetMetaTable: AssetMetaTable;
   /** 当前场景名（= 文件名）；null 表示项目里还没有场景 */
   readonly activeSceneName: string | null;
   readonly canUndo: boolean;
@@ -182,6 +210,14 @@ export interface EditorStoreState {
    */
   readonly projectSaveState: SceneSaveState;
   readonly projectSaveError: string;
+  /**
+   * **素材 meta**（`<素材>.meta`）的保存状态（去抖自动存与手动保存共用）。
+   *
+   * 与上两份并列：meta 是**每个素材一个文件**，所以它有自己的一份「有没有未保存改动」
+   * （比对 `savedMetas` 里的文本快照，只写内容真的变了的那几份）与自己的错误。
+   */
+  readonly metaSaveState: SceneSaveState;
+  readonly metaSaveError: string;
   /** 网格标注（画笔）状态：编辑窗口的涂 / 擦与画布的着色都读它。 */
   readonly gridPaint: GridPaintState;
   /**
@@ -450,6 +486,16 @@ export interface EditorStoreState {
   /** 工程文件有待保存改动就立刻写回；关项目 / 进运行态前调用。 */
   flushProjectSave(): Promise<void>;
 
+  /**
+   * 立即把**有改动的素材 meta**（`<素材>.meta`）写回磁盘。
+   *
+   * 与 `saveProjectNow` 同一套：只写内容真的变了的那几份（比对 `savedMetas` 的文本快照）、
+   * 运行态下不写盘（改动退出运行会整体还原）、失败写进 `metaSaveError` 并记一条 error 日志。
+   */
+  saveMetasNow(): Promise<boolean>;
+  /** 素材 meta 有待保存改动就立刻写回；关项目 / 换项目 / 重新读盘之前调用，避免丢掉刚切的图集。 */
+  flushMetaSave(): Promise<void>;
+
   /** 重新扫描 `Assets/scenes/` 并把场景读进内存（打开项目、增删改名后调用）。 */
   loadScenes(): Promise<void>;
   openSceneDialog(mode: SceneDialogMode): void;
@@ -559,17 +605,27 @@ export interface EditorStoreState {
   /**
    * 选这张图（图集）里的**第几格**（`null` = 改回整图）。
    *
-   * 落在**场景**那条轨道上（对象身上的引用）；「几行几列」在工程文件里，由
-   * `setSpriteSheet` 改——越界的格子在渲染与推送时统一夹到最后一格。
+   * 落在**场景**那条轨道上（对象身上的引用）；「几行几列」在这个素材自己的 `.meta` 里，
+   * 由 `setSpriteSheet` 改——越界的格子在渲染与推送时统一夹到最后一格。
    */
   setObjectSprite(objectId: string, sprite: ImageSpriteRef | null): boolean;
   /**
-   * 改一张图的**切分**（列 × 行；`null` = 恢复整图）：落在**工程文件**那条轨道上。
+   * 改一张图的**切分**（列 × 行；`null` = 恢复整图）：落在**素材 meta** 那条轨道上。
    *
-   * 切分只有这一份（`ProjectDoc.spriteSheets`），所以「改它 = 所有引用它的对象一起变」。
+   * 切分只有这一份（那个素材的 `.meta`，见 `withMetaSpriteSheet`），所以
+   * 「改它 = 所有引用它的对象一起变」；`imageId` 是素材的路径 ID，也是 `AssetMetaTable` 的键。
    */
   setSpriteSheet(imageId: string, sheet: SpriteSheetDoc | null): boolean;
+  /** 改一张图的**导入设置**（`null` / `Default` = 普通图片）；同样落在素材 meta 那条轨道上。 */
   setSpriteImportSettings(imageId: string, settings: SpriteImportSettingsDoc | null): boolean;
+  /**
+   * 拿到这个素材的 meta，**没有就现建一份**（含新 GUID）并落盘。
+   *
+   * 挑图 / 引用一条图片时要往 `ImageRef` 里写 `guid`——身份必须在**第一次引用**时就定下来，
+   * 否则「引用了却没身份」的窗口期里素材一改名，引用就又断在路径上了。
+   * 已经有 meta（哪怕只是按路径命中的）时原样返回，一个字节都不改。
+   */
+  ensureAssetMeta(imageId: string): AssetMetaDoc;
   /**
    * 替换声音对象的音频列表（资源逻辑 ID；去空去重，值没变不算变更）。
    *

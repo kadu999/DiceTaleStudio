@@ -407,7 +407,8 @@ build: { outDir: "dist", sourcemap: true },
 | `schema.ts` | 975 | zod schema + **版本迁移链** + 文件解析 | `sceneFileSchema`、`projectDocSchema`、`imageSpriteRefSchema`、`spriteSheetSchema`、`upgradeRawDocument`、`migrateProjectDoc`、`parseProjectFile`、`parseProjectDoc`、`parseSceneFile`、`defaultProjectSettings`、`defaultAudioSettings`、`defaultBgmSettings`、`DEFAULT_BGM_VOLUME`(0.6)、`DEFAULT_SFX_VOLUME`(0.8)、`DEFAULT_VOICE_VOLUME`(1)；类型 `SceneSizeHint`、`ProjectFileLoad`、`SceneFileLoad` |
 | `commands/` | 2,155 | **66 个文档变换命令**，按特性拆成 9 个模块（纯搬运，行为不变） | 见 §3.2.2 |
 | `validation.ts` | 660 | 文档语义校验（跨字段、跨场景 + **子图的切分与越界格子** + **视频只给地图与贴图**） | `IssueLevel`、`ValidationIssue`、`SceneValidationOptions`、`hasErrors`、`formatIssues`、`validateScene`、`validateProject` |
-| `sprites.ts` | 241 | **精灵（子图）的全部知识**（v20 新增）：一张图怎么切、对象取哪一格、那一格在图片里的哪块矩形、画多大；「地图贴图不支持子图」的**唯一判据**也在这里 | `SPRITE_SHEET_MAX`(64)、`DEFAULT_SPRITE_SHEET`(1×1)、`normalizeSpriteSheet`、`isTrivialSpriteSheet`、`spriteSheetOf`（没有表项 = 整图）、`clampSpriteCell`、`resolvedSpriteOf`、`displaySpriteOf`、`spriteUvRectOf`、`spritePixelRectOf`、`spriteCellSizeOf`、`spriteCellAtFraction`、`resolveSceneSprites`（推送用的解析：夹格子 + 摘掉地图上的误写） |
+| `sprites.ts` | 300 | **精灵（子图）的全部知识**（v20 新增）：一张图怎么切、对象取哪一格、那一格在图片里的哪块矩形、画多大；「地图贴图不支持子图」的**唯一判据**也在这里。切分从 v23 起**按素材 meta 查**（参数是 `AssetMetas` 索引，**guid 优先、路径兜底**） | `SPRITE_SHEET_MAX`(64)、`DEFAULT_SPRITE_SHEET`(1×1)、`normalizeSpriteSheet`、`isTrivialSpriteSheet`、`spriteSheetOf`（meta 里没 `sheet` = 整图）、`clampSpriteCell`、`resolvedSpriteOf`、`displaySpriteOf`、`spriteUvRectOf`、`spritePixelRectOf`、`spriteCellSizeOf`、`spriteCellAtFraction`、`resolveSceneSprites`（推送用的解析：夹格子 + 摘掉地图上的误写 + **把 guid 换算回当前路径 ID**） |
+| `asset-meta.ts` | 347 | **素材 meta 的全部知识**（v23 新增）：`<素材>.meta` 的形状（GUID + 导入器 + 精灵设置 / 切分）、schema、解析、序列化、GUID 生成，以及「meta ↔ 文档词汇」的访问器与两个纯函数写入 | `ASSET_META_FORMAT_VERSION`(1)、`AssetMetaDoc`、`AssetMetaSpriteDoc`、`AssetMetaFileLoad`、`newAssetGuid`、`createAssetMeta`、`parseAssetMetaFile`（只容错"缺 guid"，补上并 `needsRewrite`）、`serializeAssetMetaFile`、`isSpriteMeta`、`spriteSettingsOfMeta`、`spriteSheetOfMeta`、`withMetaSpriteSettings`、`withMetaSpriteSheet`、`AssetMetas`（guid ↔ 路径双向索引）、`emptyAssetMetas`、`createAssetMetas`、`metaOfImage` |
 | `history.ts` | 213 | 补丁式撤销 / 重做容器 | `DocumentHistory`、`HistoryEntry`、`DEFAULT_HISTORY_LIMIT`(=200)、`DEFAULT_COALESCE_WINDOW_MS`(=700)、`ProjectDraft`、`SceneListDraft` |
 | `factory.ts` | 159 | 新建对象的工厂函数（默认值） | `createEmptyProject`、`createEmptyScene`、`createEmptySceneFile`、`createMapObject`、`createSoundObject`、`createTeleportObject` |
 | `components.ts` | 258 | 组件注册表（**13 种**：7 种前端组件 + **6 种**从对象特性提升上来的——`image` 那一个字段有 `ImageLayer` / `SpriteLayer` 两种） | `ComponentType`、`ComponentTypeDef`、`COMPONENT_TYPES`、`FEATURE_COMPONENT_TYPES`、`hasLegacyFeatureField`、`findComponentType`、`componentId`、`featureComponent`、`defaultComponentData`、`isKnownComponentType`、`conditionValueTypesFor` |
@@ -605,9 +606,11 @@ v20 起 `validateScene` 多了第二个参数：`validateScene(scene, { spriteSh
 
 三条口径：
 
-- **「文档 → 线上形状」的唯一转换点**是 `resolveSceneSprites(scene, spriteSheets)`（`sprites.ts`）：
-  它把越界的格子**夹到最后一格**、把**地图贴图上误写的** `sprite` 摘掉，返回**新对象**（不改输入文档——
-  推送路径同时要做文本比对，按值比较才不会产生假变更）；
+- **「文档 → 线上形状」的唯一转换点**是 `resolveSceneSprites(scene, metas)`（`sprites.ts`，
+  v23 起第二个参数是素材 meta 索引 `AssetMetas`）：
+  它把越界的格子**夹到最后一格**、把**地图贴图上误写的** `sprite` 摘掉、把引用的 `guid`
+  **换算回当前路径 ID**（协议只认路径，见 `docs/specs/2026-09-23-asset-meta.md`），
+  返回**新对象**（不改输入文档——推送路径同时要做文本比对，按值比较才不会产生假变更）；
 - `row` **从最上面数**（`row: 0` = 第一行、`column: 0` = 最左列，对齐 Unity 的 Sprite Editor），
   与 `GridMap` 的 `rowOrder: "bottom-up"` **无关**——那是「网格坐标系锚在哪」，这里是「第几个格子」；
 - **不存像素、不存归一化 UV**：矩形 = 格子 ÷ **加载到的**纹理尺寸（`spriteUvRectOf` / `spritePixelRectOf`），
@@ -795,7 +798,7 @@ resources/
 | `src/http/requests.ts` | 58 | 请求体 / 查询参数读取助手（`readBody`/`readJsonBody`/`queryRaw`/`queryTrimmed`/`bodyString`/`bodyTrimmed`） |
 | `src/http/mime.ts` | 35 | 扩展名 → Content-Type |
 | `src/http/static.ts` | 86 | 编辑器产物托管 + SPA 回退 + 目录穿越防护 |
-| `src/http/routes/*.ts` | 463 | **一条协议一个函数**：health(17) / config(20) / state(12) / projects(174, 6 个) / resources(180, 9 个) / index(60, 路由表) |
+| `src/http/routes/*.ts` | 463 | **一条协议一个函数**：health(17) / config(20) / state(12) / projects(218, **7 个**：项目生命周期 + `/tree` + `/meta`) / resources(180, 9 个) / index(60, 路由表) |
 | `src/resources/fs-provider.ts` | 270 | `FsResourceProvider`（唯一碰磁盘的地方）+ 原子写 |
 | `src/resources/bundle.ts` | 324 | 资源清单 / 指纹 / 自研 STORED zip writer |
 | `src/resources/bundle-cache.ts` | 60 | 资源包缓存（每个项目留最近一份，指纹变了才重打）——从 `http/server.ts` 搬出来的跨请求状态 |

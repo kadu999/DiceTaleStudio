@@ -130,7 +130,7 @@ export function LockedField({ object }: { readonly object: SceneObjectDoc }): Re
  */
 export function TextureField({ object }: { readonly object: SceneObjectDoc }): React.JSX.Element {
   const tree = useEditorStore((state) => state.project.tree);
-  const spriteSheets = useEditorStore((state) => state.doc.spriteSheets);
+  const assetMetas = useEditorStore((state) => state.assetMetas);
   const openImagePicker = useEditorStore((state) => state.openImagePicker);
   const setObjectSprite = useEditorStore((state) => state.setObjectSprite);
   const image = objectImage(object);
@@ -144,7 +144,7 @@ export function TextureField({ object }: { readonly object: SceneObjectDoc }): R
   // 「文件里写的」与「实际画的」都说清楚，人才知道要去重选一格
   const spriteCapable = supportsSpriteSheet(object.kind);
   const cell = spriteCapable ? image?.sprite : undefined;
-  const sheet = image === undefined ? undefined : spriteSheetOf(spriteSheets, image.id);
+  const sheet = image === undefined ? undefined : spriteSheetOf(assetMetas, image);
   const outOfRange =
     cell !== undefined &&
     sheet !== undefined &&

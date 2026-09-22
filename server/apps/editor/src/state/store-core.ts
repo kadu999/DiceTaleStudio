@@ -1,7 +1,7 @@
 /**
  * 本文件从 `editor-store.ts` 拆出（纯搬运，行为不变）。
  *
- * React 之外的**模块级状态**与纯工具：两套历史、场景 / 工程文件序列化、视口适配、日志工厂。
+ * React 之外的**模块级状态**与纯工具：三套历史、场景 / 工程文件序列化、视口适配、日志工厂。
  */
 import {
   DOCUMENT_FORMAT_VERSION,
@@ -23,7 +23,7 @@ import { type RuntimeLogEntry } from "../services/runtime-client";
 import { type ResourceTreeNode } from "../services/project-api";
 import { readEditorPrefs } from "../services/editor-prefs";
 import { sceneVisibleRects } from "../panels/scene/display";
-import { type EditorUiState } from "./store-types";
+import { type AssetMetaTable, type EditorUiState } from "./store-types";
 
 /**
  * 平板（触控优先或窄屏）下默认收起左右面板，让场景铺满——
@@ -62,11 +62,30 @@ export const sceneHistory = new DocumentHistory<readonly SceneDoc[]>([], { limit
  */
 export const projectHistory = new DocumentHistory<ProjectDoc>(createEmptyProject(), { limit: 200 });
 
-/** 最近一次编辑发生在哪条轨道上（两套历史共用一个撤销入口）。 */
-type EditTrack = "scenes" | "project";
+/**
+ * **素材 meta**（`<素材>.meta`，v23 起）的编辑历史。
+ *
+ * 第三份文件、第三条轨道：切分与导入设置不再住在工程文件里，而是**每个素材一份**
+ * （`state/store-types.ts` 的 `AssetMetaTable`），所以落盘、撤销、去重都自成一套
+ * （见 `store-context.ts` 里对 `metaHistory` 的订阅）。
+ * 与前两条轨道的**相互作用**只有一处：切分参与场景载荷的解析（子图的「几行几列」随载荷走），
+ * 所以它一变也要重推一次场景——与工程文件那边同一条理由。
+ */
+export const metaHistory = new DocumentHistory<AssetMetaTable>({}, { limit: 200 });
+
+/** 最近一次编辑发生在哪条轨道上（三套历史共用一个撤销入口）。 */
+export type EditTrack = "scenes" | "project" | "metas";
+
+/**
+ * 三条轨道的固定次序（`trackOrder` 的底子）。
+ *
+ * `syncHistoryFlags` 用它算「三条里有没有得撤」，所以它是一个常量数组而不是散落的字面量。
+ */
+export const EDIT_TRACKS: readonly EditTrack[] = ["scenes", "project", "metas"];
+
 let lastEditTrack: EditTrack = "scenes";
 
-/** 撤销入口要能不理泛型地操作两条轨道，所以只依赖这点共同接口。 */
+/** 撤销入口要能不理泛型地操作三条轨道，所以只依赖这点共同接口。 */
 interface EditHistory {
   readonly canUndo: boolean;
   readonly canRedo: boolean;
@@ -76,20 +95,30 @@ interface EditHistory {
   redo(): boolean;
 }
 
-/** 按「先试哪条轨道」的顺序排：最近改过的那条优先，撤完了轮到另一条。 */
-function trackOrder(preferred: EditTrack): readonly [EditTrack, EditTrack] {
-  return preferred === "project" ? ["project", "scenes"] : ["scenes", "project"];
+/**
+ * 按「先试哪条轨道」的顺序排：最近改过的那条优先，撤完了轮到另一条。
+ *
+ * 三条轨道里除最近改过的那条之外，**其余两条按固定次序**（`EDIT_TRACKS` 的顺序）：
+ * 「连续按撤销」时先沿着最近那条一路撤到底，撤空了再按固定次序接手——
+ * 语序稳定（不会因为上一条撤空而换一个「下一条」），人也好预期。
+ */
+function trackOrder(preferred: EditTrack): readonly EditTrack[] {
+  return [preferred, ...EDIT_TRACKS.filter((track) => track !== preferred)];
 }
 
 export function historyOf(track: EditTrack): EditHistory {
-  return track === "scenes" ? sceneHistory : projectHistory;
+  if (track === "scenes") {
+    return sceneHistory;
+  }
+
+  return track === "project" ? projectHistory : metaHistory;
 }
 
 /**
  * 下一次撤销 / 重做会作用在哪条轨道上。
  *
  * 菜单文案与实际执行**共用这一个判定**（`undo` / `redo` / `syncHistoryFlags` 都调它），
- * 所以「撤销 移动对象」点下去必然撤销的就是那件事。两条都没得撤时返回最近改过的那条
+ * 所以「撤销 移动对象」点下去必然撤销的就是那件事。三条都没得撤时返回最近改过的那条
  * （此时标签本来就是空的）。
  */
 export function activeTrack(action: "undo" | "redo"): EditTrack {

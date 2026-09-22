@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   CONCRETE_KINDS,
+  DOCUMENT_FORMAT_VERSION,
   FEATURE_COMPONENT,
   OBJECT_KIND_DEFS,
   OBJECT_KINDS,
@@ -153,7 +154,8 @@ describe("层级落到特性表上（features.ts）", () => {
 
     for (const kind of OBJECT_KINDS) {
       const loaded = parseSceneFile({
-        formatVersion: 22,
+        // 用**当前版本**：这一条只反映 kind 改名，不该被「版本号 +1 要回写一次」搅进来
+        formatVersion: DOCUMENT_FORMAT_VERSION,
         objects: [object(kind)],
       });
 
@@ -165,7 +167,7 @@ describe("层级落到特性表上（features.ts）", () => {
     }
 
     expect(() =>
-      parseSceneFile({ formatVersion: 22, objects: [object("Portal")] }),
+      parseSceneFile({ formatVersion: DOCUMENT_FORMAT_VERSION, objects: [object("Portal")] }),
     ).toThrow(/场景文件校验失败/);
   });
 });

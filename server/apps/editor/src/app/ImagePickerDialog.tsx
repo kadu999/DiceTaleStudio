@@ -52,7 +52,7 @@ export function ImagePickerDialog({
   allowSprite,
 }: ImagePickerDialogProps): React.JSX.Element {
   const tree = useEditorStore((state) => state.project.tree);
-  const spriteSheets = useEditorStore((state) => state.doc.spriteSheets);
+  const assetMetas = useEditorStore((state) => state.assetMetas);
   const images = listImageAssets(tree);
 
   const [selectedId, setSelectedId] = useState<string | null>(currentId ?? null);
@@ -69,7 +69,7 @@ export function ImagePickerDialog({
 
   const selected = images.find((image) => image.id === selectedId);
   const selectedSize = selectedId === null ? undefined : sizes[selectedId];
-  const sheet = spriteSheetOf(spriteSheets, selectedId ?? "");
+  const sheet = spriteSheetOf(assetMetas, selectedId === null ? undefined : { id: selectedId });
 
   /**
    * 确定：`sprite` 为 `null` = 用整张图。

@@ -7,7 +7,7 @@ import { createTempResourceRoot } from "./helpers/temp-root";
 import { FsResourceProvider } from "../src/resources/fs-provider";
 import type { LoadedConfig } from "../src/config";
 import { RuntimeHub } from "../src/ws/hub";
-import { PROJECT_FILE_NAME, listProjects, projectFileId, type ResourceTreeNode } from "@dts/resources";
+import { PROJECT_FILE_NAME, assetMetaIdOf, listProjects, projectAssetId, projectFileId, type ResourceTreeNode } from "@dts/resources";
 import { DOCUMENT_FORMAT_VERSION } from "@dts/document";
 
 /**
@@ -120,6 +120,35 @@ describe("项目 API", () => {
     // 地图只是场景里的对象、道具库存在项目文件里：不再有 maps / items 目录
     expect(folderNames).not.toContain("maps");
     expect(folderNames).not.toContain("items");
+  });
+
+  it("素材 meta：一个项目一次拿全，坏 meta 跳过，`.meta` 不进资源树", async () => {
+    await postJson("/api/projects", { name: TEST_PROJECT });
+    const imageId = projectAssetId(TEST_PROJECT, "Assets/images/A.png");
+    const guid = "a".repeat(32);
+    await provider.writeText(imageId, "png");
+    await provider.writeText(
+      assetMetaIdOf(imageId),
+      JSON.stringify({ formatVersion: 1, guid, importer: "texture" }),
+    );
+
+    // 坏 JSON：跳过（并记一条日志），不该把整次加载打掉
+    const brokenId = projectAssetId(TEST_PROJECT, "Assets/images/B.png");
+    await provider.writeText(brokenId, "png");
+    await provider.writeText(assetMetaIdOf(brokenId), "{ 这不是 JSON");
+
+    const response = await fetch(`${baseUrl}/api/projects/meta?name=${encodeURIComponent(TEST_PROJECT)}`);
+    const body = (await response.json()) as { metas: Record<string, unknown> };
+    expect(response.status).toBe(200);
+    // 键是**素材**的逻辑 ID（不是 meta 文件自己的 ID）
+    expect(Object.keys(body.metas)).toEqual([imageId]);
+    expect(body.metas[imageId]).toMatchObject({ guid, importer: "texture" });
+
+    // meta 是元数据：资源树里看不到它，但按 ID 读得到（写 meta 走的就是资源接口）
+    const nodes = await tree(TEST_PROJECT);
+    const images = nodes[0]?.children?.find((node) => node.name === "images");
+    expect((images?.children ?? []).map((node) => node.name).sort()).toEqual(["A.png", "B.png"]);
+    expect(await provider.exists(assetMetaIdOf(imageId))).toBe(true);
   });
 
   it("没有 project.json 的目录不算项目，不出现在列表里", async () => {

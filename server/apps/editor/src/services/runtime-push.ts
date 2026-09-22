@@ -1,4 +1,4 @@
-import { resolveSceneSprites, type ProjectDoc, type ProjectSettingsDoc, type SceneDoc } from "@dts/document";
+import { emptyAssetMetas, resolveSceneSprites, type AssetMetas, type ProjectSettingsDoc, type SceneDoc } from "@dts/document";
 
 /**
  * 运行态「把当前场景推给服务端」的判定与去抖。
@@ -38,20 +38,17 @@ export function shouldPushScene(decision: ScenePushDecision): boolean {
  * 用 `JSON.stringify` 而不是 `serializeSceneFile`：后者是**文件格式**（只有对象、不带场景名），
  * 而运行态要的是「场景名 + 对象」，切场景也得算一次变更。
  *
- * `spriteSheets`（工程文件里的图片切分表）是**必须传进来的**：子图引用上只写着「第几格」，
- * 「几行几列」要解析进载荷里（客户端没有工程文件）——见 `resolveSceneSprites`。
+ * `metas`（素材 meta 的索引）是**必须传进来的**：子图引用上只写着「第几格」，
+ * 「几行几列」要解析进载荷里（前端手上没有 `.meta`）——见 `resolveSceneSprites`。
  * 于是**改切分也会改变这份文本**，运行态据此把新的一款推下去（这是有意的：口径就是
  * 「改切分，所有引用它的对象一起变」）。
  */
-export function scenePayloadText(
-  scene: SceneDoc | null,
-  spriteSheets?: ProjectDoc["spriteSheets"],
-): string | null {
+export function scenePayloadText(scene: SceneDoc | null, metas: AssetMetas = emptyAssetMetas()): string | null {
   if (scene === null) {
     return null;
   }
 
-  return JSON.stringify(resolveSceneSprites(scene, spriteSheets));
+  return JSON.stringify(resolveSceneSprites(scene, metas));
 }
 
 /**
@@ -60,11 +57,8 @@ export function scenePayloadText(
  * 单独一支是因为推送要的是**对象**（直接交给 WebSocket），而比对要的是文本；
  * 两者都走 `resolveSceneSprites`，所以「发出去的」与「比过的」不可能是两份不同的数据。
  */
-export function scenePayloadOf(
-  scene: SceneDoc | null,
-  spriteSheets?: ProjectDoc["spriteSheets"],
-): SceneDoc | null {
-  return scene === null ? null : resolveSceneSprites(scene, spriteSheets);
+export function scenePayloadOf(scene: SceneDoc | null, metas: AssetMetas = emptyAssetMetas()): SceneDoc | null {
+  return scene === null ? null : resolveSceneSprites(scene, metas);
 }
 
 /**

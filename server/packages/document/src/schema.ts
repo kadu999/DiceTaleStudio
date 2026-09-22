@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { createAssetMeta, withMetaSpriteSettings, withMetaSpriteSheet } from "./asset-meta";
+import type { AssetMetaDoc } from "./asset-meta";
 import { COMPONENT_TYPES, FEATURE_COMPONENT_TYPES, componentId, hasLegacyFeatureField } from "./components";
 import {
   FEATURE_COMPONENT,
@@ -9,7 +11,6 @@ import {
   featureOfComponent,
 } from "./features";
 import { OBJECT_KINDS, type ObjectKind } from "./kinds";
-import { SPRITE_SHEET_MAX } from "./sprites";
 import {
   DOCUMENT_FORMAT_VERSION,
   SOUND_LAYERS,
@@ -18,6 +19,8 @@ import {
   type ProjectSettingsDoc,
   type SceneDoc,
   type SceneFileDoc,
+  type SpriteImportSettingsDoc,
+  type SpriteSheetDoc,
 } from "./types";
 
 /**
@@ -48,12 +51,15 @@ export const imageSpriteRefSchema = z.object({
 });
 
 /**
- * 图片引用（v20 起多了可选的 `sprite`）：资源逻辑 ID + 声明尺寸 + 「取哪一格」。
+ * 图片引用（v20 起多了可选的 `sprite`；v23 起多了可选的 `guid`）：资源逻辑 ID + 声明尺寸 + 「取哪一格」。
  *
- * `sprite` 只是一份**引用**：「几行几列」住在工程文件的 `spriteSheets` 里，只有那一份。
+ * `sprite` 只是一份**引用**：「几行几列」住在素材自己的 `.meta` 里，只有那一份。
+ * `guid` 是素材的**稳定身份**（有它就以它为准，`id` 只是「上次见到的路径」）——这里只要求
+ * 「非空字符串」：认不出的 guid 顶多查不到 meta、退回按 `id` 解析，读不开文件比画不出来更糟。
  */
 export const imageRefSchema = z.object({
   id: z.string().min(1),
+  guid: z.string().min(1).optional(),
   width: z.number().int().positive(),
   height: z.number().int().positive(),
   sprite: imageSpriteRefSchema.optional(),
@@ -348,26 +354,13 @@ export const audioMetaEntrySchema = z.object({
 export const audioTagTableSchema = z.array(z.string().nullable());
 
 /**
- * 图片切分表的一项（v20 起）：一张图按几列几行切成网格。
- *
- * 上限 `SPRITE_SHEET_MAX`（64）挡的是「没有一格可言」的坏数据；`1×1`（= 整图）**不写这项**
- * （取值由 `setSpriteSheet` 收干净），手写文件里留了一个 1×1 的项由 `validateProject` 提醒。
- */
-export const spriteSheetSchema = z.object({
-  columns: z.number().int().min(1).max(SPRITE_SHEET_MAX),
-  rows: z.number().int().min(1).max(SPRITE_SHEET_MAX),
-});
-
-export const spriteImportSettingsSchema = z.object({
-  type: z.enum(["Default", "Sprite"]),
-  mode: z.enum(["Single", "Multiple"]).optional(),
-});
-
-/**
  * 工程文件：只有项目级数据，场景在 `Assets/scenes/` 下各自成文件。
  *
- * `audioMeta` / `audioTags` / `spriteSheets` **可选且不给默认值**：缺省 = 这个项目还没整理过
- * 音频 / 还没切过图（v14 的 `video` 同一条规矩：不拿空壳冒充「有这个字段」）。
+ * `audioMeta` / `audioTags` **可选且不给默认值**：缺省 = 这个项目还没整理过音频
+ * （v14 的 `video` 同一条规矩：不拿空壳冒充「有这个字段」）。
+ *
+ * v23 起这里**没有**图片的切分与导入设置：它们搬到**素材自己的 `.meta`** 里
+ * （`asset-meta.ts`），由 `parseProjectFile` 的 v22 → v23 迁移按路径合并出来交给调用方落盘。
  */
 export const projectDocSchema = z.object({
   formatVersion: z.number().int().positive(),
@@ -380,9 +373,6 @@ export const projectDocSchema = z.object({
   audioMeta: z.record(z.string(), audioMetaEntrySchema).optional(),
   // v18 起：音频标签表（下标 = tag ID，值 = 名字）。与 audioMeta 一起构成「标签」这一套。
   audioTags: audioTagTableSchema.optional(),
-  // v20 起：图片切分表（图片逻辑 ID → 列×行）。**切分只有这一份**，对象只存「引用哪张图 + 第几格」。
-  spriteSheets: z.record(z.string(), spriteSheetSchema).optional(),
-  spriteSettings: z.record(z.string(), spriteImportSettingsSchema).optional(),
 });
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -777,6 +767,104 @@ function migrateAudioTags(raw: Record<string, unknown>): {
 }
 
 /**
+ * 老切分表的一项；认不出形状就当没有（这种坏值在 v22 的 schema 那一层本来就会被拒）。
+ *
+ * 不在这里取整 / 夹取：那是 `withMetaSpriteSheet` 的活（唯一的写入口径），
+ * 这里只把「读得懂的部分」原样交出去。
+ */
+function legacySheetOf(value: unknown): SpriteSheetDoc | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const { columns, rows } = value;
+  if (typeof columns !== "number" || typeof rows !== "number") {
+    return undefined;
+  }
+
+  return { columns, rows };
+}
+
+/** 老导入设置的一项；`type` 认不出时当没写（与「不替它猜」同一条）。 */
+function legacySettingsOf(value: unknown): SpriteImportSettingsDoc | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  if (value.type === "Default") {
+    return { type: "Default" };
+  }
+
+  if (value.type !== "Sprite") {
+    return undefined;
+  }
+
+  return value.mode === "Single" || value.mode === "Multiple"
+    ? { type: "Sprite", mode: value.mode }
+    : { type: "Sprite" };
+}
+
+/**
+ * 老导入设置说了算：**没写 / `Multiple` 才保留切分**。
+ *
+ * `Default` 与 `Single` 都不要网格切分——留着会变成「面板说是普通图片、渲染却按切分画」，
+ * 这正是 `withMetaSpriteSettings` 写路径上要摘掉的那种分叉，迁移没理由把它搬过来。
+ */
+function legacyKeepsSheet(settings: SpriteImportSettingsDoc | undefined): boolean {
+  return (
+    settings === undefined || (settings.type === "Sprite" && (settings.mode ?? "Single") === "Multiple")
+  );
+}
+
+/**
+ * v22 → v23：把工程文件里的 `spriteSheets`（路径 ID → 列×行）与 `spriteSettings`
+ * （路径 ID → 导入设置）按**同一个路径 ID** 合并成一份 meta，交给调用方写进各自素材的 `.meta`。
+ *
+ * 四条口径：
+ * - **合并只按路径 ID**：老文件里这两项是两份表、键是同一个东西（图片逻辑 ID），
+ *   所以「两张表取键的并集，每个键一份 meta」；
+ * - **导入设置说了算**（`legacyKeepsSheet`）：见那里；
+ * - **guid 现生成**：老文件里没有任何稳定身份可言——这正是要迁移的原因；
+ * - **不判断素材还在不在**：文档层没有资源树，改名留下的孤儿键照旧交给调用方按资源树过滤
+ *   （见 README 的已知不一致）。
+ *
+ * 写入复用 `withMetaSpriteSettings` / `withMetaSpriteSheet`（唯一一套写入口径），于是
+ * 「1×1 不收」「Default 不留空壳」这些规矩在迁移与日常编辑里是同一份代码。
+ */
+function migrateSpriteMetas(raw: Record<string, unknown>): {
+  readonly metas: Array<{ readonly id: string; readonly meta: AssetMetaDoc }>;
+  readonly changed: boolean;
+} {
+  const sheets = isRecord(raw.spriteSheets) ? raw.spriteSheets : {};
+  const settings = isRecord(raw.spriteSettings) ? raw.spriteSettings : {};
+  // 两项都在时字段照样要删掉：`changed` 说的是「有东西从工程文件里搬走了」
+  const changed = raw.spriteSheets !== undefined || raw.spriteSettings !== undefined;
+
+  const metas: Array<{ readonly id: string; readonly meta: AssetMetaDoc }> = [];
+  for (const id of new Set([...Object.keys(sheets), ...Object.keys(settings)])) {
+    // 空路径 ID 不可能是素材（手写文件的噪声）：跳过，不为它造一份没有归属的 meta
+    if (id.trim().length === 0) {
+      continue;
+    }
+
+    const sheet = legacySheetOf(sheets[id]);
+    const importSettings = legacySettingsOf(settings[id]);
+    let meta = createAssetMeta();
+    if (importSettings !== undefined) {
+      meta = withMetaSpriteSettings(meta, importSettings);
+    }
+
+    if (sheet !== undefined && legacyKeepsSheet(importSettings)) {
+      meta = withMetaSpriteSheet(meta, sheet);
+    }
+
+    metas.push({ id, meta });
+  }
+
+  return { metas, changed };
+}
+
+/**
  * 文件里写的 `formatVersion`（没写就按 v1 算）。
  *
  * **判断迁移不能拿它跟 `DOCUMENT_FORMAT_VERSION` 比**：版本号一涨，所有旧文件都会被
@@ -809,6 +897,11 @@ export interface ProjectFileLoad {
   readonly doc: ProjectDoc;
   /** 旧版工程文件里内联的场景：调用方需要把它们写成 scenes/ 下的独立文件。 */
   readonly migratedScenes: readonly SceneDoc[];
+  /**
+   * v22 → v23 迁移搬出来的素材 meta（`id` = 素材的路径 ID）：调用方要把每一份写进
+   * `<素材>.meta`（没有就新建）。**文档层不判断素材还在不在**——孤儿键由调用方按资源树过滤。
+   */
+  readonly migratedMetas: ReadonlyArray<{ readonly id: string; readonly meta: AssetMetaDoc }>;
   /** 工程文件是旧版本，需要按新格式回写。 */
   readonly needsRewrite: boolean;
 }
@@ -831,6 +924,10 @@ export function parseProjectFile(raw: unknown): ProjectFileLoad {
   const tags = isRecord(bgm.raw)
     ? migrateAudioTags(bgm.raw)
     : { raw: bgm.raw, changed: false };
+  // v23：图片的切分 / 导入设置搬进素材自己的 `.meta`（同样要留下搬走了什么）
+  const spriteMetas = isRecord(tags.raw)
+    ? migrateSpriteMetas(tags.raw)
+    : { metas: [], changed: false };
   const result = projectDocSchema.safeParse(tags.raw);
   if (!result.success) {
     throw new Error(`项目文档校验失败: ${formatIssues(result.error)}`);
@@ -851,13 +948,14 @@ export function parseProjectFile(raw: unknown): ProjectFileLoad {
     settingsFilled ||
     bgm.changed ||
     tags.changed ||
+    spriteMetas.changed ||
     result.data.formatVersion < DOCUMENT_FORMAT_VERSION;
   const doc = migrateProjectDoc({
     ...(result.data as ProjectDoc),
     ...(needsRewrite ? { formatVersion: DOCUMENT_FORMAT_VERSION } : {}),
   });
 
-  return { doc, migratedScenes, needsRewrite };
+  return { doc, migratedScenes, migratedMetas: spriteMetas.metas, needsRewrite };
 }
 
 /** 读工程文件，只要项目级数据（调用方不关心迁移时用它）。 */

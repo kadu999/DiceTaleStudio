@@ -52,11 +52,10 @@ export function SpriteSheetPanel({
   onCellChange,
   mode = "object",
 }: SpriteSheetPanelProps): React.JSX.Element {
-  const spriteSheets = useEditorStore((state) => state.doc.spriteSheets);
   const setSpriteSheet = useEditorStore((state) => state.setSpriteSheet);
   const scenes = useEditorStore((state) => state.scenes);
 
-  const stored = spriteSheets?.[imageId];
+  const stored = useEditorStore((state) => state.assetMetas.byId[imageId]?.sprite?.sheet);
   const sheet = normalizeSpriteSheet(stored ?? { columns: 1, rows: 1 });
   const trivial = sheet.columns <= 1 && sheet.rows <= 1;
   // 有多少个对象正在用这张图切出来的格子（清掉切分之前要说清楚会牵连谁）
