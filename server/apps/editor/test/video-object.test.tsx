@@ -66,7 +66,7 @@ function mapWith(video?: VideoDataDoc, id = "map-1"): SceneObjectDoc {
 }
 
 function textureWith(video?: VideoDataDoc, id = "tex-1"): SceneObjectDoc {
-  const object = createSceneObject({ id, name: "贴图", kind: "Texture" });
+  const object = createSceneObject({ id, name: "贴图", kind: "Image" });
   return video === undefined ? object : withFeature(object, FEATURE_COMPONENT.video, video);
 }
 

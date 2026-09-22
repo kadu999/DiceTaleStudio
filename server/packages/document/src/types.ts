@@ -1,4 +1,8 @@
 import type { RleRun } from "@dts/grid";
+// 对象类型与它们的层级住在 `kinds.ts`（那张表是「谁是谁的子类型」的唯一归属地）。
+// **只 import 不转出口**：barrel 里 `./kinds` 已经把它导出去了，两处都 `export *`
+// 会让这个同名类型变成「来源不明」，TS 会直接报重名。
+import type { ObjectKind } from "./kinds";
 
 /**
  * 编辑器文档模型。
@@ -65,8 +69,16 @@ import type { RleRun } from "@dts/grid";
  * - 视频那一组从**精灵**挪到**贴图**（`OBJECT_FEATURES` 里 `video` 的 kinds）：
  *   旧文件里精灵身上的 `VideoOverlay` **不删**（不静默改用户数据），只由 `validateScene` 报一条警告。
  *   协议侧同步升到 v11（新增组件名 `SpriteLayer` / `ImageLayer`，老前端不认会把对象画成占位色）。
+ *
+ * v22（2026-09-23）：**两种实体的 kind 各归其位，并给对象类型立了层级**——`SceneObject`
+ * 从此是**抽象基类**（老文件里写这个值的对象就是当时的「精灵」，由 `renameObjectKinds`
+ * 改成 `Sprite`），`Sprite`（精灵）与 `Image`（贴图，v21 时叫 `Texture`）是它的子类型；
+ * 「凡场景对象都有的东西」（现在只有一张显示图）因此只声明一次，子类型继承下去
+ * （层级住在 `kinds.ts`，判据走 `kindIsA`）。数据形状一个字没动，改名与层级都不动内容。
+ * 协议侧同步升到 v12：老前端（v11）不认这两个值，占位色会退成灰（图照常显示，因为
+ * 显示走组件名）——属于「不是崩，是画面错」，按同一条纪律靠握手挡住。
  */
-export const DOCUMENT_FORMAT_VERSION = 21;
+export const DOCUMENT_FORMAT_VERSION = 22;
 
 /** 网格行序：`bottom-up` 表示 cells 第 0 行是图片最下面一行（与 Unity GridMap 一致）。 */
 export type RowOrder = "bottom-up";
@@ -185,34 +197,8 @@ export interface ComponentDoc {
   readonly actions: ActionInstanceDoc[];
 }
 
-/**
- * 对象类型。
- *
- * 前四种对齐前端 `BackendObjectKind`；后三种是**编辑器侧新增的**：
- * - `Map`：地图就是场景里的一个对象，携带贴图与网格数据；
- * - `PlaySound`：**动作对象**（弹框里「动作」种类下的「播放声音」），基础属性与实体一样，
- *   另带「播什么 + 哪个层级」；画布上画一枚**固定的内置音频图标**（不给换贴图），
- *   编辑器**不播放**——出声是前端的事；
- * - `Teleport`：**动作对象**里的「传送阵」，另带「传送到哪一张场景」；画布上同样是
- *   **固定的内置徽标**（不给换贴图）。触发它 = **切换当前场景**（对 DM 就是「换台」），
- *   所以它**不需要新协议命令**：切场景本来就是编辑器的事，整份 `scene_push` 下去前端就换了。
- * - `Texture`：**实体**里的「贴图」——**只负责把一张图渲染出来**，比「精灵」少一样东西：
- *   它**不引用图集里的格子**（`ImageRef.sprite` 那一套）。两者的数据形状相同
- *   （都是一份 `ImageRef`），只是**分开用两个组件**：贴图 `ImageLayer`、精灵 `SpriteLayer`
- *   ——精灵的图会取图集里的一格，贴图的图整张铺满，组件名把这条差别写死在数据里。
- *   编辑器里贴图入口的选择图片弹框也不给右侧切分面板（见 `ImagePickerDialog` 的 `allowSprite`）。
- *   反过来，**视频这一组只有地图与贴图有**（`OBJECT_FEATURES` 里 `video` 的 kinds）：
- *   视频是「盖在这个对象自己的矩形上的一条片」，给贴图正是它的用法。
- */
-export type ObjectKind =
-  | "Map"
-  | "SceneObject"
-  | "Player"
-  | "Item"
-  | "Event"
-  | "PlaySound"
-  | "Teleport"
-  | "Texture";
+// 对象类型（`ObjectKind`）与它们的层级住在 `kinds.ts`：那张表是「谁是谁的子类型」的
+// 唯一归属地，本文件只在 `SceneObjectDoc.kind` 上用到它。
 
 /** 地图对象携带的数据（贴图 + 网格）。 */
 export interface MapDataDoc {

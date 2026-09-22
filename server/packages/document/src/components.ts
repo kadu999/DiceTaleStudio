@@ -1,7 +1,8 @@
 import type { FieldDef } from "./fields";
 import { defaultDataFromFields } from "./fields";
 import { FEATURE_COMPONENT, SPRITE_COMPONENT, kindsCarrying, type ObjectFeatureField } from "./features";
-import type { ComponentDoc, ObjectKind } from "./types";
+import type { ObjectKind } from "./kinds";
+import type { ComponentDoc } from "./types";
 
 /**
  * 组件注册表。

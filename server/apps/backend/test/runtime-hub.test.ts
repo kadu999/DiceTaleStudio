@@ -138,7 +138,7 @@ function sampleScene(name: string, spriteActive: boolean): ScenePayload {
       {
         id: "sprite_01",
         name: "木门",
-        kind: "SceneObject",
+        kind: "Sprite",
         active: spriteActive,
         sortingOrder: 0,
         position: { x: -345, y: 118 },

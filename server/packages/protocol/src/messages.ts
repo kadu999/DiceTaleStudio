@@ -73,8 +73,14 @@ import { z } from "zod";
  * `SpriteLayer`；`kind` 多了一个 `Texture`（**kind 是自由字符串，这一项不破坏兼容**）。
  * 老前端（v10）不认这两个新组件名，会把对象画成占位色（图取不到），所以必须 +1。
  * **命令那一组仍然一个字节都没动。**
+ *
+ * v12（2026-09-23）：**两种实体的 kind 改名**（与文档格式 v22 同一批）——贴图 `Texture` →
+ * `Image`、精灵 `SceneObject` → `Sprite`（`SceneObject` 这个值不再出现）。
+ * 数据形状一个字节都没动，`kind` 也只是自由字符串；但**老前端（v11）不认这两个值**，
+ * `KindColor` 匹配不上会退回灰色占位色——图照常显示（显示走组件名），属于「不是崩，是画面错」，
+ * 按同一条纪律 +1。**命令那一组仍然一个字节都没动。**
  */
-export const PROTOCOL_VERSION = 11;
+export const PROTOCOL_VERSION = 12;
 
 /** 未进入运行态时拒绝 `/client` 升级的 HTTP 状态与原因头。 */
 export const RUNTIME_INACTIVE_STATUS = 503;
@@ -354,7 +360,8 @@ export const sceneComponentSchema = z.union([
 /**
  * 场景对象（三端同构的那一个对象）。
  *
- * `kind`：`Map` / `SceneObject` / `Player` / `Item` / `Event` / `PlaySound` / `Teleport` / `Texture`。
+ * `kind`：`Map` / `Sprite` / `Player` / `Item` / `Event` / `PlaySound` / `Teleport` / `Image`
+ * （v22 起贴图叫 `Image`、精灵叫 `Sprite`，见 `PROTOCOL_VERSION` 的 v12 那一条）。
  * 它是**自由字符串**（不是枚举）：加一种对象类型不需要动协议，老前端照常镜像。
  * **v9 起 `kind` 只是「创建原型」标签**（列表归类、占位色），**不再决定行为**：
  * 「这个对象有什么」全看 `components`——前端据此决定建不建可见物、建哪几层。

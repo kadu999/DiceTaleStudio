@@ -95,7 +95,7 @@ function plainObject(id: string, patch: Partial<SceneObjectDoc> = {}): SceneObje
   return {
     id,
     name: id,
-    kind: "SceneObject",
+    kind: "Sprite",
     active: true,
     sortingOrder: 0,
     position: null,
@@ -740,7 +740,7 @@ describe("对象命令（都在场景上操作）", () => {
   it("isPositionableObject 早就不在了；对象图片：地图在 map.image，精灵在 image", () => {
     const sprite = createSceneObject({
       name: "精灵",
-      kind: "SceneObject",
+      kind: "Sprite",
       position: { x: 0, y: 0 },
     });
     expect(objectImage(sprite)).toBeUndefined();
@@ -1314,6 +1314,7 @@ describe("工程文件 schema 与版本迁移", () => {
             {
               id: "door",
               name: "木门",
+              // 那时「普通场景对象」写的就是基类这个名字（v22 起改成 `Sprite`，见下面那条断言）
               kind: "SceneObject",
               position: null,
               rotation: 0,
@@ -1332,8 +1333,8 @@ describe("工程文件 schema 与版本迁移", () => {
 
     const scene = loaded.migratedScenes[0];
     expect(scene?.name).toBe("Map001");
-    // 原来的地图数据被搬到一个 Map 对象上，原有对象保持不动
-    expect(scene?.objects.map((object) => object.kind)).toEqual(["Map", "SceneObject"]);
+    // 原来的地图数据被搬到一个 Map 对象上，原有对象保持不动（只有 kind 被 v22 改成具体类型）
+    expect(scene?.objects.map((object) => object.kind)).toEqual(["Map", "Sprite"]);
     expect(mapDataOf(scene!.objects[0]!)?.image).toEqual(IMAGE);
     expect(scene?.objects[1]?.id).toBe("door");
 
@@ -1407,7 +1408,7 @@ describe("场景文件 schema", () => {
         {
           id: "door",
           name: "木门",
-          kind: "SceneObject",
+          kind: "Sprite",
           // 旧格式：左上为原点、y 向下
           position: { x: 0.25, y: 0.25 },
           rotation: 0,
@@ -1463,7 +1464,7 @@ describe("场景文件 schema", () => {
         {
           id: "door",
           name: "木门",
-          kind: "SceneObject",
+          kind: "Sprite",
           position: { x: 10, y: 20 },
           rotation: 0,
           components: [],
@@ -1489,7 +1490,7 @@ describe("场景文件 schema", () => {
         {
           id: "door",
           name: "木门",
-          kind: "SceneObject",
+          kind: "Sprite",
           active: true,
           sortingOrder: 0,
           position: { x: 10, y: 20 },
@@ -1515,7 +1516,7 @@ describe("场景文件 schema", () => {
         {
           id: "door",
           name: "木门",
-          kind: "SceneObject",
+          kind: "Sprite",
           active: true,
           sortingOrder: 0,
           position: { x: 10, y: 20 },
@@ -1700,7 +1701,7 @@ describe("场景文件 schema", () => {
         {
           id: "door",
           name: "木门",
-          kind: "SceneObject",
+          kind: "Sprite",
           position: { x: 1, y: 1 },
           rotation: 0,
           components: [],
@@ -1720,7 +1721,7 @@ describe("场景文件 schema", () => {
         {
           id: "door",
           name: "木门",
-          kind: "SceneObject",
+          kind: "Sprite",
           position: { x: 1.5, y: -0.2 },
           rotation: 0,
           components: [],

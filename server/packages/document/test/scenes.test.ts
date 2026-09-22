@@ -67,7 +67,7 @@ describe("场景内容命令", () => {
       addObject(draft, {
         id: "door",
         name: "木门",
-        kind: "SceneObject",
+        kind: "Sprite",
         active: true,
         sortingOrder: 0,
         position: { x: -288, y: 108 },
@@ -99,7 +99,7 @@ describe("对象命名（连续创建与复制共用）", () => {
       objects: names.map((name, index) => ({
         id: `obj_${index}`,
         name,
-        kind: "SceneObject" as const,
+        kind: "Sprite" as const,
         active: true,
         sortingOrder: 0,
         position: null,

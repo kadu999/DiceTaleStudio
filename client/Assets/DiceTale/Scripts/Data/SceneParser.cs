@@ -57,7 +57,9 @@ namespace DiceTale
             {
                 id = JsonParser.GetString(node, "id") ?? "",
                 name = JsonParser.GetString(node, "name") ?? "",
-                kind = JsonParser.GetString(node, "kind") ?? "SceneObject",
+                // 缺 `kind` 是**协议不允许**的（`kind` 必填非空），这里的兜底只为「手写载荷」留一条路：
+                // 按精灵算（后台那边 `SceneObject` 是抽象基类、不落进数据，最接近的具体类型就是它）
+                kind = JsonParser.GetString(node, "kind") ?? "Sprite",
                 active = JsonParser.GetBool(node, "active", true),
                 sortingOrder = (int)JsonParser.GetNumber(node, "sortingOrder"),
                 rotation = (float)JsonParser.GetNumber(node, "rotation"),

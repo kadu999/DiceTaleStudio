@@ -71,7 +71,7 @@ function mapObject(id = "map-1"): SceneObjectDoc {
 
 /** 一张贴图（另一个合法宿主，v21 起取代精灵）。 */
 function textureObject(id = "tex-1"): SceneObjectDoc {
-  return createSceneObject({ id, name: "贴图", kind: "Texture" });
+  return createSceneObject({ id, name: "贴图", kind: "Image" });
 }
 
 /** 一个精灵（**不再是**视频宿主：它的渲染选项归「渲染」那一组）。 */
@@ -82,8 +82,8 @@ function spriteObject(id = "sprite-1"): SceneObjectDoc {
 describe("视频：哪些对象能带", () => {
   it("只有地图与贴图能放视频；精灵与动作对象不行", () => {
     expect(supportsVideo("Map")).toBe(true);
-    expect(supportsVideo("Texture")).toBe(true);
-    expect(supportsVideo("SceneObject")).toBe(false);
+    expect(supportsVideo("Image")).toBe(true);
+    expect(supportsVideo("Sprite")).toBe(false);
     expect(supportsVideo("PlaySound")).toBe(false);
     expect(supportsVideo("Teleport")).toBe(false);
     expect(supportsVideo("Player")).toBe(false);

@@ -472,7 +472,8 @@ namespace DiceTale
         /// 没有图时的占位色（按对象种类区分，一眼看出「这儿有个对象」）。
         ///
         /// 没有 `PlaySound` / `Teleport` 分支：动作对象**根本不建视图**（见 <see cref="NeedsView"/>），
-        /// 永远走不到这里——写了也是死代码。
+        /// 永远走不到这里——写了也是死代码。也没有基类 `SceneObject` 分支：它是抽象类型，
+        /// 不会出现在数据里（老前端收到别的新值时，落到下面那个灰色兜底）。
         /// </summary>
         private static Color KindColor(string kind)
         {
@@ -480,11 +481,12 @@ namespace DiceTale
             {
                 case "Map":
                     return new Color(0.25f, 0.35f, 0.30f, 0.85f);
-                // 精灵与贴图分开（v21）：两者都显示一张图，差别是精灵取图集里的一格。
-                // 占位色只在这一张图还没取回来的那几百毫秒里看得见，但它是「这个对象是什么」的唯一提示
-                case "SceneObject":
+                // 精灵与贴图分开（v21 起两种图片组件，v22 起两个 kind）：两者都显示一张图，
+                // 差别是精灵取图集里的一格。占位色只在这一张图还没取回来的那几百毫秒里看得见，
+                // 但它是「这个对象是什么」的唯一提示
+                case "Sprite":
                     return new Color(0.31f, 0.61f, 0.98f, 0.85f);
-                case "Texture":
+                case "Image":
                     return new Color(0.75f, 0.52f, 0.99f, 0.85f);
                 case "Player":
                     // 橙：与精灵的蓝（0.31,0.61,0.98）、贴图的紫、道具的黄都拉开

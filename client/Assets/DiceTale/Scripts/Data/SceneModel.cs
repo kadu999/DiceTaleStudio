@@ -23,8 +23,12 @@ namespace DiceTale
         /// <summary>
         /// 对象种类。**只是「创建原型」标签**（占位色 / 排查用）：v9 起「这个对象有什么」
         /// 一律看 <see cref="components"/>，行为不再由 kind 决定（见 <see cref="SceneObjectView.NeedsView"/>）。
+        ///
+        /// 后台那边 `SceneObject` 是**抽象基类**（v22 起），精灵 `Sprite` 与贴图 `Image` 都继承它，
+        /// 而它自己不落进数据——所以这里的缺省值取具体类型 `Sprite`，
+        /// <see cref="SceneObjectView.KindColor"/> 也只为具体类型配色。
         /// </summary>
-        public string kind = "SceneObject";
+        public string kind = "Sprite";
 
         /// <summary>是否激活：不激活的对象前端也不显示（与编辑器那个勾选框同一件事）。</summary>
         public bool active = true;
@@ -60,7 +64,7 @@ namespace DiceTale
         public MirrorSound sound;
 
         /// <summary>
-        /// 地图 / 贴图能带视频（`Map` / `Texture`，v21 起）：加进来的视频 + 选中的那条 + 循环 / 声音。
+        /// 地图 / 贴图能带视频（`Map` / `Image`，v21 起）：加进来的视频 + 选中的那条 + 循环 / 声音。
         ///
         /// 为 null = 这个对象不放视频（没加过，或这份场景来自还没这个字段的旧编辑器）。
         /// </summary>
@@ -166,7 +170,7 @@ namespace DiceTale
     }
 
     /// <summary>
-    /// 地图 / 精灵上的**视频**（v14 起）：一组视频 + 选中的那条 + 循环 / 声音两个开关。
+    /// 地图 / 贴图上的**视频**（v14 起）：一组视频 + 选中的那条 + 循环 / 声音两个开关。
     ///
     /// 前端放的永远是 <see cref="picked"/> 那一条（命令 `play_video` 只给 `objectId`）：
     /// 命令是触发器，数据在镜像里。视频画面盖在**这个对象自己的矩形**上，见

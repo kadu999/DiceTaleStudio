@@ -240,7 +240,7 @@ describe("声音对象的命令", () => {
     const door: SceneObjectDoc = {
       id: "door",
       name: "木门",
-      kind: "SceneObject",
+      kind: "Sprite",
       active: true,
       sortingOrder: 0,
       position: { x: 0, y: 0 },
@@ -338,7 +338,7 @@ describe("声音对象的校验", () => {
     const door: SceneObjectDoc = {
       id: "door",
       name: "木门",
-      kind: "SceneObject",
+      kind: "Sprite",
       active: true,
       sortingOrder: 0,
       position: null,
@@ -364,7 +364,7 @@ describe("声音对象的校验", () => {
 
     const issues = validateScene(sceneWith([door, soundWithImage]));
     expect(hasErrors(issues)).toBe(false);
-    expect(formatIssues(issues)).toMatch(/非声音对象（kind=SceneObject）不应携带声音数据/);
+    expect(formatIssues(issues)).toMatch(/非声音对象（kind=Sprite）不应携带声音数据/);
     expect(formatIssues(issues)).toMatch(/声音对象用固定的内置图标（不允许改贴图）/);
   });
 

@@ -198,7 +198,7 @@ describe("契约：协议与文档的组件口径一致", () => {
         {
           id: "sprite_1",
           name: "精灵",
-          kind: "SceneObject",
+          kind: "Sprite",
           active: true,
           locked: false,
           sortingOrder: 0,

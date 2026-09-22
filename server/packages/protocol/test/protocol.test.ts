@@ -63,7 +63,7 @@ function sampleScene(): ScenePayload {
       {
         id: "sprite_01",
         name: "木门",
-        kind: "SceneObject",
+        kind: "Sprite",
         active: false,
         locked: false,
         sortingOrder: 0,
@@ -254,7 +254,7 @@ describe("协议：场景（镜像的那份对象数据）", () => {
         {
           id: "a",
           name: "a",
-          kind: "SceneObject",
+          kind: "Sprite",
           active: true,
           sortingOrder: 0,
           position: null,
@@ -278,7 +278,7 @@ describe("协议：场景（镜像的那份对象数据）", () => {
         {
           id: "a",
           name: "a",
-          kind: "SceneObject",
+          kind: "Sprite",
           active: true,
           sortingOrder: 0,
           position: { x: 0, y: 0 },
@@ -297,7 +297,7 @@ describe("协议：场景（镜像的那份对象数据）", () => {
         {
           id: "a",
           name: "a",
-          kind: "SceneObject",
+          kind: "Sprite",
           active: true,
           sortingOrder: 0,
           position: { x: 0, y: 0 },
@@ -319,7 +319,7 @@ describe("协议：场景（镜像的那份对象数据）", () => {
         {
           id: "a",
           name: "a",
-          kind: "SceneObject",
+          kind: "Sprite",
           active: true,
           sortingOrder: 0,
           position: { x: 0, y: 0 },

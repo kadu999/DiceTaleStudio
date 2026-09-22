@@ -11,11 +11,19 @@ import { FEATURE_COMPONENT, carriesKind, type ObjectKind } from "@dts/document";
  * - 场景对象面板**按种类过滤**，所以每个 `kind` 都要有归属，不能留没种类的类型。
  *
  * **每个类型自带 `id` 与 `label`，不要拿 `kind` 当它们用**：
- * - 「网格地图」「精灵」「贴图」是三个**显示名不同的实体类型**；它们落进文档的 `kind` 是
- *   文档级的值——网格地图与精灵都是 `SceneObject`、贴图是 `Texture`，所以同一个 kind 可以在
- *   表里出现多次，而名字是**每个类型自己的**。
+ * - 「网格地图」「精灵」「贴图」是三个**显示名不同的实体类型**，落进文档的 `kind` 是
+ *   文档级的值——网格地图 `Map`、精灵 `Sprite`、贴图 `Image`（v22 起：精灵以前写的是基类
+ *   `SceneObject`、贴图以前叫 `Texture`），所以同一个 kind 可以在表里出现多次（现在没有，
+ *   但表的设计允许），而名字是**每个类型自己的**。
  * - 弹框的瓦片 key / 选中态一律用 `id`（用 `kind` 会让同 kind 的两个瓦片共用 key、点一个
- *   另一个跟着亮），名字用 `label`（`KIND_LABELS[kind]` 拿不到这种「同 kind 两个名字」的信息）。
+ *   另一个跟着亮），名字用 `label`（`KIND_LABELS[kind]` 给的是 kind 的规范名，
+ *   不一定等于瓦片上的名字）。
+ *
+ * **`SceneObject` 只作为归类项留在表里**（`creatable: false`）：它是对象类型的**基类**
+ * （层级在 `@dts/document` 的 `kinds.ts`），精灵与贴图继承它——没有对象会带着这个 kind
+ * 落进文档（老文件里的由 v22 迁移改成 `Sprite`）。留在表里是为了两条既有规矩：
+ * **每个 kind 都要有种类归属**（面板按种类过滤，手写文件里真出现这个值时不能凭空消失），
+ * 以及 `KIND_LABELS` 是 `Record<ObjectKind, string>`（少一个键就编译不过）。
  *
  * 「播放声音」是**动作**种类下的第一个对象：`kind: "PlaySound"` 是编辑器侧新增的
  * （前端要认它，但**不为它建可见物**——动作对象只留数据，见 README 的契约一节）。
@@ -26,7 +34,7 @@ import { FEATURE_COMPONENT, carriesKind, type ObjectKind } from "@dts/document";
  * 画布上，前端不建可见物），另带「传送到哪一张场景」。触发它 = **切换当前场景**（编辑器 →
  * 整份 `scene_push` → 前端换镜像），所以它**不需要新协议命令**。
  *
- * 「贴图」是实体种类下的第三个：`kind: "Texture"`，**只负责把一张图渲染出来**——和精灵一样挑一张图
+ * 「贴图」是实体种类下的第三个：`kind: "Image"`，**只负责把一张图渲染出来**——和精灵一样挑一张图
  * 显示，唯一的区别是它**不引用图集里的格子**（选择图片弹框不给右侧切分面板，见 `ImagePickerDialog`
  * 的 `allowSprite`）。数据上两者用**不同的图片组件**（贴图 `ImageLayer`、精灵 `SpriteLayer`），
  * 而「视频」那一组只对地图与贴图出现（`supportsVideo`）。
@@ -54,10 +62,13 @@ export const OBJECT_CATEGORIES: readonly ObjectCategoryDef[] = [
     label: "实体",
     objects: [
       { id: "Map", kind: "Map", label: "网格地图", creatable: true },
-      // 精灵 = 场景里的普通对象（复用 SceneObject kind），显示「精灵」
-      { id: "SceneObject", kind: "SceneObject", label: "精灵", creatable: true },
-      // 贴图 = 只显示一张图（不切子图）。kind 是编辑器侧新增的 `Texture`，前端按它给占位色
-      { id: "Texture", kind: "Texture", label: "贴图", creatable: true },
+      // 精灵 = 场景对象这条线上的具体类型（v22 起有自己的 kind `Sprite`；以前写的是基类 `SceneObject`）
+      { id: "Sprite", kind: "Sprite", label: "精灵", creatable: true },
+      // 贴图 = 只显示一张图（不切子图）。kind 是编辑器侧新增的 `Image`（v21 时叫 `Texture`），前端按它给占位色
+      { id: "Image", kind: "Image", label: "贴图", creatable: true },
+      // 基类本身不可创建：没有「什么都不指定」的对象，落进文档的永远是具体类型。
+      // 它只参与归类（手写文件里真写了这个值时，面板照样把它列在实体里）
+      { id: "SceneObject", kind: "SceneObject", label: "场景对象", creatable: false },
       { id: "Player", kind: "Player", label: "玩家", creatable: false },
       { id: "Item", kind: "Item", label: "道具", creatable: false },
     ],
@@ -109,9 +120,11 @@ export function badgeIconOf(kind: ObjectKind): "audio" | "teleport" | undefined 
 
 /** 对象类型的展示名（弹框的瓦片、面板的提示共用）。**只有这里写中文**，代码一律用英文。 */
 export const KIND_LABELS: Record<ObjectKind, string> = {
+  // 基类：它不落进文档，所以这个名字只可能在「手写文件写了这个值」时露出来
+  SceneObject: "场景对象",
+  Sprite: "精灵",
+  Image: "贴图",
   Map: "网格地图",
-  SceneObject: "精灵",
-  Texture: "贴图",
   Player: "玩家",
   Item: "道具",
   Event: "事件",

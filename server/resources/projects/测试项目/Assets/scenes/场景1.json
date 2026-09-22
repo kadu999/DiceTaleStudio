@@ -1,5 +1,5 @@
 {
-  "formatVersion": 21,
+  "formatVersion": 22,
   "objects": [
     {
       "id": "map_mu6uln3x1l7fg",
@@ -338,24 +338,28 @@
     {
       "id": "obj_mu72r20g1mvao",
       "name": "精灵",
-      "kind": "SceneObject",
+      "kind": "Sprite",
       "active": true,
       "sortingOrder": 1,
       "locked": false,
       "position": {
-        "x": -605.3508237304383,
-        "y": 53.06357309566075
+        "x": -596.029508686826,
+        "y": 119.78948145825444
       },
       "rotation": 0,
-      "scale": 1,
+      "scale": 0.1,
       "components": [
         {
           "id": "obj_mu72r20g1mvao__SpriteLayer",
           "type": "SpriteLayer",
           "data": {
-            "id": "project:测试项目/Assets/images/Bridge.png",
-            "width": 256,
-            "height": 256
+            "id": "project:测试项目/Assets/images/20260922-141038.png",
+            "width": 2048,
+            "height": 2048,
+            "sprite": {
+              "column": 0,
+              "row": 1
+            }
           },
           "actions": []
         }
@@ -422,16 +426,16 @@
     {
       "id": "obj_muce2oqy1azuw",
       "name": "贴图",
-      "kind": "Texture",
+      "kind": "Image",
       "active": true,
       "sortingOrder": 1,
+      "locked": true,
       "position": {
         "x": -108.74,
         "y": -56.6
       },
       "rotation": -0.2617993877991494,
       "scale": 1,
-      "locked": true,
       "components": [
         {
           "id": "obj_muce2oqy1azuw__ImageLayer",

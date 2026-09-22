@@ -24,7 +24,7 @@ function mapObject(): SceneObjectDoc {
 
 /** 贴图（v21 起取代精灵成为视频的另一个宿主）。 */
 function textureObject(): SceneObjectDoc {
-  return createSceneObject({ id: "tex-1", name: "贴图", kind: "Texture" });
+  return createSceneObject({ id: "tex-1", name: "贴图", kind: "Image" });
 }
 
 function seedScene(objects: SceneObjectDoc[], selected: readonly string[]): void {

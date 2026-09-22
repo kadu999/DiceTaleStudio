@@ -67,7 +67,7 @@ async function openSprite(page: Page, request: APIRequestContext): Promise<strin
   await seedProjectDoc(request, project, [
     sceneDoc(SCENE, [
       withComponent(
-        sceneObjectDoc(SPRITE, "SceneObject", { x: 0, y: 0 }),
+        sceneObjectDoc(SPRITE, "Sprite", { x: 0, y: 0 }),
         COMPONENT.spriteLayer,
         { id: `project:${project}/${IMAGE_PATH}`, width: SIZE.width, height: SIZE.height },
       ),

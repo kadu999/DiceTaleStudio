@@ -207,7 +207,7 @@ describe("属性面板：候选小方块 + ＋ + 传送", () => {
   });
 
   it("普通对象没有「传送」那一组", () => {
-    seedScene([{ ...teleport([A], A), kind: "SceneObject" }]);
+    seedScene([{ ...teleport([A], A), kind: "Sprite" }]);
     render(<InspectorPanel />);
 
     expect(screen.queryByTestId("teleport-go")).toBeNull();
@@ -315,7 +315,7 @@ describe("触发传送：按一下换台（不改文档）", () => {
   });
 
   it("不是传送阵：拒绝（拿着 id 乱调也进不去）", () => {
-    const door: SceneObjectDoc = { ...teleport([A], A), kind: "SceneObject" };
+    const door: SceneObjectDoc = { ...teleport([A], A), kind: "Sprite" };
     seedScene([door]);
 
     expect(useEditorStore.getState().teleport("teleport-1")).toBe(false);

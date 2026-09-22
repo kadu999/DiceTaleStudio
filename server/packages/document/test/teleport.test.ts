@@ -164,7 +164,7 @@ describe("setTeleportTargets：加 / 移候选场景", () => {
   it("非传送阵对象：改不动（返回 false）", () => {
     const door: SceneObjectDoc = {
       ...createTeleportObject({ name: "木门", id: "d1" }),
-      kind: "SceneObject",
+      kind: "Sprite",
     };
     const scene = sceneWith([door]);
 
@@ -230,7 +230,7 @@ describe("传送阵的解析与版本", () => {
         {
           id: "door",
           name: "木门",
-          kind: "SceneObject",
+          kind: "Sprite",
           position: null,
           rotation: 0,
           scale: 1,
@@ -361,7 +361,7 @@ describe("传送阵的校验", () => {
   it("非传送阵对象带了传送数据会被提醒", () => {
     const door: SceneObjectDoc = {
       ...createTeleportObject({ name: "木门", id: "d1" }),
-      kind: "SceneObject",
+      kind: "Sprite",
       components: [featureComponent("d1", FEATURE_COMPONENT.teleport, { targets: [A] })],
     };
 

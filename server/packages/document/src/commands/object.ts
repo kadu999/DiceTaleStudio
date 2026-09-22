@@ -5,10 +5,10 @@ import { FEATURE_COMPONENT, componentForKind, displayImageField } from "../featu
 import { mapDataOf, objectImage, writeFeature } from "../access";
 import { DEFAULT_OBJECT_SCALE, clampObjectScale, collapseScale } from "../scale";
 import { DEFAULT_SORTING_ORDER, createId, findObject } from "./shared";
+import type { ObjectKind } from "../kinds";
 import type {
   ImageRef,
   ImageSpriteRef,
-  ObjectKind,
   SceneDoc,
   SceneObjectDoc,
   WorldPosition,
@@ -33,12 +33,15 @@ export interface CreateObjectInput {
 
 /**
  * 新建普通对象（地图对象请用工厂的 `createMapObject`，它要带地图数据）。
+ *
+ * 缺省 `kind` 是**精灵** `Sprite`：`SceneObject` 是抽象基类（不落进文档），
+ * 而「一个还没细看的场景对象」最接近的就是它——能挂一张图、能取图集里的一格。
  */
 export function createSceneObject(input: CreateObjectInput): SceneObjectDoc {
   return {
     id: input.id ?? createId("obj"),
     name: input.name,
-    kind: input.kind ?? "SceneObject",
+    kind: input.kind ?? "Sprite",
     active: true,
     sortingOrder: DEFAULT_SORTING_ORDER,
     position: input.position ?? null,

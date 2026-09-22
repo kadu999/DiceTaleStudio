@@ -58,16 +58,23 @@ namespace DiceTale
         /// `kind` 多了一个 `Texture`（它是自由字符串，这一项本身不破坏兼容）。
         /// 老前端（v10）不认这两个新组件名 → 图取不到、只画一块占位色，所以必须 +1。
         /// **命令那一组仍然一个字节都没动**（这只是数据换了组件名）。
+        ///
+        /// v12（2026-09-23）：**两种实体的 kind 改名**——贴图 `Texture` → `Image`、
+        /// 精灵 `SceneObject` → `Sprite`（后台那边 `SceneObject` 从此是**抽象基类**：
+        /// 精灵与贴图都继承它，它自己不再出现在数据里）。
+        /// 数据形状一个字节都没动，`kind` 也只是自由字符串；但**老前端（v11）不认这两个值**，
+        /// 占位色会退回灰色（图照常显示——显示走组件名），属于「不是崩，是画面错」，
+        /// 按同一条纪律 +1。**命令那一组仍然一个字节都没动。**
         /// </summary>
-        public const int Version = 11;
+        public const int Version = 12;
 
         /// <summary>对象特性组件的类型名（v9 起）。与服务端 `@dts/protocol` 的 `COMPONENT_TYPE` 逐字一致。</summary>
         public static class ComponentType
         {
             public const string Map = "GridMap";
-            /// <summary>「显示一张图」：**贴图对象**用它（`kind: "Texture"`），整张铺满。</summary>
+            /// <summary>「显示一张图」：**贴图对象**用它（`kind: "Image"`），整张铺满。</summary>
             public const string Image = "ImageLayer";
-            /// <summary>「显示一张图」：**精灵对象**用它（`kind: "SceneObject"`），会取图集里的一格。</summary>
+            /// <summary>「显示一张图」：**精灵对象**用它（`kind: "Sprite"`），会取图集里的一格。</summary>
             public const string Sprite = "SpriteLayer";
             public const string Sound = "PlaySound";
             public const string Teleport = "Teleport";

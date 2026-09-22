@@ -1,5 +1,5 @@
 {
-  "formatVersion": 21,
+  "formatVersion": 22,
   "name": "测试项目",
   "items": {
     "source": "item.xlsx",
@@ -40,5 +40,11 @@
     "场景1",
     "场景2",
     "场景3"
-  ]
+  ],
+  "spriteSheets": {
+    "project:测试项目/Assets/images/20260922-141038.png": {
+      "columns": 2,
+      "rows": 2
+    }
+  }
 }

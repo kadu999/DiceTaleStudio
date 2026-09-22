@@ -113,15 +113,16 @@ test.describe("创建与编辑场景对象", () => {
       await expect(page.getByTestId("object-category-event")).toBeVisible();
 
       // 二级：实体下有 网格地图 / 精灵 / 贴图，默认选中第一个（网格地图），名字按类型预填
+      // （基类 `SceneObject` 那一项不可创建，所以弹框里看不到它——它只参与归类）
       await expect(page.getByTestId("object-type-Map")).toHaveAttribute("data-selected", "true");
-      await expect(page.getByTestId("object-type-SceneObject")).toBeVisible();
-      // 贴图（v21）：实体下的第三个类型，kind 是新的 `Texture`
-      await expect(page.getByTestId("object-type-Texture")).toBeVisible();
+      await expect(page.getByTestId("object-type-Sprite")).toBeVisible();
+      // 贴图（v21 起，v22 改叫 `Image`）：实体下的第三个类型
+      await expect(page.getByTestId("object-type-Image")).toBeVisible();
       await expect(page.getByTestId("object-name-input")).toHaveValue("网格地图");
 
       // 贴图按**它自己的**展示名预填（精灵与贴图是两个类型，名字不跟着 kind 走）
-      await page.getByTestId("object-type-Texture").click();
-      await expect(page.getByTestId("object-type-Texture")).toHaveAttribute("data-selected", "true");
+      await page.getByTestId("object-type-Image").click();
+      await expect(page.getByTestId("object-type-Image")).toHaveAttribute("data-selected", "true");
       await expect(page.getByTestId("object-type-Map")).toHaveAttribute("data-selected", "false");
       await expect(page.getByTestId("object-name-input")).toHaveValue("贴图");
       await page.getByTestId("object-type-Map").click();
@@ -137,7 +138,7 @@ test.describe("创建与编辑场景对象", () => {
 
       // 造精灵来验证落点：地图铺满整个场景，本来就没有「摆在哪」这回事（position 为 null）
       await page.getByTestId("object-category-entity").click();
-      await page.getByTestId("object-type-SceneObject").click();
+      await page.getByTestId("object-type-Sprite").click();
       await expect(page.getByTestId("object-name-input")).toHaveValue("精灵");
       await page.getByTestId("confirm-object").click();
       await expect(page.getByTestId("object-dialog")).toHaveCount(0);
@@ -152,7 +153,7 @@ test.describe("创建与编辑场景对象", () => {
 
       // 再开一次：同类类型（精灵）已存在，预填名自动避开重名
       await page.getByTestId("new-object").click();
-      await page.getByTestId("object-type-SceneObject").click();
+      await page.getByTestId("object-type-Sprite").click();
       await expect(page.getByTestId("object-name-input")).toHaveValue("精灵 2");
 
       await page.getByTestId("object-dialog-cancel").click();
@@ -162,7 +163,7 @@ test.describe("创建与编辑场景对象", () => {
     }
   });
 
-  test("精灵：实体下的第二个类型，复用 SceneObject kind，名字按「精灵」预填", async ({
+  test("精灵：实体下的第二个类型，落盘 kind = Sprite，名字按「精灵」预填", async ({
     page,
     request,
   }) => {
@@ -173,8 +174,8 @@ test.describe("创建与编辑场景对象", () => {
       await page.getByTestId("new-object").click();
       await expect(page.getByTestId("object-dialog")).toBeVisible();
 
-      await page.getByTestId("object-type-SceneObject").click();
-      await expect(page.getByTestId("object-type-SceneObject")).toHaveAttribute(
+      await page.getByTestId("object-type-Sprite").click();
+      await expect(page.getByTestId("object-type-Sprite")).toHaveAttribute(
         "data-selected",
         "true",
       );
@@ -183,7 +184,7 @@ test.describe("创建与编辑场景对象", () => {
       await page.getByTestId("confirm-object").click();
       await expect(page.getByTestId("object-dialog")).toHaveCount(0);
 
-      // 落盘的是 SceneObject kind（精灵没有新造 kind，前端无需配合），且生成在场景正中
+      // 落盘的是精灵自己的 kind `Sprite`（v22 起：以前写的是基类 `SceneObject`），且生成在场景正中
       await expect
         .poll(async () =>
           (await readSceneObjects(request, project, SCENE_A)).map((object) => ({
@@ -192,12 +193,12 @@ test.describe("创建与编辑场景对象", () => {
             position: object.position,
           })),
         )
-        .toEqual([{ name: "精灵", kind: "SceneObject", position: { x: 0, y: 0 } }]);
+        .toEqual([{ name: "精灵", kind: "Sprite", position: { x: 0, y: 0 } }]);
 
       await expect(page.getByTestId("object-row")).toHaveCount(1);
       await expect(page.getByTestId("object-row").first()).toHaveAttribute(
         "data-kind",
-        "SceneObject",
+        "Sprite",
       );
     } finally {
       await dropProject(request, project);
@@ -386,7 +387,7 @@ test.describe("创建与编辑场景对象", () => {
       // 默认「全部」：三个对象都在，而且**不分组**
       await expect(page.getByTestId("object-row")).toHaveCount(3);
 
-      // 实体 = 精灵（kind=SceneObject）+ 网格地图（kind=Map）
+      // 实体 = 精灵（kind=Sprite）+ 网格地图（kind=Map）
       await page.getByTestId("category-filter-entity").click();
       await expect(page.getByTestId("object-row")).toHaveCount(2);
       await expect(page.getByTestId("object-row").filter({ hasText: "机关" })).toHaveCount(0);
@@ -418,7 +419,7 @@ test.describe("创建与编辑场景对象", () => {
     const project = await newProject(request);
     try {
       await openSceneForEdit(page, request, project, [
-        sceneDoc(SCENE_A, [sceneObjectDoc("木门", "SceneObject", { x: 0, y: 0 })]),
+        sceneDoc(SCENE_A, [sceneObjectDoc("木门", "Sprite", { x: 0, y: 0 })]),
       ]);
 
       // 先把对象挪到「三种视口都点得到」的落点（平板竖屏左边是抽屉，
@@ -479,12 +480,12 @@ test.describe("创建与编辑场景对象", () => {
       await seedProjectDoc(request, project, [
         sceneDoc(SCENE_A, [
           withComponent(
-            sceneObjectDoc("大红", "SceneObject", { x: 0, y: 0 }, { sortingOrder: 5 }),
+            sceneObjectDoc("大红", "Sprite", { x: 0, y: 0 }, { sortingOrder: 5 }),
             COMPONENT.spriteLayer,
             { id: bigId, width: 120, height: 120 },
           ),
           withComponent(
-            sceneObjectDoc("小蓝", "SceneObject", { x: 0, y: 0 }, { sortingOrder: 1 }),
+            sceneObjectDoc("小蓝", "Sprite", { x: 0, y: 0 }, { sortingOrder: 1 }),
             COMPONENT.spriteLayer,
             { id: smallId, width: 120, height: 120 },
           ),
@@ -619,7 +620,7 @@ test.describe("创建与编辑场景对象", () => {
     const project = await newProject(request);
     try {
       await openSceneForEdit(page, request, project, [
-        sceneDoc(SCENE_A, [sceneObjectDoc("木门", "SceneObject", { x: 0, y: 0 })]),
+        sceneDoc(SCENE_A, [sceneObjectDoc("木门", "Sprite", { x: 0, y: 0 })]),
       ]);
 
       // 挪到一个「三种视口都点得到」的落点（平板竖屏左边是抽屉）
@@ -671,7 +672,7 @@ test.describe("创建与编辑场景对象", () => {
     const project = await newProject(request);
     try {
       await openSceneForEdit(page, request, project, [
-        sceneDoc(SCENE_A, [sceneObjectDoc("木门", "SceneObject", { x: -320, y: 270 })]),
+        sceneDoc(SCENE_A, [sceneObjectDoc("木门", "Sprite", { x: -320, y: 270 })]),
       ]);
       await selectObject(page);
 
@@ -749,7 +750,7 @@ test.describe("创建与编辑场景对象", () => {
     const project = await newProject(request);
     try {
       await seedProjectDoc(request, project, [
-        sceneDoc(SCENE_A, [sceneObjectDoc("精灵", "SceneObject", { x: 0, y: 0 })]),
+        sceneDoc(SCENE_A, [sceneObjectDoc("精灵", "Sprite", { x: 0, y: 0 })]),
       ]);
       // 200×150 的纯绿图：声明尺寸就是它在世界里的尺寸（1 图片像素 = 1 世界像素）
       const imageId = `project:${project}/Assets/images/sprite.png`;
@@ -791,7 +792,7 @@ test.describe("创建与编辑场景对象", () => {
       await expect
         .poll(async () => {
           const file = await readSceneFile(request, project, SCENE_A);
-          const sprite = findSceneObject(file, { kind: "SceneObject" });
+          const sprite = findSceneObject(file, { kind: "Sprite" });
           return sprite === undefined
             ? null
             : {
@@ -1001,12 +1002,12 @@ test.describe("创建与编辑场景对象", () => {
       await seedProjectDoc(request, project, [
         sceneDoc(SCENE_A, [
           withComponent(
-            sceneObjectDoc("绿块", "SceneObject", { x: 0, y: 0 }, { sortingOrder: 5 }),
+            sceneObjectDoc("绿块", "Sprite", { x: 0, y: 0 }, { sortingOrder: 5 }),
             COMPONENT.spriteLayer,
             { id: greenId, width: 120, height: 120 },
           ),
           withComponent(
-            sceneObjectDoc("蓝块", "SceneObject", { x: 0, y: 0 }, { sortingOrder: 1 }),
+            sceneObjectDoc("蓝块", "Sprite", { x: 0, y: 0 }, { sortingOrder: 1 }),
             COMPONENT.spriteLayer,
             { id: blueId, width: 120, height: 120 },
           ),

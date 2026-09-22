@@ -38,7 +38,7 @@ function object(id = "door", patch: Partial<SceneObjectDoc> = {}): SceneObjectDo
   return {
     id,
     name: id,
-    kind: "SceneObject",
+    kind: "Sprite",
     active: true,
     sortingOrder: 0,
     position: { x: 0, y: 0 },
@@ -220,7 +220,7 @@ describe("v10 → v11 迁移", () => {
         {
           id: "door",
           name: "木门",
-          kind: "SceneObject",
+          kind: "Sprite",
           active: true,
           sortingOrder: 0,
           position: { x: 10, y: 20 },

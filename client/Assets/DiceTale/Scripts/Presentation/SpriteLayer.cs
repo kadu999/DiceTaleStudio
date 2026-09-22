@@ -3,7 +3,7 @@ using UnityEngine;
 namespace DiceTale
 {
     /// <summary>
-    /// **精灵对象**的显示层（`kind: "SceneObject"`，协议组件 `SpriteLayer`）：只画**图集里的一格**。
+    /// **精灵对象**的显示层（`kind: "Sprite"`，协议组件 `SpriteLayer`）：只画**图集里的一格**。
     ///
     /// 与 <see cref="ImageLayer"/>（贴图对象，整张铺满）的区别只有一件事：**取样矩形**。
     /// 这里把数据里的「第几行第几列 + 几行几列」（`MirrorSprite`）换算成一块 UV，

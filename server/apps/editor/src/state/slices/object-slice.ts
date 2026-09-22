@@ -121,7 +121,7 @@ export function createObjectSlice(
               ? // 传送阵（动作对象）：同样摆在世界里（画布上是一枚传送徽标），
                 // 新建时**还没指定目标场景**——属性面板挑一个目标，传送按钮才点得动
                 createTeleportObject({ name: trimmed, position: at })
-              : // 其它实体（例如精灵，kind = "SceneObject"）走普通对象：只有名字、类型与位置
+              : // 其它实体（例如精灵，kind = "Sprite"）走普通对象：只有名字、类型与位置
                 createSceneObject({ name: trimmed, kind, position: at });
 
       const changed = get().applyScenes(`新建对象 ${trimmed}`, (draft) => {

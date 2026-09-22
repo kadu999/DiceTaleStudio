@@ -237,7 +237,7 @@ test.describe("编辑态 / 运行态", { tag: "@runtime" }, () => {
     const project = await newProject(request);
     try {
       await seedProjectDoc(request, project, [
-        sceneDoc(RUN_SCENE, [sceneObjectDoc(RUN_OBJECT, "SceneObject", { x: 0, y: 0 })]),
+        sceneDoc(RUN_SCENE, [sceneObjectDoc(RUN_OBJECT, "Sprite", { x: 0, y: 0 })]),
       ]);
       await openFirstObject(page, project, RUN_OBJECT);
 

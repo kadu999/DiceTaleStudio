@@ -23,7 +23,7 @@ function scene(name: string, objectCount: number): ScenePayload {
     objects: Array.from({ length: objectCount }, (_value, index) => ({
       id: `o${index}`,
       name: `对象${index}`,
-      kind: "SceneObject",
+      kind: "Sprite",
       active: true,
       sortingOrder: 0,
       position: { x: index, y: index },
@@ -151,7 +151,7 @@ describe("RuntimeSession", () => {
         {
           id: "o1",
           name: "精灵",
-          kind: "SceneObject",
+          kind: "Sprite",
           active: true,
           sortingOrder: 0,
           position: { x: 0, y: 0 },
@@ -236,7 +236,7 @@ describe("RuntimeSession", () => {
         {
           id: "o1",
           name: "精灵",
-          kind: "SceneObject",
+          kind: "Sprite",
           active: true,
           sortingOrder: 0,
           position: { x: 0, y: 0 },

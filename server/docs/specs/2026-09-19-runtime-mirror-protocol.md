@@ -149,18 +149,26 @@
   （`GridMap.data.image` 上不会出现这两项）。
 - 老前端（协议 v9）不认这两项，会把整张图集铺出来——**画面错**，所以协议 +1，靠握手挡住。
 
-**贴图对象 + 两种图片组件（v11，2026-09-23）**：实体下多一个「贴图」（`kind: "Texture"`）——
-**只显示整张图**，与精灵的差别只有「不取图集里的一格」。数据上分成两个组件：
+**贴图对象 + 两种图片组件（v11，2026-09-23）**：实体下多一个「贴图」（那时 `kind: "Texture"`，
+v12 起叫 `Image`）——**只显示整张图**，与精灵的差别只有「不取图集里的一格」。数据上分成两个组件：
 
 - `ImageLayer`（**贴图**用，`data` = `{id, width, height}`）与 `SpriteLayer`（**精灵**用，
   `data` 多可选的 `sprite` + `spriteGrid`）——**形状一样、名字不同**，名字就是那条判据
   （编辑器据此决定给不给切图入口）；
 - v10 及更早两者共用一个 `TextureRenderer`，老文件里精灵的那一份会被编辑器改名成 `SpriteLayer`
   （`renameSpriteImageComponent`）；
-- **视频那一组换了宿主**：只有 `Map` 与 `Texture` 会带 `VideoOverlay`（精灵不再带）。
+- **视频那一组换了宿主**：只有 `Map` 与 `Image`（贴图）会带 `VideoOverlay`（精灵不再带）。
   旧文件里精灵身上的 `VideoOverlay` **不会被删**（不静默改用户数据），只是编辑器不再认它；
 - 老前端（v10）不认这两个新组件名 → 图取不到、对象只画一块占位色，所以协议 +1。
   `kind` 是自由字符串，`Texture` 这个新值本身不破坏兼容。
+
+**kind 改名 + 对象类型层级（v12，2026-09-23）**：贴图 `Texture` → `Image`、精灵 `SceneObject` → `Sprite`。
+后台那边 `SceneObject` 从此是**抽象基类**（精灵与贴图继承它，它自己不落进数据），
+但**协议这一侧完全看不见层级**——`kind` 只是自由字符串，前端拿它取占位色：
+
+- 载荷形状**一个字节都没动**（图片组件仍是 `SpriteLayer` / `ImageLayer`，视频仍只挂 `Map` / `Image`）；
+- 老前端（v11）不认这两个值，`KindColor` 匹配不上会退回灰色占位色——**图照常显示**
+  （显示走组件名），属于「不是崩，是画面错」，所以协议 +1，照旧靠握手挡住。
 
 前端按需取用：
 
@@ -168,7 +176,7 @@
 |---|---|
 | `id` | 镜像字典的 key：新 id 建对象、老 id 更新、名单里没有的销毁；场景名变了则整场景换 |
 | `name` | GameObject 名字 |
-| `kind` | **只用来取占位色 / 排查**（不再决定建不建可见物） |
+| `kind` | **只用来取占位色 / 排查**（不再决定建不建可见物）。v12 起具体值是 `Sprite` / `Image` / `Map` / `Player` / `Item` / `Event` / `PlaySound` / `Teleport`；`SceneObject` 是后台的抽象基类，不会出现在载荷里 |
 | `components` | **决定这个对象有什么**：`map` / `image` 这两个强类型字段由 `GridMap` / `ImageLayer` / `SpriteLayer` 填（后两个都是「对象自己那张图」，v11 起按对象类型分开）；`sound` / `video` 由 `PlaySound` / `VideoOverlay` 填 |
 | `position {x,y}` | `(x, 0, y)`：文档 y 向上 → 客户端 +Z（与 `GridMap.WorldToGrid` 同口径）；`null` = 未落位 → 不建视图 |
 | `active` | 是否显示（编辑器那个勾选框一改，前端就出现 / 消失） |

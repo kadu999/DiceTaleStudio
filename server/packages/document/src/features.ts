@@ -1,4 +1,6 @@
-import type { ObjectKind, SoundLayer } from "./types";
+import { CONCRETE_KINDS, kindIsA, kindLineage } from "./kinds";
+import type { ObjectKind } from "./kinds";
+import type { SoundLayer } from "./types";
 
 /**
  * 对象身上的**可插拔特性**：一个特性 = 一份数据 + 一组允许携带它的对象类型。
@@ -16,13 +18,17 @@ import type { ObjectKind, SoundLayer } from "./types";
  * 贴图对象用 `ImageLayer`（只显示整张图）、精灵对象用 `SpriteLayer`（显示图集里的一格）。
  * `componentsByKind` 就是这条路由，取组件名的入口统一是 `componentForKind()`，
  * 别在调用处自己判 kind。
+ *
+ * **v22 起 `kinds` 里的名字可以是基类**：`Sprite` / `Image` 继承 `SceneObject`
+ * （层级住在 `./kinds`），所以 `image` 那条只写基类 + 几个根类型，
+ * 判据一律走 `kindIsA`——**`kinds.includes(kind)` 会把子类型漏掉**。
  */
 export type ObjectFeatureField = "map" | "image" | "sound" | "teleport" | "video";
 
 /**
  * 特性字段名 → 承载它的组件类型名（迁移 / 协议 / 客户端共用的契约）。
  *
- * `image` 那一项是**缺省承载**（除 `SceneObject` 之外的对象用它）；精灵走 `componentsByKind`。
+ * `image` 那一项是**缺省承载**（除精灵 `Sprite` 之外的对象用它）；精灵走 `componentsByKind`。
  */
 export const FEATURE_COMPONENT = {
   map: "GridMap",
@@ -65,22 +71,24 @@ export interface ObjectFeatureDef {
 export const OBJECT_FEATURES: readonly ObjectFeatureDef[] = [
   // 地图的贴图与网格都在这份数据里（`map.image`），所以它不吃 `image` 那一份
   { field: "map", component: FEATURE_COMPONENT.map, kinds: ["Map"] },
-  // 「对象自己显示的图」：精灵与贴图都是靠它显示图片的。
-  // **两种组件**：精灵 = SpriteLayer（会取图集里的一格），贴图 = ImageLayer（只显示整张图）
+  // 「对象自己显示的图」：**凡是场景对象都靠它显示图片**——所以声明写在基类 `SceneObject` 上，
+  // 精灵 `Sprite` 与贴图 `Image` 继承它（Player / Item / Event 与它平级，得单独列）。
+  // **两种组件**：精灵 = SpriteLayer（会取图集里的一格），其余 = ImageLayer（只显示整张图）
   {
     field: "image",
     component: FEATURE_COMPONENT.image,
-    kinds: ["SceneObject", "Texture", "Player", "Item", "Event"],
-    componentsByKind: { SceneObject: SPRITE_COMPONENT },
+    kinds: ["SceneObject", "Player", "Item", "Event"],
+    componentsByKind: { Sprite: SPRITE_COMPONENT },
   },
   // 动作对象：只声明「告诉前端播什么」，编辑器自己不播放
   { field: "sound", component: FEATURE_COMPONENT.sound, kinds: ["PlaySound"] },
   // 动作对象：触发它 = 切换当前场景（不需要新协议命令）
   { field: "teleport", component: FEATURE_COMPONENT.teleport, kinds: ["Teleport"] },
   // 视频画面盖在对象自己的矩形上，所以只有画得出来的对象能带。
-  // **贴图而不是精灵**：视频是「盖住这个对象那块矩形的一条片」，贴图（只显示整张图）才是它的用法；
-  // 精灵显示的是图集里的一格，它的渲染选项归「渲染」那一组。
-  { field: "video", component: FEATURE_COMPONENT.video, kinds: ["Map", "Texture"] },
+  // **贴图 `Image` 而不是精灵 `Sprite`**：视频是「盖住这个对象那块矩形的一条片」，
+  // 贴图（只显示整张图）才是它的用法；精灵显示的是图集里的一格，它的渲染选项归「渲染」那一组。
+  // 这里**不能**写基类 `SceneObject`——那会让精灵也继承到视频。
+  { field: "video", component: FEATURE_COMPONENT.video, kinds: ["Map", "Image"] },
 ];
 
 /**
@@ -133,7 +141,11 @@ export function componentsOfField(field: ObjectFeatureField): readonly string[] 
  * 这个 kind 上，某个特性由**哪个组件**承载。
  *
  * **取组件名只有这一个入口**（迁移、写盘、访问器都走它）：`image` 在精灵上是
- * `SpriteLayer`、在贴图上是 `ImageLayer`，调用处不该自己判 kind。
+ * `SpriteLayer`、在其余上是 `ImageLayer`，调用处不该自己判 kind。
+ *
+ * 查法是**沿基类往上**（`kindLineage`）：先看自己那一份 `componentsByKind`、再退到基类。
+ * 于是 `Image` 没写自己的路由，就落到基类那一份缺省承载上；将来加一个
+ * 「`Sprite` 的子类型但换一种图片组件」，只在自己的定义里写一条即可。
  */
 export function componentForKind(field: ObjectFeatureField, kind: ObjectKind): string {
   const def = BY_FIELD.get(field);
@@ -141,7 +153,14 @@ export function componentForKind(field: ObjectFeatureField, kind: ObjectKind): s
     return "";
   }
 
-  return def.componentsByKind?.[kind] ?? def.component;
+  for (const candidate of kindLineage(kind)) {
+    const routed = def.componentsByKind?.[candidate];
+    if (routed !== undefined) {
+      return routed;
+    }
+  }
+
+  return def.component;
 }
 
 /**
@@ -155,11 +174,12 @@ export function carriesFeatureComponent(field: ObjectFeatureField, component: st
 }
 
 /**
- * 能携带某个组件的对象类型（组件名不认识时返回空数组）。
+ * 能携带某个组件的**具体对象类型**（抽象基类不算——它不落进文档）。
  *
- * `componentsByKind` 里的 kind 从缺省组件那份里**剔掉**（精灵的图住在 `SpriteLayer`，
- * 不该再算 `ImageLayer` 能挂）；反过来缺省组件那份也剔掉被路由走的 kind
- * （`ImageLayer` 的 kinds = `OBJECT_FEATURES` 那份减去 `SceneObject`）。
+ * 判据是**算出来的**、不是另抄一份名单：先把 `kinds` 里声明过的类型连同它们的子类型
+ * 收进来（`Sprite` / `Image` 就是这么从基类 `SceneObject` 进来的），
+ * 再按「这个组件最终归谁」（`componentForKind`）筛一遍——于是
+ * `ImageLayer` 的 kinds 里**没有** `Sprite`（它的图住在 `SpriteLayer`）。
  */
 export function kindsCarrying(component: string): readonly ObjectKind[] {
   const def = featureOfComponent(component);
@@ -167,18 +187,17 @@ export function kindsCarrying(component: string): readonly ObjectKind[] {
     return [];
   }
 
-  const overrides = def.componentsByKind ?? {};
-  if (component === def.component) {
-    return def.kinds.filter((kind) => overrides[kind] === undefined);
-  }
-
-  return def.kinds.filter((kind) => overrides[kind] === component);
+  return CONCRETE_KINDS.filter(
+    (kind) => carriesKind(component, kind) && componentForKind(def.field, kind) === component,
+  );
 }
 
 /**
  * 这个对象类型能不能携带某个组件。
  *
- * **「空 kinds = 任何类型都允许」在实现里**，调用方不必自己判空。
+ * **「空 kinds = 任何类型都允许」在实现里**，调用方不必自己判空；
+ * 命中判据是**层级**（`kindIsA`：`Sprite` / `Image` 继承 `SceneObject`），
+ * 不是 `kinds.includes(kind)`——后者会把子类型漏掉。
  */
 export function carriesKind(component: string, kind: ObjectKind): boolean {
   const def = featureOfComponent(component);
@@ -186,7 +205,7 @@ export function carriesKind(component: string, kind: ObjectKind): boolean {
     return false;
   }
 
-  return def.kinds.length === 0 || def.kinds.includes(kind);
+  return def.kinds.length === 0 || def.kinds.some((base) => kindIsA(kind, base));
 }
 
 /**
@@ -200,11 +219,12 @@ export function supportsVideo(kind: ObjectKind): boolean {
 }
 
 /**
- * 这种对象的图**能不能取图集里的一格**（子图）——即「精灵」与「贴图」的分界。
+ * 这种对象的图**能不能取图集里的一格**（子图）——即精灵 `Sprite` 与其余场景对象的分界。
  *
- * 判据是**图片用哪个组件**（精灵 `SpriteLayer`、贴图 `ImageLayer`），不是另写一份 kind 名单：
+ * 判据是**图片用哪个组件**（精灵 `SpriteLayer`、其余 `ImageLayer`），不是另写一份 kind 名单：
  * 于是「选择图片弹框给不给右侧切分面板」「渲染那一组给不给选格子」两处永远一致。
- * 地图返回 `false`（它的贴图住在 `GridMap` 里，格子按整张贴图算）。
+ * 基类 `SceneObject` 与地图返回 `false`（地图的贴图住在 `GridMap` 里，格子按整张贴图算；
+ * 基类那份缺省承载就是整图）。
  */
 export function supportsSpriteSheet(kind: ObjectKind): boolean {
   return (

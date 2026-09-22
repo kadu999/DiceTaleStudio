@@ -1,9 +1,9 @@
-﻿using UnityEngine;
+using UnityEngine;
 
 namespace DiceTale
 {
     /// <summary>
-    /// **贴图对象**的显示层（`kind: "Texture"`，协议组件 `ImageLayer`）：显示**整张图**。
+    /// **贴图对象**的显示层（`kind: "Image"`，协议组件 `ImageLayer`）：显示**整张图**。
     ///
     /// 它自己就是「把一张图铺在对象那块矩形上」这件事的全部——网格 / 材质 / 尺寸 / 离地
     /// 全在基类 <see cref="GroundLayer"/> 里，这里一个字节都不加：

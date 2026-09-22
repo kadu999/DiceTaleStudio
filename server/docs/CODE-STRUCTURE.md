@@ -11,13 +11,13 @@
 |---|---|
 | 语言 / 运行时 | TypeScript 5.9 + ESM，Node 22+（后端跑在 `tsx` 上，无编译产物） |
 | 包管理 | pnpm workspace（`apps/*` + `packages/*`，共 8 个包） |
-| 文档格式版本 | `DOCUMENT_FORMAT_VERSION = 21`（`packages/document/src/types.ts`） |
-| 协议版本 | `PROTOCOL_VERSION = 11`（`packages/protocol/src/messages.ts`；与文档 v21 是**同一批改动、必须配套发布**，见 §6.1） |
+| 文档格式版本 | `DOCUMENT_FORMAT_VERSION = 22`（`packages/document/src/types.ts`） |
+| 协议版本 | `PROTOCOL_VERSION = 12`（`packages/protocol/src/messages.ts`；与文档 v22 是**同一批改动、必须配套发布**，见 §6.1） |
 | 后端默认地址 | `0.0.0.0:1420`（`resources/config/app.json`，可被 `HOST` / `PORT` 覆盖） |
 | 编辑器开发地址 | `http://localhost:5173`（Vite，`/api`、`/editor`、`/client` 反代到 1420） |
 | 编辑器生产地址 | `http://localhost:1420`（后端同源托管 `apps/editor/dist`） |
-| 源码规模（不含测试） | 154 个文件 / 32,159 行（packages 10,626 · backend 3,123 · editor 18,410） |
-| 测试规模 | 27,899 行（单测 18,877 · E2E 8,790 · 架构测试 232） |
+| 源码规模（不含测试） | 155 个文件 / 32,804 行（packages 11,155 · backend 3,123 · editor 18,526） |
+| 测试规模 | 28,615 行（单测 19,545 · E2E 8,838 · 架构测试 232） |
 
 ### 0.1 本次重构（解耦 + 实体/组件）留下了什么
 
@@ -32,7 +32,7 @@
 | **编辑器 store 分片** | `editor-store.ts` 4,493 行 | 组装点 **98 行** + 16 个切片 + 上下文（见 §5.2） | 加一个功能 = 加一个 `slices/<功能>-slice.ts` + 组装点一行 |
 | **属性面板注册表** | `InspectorPanel.tsx` 1,195 行的 JSX 分支 | `InspectorPanel.tsx` **343 行** + `registry.tsx` + `object-fields.tsx` | 加一个特性分组 = 注册表一行 + 一个字段组件 |
 
-**代价是诚实的**：源码从 28,810 行长到 31,002 行（+7.6%；本次子图改动后全仓 32,159 行，见 §0）——多出来的是文件头注释、import/export
+**代价是诚实的**：源码从 28,810 行长到 31,002 行（+7.6%；子图与 kind 两次改动后全仓 32,804 行，见 §0）——多出来的是文件头注释、import/export
 与「显式列出 action 名」的类型。换来的是「改一个功能不必碰整个项目」。
 外部可见的**行为**只在两处收紧：`/api/{health,config,state}` 现在只认 GET（调用方本来就都是 GET）；
 协议 +1 到 v9（老前端会被握手拒绝，见 §6.4）。
@@ -66,11 +66,11 @@ server/
 │  │     ├─ resources/         # FsResourceProvider（唯一碰磁盘的地方）、zip 打包器、资源包缓存
 │  │     ├─ ws/                # hub（传输层）+ hub-context + types + handlers/（一条消息一个函数）
 │  │     └─ mock-client/       # 假 Unity 前端（联调用）
-│  └─ editor/                  # React 编辑器（18,410 行）
+│  └─ editor/                  # React 编辑器（18,526 行）
 │     └─ src/{app,panels,services,state,hooks,styles}/   # state/ 是切片式 store（见 §5.2）
-├─ packages/                   # 6 个可独立测试的内部模块（10,626 行）
+├─ packages/                   # 6 个可独立测试的内部模块（11,155 行）
 │  ├─ grid/                    # 位掩码、坐标换算、RLE、.bytes 编解码（零依赖）
-│  ├─ document/                # 文档模型 + 特性表 + 访问器 + zod 校验 + 组件注册表 + 补丁式撤销
+│  ├─ document/                # 文档模型 + 对象类型层级 + 特性表 + 访问器 + zod 校验 + 组件注册表 + 补丁式撤销
 │  ├─ actions/                 # 动作类型注册表 + 条件求值 + 动作图校验
 │  ├─ protocol/                # WS 消息契约（编辑器 / 服务端 / 前端共用）
 │  ├─ resources/               # 逻辑 ID 规则 + ResourceProvider 抽象 + 内存实现
@@ -78,7 +78,7 @@ server/
 ├─ resources/                  # ★ 全部运行期资源
 │  ├─ config/{app,editor,export}.json
 │  └─ projects/<项目名>/{project.json, Assets/{config,scenes,images,audio,video}/}
-├─ e2e/                        # Playwright 用例（8,790 行）
+├─ e2e/                        # Playwright 用例（8,838 行）
 ├─ test/architecture.test.ts   # 架构边界测试（依赖方向 / 禁止模块 / 资源路径字面量）
 ├─ docs/specs/                 # 前后端契约与运行态镜像协议
 ├─ command-*.bat               # Windows 一键脚本（GBK + CRLF）
@@ -188,11 +188,18 @@ SceneObjectDoc
       —— `image` 这个字段有**两种组件**（v21）：贴图整张铺满、精灵会取图集里的一格
 ```
 
+**对象类型还有一层层级**（v22，`packages/document/src/kinds.ts`）：`SceneObject` 是**抽象基类**
+（不落进文档），`Sprite`（精灵）与 `Image`（贴图）继承它，于是「凡场景对象都有的东西」
+（现在只有 `image` 那张显示图）只声明一次。判据走 `kindIsA` / `kindLineage`，
+**`kinds.includes(kind)` 是错的**（名单里是基类，子类型一个都不在里面）。
+详见 §3.2.3。
+
 **关键约定**（改这块代码前必须知道）：
 
 | 约定 | 在哪实现 |
 |---|---|
-| 「哪个 kind 能带哪个特性」只有**一处**归属地 | `packages/document/src/features.ts` 的 `OBJECT_FEATURES`（`kindsCarrying` / `carriesKind`） |
+| 「哪个 kind 能带哪个特性」只有**一处**归属地 | `packages/document/src/features.ts` 的 `OBJECT_FEATURES`（`kindsCarrying` / `carriesKind`；名单里可以写**基类**，判据按层级走） |
+| 「哪个 kind 是谁的子类型」只有**一处**归属地 | `packages/document/src/kinds.ts` 的 `OBJECT_KIND_DEFS`（`kindIsA` / `kindLineage` / `CONCRETE_KINDS`；`SceneObject` 是抽象基类） |
 | 特性数据怎么读 / 怎么写只有**一处**归属地 | `packages/document/src/access.ts`（`mapDataOf` / `ensureSoundData` / `writeFeature` …）。**禁止**在调用处 `object.components.find(...)` |
 | 组件类型名与元数据只有**一处**归属地 | `packages/document/src/components.ts` 的 `COMPONENT_TYPES`（13 条 = 7 种前端组件 + 6 种对象特性组件；`kinds` 从 `OBJECT_FEATURES` 取回，`legacyField` 记着 v18 的字段名） |
 | 组件实例 id 是**确定性**的 | `componentId(objectId, type)` = `<对象id>__<组件类型>`，所以迁移与新建重复执行都不会多出实例 |
@@ -225,6 +232,12 @@ SceneObjectDoc
 属性面板显不显示子图那一行，都跟这一条走）。为什么这次不怕「谁赢」：一个对象**只会带其中一种**
 （`OBJECT_FEATURES` 的 `componentsByKind` 按 kind 路由，迁移也按 kind 改名），
 不像「两个显示组件同时挂着」那种歧义。
+
+**v22 给对象类型立了层级**，`image` 这一条因此声明在**基类** `SceneObject` 上
+（`kinds: ["SceneObject", "Player", "Item", "Event"]`）：精灵 `Sprite` 与贴图 `Image` 继承它，
+不用在名单里各写一遍。两条例外都是**故意**的：`video` 那一行**不写基类**
+（写了精灵会继承到视频），精灵的图片组件仍由 `componentsByKind: { Sprite: SpriteLayer }`
+单独路由（继承管的是「能不能带」，路由管的是「带在哪」）。
 
 ---
 
@@ -387,7 +400,8 @@ build: { outDir: "dist", sourcemap: true },
 
 | 文件 | 行数 | 职责 | 关键导出 |
 |---|---|---|---|
-| `types.ts` | 424 | 全部文档类型与格式版本常量（**v20 的切分类型、v21 的 `Texture` kind 也在这里**） | `DOCUMENT_FORMAT_VERSION`(=21)、`ProjectDoc`、`SceneDoc`、`SceneFileDoc`、`SceneObjectDoc`、`ObjectKind`、`ComponentDoc`、`MapDataDoc`、`MapFogDoc`、`SoundDataDoc`、`TeleportDataDoc`、`VideoDataDoc`、`ActionInstanceDoc`、`ConditionDoc`、`ImageRef`、`GridSpec`、`CellRuns`、`ItemLibraryDoc`、`AudioMetaDoc`、`AudioTagTableDoc`、`SOUND_LAYERS`、`OBJECT_SOUND_LAYERS`、`ImageSpriteRef`、`SpriteSheetDoc`、`ResolvedSprite`、`SOUND_LAYER_LABELS` |
+| `types.ts` | 599 | 全部文档类型与格式版本常量（**`ObjectKind` 不在这里：v22 起住在 `kinds.ts`**） | `DOCUMENT_FORMAT_VERSION`(=22)、`ProjectDoc`、`SceneDoc`、`SceneFileDoc`、`SceneObjectDoc`、`ComponentDoc`、`MapDataDoc`、`MapFogDoc`、`SoundDataDoc`、`TeleportDataDoc`、`VideoDataDoc`、`ActionInstanceDoc`、`ConditionDoc`、`ImageRef`、`GridSpec`、`CellRuns`、`ItemLibraryDoc`、`AudioMetaDoc`、`AudioTagTableDoc`、`SOUND_LAYERS`、`OBJECT_SOUND_LAYERS`、`ImageSpriteRef`、`SpriteSheetDoc`、`ResolvedSprite`、`SOUND_LAYER_LABELS` |
+| `kinds.ts` | 146 | **对象类型与它们之间的层级**（v22 新增）：`SceneObject` 是抽象基类、`Sprite` / `Image` 继承它；「谁能带某个特性」的层级判据都从这里走 | `OBJECT_KINDS`（=schema 枚举的那个列表）、`ObjectKind`、`ObjectKindDef`、`OBJECT_KIND_DEFS`、`objectKindDef`、`kindAncestors`、`kindLineage`、`kindIsA`、`isAbstractKind`、`CONCRETE_KINDS`、`kindDescendants` |
 | `features.ts` | 177 | **「哪个 kind 带哪个特性」的唯一归属地** + 组件类型名映射（含 `image` 的**按 kind 路由**）+ 特性缺省值 | `ObjectFeatureField`、`FEATURE_COMPONENT`、`SPRITE_COMPONENT`、`LEGACY_IMAGE_COMPONENT`、`OBJECT_FEATURES`、`FEATURE_COMPONENTS`、`featureOfField`、`featureOfComponent`、`componentsOfField`、`componentForKind`、`carriesFeatureComponent`、`kindsCarrying`、`carriesKind`、`supportsVideo`、`supportsSpriteSheet`、`displayImageField`、`DEFAULT_SOUND_LAYER`、`DEFAULT_VIDEO_*` |
 | `access.ts` | 220 | **对象特性的唯一访问路径**（数据存在哪只有这里知道；`image` 的两种组件都在这里收口） | 读：`componentOf`、`componentDataOf`、`hasFeature`、`mapDataOf`、`imageOf`（**两种图片组件都认**）、`objectImage`、`soundDataOf`、`teleportDataOf`、`videoDataOf`、`isVideoEnabled`；写：`mapDraftOf`、`writeFeature`、`removeFeature`、`ensureSoundData`、`ensureTeleportData`、`ensureVideoData`、`withFeature`、`withoutFeature` |
 | `schema.ts` | 975 | zod schema + **版本迁移链** + 文件解析 | `sceneFileSchema`、`projectDocSchema`、`imageSpriteRefSchema`、`spriteSheetSchema`、`upgradeRawDocument`、`migrateProjectDoc`、`parseProjectFile`、`parseProjectDoc`、`parseSceneFile`、`defaultProjectSettings`、`defaultAudioSettings`、`defaultBgmSettings`、`DEFAULT_BGM_VOLUME`(0.6)、`DEFAULT_SFX_VOLUME`(0.8)、`DEFAULT_VOICE_VOLUME`(1)；类型 `SceneSizeHint`、`ProjectFileLoad`、`SceneFileLoad` |
@@ -405,7 +419,7 @@ build: { outDir: "dist", sourcemap: true },
 
 ```
 project.json（ProjectDoc）
-├─ formatVersion: 21
+├─ formatVersion: 22
 ├─ name
 ├─ items: ItemLibraryDoc            ← 道具库（source/updatedAt/count/items[]）
 ├─ settings: ProjectSettingsDoc     ← v15 起；audio: { bgm, sfx, voice } 各只有 volume
@@ -415,7 +429,7 @@ project.json（ProjectDoc）
                                                           （1×1 = 整图，不写这种表项；表空了删字段）
 
 Assets/scenes/<场景名>.json（SceneFileDoc）   ← 场景名不进文件内容，它就是文件名
-├─ formatVersion: 21
+├─ formatVersion: 22
 └─ objects: SceneObjectDoc[]
    ├─ id / name / kind / active / locked / sortingOrder / rotation / scale / scaleX? / scaleY?
    ├─ position: { x, y } | null      ← 世界坐标，原点 = 场景中心，y 向上
@@ -432,9 +446,20 @@ Assets/scenes/<场景名>.json（SceneFileDoc）   ← 场景名不进文件内�
 **v19 起对象特性住在 `components[]` 里**（v18 及更早是 `map` / `image` / `sound` / `teleport` / `video`
 五个扁平字段，由 `migrateFeaturesToComponents` 搬一次）。读它们一律走 `access.ts` 的访问器。
 
-`ObjectKind = "Map" | "SceneObject" | "Player" | "Item" | "Event" | "PlaySound" | "Teleport" | "Texture"`
-（前四种对齐 Unity 的 `BackendObjectKind`，后四种是编辑器侧新增的：`Map` 是「带网格的图」、
-`PlaySound` / `Teleport` 是**动作对象**、`Texture`（v21）是「只显示整张图」的贴图对象）。
+```
+ObjectKind（`kinds.ts` 的 `OBJECT_KINDS`；schema 的枚举就是它，加一个类型只动一处）
+├─ SceneObject                 ← **抽象基类**：不落进文档（老文件里的由 v22 迁移改成 Sprite）
+│  ├─ Sprite                   ← 精灵：图会取图集里的一格（组件 SpriteLayer）
+│  └─ Image                    ← 贴图（v21 时叫 Texture）：整张铺满（组件 ImageLayer）
+├─ Player / Item / Event       ← 前端 BackendObjectKind 就有的实体，与上面平级
+├─ Map                         ← 带网格的图（组件 GridMap）
+└─ PlaySound / Teleport        ← 动作对象（前端不建可见物）
+```
+
+`image` 那条特性**声明在基类上**（`kinds: ["SceneObject", "Player", "Item", "Event"]`），
+`Sprite` / `Image` 继承下来；`video` 那条**刻意只写具体类型**（`Map` / `Image`），
+不然精灵会跟着继承到视频。判据一律走 `kindIsA` / `kindLineage`，
+**`kinds.includes(kind)` 会把子类型整个漏掉**。
 
 **单位口径**：`position` 与世界坐标（像素）一致；`rotation` **在文档里存弧度**（面板按度编辑，
 写盘前归一到 `(-180°, 180°]`，见 `normalizeDegrees`）；`scale` 与 `scaleX`/`scaleY` 是倍数（0.01 ~ 100）。
@@ -526,6 +551,10 @@ Assets/scenes/<场景名>.json（SceneFileDoc）   ← 场景名不进文件内�
   `migrateAudioTags` 建成 `audioTags` 表并换成整数 ID）；
 - **v20（子图）没有迁移函数**：`image.sprite`（取哪一格）与 `spriteSheets`（怎么切）都是**可选**字段，
   靠「版本号 +1 → `needsRewrite` 回写一次」让老文件自描述（与 v17 `audioMeta` 同一个先例）；
+- **v22 的 `renameObjectKinds` 必须跑在其它迁移前面**：它把 `Texture` → `Image`、
+  `SceneObject` → `Sprite`，而 v19 的 `migrateFeaturesToComponents` 与 v21 的
+  `renameSpriteImageComponent` 都**按 kind 选图片组件名**——kind 没先落到具体类型，
+  老精灵就会被搬进贴图的 `ImageLayer`（子图能力静默消失）；
 - `parseProjectFile(raw)` → `ProjectFileLoad`（含 `upgraded: boolean` 之类的加载信息）；
 - `parseSceneFile(raw, size?)` → `SceneFileLoad`；`SceneSizeHint` 用于给缺 `grid` 的老地图补尺寸；
 - `migrateProjectDoc` 做「已解析文档」的补齐（与原始 JSON 的 upgrade 分开）；
@@ -550,7 +579,7 @@ Assets/scenes/<场景名>.json（SceneFileDoc）   ← 场景名不进文件内�
 `Map` 缺 `map`（error）/RLE 解码失败（error）/`map.image.id` 空白（warning）/雾区位非法或
 「开着没雾区」「关着有雾区」（warning）、`PlaySound` 缺 `sound`（error）/`layer:"bgm"`（warning）/
 `picked` 越界（warning）、`Teleport` 缺 `teleport`（error）/候选空 / 没选 / 选中的不在候选里 /
-自己传自己（均 warning）、`video` 只允许 Map 与 Texture（贴图）携带、动作对象挂 `image`（warning）、
+自己传自己（均 warning）、`video` 只允许 Map 与 Image（贴图）携带、动作对象挂 `image`（warning）、
 **子图格子越出切分（warning，渲染与推送都按最后一格显示）**、**地图贴图带了 `sprite`（warning，两边都忽略）**、
 组件 id 唯一、未知组件类型（warning，数据原样保留）、`OptionValue.current` 不在 `options` 里（error）、
 字段类型与 `FieldDef.kind` 不符（error）、条件 `target` 类型与 `valueType` 不符（error）、
@@ -635,7 +664,7 @@ v20 起 `validateScene` 多了第二个参数：`validateScene(scene, { spriteSh
 
 | 名称 | 值 | 用途 |
 |---|---|---|
-| `PROTOCOL_VERSION` | `11` | 握手校验；不一致则关闭连接（`4002`）。与文档格式 v21 是**同一批改动**：图片组件拆成 `ImageLayer` / `SpriteLayer`，老客户端不认这两个名字，图取不到、只画一块占位色 |
+| `PROTOCOL_VERSION` | `12` | 握手校验；不一致则关闭连接（`4002`）。与文档格式 v22 是**同一批改动**：`kind` 改名（贴图 `Texture`→`Image`、精灵 `SceneObject`→`Sprite`），老客户端不认这两个值，占位色退回灰色（图照常显示，显示走组件名） |
 | `SPRITE_SHEET_MAX` | `64` | 子图切分的**列 / 行上限**（与 `@dts/document` 的 `SPRITE_SHEET_MAX` 同值，契约测试盯着） |
 | `RUNTIME_INACTIVE_STATUS` | `503` | 未开闸时拒绝 `/client` 升级的 HTTP 状态 |
 | `RUNTIME_INACTIVE_REASON` | `"runtime-inactive"` | 写在 `x-dts-reason` 头里 |
@@ -1188,7 +1217,7 @@ export function createSoundSlice(
 |---|---|---|---|
 | `LeftPanel.tsx` | 69 | 左栏两个页签（场景对象 / 资源）共用一栏，默认停「场景对象」。 | `LeftPanel` |
 | `EmptyState.tsx` | 39 | 空状态占位：没项目时指路菜单；没场景时**占位本身是入口**（点一下弹新建场景）。 | `EmptyState` |
-| `object-kinds.ts` | 105 | 对象类型表（实体/动作/事件）+ 可创建标记 + 中文展示名 + 「画内置徽标」判定；`kind` 是前端也认的字段，不造新值（精灵复用 `SceneObject`）。 | `OBJECT_CATEGORIES`、`DEFAULT_CATEGORY`、`KIND_LABELS`、`creatableObjects`、`categoryOfKind`、`badgeIconOf`；类型 `ObjectTypeDef`、`ObjectCategoryDef` |
+| `object-kinds.ts` | 121 | 对象类型表（实体/动作/事件）+ 可创建标记 + 中文展示名 + 「画内置徽标」判定；`kind` 是前端也认的字段，不造新值（v22 起精灵写 `Sprite`、贴图写 `Image`，基类 `SceneObject` 只作**不可创建**的归类项留在表里，保证每个 kind 都有归属）。 | `OBJECT_CATEGORIES`、`DEFAULT_CATEGORY`、`KIND_LABELS`、`creatableObjects`、`categoryOfKind`、`badgeIconOf`；类型 `ObjectTypeDef`、`ObjectCategoryDef` |
 | `asset-info.ts` | 121 | 按扩展名判断资源怎么显示：图标种类、可预览种类、人类可读类型名、去扩展名的显示名、字节可读化；**扩展名判断只此一处**。 | `assetSuffix`、`assetIconKind`、`assetPreviewKind`、`assetKindLabel`、`assetDisplayName`、`formatSize`；类型 `AssetIconKind` |
 | `asset-picker.ts` | 83 | 资源显示路径（剥掉 `project:`/项目名/`Assets/`）、按 id 查资源、按类别收图片/音频/视频、原始字节 URL。 | `assetDisplayPath`、`findAssetById`、`listImageAssets`、`listAudioAssets`、`listVideoAssets`、`assetRawUrl` |
 | `audio-catalog.ts` | 273 | 音频清单 + 标注 + 标签表的**纯函数层**（BGM 弹框 / 选择音频 / 选择标签三处共用）：tag 是整数、名字住表里；名字兜底链、搜索、按标签 AND 筛、按名排序、标签用量与勾选项。 | `tagEntriesOf`、`tagNameOf`、`tagsOfClip`、`audioCatalog`、`audioNameOf`、`audioDisplayName`、`matchesAudioQuery`、`filterAudioRows`、`sortAudioRowsByName`、`allTagsOf`、`tagOptionsOf`；类型 `AudioTagRef`、`AudioTagEntry`、`AudioCatalogRow` |
@@ -1535,10 +1564,10 @@ edit：取消去抖、`lastPushedSceneText=null`、发 `runtime_stop`）、`push
 
 ### 6.1 版本演进
 
-`DOCUMENT_FORMAT_VERSION = 21`，`PROTOCOL_VERSION = 11`。两者**独立编号**（文档 v21 ↔ 协议 v11 是同一批改动）。
-v21 这一次两者**必须配套发布**：对象自己那张图的组件从一种（`TextureRenderer`）拆成两种
-（`ImageLayer` / `SpriteLayer`），协议 v10 的老客户端不认这两个名字——图取不到、只画一块占位色，
-所以只能靠握手 `4002` 把老客户端挡在连上的那一刻。
+`DOCUMENT_FORMAT_VERSION = 22`，`PROTOCOL_VERSION = 12`。两者**独立编号**（文档 v22 ↔ 协议 v12 是同一批改动）。
+v22 这一次两者**必须配套发布**：`kind` 改名（贴图 `Texture`→`Image`、精灵 `SceneObject`→`Sprite`），
+协议 v11 的老客户端不认这两个值——占位色退回灰色（图照常显示，显示走组件名），
+按「不是崩、是画面错」的同一条纪律靠握手 `4002` 挡住。
 规则：文档格式**任何结构不兼容的改动 +1**；协议**任何不兼容改动 +1**。
 
 | 文档版本 | 内容 | 迁移方式 |
@@ -1563,6 +1592,7 @@ v21 这一次两者**必须配套发布**：对象自己那张图的组件从一
 | **v19** | **对象特性搬进 `components[]`**：`map`/`image`/`sound`/`teleport`/`video` → `GridMap`/`ImageLayer`/`SpriteLayer`/`PlaySound`/`Teleport`/`VideoOverlay` 组件实例（v20 及更早 `image` 那一种是 `TextureRenderer`，v21 拆开） | `migrateFeaturesToComponents`（只搬键、不解释内容；幂等；**组件名按 kind 取**） |
 | **v20** | **精灵（子图）**：图片引用多了可选的 `sprite`（取图集里哪一格），工程文件多了可选的 `spriteSheets`（`图片逻辑 ID → 列×行`，**切分只有这一份**）。格序数**从左上数**（与 `rowOrder: "bottom-up"` 无关）；不存像素 / 不存 UV；越界格子在**推送与渲染两处**统一夹到最后一格；**地图贴图不支持子图** | **无需函数**——两项都是可选字段，靠「版本号 +1 → `needsRewrite` 回写一次」让老文件自描述（同 v17 `audioMeta`）。协议同批 +1 到 **v10**：切分随载荷走（`spriteGrid`，协议比文档多一项），老客户端会把整张图集铺出来，靠握手 `4002` 挡住 |
 | **v21** | **「贴图」对象（kind `Texture`）+ 图片组件拆成两种**：精灵 `SpriteLayer`、贴图 `ImageLayer`（v20 及更早共用 `TextureRenderer`）；`video` 的宿主从精灵换成贴图 | `renameSpriteImageComponent`（旧 `TextureRenderer` **按 kind 路由**改名：`SceneObject` → `SpriteLayer`，Player / Item / Event → `ImageLayer`——v19 的 `image` kinds 含它们，组件 id 同步换 `<对象 id>__<新类型>`；幂等）＋ `migrateFeaturesToComponents` 新增**按 kind 路由组件名**。**精灵身上旧的 `VideoOverlay` 不删**（只由 `validateScene` 报 warning）。协议同批 +1 到 **v11**：老前端不认这两个组件名 → 图取不到只画占位色，靠握手挡住 |
+| **v22** | **对象类型立层级 + 两个 kind 改名**：`SceneObject` 变成**抽象基类**（精灵与贴图继承它，自己不落进文档）；贴图 `Texture` → `Image`、精灵 `SceneObject` → `Sprite`。数据形状一个字没动 | `renameObjectKinds`（`LEGACY_KINDS` 表改名，**必须排在其它迁移前面**——后面两条都按 kind 选图片组件名）；判据从 `kinds.includes` 改成 `carriesKind`（按层级）。协议同批 +1 到 **v12**：老前端不认这两个值 → 占位色退回灰色（图照常显示），靠握手挡住 |
 
 **版本判断纪律**（`schema.ts` 里专门写了注释）：**不能拿文件里的 `formatVersion` 跟 `DOCUMENT_FORMAT_VERSION` 比**
 来判断「要不要做位置换算」——版本号一涨，所有旧文件都会被判成「需要换算」，那会把已经是世界坐标的 v5 文件
@@ -1586,11 +1616,13 @@ upgradeRawDocument           # v1 → v2（把内联 maps 拆成 Map 对象）
 
 ```
 upgradeRawDocument
- → version > 21 则抛错
+ → version > 22 则抛错
  → version < 5  → migrateScenePositions（越界旧值原样保留，不夹到边界）
  → withFilledObjectFields（补 active/sortingOrder/scale/locked；Map 缺位置补 (0,0)）
  → migrateTeleportTarget（{target} → {targets,picked}）
  → migrateSoundLayers（ambient → bgm）
+ → renameObjectKinds           # v22：Texture → Image、SceneObject → Sprite
+                               #      **必须最先**：后面两条都按 kind 选图片组件名
  → renameSpriteImageComponent  # v21：TextureRenderer 按 kind 改名（先改名、再搬字段）
  → migrateFeaturesToComponents # v19：扁平特性字段搬进组件（组件名按 kind 路由）
  → sceneFileSchema.safeParse
@@ -1643,12 +1675,12 @@ upgradeRawDocument
 
 | 概念 | 位置 | 与前端的关系 |
 |---|---|---|
-| 对象类型 `ObjectKind`（8 种） | `@dts/document` | 前 4 种对齐 Unity `BackendObjectKind`；后 4 种（`Map`/`PlaySound`/`Teleport`/`Texture`）编辑器侧新增。**v19 起 `kind` 只是创建原型标签**（前端拿它取占位色），「建不建可见物」看组件（见下） |
+| 对象类型 `ObjectKind`（9 种，含抽象基类） | `@dts/document` 的 `kinds.ts` | `SceneObject` 是**抽象基类**（不落进文档），`Sprite`（精灵）与 `Image`（贴图）继承它；`Player`/`Item`/`Event` 与它平级，另有编辑器侧的 `Map`/`PlaySound`/`Teleport`。**v19 起 `kind` 只是创建原型标签**（前端拿它取占位色），「建不建可见物」看组件（见下）；**v22 起「谁能带哪个特性」按层级判**（`kindIsA`），别写 `kinds.includes` |
 | 组件类型（13 种，`components.ts`） | `@dts/document` | 6 种对象特性（`GridMap` / `ImageLayer` / `SpriteLayer` / `PlaySound` / `Teleport` / `VideoOverlay`）**逐字对齐客户端 `Protocol.ComponentType`**，由 `apps/backend/test/protocol-document-contract.test.ts` 断言；另外 7 种是编辑器侧组件（前端忽略，数据留在镜像里）。**`image` 一个字段两种组件**（`componentsByKind` 按 kind 路由） |
 | 前端可见性判据 | `SceneObjectView.NeedsView(MirrorObject)`（客户端） | 有 `map`（GridMap）或 `image`（`ImageLayer` / `SpriteLayer`）**组件** → 建视图；都没有时**只有带 `PlaySound` / `Teleport` 组件的不建**（动作对象），其余（玩家 / 道具 / 事件 / 还没挑图的精灵）仍要一块占位色面片。**判据只此一处** |
 | 动作类型（5 种，`registry.ts`） | `@dts/actions` | `implemented: false` 的动作（当前是 `PlayAudio`，前端为空壳）在编辑器里可编辑但会报 warning、且导出后不产生效果 |
-| **子图（v10）** | `@dts/document` 的 `ImageRef.sprite` + `ProjectDoc.spriteSheets`（见 §3.2.6） | 就是「纹理 + 一块矩形」（组件是 `SpriteLayer` / `ImageLayer`，见 v21 那一条）。载荷里 `sprite` + `spriteGrid` 一起下发（编辑器推送时解析出来）；Unity 侧：`Protocol.Version = 11` → `SceneParser.ParseSprite` 把两项合成一份 `MirrorSprite`（缺 `spriteGrid` 按 1×1，越界夹到最后一格）存进 `MirrorImage.sprite` → `SpriteLayer.UvRectOf`（**全链路唯一一次 y 翻转**）+ `InsetUv`（子图内缩半纹素，躲开双线性渗色）→ `Apply(..., uvRect)` 把 UV **烘进网格顶点**；`SceneObjectView.currentUvRect` 记着当前那一块；`ResourceImageLoader` 取到纹理后 `wrapMode = Clamp`（整图也无副作用）；`Editor/LayerInspector.cs` 把网格上的实际 UV 显示出来 |
-| **两种图片组件（v21）** | `@dts/document` 的 `FEATURE_COMPONENT.image`（`ImageLayer`）+ `SPRITE_COMPONENT`（`SpriteLayer`）；`OBJECT_FEATURES.image.componentsByKind` | 同一个 `image` 字段，**按 kind 取组件名**（唯一入口 `componentForKind`）。文档侧「这个对象的图能不能取一格」= `supportsSpriteSheet`（编辑器据此决定选择图片弹框给不给切分面板）；客户端读**两种都认**，`MirrorObject.hasSpriteLayer` 记下是哪一种（占位色 `KindColor` 靠 `kind` 分：精灵蓝、贴图紫）。迁移：`renameSpriteImageComponent` 把老文件里的 `TextureRenderer` **按 kind 路由**改名（精灵 → `SpriteLayer`，Player / Item / Event → `ImageLayer`），组件 id 同步换 |
+| **子图（v10）** | `@dts/document` 的 `ImageRef.sprite` + `ProjectDoc.spriteSheets`（见 §3.2.6） | 就是「纹理 + 一块矩形」（组件是 `SpriteLayer` / `ImageLayer`，见 v21 那一条）。载荷里 `sprite` + `spriteGrid` 一起下发（编辑器推送时解析出来）；Unity 侧：`Protocol.Version = 12` → `SceneParser.ParseSprite` 把两项合成一份 `MirrorSprite`（缺 `spriteGrid` 按 1×1，越界夹到最后一格）存进 `MirrorImage.sprite` → `SpriteLayer.UvRectOf`（**全链路唯一一次 y 翻转**）+ `InsetUv`（子图内缩半纹素，躲开双线性渗色）→ `Apply(..., uvRect)` 把 UV **烘进网格顶点**；`SceneObjectView.currentUvRect` 记着当前那一块；`ResourceImageLoader` 取到纹理后 `wrapMode = Clamp`（整图也无副作用）；`Editor/LayerInspector.cs` 把网格上的实际 UV 显示出来 |
+| **两种图片组件（v21）** | `@dts/document` 的 `FEATURE_COMPONENT.image`（`ImageLayer`）+ `SPRITE_COMPONENT`（`SpriteLayer`）；`OBJECT_FEATURES.image.componentsByKind` | 同一个 `image` 字段，**按 kind 取组件名**（唯一入口 `componentForKind`，**沿基类往上查**：`Image` 没写自己的路由，就落到基类那一份缺省承载）。文档侧「这个对象的图能不能取一格」= `supportsSpriteSheet`（编辑器据此决定选择图片弹框给不给切分面板）；客户端读**两种都认**，`MirrorObject.hasSpriteLayer` 记下是哪一种（占位色 `KindColor` 靠 `kind` 分：精灵蓝、贴图紫，只认具体类型）。迁移：`renameSpriteImageComponent` 把老文件里的 `TextureRenderer` **按 kind 路由**改名（精灵 → `SpriteLayer`，Player / Item / Event → `ImageLayer`），组件 id 同步换 |
 
 ### 6.5 客户端联调（真 Unity 验证，2026-09-22）
 
@@ -1695,8 +1727,8 @@ upgradeRawDocument
 | 层 | 位置 | 运行器 / 环境 | 数量 | 行数 |
 |---|---|---|---|---|
 | 架构边界 | `test/architecture.test.ts` | vitest `node` | 1 文件 / 3 describe / 6 用例 | 232 |
-| 单元测试 | `packages/*/test`、`apps/backend/test`、`apps/editor/test` | vitest（`node` / `jsdom` 两个 project） | 70 个测试文件（另 2 个 helper + 1 个 setup） | 18,877 |
-| 端到端 | `e2e/*.spec.ts` | Playwright（三条档位线） | 20 个 spec（7,355）+ 2 helper（1,419）+ 1 teardown | 8,790 |
+| 单元测试 | `packages/*/test`、`apps/backend/test`、`apps/editor/test` | vitest（`node` / `jsdom` 两个 project） | 72 个测试文件（另 2 个 helper + 1 个 setup） | 19,545 |
+| 端到端 | `e2e/*.spec.ts` | Playwright（三条档位线） | 20 个 spec（7,396）+ 2 helper（1,427）+ 1 teardown（15） | 8,838 |
 
 - `pnpm test` = `vitest run`（两个 project 一起跑，README 说约 1.5s）；
 - `apps/editor/test` 跑在 **jsdom**，`setup.ts` 补 jsdom 缺的浏览器 API 并挂 `@testing-library/jest-dom`；
@@ -1752,7 +1784,8 @@ upgradeRawDocument
 | `document/document.test.ts` | 1,760 | 文档工厂（场景是容器、对象挂在场景上）；组件注册表；对象命令（改名/位置/锁定/激活/显示顺序/缩放/贴图/网格/组件/动作…）；**战争雾手动指定雾区**；文档校验；工程文件 schema 与版本迁移；场景文件 schema |
 | `protocol/protocol.test.ts` | 979 | 场景载荷（地图/精灵/声音/战争雾总开关/视频/传送阵/`position: null`/单轴缩放/额外字段不报错/网格尺寸约束/**子图：`sprite` + `spriteGrid` 原样传给前端、越界被拒、只有整图时两项都不在**）；四条通道的逐条成员；命令只带触发器（含战争雾只发轨迹、声音按层、BGM 带 clip、视频只带 objectId）；畸形结构被拒（缺 objectId、空轨迹、非有限数）；**拒绝旧模型消息**（`register_*`/`report_*`/`invoke_action`/`sync_state`）；三端 schema 都是判别式联合；JSON 解析与请求 id |
 | `document/video.test.ts` | 467 | 哪些对象能带视频；列表命令（去空去重、清空不删字段、移出的视频收拾干净、重复写不算变更）；选中与名字；循环与声音开关；总开关；文档校验；格式版本 |
-| `document/sprite.test.ts` | 436 | **v20 新增**。切分只有一份：没有表项 = 整图、写进去/改回来/删掉这一串「值没变」不算变更、只删一张时字段留着、坏数字取整并夹到 1..64；对象引用哪一格（换图丢掉旧格子、同一 id 再挑保留格子、地图对象选格返回 `false`、坏格子收成非负整数）；解析（归一化矩形每格恰好 1/列 1/行、像素矩形按**加载到的**尺寸算、越界夹到最后一格、没有 `sprite` = 整图、地图一律没有子图、一格声明尺寸、预览图上点哪一格）；落盘（场景/工程文件往返 + v19 升 v20 需要回写、负数/小数格子被 schema 拒）；**推送解析**（补 `spriteGrid`、越界夹取、摘掉地图上的误写、不改输入文档）；校验（越界格 warning、地图带 sprite warning、`1×1` 多余项与空图片 ID warning）。**v21 加**：`TextureRenderer` 按 kind 改名（精灵 → `SpriteLayer`、Player / Item / Event → `ImageLayer`，组件 id 同步换、幂等、非 image 特性的 kind 不碰） |
+| `document/sprite.test.ts` | 700 | **v20 新增**。切分只有一份：没有表项 = 整图、写进去/改回来/删掉这一串「值没变」不算变更、只删一张时字段留着、坏数字取整并夹到 1..64；对象引用哪一格（换图丢掉旧格子、同一 id 再挑保留格子、地图对象选格返回 `false`、坏格子收成非负整数）；解析（归一化矩形每格恰好 1/列 1/行、像素矩形按**加载到的**尺寸算、越界夹到最后一格、没有 `sprite` = 整图、地图一律没有子图、一格声明尺寸、预览图上点哪一格）；落盘（场景/工程文件往返 + v19 升 v20 需要回写、负数/小数格子被 schema 拒）；**推送解析**（补 `spriteGrid`、越界夹取、摘掉地图上的误写、不改输入文档）；校验（越界格 warning、地图带 sprite warning、`1×1` 多余项与空图片 ID warning）。**v21 加**：`TextureRenderer` 按 kind 改名（精灵 → `SpriteLayer`、Player / Item / Event → `ImageLayer`，组件 id 同步换、幂等、非 image 特性的 kind 不碰）。**v22 加**：kind 改名（`SceneObject`→`Sprite`、`Texture`→`Image`，回写一次、幂等、怪值原样留着让 schema 报错、只换 kind 一个字段） |
+| `document/kinds.test.ts` | 175 | **v22 新增**。层级表本身（表与定义一一对应、祖先链 / 自身链、`kindIsA` 正反向、抽象基类不入 `CONCRETE_KINDS`、`kindDescendants`）；层级落到特性表上的三件事（`carriesKind` 让子类型继承基类那条 `image`、`video` 仍然只给具体类型；`componentForKind` 先看自己再退到基类；`kindsCarrying` 算出的 `ImageLayer` 里**没有** `Sprite`）；文档 schema 的枚举就是 `OBJECT_KINDS`（每个值都读得开、`SceneObject` 一读出来就是 `Sprite` 并要回写、表外的值仍被挡住） |
 | `document/audio-meta.test.ts` | 426 | 显示名；标签表新建/改名；按序号命名（序号预先定好只填名字）；删除（留洞 + 摘引用）；文件上的标签 ID 列表；读写工程文件与 **v17 → v18 迁移**；校验 |
 | `document/teleport.test.ts` | 370 | 传送阵工厂；`setTeleportTargets`（加/移候选）；`setTeleportPicked`；解析与版本（含 `{target}` 老形状迁移）；校验 |
 | `document/sound.test.ts` | 406 | 声音对象工厂；声音命令（列表/选中/层级/名字）；场景文件 schema；校验 |
@@ -1781,7 +1814,7 @@ upgradeRawDocument
 > 紧凑布局，不补的话任何 import 了 store 的用例在收集阶段就炸；`matches` 恒为 `false` = 桌面布局）与
 > `Element.prototype.scrollIntoView`（资源面板把左树滚到当前层时用；补空实现，**刻意不在组件里加特性判断**）。
 
-#### 7.3.3 `apps/editor/test`（34 文件 / 8,183 行，jsdom）
+#### 7.3.3 `apps/editor/test`（35 文件 / 8,352 行，jsdom）
 
 | 文件 | 行数 | 覆盖的行为 |
 |---|---|---|
@@ -1818,20 +1851,21 @@ upgradeRawDocument
 | `scene-rename-image.test.ts` | 83 | **回归护栏（v19 新增）**：重命名场景时同名贴图跟着改指——地图的贴图引用必须写进 `GridMap` 组件、**不能留下扁平 `map` 字段**（那会被 schema 丢掉 = 贴图丢失，而且类型检查抓不到）；精灵的图片不动、手工指定的贴图不动 |
 | `runtime-client.test.ts` | 57 | 断开原因（close code / reason → 一句人话）；**重连退避**（别拿 500ms 去捶一个注定拒绝你的服务端） |
 | `dialog-size.test.ts` | 55 | `dialogSizeFor`；`fitBox` |
+| `object-kinds.test.ts` | 77 | **v22 新增**。类型表的**表级不变量**：每个 `ObjectKind` 都有且只有一个种类归属（面板按种类过滤，漏一个那种对象就凭空消失）；表里每个类型都有展示名、`id` 不重复；抽象基类 `SceneObject` 只作归类项（不可创建、也不在弹框候选里，但仍归「实体」，手写文件里出现它时面板不会漏）；实体下可创建的就是 网格地图 / 精灵 / 贴图 三个具体类型 |
 | `setup.ts` | 31 | jsdom 环境补齐 |
 
-### 7.4 E2E 清单（20 spec + 2 helper + 1 teardown / 8,790 行）
+### 7.4 E2E 清单（20 spec + 2 helper + 1 teardown / 8,838 行）
 
 | spec | 行数 | 覆盖的用户流程 | `@runtime` |
 |---|---|---|---|
-| `object-edit.spec.ts` | 1,185 | 创建与编辑场景对象（最大的一份：对象弹框、属性面板各组、改名/位置/贴图/网格、复制删除） | 否 |
+| `object-edit.spec.ts` | 1,195 | 创建与编辑场景对象（最大的一份：对象弹框、属性面板各组、改名/位置/贴图/网格、复制删除） | 否 |
 | `scene-transform.spec.ts` | 881 | 场景变换手柄（移动/旋转/缩放的精确指针手势）+ 画布上的其它拖动 | 否 |
 | `sound-object.spec.ts` | 634 | 动作对象「播放声音」（创建、属性面板、编辑窗口）+ 声音命令下发给前端 | **是**（第二部分） |
 | `scene-menu.spec.ts` | 456 | 场景菜单（新建/改名/删除/上下场）+ 场景切换（切换条与快捷键 `1`-`9`、`[`/`]`） | 否 |
 | `global-bgm.spec.ts` | 422 | 背景音乐：清单来自项目音频、与项目设置分离 + 背景音乐命令下发给前端 | **是**（第二部分） |
 | `hierarchy.spec.ts` | 498 | 场景数据（对象列表、种类/关键字过滤）+ 场景对象行操作；**含 4 条迁移用例**：旧版工程文件 v2、旧版场景文件 v3 / v4、以及 **v18 扁平字段 → v19 组件**（断言 `formatVersion` 19、组件 id/type/data 精确、5 个扁平字段消失、网格与声音层级仍然渲染出来） | 否 |
 | `smoke.spec.ts` | 354 | 编辑器外壳、画布视口交互、**平板紧凑布局**、编辑态/运行态 | **是**（第四部分） |
-| `video-object.spec.ts` | 347 | 地图/精灵的视频列表 + 视频命令下发给前端 | **是**（第二部分） |
+| `video-object.spec.ts` | 367 | 地图/贴图（`kind: "Image"`）的视频列表 + 视频命令下发给前端 | **是**（第二部分） |
 | `fog-mask.spec.ts` | 307 | 战争雾 Mask 窗口 | 否 |
 | `teleport.spec.ts` | 261 | 动作对象「传送阵」（候选、窗口、按一下换台） | 否 |
 | `sprite-sheet.spec.ts` | 259 | **v20 新增**（三条）：① 选一格 → 只画那一格（画布采样四象限都成了那一格的颜色），并落进**两份文件**（场景文件只记「第几格」、工程文件记切分）；② 改切分 → 同一份引用换一块像素（对象侧一个字节都不改）；③ 地图对象的选择窗口**没有**切分面板（贴图不支持子图） | 否 |
@@ -1839,12 +1873,12 @@ upgradeRawDocument
 | `fog-reveal.spec.ts` | 242 | 战争雾：轨迹下发给前端 | **是** |
 | `grid-annotate.spec.ts` | 229 | 网格标注在画布上的显示（显示开关、颜色、叠加顺序） | 否 |
 | `grid-edit-window.spec.ts` | 219 | 网格编辑窗口（落笔即格子、画笔、全部清除） | 否 |
-| `inspector-groups.spec.ts` | 209 | 属性分组 | 否 |
+| `inspector-groups.spec.ts` | 219 | 属性分组 | 否 |
 | `project.spec.ts` | 200 | 项目（新建/打开/删除、资源树） | 否 |
 | `object-lock.spec.ts` | 175 | 对象锁定 | 否 |
 | `object-scale.spec.ts` | 124 | 对象缩放 | 否 |
 | `startup.spec.ts` | 113 | 编辑器启动引导 | 否 |
-| `helpers/editor.ts` | 917 | 用例级助手：建/删项目、打开编辑器、按 `data-testid` 定位、断言状态；**v19 起还有一组组件读取助手**：`COMPONENT`（**6 个**组件名常量：`gridMap` / `imageLayer` / `spriteLayer` / `playSound` / `teleport` / `videoOverlay`）、`componentId`、`findSceneObject`、`componentInstanceOf`、`objectComponentData`、`componentDataOf(file, {objectId?\|kind?}, component)`、`withComponent`、`readSceneFile`、`readSceneMap`、`readSceneFog`、`readSceneSound`、`readSceneTeleport`、`readSceneVideo`（缺省找 `Map`，贴图要显式传 `"Texture"`；spec 里**不再直接摸 `components`**，也不再有扁平字段读取）；**v20 起补子图助手**：`CURRENT_SCENE_FORMAT_VERSION = 21`、`colorGridPng(columns, rows, colors, cell)`（**每格一色的自编码 PNG**，用例靠它断言「画的是哪一格」）、`readProjectSpriteSheets`、`readObjectSprite`（读 `SpriteLayer` 的 `sprite`），`seedProjectDoc` 多了第四参 `projectPatch`（种一份带切分表的工程文件） | — |
+| `helpers/editor.ts` | 1,035 | 用例级助手：建/删项目、打开编辑器、按 `data-testid` 定位、断言状态；**v19 起还有一组组件读取助手**：`COMPONENT`（**6 个**组件名常量：`gridMap` / `imageLayer` / `spriteLayer` / `playSound` / `teleport` / `videoOverlay`）、`componentId`、`findSceneObject`、`componentInstanceOf`、`objectComponentData`、`componentDataOf(file, {objectId?\|kind?}, component)`、`withComponent`、`readSceneFile`、`readSceneMap`、`readSceneFog`、`readSceneSound`、`readSceneTeleport`、`readSceneVideo`（缺省找 `Map`，贴图要显式传 `"Image"`；spec 里**不再直接摸 `components`**，也不再有扁平字段读取）；**v20 起补子图助手**：`CURRENT_SCENE_FORMAT_VERSION = 22`、`colorGridPng(columns, rows, colors, cell)`（**每格一色的自编码 PNG**，用例靠它断言「画的是哪一格」）、`readProjectSpriteSheets`、`readObjectSprite`（读 `SpriteLayer` 的 `sprite`），`seedProjectDoc` 多了第四参 `projectPatch`（种一份带切分表的工程文件） | — |
 | `helpers/canvas.ts` | 392 | 画布助手：世界↔屏幕换算、精确点/拖手柄、读取 `data-viewport-*` | — |
 | `global-teardown.ts` | 15 | 按 `DTS_E2E_RESOURCES` 清掉临时资源根 | — |
 
@@ -1865,9 +1899,9 @@ upgradeRawDocument
 - `globalTeardown` 只能是**文件路径**，所以临时根经环境变量 `DTS_E2E_RESOURCES` 传给 teardown。
 
 **helper 的两处「复述常量」**（升级时必须同步改，注释里都写明了）：
-`e2e/helpers/editor.ts` 的 `CURRENT_SCENE_FORMAT_VERSION = 21` 复述 `@dts/document` 的
+`e2e/helpers/editor.ts` 的 `CURRENT_SCENE_FORMAT_VERSION = 22` 复述 `@dts/document` 的
 `DOCUMENT_FORMAT_VERSION`；`fog-reveal.spec.ts` / `global-bgm.spec.ts` / `video-object.spec.ts` /
-`sound-object.spec.ts` 里写死的 `protocolVersion: 11` 复述 `@dts/protocol` 的 `PROTOCOL_VERSION`。
+`sound-object.spec.ts` 里写死的 `protocolVersion: 12` 复述 `@dts/protocol` 的 `PROTOCOL_VERSION`。
 E2E **不引用内部包**（根上没有 workspace 链接），所以这些常量不会被类型检查兜住。
 
 ---
@@ -1903,13 +1937,13 @@ resources/
 - 后端不依赖资源根存在：`loadConfig` 读不到 `config/app.json` 就用内置默认值，目录由首次写入时按需创建
   （E2E 依赖这一点）。
 
-**`测试项目` 的实际内容**（磁盘上还是 `formatVersion: 20`——v21 改了图片组件的名字与 kind 名单，
-所以**编辑器打开它时会自动迁移并回写一次**，见 §6.4；下表的 `kind` / 组件名按**迁移后**的样子写）：
+**`测试项目` 的实际内容**（磁盘上已经是 `formatVersion: 22`——v22 改了 kind 的名字、v21 改了图片组件的
+名字，历史文件由**编辑器打开时自动迁移并回写一次**，见 §6.4；下表按**迁移后**的样子写）：
 
 | 文件 | 内容 |
 |---|---|
 | `project.json` | `items = { source: "item.xlsx", updatedAt: "2026-09-18", count: 0, items: [] }`；`settings.audio` = `bgm 0.6 / sfx 0.8 / voice 1`（**只有音量**）；`audioMeta` 两条（`06-altar-transition.mp3 → {tags:[0,2]}`、`01-bird-capture-part-1.mp3 → {name:"声音1", tags:[0,1,2]}`）；`audioTags = ["场景1","场景2","场景3"]` |
-| `Assets/scenes/场景1.json` | 4 个对象：① `Map`「地图」（`sortingOrder -1`、`locked`、`Map001.png` 1920×1080、`grid 64×36`、RLE 71 段、`map.fog {enabled:true, regions:[1,2,4]}`）；② `SceneObject`「精灵」（`Bridge.png` 256×256、`rotation ≈ -15°`）；③ `PlaySound`「播放声音」（3 条 clips、`picked` = `06-altar-transition.mp3`、`layer:"voice"`）；④ `Teleport`「传送阵」（`targets:["场景2","场景3"]`、`picked:"场景3"`） |
+| `Assets/scenes/场景1.json` | 4 个对象：① `Map`「地图」（`sortingOrder -1`、`locked`、`Map001.png` 1920×1080、`grid 64×36`、RLE 71 段、`map.fog {enabled:true, regions:[1,2,4]}`）；② `Sprite`「精灵」（`Bridge.png` 256×256、`rotation ≈ -15°`）；③ `PlaySound`「播放声音」（3 条 clips、`picked` = `06-altar-transition.mp3`、`layer:"voice"`）；④ `Teleport`「传送阵」（`targets:["场景2","场景3"]`、`picked:"场景3"`） |
 | `Assets/scenes/场景2.json` | 1 个 `Map`「网格地图」（`Map002.png`、`cells` 单个游程 `[[0, 2304]]` 即全空） |
 | `Assets/scenes/场景3.json` | 1 个 `Map`「网格地图」（`Map003.png`）+ `video { enabled:false, clips:[Map003_1..3.mp4], picked:"Map003_1.mp4", loop:false, audio:false }` |
 
@@ -2025,8 +2059,8 @@ resources/
     （必须相对且不越出资源根），写错会**直接拒绝启动**而不是静默降级。
 15. **README 与 `playwright.config.ts` 对 E2E worker 数的说法不一致**：`server/README.md` 写「worker 数默认按核数
     一半、封顶 8」，而配置里是固定的 `Number(process.env.E2E_WORKERS ?? 4)`。**以配置文件为准**。
-16. **E2E 里有几处「复述常量」不会被类型检查兜住**（见 §7.4 末）：`CURRENT_SCENE_FORMAT_VERSION = 21`、
-    各 spec 里写死的 `protocolVersion: 11`，以及 `scene-transform.spec.ts` 顶部复述的手柄几何常量
+16. **E2E 里有几处「复述常量」不会被类型检查兜住**（见 §7.4 末）：`CURRENT_SCENE_FORMAT_VERSION = 22`、
+    各 spec 里写死的 `protocolVersion: 12`，以及 `scene-transform.spec.ts` 顶部复述的手柄几何常量
     （`GIZMO_AXIS_GAP` 45 / `GIZMO_AXIS_LENGTH` 40 / `GIZMO_RING_GAP` 22）。改这些常量时要一起改。
 17. **`resources/projects/` 里唯一的项目是「测试项目」**（含 3 个场景、4 张图片、6 个视频、13 个音频），
     它是仓库里唯一「有 `project.json` 因此被接口认成项目」的目录——所以 `e2e/startup.spec.ts` 必须把

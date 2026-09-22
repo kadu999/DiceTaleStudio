@@ -70,7 +70,7 @@ test.describe("精灵：把图集切成子图", () => {
         [
           sceneDoc(SCENE, [
             withComponent(
-              sceneObjectDoc("精灵", "SceneObject", { x: 0, y: 0 }),
+              sceneObjectDoc("精灵", "Sprite", { x: 0, y: 0 }),
               COMPONENT.spriteLayer,
               { id: imageId, width: CELL * 2, height: CELL * 2 },
             ),
@@ -163,7 +163,7 @@ test.describe("精灵：把图集切成子图", () => {
         [
           sceneDoc(SCENE, [
             withComponent(
-              sceneObjectDoc("精灵", "SceneObject", { x: 0, y: 0 }),
+              sceneObjectDoc("精灵", "Sprite", { x: 0, y: 0 }),
               COMPONENT.spriteLayer,
               { id: imageId, width: CELL, height: 16, sprite: { column: 1, row: 0 } },
             ),

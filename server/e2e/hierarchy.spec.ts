@@ -93,7 +93,7 @@ test.describe("场景数据", () => {
             id: "m1",
             name: SCENE_A,
             objects: [
-              { id: "door", name: "木门", kind: "SceneObject", position: null, rotation: 0, components: [] },
+              { id: "door", name: "木门", kind: "Sprite", position: null, rotation: 0, components: [] },
             ],
           },
         ],
@@ -154,7 +154,7 @@ test.describe("场景数据", () => {
       const legacyScene = {
         formatVersion: 3,
         objects: [
-          { id: "door", name: "木门", kind: "SceneObject", position: null, rotation: 0, components: [] },
+          { id: "door", name: "木门", kind: "Sprite", position: null, rotation: 0, components: [] },
         ],
       };
 
@@ -215,7 +215,7 @@ test.describe("场景数据", () => {
             id: "door",
             // 归一化 (0.25, 0.25) 在 1920×1080 场景里 = 左上四分之一处
             name: "木门",
-            kind: "SceneObject",
+            kind: "Sprite",
             position: { x: 0.25, y: 0.25 },
             rotation: 0,
             components: [],

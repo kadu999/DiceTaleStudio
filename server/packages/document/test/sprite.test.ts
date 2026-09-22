@@ -444,7 +444,7 @@ describe("校验：只提醒，不算错", () => {
  * 按新名字找不到旧实例、会**多补一个**，对象上就挂了两份图）。
  */
 describe("v21 迁移：图片组件改名（按 kind）", () => {
-  /** 一个 v20 形状的精灵：kind=SceneObject + 旧组件名 `TextureRenderer`。 */
+  /** 一个 v20 形状的精灵：kind=SceneObject（那时精灵复用这个名字）+ 旧组件名 `TextureRenderer`。 */
   const legacySprite = (id: string, data: Record<string, unknown>): Record<string, unknown> => ({
     id,
     name: "精灵",
@@ -590,6 +590,8 @@ describe("v21 迁移：图片组件改名（按 kind）", () => {
   });
 
   it("v18 那种扁平 `image` 字段：按 kind 路由到精灵那一份组件（不是贴图那一份）", () => {
+    // kind 写的是**那时候的名字** `SceneObject`（v22 才改叫 `Sprite`）：老文件里两个迁移
+    // 叠在一起——先改 kind、再按 kind 挑组件名，挑错就会把精灵的图搬进贴图的 `ImageLayer`
     const loaded = parseSceneFile({
       formatVersion: 18,
       objects: [
@@ -606,5 +608,102 @@ describe("v21 迁移：图片组件改名（按 kind）", () => {
     });
 
     expect(loaded.file.objects[0]!.components.map((item) => item.type)).toEqual(["SpriteLayer"]);
+    expect(loaded.file.objects[0]!.kind).toBe("Sprite");
+  });
+});
+
+/**
+ * v21 → v22：**两种实体的 kind 改名**——贴图 `Texture` → `Image`、精灵 `SceneObject` → `Sprite`。
+ *
+ * 纯改名（数据形状一个字没动），所以这一组只钉三件事：两个老值换对、**别的地方一个字节不碰**、
+ * 幂等。真正的风险不在改名本身，而在**它必须排在按 kind 路由的那两条迁移前面**——
+ * 那一条由上面「v18 扁平字段」与「v20 图片组件改名」两个用例兜着。
+ */
+describe("v22 迁移：kind 改名（Texture → Image / SceneObject → Sprite）", () => {
+  const load = (objects: readonly Record<string, unknown>[], formatVersion = 21) =>
+    parseSceneFile({ formatVersion, objects: [...objects] });
+
+  /** 一个只有基础字段的对象（组件由各用例自己给）。 */
+  const bare = (id: string, kind: string, components: readonly Record<string, unknown>[] = []) => ({
+    id,
+    name: kind,
+    kind,
+    active: true,
+    sortingOrder: 0,
+    locked: false,
+    position: { x: 0, y: 0 },
+    rotation: 0,
+    scale: 1,
+    components: [...components],
+  });
+
+  it("精灵 SceneObject → Sprite、贴图 Texture → Image，并回写一次", () => {
+    const loaded = load([bare("obj_1", "SceneObject"), bare("obj_2", "Texture")]);
+
+    expect(loaded.file.objects.map((object) => object.kind)).toEqual(["Sprite", "Image"]);
+    expect(loaded.needsRewrite).toBe(true);
+    expect(loaded.file.formatVersion).toBe(DOCUMENT_FORMAT_VERSION);
+  });
+
+  it("其余 kind 与手写怪值原样不动（怪值照旧被枚举挡住，不给它猜一个新归属）", () => {
+    const known = load([
+      bare("map_1", "Map"),
+      bare("player_1", "Player"),
+      bare("item_1", "Item"),
+      bare("event_1", "Event"),
+      bare("sound_1", "PlaySound"),
+      bare("teleport_1", "Teleport"),
+    ]);
+    expect(known.file.objects.map((object) => object.kind)).toEqual([
+      "Map",
+      "Player",
+      "Item",
+      "Event",
+      "PlaySound",
+      "Teleport",
+    ]);
+
+    expect(() => load([bare("portal_1", "Portal")])).toThrow(/场景文件校验失败/);
+  });
+
+  it("只换 kind 这一个字段：组件与图片数据一个字节不动（v21 形状的文件）", () => {
+    const loaded = load([
+      bare("obj_1", "SceneObject", [
+        {
+          id: "obj_1__SpriteLayer",
+          type: "SpriteLayer",
+          data: { id: IMAGE_ID, width: 64, height: 64, sprite: { column: 1, row: 0 } },
+          actions: [],
+        },
+        // v21 起视频那一组的宿主是贴图，但**旧文件里精灵身上这一份不删**（不静默改用户数据）
+        {
+          id: "obj_1__VideoOverlay",
+          type: "VideoOverlay",
+          data: { enabled: true, clips: ["project:C/Assets/video/open.mp4"], picked: "project:C/Assets/video/open.mp4" },
+          actions: [],
+        },
+      ]),
+    ]);
+
+    const object = loaded.file.objects[0]!;
+    expect(object.kind).toBe("Sprite");
+    expect(object.components.map((component) => component.type)).toEqual([
+      "SpriteLayer",
+      "VideoOverlay",
+    ]);
+    expect(imageOf(object)).toEqual({
+      id: IMAGE_ID,
+      width: 64,
+      height: 64,
+      sprite: { column: 1, row: 0 },
+    });
+  });
+
+  it("幂等：现行值再读一遍不改、也不需要回写", () => {
+    const once = load([bare("obj_1", "SceneObject"), bare("obj_2", "Texture")]);
+    const twice = parseSceneFile(JSON.parse(JSON.stringify(once.file)) as unknown);
+
+    expect(twice.file.objects.map((object) => object.kind)).toEqual(["Sprite", "Image"]);
+    expect(twice.needsRewrite).toBe(false);
   });
 });

@@ -50,7 +50,7 @@ test.describe("对象锁定", () => {
     const project = await newProject(request);
     try {
       await seedProjectDoc(request, project, [
-        sceneDoc(SCENE, [sceneObjectDoc(DOOR, "SceneObject", { x: 0, y: 0 })]),
+        sceneDoc(SCENE, [sceneObjectDoc(DOOR, "Sprite", { x: 0, y: 0 })]),
       ]);
 
       await enterEditor(page);

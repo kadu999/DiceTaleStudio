@@ -18,7 +18,7 @@ function scene(name: string, x: number): SceneDoc {
       {
         id: "o1",
         name: "对象",
-        kind: "SceneObject",
+        kind: "Sprite",
         active: true,
         locked: false,
         sortingOrder: 0,

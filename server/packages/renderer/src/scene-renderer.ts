@@ -215,10 +215,11 @@ const MAX_GRID_LINES = 4000;
 
 /** 对象类型色（弹框里那个小圆点、以及声音对象那枚内置图标都用它）。 */
 const KIND_MARKER_COLORS: Record<string, string> = {
-  SceneObject: "#4f9cf9",
-  // 贴图对象（v21）：与精灵分开——两者都显示一张图，但精灵会取图集里的一格。
+  // 精灵（v22 前叫 `SceneObject`：那时它复用泛用的场景对象名）
+  Sprite: "#4f9cf9",
+  // 贴图对象（v21，v22 前叫 `Texture`）：与精灵分开——两者都显示一张图，但精灵会取图集里的一格。
   // 用一个偏青的粉紫，和上面五个都分得开（弹框里两个瓦片一眼看得出不是一个东西）
-  Texture: "#c084fc",
+  Image: "#c084fc",
   Player: "#3fbf6f",
   Item: "#e0a13c",
   Event: "#b06ef0",

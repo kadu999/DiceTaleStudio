@@ -8,9 +8,9 @@ namespace DiceTale
     ///
     /// 它有两个具体的子类，对应**两种不同的图片组件**（协议 v11 / 文档 v21 起）：
     /// <list type="bullet">
-    /// <item><see cref="ImageLayer"/> —— 「贴图对象」（`kind: "Texture"`，组件 `ImageLayer`）：
+    /// <item><see cref="ImageLayer"/> —— 「贴图对象」（`kind: "Image"`，组件 `ImageLayer`）：
     /// 显示**整张图**；</item>
-    /// <item><see cref="SpriteLayer"/> —— 「精灵对象」（`kind: "SceneObject"`，组件 `SpriteLayer`）：
+    /// <item><see cref="SpriteLayer"/> —— 「精灵对象」（`kind: "Sprite"`，组件 `SpriteLayer`）：
     /// 显示图集里的**一格**（子图）。</item>
     /// </list>
     /// 两者共用这一份网格 / 材质 / UV 逻辑，差别只有「取样矩形要不要内缩半个纹素躲开邻格渗色」

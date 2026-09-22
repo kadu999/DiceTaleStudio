@@ -63,7 +63,7 @@ test.describe("对象缩放", () => {
       await seedProjectDoc(request, project, [
         sceneDoc(SCENE, [
           withComponent(
-            sceneObjectDoc("精灵", "SceneObject", { x: 0, y: 0 }),
+            sceneObjectDoc("精灵", "Sprite", { x: 0, y: 0 }),
             COMPONENT.spriteLayer,
             { id: `project:${project}/${IMAGE_PATH}`, width: SIZE.width, height: SIZE.height },
           ),

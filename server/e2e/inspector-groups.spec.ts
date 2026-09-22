@@ -31,9 +31,9 @@ test.describe("属性分组", () => {
       await seedProjectDoc(request, project, [
         sceneDoc(SCENE, [
           mapObjectDoc(project, SCENE, "网格地图", { width: 400, height: 300 }, { width: 8, height: 6 }),
-          sceneObjectDoc("精灵", "SceneObject", { x: 200, y: 0 }),
+          sceneObjectDoc("精灵", "Sprite", { x: 200, y: 0 }),
           // 贴图：视频那一组的宿主（v21 起从精灵换成贴图）
-          sceneObjectDoc("贴图", "Texture", { x: -200, y: 0 }),
+          sceneObjectDoc("贴图", "Image", { x: -200, y: 0 }),
         ]),
       ]);
 

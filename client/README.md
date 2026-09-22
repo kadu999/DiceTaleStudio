@@ -306,7 +306,7 @@ Assets/
   Inspector 上多/少那一行读的是**网格实际的 UV**（`Editor/LayerInspector.cs`），
   选中对象就能看出它现在是整张图还是子图。
 - **贴图对象 + 两种图片组件（2026-09-23，协议 v11 / 文档 v21）**：实体下多了「贴图」
-  （`kind: "Texture"`）——**只显示整张图**，与精灵的区别只有「不取图集里的一格」。
+  （那时 `kind: "Texture"`，v12 起叫 `Image`）——**只显示整张图**，与精灵的区别只有「不取图集里的一格」。
   数据上分成两个组件：精灵挂 `SpriteLayer`、贴图挂 `ImageLayer`（v10 及更早都叫 `TextureRenderer`），
   两者的 `data` 形状完全一样。客户端侧：
   - `Protocol.ComponentType` 多一个 `Sprite` = `"SpriteLayer"`（`Image` 从 `TextureRenderer` 改成 `"ImageLayer"`）；
@@ -317,11 +317,19 @@ Assets/
   - **占位色分开了**：`SceneObjectView.KindColor` 里精灵是蓝、贴图是紫（图没取回来那几百毫秒可见）；
   - **视频那一组换了宿主**（地图 + 贴图，精灵不再有）：能不能放视频是由
     `HasComponent(VideoOverlay)` 判的，所以前端**不用改**——只是精灵身上不会再出现这个组件。
-- **镜像协议已实现**（**协议 v11**：v5 起战争雾的总开关与视频随场景下发，v6 起声音补齐
+- **kind 改名（2026-09-23，协议 v12 / 文档 v22）**：贴图 `Texture` → `Image`、精灵
+  `SceneObject` → `Sprite`。后台那边 `SceneObject` 从此是**抽象基类**（精灵与贴图继承它、
+  它自己不落进数据），但**客户端这一侧看不见层级**——`kind` 只是个标签，载荷一个字节都没动。
+  客户端只改了两处：`KindColor` 的 `case`（`SceneObject`/`Texture` → `Sprite`/`Image`）
+  与缺省 `kind`（`MirrorObject` / `SceneParser` 的兜底值是 `Sprite`）。
+  老客户端（v11）不认这两个值只会退回灰色占位色，图照常显示（显示走组件名），
+  所以照旧 +1、靠握手挡住。
+- **镜像协议已实现**（**协议 v12**：v5 起战争雾的总开关与视频随场景下发，v6 起声音补齐
   `pause_sound` / `resume_sound`，v7 起**全局背景音乐**（`play_bgm` 那一组命令）与三档层级，
   v8 起**背景音乐与项目设置解耦**——`project_settings` 只剩三档音量，曲目清单就是项目
   `Assets/audio/` 下的音频，v9 起对象特性搬进 `components[]`，v10 起子图随载荷下发，
-  v11 起图片组件分成 `ImageLayer` / `SpriteLayer`，
+  v11 起图片组件分成 `ImageLayer` / `SpriteLayer`，v12 起 kind 改名（`Texture` → `Image`、
+  `SceneObject` → `Sprite`），
   见 `server/docs/specs/2026-09-19-runtime-mirror-protocol.md`）：
   编辑器点「运行」→ 服务端开闸 → 前端连上 → **先下资源包** → 再整份推设置与场景 → 按 `id` 建 / 改 / 删对象
   （位置 / 缩放 / 旋转 / **激活** / 显示顺序 / 取图都同步）。

@@ -70,7 +70,7 @@ test.describe("场景菜单", () => {
     try {
       await seedProjectDoc(request, project, [
         sceneDoc("Map001", [
-          { id: "door", name: "木门", kind: "SceneObject", position: null, rotation: 0, components: [] },
+          { id: "door", name: "木门", kind: "Sprite", position: null, rotation: 0, components: [] },
         ]),
       ]);
       await enterEditor(page);
@@ -370,7 +370,7 @@ test.describe("场景切换：切换条与快捷键", () => {
     const project = await newProject(request);
     try {
       await seedProjectDoc(request, project, [
-        sceneDoc("Map001", [sceneObjectDoc("木门", "SceneObject", { x: 0, y: 0 })]),
+        sceneDoc("Map001", [sceneObjectDoc("木门", "Sprite", { x: 0, y: 0 })]),
         sceneDoc("Map002"),
       ]);
       await enterEditor(page);

@@ -22,7 +22,7 @@ export type LeftTab = "assets" | "hierarchy";
  * 要有意制造「旧版本文件」时别用它：自己写那个版本号（`formatVersion: 4` 之类），
  * 并预期编辑器会把它升上来回写一次。
  */
-export const CURRENT_SCENE_FORMAT_VERSION = 21;
+export const CURRENT_SCENE_FORMAT_VERSION = 22;
 
 /**
  * **承载对象特性的组件类型名**（v19 起特性住在 `object.components[]` 里）。
@@ -325,6 +325,8 @@ export function sceneDoc(
 /**
  * 造一个场景里的普通对象（形状与 `createSceneObject` 一致，无组件无动作）。
  *
+ * `kind` 缺省是**精灵** `Sprite`（`SceneObject` 是抽象基类，不落进文档）。
+ *
  * `position` 是**世界坐标**（场景中心为原点，x 向右、y 向上，单位像素）；不传即未放置。
  * `active` / `sortingOrder` 是 v7 起、`scale` 是 v8 起、`locked` 是 v9 起、地图的战争雾
  * （v19 起在 `GridMap` 组件的 `fog` 里，v10–v18 是 `map.fog`；v13 起里面还有总开关 `enabled`）
@@ -335,7 +337,7 @@ export function sceneDoc(
  */
 export function sceneObjectDoc(
   name: string,
-  kind = "SceneObject",
+  kind = "Sprite",
   position: { x: number; y: number } | null = null,
   patch: Record<string, unknown> = {},
 ): Record<string, unknown> {
@@ -688,7 +690,7 @@ export async function readSceneVideo(
   request: APIRequestContext,
   project: string,
   sceneName: string,
-  kind: "Map" | "Texture" = "Map",
+  kind: "Map" | "Image" = "Map",
 ): Promise<
   | {
       clips?: readonly string[];
