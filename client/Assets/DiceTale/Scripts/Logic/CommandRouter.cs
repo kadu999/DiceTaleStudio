@@ -683,9 +683,10 @@ namespace DiceTale
                 return $"镜像里没有这个对象：{objectId}（场景可能还没同步到）";
             }
 
-            if (obj.kind != "Map" && obj.kind != "SceneObject")
+            // v9 起「能不能放视频」看**组件**：编辑器只会给地图 / 精灵挂 `VideoOverlay`
+            if (!obj.HasComponent(Protocol.ComponentType.Video))
             {
-                return $"「{obj.name}」不是地图或精灵（kind={obj.kind}），放不了视频";
+                return $"「{obj.name}」没有视频组件（kind={obj.kind}），放不了视频";
             }
 
             // 与编辑器那边（`videoTargetOf`）逐条对齐：没开 / 没加 / 没选是三种不同的拒绝
@@ -744,7 +745,7 @@ namespace DiceTale
                 return $"镜像里没有这个对象：{objectId}（场景可能还没同步到）";
             }
 
-            if (obj.kind != "Map" || obj.map == null)
+            if (obj.map == null)
             {
                 return $"「{obj.name}」不是地图对象";
             }

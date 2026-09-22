@@ -115,16 +115,25 @@ namespace DiceTale
         /// <summary>
         /// 这种对象在前端**要不要建视图**（连 GameObject 都不该建的那种返回 `false`）。
         ///
-        /// **实体要、动作不要**：地图 / 精灵 / 玩家 / 道具 / 事件都在世界里看得见摸得着；
-        /// `PlaySound` / `Teleport` 只是「一条给前端的指令」——声音靠命令来播，传送靠编辑器
-        /// 换场景（整份 `scene_push`）——它们的**数据留在镜像里**（命令要用它取数据）就够了。
+        /// **判据是组件，不是 `kind`**（协议 v9 起）：
+        /// - 有 `GridMap` 或 `TextureRenderer` → 当然要画；
+        /// - 都没有时，**只有「动作对象」不建**——它们只带 `PlaySound` / `Teleport` 的数据
+        ///   （声音靠命令播、传送靠编辑器换场景），一个 GameObject 都不该建；
+        /// - 其余（玩家 / 道具 / 事件 / 还没挑图的精灵）**仍要一块占位色面片**，
+        ///   否则它们在场上就凭空消失了。
         ///
-        /// 判据放在**一处**（<see cref="SceneMirror"/> 建视图前问这里）：新加一种动作对象时，
-        /// 只改这一个地方，不会出现「镜像建了、却忘了在别处跳过」的半套状态。
+        /// 判据只此一处（<see cref="SceneMirror"/> 建视图前问这里）：编辑器加一种新组件时，
+        /// 不会出现「镜像建了、却忘了在别处跳过」的半套状态。
         /// </summary>
-        public static bool NeedsView(string kind)
+        public static bool NeedsView(MirrorObject obj)
         {
-            return kind != "PlaySound" && kind != "Teleport";
+            if (obj.map != null || obj.image != null)
+            {
+                return true;
+            }
+
+            return !obj.HasComponent(Protocol.ComponentType.Sound) &&
+                   !obj.HasComponent(Protocol.ComponentType.Teleport);
         }
 
         /// <summary>最近一次对象数据里的染色与显示顺序（<see cref="ApplyVisual"/> 要用，含异步取图回来那次）。</summary>

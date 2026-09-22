@@ -20,7 +20,10 @@ namespace DiceTale
     {
         public string id = "";
         public string name = "";
-        /// <summary>对象种类。**动作对象（`PlaySound` / `Teleport`）只留在镜像里、不建视图**（见 <see cref="SceneObjectView.NeedsView"/>）。</summary>
+        /// <summary>
+        /// 对象种类。**只是「创建原型」标签**（占位色 / 排查用）：v9 起「这个对象有什么」
+        /// 一律看 <see cref="components"/>，行为不再由 kind 决定（见 <see cref="SceneObjectView.NeedsView"/>）。
+        /// </summary>
         public string kind = "SceneObject";
 
         /// <summary>是否激活：不激活的对象前端也不显示（与编辑器那个勾选框同一件事）。</summary>
@@ -40,10 +43,10 @@ namespace DiceTale
         /// <summary>对象自己要显示的图（精灵用它；地图的图在 <see cref="map"/> 里）。</summary>
         public MirrorImage image;
 
-        /// <summary>仅 <c>kind == "Map"</c>：贴图 + 网格数据。</summary>
+        /// <summary>由 `GridMap` 组件填（v9 起；老版本是对象上的 `map` 字段）。</summary>
         public MirrorMap map;
 
-        /// <summary>仅 <c>kind == "PlaySound"</c>：加进来的音频 + 当前选中的那条 + 层级。</summary>
+        /// <summary>由 `PlaySound` 组件填（v9 起；老版本是对象上的 `sound` 字段）。</summary>
         public MirrorSound sound;
 
         /// <summary>
@@ -55,6 +58,41 @@ namespace DiceTale
 
         /// <summary>要显示的图（地图对象取 <c>map.image</c>）。</summary>
         public MirrorImage DisplayImage => image ?? map?.image;
+
+        /// <summary>
+        /// 对象身上的组件（协议 v9 起）。
+        ///
+        /// **原始数据一律留着**：已知的 5 种特性组件会同时填进上面那几个强类型字段
+        /// （`map` / `image` / `sound` / `video`），未知类型只留在这里备查——
+        /// 编辑器加一个新组件时，老前端不该整份场景解析失败，它只是不认那一个组件而已。
+        /// </summary>
+        public readonly List<MirrorComponent> components = new List<MirrorComponent>();
+
+        /// <summary>这个对象带某个类型的组件吗（v9 起「这个对象有什么」都看组件）。</summary>
+        public bool HasComponent(string type)
+        {
+            foreach (var component in components)
+            {
+                if (component.type == type)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// 一个组件实例（协议 v9 起）：`type` 决定它是什么，`data` 是它的数据。
+    ///
+    /// 前端只解释它认识的那 5 种（解析时已经填进 <see cref="MirrorObject"/> 的强类型字段），
+    /// 其余的留着不解释。
+    /// </summary>
+    public class MirrorComponent
+    {
+        public string type = "";
+        public Dictionary<string, object> data;
     }
 
     /// <summary>图片引用：资源逻辑 ID + 声明的宽高（世界像素；实际尺寸还要乘对象 scale）。</summary>

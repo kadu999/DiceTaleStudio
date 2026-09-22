@@ -375,7 +375,8 @@ namespace DiceTale
                 // **动作对象（PlaySound / Teleport）不建视图**：它们只是「一条给前端的指令」，
                 // 数据留在镜像里够用（命令要用它取数据）；编辑器画布上那两枚徽标是编辑器的画法。
                 // 这里连 GameObject 都不建，不是「建了再隐藏」——所以也不会占层级、不会进相机的剔除。
-                if (!SceneObjectView.NeedsView(obj.kind))
+                // 判据看的是**组件**（v9 起），见 `SceneObjectView.NeedsView`。
+                if (!SceneObjectView.NeedsView(obj))
                 {
                     if (viewTable.TryGetValue(obj.id, out var stale) && stale != null)
                     {
@@ -494,7 +495,14 @@ namespace DiceTale
             return null;
         }
 
-        /// <summary>取一个对象身上第一个资源逻辑 ID（贴图 → 地图贴图 → 声音），没有则返回 null。</summary>
+        /// <summary>
+        /// 取一个对象身上第一个资源逻辑 ID（贴图 → 地图贴图 → 声音），没有则返回 null。
+        ///
+        /// **没有资源的对象是常态**（动作对象、还没挑图的精灵、以及协议版本不匹配时收到的
+        /// 「什么组件都没有」的对象），所以这里必须一路 null 安全：`obj.sound?.clips` 为 null
+        /// 时**不能**把它喂给 `foreach`——对 null 做 foreach 会抛 NullReferenceException，
+        /// 而那会把整份场景的载入打断在一次兜底的「推项目名」上。
+        /// </summary>
         private static string ResourceIdOf(MirrorObject obj)
         {
             var display = obj.DisplayImage;
@@ -503,7 +511,13 @@ namespace DiceTale
                 return display.id;
             }
 
-            foreach (var clip in obj.sound != null ? obj.sound.clips : null)
+            var clips = obj.sound != null ? obj.sound.clips : null;
+            if (clips == null)
+            {
+                return null;
+            }
+
+            foreach (var clip in clips)
             {
                 if (!string.IsNullOrEmpty(clip))
                 {

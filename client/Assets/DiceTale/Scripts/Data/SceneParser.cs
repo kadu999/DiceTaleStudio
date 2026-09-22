@@ -77,11 +77,67 @@ namespace DiceTale
                 obj.y = (float)JsonParser.GetNumber(position, "y");
             }
 
-            obj.image = ParseImage(JsonParser.GetObject(node, "image"));
-            obj.map = ParseMap(JsonParser.GetObject(node, "map"));
-            obj.sound = ParseSound(JsonParser.GetObject(node, "sound"));
-            obj.video = ParseVideo(JsonParser.GetObject(node, "video"));
+            // 对象特性一律从 `components` 里读（协议 v9 起）——**不再读扁平字段**：
+            // 握手是版本化的（不一致直接 close 4002），所以这里收到的场景一定是 v9 形状，
+            // 留一条「老字段也认」的旁路只会让「数据到底存在哪」又多一种答案。
+            ParseComponents(obj, JsonParser.GetArray(node, "components"));
             return obj;
+        }
+
+        /// <summary>
+        /// 把 `components[]` 填进镜像对象。
+        ///
+        /// 判据是**组件类型**而不是 `kind`：这样编辑器加一个新组件时，前端只需要在这里多一个
+        /// `case`（或者干脆什么都不做——未知类型会被安静地留下），不必再维护一份
+        /// 「哪种 kind 有什么」的清单。
+        /// </summary>
+        private static void ParseComponents(MirrorObject obj, List<object> rawComponents)
+        {
+            if (rawComponents == null)
+            {
+                return;
+            }
+
+            foreach (var raw in rawComponents)
+            {
+                if (!(raw is Dictionary<string, object> component))
+                {
+                    continue;
+                }
+
+                var type = JsonParser.GetString(component, "type");
+                if (string.IsNullOrEmpty(type))
+                {
+                    continue;
+                }
+
+                var data = JsonParser.GetObject(component, "data");
+                if (data == null)
+                {
+                    continue;
+                }
+
+                obj.components.Add(new MirrorComponent { type = type, data = data });
+
+                switch (type)
+                {
+                    case Protocol.ComponentType.Map:
+                        obj.map = ParseMap(data);
+                        break;
+                    case Protocol.ComponentType.Image:
+                        obj.image = ParseImage(data);
+                        break;
+                    case Protocol.ComponentType.Sound:
+                        obj.sound = ParseSound(data);
+                        break;
+                    case Protocol.ComponentType.Video:
+                        obj.video = ParseVideo(data);
+                        break;
+                    default:
+                        // 不认识的组件（将来的新特性 / 编辑器侧的组件）：数据留在 components 里就够了
+                        break;
+                }
+            }
         }
 
         private static MirrorImage ParseImage(Dictionary<string, object> node)

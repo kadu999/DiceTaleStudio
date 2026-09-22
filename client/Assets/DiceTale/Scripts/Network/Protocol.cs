@@ -39,8 +39,24 @@ namespace DiceTale
         ///
         /// v8（2026-09-22）：**背景音乐与项目设置解耦**——`project_settings.audio.bgm` 只剩音量
         /// （歌单 / 默认曲 / 循环不再下发），命令那一组不变。载荷形状变了，所以照旧 +1。
+        ///
+        /// v9（2026-09-22）：**对象特性搬进组件**。场景对象上的 `map` / `image` / `sound` / `teleport` /
+        /// `video` 这 5 个扁平字段没了，改成 `components[]` 里的组件实例（`GridMap` /
+        /// `TextureRenderer` / `PlaySound` / `Teleport` / `VideoOverlay`）。老前端按扁平字段读，
+        /// 迁移后的场景在它眼里会变成「一个什么都不带的空对象」，所以必须 +1。
+        /// **命令那一组一个字节都没动。**
         /// </summary>
-        public const int Version = 8;
+        public const int Version = 9;
+
+        /// <summary>对象特性组件的类型名（v9 起）。与服务端 `@dts/protocol` 的 `COMPONENT_TYPE` 逐字一致。</summary>
+        public static class ComponentType
+        {
+            public const string Map = "GridMap";
+            public const string Image = "TextureRenderer";
+            public const string Sound = "PlaySound";
+            public const string Teleport = "Teleport";
+            public const string Video = "VideoOverlay";
+        }
 
         // 服务端 → 前端
         public const string TypeServerHello = "server_hello";
