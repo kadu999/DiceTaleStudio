@@ -38,21 +38,18 @@ Assets/
 │  │  │                 ClientSession.cs         握手 / 心跳 / 把消息变成事件
 │  │  │                 ResourceBundleCache.cs   当前项目的资源包：清单 → 按需下整包 → 解压到本地
 │  │  │                 BackendManager.cs        装配：连接 + 会话 + 资源包 + 镜像 + 命令 + 取图
-│  │  ├─ Logic/         （4）         逻辑层：流程 / 状态，不直接画东西
+│  │  ├─ Logic/         （3）         逻辑层：流程 / 状态，不直接画东西
 │  │  │                 SceneMirror.cs           **按 id 增 / 改 / 删视图**（镜像落地的地方）│  │  │                 CommandRouter.cs         命令 → 动作 → 回执（成败都回）
 │  │  │                 Game.cs                  宿主 + 组合根：装配全部管理器、交互锁
-│  │  │                 DynamicObstacle.cs       运行时把物体占据的格子标成动态阻挡
-│  │  └─ Presentation/  （12）        表现层：直接画 / 播 / 显示
+│  │  └─ Presentation/  （5+4）      表现层：直接画 / 播 / 显示
 │  │                    SceneObjectView.cs       **一个镜像对象 = 一块贴地面片**（位置/缩放/激活/顺序/取图）
 │  │                    ResourceImageLoader.cs   按资源逻辑 ID 取图（缓存 / 去重 / 失败记忆）
-│  │                    GridMap.cs               地图格子数据 + 网格渲染（+ .bytes 读取）
 │  │                    FogOfWar.cs              战争雾（按 map.fog.enabled/regions + cells 建遮罩、GPU 羽化、按后台轨迹揭示）
 │  │                    VideoOverlay.cs          视频层（按 URL 放；本地资源包优先，盖在那个对象自己的矩形上）
-│  │                    BirdWanderer.cs          装饰物区域随机游荡
 │  │                    TextureRenderer.cs 贴地面的纹理面片（**只认运行时纹理**）
 │  │                    AudioPlayerManager.cs    三条音频通道（背景音乐 / 音效 / 旁白+字幕），三档音量来自项目设置
 │  │                    AudioClipLoader.cs       按资源逻辑 ID 取音频（本地优先 / 缓存 / 去重 / 失败记忆）
-│  │                    SmartVideoPlayer.cs      视频播放 / 播完回调 / 淡入淡出
+│  │                    UI/                      uGUI 窗口（唯一子目录，见「模块约定」）
 │  │                    UIManager.cs             唯一 Canvas + 窗口注册/开关
 │  │                    UIWindow.cs              窗口基类
 │  │                    SceneFadeUI.cs           全屏淡入淡出遮罩（切场景时由 SceneMirror 调用）
@@ -61,9 +58,7 @@ Assets/
 │  │                    SetupMaps.cs                  一次性脚本：把 Demo 场景重建成「只有 Game 宿主」
 │  │                    TextureRendererEditor.cs 只读 Inspector：面片实际生效的 sortingOrder 与纹理长宽
 │  ├─ Resources/                      ← **运行时按名加载的资产必须留在这里**
-│  │  ├─ Shaders/                     DiceTale/*.shader（TextureRenderer / VideoFade / FogBlur 在用）
-│  │  └─ RealMap.prefab
-│  ├─ Materials/                      材质（原 `Res/Materials`）
+│  │  └─ Shaders/                     DiceTale/*.shader（TextureRenderer / FogBlur 在用；MaskEraseStamp 拍板保留）
 │  └─ Scenes/Demo.unity               唯一的场景
 └─ Settings/                          URP 管线 / 质量 / Volume 设置（被 ProjectSettings 引用）
 ```
@@ -83,22 +78,21 @@ Assets/
 `SceneModel` 就是后端 `SceneDoc` 的同构副本，`SceneMirror` 负责把它变成 Unity 对象。
 **网络层**同理只做「连接 + 会话 + 协议」，一行游戏逻辑都没有。
 
-**已知的「逻辑层碰表现层」4 处**（不是随手写的，是现状：真要让方向绝对干净，得先把 `GridMap` 拆成
-「格子数据 + 渲染」两个东西，那是新功能落地时的事）：
+**已知的「逻辑层碰表现层」3 处**（不是随手写的，是现状）：
 
 | 位置 | 碰了什么 | 说明 |
 |---|---|---|
 | `Logic/Game.cs` | 网络层 + 全部表现层管理器 | **组合根**：装配入口本来就得认识所有管理器，这处是允许的 |
 | `Logic/SceneMirror.cs` | `Presentation/SceneObjectView` | 镜像落地就是「建视图」，这是它的本职；层级按场景分（`场景/<场景名>/对象`） |
 | `Logic/CommandRouter.cs` | 镜像 + 音频 / 视频 + 回执 | 命令要作用到表现上（取音频是异步的，回执在加载完成后发），回执要经会话发出去 |
-| `Logic/DynamicObstacle.cs` | `GridMap` | 它只跟 `GridMap` 打交道，而 `GridMap` 目前同时持有格子数据与渲染 |
 
 ## 模块约定
 
 1. **模块 = 目录 + asmdef**：`Scripts/DiceTale.asmdef`（`rootNamespace: DiceTale`）、
    `Editor/DiceTale.Editor.asmdef`（`includePlatforms: [Editor]`，引用 `DiceTale`）。
    **加脚本只往 Data / Network / Logic / Presentation 里放，不要再建 asmdef、也不要再往下切子目录**
-   （真觉得某一层太挤时再谈：比如表现层的 UI 窗口可能值得 `Presentation/UI/`）。
+   （唯一的例外：`Presentation/UI/`，2026-09-22 起 uGUI 窗口集中在这里——Canvas/窗口类自成一体，
+   与贴地渲染无关；其余仍按四根目录放）。
 2. **namespace 与模块同名**：运行时代码一律 `namespace DiceTale`（子目录不细分），编辑器代码
    `DiceTale.Editor` —— 与（已删除的）`ProjectionAlignment` 模块同一套写法。
 3. **运行时按名加载的资产放 `Resources/`**：`Shader.Find("DiceTale/X")` 与
@@ -248,9 +242,8 @@ Assets/
   地图数据一变（换绑定 / 涂格子）就「重填初始态 + 按顺序重放操作」，已揭示的部分不丢。
   Unity 里选中地图或 `FogOverlay`，Inspector 上就能看到这一层**实际生效的 `sortingOrder`
   与长宽**（只读，见 `Editor/TextureRendererEditor.cs`）——层叠关系不对时先看那里。
-  ⚠️ **`GridMap` / `DynamicObstacle` 仍按世界坐标算格子**，而且运行时不建 `GridMap`
-  （它只服务 `.bytes` 那套旧资产，`map.cells` 现在由战争雾那层消费）；
-  以后要用「缩放后的场景」做格子交互时，这两处得改成按场景根节点换算。
+  ⚠️ ~~`GridMap` / `DynamicObstacle` 仍按世界坐标算格子~~（两者均已删，2026-09-22，详见
+  `docs/2026-09-22-client-redundancy-review.md`）；以后要做格子交互时，按场景根节点换算重建。
 - **视频：地图 / 精灵上的视频层（2026-09-21，协议 v5 / 文档 v14）**：对象上可能带
   `video`（`enabled` / `clips` / `picked` / `loop` / `audio`）。收到 `play_video` 时
   `SceneObjectView` 给这个对象加一个 **`VideoOverlay` 子物体**（`Presentation/VideoOverlay.cs`）：
@@ -259,15 +252,15 @@ Assets/
   - **按 URL 播，不用 `VideoClip`**：视频是资源逻辑 ID，字节在本地资源包（`file://`，见
     `ResourceBundleCache.LocalUrlOf`）或服务端 `/api/resources/raw`（边下边播），两条路都靠
     `VideoPlayer.url`；`renderMode = MaterialOverride` 写进材质的 `_MainTex`
-    （`DiceTale/TextureRenderer` 的主纹理，与 `SmartVideoPlayer` 同一套做法）。
+    （`DiceTale/TextureRenderer` 的主纹理——与贴地面片同一套做法）。
   - **首帧之前不显示**：`TextureRenderer` 没纹理时会画占位色，所以 renderer 先关着，
     `prepareCompleted` 才打开——否则会先闪一块白底。等首帧有 15 秒看门狗，超时打一条明确错误。
   - **开关即时生效**：文档一变（`scene_push`）就把 `loop` / `audio` 同步到正在放的那一条；
     `audio` 缺省静音（对应 `VideoPlayer.audioOutputMode`）。**「启用」关掉（或列表清空）时正在放的
     那一层会被拆掉**（与战争雾「关掉开关就拆雾层」同一条规矩）；`stop_video` 同样**拆掉整个子物体**，
     露出对象原来的贴图。**能不能解码看运行平台**：Windows 上稳的是 H.264 的 `.mp4`，`.webm` 多半不行。
-  - `Presentation/SmartVideoPlayer.cs`（老项目搬来的，按 Inspector 里的 `VideoClip[]` 播、带交叉淡化）
-    **没有动**，也还没有任何 prefab / scene 引用它——文档驱动这条走的是 `VideoOverlay`。
+    （老项目搬来的 `SmartVideoPlayer`——按 Inspector `VideoClip[]` 播那套——已于 2026-09-22 删除，
+    文档驱动这条一直走的是 `VideoOverlay`。）
 - **缩放：`scale` 是等比，单轴字段可选（2026-09-20）**：文档 v11 起，对象上可能多出
   **可选**的 `scaleX` / `scaleY`（编辑器里拖缩放手柄的**边**、或关掉属性面板的等比锁后改单轴时会写）。
   客户端目前**按 `scale` 等比渲染**——`SceneObjectView` 把它们忽略掉是**正确**的（协议里它们是可选字段，
@@ -320,10 +313,10 @@ Assets/
   整个删除**——它唯一的动作就是 `Start()` 里加载早已不存在的 `Scene000` 预设，每次进播放模式都报
   `Scene prefab not found`。**淡入淡出没有跟着丢**：2026-09-21 把它接回 **`SceneMirror`**
   （`SceneFadeUI` 本来就是自包含的全屏遮罩，见上面「切场景」一节）。
-- **已停用但未删**（你要求先不动）：14 个无人引用的 shader
-  （`MaskEraseStamp` / `FogOfWar` / `FogOfWarAccumulate` / `FogCombine` 等——战争雾走 CPU 擦除 +
-  `FogBlur` 羽化，这几个都没接）、6 个孤儿材质、`Resources/RealMap.prefab`、`Assets/Readme.asset`。
-  要清时按清理文档的口径来（都能从 git 取回）。
+- **旧世界残留已清（2026-09-22）**：13 个无人引用的 shader（BurningRoom 遗留、旧雾实现、`VideoFade`、
+  `SelectionRing`、`BoxComposite` 等）、6 个孤儿材质、`Resources/RealMap.prefab`、`Assets/Readme.asset`
+  （URP 模板欢迎页）、`SmartVideoPlayer`、`BirdWanderer` 均已删除（`MaskEraseStamp` 按清理文档 D5
+  拍板保留；都能从 git 取回，详见 `docs/2026-09-22-client-redundancy-review.md`）。
 - **输入层已整体删除（2026-09-22）**：`InputManager` / `InputSource` / `SimulatedTouchInputSource` /
   `DevicePipeInputSource2` / `InputConfigPrefs` / `SimulatedTouchDebugUI` / `PhotoClickGlow` 全部删除
   （见 `docs/2026-09-22-client-redundancy-review.md`）。按下事件新协议落地后由后台命令驱动，
