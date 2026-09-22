@@ -1,5 +1,5 @@
 {
-  "formatVersion": 22,
+  "formatVersion": 23,
   "objects": [
     {
       "id": "map_mu6uln3x1l7fg",
@@ -341,9 +341,9 @@
             "clips": [
               "project:测试项目/Assets/video/Map001.mp4"
             ],
+            "picked": "project:测试项目/Assets/video/Map001.mp4",
             "loop": true,
-            "audio": true,
-            "picked": "project:测试项目/Assets/video/Map001.mp4"
+            "audio": true
           },
           "actions": []
         }

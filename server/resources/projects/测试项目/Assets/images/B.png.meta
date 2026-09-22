@@ -1,0 +1,12 @@
+{
+  "formatVersion": 1,
+  "guid": "2d0195e4ae656c6fc24fd5ba68e79b1b",
+  "importer": "texture",
+  "sprite": {
+    "mode": "Multiple",
+    "sheet": {
+      "columns": 2,
+      "rows": 2
+    }
+  }
+}
