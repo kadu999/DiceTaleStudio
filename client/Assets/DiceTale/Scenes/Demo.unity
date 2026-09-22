@@ -266,7 +266,6 @@ GameObject:
   m_Component:
   - component: {fileID: 825083551}
   - component: {fileID: 825083552}
-  - component: {fileID: 825083553}
   m_Layer: 0
   m_Name: Game
   m_TagString: Untagged
@@ -301,20 +300,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 348f058fb1befa94585a840568ab8de8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::DiceTale.Game
-  inputSourceKind: 1
---- !u!114 &825083553
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 825083550}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 6e63a8fc6449cca4a8b6358e28bbe2a6, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::DiceTale.SimulatedTouchDebugUI
-  showDebugUi: 0
 --- !u!1 &832575517
 GameObject:
   m_ObjectHideFlags: 0

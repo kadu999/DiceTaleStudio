@@ -6,13 +6,7 @@ namespace DiceTale
 {
     public class Game : MonoBehaviour
     {
-        [Header("输入源")]
-        [Tooltip("输入方案（初始化统一在 InputManager.InstallInputSource，切版本只改这里）：\n" +
-            "SimulatedTouch=鼠标+数字键 1..6 模拟触点（开发）；PipeSource=压板 v1 全触点顺序编号；\n" +
-            "PipeSource2=压板 v2 单点指挥（只触发压力最大点，Id 由 CommandId 控制）。")]
-        [SerializeField] private InputManager.InputSourceKind inputSourceKind = InputManager.InputSourceKind.SimulatedTouch;
-
-        /// <summary>宿主实例：所有管理器（Input/Backend/UI/Audio/Registry…）都挂在本组件所在物体，
+        /// <summary>宿主实例：所有管理器（Backend/UI/Audio/Registry…）都挂在本组件所在物体，
         /// 随宿主一起销毁（本组件所在场景物体卸载即全部销毁，退出即清、重进可重建）。</summary>
         public static Game Instance { get; private set; }
 
@@ -21,11 +15,9 @@ namespace DiceTale
         /// `client/docs/2026-09-19-unused-code-removal.md`）；
         /// <c>GameSceneManager</c> 也已在 2026-09-20 删除——场景内容由后台推送、由 <see cref="SceneMirror"/> 搭出来，
         /// 「按 Resources 预设加载场景」那条路已经没有资产可加载（脚本与资源一起删掉了）。</summary>
-        public InputManager InputManager { get; private set; }
         public BackendManager BackendManager { get; private set; }
         public UIManager UIManager { get; private set; }
         public AudioPlayerManager AudioPlayerManager { get; private set; }
-        public PhotoClickGlow PhotoClickGlow { get; private set; }
 
         public bool CanInteract { get; private set; } = true;
 
@@ -42,8 +34,6 @@ namespace DiceTale
             Instance = this;
             // 初始化并持有全部管理器：所有管理器都挂在宿主物体上（GetOrCreateManager 找到即用、
             // 没有则挂一个），经 Game.Instance.X 访问
-            InputManager = GetOrCreateManager<InputManager>();
-            InitializeInputSource(); // 输入方案：按开关装模拟源或压板设备源
             // **音频管理器要在 BackendManager 之前**：后端那边装配命令路由时要拿到播放器
             // （命令一来就出声）。顺序反了的话 `Awake` 里那次取到的是 null——真机上就踩过一次：
             // `play_bgm` 回执写着「前端没有装配音频播放器」。
@@ -51,8 +41,6 @@ namespace DiceTale
             AudioPlayerManager = GetOrCreateManager<AudioPlayerManager>();
             BackendManager = GetOrCreateManager<BackendManager>();
             UIManager = GetOrCreateManager<UIManager>();
-            // 拍照点击发光：拍照指针点地时点击处点光闪烁（参考 Scene002 Photograph02 预设）
-            PhotoClickGlow = GetOrCreateManager<PhotoClickGlow>();
         }
 
         private void OnDestroy()
@@ -98,13 +86,6 @@ namespace DiceTale
             }
 
             return gameObject.AddComponent<T>();
-        }
-
-        /// <summary>按场景开关安装输入方案（统一走 InputManager.InstallInputSource；切换版本改
-        /// <c>inputSourceKind</c> 一处即可）。</summary>
-        private void InitializeInputSource()
-        {
-            InputManager.InstallInputSource(inputSourceKind);
         }
     }
 }

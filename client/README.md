@@ -38,16 +38,11 @@ Assets/
 │  │  │                 ClientSession.cs         握手 / 心跳 / 把消息变成事件
 │  │  │                 ResourceBundleCache.cs   当前项目的资源包：清单 → 按需下整包 → 解压到本地
 │  │  │                 BackendManager.cs        装配：连接 + 会话 + 资源包 + 镜像 + 命令 + 取图
-│  │  ├─ Logic/         （9）         逻辑层：输入 / 流程 / 状态，不直接画东西
+│  │  ├─ Logic/         （4）         逻辑层：流程 / 状态，不直接画东西
 │  │  │                 SceneMirror.cs           **按 id 增 / 改 / 删视图**（镜像落地的地方）│  │  │                 CommandRouter.cs         命令 → 动作 → 回执（成败都回）
 │  │  │                 Game.cs                  宿主 + 组合根：装配全部管理器、交互锁
-│  │  │                 InputManager.cs          消费输入帧 + 对外统一状态快照
-│  │  │                 InputSource.cs           输入源抽象 / PointerId / InputFrame
-│  │  │                 SimulatedTouchInputSource.cs  开发用模拟触摸源（鼠标 + 数字键）
-│  │  │                 DevicePipeInputSource2.cs     压板源（**已停用**，见「当前状态」）
-│  │  │                 InputConfigPrefs.cs      CommandId 的 PlayerPrefs 持久化
 │  │  │                 DynamicObstacle.cs       运行时把物体占据的格子标成动态阻挡
-│  │  └─ Presentation/  （14）        表现层：直接画 / 播 / 显示
+│  │  └─ Presentation/  （12）        表现层：直接画 / 播 / 显示
 │  │                    SceneObjectView.cs       **一个镜像对象 = 一块贴地面片**（位置/缩放/激活/顺序/取图）
 │  │                    ResourceImageLoader.cs   按资源逻辑 ID 取图（缓存 / 去重 / 失败记忆）
 │  │                    GridMap.cs               地图格子数据 + 网格渲染（+ .bytes 读取）
@@ -55,7 +50,6 @@ Assets/
 │  │                    VideoOverlay.cs          视频层（按 URL 放；本地资源包优先，盖在那个对象自己的矩形上）
 │  │                    BirdWanderer.cs          装饰物区域随机游荡
 │  │                    TextureRenderer.cs 贴地面的纹理面片（**只认运行时纹理**）
-│  │                    PhotoClickGlow.cs        拍照指针点地时的点光
 │  │                    AudioPlayerManager.cs    三条音频通道（背景音乐 / 音效 / 旁白+字幕），三档音量来自项目设置
 │  │                    AudioClipLoader.cs       按资源逻辑 ID 取音频（本地优先 / 缓存 / 去重 / 失败记忆）
 │  │                    SmartVideoPlayer.cs      视频播放 / 播完回调 / 淡入淡出
@@ -63,7 +57,6 @@ Assets/
 │  │                    UIWindow.cs              窗口基类
 │  │                    SceneFadeUI.cs           全屏淡入淡出遮罩（切场景时由 SceneMirror 调用）
 │  │                    SubtitleWindow.cs        字幕窗口
-│  │                    SimulatedTouchDebugUI.cs 触点调试圆点
 │  ├─ Editor/           （2）         编辑器工具（DiceTale.Editor.asmdef）
 │  │                    SetupMaps.cs                  一次性脚本：把 Demo 场景重建成「只有 Game 宿主」
 │  │                    TextureRendererEditor.cs 只读 Inspector：面片实际生效的 sortingOrder 与纹理长宽
@@ -83,14 +76,14 @@ Assets/
 |---|---|---|
 | **Data** | 数据结构、枚举、可序列化模型、解析（场景 / JSON / RLE） | 不引用另外三层（当前 Data 零外部引用） |
 | **Network** | 与后端通信的一切：连接、会话、协议 DTO、连接装配 | 只依赖数据层；不认识游戏逻辑、不碰显示 |
-| **Logic** | 输入消费、流程与状态驱动、**镜像落地**、命令路由 | 不直接操作渲染器 / Canvas / AudioSource |
+| **Logic** | 流程与状态驱动、**镜像落地**、命令路由 | 不直接操作渲染器 / Canvas / AudioSource |
 | **Presentation** | 直接画 / 播 / 显示：MeshRenderer、Texture、Canvas、AudioSource、VideoPlayer、Light | 不做协议 |
 
 **客户端不拥有数据**（数据都在后端），所以 Data 里是「镜像模型 + 解析」，不是业务数据：
 `SceneModel` 就是后端 `SceneDoc` 的同构副本，`SceneMirror` 负责把它变成 Unity 对象。
 **网络层**同理只做「连接 + 会话 + 协议」，一行游戏逻辑都没有。
 
-**已知的「逻辑层碰表现层」5 处**（不是随手写的，是现状：真要让方向绝对干净，得先把 `GridMap` 拆成
+**已知的「逻辑层碰表现层」4 处**（不是随手写的，是现状：真要让方向绝对干净，得先把 `GridMap` 拆成
 「格子数据 + 渲染」两个东西，那是新功能落地时的事）：
 
 | 位置 | 碰了什么 | 说明 |
@@ -98,7 +91,6 @@ Assets/
 | `Logic/Game.cs` | 网络层 + 全部表现层管理器 | **组合根**：装配入口本来就得认识所有管理器，这处是允许的 |
 | `Logic/SceneMirror.cs` | `Presentation/SceneObjectView` | 镜像落地就是「建视图」，这是它的本职；层级按场景分（`场景/<场景名>/对象`） |
 | `Logic/CommandRouter.cs` | 镜像 + 音频 / 视频 + 回执 | 命令要作用到表现上（取音频是异步的，回执在加载完成后发），回执要经会话发出去 |
-| `Logic/InputManager.cs` | uGUI 命中判定 + `PhotoClickGlow` | UI 点击豁免与拍照点光 |
 | `Logic/DynamicObstacle.cs` | `GridMap` | 它只跟 `GridMap` 打交道，而 `GridMap` 目前同时持有格子数据与渲染 |
 
 ## 模块约定
@@ -328,11 +320,14 @@ Assets/
   整个删除**——它唯一的动作就是 `Start()` 里加载早已不存在的 `Scene000` 预设，每次进播放模式都报
   `Scene prefab not found`。**淡入淡出没有跟着丢**：2026-09-21 把它接回 **`SceneMirror`**
   （`SceneFadeUI` 本来就是自包含的全屏遮罩，见上面「切场景」一节）。
-- **已停用但未删**（你要求先不动）：`DevicePipeInputSource2`（`Sample` 整段注释——若在 Game 里把
-  输入方案选成 `PipeSource`，输入会**静默失效**）、`InputConfigPrefs`、14 个无人引用的 shader
+- **已停用但未删**（你要求先不动）：14 个无人引用的 shader
   （`MaskEraseStamp` / `FogOfWar` / `FogOfWarAccumulate` / `FogCombine` 等——战争雾走 CPU 擦除 +
   `FogBlur` 羽化，这几个都没接）、6 个孤儿材质、`Resources/RealMap.prefab`、`Assets/Readme.asset`。
   要清时按清理文档的口径来（都能从 git 取回）。
+- **输入层已整体删除（2026-09-22）**：`InputManager` / `InputSource` / `SimulatedTouchInputSource` /
+  `DevicePipeInputSource2` / `InputConfigPrefs` / `SimulatedTouchDebugUI` / `PhotoClickGlow` 全部删除
+  （见 `docs/2026-09-22-client-redundancy-review.md`）。按下事件新协议落地后由后台命令驱动，
+  本地不再采样设备输入。
 - **待办（关掉 Unity 后再改，否则会被编辑器内存里的旧值覆盖）**：
   `ProjectSettings/EditorBuildSettings.asset` 里还挂着 6 个**已不存在**的场景
   （`DMGameLibrary` / `SampleScene` / `DarkwaterM0` / `TableBand` / 两个 `ProjectionAlignment` 场景），
