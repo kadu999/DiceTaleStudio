@@ -51,8 +51,22 @@ import type { RleRun } from "@dts/grid";
  * `Teleport` / `VideoOverlay`），由 `migrateFeaturesToComponents` 搬一次。
  * 于是「对象 = 实体（id / 名字 / 变换 / 可见性 / 排序）+ 组件列表」，加一个新特性
  * 只需要往组件注册表里加一条，不用再改校验、序列化、协议与客户端解析各一处。
+ *
+ * v20（2026-09-22）：**精灵（子图）**——图片引用多了可选的 `sprite`（引用工程里那张图的
+ * 切分表第几格），工程文件多了可选的 `spriteSheets`（`图片逻辑 ID → 行×列`，**切分只有这一份**）。
+ * 两项都是可选的新字段，没有迁移函数（照 v17 `audioMeta` 的先例：+1 只是让老文件回写一次、
+ * 从此自描述）。协议侧同步升到 v10：切分要随载荷走（客户端没有工程文件），
+ * 老客户端不认这一项会把整张图集铺出来——那是可见的错误，必须靠握手挡住。
+ *
+ * v21（2026-09-23）：**实体多一个「贴图」对象，精灵与贴图各用自己的图片组件**。
+ * - 新 kind `Texture`：只把一张图渲染出来，**不引用图集里的格子**；
+ * - 图片组件从一种拆成两种——精灵 `SpriteLayer`、贴图 `ImageLayer`（v20 及更早两者共用
+ *   `TextureRenderer`），`renameSpriteImageComponent` 把老文件里精灵的那一份改名一次；
+ * - 视频那一组从**精灵**挪到**贴图**（`OBJECT_FEATURES` 里 `video` 的 kinds）：
+ *   旧文件里精灵身上的 `VideoOverlay` **不删**（不静默改用户数据），只由 `validateScene` 报一条警告。
+ *   协议侧同步升到 v11（新增组件名 `SpriteLayer` / `ImageLayer`，老前端不认会把对象画成占位色）。
  */
-export const DOCUMENT_FORMAT_VERSION = 19;
+export const DOCUMENT_FORMAT_VERSION = 21;
 
 /** 网格行序：`bottom-up` 表示 cells 第 0 行是图片最下面一行（与 Unity GridMap 一致）。 */
 export type RowOrder = "bottom-up";
@@ -60,9 +74,69 @@ export type RowOrder = "bottom-up";
 export interface ImageRef {
   /** 资源逻辑 ID，例如 `project:我的项目/Assets/images/Map001.png`。 */
   readonly id: string;
+  /**
+   * 在场景里占多宽（**换算前的声明尺寸**；实际尺寸还要乘对象 scale）。
+   *
+   * 整图 = 图片本身的宽；子图（`sprite` 在） = **那一格的宽**。它由挑图的人从素材读出来，
+   * 与「网格规格不存 cellSize」那条规矩不冲突：它不是从别处算出来的，而是**声明**出来的
+   * （画布与前端都按它铺矩形，与磁盘上的真实像素不一致时只报警告并拉伸）。
+   */
   readonly width: number;
   readonly height: number;
+  /**
+   * 取这张图（图集）里的**哪一格**；缺省 = 整张图。
+   *
+   * 这里**只存引用**：「几行几列」住在工程文件的 `ProjectDoc.spriteSheets` 里，
+   * 只有那一份——所以改切分，所有引用它的对象一起变（对齐 Unity：Sprite 的矩形住在
+   * 资源自己的导入设置里，场景只引用它）。
+   *
+   * **不存像素矩形**：矩形 = 格子 ÷ 加载到的纹理尺寸，由编辑器画布与前端各算一次，
+   * 于是两侧不可能各差一像素（与「`GridSpec` 不存 `cellSize`」同一条规矩）。
+   * 地图贴图（`map.image`）**不支持**它：地图的格子是按整张贴图算好的，取一块会让已有
+   * 格子标注的含义静默改变——带上它也会被忽略（见 `sprites.ts` 的 `displaySpriteOf`）。
+   */
+  readonly sprite?: ImageSpriteRef;
 }
+
+/**
+ * 「图集里的第几格」。
+ *
+ * `row` **从最上面数**（`row: 0` = 第一行、`column: 0` = 最左边一列），对齐 Unity 的
+ * Sprite Editor 的格子编号；它与 `GridMap` 的 `rowOrder: "bottom-up"` **无关**——
+ * 那是「网格坐标系锚在哪」，这里是「第几个格子」，序数只有从左上数这一种读法。
+ *
+ * 越界的值（切分改小之后 `column >= columns`）不写回、不报错：渲染与推送两处统一
+ * **夹到最后一格**（`sprites.ts` 的 `clampSpriteCell`），属性面板会提示出来让人自己改。
+ */
+export interface ImageSpriteRef {
+  readonly column: number;
+  readonly row: number;
+}
+
+/**
+ * 一张图片的**切分**（工程级，`ProjectDoc.spriteSheets` 的值）：按列 × 行切成网格。
+ *
+ * `1×1` = 整图（等同于没有这项），所以**不写这种表项**（不留空壳，与 `video` / `audioMeta`
+ * 同一个口径）。上限 `SPRITE_SHEET_MAX`（64）：再密就没有「一格」可言了。
+ */
+export interface SpriteSheetDoc {
+  readonly columns: number;
+  readonly rows: number;
+}
+
+/**
+ * 解析后的子图：**几行几列 + 第几格**（格评夹取之后）。
+ *
+ * 这是「引用 + 切分表」算出来的形状，有两个消费者：
+ * 编辑器画布（算像素矩形）与协议载荷（`sprite` + `spriteGrid` 一起下发，见 `messages.ts`）。
+ */
+export interface ResolvedSprite {
+  readonly columns: number;
+  readonly rows: number;
+  readonly column: number;
+  readonly row: number;
+}
+
 
 /**
  * 网格规格：只有**列数 / 行数**。
@@ -122,6 +196,13 @@ export interface ComponentDoc {
  * - `Teleport`：**动作对象**里的「传送阵」，另带「传送到哪一张场景」；画布上同样是
  *   **固定的内置徽标**（不给换贴图）。触发它 = **切换当前场景**（对 DM 就是「换台」），
  *   所以它**不需要新协议命令**：切场景本来就是编辑器的事，整份 `scene_push` 下去前端就换了。
+ * - `Texture`：**实体**里的「贴图」——**只负责把一张图渲染出来**，比「精灵」少一样东西：
+ *   它**不引用图集里的格子**（`ImageRef.sprite` 那一套）。两者的数据形状相同
+ *   （都是一份 `ImageRef`），只是**分开用两个组件**：贴图 `ImageLayer`、精灵 `SpriteLayer`
+ *   ——精灵的图会取图集里的一格，贴图的图整张铺满，组件名把这条差别写死在数据里。
+ *   编辑器里贴图入口的选择图片弹框也不给右侧切分面板（见 `ImagePickerDialog` 的 `allowSprite`）。
+ *   反过来，**视频这一组只有地图与贴图有**（`OBJECT_FEATURES` 里 `video` 的 kinds）：
+ *   视频是「盖在这个对象自己的矩形上的一条片」，给贴图正是它的用法。
  */
 export type ObjectKind =
   | "Map"
@@ -130,7 +211,8 @@ export type ObjectKind =
   | "Item"
   | "Event"
   | "PlaySound"
-  | "Teleport";
+  | "Teleport"
+  | "Texture";
 
 /** 地图对象携带的数据（贴图 + 网格）。 */
 export interface MapDataDoc {
@@ -382,9 +464,9 @@ export interface SceneObjectDoc {
    *
    * 「对象是什么、画成什么样、运行时能做什么」全由这里声明：
    * - 前端组件体系那 7 种（`OptionValue` / `Backpack` / …）——条件、动作挂在它们上面；
-   * - 从对象特性提升上来的 5 种（`GridMap` / `TextureRenderer` / `PlaySound` / `Teleport` /
-   *   `VideoOverlay`）——v18 及更早它们住在对象的扁平字段里（`map` / `image` / `sound` /
-   *   `teleport` / `video`），由 `migrateFeaturesToComponents` 搬进来。
+   * - 从对象特性提升上来的 6 种（`GridMap` / `ImageLayer` / `SpriteLayer` / `PlaySound` /
+   *   `Teleport` / `VideoOverlay`）——v18 及更早它们住在对象的扁平字段里（`map` / `image` /
+   *   `sound` / `teleport` / `video`），由 `migrateFeaturesToComponents` 搬进来。
    *
    * **读它们一律走 `access.ts` 的访问器**（`mapDataOf` / `soundDataOf` / …），
    * 不要在调用处 `components.find(...)`：那样「哪个类型带什么数据」又会散开。
@@ -485,6 +567,18 @@ export interface ProjectDoc {
    * 与 `audioMeta` 并列（都是项目级数据、都不进协议）。没有标签时**不写这一项**。
    */
   readonly audioTags?: AudioTagTableDoc;
+  /**
+   * **图片切分表**（v20 起，可选）：`图片资源逻辑 ID → { 列, 行 }`。
+   *
+   * 这是「一张图按几行几列切」的**唯一一份**数据：对象身上只存「引用哪张图 + 第几格」
+   * （`ImageRef.sprite`），改这里 = 所有引用它的对象一起变——对齐 Unity（Sprite 的矩形住在
+   * 资源自己的导入设置里，场景文件只引用它）。
+   *
+   * 与 `audioMeta` / `audioTags` 并列（都是项目级数据）。**不进协议**：前端的载荷里由编辑器
+   * 把切分解析成 `spriteGrid` 一起下发（客户端没有工程文件，见 `@dts/protocol` 的 `imageRefSchema`）。
+   * `1×1` = 整图，**不写这种表项**；整个表空了就把字段删掉。
+   */
+  readonly spriteSheets?: Record<string, SpriteSheetDoc>;
 }
 
 /** 场景文件（Assets/scenes/<场景名>.json）的内容：场景名就是文件名，文件里不存名字。 */

@@ -22,7 +22,7 @@ import {
 const SCENE = "Map001";
 
 test.describe("属性分组", () => {
-  test("地图分「基础 / 渲染 / 区域 / 战争雾」四组，点标题可收起 / 展开；精灵没有后两组", async ({
+  test("地图分「基础 / 渲染 / 区域 / 战争雾」四组，点标题可收起 / 展开；贴图有「视频」、精灵没有", async ({
     page,
     request,
   }) => {
@@ -32,6 +32,8 @@ test.describe("属性分组", () => {
         sceneDoc(SCENE, [
           mapObjectDoc(project, SCENE, "网格地图", { width: 400, height: 300 }, { width: 8, height: 6 }),
           sceneObjectDoc("精灵", "SceneObject", { x: 200, y: 0 }),
+          // 贴图：视频那一组的宿主（v21 起从精灵换成贴图）
+          sceneObjectDoc("贴图", "Texture", { x: -200, y: 0 }),
         ]),
       ]);
 
@@ -138,9 +140,17 @@ test.describe("属性分组", () => {
       await expect(video).toHaveAttribute("data-open", "true");
       await expect(video.getByTestId("video-enable")).toBeVisible();
 
-      // 精灵：有「基础 / 渲染 / 视频」（视频盖在它自己的矩形上），
-      // 没有「区域 / 战争雾」（都是地图独有的）
+      // 精灵：只有「基础 / 渲染」（**没有视频**——v21 起那一组归贴图），
+      // 也没有「区域 / 战争雾」（都是地图独有的）
       await selectObject(page, 1);
+      await expect(page.locator('[data-group="basic"]')).toBeVisible();
+      await expect(page.locator('[data-group="render"]')).toBeVisible();
+      await expect(page.locator('[data-group="video"]')).toHaveCount(0);
+      await expect(page.locator('[data-group="edit"]')).toHaveCount(0);
+      await expect(page.locator('[data-group="fog"]')).toHaveCount(0);
+
+      // 贴图：有「基础 / 渲染 / 视频」，同样没有地图那两组
+      await selectObject(page, 2);
       await expect(page.locator('[data-group="basic"]')).toBeVisible();
       await expect(page.locator('[data-group="render"]')).toBeVisible();
       await expect(page.locator('[data-group="video"]')).toBeVisible();

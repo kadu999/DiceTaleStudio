@@ -46,7 +46,9 @@ Assets/
 │  │                    ResourceImageLoader.cs   按资源逻辑 ID 取图（缓存 / 去重 / 失败记忆）
 │  │                    FogOfWar.cs              战争雾（按 map.fog.enabled/regions + cells 建遮罩、GPU 羽化、按后台轨迹揭示）
 │  │                    VideoOverlay.cs          视频层（按 URL 放；本地资源包优先，盖在那个对象自己的矩形上）
-│  │                    TextureRenderer.cs 贴地面的纹理面片（**只认运行时纹理**）
+│  │                    ImageLayer.cs     贴图对象的显示层：**整张图**铺在对象那块矩形上（只认运行时纹理）
+│  │                    SpriteLayer.cs    精灵对象的显示层：只取纹理里**一格**（v10 的子图 UV）
+│  │                    GroundLayer.cs    上面两个的公共实现（面片网格 / 材质 / 尺寸 / UV / 离地）
 │  │                    AudioPlayerManager.cs    三条音频通道（背景音乐 / 音效 / 旁白+字幕），三档音量来自项目设置
 │  │                    AudioClipLoader.cs       按资源逻辑 ID 取音频（本地优先 / 缓存 / 去重 / 失败记忆）
 │  │                    UI/                      uGUI 窗口（唯一子目录，见「模块约定」）
@@ -56,9 +58,9 @@ Assets/
 │  │                    SubtitleWindow.cs        字幕窗口
 │  ├─ Editor/           （2）         编辑器工具（DiceTale.Editor.asmdef）
 │  │                    SetupMaps.cs                  一次性脚本：把 Demo 场景重建成「只有 Game 宿主」
-│  │                    TextureRendererEditor.cs 只读 Inspector：面片实际生效的 sortingOrder 与纹理长宽
+│  │                    LayerInspector.cs      只读 Inspector：面片实际生效的 sortingOrder、纹理长宽与实际 UV（整张 / 子图）
 │  ├─ Resources/                      ← **运行时按名加载的资产必须留在这里**
-│  │  └─ Shaders/                     DiceTale/*.shader（TextureRenderer / FogBlur 在用；MaskEraseStamp 拍板保留）
+│  │  └─ Shaders/                     DiceTale/*.shader（ImageLayer / FogBlur 在用；MaskEraseStamp 拍板保留）
 │  └─ Scenes/Demo.unity               唯一的场景
 └─ Settings/                          URP 管线 / 质量 / Volume 设置（被 ProjectSettings 引用）
 ```
@@ -241,10 +243,10 @@ Assets/
   揭示状态**只在前端**（不写文档）：切场景 / 重连（视图不销毁）都保留，Unity 重启回到未探索；
   地图数据一变（换绑定 / 涂格子）就「重填初始态 + 按顺序重放操作」，已揭示的部分不丢。
   Unity 里选中地图或 `FogOverlay`，Inspector 上就能看到这一层**实际生效的 `sortingOrder`
-  与长宽**（只读，见 `Editor/TextureRendererEditor.cs`）——层叠关系不对时先看那里。
+  与长宽**（只读，见 `Editor/LayerInspector.cs`）——层叠关系不对时先看那里。
   ⚠️ ~~`GridMap` / `DynamicObstacle` 仍按世界坐标算格子~~（两者均已删，2026-09-22，详见
   `docs/2026-09-22-client-redundancy-review.md`）；以后要做格子交互时，按场景根节点换算重建。
-- **视频：地图 / 精灵上的视频层（2026-09-21，协议 v5 / 文档 v14）**：对象上可能带
+- **视频：地图 / 贴图上的视频层（2026-09-21，协议 v5 / 文档 v14；v21 起宿主从精灵换成贴图）**：对象上可能带
   `video`（`enabled` / `clips` / `picked` / `loop` / `audio`）。收到 `play_video` 时
   `SceneObjectView` 给这个对象加一个 **`VideoOverlay` 子物体**（`Presentation/VideoOverlay.cs`）：
   一块与**对象自己矩形同尺寸**的面片，`sortingOrder = short.MaxValue - 1`（**在战争雾之下**——
@@ -252,8 +254,8 @@ Assets/
   - **按 URL 播，不用 `VideoClip`**：视频是资源逻辑 ID，字节在本地资源包（`file://`，见
     `ResourceBundleCache.LocalUrlOf`）或服务端 `/api/resources/raw`（边下边播），两条路都靠
     `VideoPlayer.url`；`renderMode = MaterialOverride` 写进材质的 `_MainTex`
-    （`DiceTale/TextureRenderer` 的主纹理——与贴地面片同一套做法）。
-  - **首帧之前不显示**：`TextureRenderer` 没纹理时会画占位色，所以 renderer 先关着，
+    （`DiceTale/ImageLayer` 的主纹理——与贴地面片同一套做法）。
+  - **首帧之前不显示**：`ImageLayer` 没纹理时会画占位色，所以 renderer 先关着，
     `prepareCompleted` 才打开——否则会先闪一块白底。等首帧有 15 秒看门狗，超时打一条明确错误。
   - **开关即时生效**：文档一变（`scene_push`）就把 `loop` / `audio` 同步到正在放的那一条；
     `audio` 缺省静音（对应 `VideoPlayer.audioOutputMode`）。**「启用」关掉（或列表清空）时正在放的
@@ -265,7 +267,7 @@ Assets/
   **可选**的 `scaleX` / `scaleY`（编辑器里拖缩放手柄的**边**、或关掉属性面板的等比锁后改单轴时会写）。
   客户端目前**按 `scale` 等比渲染**——`SceneObjectView` 把它们忽略掉是**正确**的（协议里它们是可选字段，
   老前端本来就不认）。要看到非等比，是独立的一次改动：读这两个字段后传给
-  `TextureRenderer.Apply(w, h)`（渲染器本来就吃两个尺寸参数，尺寸仍烘进网格顶点）。
+  `ImageLayer.Apply(w, h)`（渲染器本来就吃两个尺寸参数，尺寸仍烘进网格顶点）。
   规格与折叠规则见 `server/README.md` 的 v11 迁移一节。
 - **角度与编辑器同一套口径（2026-09-20）**：文档里的 `SceneObject.rotation` 存**弧度**，
   Unity 侧必须 `Rad2Deg` 再喂给 `Quaternion.Euler`（**不能直接把弧度当度用**，否则 30° 变成 0.52°），
@@ -277,20 +279,50 @@ Assets/
   而取图是**异步**的——首帧必然拿占位色，且命中缓存的那次推送根本不回调这个视图，于是出现
   「纹理已经在 `ResourceImageLoader` 缓存里、`MeshRenderer` 上却还是占位色」（地图对象最明显）。
   现在取图回调里会自己调一次 `ApplyVisual()` 重画。
-- **`GroundSpriteRenderer` → `TextureRenderer`（2026-09-20，2026-09-21 由 `GroundTextureRenderer` 缩短成现名）**：前者是给 Inspector 用的
+- **`GroundSpriteRenderer` → `TextureRenderer`（2026-09-20，2026-09-21 由 `GroundTextureRenderer` 缩短成现名）
+  → 拆成 `ImageLayer` / `SpriteLayer`（2026-09-23，v21）**：最早那个是给 Inspector 用的
   （`Sprite` 字段 + `OnValidate` 预览 + 序列化资源管理），而镜像的图来自后台推下来的资源 ID、
-  运行时才拿到，根本没有「拖图」这回事。新类**只认 `Texture2D`**，没有 `Sprite` 字段、
-  没有序列化字段、没有编辑器预览；连同它的菜单入口 `GroundSpriteRendererMenu` 一起删掉
-  （Shader 也一起改名：`DiceTale/TextureRenderer`，与类同名）。
+  运行时才拿到，根本没有「拖图」这回事。改成只认 `Texture2D` 之后，v21 又按**对象类型**分成两个类：
+  `ImageLayer`（贴图对象，整张铺满）、`SpriteLayer`（精灵对象，只取一格），
+  公共的网格 / 材质 / 尺寸 / UV 逻辑抽到 `GroundLayer`；Inspector 合成一个 `LayerInspector`。
+  （Shader 也跟着改名：`DiceTale/ImageLayer`，与贴图那个类同名。）
 - **尺寸烘进网格顶点，不再靠 Transform 缩放（2026-09-20）**：`Apply(texture, width, height, tint, order, lift)`
   收的是世界单位下的宽高，顶点摆在 `±宽/2` / `±高/2`，`transform.localScale` 由渲染器校正为
   `(1,1,1)`（`SceneObjectView` 不再设 `localScale`）。这样「对象多大」只有一处来源——网格自己，
   不会出现「网格比例 × 缩放」两处都能改大小、改错一个就变形。实测：地图声明 1920×1080 → 
   网格 bounds 1920×1080、scale (1,1,1)；精灵声明 256×256 → 网格 256×256、scale (1,1,1)。
-- **镜像协议已实现**（**协议 v8**：v5 起战争雾的总开关与视频随场景下发，v6 起声音补齐
+  （v10 起**UV 也用同一套办法**：多一个可选的 `uvRect` 参数，子图取纹理里的一块，见上一条。）
+- **精灵（子图）：只画纹理里的一块（2026-09-22，协议 v10 / 文档 v20）**：贴图引用可能多出
+  `sprite = { column, row }` 与 `spriteGrid = { columns, rows }`（编辑器那边「一张图按行 × 列切」的
+  那一份数据随载荷走）。`SpriteLayer.UvRectOf` 把它们算成 UV 矩形——**全链路唯一一次 y 翻转**
+  就在这里（文档 / 服务端的格子是**从左上**数的，纹理 UV 的 v 从下往上），
+  `Apply(..., uvRect)` 再把 UV **烘进面片网格的顶点**（与尺寸同一套：换格子 = 重建网格，
+  `material.mainTexture` 仍是整张图）。三条细节：
+  - 子图会**再内缩半个纹素**（`InsetUv`）：双线性过滤在格子边界上会把邻格的边渗进来，
+    内缩半纹素正好采到边界纹素的中心；整张图（`(0,0,1,1)`）不缩（它外面没有别的格子）；
+  - 取图后把纹理的 `wrapMode` 设成 **`Clamp`**：采样越出格子边界时 Repeat 会绕到图片另一头
+    （双线性下表现为「边缘混进对面的颜色」）；
+  - **尺寸不受影响**：面片多大仍由声明的 `width/height × scale` 决定——换格子只换「取哪一块像素」。
+  Inspector 上多/少那一行读的是**网格实际的 UV**（`Editor/LayerInspector.cs`），
+  选中对象就能看出它现在是整张图还是子图。
+- **贴图对象 + 两种图片组件（2026-09-23，协议 v11 / 文档 v21）**：实体下多了「贴图」
+  （`kind: "Texture"`）——**只显示整张图**，与精灵的区别只有「不取图集里的一格」。
+  数据上分成两个组件：精灵挂 `SpriteLayer`、贴图挂 `ImageLayer`（v10 及更早都叫 `TextureRenderer`），
+  两者的 `data` 形状完全一样。客户端侧：
+  - `Protocol.ComponentType` 多一个 `Sprite` = `"SpriteLayer"`（`Image` 从 `TextureRenderer` 改成 `"ImageLayer"`）；
+  - `SceneParser` **两种都认**，都填进 `MirrorObject.image`，并多记一位 `hasSpriteLayer`
+    （「前端认得出这两种对象」的落点）；
+  - **行为零差别**：`NeedsView` 看的是 `image` 有没有（组件），取图 / UV / 尺寸走同一条路
+    ——精灵的子图 UV 在 `SpriteLayer.UvRectOf`，贴图永远是整张；
+  - **占位色分开了**：`SceneObjectView.KindColor` 里精灵是蓝、贴图是紫（图没取回来那几百毫秒可见）；
+  - **视频那一组换了宿主**（地图 + 贴图，精灵不再有）：能不能放视频是由
+    `HasComponent(VideoOverlay)` 判的，所以前端**不用改**——只是精灵身上不会再出现这个组件。
+- **镜像协议已实现**（**协议 v11**：v5 起战争雾的总开关与视频随场景下发，v6 起声音补齐
   `pause_sound` / `resume_sound`，v7 起**全局背景音乐**（`play_bgm` 那一组命令）与三档层级，
   v8 起**背景音乐与项目设置解耦**——`project_settings` 只剩三档音量，曲目清单就是项目
-  `Assets/audio/` 下的音频，见 `server/docs/specs/2026-09-19-runtime-mirror-protocol.md`）：
+  `Assets/audio/` 下的音频，v9 起对象特性搬进 `components[]`，v10 起子图随载荷下发，
+  v11 起图片组件分成 `ImageLayer` / `SpriteLayer`，
+  见 `server/docs/specs/2026-09-19-runtime-mirror-protocol.md`）：
   编辑器点「运行」→ 服务端开闸 → 前端连上 → **先下资源包** → 再整份推设置与场景 → 按 `id` 建 / 改 / 删对象
   （位置 / 缩放 / 旋转 / **激活** / 显示顺序 / 取图都同步）。
 - **声音已实现（2026-09-21；v8 起设置里只剩音量）**：三条通道各一个 `AudioSource`——

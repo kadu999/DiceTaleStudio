@@ -112,10 +112,19 @@ test.describe("创建与编辑场景对象", () => {
       await expect(page.getByTestId("object-category-action")).toBeVisible();
       await expect(page.getByTestId("object-category-event")).toBeVisible();
 
-      // 二级：实体下有 网格地图 / 精灵，默认选中第一个（网格地图），名字按类型预填
+      // 二级：实体下有 网格地图 / 精灵 / 贴图，默认选中第一个（网格地图），名字按类型预填
       await expect(page.getByTestId("object-type-Map")).toHaveAttribute("data-selected", "true");
       await expect(page.getByTestId("object-type-SceneObject")).toBeVisible();
+      // 贴图（v21）：实体下的第三个类型，kind 是新的 `Texture`
+      await expect(page.getByTestId("object-type-Texture")).toBeVisible();
       await expect(page.getByTestId("object-name-input")).toHaveValue("网格地图");
+
+      // 贴图按**它自己的**展示名预填（精灵与贴图是两个类型，名字不跟着 kind 走）
+      await page.getByTestId("object-type-Texture").click();
+      await expect(page.getByTestId("object-type-Texture")).toHaveAttribute("data-selected", "true");
+      await expect(page.getByTestId("object-type-Map")).toHaveAttribute("data-selected", "false");
+      await expect(page.getByTestId("object-name-input")).toHaveValue("贴图");
+      await page.getByTestId("object-type-Map").click();
 
       // 动作种类下有「播放声音」（动作对象）；事件种类还没做出来 → 给提示、创建按钮不可用
       await page.getByTestId("object-category-action").click();
@@ -471,12 +480,12 @@ test.describe("创建与编辑场景对象", () => {
         sceneDoc(SCENE_A, [
           withComponent(
             sceneObjectDoc("大红", "SceneObject", { x: 0, y: 0 }, { sortingOrder: 5 }),
-            COMPONENT.textureRenderer,
+            COMPONENT.spriteLayer,
             { id: bigId, width: 120, height: 120 },
           ),
           withComponent(
             sceneObjectDoc("小蓝", "SceneObject", { x: 0, y: 0 }, { sortingOrder: 1 }),
-            COMPONENT.textureRenderer,
+            COMPONENT.spriteLayer,
             { id: smallId, width: 120, height: 120 },
           ),
         ]),
@@ -778,7 +787,7 @@ test.describe("创建与编辑场景对象", () => {
         .poll(async () => (await canvasAverageColor(page, await worldSamplePoint(page, inside))).g)
         .toBeGreaterThan(200);
 
-      // 落盘：图片挂在对象自己的 `TextureRenderer` 上（不是 `GridMap.image`），宽高就是素材本身
+      // 落盘：图片挂在对象自己的 `SpriteLayer` 上（不是 `GridMap.image`），宽高就是素材本身
       await expect
         .poll(async () => {
           const file = await readSceneFile(request, project, SCENE_A);
@@ -786,7 +795,7 @@ test.describe("创建与编辑场景对象", () => {
           return sprite === undefined
             ? null
             : {
-                texture: objectComponentData(sprite, COMPONENT.textureRenderer),
+                texture: objectComponentData(sprite, COMPONENT.spriteLayer),
                 gridMap: objectComponentData(sprite, COMPONENT.gridMap),
               };
         })
@@ -993,12 +1002,12 @@ test.describe("创建与编辑场景对象", () => {
         sceneDoc(SCENE_A, [
           withComponent(
             sceneObjectDoc("绿块", "SceneObject", { x: 0, y: 0 }, { sortingOrder: 5 }),
-            COMPONENT.textureRenderer,
+            COMPONENT.spriteLayer,
             { id: greenId, width: 120, height: 120 },
           ),
           withComponent(
             sceneObjectDoc("蓝块", "SceneObject", { x: 0, y: 0 }, { sortingOrder: 1 }),
-            COMPONENT.textureRenderer,
+            COMPONENT.spriteLayer,
             { id: blueId, width: 120, height: 120 },
           ),
         ]),

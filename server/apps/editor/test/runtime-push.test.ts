@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { scenePayloadText, ScenePushScheduler, shouldPushScene } from "../src/services/runtime-push";
-import type { SceneDoc } from "@dts/document";
+import {
+  scenePayloadOf,
+  scenePayloadText,
+  ScenePushScheduler,
+  shouldPushScene,
+} from "../src/services/runtime-push";
+import { SPRITE_COMPONENT, type SceneDoc } from "@dts/document";
 
 /**
  * 运行态场景推送的判定与去抖：这几条规则决定「编辑器改一下，前端多久、会不会收到」。
@@ -82,7 +87,74 @@ describe("scenePayloadText", () => {
   it("null 表示没有打开的场景", () => {
     expect(scenePayloadText(null)).toBeNull();
   });
+
+  it("精灵：子图的切分随载荷走；改切分文本就变（没有子图的对象不受影响）", () => {
+    const imageId = "project:P/Assets/images/sheet.png";
+    const sheets = { [imageId]: { columns: 4, rows: 2 } };
+
+    expect(scenePayloadOf(sceneWithSprite(imageId, { column: 1, row: 0 }), sheets)).toMatchObject({
+      objects: [
+        {
+          components: [
+            {
+              data: {
+                id: imageId,
+                sprite: { column: 1, row: 0 },
+                spriteGrid: { columns: 4, rows: 2 },
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    // 同一份场景 + 同一张表：文本一致（去重照旧有效）
+    const withSprite = sceneWithSprite(imageId, { column: 1, row: 0 });
+    expect(scenePayloadText(withSprite, sheets)).toBe(scenePayloadText(withSprite, sheets));
+
+    // 改切分（4×2 → 2×1）：文本必须变——这就是「改切分，所有引用它的对象一起变」
+    expect(scenePayloadText(withSprite, sheets)).not.toBe(
+      scenePayloadText(withSprite, { [imageId]: { columns: 2, rows: 1 } }),
+    );
+
+    // 越界的格子在载荷里被夹到最后一格（协议会拒越界值）
+    expect(
+      (
+        scenePayloadOf(sceneWithSprite(imageId, { column: 9, row: 9 }), sheets)?.objects[0]
+          ?.components[0]?.data as { sprite?: unknown }
+      ).sprite,
+    ).toEqual({ column: 3, row: 1 });
+
+    // 没有子图引用的对象：整份载荷与以前逐字一样（老项目不会因为这次改动多推任何东西）
+    expect(scenePayloadText(scene("场景1", 0), sheets)).toBe(JSON.stringify(scene("场景1", 0)));
+  });
 });
+
+/** 一个带子图引用的精灵（推送那几条用例用）。 */
+function sceneWithSprite(imageId: string, sprite: { column: number; row: number }): SceneDoc {
+  const base = scene("场景1", 0);
+  const object = base.objects[0];
+  if (object === undefined) {
+    throw new Error("样例场景里没有对象");
+  }
+
+  return {
+    ...base,
+    objects: [
+      {
+        ...object,
+        components: [
+          {
+            id: `${object.id}__${SPRITE_COMPONENT}`,
+            type: SPRITE_COMPONENT,
+            data: { id: imageId, width: 64, height: 32, sprite },
+            actions: [],
+          },
+        ],
+      },
+    ],
+  };
+}
 
 describe("ScenePushScheduler", () => {
   afterEach(() => {

@@ -6,6 +6,8 @@ import {
   mapDataOf,
   normalizeDegrees,
   objectImage,
+  spriteSheetOf,
+  supportsSpriteSheet,
   type SceneObjectDoc,
 } from "@dts/document";
 import { cellPixelSize } from "@dts/grid";
@@ -115,20 +117,38 @@ export function LockedField({ object }: { readonly object: SceneObjectDoc }): Re
  * 对象要显示的图片（**精灵**就靠它显示图片；地图的贴图也是这个字段，只是存在 `map.image` 里）：
  * 显示**项目内相对路径**（`images/Map001.png`），后面跟一个「选择」按钮。
  *
- * 这是**「渲染」分组目前唯一的一行**：现阶段渲染只做到「换一张图片」，后面加进来的
- * 渲染选项（着色、混合、动画…）都归到这一组。
+ * 这是**「渲染」分组目前唯一的一行**：现阶段渲染只做到「换一张图片」与「取图集里的哪一格」，
+ * 后面加进来的渲染选项（着色、混合、动画…）都归到这一组。
  *
- * 按钮唤出的是「选择图片」弹框（对齐 Unity 的 Object Picker）——素材由外部提交到
+ * 按钮唤出的是「选择贴图」弹框（对齐 Unity 的 Object Picker）——素材由外部提交到
  * `Assets/images/`，编辑器不导入，所以这里只负责从已有图片里挑。没有图片的对象
  * （刚建出来的精灵）只画一个标记点，这里给一行说明 + 同一个「选择」入口。
+ *
+ * **子图（v20）**：图片是图集时显示「子图 第2行第3列（4×4）」，并给一个「改回整图」的入口。
+ * 只有**自己拥有贴图特性**的对象（`carriesKind(image)`，即精灵 / 玩家 / 道具 / 事件）才有这套 UI；
+ * 地图的贴图在 `GridMap` 里、且不允许取子图（取一块会让已有格子标注错位）。
  */
 export function TextureField({ object }: { readonly object: SceneObjectDoc }): React.JSX.Element {
   const tree = useEditorStore((state) => state.project.tree);
+  const spriteSheets = useEditorStore((state) => state.doc.spriteSheets);
   const openImagePicker = useEditorStore((state) => state.openImagePicker);
+  const setObjectSprite = useEditorStore((state) => state.setObjectSprite);
   const image = objectImage(object);
 
   // 引用的文件不在项目里（素材没提交 / 改名了）：直接把这件事写出来
   const missing = image !== undefined && findAssetById(tree, image.id) === undefined;
+
+  // 子图：能不能切由**图片用的是哪个组件**说了算（`supportsSpriteSheet`：精灵能、贴图不能、
+  // 地图的贴图在 GridMap 里根本不在这一套里）。
+  // 这里显示的是**文件里存的那一格**（不是夹取后的那一格）：越界时旁边挂一枚提示，
+  // 「文件里写的」与「实际画的」都说清楚，人才知道要去重选一格
+  const spriteCapable = supportsSpriteSheet(object.kind);
+  const cell = spriteCapable ? image?.sprite : undefined;
+  const sheet = image === undefined ? undefined : spriteSheetOf(spriteSheets, image.id);
+  const outOfRange =
+    cell !== undefined &&
+    sheet !== undefined &&
+    (cell.column >= sheet.columns || cell.row >= sheet.rows);
 
   return (
     <FieldRow label="贴图">
@@ -140,6 +160,24 @@ export function TextureField({ object }: { readonly object: SceneObjectDoc }): R
       >
         {image === undefined ? "（无贴图）" : assetDisplayPath(image.id)}
       </span>
+      {cell === undefined || sheet === undefined ? null : (
+        <span
+          data-testid="texture-sprite"
+          className="flex-none font-mono text-[10px] text-[var(--color-editor-accent)]"
+          title="显示的是这张图集里的一个子图；改图集的切分会一起变（在「选择」窗口里切）"
+        >
+          子图 第{cell.row + 1}行第{cell.column + 1}列（{sheet.columns}×{sheet.rows}）
+        </span>
+      )}
+      {outOfRange ? (
+        <span
+          data-testid="texture-sprite-out-of-range"
+          className="flex-none text-[10px] text-[var(--color-editor-warn)]"
+          title="这张图的切分被改小了，这一格已经超出范围（按最后一格显示）；在「选择」窗口里重选一格"
+        >
+          格子越界
+        </span>
+      ) : null}
       {missing ? (
         <span
           data-testid="texture-missing"
@@ -149,6 +187,17 @@ export function TextureField({ object }: { readonly object: SceneObjectDoc }): R
           找不到
         </span>
       ) : null}
+      {cell === undefined ? null : (
+        <button
+          type="button"
+          data-testid="clear-sprite"
+          className="toolbar-button flex-none hover:toolbar-button-hover"
+          title="改回整张图（图集的切分留着，别的对象还在用）"
+          onClick={() => setObjectSprite(object.id, null)}
+        >
+          改回整图
+        </button>
+      )}
       <button
         type="button"
         data-testid="pick-texture"

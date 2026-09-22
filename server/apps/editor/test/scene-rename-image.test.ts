@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   FEATURE_COMPONENT,
+  SPRITE_COMPONENT,
   componentOf,
   createMapObject,
   createSceneObject,
@@ -59,7 +60,7 @@ describe("重命名场景：同名贴图跟着改指", () => {
   it("精灵的图片不动（那是用户明确挑的文件，哪怕它和场景同名）", () => {
     const sprite = withFeature(
       createSceneObject({ id: "sprite-1", name: "精灵" }),
-      FEATURE_COMPONENT.image,
+      SPRITE_COMPONENT,
       { id: MAP_IMAGE, width: 100, height: 100 },
     );
 

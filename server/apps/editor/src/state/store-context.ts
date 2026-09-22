@@ -28,6 +28,7 @@ import {
 import {
   ScenePushScheduler,
   projectSettingsPayloadText,
+  scenePayloadOf,
   scenePayloadText,
   shouldPushScene,
 } from "../services/runtime-push";
@@ -369,12 +370,21 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
     },
   });
 
+  /**
+   * 图片切分表（工程文件里的那一份）。
+   *
+   * 场景载荷要用它把「第几格」解析成「几行几列 + 第几格」（见 `resolveSceneSprites`），
+   * 所以推送路径上每一处都得带上；没打开项目时是 `undefined`（不解析子图）。
+   */
+  const currentSpriteSheets = (): ProjectDoc["spriteSheets"] => projectHistory.current.spriteSheets;
+
   /** 去抖推送：连续拖动 / 连续输入只推最后一次。 */
   const pushScheduler = new ScenePushScheduler({
     // 去抖到点后**重新读一次当前文档**（比排队时那份更新），再决定推不推
     push: (_text) => {
       const scene = currentSceneDoc();
-      const nextText = scenePayloadText(scene);
+      const sheets = currentSpriteSheets();
+      const nextText = scenePayloadText(scene, sheets);
       if (
         !shouldPushScene({
           mode: get().mode,
@@ -386,15 +396,16 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
         return;
       }
 
-      // 文档模型与协议模型结构一致，只差 `RleRun` 的 readonly 标注（服务端还会用 zod 校验一遍）
-      runtimeClient.pushScene(scene as ScenePayload | null);
+      // 文档模型与协议模型结构一致，只差子图解析出来的 `spriteGrid` 与 `RleRun` 的 readonly 标注
+      // （服务端还会用 zod 校验一遍）
+      runtimeClient.pushScene(scenePayloadOf(scene, sheets) as ScenePayload | null);
       lastPushedSceneText = nextText;
     },
   });
 
   /** 立刻推一份全量（进运行态、重连补发用）。 */
   const pushSceneNow = (): void => {
-    pushScheduler.flush(scenePayloadText(currentSceneDoc()));
+    pushScheduler.flush(scenePayloadText(currentSceneDoc(), currentSpriteSheets()));
   };
 
   /** 文档变了就安排一次推送（运行态 + 连着服务端才有意义，由 shouldPushScene 判定）。 */
@@ -403,7 +414,7 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
       return;
     }
 
-    pushScheduler.schedule(scenePayloadText(currentSceneDoc()));
+    pushScheduler.schedule(scenePayloadText(currentSceneDoc(), currentSpriteSheets()));
   };
 
   /** 当前项目的全局设置（没打开项目 = null：推上去等于让前端清掉手上的设置）。 */
@@ -555,7 +566,7 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
   };
 
   /**
-   * 找出「能放视频」的对象：当前场景里的**地图或精灵**，且**加了视频也选了那一条**。
+   * 找出「能放视频」的对象：当前场景里的**地图或贴图**，且**加了视频也选了那一条**。
    *
    * 与 `fogTargetOf` 同一个口径：找不到就写一条**说明原因**的运行日志并返回 null（不静默失败）。
    * 「能放视频」的判据只有 `supportsVideo` 一处（文档命令与校验走的是同一个函数）。
@@ -571,7 +582,7 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
     }
 
     if (!supportsVideo(object.kind)) {
-      pushLog(makeLog("warn", `${what}失败：「${object.name}」不是地图或精灵，放不了视频`));
+      pushLog(makeLog("warn", `${what}失败：「${object.name}」不是地图或贴图，放不了视频`));
       return null;
     }
 
@@ -969,10 +980,15 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
   /**
    * 工程文件（全局设置）的变更：与场景那套对称——同步 doc 与撤销标记、运行态下推给服务端、
    * 编辑态下（去抖）落盘。
+   *
+   * **除了设置，还要重推一次场景**：工程文件里的**图片切分表**参与场景载荷的解析
+   * （子图的「几行几列」随载荷走，见 `resolveSceneSprites`），所以切分一改，
+   * 引用它的对象在前端那边也该跟着变。文本比对保证「改的是别的项目级数据」时一个字节都不发。
    */
   projectHistory.subscribe(() => {
     syncHistoryFlags();
     scheduleSettingsPush();
+    scheduleRuntimePush();
 
     if (get().runtime.runtimeActive) {
       set({ projectSaveState: "runtime" });

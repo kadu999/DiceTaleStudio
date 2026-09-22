@@ -109,6 +109,17 @@ function mapObjectWith(component: { id: string; type: string; data: Record<strin
   return { ...map, components: [component] };
 }
 
+/**
+ * 一个精灵对象，它的 `SpriteLayer` 挂着给定的图片引用（精灵那一组用例用）。
+ *
+ * v11 起精灵的图住在 `SpriteLayer`、贴图的住在 `ImageLayer`——两者**同一份 schema**，
+ * 所以这里换成 `COMPONENT_TYPE.sprite` 也一样收得下（协议不区分对象类型，只认组件名）。
+ */
+function spriteObjectWith(image: Record<string, unknown>): Record<string, unknown> {
+  const sprite = sampleScene().objects[1] as unknown as Record<string, unknown>;
+  return { ...sprite, components: [feature(COMPONENT_TYPE.sprite, image)] };
+}
+
 describe("协议：场景（镜像的那份对象数据）", () => {
   it("接住文档模型里的对象：地图 / 精灵 / 声音", () => {
     const scene = sceneSchema.parse(sampleScene());
@@ -339,6 +350,83 @@ describe("协议：场景（镜像的那份对象数据）", () => {
     const badMap2 = featureData(bad2.objects[0], COMPONENT_TYPE.map) as { rowOrder: string };
     badMap2.rowOrder = "top-down";
     expect(() => sceneSchema.parse(bad2)).toThrow(rejected);
+  });
+
+  it("精灵（v10）：sprite + spriteGrid 原样传给前端；只有整图时两项都不在", () => {
+    const withSprite = sceneSchema.parse({
+      name: "s",
+      objects: [spriteObjectWith({ id: "project:P/Assets/images/sheet.png", width: 64, height: 64, sprite: { column: 1, row: 0 }, spriteGrid: { columns: 4, rows: 2 } })],
+    });
+    expect(featureData(withSprite.objects[0], COMPONENT_TYPE.sprite)).toEqual({
+      id: "project:P/Assets/images/sheet.png",
+      width: 64,
+      height: 64,
+      sprite: { column: 1, row: 0 },
+      spriteGrid: { columns: 4, rows: 2 },
+    });
+
+    // v9 那样的整图引用：解析出来一个字节都没多（前端照旧铺满整张）
+    const plain = sceneSchema.parse({
+      name: "s",
+      objects: [spriteObjectWith({ id: "project:P/Assets/images/sheet.png", width: 64, height: 64 })],
+    });
+    expect(featureData(plain.objects[0], COMPONENT_TYPE.sprite)).toEqual({
+      id: "project:P/Assets/images/sheet.png",
+      width: 64,
+      height: 64,
+    });
+  });
+
+  it("精灵：越界的格子被拒（编辑器推送前会夹，所以这是坏载荷）", () => {
+    const rejected = /校验失败|Invalid|too_small|custom|超出切分/;
+
+    // column 落在范围外（4 列的图集没有第 4 列）
+    expect(() =>
+      sceneSchema.parse({
+        name: "s",
+        objects: [
+          spriteObjectWith({
+            id: "project:P/Assets/images/sheet.png",
+            width: 64,
+            height: 64,
+            sprite: { column: 4, row: 0 },
+            spriteGrid: { columns: 4, rows: 2 },
+          }),
+        ],
+      }),
+    ).toThrow(rejected);
+
+    // 只有 sprite、没有 spriteGrid（手写载荷）：收下，但前端算不出 UV，只能当整图——
+    // 「两项必须成对」由 `spriteGrid` 的缺省语义兜住（缺 = 1×1 = 整图），不必判整条消息非法
+    expect(() =>
+      sceneSchema.parse({
+        name: "s",
+        objects: [
+          spriteObjectWith({
+            id: "project:P/Assets/images/sheet.png",
+            width: 64,
+            height: 64,
+            sprite: { column: 0, row: 0 },
+          }),
+        ],
+      }),
+    ).not.toThrow();
+
+    // 切分本身也受 1..64 约束
+    expect(() =>
+      sceneSchema.parse({
+        name: "s",
+        objects: [
+          spriteObjectWith({
+            id: "project:P/Assets/images/sheet.png",
+            width: 64,
+            height: 64,
+            sprite: { column: 0, row: 0 },
+            spriteGrid: { columns: 0, rows: 2 },
+          }),
+        ],
+      }),
+    ).toThrow(rejected);
   });
 });
 

@@ -40,8 +40,18 @@ namespace DiceTale
         public float rotation;
         public float scale = 1f;
 
-        /// <summary>对象自己要显示的图（精灵用它；地图的图在 <see cref="map"/> 里）。</summary>
+        /// <summary>对象自己要显示的图（精灵与贴图都用它；地图的图在 <see cref="map"/> 里）。</summary>
         public MirrorImage image;
+
+        /// <summary>
+        /// 这张图是**精灵**那一份（`SpriteLayer` 组件）还是**贴图**那一份（`ImageLayer`）。
+        ///
+        /// 两者显示的是同一件事（对象自己那张图），数据形状也一样，所以都填进 <see cref="image"/>；
+        /// 差别只在**精灵会取图集里的一格**。真正的读取点在 <see cref="SceneObjectView.Create"/>：
+        /// 据此决定挂 `SpriteLayer` 还是 `ImageLayer`（后者省略时以 <see cref="MirrorImage.sprite"/>
+        /// 兜底）；其余（占位色、诊断日志）也跟着这一个事实走，不用再翻组件表。
+        /// </summary>
+        public bool hasSpriteLayer;
 
         /// <summary>由 `GridMap` 组件填（v9 起；老版本是对象上的 `map` 字段）。</summary>
         public MirrorMap map;
@@ -50,7 +60,7 @@ namespace DiceTale
         public MirrorSound sound;
 
         /// <summary>
-        /// 仅地图 / 精灵（`Map` / `SceneObject`）：加进来的视频 + 选中的那条 + 循环 / 声音。
+        /// 地图 / 贴图能带视频（`Map` / `Texture`，v21 起）：加进来的视频 + 选中的那条 + 循环 / 声音。
         ///
         /// 为 null = 这个对象不放视频（没加过，或这份场景来自还没这个字段的旧编辑器）。
         /// </summary>
@@ -62,7 +72,7 @@ namespace DiceTale
         /// <summary>
         /// 对象身上的组件（协议 v9 起）。
         ///
-        /// **原始数据一律留着**：已知的 5 种特性组件会同时填进上面那几个强类型字段
+        /// **原始数据一律留着**：已知的特性组件会同时填进上面那几个强类型字段
         /// （`map` / `image` / `sound` / `video`），未知类型只留在这里备查——
         /// 编辑器加一个新组件时，老前端不该整份场景解析失败，它只是不认那一个组件而已。
         /// </summary>
@@ -101,6 +111,29 @@ namespace DiceTale
         public string id = "";
         public int width;
         public int height;
+
+        /// <summary>
+        /// **子图**（v10）：显示的是这张图集里的哪一格；`null` = 整张图（与 v9 同义）。
+        ///
+        /// 只有精灵会带它（贴图对象的图组件是 `ImageLayer`，界面不给切图入口），
+        /// 但地图 / 手写载荷里出现它也照常解析——前端「收到的就是事实」，多认一种形状没有坏处。
+        /// </summary>
+        public MirrorSprite sprite;
+    }
+
+    /// <summary>
+    /// 图集里的一个子图（v10 起）：几列几行、取第几格。
+    ///
+    /// **格序数从左上数**（`column: 0` = 最左、`row: 0` = 最上），且**只存格序数不存像素**——
+    /// 像素矩形 = 格子 ÷ 加载到的纹理尺寸（见 <see cref="SpriteLayer"/>）。
+    /// 存像素就会与事实不一致（服务端那边同一条规矩）。
+    /// </summary>
+    public class MirrorSprite
+    {
+        public int columns = 1;
+        public int rows = 1;
+        public int column;
+        public int row;
     }
 
     /// <summary>地图对象的数据：贴图 + 网格（格子已从 RLE 解成掩码数组）。</summary>

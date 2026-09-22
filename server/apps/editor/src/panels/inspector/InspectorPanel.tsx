@@ -7,6 +7,7 @@ import { tagsOfClip, type AudioTagRef } from "../audio-catalog";
 import { assetKindLabel, assetPreviewKind, formatSize } from "../asset-info";
 import { EmptyState } from "../EmptyState";
 import { AudioTagDialog } from "../../app/AudioTagDialog";
+import { SpriteSheetPanel } from "../../app/SpriteSheetPanel";
 import { Field, FieldGroup, FieldRow } from "./fields";
 import { OBJECT_GROUPS } from "./registry";
 
@@ -137,12 +138,32 @@ function AssetProperties({ asset }: { readonly asset: ResourceTreeNode }): React
         )}
       </FieldGroup>
 
+      {/*
+        图片：**就地把它切成精灵（子图）**——「一张图按行 × 列切」也是这张图自己的属性，
+        所以入口就放在选中这张图的地方（对齐 Unity：Sprite 的矩形住在资源的导入设置里）。
+        点哪一格由用它的对象各自挑，所以这一档的预览只看不选。
+
+        **位置在大预览之前**是有意的：属性栏只有一列，先摆 256px 的大图会把这一块挤到折叠线
+        以下——「选中图片却看不到切分入口」正是这么来的（用户反馈过）。
+      */}
+      {preview === "image" ? (
+        <FieldGroup title="精灵（子图）" group="sprite">
+          <SpriteSheetPanel
+            mode="asset"
+            imageId={asset.id}
+            imageSize={imageSize ?? undefined}
+            cell={null}
+            onCellChange={() => undefined}
+          />
+        </FieldGroup>
+      ) : null}
+
       {preview === "image" ? (
         <img
           src={src}
           alt={asset.name}
           data-testid="asset-preview-image"
-          className="max-h-64 w-full rounded border border-[var(--color-editor-border)] bg-black/20 object-contain"
+          className="max-h-40 w-full rounded border border-[var(--color-editor-border)] bg-black/20 object-contain"
           onLoad={(event) =>
             setImageSize({
               width: event.currentTarget.naturalWidth,

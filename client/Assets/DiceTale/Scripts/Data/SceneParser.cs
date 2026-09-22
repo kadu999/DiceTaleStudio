@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using UnityEngine;
 
 namespace DiceTale
 {
@@ -124,6 +125,13 @@ namespace DiceTale
                     case Protocol.ComponentType.Map:
                         obj.map = ParseMap(data);
                         break;
+                    // 「对象自己显示的图」有两种组件（v11）：精灵 `SpriteLayer`（会取图集里的一格）
+                    // 与贴图 `ImageLayer`（整张铺满）。数据形状一样，都填进 `obj.image`，
+                    // 只多记一位「这是精灵那一份」——前端据此认得这两种对象。
+                    case Protocol.ComponentType.Sprite:
+                        obj.image = ParseImage(data);
+                        obj.hasSpriteLayer = true;
+                        break;
                     case Protocol.ComponentType.Image:
                         obj.image = ParseImage(data);
                         break;
@@ -158,6 +166,38 @@ namespace DiceTale
                 id = id,
                 width = (int)JsonParser.GetNumber(node, "width"),
                 height = (int)JsonParser.GetNumber(node, "height"),
+                sprite = ParseSprite(JsonParser.GetObject(node, "sprite"), JsonParser.GetObject(node, "spriteGrid")),
+            };
+        }
+
+        /// <summary>
+        /// 子图（v10）：把「第几格」与「几列几行」合成一份。
+        ///
+        /// 服务端推的是两项、还可能是手写 / 老载荷，所以这里一路兜底：
+        /// - 没有 `sprite` → `null`（整张图，与 v9 同义）；
+        /// - 缺 `spriteGrid` → 按 **1×1** 算（那种载荷里「第几格」没有意义，只能当整图）；
+        /// - 越界的格子 → **夹到最后一格**（切分被改小之后老对象仍然画得出来，
+        ///   与服务端推送时的夹取同一条规矩；坏数字不该把整块面片画没）。
+        /// </summary>
+        private static MirrorSprite ParseSprite(
+            Dictionary<string, object> sprite,
+            Dictionary<string, object> grid)
+        {
+            if (sprite == null)
+            {
+                return null;
+            }
+
+            var columns = Mathf.Max(1, grid == null ? 1 : (int)JsonParser.GetNumber(grid, "columns"));
+            var rows = Mathf.Max(1, grid == null ? 1 : (int)JsonParser.GetNumber(grid, "rows"));
+
+            return new MirrorSprite
+            {
+                columns = columns,
+                rows = rows,
+                // 格子从**左上**数（与 Unity 的 Sprite Editor 一致）：0 起、夹进范围
+                column = Mathf.Clamp((int)JsonParser.GetNumber(sprite, "column"), 0, columns - 1),
+                row = Mathf.Clamp((int)JsonParser.GetNumber(sprite, "row"), 0, rows - 1),
             };
         }
 

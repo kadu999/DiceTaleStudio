@@ -18,7 +18,7 @@ import type { RuntimeStatus } from "../src/services/runtime-client";
 import type { ResourceTreeNode } from "../src/services/project-api";
 
 /**
- * **地图 / 精灵上的视频**（v14 起）：一组视频 + 选中哪条 + 循环 / 声音两个开关。
+ * **地图 / 贴图上的视频**（v14 起）：一组视频 + 选中哪条 + 循环 / 声音两个开关。
  *
  * 三个地方分工，这一份钉前两个（第三个是真 canvas / 两层模态，交给 e2e）：
  * 1. **属性面板**：把加进来的视频列成小方块（选放哪条）+ 播放 / 暂停 / 停止 + 两个开关；
@@ -27,7 +27,7 @@ import type { ResourceTreeNode } from "../src/services/project-api";
  * 3. 「编辑视频」窗口与「选择视频」弹框（`e2e/video-object.spec.ts`）。
  *
  * 与声音的两处关键区别也在这里钉住：
- * - 视频挂在**对象自己身上**（只有地图与精灵能带），声音是单独一种动作对象；
+ * - 视频挂在**对象自己身上**（v21 起只有地图与贴图能带，精灵不行），声音是单独一种动作对象；
  * - **每个对象各自一条、互不影响**，不像声音那样按层级互相顶掉。
  */
 
@@ -65,6 +65,12 @@ function mapWith(video?: VideoDataDoc, id = "map-1"): SceneObjectDoc {
   return video === undefined ? object : withFeature(object, FEATURE_COMPONENT.video, video);
 }
 
+function textureWith(video?: VideoDataDoc, id = "tex-1"): SceneObjectDoc {
+  const object = createSceneObject({ id, name: "贴图", kind: "Texture" });
+  return video === undefined ? object : withFeature(object, FEATURE_COMPONENT.video, video);
+}
+
+/** 精灵：**不再是**视频宿主（v21 起视频那一组归贴图）。 */
 function spriteWith(video?: VideoDataDoc, id = "sprite-1"): SceneObjectDoc {
   const object = createSceneObject({ id, name: "精灵" });
   return video === undefined ? object : withFeature(object, FEATURE_COMPONENT.video, video);
@@ -137,10 +143,11 @@ afterEach(() => {
 });
 
 describe("属性面板：视频组", () => {
-  it("地图与精灵都有「视频」组（关着时只有「启用」）；声音对象与传送阵没有", () => {
+  it("地图与贴图都有「视频」组（关着时只有「启用」）；精灵、声音对象与传送阵没有", () => {
     seedScene(
       [
         mapWith(),
+        textureWith(),
         spriteWith(),
         createSoundObject({ id: "sound-1", name: "脚步" }),
         createTeleportObject({ id: "tp-1", name: "传送阵" }),
@@ -155,14 +162,20 @@ describe("属性面板：视频组", () => {
     expect(screen.queryByTestId("video-empty")).toBeNull();
     expect(screen.queryByTestId("video-edit")).toBeNull();
 
-    // 精灵也有这一组
+    // 贴图也有这一组（v21 起取代精灵）
     unmount();
-    seedScene([spriteWith()], ["sprite-1"]);
+    seedScene([textureWith()], ["tex-1"]);
     render(<InspectorPanel />);
     expect(hasGroup("video")).toBe(true);
     expect(screen.getByTestId("video-enable")).toBeDefined();
 
-    // 动作对象没有：视频挂在对象自己的矩形上，声音对象 / 传送阵画的是固定徽标
+    // 精灵**没有**这一组：视频宿主从精灵换成了贴图
+    unmount();
+    seedScene([spriteWith()], ["sprite-1"]);
+    render(<InspectorPanel />);
+    expect(hasGroup("video")).toBe(false);
+
+    // 动作对象也没有：视频挂在对象自己的矩形上，声音对象 / 传送阵画的是固定徽标
     unmount();
     seedScene(
       [createSoundObject({ id: "sound-1", name: "脚步" }), createTeleportObject({ id: "tp-1", name: "传送阵" })],
@@ -379,26 +392,26 @@ describe("播放 / 暂停 / 停止：面板上看得见的状态", () => {
     expect(status().getAttribute("data-state")).toBe("idle");
   });
 
-  it("每个对象各记各的：地图放着的时候精灵也能放，停一个不影响另一个", () => {
+  it("每个对象各记各的：地图放着的时候贴图也能放，停一个不影响另一个", () => {
     seedScene(
-      [mapWith(video([CLIP], { picked: CLIP })), spriteWith(video([CLIP2], { picked: CLIP2 }))],
+      [mapWith(video([CLIP], { picked: CLIP })), textureWith(video([CLIP2], { picked: CLIP2 }))],
       ["map-1"],
     );
     render(<InspectorPanel />);
 
     act(() => useEditorStore.getState().playVideo("map-1"));
-    act(() => useEditorStore.getState().playVideo("sprite-1"));
+    act(() => useEditorStore.getState().playVideo("tex-1"));
 
     const playback = useEditorStore.getState().videoPlayback.objects;
-    expect(Object.keys(playback).sort()).toEqual(["map-1", "sprite-1"]);
+    expect(Object.keys(playback).sort()).toEqual(["map-1", "tex-1"]);
     expect(playback["map-1"]?.clip).toBe(CLIP);
-    expect(playback["sprite-1"]?.clip).toBe(CLIP2);
+    expect(playback["tex-1"]?.clip).toBe(CLIP2);
 
-    // 面板正看着地图：它自己的状态不受精灵影响
+    // 面板正看着地图：它自己的状态不受贴图影响
     expect(status().getAttribute("data-state")).toBe("playing");
 
-    act(() => useEditorStore.getState().stopVideo("sprite-1"));
-    expect(useEditorStore.getState().videoPlayback.objects["sprite-1"]).toBeUndefined();
+    act(() => useEditorStore.getState().stopVideo("tex-1"));
+    expect(useEditorStore.getState().videoPlayback.objects["tex-1"]).toBeUndefined();
     expect(useEditorStore.getState().videoPlayback.objects["map-1"]).toBeDefined();
   });
 
@@ -420,7 +433,7 @@ describe("播放 / 暂停 / 停止：面板上看得见的状态", () => {
 });
 
 describe("失败原因：都在运行日志里写明", () => {
-  it("开关关着 / 没加视频 / 没选 / 不是地图或精灵 / 对象不存在", () => {
+  it("开关关着 / 没加视频 / 没选 / 不是地图或贴图 / 对象不存在", () => {
     seedScene(
       [
         // 连 video 字段都没有 = 没开（前端/编辑器口径一致：就是「开关关着」）
@@ -429,7 +442,10 @@ describe("失败原因：都在运行日志里写明", () => {
         mapWith(video([]), "map-2"),
         // 加了但没选（手写文件里可能有）
         mapWith(unpicked([CLIP]), "map-3"),
+        // 声音对象（动作对象）与**精灵**都不是视频宿主：
+        // 精灵这一条是 v21 的行为变化——视频那一组从精灵挪到了贴图
         createSoundObject({ id: "sound-1", name: "脚步" }),
+        createSceneObject({ id: "sprite-1", name: "精灵" }),
       ],
       ["map-1"],
     );
@@ -444,7 +460,10 @@ describe("失败原因：都在运行日志里写明", () => {
     expect(logs().at(-1)).toMatch(/还没选要放哪一条视频/);
 
     act(() => useEditorStore.getState().playVideo("sound-1"));
-    expect(logs().at(-1)).toMatch(/不是地图或精灵/);
+    expect(logs().at(-1)).toMatch(/不是地图或贴图/);
+
+    act(() => useEditorStore.getState().playVideo("sprite-1"));
+    expect(logs().at(-1)).toMatch(/不是地图或贴图/);
 
     act(() => useEditorStore.getState().playVideo("不存在"));
     expect(logs().at(-1)).toMatch(/找不到这个对象/);
@@ -531,12 +550,12 @@ describe("store：加 / 删 / 改名（「编辑视频」窗口走的那几个�
     expect(useEditorStore.getState().setVideoClipName("map-1", CLIP2, "别的")).toBe(false);
   });
 
-  it("精灵与地图走同一套命令（两个宿主不分家）", () => {
-    seedScene([spriteWith()], ["sprite-1"]);
+  it("贴图与地图走同一套命令（两个宿主不分家）", () => {
+    seedScene([textureWith()], ["tex-1"]);
 
-    act(() => useEditorStore.getState().addVideoClip("sprite-1", CLIP));
-    act(() => useEditorStore.getState().setVideoLoop("sprite-1", true));
-    expect(videoOf("sprite-1")).toEqual({
+    act(() => useEditorStore.getState().addVideoClip("tex-1", CLIP));
+    act(() => useEditorStore.getState().setVideoLoop("tex-1", true));
+    expect(videoOf("tex-1")).toEqual({
       enabled: true,
       clips: [CLIP],
       picked: CLIP,

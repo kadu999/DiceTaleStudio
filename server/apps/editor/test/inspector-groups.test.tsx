@@ -22,6 +22,11 @@ function mapObject(): SceneObjectDoc {
   return createMapObject({ id: "map-1", name: "网格地图", image: IMAGE, grid: GRID });
 }
 
+/** 贴图（v21 起取代精灵成为视频的另一个宿主）。 */
+function textureObject(): SceneObjectDoc {
+  return createSceneObject({ id: "tex-1", name: "贴图", kind: "Texture" });
+}
+
 function seedScene(objects: SceneObjectDoc[], selected: readonly string[]): void {
   const scenes = [{ name: "Map001", objects }];
   sceneHistory.reset(scenes);
@@ -76,7 +81,7 @@ afterEach(() => {
 });
 
 describe("属性分组：基础 / 渲染 / 区域 / 战争雾 / 视频", () => {
-  it("地图对象分五组；精灵有基础 / 渲染 / 视频", () => {
+  it("地图对象分五组；精灵只有基础 / 渲染；贴图有基础 / 渲染 / 视频", () => {
     seedScene([mapObject(), createSceneObject({ id: "sprite", name: "精灵" })], ["map-1"]);
     const { unmount } = render(<InspectorPanel />);
 
@@ -101,7 +106,7 @@ describe("属性分组：基础 / 渲染 / 区域 / 战争雾 / 视频", () => {
     expect(within(groupOf("basic")).queryByTestId("pick-texture")).toBeNull();
     // 战争雾那一组只在有地图数据时出现
     expect(within(groupOf("fog")).getByTestId("fog-enable")).toBeDefined();
-    // 视频那一组对地图与精灵都出现；还没开时整组只剩「启用」那一个开关
+    // 视频那一组对地图与贴图都出现；还没开时整组只剩「启用」那一个开关
     expect(within(groupOf("video")).getByTestId("video-enable")).toBeDefined();
     expect(within(groupOf("video")).queryByTestId("video-edit")).toBeNull();
 
@@ -116,14 +121,27 @@ describe("属性分组：基础 / 渲染 / 区域 / 战争雾 / 视频", () => {
 
     unmount();
     seedScene([mapObject(), createSceneObject({ id: "sprite", name: "精灵" })], ["sprite"]);
+    const spritePanel = render(<InspectorPanel />);
+
+    // 精灵也有「渲染」（每个对象都能显示图片），但**没有**「视频」——v21 起视频宿主换成了贴图；
+    // 也没有格子可编辑、不是地图 → 没有区域 / 战争雾
+    expect(headerOf("basic")).toBeDefined();
+    expect(headerOf("render")).toBeDefined();
+    expect(groupSlugs()).toEqual(["basic", "render"]);
+    expect(hasGroup("video")).toBe(false);
+    expect(hasGroup("edit")).toBe(false);
+    expect(hasGroup("fog")).toBe(false);
+
+    spritePanel.unmount();
+    seedScene([mapObject(), textureObject()], ["tex-1"]);
     render(<InspectorPanel />);
 
-    // 精灵也有「渲染」（每个对象都能显示图片）与「视频」（视频盖在它自己的矩形上），
-    // 但没有格子可编辑、也不是地图 → 没有区域 / 战争雾
+    // 贴图：基础 + 渲染 + 视频（视频的另一个宿主），但没有区域 / 战争雾
     expect(headerOf("basic")).toBeDefined();
     expect(headerOf("render")).toBeDefined();
     expect(headerOf("video")).toBeDefined();
     expect(groupSlugs()).toEqual(["basic", "render", "video"]);
+    expect(within(groupOf("video")).getByTestId("video-enable")).toBeDefined();
     expect(hasGroup("edit")).toBe(false);
     expect(hasGroup("fog")).toBe(false);
   });
@@ -193,11 +211,11 @@ describe("属性分组：基础 / 渲染 / 区域 / 战争雾 / 视频", () => {
     expect(isOpen("edit")).toBe(false);
     expect(isOpen("fog")).toBe(false);
 
-    // 换到精灵：分组是另一套（基础 + 渲染 + 视频，没有区域 / 战争雾）
+    // 换到精灵：分组是另一套（基础 + 渲染，没有视频 / 区域 / 战争雾）
     act(() => useEditorStore.getState().setSelection(["sprite"]));
     expect(headerOf("basic")).toBeDefined();
     expect(headerOf("render")).toBeDefined();
-    expect(headerOf("video")).toBeDefined();
+    expect(hasGroup("video")).toBe(false);
     expect(hasGroup("edit")).toBe(false);
     expect(hasGroup("fog")).toBe(false);
 

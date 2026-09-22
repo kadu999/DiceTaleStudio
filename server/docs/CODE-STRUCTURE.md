@@ -11,26 +11,28 @@
 |---|---|
 | 语言 / 运行时 | TypeScript 5.9 + ESM，Node 22+（后端跑在 `tsx` 上，无编译产物） |
 | 包管理 | pnpm workspace（`apps/*` + `packages/*`，共 8 个包） |
-| 文档格式版本 | `DOCUMENT_FORMAT_VERSION = 19`（`packages/document/src/types.ts`） |
-| 协议版本 | `PROTOCOL_VERSION = 9`（`packages/protocol/src/messages.ts`） |
+| 文档格式版本 | `DOCUMENT_FORMAT_VERSION = 21`（`packages/document/src/types.ts`） |
+| 协议版本 | `PROTOCOL_VERSION = 11`（`packages/protocol/src/messages.ts`；与文档 v21 是**同一批改动、必须配套发布**，见 §6.1） |
 | 后端默认地址 | `0.0.0.0:1420`（`resources/config/app.json`，可被 `HOST` / `PORT` 覆盖） |
 | 编辑器开发地址 | `http://localhost:5173`（Vite，`/api`、`/editor`、`/client` 反代到 1420） |
 | 编辑器生产地址 | `http://localhost:1420`（后端同源托管 `apps/editor/dist`） |
-| 源码规模（不含测试） | 152 个文件 / 31,002 行（packages 9,918 · backend 3,123 · editor 17,961） |
-| 测试规模 | 25,831 行（单测 17,472 · E2E 8,127 · 架构测试 232） |
+| 源码规模（不含测试） | 154 个文件 / 32,159 行（packages 10,626 · backend 3,123 · editor 18,410） |
+| 测试规模 | 27,899 行（单测 18,877 · E2E 8,790 · 架构测试 232） |
 
-### 0.1 本次重构（解耦 + 实体/组件）留下了什么同一批改动做了三件事，互相独立又可分开回滚：
+### 0.1 本次重构（解耦 + 实体/组件）留下了什么
+
+同一批改动做了三件事，互相独立又可分开回滚：
 
 | 改动 | 之前 | 之后 | 加一个功能要改几处 |
 |---|---|---|---|
 | **HTTP 一条协议一个函数** | `http/server.ts` 633 行、一条 `switch` | 13 个文件，`server.ts` **59 行** + `routes/*` | 加一个接口 = 加一个函数 + 路由表一行 |
 | **WS 一条消息一个函数** | `ws/hub.ts` 621 行、两条 `switch` | 8 个文件，`hub.ts` **465 行**（只管传输）+ `handlers/*` | 加一条消息 = 加一个函数（表的键完整性由类型保证） |
-| **实体 + 组件（真 ECS）** | 对象上 5 个特性扁平字段 + 各处 `kind === "…"` | `components[]` + 特性表/访问器；文档 v19 / 协议 v9 / Unity 客户端同步 | 加一个特性 = 加一个组件 + 注册表一行（见 §1.6） |
+| **实体 + 组件（真 ECS）** | 对象上 5 个特性扁平字段 + 各处 `kind === "…"` | `components[]` + 特性表/访问器；文档 v19 / 协议 v9 / Unity 客户端同步（子图改动后为 **v20 / v10**，见 §0） | 加一个特性 = 加一个组件 + 注册表一行（见 §1.6） |
 | **文档命令分模块** | `commands.ts` 2,069 行 | `commands/` 10 个文件（按特性） | 加一个特性的命令 = 加一个文件 |
-| **编辑器 store 分片** | `editor-store.ts` 4,493 行 | 组装点 **96 行** + 15 个切片 + 上下文（见 §5.2） | 加一个功能 = 加一个 `slices/<功能>-slice.ts` + 组装点一行 |
+| **编辑器 store 分片** | `editor-store.ts` 4,493 行 | 组装点 **98 行** + 16 个切片 + 上下文（见 §5.2） | 加一个功能 = 加一个 `slices/<功能>-slice.ts` + 组装点一行 |
 | **属性面板注册表** | `InspectorPanel.tsx` 1,195 行的 JSX 分支 | `InspectorPanel.tsx` **343 行** + `registry.tsx` + `object-fields.tsx` | 加一个特性分组 = 注册表一行 + 一个字段组件 |
 
-**代价是诚实的**：源码从 28,810 行长到 31,002 行（+7.6%）——多出来的是文件头注释、import/export
+**代价是诚实的**：源码从 28,810 行长到 31,002 行（+7.6%；本次子图改动后全仓 32,159 行，见 §0）——多出来的是文件头注释、import/export
 与「显式列出 action 名」的类型。换来的是「改一个功能不必碰整个项目」。
 外部可见的**行为**只在两处收紧：`/api/{health,config,state}` 现在只认 GET（调用方本来就都是 GET）；
 协议 +1 到 v9（老前端会被握手拒绝，见 §6.4）。
@@ -64,9 +66,9 @@ server/
 │  │     ├─ resources/         # FsResourceProvider（唯一碰磁盘的地方）、zip 打包器、资源包缓存
 │  │     ├─ ws/                # hub（传输层）+ hub-context + types + handlers/（一条消息一个函数）
 │  │     └─ mock-client/       # 假 Unity 前端（联调用）
-│  └─ editor/                  # React 编辑器（17,961 行）
+│  └─ editor/                  # React 编辑器（18,410 行）
 │     └─ src/{app,panels,services,state,hooks,styles}/   # state/ 是切片式 store（见 §5.2）
-├─ packages/                   # 6 个可独立测试的内部模块（9,918 行）
+├─ packages/                   # 6 个可独立测试的内部模块（10,626 行）
 │  ├─ grid/                    # 位掩码、坐标换算、RLE、.bytes 编解码（零依赖）
 │  ├─ document/                # 文档模型 + 特性表 + 访问器 + zod 校验 + 组件注册表 + 补丁式撤销
 │  ├─ actions/                 # 动作类型注册表 + 条件求值 + 动作图校验
@@ -76,7 +78,7 @@ server/
 ├─ resources/                  # ★ 全部运行期资源
 │  ├─ config/{app,editor,export}.json
 │  └─ projects/<项目名>/{project.json, Assets/{config,scenes,images,audio,video}/}
-├─ e2e/                        # Playwright 用例（8,127 行）
+├─ e2e/                        # Playwright 用例（8,790 行）
 ├─ test/architecture.test.ts   # 架构边界测试（依赖方向 / 禁止模块 / 资源路径字面量）
 ├─ docs/specs/                 # 前后端契约与运行态镜像协议
 ├─ command-*.bat               # Windows 一键脚本（GBK + CRLF）
@@ -180,8 +182,10 @@ SceneObjectDoc
 │                            position / rotation / scale / scaleX? / scaleY?
 └─ components: ComponentDoc[]   ← 「对象是什么、画成什么样、运行时能做什么」全在这里
    ├─ 前端组件体系那 7 种：OptionValue / Backpack / ItemExchange / MaskImage / FloatValue / IntValue / BoolValue
-   └─ 从对象特性提升上来的 5 种（v19 前是扁平字段）：
-      GridMap(←map) / TextureRenderer(←image) / PlaySound(←sound) / Teleport(←teleport) / VideoOverlay(←video)
+   └─ 从对象特性提升上来的 6 种（v19 前是扁平字段）：
+      GridMap(←map) / PlaySound(←sound) / Teleport(←teleport) / VideoOverlay(←video)
+      / ImageLayer(←image，贴图对象) / SpriteLayer(←image，精灵对象)
+      —— `image` 这个字段有**两种组件**（v21）：贴图整张铺满、精灵会取图集里的一格
 ```
 
 **关键约定**（改这块代码前必须知道）：
@@ -190,7 +194,7 @@ SceneObjectDoc
 |---|---|
 | 「哪个 kind 能带哪个特性」只有**一处**归属地 | `packages/document/src/features.ts` 的 `OBJECT_FEATURES`（`kindsCarrying` / `carriesKind`） |
 | 特性数据怎么读 / 怎么写只有**一处**归属地 | `packages/document/src/access.ts`（`mapDataOf` / `ensureSoundData` / `writeFeature` …）。**禁止**在调用处 `object.components.find(...)` |
-| 组件类型名与元数据只有**一处**归属地 | `packages/document/src/components.ts` 的 `COMPONENT_TYPES`（12 条；`kinds` 从 `OBJECT_FEATURES` 取回，`legacyField` 记着 v18 的字段名） |
+| 组件类型名与元数据只有**一处**归属地 | `packages/document/src/components.ts` 的 `COMPONENT_TYPES`（13 条 = 7 种前端组件 + 6 种对象特性组件；`kinds` 从 `OBJECT_FEATURES` 取回，`legacyField` 记着 v18 的字段名） |
 | 组件实例 id 是**确定性**的 | `componentId(objectId, type)` = `<对象id>__<组件类型>`，所以迁移与新建重复执行都不会多出实例 |
 | 同一个对象上**同一类型最多一个**实例 | 新建、迁移、`writeFeature` 都按这个前提写 |
 | `kind` **不再决定行为** | 只是「创建原型」标签：新建弹框归类、列表过滤、占位色（`SceneObjectView.NeedsView(MirrorObject)` 也改看组件） |
@@ -209,6 +213,18 @@ SceneObjectDoc
 9. `client/.../SceneParser.cs`：加一个 `case`（不加也不会崩——未知组件会被安静地留下）。
 
 也就是说：**特性本身的代码是新增文件，而不是去十几处 `kind === "…"` 里插分支**。
+
+**子图（v20）刻意没有做成第 6 个特性组件，它是一项数据**：精灵本来就是「纹理 + 一块矩形」
+（Unity 也是这么定义 `Sprite` 的），矩形由图片自己的切分算出来，所以它住在图片组件的
+`image` 字段（`ImageRef.sprite`）与工程文件的切分表（`ProjectDoc.spriteSheets`）里。
+全部知识住在 `packages/document/src/sprites.ts`（新增文件），数据形状见 §3.2.6。
+
+**v21 把「显示一张图」拆成了两个组件**（`ImageLayer` / `SpriteLayer`），这**不是**在拆子图那项数据，
+而是给「哪一类对象」各配一个组件：两者的 `data` 形状一模一样，差别是**名字**——
+`supportsSpriteSheet` 就靠它回答「这个对象的图能不能取一格」（选择图片弹框给不给切分面板、
+属性面板显不显示子图那一行，都跟这一条走）。为什么这次不怕「谁赢」：一个对象**只会带其中一种**
+（`OBJECT_FEATURES` 的 `componentsByKind` 按 kind 路由，迁移也按 kind 改名），
+不像「两个显示组件同时挂着」那种歧义。
 
 ---
 
@@ -367,42 +383,46 @@ build: { outDir: "dist", sourcemap: true },
 - 画笔半径 `floor((brushSize-1)/2)`（1/2→1×1、3/4→3×3、5→5×5，含偶数尺寸的刻意保真），与 Unity `ApplyBrush` 完全一致；
 - 坐标系只有一个：**世界坐标**（x 右、y 上、像素、无限大）；`grid(0,0)` 在地图矩形左下角 = 图片最下面一行，grid.y 与世界 y 同向、不翻转；唯一的翻转发生在贴图绘制（`worldRectTopLeft`）。
 
-### 3.2 `@dts/document` — 文档模型、命令与历史（4,785 行）
+### 3.2 `@dts/document` — 文档模型、命令与历史（5,986 行）
 
 | 文件 | 行数 | 职责 | 关键导出 |
 |---|---|---|---|
-| `types.ts` | 531 | 全部文档类型与格式版本常量 | `DOCUMENT_FORMAT_VERSION`(=19)、`ProjectDoc`、`SceneDoc`、`SceneFileDoc`、`SceneObjectDoc`、`ComponentDoc`、`MapDataDoc`、`MapFogDoc`、`SoundDataDoc`、`TeleportDataDoc`、`VideoDataDoc`、`ActionInstanceDoc`、`ConditionDoc`、`ImageRef`、`GridSpec`、`CellRuns`、`ItemLibraryDoc`、`AudioMetaDoc`、`AudioTagTableDoc`、`SOUND_LAYERS`、`OBJECT_SOUND_LAYERS`、`SOUND_LAYER_LABELS` |
-| `features.ts` | 165 | **「哪个 kind 带哪个特性」的唯一归属地** + 组件类型名映射 + 特性缺省值 | `ObjectFeatureField`、`FEATURE_COMPONENT`、`OBJECT_FEATURES`、`featureOfField`、`featureOfComponent`、`kindsCarrying`、`carriesKind`、`supportsVideo`、`displayImageField`、`DEFAULT_SOUND_LAYER`、`DEFAULT_VIDEO_*` |
-| `access.ts` | 250 | **对象特性的唯一访问路径**（数据存在哪只有这里知道） | 读：`componentOf`、`componentDataOf`、`hasFeature`、`mapDataOf`、`imageOf`、`objectImage`、`soundDataOf`、`teleportDataOf`、`videoDataOf`、`isVideoEnabled`；写：`mapDraftOf`、`writeFeature`、`removeFeature`、`ensureSoundData`、`ensureTeleportData`、`ensureVideoData`、`withFeature`、`withoutFeature` |
-| `schema.ts` | 832 | zod schema + **版本迁移链** + 文件解析 | `sceneFileSchema`、`projectDocSchema`、`upgradeRawDocument`、`migrateProjectDoc`、`parseProjectFile`、`parseProjectDoc`、`parseSceneFile`、`defaultProjectSettings`、`defaultAudioSettings`、`defaultBgmSettings`、`DEFAULT_BGM_VOLUME`(0.6)、`DEFAULT_SFX_VOLUME`(0.8)、`DEFAULT_VOICE_VOLUME`(1)；类型 `SceneSizeHint`、`ProjectFileLoad`、`SceneFileLoad` |
-| `commands/` | 2,019 | **67 个文档变换命令**，按特性拆成 9 个模块（纯搬运，行为不变） | 见 §3.2.2 |
-| `validation.ts` | 619 | 文档语义校验（跨字段、跨场景） | `IssueLevel`、`ValidationIssue`、`hasErrors`、`formatIssues`、`validateScene`、`validateProject` |
-| `history.ts` | 229 | 补丁式撤销 / 重做容器 | `DocumentHistory`、`HistoryEntry`、`DEFAULT_HISTORY_LIMIT`(=200)、`DEFAULT_COALESCE_WINDOW_MS`(=700)、`ProjectDraft`、`SceneListDraft` |
-| `factory.ts` | 171 | 新建对象的工厂函数（默认值） | `createEmptyProject`、`createEmptyScene`、`createEmptySceneFile`、`createMapObject`、`createSoundObject`、`createTeleportObject` |
-| `components.ts` | 250 | 组件注册表（**12 种**：7 种前端组件 + 5 种从对象特性提升上来的） | `ComponentType`、`ComponentTypeDef`、`COMPONENT_TYPES`、`FEATURE_COMPONENT_TYPES`、`findComponentType`、`findComponentTypeByLegacyField`、`componentId`、`featureComponent`、`defaultComponentData`、`isKnownComponentType`、`conditionValueTypesFor` |
-| `scale.ts` | 118 | 对象缩放语义（等比 + v11 单轴覆盖） | `DEFAULT_OBJECT_SCALE`(1)、`MIN_OBJECT_SCALE`(0.01)、`MAX_OBJECT_SCALE`(100)、`clampObjectScale`、`effectiveScaleX`、`effectiveScaleY`、`isUniformScale`、`collapseScale` |
-| `fields.ts` | 90 | 组件字段定义与默认值推导 | `FieldDef`、`FieldKind`、`FieldOption`、`defaultValueFor`、`defaultDataFromFields` |
-| `index.ts` | 9 | barrel | — |
+| `types.ts` | 424 | 全部文档类型与格式版本常量（**v20 的切分类型、v21 的 `Texture` kind 也在这里**） | `DOCUMENT_FORMAT_VERSION`(=21)、`ProjectDoc`、`SceneDoc`、`SceneFileDoc`、`SceneObjectDoc`、`ObjectKind`、`ComponentDoc`、`MapDataDoc`、`MapFogDoc`、`SoundDataDoc`、`TeleportDataDoc`、`VideoDataDoc`、`ActionInstanceDoc`、`ConditionDoc`、`ImageRef`、`GridSpec`、`CellRuns`、`ItemLibraryDoc`、`AudioMetaDoc`、`AudioTagTableDoc`、`SOUND_LAYERS`、`OBJECT_SOUND_LAYERS`、`ImageSpriteRef`、`SpriteSheetDoc`、`ResolvedSprite`、`SOUND_LAYER_LABELS` |
+| `features.ts` | 177 | **「哪个 kind 带哪个特性」的唯一归属地** + 组件类型名映射（含 `image` 的**按 kind 路由**）+ 特性缺省值 | `ObjectFeatureField`、`FEATURE_COMPONENT`、`SPRITE_COMPONENT`、`LEGACY_IMAGE_COMPONENT`、`OBJECT_FEATURES`、`FEATURE_COMPONENTS`、`featureOfField`、`featureOfComponent`、`componentsOfField`、`componentForKind`、`carriesFeatureComponent`、`kindsCarrying`、`carriesKind`、`supportsVideo`、`supportsSpriteSheet`、`displayImageField`、`DEFAULT_SOUND_LAYER`、`DEFAULT_VIDEO_*` |
+| `access.ts` | 220 | **对象特性的唯一访问路径**（数据存在哪只有这里知道；`image` 的两种组件都在这里收口） | 读：`componentOf`、`componentDataOf`、`hasFeature`、`mapDataOf`、`imageOf`（**两种图片组件都认**）、`objectImage`、`soundDataOf`、`teleportDataOf`、`videoDataOf`、`isVideoEnabled`；写：`mapDraftOf`、`writeFeature`、`removeFeature`、`ensureSoundData`、`ensureTeleportData`、`ensureVideoData`、`withFeature`、`withoutFeature` |
+| `schema.ts` | 975 | zod schema + **版本迁移链** + 文件解析 | `sceneFileSchema`、`projectDocSchema`、`imageSpriteRefSchema`、`spriteSheetSchema`、`upgradeRawDocument`、`migrateProjectDoc`、`parseProjectFile`、`parseProjectDoc`、`parseSceneFile`、`defaultProjectSettings`、`defaultAudioSettings`、`defaultBgmSettings`、`DEFAULT_BGM_VOLUME`(0.6)、`DEFAULT_SFX_VOLUME`(0.8)、`DEFAULT_VOICE_VOLUME`(1)；类型 `SceneSizeHint`、`ProjectFileLoad`、`SceneFileLoad` |
+| `commands/` | 2,155 | **66 个文档变换命令**，按特性拆成 9 个模块（纯搬运，行为不变） | 见 §3.2.2 |
+| `validation.ts` | 660 | 文档语义校验（跨字段、跨场景 + **子图的切分与越界格子** + **视频只给地图与贴图**） | `IssueLevel`、`ValidationIssue`、`SceneValidationOptions`、`hasErrors`、`formatIssues`、`validateScene`、`validateProject` |
+| `sprites.ts` | 241 | **精灵（子图）的全部知识**（v20 新增）：一张图怎么切、对象取哪一格、那一格在图片里的哪块矩形、画多大；「地图贴图不支持子图」的**唯一判据**也在这里 | `SPRITE_SHEET_MAX`(64)、`DEFAULT_SPRITE_SHEET`(1×1)、`normalizeSpriteSheet`、`isTrivialSpriteSheet`、`spriteSheetOf`（没有表项 = 整图）、`clampSpriteCell`、`resolvedSpriteOf`、`displaySpriteOf`、`spriteUvRectOf`、`spritePixelRectOf`、`spriteCellSizeOf`、`spriteCellAtFraction`、`resolveSceneSprites`（推送用的解析：夹格子 + 摘掉地图上的误写） |
+| `history.ts` | 213 | 补丁式撤销 / 重做容器 | `DocumentHistory`、`HistoryEntry`、`DEFAULT_HISTORY_LIMIT`(=200)、`DEFAULT_COALESCE_WINDOW_MS`(=700)、`ProjectDraft`、`SceneListDraft` |
+| `factory.ts` | 159 | 新建对象的工厂函数（默认值） | `createEmptyProject`、`createEmptyScene`、`createEmptySceneFile`、`createMapObject`、`createSoundObject`、`createTeleportObject` |
+| `components.ts` | 258 | 组件注册表（**13 种**：7 种前端组件 + **6 种**从对象特性提升上来的——`image` 那一个字段有 `ImageLayer` / `SpriteLayer` 两种） | `ComponentType`、`ComponentTypeDef`、`COMPONENT_TYPES`、`FEATURE_COMPONENT_TYPES`、`hasLegacyFeatureField`、`findComponentType`、`componentId`、`featureComponent`、`defaultComponentData`、`isKnownComponentType`、`conditionValueTypesFor` |
+| `scale.ts` | 92 | 对象缩放语义（等比 + v11 单轴覆盖） | `DEFAULT_OBJECT_SCALE`(1)、`MIN_OBJECT_SCALE`(0.01)、`MAX_OBJECT_SCALE`(100)、`clampObjectScale`、`effectiveScaleX`、`effectiveScaleY`、`isUniformScale`、`collapseScale` |
+| `fields.ts` | 87 | 组件字段定义与默认值推导 | `FieldDef`、`FieldKind`、`FieldOption`、`defaultValueFor`、`defaultDataFromFields` |
+| `index.ts` | 13 | barrel | — |
 
 #### 3.2.1 数据模型
 
 ```
 project.json（ProjectDoc）
-├─ formatVersion: 18
+├─ formatVersion: 21
 ├─ name
 ├─ items: ItemLibraryDoc            ← 道具库（source/updatedAt/count/items[]）
 ├─ settings: ProjectSettingsDoc     ← v15 起；audio: { bgm, sfx, voice } 各只有 volume
 ├─ audioMeta?: { [资源逻辑ID]: { name?, tags?: number[] } }   ← v17 起，可选，纯编辑器数据
-└─ audioTags?: (string|null)[]      ← v18 起，可选；下标 = tag ID，null = 已删的洞
+├─ audioTags?: (string|null)[]      ← v18 起，可选；下标 = tag ID，null = 已删的洞
+└─ spriteSheets?: { [图片逻辑ID]: { columns, rows } }   ← v20 起，可选；**切分只有这一份**
+                                                          （1×1 = 整图，不写这种表项；表空了删字段）
 
 Assets/scenes/<场景名>.json（SceneFileDoc）   ← 场景名不进文件内容，它就是文件名
-├─ formatVersion: 19
+├─ formatVersion: 21
 └─ objects: SceneObjectDoc[]
    ├─ id / name / kind / active / locked / sortingOrder / rotation / scale / scaleX? / scaleY?
    ├─ position: { x, y } | null      ← 世界坐标，原点 = 场景中心，y 向上
    └─ components: ComponentDoc[]     ← { id, type, displayName?, data, actions[] }
       ├─ GridMap          ← 贴图 + 网格 + 战争雾（原 map）    : image + grid + rowOrder + cells(RLE) + fog?
-      ├─ TextureRenderer  ← 对象自己显示的图（原 image）
+      ├─ ImageLayer       ← 对象自己显示的图（原 image），**贴图对象**用：整张铺满
+      ├─ SpriteLayer      ← 对象自己显示的图（原 image），**精灵对象**用：+ `sprite?: {column, row}`（v20：取图集里哪一格）
       ├─ PlaySound        ← 音频列表 + 选中 + 层级（原 sound）
       ├─ Teleport         ← 候选场景 + 选中（原 teleport）
       ├─ VideoOverlay     ← 视频列表 + 开关（原 video）
@@ -412,13 +432,19 @@ Assets/scenes/<场景名>.json（SceneFileDoc）   ← 场景名不进文件内�
 **v19 起对象特性住在 `components[]` 里**（v18 及更早是 `map` / `image` / `sound` / `teleport` / `video`
 五个扁平字段，由 `migrateFeaturesToComponents` 搬一次）。读它们一律走 `access.ts` 的访问器。
 
-`ObjectKind = "Map" | "SceneObject" | "Player" | "Item" | "Event" | "PlaySound" | "Teleport"`
-（前四种对齐 Unity 的 `BackendObjectKind`，后三种是编辑器侧新增的）。
+`ObjectKind = "Map" | "SceneObject" | "Player" | "Item" | "Event" | "PlaySound" | "Teleport" | "Texture"`
+（前四种对齐 Unity 的 `BackendObjectKind`，后四种是编辑器侧新增的：`Map` 是「带网格的图」、
+`PlaySound` / `Teleport` 是**动作对象**、`Texture`（v21）是「只显示整张图」的贴图对象）。
 
 **单位口径**：`position` 与世界坐标（像素）一致；`rotation` **在文档里存弧度**（面板按度编辑，
 写盘前归一到 `(-180°, 180°]`，见 `normalizeDegrees`）；`scale` 与 `scaleX`/`scaleY` 是倍数（0.01 ~ 100）。
 
-**组件注册表（`components.ts`，7 种，全部 `gmEditable: true`）**：
+**组件注册表（`components.ts`，13 种；全部 `gmEditable: true`）**：
+
+下面这张表只列**前端组件体系那 7 种**（它们是「动作挂在哪个组件上」的宿主，字段有语义）；
+另外 6 种是从对象特性提升上来的（`GridMap` / `ImageLayer` / `SpriteLayer` / `PlaySound` /
+`Teleport` / `VideoOverlay`），`fields: []`（数据形状由各自的 zod schema 把关）、完整定义见
+`components.ts` 与 §3.2.6 / §6.2。
 
 | type | 中文名 | 条件值类型 | 关联命令 | 字段 |
 |---|---|---|---|---|
@@ -434,11 +460,12 @@ Assets/scenes/<场景名>.json（SceneFileDoc）   ← 场景名不进文件内�
 缺省表示恒满足。
 
 **可选字段的取舍**（贯穿全库的一条规矩）：
-`map.fog`(v10)、`scaleX/scaleY`(v11)、`video`(v14)、`audioMeta`(v17)、`audioTags`(v18) 一律**不补空壳**——
+`map.fog`(v10)、`scaleX/scaleY`(v11)、`video`(v14)、`audioMeta`(v17)、`audioTags`(v18)、
+`image.sprite`(v20)、`spriteSheets`(v20) 一律**不补空壳**——
 「字段不存在」本身就是有意义的事实；而 `active`/`sortingOrder`(v7)、`scale`(v8)、`locked`(v9)、
 `settings`(v15) 是**补默认值**的（老文件读出来就有可用值）。
 
-#### 3.2.2 文档命令（`commands/`，67 个）
+#### 3.2.2 文档命令（`commands/`，66 个）
 
 `commands/` 是个目录（原来是一个 2,069 行的 `commands.ts`），**按特性分模块**——
 加一个特性的命令 = 加一个文件，而不是往一个巨型文件里插一段：
@@ -446,15 +473,15 @@ Assets/scenes/<场景名>.json（SceneFileDoc）   ← 场景名不进文件内�
 | 文件 | 行数 | 内容 |
 |---|---|---|
 | `index.ts` | 24 | barrel（`export *` 9 个模块）+ 模块级说明 |
-| `shared.ts` | 74 | 命令共用的常量与查找工具：`DEFAULT_SORTING_ORDER` / `MAP_DEFAULT_SORTING_ORDER` / 角度区间 / `createId` / `findObject` / `findComponent` / `findMapObject` / `listMapObjects` / `collectActionIds` |
-| `object.ts` | 345 | 对象增删改 + 变换 + 排序 + 缩放 + `setObjectImage`（`SORTING_ORDER_LIMIT` 是这里的**私有**常量） |
+| `shared.ts` | 78 | 命令共用的常量与查找工具：`DEFAULT_SORTING_ORDER` / `MAP_DEFAULT_SORTING_ORDER` / 角度区间 / `createId` / `findObject` / `findComponent` / `findMapObject` / `listMapObjects` / `collectActionIds` |
+| `object.ts` | 417 | 对象增删改 + 变换 + 排序 + 缩放 + `setObjectImage`（**换 id 丢掉旧的子图引用**，v20）+ `setObjectSprite`（取图集里哪一格，`null` = 整图）；`SORTING_ORDER_LIMIT` 是这里的**私有**常量 |
 | `component.ts` | 201 | 组件与动作的增删改（通用，不认具体类型） |
 | `scene.ts` | 52 | 场景名校验 / 查找 / 重名判定（纯函数） |
 | `grid-map.ts` | 356 | 地图数据 + 战争雾 + 网格与标注 |
 | `play-sound.ts` | 195 | 声音对象（音频列表 / 选中 / 层级 / 名字） |
 | `teleport.ts` | 116 | 传送阵（候选场景 / 选中） |
 | `video.ts` | 287 | 视频（开关 / 列表 / 选中 / 循环 / 声音） |
-| `project.ts` | 370 | 三档音量 + 音频标注 + 标签表 |
+| `project.ts` | 429 | 三档音量 + 音频标注 + 标签表 + 图片切分表（`setSpriteSheet`，v20） |
 
 **依赖方向严格单向**：`shared` → `../features`/`../types`（不 import 任何命令模块）；
 `object`/`component`/`scene` → `./shared`；`grid-map`/`play-sound`/`teleport`/`video` → `./shared` + `../access` + `../features`；
@@ -465,7 +492,7 @@ Assets/scenes/<场景名>.json（SceneFileDoc）   ← 场景名不进文件内�
 | 分组 | 函数 |
 |---|---|
 | 查找 | `findObject`、`findComponent`、`findMapObject`、`listMapObjects`、`findScene`、`collectActionIds` |
-| 对象增删改 | `createSceneObject`、`addObject`、`removeObject`、`renameObject`、`nextObjectName`、`setObjectPosition`、`setObjectKind`、`setObjectActive`、`setObjectLocked`、`setObjectSortingOrder`、`setObjectRotation`、`setObjectImage`、`objectImage` |
+| 对象增删改 | `createSceneObject`、`addObject`、`removeObject`、`renameObject`、`nextObjectName`、`setObjectPosition`、`setObjectKind`、`setObjectActive`、`setObjectLocked`、`setObjectSortingOrder`、`setObjectRotation`、`setObjectImage`、`setObjectSprite`、`objectImage` |
 | 缩放 | `setObjectScale`、`setObjectScaleAxes`、`normalizeDegrees`、`objectsInDrawOrder` |
 | 组件 / 动作 | `addComponent`、`removeComponent`、`updateComponentData`、`setComponentDisplayName`、`addAction`、`removeAction`、`updateAction`、`moveAction` |
 | 地图网格 | `setMapCells`、`clearMapCells`、`paintMapCells`、`setMapGrid`、`setMapData` |
@@ -475,6 +502,7 @@ Assets/scenes/<场景名>.json（SceneFileDoc）   ← 场景名不进文件内�
 | 视频 | `supportsVideo`、`isVideoEnabled`、`setVideoEnabled`、`setVideoClips`、`setVideoPicked`、`setVideoClipName`、`setVideoLoop`、`setVideoAudio` |
 | 全局设置 | `setBgmVolume`、`setSfxVolume`、`setVoiceVolume` |
 | 音频标注 | `setAudioMetaName`、`setAudioMetaTags`、`addAudioTag`、`renameAudioTag`、`setAudioTagName`、`deleteAudioTag` |
+| 图片切分（v20） | `setSpriteSheet`（`1×1` 与 `null` 都**删掉表项**，不留空壳；表空了连字段一起删） |
 | 场景 | `isSceneNameTaken`、`validateSceneName`、`createId` |
 | 常量 | `DEFAULT_SORTING_ORDER`(0)、`MAP_DEFAULT_SORTING_ORDER`(-10)、`DEFAULT_SOUND_LAYER`("sfx")、`DEFAULT_VIDEO_ENABLED`(true)、`DEFAULT_VIDEO_LOOP`(false)、`DEFAULT_VIDEO_AUDIO`(false) |
 
@@ -496,6 +524,8 @@ Assets/scenes/<场景名>.json（SceneFileDoc）   ← 场景名不进文件内�
   v5 位置换算成世界坐标、v6 删掉网格里的 `cellSize`、v7 补 `active`/`sortingOrder`、v8 补 `scale`、
   v9 补 `locked`、v13 给 `map.fog` 补 `enabled`、v15 补 `settings`、v18 把字符串标签
   `migrateAudioTags` 建成 `audioTags` 表并换成整数 ID）；
+- **v20（子图）没有迁移函数**：`image.sprite`（取哪一格）与 `spriteSheets`（怎么切）都是**可选**字段，
+  靠「版本号 +1 → `needsRewrite` 回写一次」让老文件自描述（与 v17 `audioMeta` 同一个先例）；
 - `parseProjectFile(raw)` → `ProjectFileLoad`（含 `upgraded: boolean` 之类的加载信息）；
 - `parseSceneFile(raw, size?)` → `SceneFileLoad`；`SceneSizeHint` 用于给缺 `grid` 的老地图补尺寸；
 - `migrateProjectDoc` 做「已解析文档」的补齐（与原始 JSON 的 upgrade 分开）；
@@ -520,14 +550,47 @@ Assets/scenes/<场景名>.json（SceneFileDoc）   ← 场景名不进文件内�
 `Map` 缺 `map`（error）/RLE 解码失败（error）/`map.image.id` 空白（warning）/雾区位非法或
 「开着没雾区」「关着有雾区」（warning）、`PlaySound` 缺 `sound`（error）/`layer:"bgm"`（warning）/
 `picked` 越界（warning）、`Teleport` 缺 `teleport`（error）/候选空 / 没选 / 选中的不在候选里 /
-自己传自己（均 warning）、`video` 只允许 Map 与 SceneObject 携带、动作对象挂 `image`（warning）、
+自己传自己（均 warning）、`video` 只允许 Map 与 Texture（贴图）携带、动作对象挂 `image`（warning）、
+**子图格子越出切分（warning，渲染与推送都按最后一格显示）**、**地图贴图带了 `sprite`（warning，两边都忽略）**、
 组件 id 唯一、未知组件类型（warning，数据原样保留）、`OptionValue.current` 不在 `options` 里（error）、
 字段类型与 `FieldDef.kind` 不符（error）、条件 `target` 类型与 `valueType` 不符（error）、
 全场景动作 id 唯一（error）。
 
 `validateProject` 覆盖：`items.count` 与 `items.items.length` 不符、三档音量越界、
-标签重名、`audioMeta` 里空显示名 / 空标签数组 / tagId 越界或指向已删的洞。
+标签重名、`audioMeta` 里空显示名 / 空标签数组 / tagId 越界或指向已删的洞、
+`spriteSheets` 里 `1×1` 的多余项 / 空图片 ID（后两组均为 warning）。
 **全是 warning**——不拦工程文件打开。场景不在 `validateProject` 里（各自成文件，由 `validateScene` 逐个校验）。
+
+v20 起 `validateScene` 多了第二个参数：`validateScene(scene, { spriteSheets })`（`SceneValidationOptions`）——
+「格子越界」要拿**工程文件的切分表**对照，而文档包不读全局，所以切分表是从外面传进来的（纯函数）。
+
+#### 3.2.6 精灵（子图，v20）
+
+**「精灵 = 纹理 + 一块矩形」**，而这个仓库里**切分只有一份、矩形一像素都不存**。三份数据各存什么：
+
+| 数据 | 住在哪 | 存什么 |
+|---|---|---|
+| 场景文件（对象身上） | **图片组件的 `data`**（类型 `ImageRef`）：精灵在 `SpriteLayer`、贴图在 `ImageLayer` | **只存引用**：`{ id, width, height, sprite?: { column, row } }`——哪张图 + 第几格；`width/height` 是**那一格的声明尺寸**（整图 = 图宽）。**贴图（`ImageLayer`）不带 `sprite`**（界面不给切图入口），但文档层不拦——手写文件里写了也会照常渲染 |
+| 工程文件 | `ProjectDoc.spriteSheets?: Record<图片逻辑 ID, { columns, rows }>` | **唯一一份切分**（这张图几列几行）。`1×1` = 整图，**不写这种表项**；表空了连字段一起删 |
+| 运行态载荷（协议） | 推送时由编辑器解析出来 | **多一项** `spriteGrid: { columns, rows }`——前端手上没有工程文件，「几行几列」必须随载荷走 |
+
+三条口径：
+
+- **「文档 → 线上形状」的唯一转换点**是 `resolveSceneSprites(scene, spriteSheets)`（`sprites.ts`）：
+  它把越界的格子**夹到最后一格**、把**地图贴图上误写的** `sprite` 摘掉，返回**新对象**（不改输入文档——
+  推送路径同时要做文本比对，按值比较才不会产生假变更）；
+- `row` **从最上面数**（`row: 0` = 第一行、`column: 0` = 最左列，对齐 Unity 的 Sprite Editor），
+  与 `GridMap` 的 `rowOrder: "bottom-up"` **无关**——那是「网格坐标系锚在哪」，这里是「第几个格子」；
+- **不存像素、不存归一化 UV**：矩形 = 格子 ÷ **加载到的**纹理尺寸（`spriteUvRectOf` / `spritePixelRectOf`），
+  与「`GridSpec` 不存 `cellSize`」同一条规矩；图片尺寸不是行列整数倍时（100px 切 3 列）编辑器画布与前端
+  算出来的是同一块，不会各差一像素。`spriteCellSizeOf` 只在**挑图那一刻**算一次并写进 `ImageRef.width/height`。
+
+**地图贴图不支持子图**：判据只有 `displaySpriteOf` 一处（地图对象一律返回 `undefined`），
+于是编辑器不给入口（选择窗口右侧没有切分面板）、`validateScene` 给 warning、推送时把误写的引用摘掉——
+三处行为一致，不会出现「编辑器画裁过的一块、前端铺整张」这种对不上的半套状态。
+
+**越界格子**（切分被改小之后）：对象数据**不改**（那是用户自己挑的格），推送与渲染两处统一夹到最后一格，
+画布上照常有东西可看（不是空白、也不越出图外），属性面板另挂一条「格子越界」提示让人自己重选一格。
 
 ### 3.3 `@dts/actions` — 动作注册表与条件求值（425 行）
 
@@ -560,9 +623,9 @@ Assets/scenes/<场景名>.json（SceneFileDoc）   ← 场景名不进文件内�
 `Teleport`/`TeleportZone` 的 `targetMapName` 必须是已有场景（error）、
 `ShowHide`/`PlayVideo` 的 `targetObjectId` 必须在本场景内（error）；`targetMarkerId` 只透传，编辑态不校验。
 
-### 3.4 `@dts/protocol` — WS 消息契约（约 700 行）
+### 3.4 `@dts/protocol` — WS 消息契约（798 行）
 
-单文件 `src/messages.ts`（634 行）+ `index.ts` barrel（1 行）。
+单文件 `src/messages.ts`（797 行）+ `index.ts` barrel（1 行）。
 **编辑器、服务端、Unity 前端共用同一份 zod schema。**
 
 > **刻意不依赖 `@dts/document`**：`protocol` 是被三端共用的最底层包，不能反过来依赖文档包，
@@ -572,7 +635,8 @@ Assets/scenes/<场景名>.json（SceneFileDoc）   ← 场景名不进文件内�
 
 | 名称 | 值 | 用途 |
 |---|---|---|
-| `PROTOCOL_VERSION` | `8` | 握手校验；不一致则关闭连接 |
+| `PROTOCOL_VERSION` | `11` | 握手校验；不一致则关闭连接（`4002`）。与文档格式 v21 是**同一批改动**：图片组件拆成 `ImageLayer` / `SpriteLayer`，老客户端不认这两个名字，图取不到、只画一块占位色 |
+| `SPRITE_SHEET_MAX` | `64` | 子图切分的**列 / 行上限**（与 `@dts/document` 的 `SPRITE_SHEET_MAX` 同值，契约测试盯着） |
 | `RUNTIME_INACTIVE_STATUS` | `503` | 未开闸时拒绝 `/client` 升级的 HTTP 状态 |
 | `RUNTIME_INACTIVE_REASON` | `"runtime-inactive"` | 写在 `x-dts-reason` 头里 |
 | `RUNTIME_STOPPED_CODE` | `4003` | WS 关闭码：退出运行态 / 被顶替 / 心跳超时 |
@@ -600,10 +664,19 @@ Assets/scenes/<场景名>.json（SceneFileDoc）   ← 场景名不进文件内�
 | `reveal_fog_region` | `objectId`, `region`, `revealed` | 区域位取自 `map.fog.regions` |
 
 载荷 schema（与 `@dts/document` **有意重复**，两处同步维护）：
-`worldPositionSchema`、`imageRefSchema`、`gridSpecSchema`、`cellRunsSchema`、`mapFogSchema`、`mapDataSchema`、
-`soundDataSchema`、`videoDataSchema`、`teleportDataSchema`、`projectSettingsSchema`、`sceneObjectSchema`、`sceneSchema`。
-协议侧是**下发子集**：不含 `components` / `actions` / `items` / `audioMeta` / `audioTags` 等纯编辑器数据
+`worldPositionSchema`、`imageRefSchema`、`spriteRefSchema`、`spriteGridSchema`、`gridSpecSchema`、`cellRunsSchema`、
+`mapFogSchema`、`mapDataSchema`、`soundDataSchema`、`videoDataSchema`、`teleportDataSchema`、
+`projectSettingsSchema`、`sceneObjectSchema`、`sceneSchema`。
+协议侧是**下发子集**：不含 `components` / `actions` / `items` / `audioMeta` / `audioTags` / `spriteSheets` 等纯编辑器数据
 （`sceneObjectSchema` 只保留前端渲染与播放需要的字段）。
+
+**唯一的例外——协议比文档多一项**：`imageRefSchema` 多了 `spriteGrid{columns, rows}`（v10）。
+切分在编辑器那边**只有一份**（工程文件的 `spriteSheets`），前端没有工程文件，所以编辑器推送时用
+`resolveSceneSprites` 把「几行几列」解析进载荷（§3.2.6）。`refine` 只卡**一条**：两项都在时
+`sprite.column < spriteGrid.columns && sprite.row < spriteGrid.rows`——**越界在协议侧是坏载荷**
+（推送前已经夹过，收到越界值说明对面没按规矩来）；只带 `sprite` 不带 `spriteGrid` 仍然收下
+（缺省 = 1×1 = 整图，前端算不出 UV 就按整图铺，不必为一条手写载荷判整条消息非法）。
+`resourceIdsOfObject` **不因此改动**：子图不带来新的资源 ID。
 
 公共摘要类型：`clientInfoSchema{name,version,connectedAt}`、`sceneInfoSchema{name,objectCount,updatedAt}`、
 `resourcesInfoSchema{project,fingerprint,fileCount,bytes,ok,at,reason?}`、`projectSettingsInfoSchema{updatedAt}`。
@@ -644,13 +717,13 @@ resources/
 `writeBinary`、`ensureFolder`、`remove`、`rename`。`rename` 的契约：两端类别必须一致、源必须存在、
 目标必须不存在（**绝不覆盖用户数据**）。
 
-### 3.6 `@dts/renderer` — Canvas 2D 渲染与手柄几何（1,743 行）
+### 3.6 `@dts/renderer` — Canvas 2D 渲染与手柄几何（1,775 行）
 
 | 文件 | 行数 | 职责 | 关键导出 |
 |---|---|---|---|
 | `viewport.ts` | 154 | 视口（缩放 + 平移）与坐标变换 | `Viewport`、`Point`、`MIN_SCALE`(0.05)、`MAX_SCALE`(16)、`createViewport`、`createCenteredViewport`、`clampScale`、`worldToScreen`、`screenToWorld`、`panBy`、`zoomAt`、`fitViewport`、`visibleWorldRect` |
 | `gizmo.ts` | 422 | 变换手柄（移动 / 旋转 / 缩放）的**世界几何 + 屏幕几何 + 命中判定** | `TransformTool`、`toolHasGizmo`、`GizmoHandle`、`SCALE_HANDLES`、尺寸常量（`GIZMO_HANDLE_SIZE` 9、`GIZMO_HANDLE_HIT_SIZE` 10、`GIZMO_AXIS_GAP` 45、`GIZMO_AXIS_LENGTH` 40、`GIZMO_RING_GAP` 22、`GIZMO_AXIS_HIT_WIDTH` 9、`GIZMO_RING_HIT_WIDTH` 10）、`isDrawableFrame`、`rectCorners`、`rotatePointAround`、`angleAround`、`scaleHandlePoints`、`scaleAnchorFor`、`isCornerScaleHandle`、`scaleAxisOf`、`gizmoScreenGeometry`、`hitTestGizmoHandles`、`moveTipOf`、`moveRootOf` |
-| `scene-renderer.ts` | 1,164 | 场景绘制主循环 + 命中测试 + 音频徽标动画 | `SceneLayer`、`SceneRenderInput`、`SceneToolHandles`、`SceneRenderer`、`createCanvasSceneRenderer`、`kindMarkerColor`、`hitTestRect`、`AudioPulseRing`、`AudioBadgeAnimation`、`audioBadgeAnimation` |
+| `scene-renderer.ts` | 1,196 | 场景绘制主循环 + 命中测试 + 音频徽标动画 + 子图的九参数 `drawImage` | `SceneLayer`（含 `sprite?`：**图片像素、左上角原点、y 向下**）、`SceneRenderInput`、`SceneToolHandles`、`SceneRenderer`、`createCanvasSceneRenderer`、`kindMarkerColor`、`hitTestRect`、`AudioPulseRing`、`AudioBadgeAnimation`、`audioBadgeAnimation` |
 | `index.ts` | 3 | barrel | — |
 
 两条关键不变量：
@@ -669,6 +742,10 @@ resources/
 `drawGridLines` 间距 < 4px 跳过、条数上限 4000。内置徽标（`icon: "audio" | "teleport"`）**不裁剪**
 （正在播的声波要扩到矩形外）、全部用路径画（不占资产、不依赖字体）。
 `audioBadgeAnimation` 是**纯函数**（周期 1200ms、两圈错开半周期），因此可以脱离画布单测。
+
+**子图（v20）只改「贴哪里」**：`SceneLayer.sprite` 有值时走九参数 `drawImage`（源矩形 + 目标矩形），
+源矩形由调用方用 `spritePixelRectOf` 算好（口在 `@dts/document`，与前端是同一套除法）。
+**裁剪、命中、选中框、手柄仍按对象矩形算**——渲染器不认识「子图」这个概念，它只拿到一块源矩形。
 
 ---
 
@@ -963,7 +1040,7 @@ Radmin / Hamachi / Bluetooth）；真实网卡（Wi-Fi / WLAN / Wireless / Ether
 
 ---
 
-## 5. 编辑器 `apps/editor`（17,961 行 / 79 个文件）
+## 5. 编辑器 `apps/editor`（18,410 行 / 80 个文件）
 
 ### 5.1 分层总览
 
@@ -992,6 +1069,9 @@ Radmin / Hamachi / Bluetooth）；真实网卡（Wi-Fi / WLAN / Wireless / Ether
 
 ### 5.2 文件清单
 
+> 本节按目录分组，**含 `styles/index.css`**（160 行）——§0 的源码规模只数 `.ts` / `.tsx`，
+> 所以那里的「80 个文件 / 18,410 行」不含它（下表合计是 81 个文件 / 18,570 行）。
+
 #### 根目录（2）
 
 | 文件 | 行数 | 职责 | 对外导出 |
@@ -1014,14 +1094,14 @@ Radmin / Hamachi / Bluetooth）；真实网卡（Wi-Fi / WLAN / Wireless / Ether
 #### `state/`（21）
 
 store 用 **zustand 切片**模式拆开了：原来是一个 4,493 行的 `editor-store.ts`，
-现在是「组装点 + 类型 + 模块级工具 + 上下文 + 初始状态 + 15 个功能切片」。
+现在是「组装点 + 类型 + 模块级工具 + 上下文 + 初始状态 + 16 个功能切片」。
 
 | 文件 | 行数 | 职责 | 对外导出 |
 |---|---|---|---|
-| `editor-store.ts` | **85** | **只剩组装与再导出**：`create<EditorStoreState>()` 里展开初始状态与 15 个切片，然后把公开 API 原样再导出（仓库里 30+ 处从这里导入） | `useEditorStore`、`sceneHistory`、`projectHistory`、`fitSceneViewport`、`serializeSceneFile`、`serializeProjectFile`、`compareSceneNames`、`findResourceNode`、`withRenamedSceneImage`；类型 `EditorMode`、`EditorUiState`、`RuntimeUiState`、`ProjectUiState`、`ProjectDialogMode`、`SceneDialogMode`、`SceneSaveState`、`GridPaintState`、`EditorStoreState` |
-| `store-types.ts` | 692 | 全部状态类型 + `EditorStoreState`（**126 个 action + 44 个状态字段**）+ `StoreSet` / `StoreGet` / `EditorStoreData`（由「全部 action 名」算出来的状态部分） | 上表那些类型 |
+| `editor-store.ts` | **98** | **只剩组装与再导出**：`create<EditorStoreState>()` 里展开初始状态与 16 个切片，然后把公开 API 原样再导出（仓库里 30+ 处从这里导入） | `useEditorStore`、`sceneHistory`、`projectHistory`、`fitSceneViewport`、`serializeSceneFile`、`serializeProjectFile`、`compareSceneNames`、`findResourceNode`、`withRenamedSceneImage`；类型 `EditorMode`、`EditorUiState`、`RuntimeUiState`、`ProjectUiState`、`ProjectDialogMode`、`SceneDialogMode`、`SceneSaveState`、`GridPaintState`、`EditorStoreState` |
+| `store-types.ts` | 713 | 全部状态类型 + `EditorStoreState`（**129 个 action + 44 个状态字段**）+ `StoreSet` / `StoreGet` / `EditorStoreData`（由「全部 action 名」算出来的状态部分） | 上表那些类型 |
 | `store-core.ts` | 350 | **模块级**工具与状态：两份 `DocumentHistory`、撤销轨（`lastEditTrack` / `activeTrack` / `historyOf`）、常量、`fitSceneViewport`、`serializeSceneFile` / `serializeProjectFile`、`withRenamedSceneImage`、`compareSceneNames`、`findResourceNode`、`makeLog` / `nextLogId` | 同 `editor-store` 的值导出 |
-| `store-context.ts` | 1,174 | **闭包状态与局部工具**（原 `create()` 里 1157-2050 行那段）：`StoreContext` 49 个成员——37 个函数（`pushLog` / `switchScene` / `deliverSoundPlay` / `scheduleSceneSave` / `fogTargetOf` …）、7 个稳定引用（`runtimeClient` / 两个 `ScenePushScheduler` / `savedScenes` / `sceneViewports` / `quietCommandIds` / `storedGridPaint`）、5 个可变标量走 get/set（`lastPushedSceneText` / `pendingRunRequest` / `viewportAdjusted` / `bootstrapping` / `savedProjectText`） | `StoreContext`、`createStoreContext` |
+| `store-context.ts` | 1,190 | **闭包状态与局部工具**（原 `create()` 里 1157-2050 行那段）：`StoreContext` 49 个成员——37 个函数（`pushLog` / `switchScene` / `deliverSoundPlay` / `scheduleSceneSave` / `fogTargetOf` / `currentSpriteSheets` …）、7 个稳定引用（`runtimeClient` / 两个 `ScenePushScheduler` / `savedScenes` / `sceneViewports` / `quietCommandIds` / `storedGridPaint`）、5 个可变标量走 get/set（`lastPushedSceneText` / `pendingRunRequest` / `viewportAdjusted` / `bootstrapping` / `savedProjectText`） | `StoreContext`、`createStoreContext` |
 | `initialState.ts` | 80 | 初始状态（返回类型是 `EditorStoreData`，所以**少一个状态字段就编译报错**） | `createInitialState` |
 | `slices/history-slice.ts` | 116 | `applyScenes` `applyProject` `undo` `redo` `resetDoc` | — |
 | `slices/save-slice.ts` | 143 | `saveSceneNow` `flushSceneSave` `saveProjectNow` `flushProjectSave` | — |
@@ -1038,6 +1118,7 @@ store 用 **zustand 切片**模式拆开了：原来是一个 4,493 行的 `edit
 | `slices/teleport-slice.ts` | 105 | 传送阵：候选、选中、触发换台 | — |
 | `slices/grid-paint-slice.ts` | 150 | 网格标注：画笔偏好、涂抹、清空 | — |
 | `slices/fog-slice.ts` | 224 | 战争雾：开关、雾区、擦除记账、补发 | — |
+| `slices/sprite-slice.ts` | 104 | 精灵（子图）：`setObjectImageSprite`（图 + 格子**一条撤销记录**）、`setObjectSprite`、`setSpriteSheet`（切分落在**工程文件**那条轨道） | — |
 
 **切片的写法**（加一个功能照着抄）：
 
@@ -1064,7 +1145,7 @@ export function createSoundSlice(
 |---|---|---|---|---|
 | `project-api.ts` | 167 | 项目 HTTP 客户端；统一把非 2xx 的 `{error}` 转成 `Error`，204 返回 `undefined`。 | `projectApi`、`contentTypeFor`；类型 `ProjectSummary`、`ResourceTreeNode` | 见 §5.4.1 |
 | `runtime-client.ts` | 328 | 编辑器↔服务端的 WS 运行态连接：只负责协议与连接，不含编辑态数据；含重连退避、稳定连接判定、close-code 翻译。 | `RuntimeClient`、`defaultEditorSocketUrl`、`reconnectDelayMs`、`describeSocketClose`、`CLOSE_PROTOCOL_MISMATCH`(4002)；类型 `RuntimeStatus`、`RuntimeLogEntry`、`RuntimeStateSnapshot`、`RuntimeHandlers` | `WS /editor` |
-| `runtime-push.ts` | 100 | 运行态推送的**纯判定 + 去抖**：只在 run 且 WS open 且内容变了才推。 | `RUNTIME_PUSH_DEBOUNCE_MS`(200)、`shouldPushScene`、`scenePayloadText`、`projectSettingsPayloadText`、`ScenePushScheduler`；类型 `ScenePushDecision` | —（纯逻辑） |
+| `runtime-push.ts` | 121 | 运行态推送的**纯判定 + 去抖**：只在 run 且 WS open 且内容变了才推；子图的切分在解析时随载荷走。 | `RUNTIME_PUSH_DEBOUNCE_MS`(200)、`shouldPushScene`、`scenePayloadText(scene, spriteSheets?)`、`scenePayloadOf(scene, spriteSheets?)`、`projectSettingsPayloadText`、`ScenePushScheduler`；类型 `ScenePushDecision` | —（纯逻辑） |
 | `sound-playback.ts` | 97 | 声音的**期望播放记账**（按层级，同层顶替）：不写文档、不进撤销。 | `emptySoundPlayback`、`withPlaying`、`withSoundPaused`、`withStopped`、`soundPlaybackResendPlan`；类型 `SoundPlaybackEntry`、`SoundPlaybackState` | — |
 | `video-playback.ts` | 92 | 视频的期望播放记账（按对象，每个对象一条）。 | `emptyVideoPlayback`、`withVideoPlaying`、`withVideoPaused`、`withVideoStopped`、`videoPlaybackResendPlan`；类型 `VideoPlaybackEntry`、`VideoPlaybackState` | — |
 | `bgm-playback.ts` | 99 | 全局背景音乐记账（全局一条；v16 起不属于项目设置），状态只有 `{clip, paused}`。 | `emptyBgmPlayback`、`withBgmPlaying`、`withBgmPaused`、`withBgmStopped`、`bgmResendPlan`、`bgmResendActions`；类型 `BgmPlaybackState`、`BgmAction`、`BgmResend` | — |
@@ -1075,30 +1156,31 @@ export function createSoundSlice(
 | `session.ts` | 39 | 只记「上次打开的项目名」，读写一律吞异常（隐私模式不能让编辑器打不开）。 | `readLastProject`、`writeLastProject`、`clearLastProject` | localStorage `dts.editor.lastProject` |
 | `scene-image.ts` | 118 | 场景贴图加载器：按逻辑 ID 缓存 `HTMLImageElement`（绘制是 rAF 循环，不能在循环里发请求）；失败**不缓存**并给出原因；提供完成订阅与 `clearSceneImageCache()`（切项目释放）。 | `sceneImage`、`subscribeSceneImage`、`sceneImageError`、`clearSceneImageCache` | `GET /api/resources/raw?id=` |
 
-#### `app/`（20）
+#### `app/`（21）
 
 | 文件 | 行数 | 职责 | 对外导出 |
 |---|---|---|---|
-| `EditorShell.tsx` | 370 | 四区外壳（桌面三栏 / 紧凑抽屉）、启动引导 `bootstrapEditor`、**全局快捷键注册**、跨断点重置面板开合、按 store 开关渲染 12 个对话框；内部 `Drawer`。 | `EditorShell` |
+| `EditorShell.tsx` | 375 | 四区外壳（桌面三栏 / 紧凑抽屉）、启动引导 `bootstrapEditor`、**全局快捷键注册**、跨断点重置面板开合、按 store 开关渲染 12 个对话框；内部 `Drawer`。 | `EditorShell` |
 | `MenuBar.tsx` | 385 | 顶部菜单（工程/场景/编辑/视图/运行）+ 顶栏右侧（紧凑开关、`BgmControl`、`ModeSwitch`、`ClientBadge`）。原则：**所有命令都必须能从菜单触发**。 | `MenuBar` |
 | `StatusBar.tsx` | 98 | 底栏八个状态格：工程名、场景数、场景保存状态、工程保存状态、当前场景、已选数、当前工具、运行态与连接状态点；内部 `SAVE_STATE_LABELS`（含 `runtime: "运行中（不保存）"`）、`TOOL_LABELS`。 | `StatusBar` |
 | `dialog-size.ts` | 96 | 弹窗尺寸计算（比例 0.8×0.86，夹 720×520 ~ 1680×1200，且不超过窗口 92%）与「按长宽比等比装进可用区域」；`useViewportSize` 订阅 resize。 | `dialogSizeFor`、`fitBox`、`useViewportSize`、`useDialogSize` |
 | `ProjectDialog.tsx` | 177 | 新建/打开项目：列表带「N 个文件」与删除（`confirm`），创建成功即关闭，失败把 `project.error` 摆在框里。 | `ProjectDialog` |
 | `SceneDialog.tsx` | 104 | 新建/重命名场景：场景名 = 文件名，失败原因就地显示。 | `SceneDialog` |
 | `ObjectDialog.tsx` | 203 | 「新建对象」弹框：先选种类（实体/动作/事件）再选类型（正方形瓦片 + `kindMarkerColor` 色点），名字用 `nextObjectName` 预填去重。 | `ObjectDialog` |
-| `ImagePickerDialog.tsx` | 151 | 「选择贴图」：列项目全部图片，缩略图 `onLoad` 读真实像素尺寸，双击 = 直接确定。 | `ImagePickerDialog` |
+| `ImagePickerDialog.tsx` | 226 | 「选择贴图 / 精灵」：列项目全部图片，缩略图 `onLoad` 读真实像素尺寸，双击 = 直接确定；**右侧切分面板**（`allowSprite` 为 false 的地图对象不给），确定时回调 `onPick(image, sprite)`——**图 + 格子一次交出去**，「使用整图 / 使用第X行第Y列」两个按钮，尺寸没读到就禁用确定。 | `ImagePickerDialog` |
+| `SpriteSheetPanel.tsx` | 302 | 选择窗口右侧的**切分面板**：列 / 行输入（1..64，坏数字退回当前值）、一行说明（`sprite-sheet-scope-note`：切分是这张图自己的、改它引用它的对象一起变、**对象在场景里的大小不变**）、预览图上点点选格（`sprite-preview` / `sprite-preview-cell`）、`sprite-current-cell` 显示当前格（或「整张图」）、`sprite-clear-sheet` = 恢复整图（**还有对象在用这张图的格子时禁用**，提示先让它们「改回整图」）。 | `SpriteSheetPanel` |
 | `AudioPickerDialog.tsx` | 151 | 「选择音频」：`audioCatalog` 过滤 `missing`，带搜索框；点一条就 `addSoundClip`，已加入的禁用。 | `AudioPickerDialog` |
 | `VideoPickerDialog.tsx` | 128 | 「选择视频」：列 `listVideoAssets`，已加入的标「已加入」；`.webm` 行给「Windows 多半解不了」提醒。 | `VideoPickerDialog` |
 | `AudioTagDialog.tsx` | 153 | 「选择标签」：给一个音频文件勾/去标签（`allTagsOf` + `setAudioTags`），只勾选不新建。 | `AudioTagDialog` |
 | `AudioTagEditorDialog.tsx` | 197 | 「标签」窗口：整数序号 `#0…#N` 预铺（`SLOTS_PER_PAGE` 16、`MAX_SLOTS` 32），只填名字，洞不画。 | `AudioTagEditorDialog` |
 | `SoundEditDialog.tsx` | 264 | 「编辑声音」窗口：加/删音频、看路径、给每条起显示名（`sound.names`）；内嵌 `AudioPickerDialog`。 | `SoundEditDialog` |
 | `VideoEditDialog.tsx` | 272 | 「编辑视频」窗口：加/删视频、看路径、起名字（`video.names`）；内嵌 `VideoPickerDialog`。 | `VideoEditDialog` |
-| `TeleportEditDialog.tsx` | 116 | 「传送目标」窗口：把项目场景勾成候选（整份新清单交 `setTeleportTargets`）；已失效的目标照列并标「已失效」。 | `TeleportEditDialog` |
+| `TeleportEditDialog.tsx` | 117 | 「传送目标」窗口：把项目场景勾成候选（整份新清单交 `setTeleportTargets`）；已失效的目标照列并标「已失效」。 | `TeleportEditDialog` |
 | `GlobalSettingsDialog.tsx` | 110 | 「全局设置」：三档音量滑杆（`doc.settings.audio.*`，0..1 step 0.05）。 | `GlobalSettingsDialog` |
 | `BgmControl.tsx` | 79 | 顶栏「音乐」按钮：显示当前在放什么/暂停标记/播放中高亮；导出 `bgmDeliveryHint`（与声音/视频**同一套措辞**的「已记录，等连上补发」提示）。 | `BgmControl`、`bgmDeliveryHint` |
 | `BgmDialog.tsx` | 355 | 「背景音乐」弹框：项目音频清单（按显示名排序）+ 只搜名字/路径 + 标签勾选（AND）+ 路径显示开关 + 行选中跟随播放态 + 打开时滚到当前曲 + 底部播放/暂停·继续/停止。 | `BgmDialog` |
-| `FogMaskDialog.tsx` | 461 | 「战争雾 Mask 窗口」：贴图底 + canvas 遮罩（960 宽、按贴图比例定高），软边圆刷擦除，右侧「整区开关」；运行态下按批下发 `erase_mask` 轨迹、整区开关下发 `reveal_fog_region`；编辑态纯预览、不写文档不落盘。 | `FogMaskDialog` |
-| `GridEditDialog.tsx` | 458 | 「网格编辑窗口」：**唯一**的格子涂/擦入口，用同一渲染器 + `fitViewport` 把地图铺满窗口；指针捕获 + 补齐两事件点之间的格子（不断线）；「全部清除」可撤销。 | `GridEditDialog` |
+| `FogMaskDialog.tsx` | 462 | 「战争雾 Mask 窗口」：贴图底 + canvas 遮罩（960 宽、按贴图比例定高），软边圆刷擦除，右侧「整区开关」；运行态下按批下发 `erase_mask` 轨迹、整区开关下发 `reveal_fog_region`；编辑态纯预览、不写文档不落盘。 | `FogMaskDialog` |
+| `GridEditDialog.tsx` | 459 | 「网格编辑窗口」：**唯一**的格子涂/擦入口，用同一渲染器 + `fitViewport` 把地图铺满窗口；指针捕获 + 补齐两事件点之间的格子（不断线）；「全部清除」可撤销。 | `GridEditDialog` |
 
 #### `panels/`（6）
 
@@ -1115,24 +1197,24 @@ export function createSoundSlice(
 
 | 文件 | 行数 | 职责 | 对外导出 |
 |---|---|---|---|
-| `AssetIcon.tsx` | 121 | 资源面板图标：内联 SVG（不用 emoji，跨设备一致）、`currentColor` 描边、一律 `aria-hidden`；文件夹开/合两种画法。 | `AssetChevron`、`FolderIcon`、`AssetFileIcon` |
+| `AssetIcon.tsx` | 128 | 资源面板图标：内联 SVG（不用 emoji，跨设备一致）、`currentColor` 描边、一律 `aria-hidden`；文件夹开/合两种画法。 | `AssetChevron`、`FolderIcon`、`AssetFileIcon` |
 | `AssetsPanel.tsx` | 634 | 资源面板（对齐 Unity Project）：根 = `Assets`，左目录树 + 右列当前目录直属内容；只读、不导入素材；场景文件点一下 = 打开场景；「打开目录」按选中项调后端；展开集合用 ref 做真源 + 懒滚动/定位。 | `AssetsPanel` |
 
 #### `panels/hierarchy/`（1）
 
 | 文件 | 行数 | 职责 | 对外导出 |
 |---|---|---|---|
-| `HierarchyPanel.tsx` | 354 | 场景对象列表：种类过滤 + 关键字过滤、复制/删除、保存按钮与保存错误条；行内改名（双击）、激活/锁定切换、行尾提示（地图网格尺寸 / 声音层级 / 传送目标）。 | `HierarchyPanel` |
+| `HierarchyPanel.tsx` | 362 | 场景对象列表：种类过滤 + 关键字过滤、复制/删除、保存按钮与保存错误条；行内改名（双击）、激活/锁定切换、行尾提示（地图网格尺寸 / 声音层级 / 传送目标）。 | `HierarchyPanel` |
 
 #### `panels/inspector/`（9）
 
 | 文件 | 行数 | 职责 | 对外导出 |
 |---|---|---|---|
-| `InspectorPanel.tsx` | 341 | 右侧属性面板**只剩「显示哪一屏」**：按「资源 > 对象 > 场景 > 项目」的优先级选择视图，对象那一屏按注册表渲染分组 | `InspectorPanel` |
-| `registry.tsx` | 150 | **对象分组的注册表**：7 组（基础 / 渲染 / 声音 / 传送 / 区域 / 战争雾 / 视频）各自的 `applies`（判据走特性表与访问器，不看 `kind` 字面量）与 `render`；**数组顺序就是界面顺序**（e2e 断言它） | `ObjectGroupDef`、`OBJECT_GROUPS` |
-| `object-fields.tsx` | 795 | 对象字段的控件本体（从 `InspectorPanel.tsx` 拆出，纯搬运）：名称 / 激活 / 锁定 / 显示顺序 / 位置 / 缩放 / 单轴缩放 / 旋转 / 贴图 / 网格规格 / 每格像素 / 网格显示开关 + 它们的格式化与解析助手 | `NameField`、`ActiveField`、`LockedField`、`SortingOrderField`、`PositionFields`、`ScaleField`、`ScaleAxisField`、`RotationField`、`TextureField`、`GridFields`、`CellSizeField`、`GridDisplayField`、`WORLD_ORIGIN_FALLBACK` 等 |
+| `InspectorPanel.tsx` | 343 | 右侧属性面板**只剩「显示哪一屏」**：按「资源 > 对象 > 场景 > 项目」的优先级选择视图，对象那一屏按注册表渲染分组 | `InspectorPanel` |
+| `registry.tsx` | 134 | **对象分组的注册表**：7 组（基础 / 渲染 / 声音 / 传送 / 区域 / 战争雾 / 视频）各自的 `applies`（判据走特性表与访问器，不看 `kind` 字面量）与 `render`；**数组顺序就是界面顺序**（e2e 断言它） | `ObjectGroupDef`、`OBJECT_GROUPS` |
+| `object-fields.tsx` | 844 | 对象字段的控件本体（从 `InspectorPanel.tsx` 拆出，纯搬运）：名称 / 激活 / 锁定 / 显示顺序 / 位置 / 缩放 / 单轴缩放 / 旋转 / 贴图（含**子图那一行**：`子图 第2行第3列（4×4）` + 「改回整图」，越界时挂「格子越界」提示；testid `texture-sprite` / `texture-sprite-out-of-range` / `clear-sprite`）/ 网格规格 / 每格像素 / 网格显示开关 + 它们的格式化与解析助手 | `NameField`、`ActiveField`、`LockedField`、`SortingOrderField`、`PositionFields`、`ScaleField`、`ScaleAxisField`、`RotationField`、`TextureField`、`GridFields`、`CellSizeField`、`GridDisplayField`、`WORLD_ORIGIN_FALLBACK` 等 |
 | `fields.tsx` | 204 | 属性面板的行/分组外壳与**播放类控件**：可折叠 `FieldGroup`（`data-group` 英文 slug）、只读 `Field`、`FieldRow`（标签定宽 `w-20`，必须是行内第一个子元素）、`PlaybackRow`、`PlaybackStatus`、`PLAYBACK_BUTTON_CLASS` / `PLAYBACK_BUTTON_ACTIVE_CLASS`（高 34px、13px 字）。 | `FieldGroup`、`Field`、`FieldRow`、`PlaybackRow`、`PlaybackStatus`、`PLAYBACK_BUTTON_CLASS`、`PLAYBACK_BUTTON_ACTIVE_CLASS`；类型 `PlaybackState` |
-| `SoundFields.tsx` | 315 | 声音对象的「声音」组：层级下拉（对象只给 `OBJECT_SOUND_LAYERS`，老文件的 `bgm` 照显并提示改）、音频小方块单选、`编辑音频…` 入口、播放三键 + 状态行（多一档 `busy` = 本层被别的对象占着）。 | `SoundFields`、`soundPlayBlockedReason`、`soundDeliveryHint` |
+| `SoundFields.tsx` | 316 | 声音对象的「声音」组：层级下拉（对象只给 `OBJECT_SOUND_LAYERS`，老文件的 `bgm` 照显并提示改）、音频小方块单选、`编辑音频…` 入口、播放三键 + 状态行（多一档 `busy` = 本层被别的对象占着）。 | `SoundFields`、`soundPlayBlockedReason`、`soundDeliveryHint` |
 | `VideoFields.tsx` | 313 | 地图/精灵的「视频」组：启用闸门（关着只留开关）、循环/声音开关、视频小方块单选、`编辑视频…` 入口、播放三键 + 状态行。 | `VideoFields`、`videoPlayBlockedReason`、`videoDeliveryHint` |
 | `TeleportFields.tsx` | 105 | 传送阵的「传送」组：候选目标小方块 + `＋` 开「传送目标」窗口 + 「传送」按钮（不能传时按钮上写原因）。 | `TeleportFields` |
 | `FogFields.tsx` | 126 | 战争雾编辑区：第一行总开关（`map.fog.enabled`，文档数据）闸住整组；打开后给「指定雾区」小方块与「雾格子 → 编辑」入口。 | `FogFields` |
@@ -1146,15 +1228,15 @@ export function createSoundSlice(
 | 文件 | 行数 | 职责 | 对外导出 |
 |---|---|---|---|
 | `RuntimePanel.tsx` | 336 | 运行态面板：连接状态、开闸状态、前端镜像（谁连上/镜像哪个场景/对象数/同步时间 + 重新同步）、设置推送状态、资源包状态（文件数/字节/指纹/失败原因），以及可复制的日志列表。 | `RuntimePanel` |
-| `ScenePanel.tsx` | 1,300 | 场景画布：rAF 绘制循环（每帧 `getState()` 直读）、指针手势（拖拽平移、滚轮/双指缩放、点空白取消选中并带 `CLICK_SLOP` 4px 抖动阈值、中键只平移）、拾取（按显示顺序从后往前）、手柄几何（绘制与命中**共用** `gizmoGeometryOf`）、手柄/本体拖拽、双击传送徽标 = 传送；画布左上工具开关、场景切换条（1-9 序号 + `[`/`]`）、视口变换暴露为 `data-viewport-*` 供 E2E。 | `ScenePanel`、`checkerOriginOf`、`TOOL_OPTIONS` |
+| `ScenePanel.tsx` | 1,315 | 场景画布：rAF 绘制循环（每帧 `getState()` 直读）、指针手势（拖拽平移、滚轮/双指缩放、点空白取消选中并带 `CLICK_SLOP` 4px 抖动阈值、中键只平移）、拾取（按显示顺序从后往前）、手柄几何（绘制与命中**共用** `gizmoGeometryOf`）、手柄/本体拖拽、双击传送徽标 = 传送；建层时按 `displaySpriteOf(object, doc.spriteSheets)` + 图片**自然尺寸**算源矩形（子图只画那一块）；画布左上工具开关、场景切换条（1-9 序号 + `[`/`]`）、视口变换暴露为 `data-viewport-*` 供 E2E。 | `ScenePanel`、`checkerOriginOf`、`TOOL_OPTIONS` |
 | `display.ts` | 112 | 对象在画布上占的世界矩形（显示/拾取/选中框/适配视图共用一份口径）：尺寸 = 贴图尺寸（无图用 `COLLIDER_SIZE` 64×64）× 该轴有效缩放；返回**未旋转**矩形，由消费方带 rotation。 | `COLLIDER_SIZE`、`displayRectOf`、`displaySizeOf`、`displayImageOf`、`sceneVisibleRects` |
 | `grid-paint.ts` | 87 | 网格标注**绘制侧**纯工具：掩码 + 偏好 → 一串 CSS 颜色；RLE 按 `runs` 引用缓存的解码（坏数据返回空数组，绝不让绘制循环抛错）。 | `cellColorsOf`、`decodeCellsCached`、`countCellsWithMask` |
 | `transform.ts` | 230 | 一次变换拖拽的纯计算：以「按下时的快照」为基准（不做逐帧累加）；Shift 吸附 15°。 | `resolveTransform`、`rotateIntoLocal`、`rotateOutOfLocal`、`angleAround`、`ROTATION_SNAP_DEGREES`(15)；类型 `TransformStart`、`TransformResult` |
 
 ### 5.3 `state/` 详解（切片拆分后）
 
-> 拆分前的 `editor-store.ts` 是 4,493 行；现在组装点 85 行 + 15 个切片（见 §5.2 的表）。
-> 下面的状态与 action 清单**名字与拆分前完全一致**（契约检查：126 个 action + 44 个状态字段，
+> 拆分前的 `editor-store.ts` 是 4,493 行；现在组装点 98 行 + 16 个切片（见 §5.2 的表）。
+> 下面的状态与 action 清单**名字与拆分前完全一致**（契约检查：129 个 action + 44 个状态字段，
 > missing 0 / extra 0），只是各自住在哪个文件变了。
 
 #### 5.3.1 状态切片
@@ -1197,6 +1279,12 @@ export function createSoundSlice(
 `setObjectRotation`（收弧度，面板按度）、`deleteObjects`（顺手关掉指向被删地图的窗口）、
 `duplicateObjects`（「副本」后缀 + `COPY_OFFSET` 24 递增偏移）、`moveObject`（**全项目唯一移动入口**，锁定直接拒）、
 `endObjectDrag`、`setObjectImage`、`setMapGrid`、`openObjectDialog`、`openImagePicker`。
+
+**精灵（子图）**：`setObjectImageSprite(objectId, image, sprite)`（「选择贴图 / 精灵」窗口确定那一下：
+**图 + 格子一次写进去 = 一条撤销记录**）、`setObjectSprite(objectId, sprite)`（`null` = 改回整图，
+撤销标签写「改回整图 / 设为子图 第X行第Y列」）、`setSpriteSheet(imageId, sheet)`（改的是**工程文件**
+那条轨道，`coalesceKey: sprite-sheet:<图片 ID>` 合并连续输入；**不动任何对象**——「改切分，引用它的
+对象一起变」是解析出来的，见 §3.2.6）。
 
 **变换（手柄 / 本体拖拽）**：`setTool`、`setBgmPaths`、`beginObjectTransform`（`tool==="none"`、未落位、锁定都返回 `undefined`）、
 `applyObjectTransform`（pos/rot/scale 一次写完，`coalesceKey: transform:<id>`）、`endObjectTransform`、
@@ -1252,6 +1340,8 @@ edit：取消去抖、`lastPushedSceneText=null`、发 `runtime_stop`）、`push
   两条历史的 `subscribe` 每次变更做四件事：① 同步 `scenes`/`doc`/撤销标记；② `scheduleRuntimePush()` /
   `scheduleSettingsPush()`（仅 run + WS open）；③ **运行态下把保存状态设为 `"runtime"` 并直接返回（不写盘）**；
   ④ 否则与 `savedScenes` / `savedProjectText` 比内容，脏才置 `pending` 并在 800ms 后写。
+  **工程轨的 `subscribe` 里也调了一次 `scheduleRuntimePush()`**（v20）：切分表参与场景载荷的解析，
+  工程文件一变场景就该重推（§5.4.3）；文本比对保证「改的是别的项目级数据」时一个字节都不发。
 - **落盘状态机**：`saved → pending → saving → saved / error`；`saveSceneNow` 只写真正脏的场景；
   失败写 `sceneSaveError` 并进运行日志。
 - **运行基线**：`runBaseline` 存 `{scenes, activeSceneName, doc}` **引用**（immer 不可变，存引用即可）；
@@ -1313,8 +1403,11 @@ edit：取消去抖、`lastPushedSceneText=null`、发 `runtime_stop`）、`push
 
 - `RUNTIME_PUSH_DEBOUNCE_MS = 200`；
 - `shouldPushScene({mode, connected, lastPushed, next})`：**只在 `run && connected && lastPushed !== next` 时推**；
-- `scenePayloadText(scene)` = `JSON.stringify({name, objects})`——用 stringify 而不是 `serializeSceneFile`：
-  后者是文件格式、**不含场景名**，而运行态切场景也要算一次变更；
+- `scenePayloadText(scene, spriteSheets?)` = `JSON.stringify(resolveSceneSprites(scene, spriteSheets))`——
+  用 stringify 而不是 `serializeSceneFile`：后者是文件格式、**不含场景名**，而运行态切场景也要算一次变更；
+- `scenePayloadOf(scene, spriteSheets?)` = 同一份解析的**对象**（`scene_push` 发的是它），
+  所以「发出去的」与「比过的」不可能是两份不同的数据；`spriteSheets` 是工程文件里的切分表：
+  子图引用上只写着「第几格」，「几行几列」必须解析进载荷（前端没有工程文件），见 §3.2.6；
 - `ScenePushScheduler` 提供 `schedule` / `flush` / `cancel`；store 里实例化**两个**调度器
   （场景 + 全局设置），回调在触发时**重新读一次当前文档**（比排队时更新）再决定推不推；
   进运行态/重连时用 `flush` 补全量。
@@ -1354,7 +1447,8 @@ edit：取消去抖、`lastPushedSceneText=null`、发 `runtime_stop`）、`push
 | `EmptyState` | `project.current`、`openSceneDialog` | 没项目 / 没场景的占位；没场景时占位可点 |
 
 对话框绑定：`ProjectDialog` → `project`/`projectDialog`；`SceneDialog` → `activeSceneName`/`sceneDialog`；
-`ObjectDialog` → `objectDialog`；`ImagePickerDialog` → `imagePickerTarget`；
+`ObjectDialog` → `objectDialog`；`ImagePickerDialog`（+ 右侧切分面板 `SpriteSheetPanel`）→
+`imagePickerTarget`/`doc.spriteSheets`/`setSpriteSheet`；
 `SoundEditDialog`+`AudioPickerDialog` → `soundEditor(Target)`；`VideoEditDialog`+`VideoPickerDialog` → `videoEditor(Target)`；
 `TeleportEditDialog` → `teleportEditor(Target)`；`GlobalSettingsDialog` → `doc.settings.audio`；
 `BgmControl`+`BgmDialog` → `bgmDialog`/`bgmPlayback`/`ui.bgmPaths`；
@@ -1369,7 +1463,7 @@ edit：取消去抖、`lastPushedSceneText=null`、发 `runtime_stop`）、`push
 - 作用域锚点：`menu-bar`（菜单栏与属性面板可能同名，测试必须按区域找）、`object-properties`、`asset-properties`、
   `project-properties`、`field-group`/`field-group-header`/`field-group-body` + `data-group`
   （英文 slug：`basic`/`render`/`sound`/`teleport`/`edit`/`fog`/`video`/`scene`/`asset`/`project`）、
-  `runtime-*`、`scene-viewport`、`scene-bar`、`object-tree`、`folder-tree`/`folder-contents`/`folder-breadcrumb`；
+  `runtime-*`、`sprite-*`（切分面板与预览格）、`scene-viewport`、`scene-bar`、`object-tree`、`folder-tree`/`folder-contents`/`folder-breadcrumb`；
 - 行级 `data-*`：`data-name`/`data-kind`/`data-selected`/`data-active`/`data-locked`/`data-clip`/`data-tag`/
   `data-id`/`data-path`/`data-type`/`data-icon`/`data-added`/`data-checked`/`data-missing`/`data-bound`/
   `data-shown`/`data-paused`/`data-playing`/`data-state`/`data-mode`/`data-index`/`data-scene`/`data-tool`/
@@ -1421,7 +1515,7 @@ edit：取消去抖、`lastPushedSceneText=null`、发 `runtime_stop`）、`push
   `FOG_ERASE_BATCH_MS` 150、`ROTATION_SNAP_DEGREES` 15、`COPY_OFFSET` 24、`CLICK_SLOP` 4、`MAX_DPR` 2、
   `VIEW_PADDING` 12、`MAX_LOGS` 200、`STABLE_CONNECTION_MS` 3000、`MAX_RECONNECT_DELAY_MS` 10000、
   `CLOSE_PROTOCOL_MISMATCH` 4002、`MASK_PREVIEW_WIDTH` 960、`MASK_BRUSH_RADIUS` 48、`MASK_BRUSH_RATIO` 0.05、
-  `SLOTS_PER_PAGE` 16、`MAX_SLOTS` 32、历史 `limit` 200；
+  `SLOTS_PER_PAGE` 16、`MAX_SLOTS` 32、`SPRITE_SHEET_MAX` 64、历史 `limit` 200；
 - **编辑器不导入素材**：`src` 下没有任何 `<input type="file">`；素材由外部提交到 `Assets/`，编辑器只读、只引用；
   `uploadFiles` 是唯一写入资源的入口且只在 store 里（当前无 UI 调用点）；
 - **E2E 可见性契约**：`data-viewport-scale/-tx/-ty` 暴露在 `scene-viewport` 上（用例要精确点手柄就必须知道
@@ -1441,7 +1535,10 @@ edit：取消去抖、`lastPushedSceneText=null`、发 `runtime_stop`）、`push
 
 ### 6.1 版本演进
 
-`DOCUMENT_FORMAT_VERSION = 19`，`PROTOCOL_VERSION = 9`。两者**独立编号**（文档 v19 ↔ 协议 v9 是同一批改动）。
+`DOCUMENT_FORMAT_VERSION = 21`，`PROTOCOL_VERSION = 11`。两者**独立编号**（文档 v21 ↔ 协议 v11 是同一批改动）。
+v21 这一次两者**必须配套发布**：对象自己那张图的组件从一种（`TextureRenderer`）拆成两种
+（`ImageLayer` / `SpriteLayer`），协议 v10 的老客户端不认这两个名字——图取不到、只画一块占位色，
+所以只能靠握手 `4002` 把老客户端挡在连上的那一刻。
 规则：文档格式**任何结构不兼容的改动 +1**；协议**任何不兼容改动 +1**。
 
 | 文档版本 | 内容 | 迁移方式 |
@@ -1463,7 +1560,9 @@ edit：取消去抖、`lastPushedSceneText=null`、发 `runtime_stop`）、`push
 | v16 | `settings.audio.bgm` 收敛成只有 `volume` | `migrateBgmSettings`（**显式删**`clips`/`picked`/`names`/`loop`） |
 | v17 | `audioMeta`（可选，不补空壳） | 无需函数 |
 | v18 | 标签从字符串改成**整数 ID + `audioTags` 表** | `migrateAudioTags`（按出现顺序建表） |
-| **v19** | **对象特性搬进 `components[]`**：`map`/`image`/`sound`/`teleport`/`video` → `GridMap`/`TextureRenderer`/`PlaySound`/`Teleport`/`VideoOverlay` 组件实例 | `migrateFeaturesToComponents`（只搬键、不解释内容；幂等） |
+| **v19** | **对象特性搬进 `components[]`**：`map`/`image`/`sound`/`teleport`/`video` → `GridMap`/`ImageLayer`/`SpriteLayer`/`PlaySound`/`Teleport`/`VideoOverlay` 组件实例（v20 及更早 `image` 那一种是 `TextureRenderer`，v21 拆开） | `migrateFeaturesToComponents`（只搬键、不解释内容；幂等；**组件名按 kind 取**） |
+| **v20** | **精灵（子图）**：图片引用多了可选的 `sprite`（取图集里哪一格），工程文件多了可选的 `spriteSheets`（`图片逻辑 ID → 列×行`，**切分只有这一份**）。格序数**从左上数**（与 `rowOrder: "bottom-up"` 无关）；不存像素 / 不存 UV；越界格子在**推送与渲染两处**统一夹到最后一格；**地图贴图不支持子图** | **无需函数**——两项都是可选字段，靠「版本号 +1 → `needsRewrite` 回写一次」让老文件自描述（同 v17 `audioMeta`）。协议同批 +1 到 **v10**：切分随载荷走（`spriteGrid`，协议比文档多一项），老客户端会把整张图集铺出来，靠握手 `4002` 挡住 |
+| **v21** | **「贴图」对象（kind `Texture`）+ 图片组件拆成两种**：精灵 `SpriteLayer`、贴图 `ImageLayer`（v20 及更早共用 `TextureRenderer`）；`video` 的宿主从精灵换成贴图 | `renameSpriteImageComponent`（旧 `TextureRenderer` **按 kind 路由**改名：`SceneObject` → `SpriteLayer`，Player / Item / Event → `ImageLayer`——v19 的 `image` kinds 含它们，组件 id 同步换 `<对象 id>__<新类型>`；幂等）＋ `migrateFeaturesToComponents` 新增**按 kind 路由组件名**。**精灵身上旧的 `VideoOverlay` 不删**（只由 `validateScene` 报 warning）。协议同批 +1 到 **v11**：老前端不认这两个组件名 → 图取不到只画占位色，靠握手挡住 |
 
 **版本判断纪律**（`schema.ts` 里专门写了注释）：**不能拿文件里的 `formatVersion` 跟 `DOCUMENT_FORMAT_VERSION` 比**
 来判断「要不要做位置换算」——版本号一涨，所有旧文件都会被判成「需要换算」，那会把已经是世界坐标的 v5 文件
@@ -1479,19 +1578,21 @@ upgradeRawDocument           # v1 → v2（把内联 maps 拆成 Map 对象）
  → migrateAudioTags          # v18：字符串标签 → 整数 ID + audioTags 表（按出现顺序）
  → projectDocSchema.safeParse# 失败抛「项目文档校验失败: …」
  → 拆出内联 scenes，逐个 parseSceneFile() 得到 migratedScenes
- → needsRewrite = 有内联场景 || settingsFilled || bgm.changed || tags.changed || version < 18
- → migrateProjectDoc         # formatVersion > 18 → 抛错（拒绝用旧编辑器打开新文件）
+ → needsRewrite = 有内联场景 || settingsFilled || bgm.changed || tags.changed || formatVersion < 21
+ → migrateProjectDoc         # formatVersion > 21 → 抛错（拒绝用旧编辑器打开新文件）
 ```
 
 **`parseSceneFile(raw, size?)` → `{ file, needsRewrite }`**
 
 ```
 upgradeRawDocument
- → version > 18 则抛错
+ → version > 21 则抛错
  → version < 5  → migrateScenePositions（越界旧值原样保留，不夹到边界）
  → withFilledObjectFields（补 active/sortingOrder/scale/locked；Map 缺位置补 (0,0)）
  → migrateTeleportTarget（{target} → {targets,picked}）
  → migrateSoundLayers（ambient → bgm）
+ → renameSpriteImageComponent  # v21：TextureRenderer 按 kind 改名（先改名、再搬字段）
+ → migrateFeaturesToComponents # v19：扁平特性字段搬进组件（组件名按 kind 路由）
  → sceneFileSchema.safeParse
 ```
 
@@ -1503,7 +1604,11 @@ upgradeRawDocument
 协议侧**复刻一份只读 schema** 而不 import `@dts/document`（理由：`protocol` 是被三端共用的最底层包，
 不该反过来依赖文档包），并要求「字段口径与文档严格一致，文档加字段时这里同步补」。
 
-**协议有、文档没有**：无。
+**协议有、文档没有**：
+
+| 协议字段 | 说明 |
+|---|---|
+| `image.spriteGrid{columns, rows}` | **唯一的例外**（v10）。切分在编辑器那边只有一份（工程文件的 `spriteSheets`），前端没有工程文件，所以编辑器推送时用 `resolveSceneSprites` 把「几行几列」解析进载荷（§3.2.6）。它是**载荷专有的字段**：文档 schema 静默丢掉它（zod 不认识的键会被丢掉），契约测试盯着这一点——落盘时留在场景文件里等于没写 |
 
 **文档有、协议没有**：
 
@@ -1513,6 +1618,7 @@ upgradeRawDocument
 | `formatVersion`（场景 / 工程） | 协议**不传**（`sceneSchema = { name, objects }`，无 `formatVersion`） |
 | `ProjectDoc.name` / `items`（道具库） | 协议完全没有项目级道具库 |
 | `ProjectDoc.audioMeta` / `audioTags` | 纯编辑器标注（v17/v18），**不进协议、不下发 Unity** |
+| `ProjectDoc.spriteSheets`（切分表） | 纯编辑器数据（v20），**整表不下发**——编辑器推送时把每个引用解析成 `sprite` + `spriteGrid`（见上表） |
 | `sound.names` / `video.names` | 只是编辑器里给人看的标签，**刻意不进协议** |
 
 **同名字段但默认值 / 约束不同**：
@@ -1526,6 +1632,8 @@ upgradeRawDocument
 | `map.fog.regions` | `.int().min(1).max(255)` + `.default([])` | `.int()`，**无默认、无范围**（越界位留给前端与校验处理） |
 | `rleRun` | `[int 0..255, int ≥0]` | `[int, int]`，无范围 |
 | `sound.clips` | `z.array(z.string().min(1))` | `z.array(z.string())` |
+| `image.sprite` | `.optional()`，只要求**非负整数**（越界合法：切分被改小之后老对象的格子会暂时越界，夹取交给解析） | `.optional()`，另有 `refine`：与 `spriteGrid` **同时出现**时必须落在切分范围内（越界 = 坏载荷）；缺 `spriteGrid` 时按 1×1 收下 |
+| `spriteGrid`（`SPRITE_SHEET_MAX`） | 不存在（文档只有切分表 `spriteSheets`，`1..64`） | `columns` / `rows` 各 `1..64`；常量与文档包**同值**，由契约测试断言 |
 
 **协议额外携带的运行态语义**：`map.fog` 的注释说明「**哪个格子被揭示了不在数据里**」——
 那是运行态，由 `erase_mask` / `reveal_fog_region` 驱动，不写文档、也不随 `scene_sync` 走。
@@ -1535,10 +1643,12 @@ upgradeRawDocument
 
 | 概念 | 位置 | 与前端的关系 |
 |---|---|---|
-| 对象类型 `ObjectKind`（7 种） | `@dts/document` | 前 4 种对齐 Unity `BackendObjectKind`；后 3 种（`Map`/`PlaySound`/`Teleport`）编辑器侧新增。**v19 起 `kind` 只是创建原型标签**，前端「建不建可见物」看组件（见下） |
-| 组件类型（12 种，`components.ts`） | `@dts/document` | 5 种对象特性（`GridMap` / `TextureRenderer` / `PlaySound` / `Teleport` / `VideoOverlay`）**逐字对齐客户端 `Protocol.ComponentType`**，由 `apps/backend/test/protocol-document-contract.test.ts` 断言；另外 7 种是编辑器侧组件（前端忽略，数据留在镜像里） |
-| 前端可见性判据 | `SceneObjectView.NeedsView(MirrorObject)`（客户端） | 有 `map`（GridMap）或 `image`（TextureRenderer）**组件** → 建视图；都没有时**只有带 `PlaySound` / `Teleport` 组件的不建**（动作对象），其余（玩家 / 道具 / 事件 / 还没挑图的精灵）仍要一块占位色面片。**判据只此一处** |
+| 对象类型 `ObjectKind`（8 种） | `@dts/document` | 前 4 种对齐 Unity `BackendObjectKind`；后 4 种（`Map`/`PlaySound`/`Teleport`/`Texture`）编辑器侧新增。**v19 起 `kind` 只是创建原型标签**（前端拿它取占位色），「建不建可见物」看组件（见下） |
+| 组件类型（13 种，`components.ts`） | `@dts/document` | 6 种对象特性（`GridMap` / `ImageLayer` / `SpriteLayer` / `PlaySound` / `Teleport` / `VideoOverlay`）**逐字对齐客户端 `Protocol.ComponentType`**，由 `apps/backend/test/protocol-document-contract.test.ts` 断言；另外 7 种是编辑器侧组件（前端忽略，数据留在镜像里）。**`image` 一个字段两种组件**（`componentsByKind` 按 kind 路由） |
+| 前端可见性判据 | `SceneObjectView.NeedsView(MirrorObject)`（客户端） | 有 `map`（GridMap）或 `image`（`ImageLayer` / `SpriteLayer`）**组件** → 建视图；都没有时**只有带 `PlaySound` / `Teleport` 组件的不建**（动作对象），其余（玩家 / 道具 / 事件 / 还没挑图的精灵）仍要一块占位色面片。**判据只此一处** |
 | 动作类型（5 种，`registry.ts`） | `@dts/actions` | `implemented: false` 的动作（当前是 `PlayAudio`，前端为空壳）在编辑器里可编辑但会报 warning、且导出后不产生效果 |
+| **子图（v10）** | `@dts/document` 的 `ImageRef.sprite` + `ProjectDoc.spriteSheets`（见 §3.2.6） | 就是「纹理 + 一块矩形」（组件是 `SpriteLayer` / `ImageLayer`，见 v21 那一条）。载荷里 `sprite` + `spriteGrid` 一起下发（编辑器推送时解析出来）；Unity 侧：`Protocol.Version = 11` → `SceneParser.ParseSprite` 把两项合成一份 `MirrorSprite`（缺 `spriteGrid` 按 1×1，越界夹到最后一格）存进 `MirrorImage.sprite` → `SpriteLayer.UvRectOf`（**全链路唯一一次 y 翻转**）+ `InsetUv`（子图内缩半纹素，躲开双线性渗色）→ `Apply(..., uvRect)` 把 UV **烘进网格顶点**；`SceneObjectView.currentUvRect` 记着当前那一块；`ResourceImageLoader` 取到纹理后 `wrapMode = Clamp`（整图也无副作用）；`Editor/LayerInspector.cs` 把网格上的实际 UV 显示出来 |
+| **两种图片组件（v21）** | `@dts/document` 的 `FEATURE_COMPONENT.image`（`ImageLayer`）+ `SPRITE_COMPONENT`（`SpriteLayer`）；`OBJECT_FEATURES.image.componentsByKind` | 同一个 `image` 字段，**按 kind 取组件名**（唯一入口 `componentForKind`）。文档侧「这个对象的图能不能取一格」= `supportsSpriteSheet`（编辑器据此决定选择图片弹框给不给切分面板）；客户端读**两种都认**，`MirrorObject.hasSpriteLayer` 记下是哪一种（占位色 `KindColor` 靠 `kind` 分：精灵蓝、贴图紫）。迁移：`renameSpriteImageComponent` 把老文件里的 `TextureRenderer` **按 kind 路由**改名（精灵 → `SpriteLayer`，Player / Item / Event → `ImageLayer`），组件 id 同步换 |
 
 ### 6.5 客户端联调（真 Unity 验证，2026-09-22）
 
@@ -1561,9 +1671,10 @@ upgradeRawDocument
 
 | 对象 | 组件 | 客户端建了什么 |
 |---|---|---|
-| `地图（map_…）` | `GridMap` | `SceneObjectView` + `TextureRenderer`（地图面片 + 网格） |
-| `FogOverlay` | （由 `GridMap.fog` 生成） | `FogOfWar` + `TextureRenderer` |
-| `精灵（obj_…）` | `TextureRenderer` | `SceneObjectView` + `TextureRenderer` |
+| `地图（map_…）` | `GridMap` | `SceneObjectView` + `ImageLayer`（地图面片 + 网格） |
+| `FogOverlay` | （由 `GridMap.fog` 生成） | `FogOfWar` + `ImageLayer` |
+| `精灵（obj_…）` | `SpriteLayer` | `SceneObjectView` + `ImageLayer`（面片是 `ImageLayer`，取哪一块由 `SpriteLayer.UvRectOf` 算） |
+| `贴图（obj_…）` | `ImageLayer` | `SceneObjectView` + `ImageLayer`（整张铺满） |
 | `sound_…` | `PlaySound` | **一个 GameObject 都不建**（数据留在镜像里） |
 | `teleport_…` | `Teleport` | **一个 GameObject 都不建** |
 
@@ -1577,15 +1688,15 @@ upgradeRawDocument
 
 ---
 
-## 7. 测试体系（25,831 行）
+## 7. 测试体系（27,898 行）
 
 ### 7.1 三层测试与运行方式
 
 | 层 | 位置 | 运行器 / 环境 | 数量 | 行数 |
 |---|---|---|---|---|
 | 架构边界 | `test/architecture.test.ts` | vitest `node` | 1 文件 / 3 describe / 6 用例 | 232 |
-| 单元测试 | `packages/*/test`、`apps/backend/test`、`apps/editor/test` | vitest（`node` / `jsdom` 两个 project） | 66 个测试文件（另 2 个 helper + 1 个 setup） | 17,472 |
-| 端到端 | `e2e/*.spec.ts` | Playwright（三条档位线） | 19 个 spec（6,987）+ 2 helper（1,125）+ 1 teardown | 8,127 |
+| 单元测试 | `packages/*/test`、`apps/backend/test`、`apps/editor/test` | vitest（`node` / `jsdom` 两个 project） | 70 个测试文件（另 2 个 helper + 1 个 setup） | 18,877 |
+| 端到端 | `e2e/*.spec.ts` | Playwright（三条档位线） | 20 个 spec（7,355）+ 2 helper（1,419）+ 1 teardown | 8,790 |
 
 - `pnpm test` = `vitest run`（两个 project 一起跑，README 说约 1.5s）；
 - `apps/editor/test` 跑在 **jsdom**，`setup.ts` 补 jsdom 缺的浏览器 API 并挂 `@testing-library/jest-dom`；
@@ -1614,13 +1725,13 @@ upgradeRawDocument
 
 ### 7.3 单元测试清单
 
-#### 7.3.1 `apps/backend/test`（14 文件 / 2,569 行）
+#### 7.3.1 `apps/backend/test`（15 文件 / 2,817 行）
 
 | 文件 | 行数 | 覆盖的行为 |
 |---|---|---|
-| `runtime-hub.test.ts` | 905 | **最大的一份**。门控（没点运行 → 握手 503 / 点运行后能连 / 退出运行 4003 踢下线）；先推场景后开前端拿到全量；运行中改场景整份转发；命令转发 + 回执 + 日志；不认识的命令回带 `requestId` 的 `editor_error`（不静默丢弃）；战争雾轨迹转发；前端不在 / 未进运行态的明确报错；编辑器刷新/断开不影响运行态；协议版本不一致 4002；**顺序断言**（`resources_prepare` → `project_settings` → `scene_sync`）；换项目重发 `resources_prepare`；前端上报资源包结果并在关闸后清掉；一组 HTTP 接口用例（`/api/health`、`/api/config`、`/api/resources/index`、`/api/resources/raw`、`/api/state`、未构建时的根路径提示） |
+| `runtime-hub.test.ts` | 919 | **最大的一份**。门控（没点运行 → 握手 503 / 点运行后能连 / 退出运行 4003 踢下线）；先推场景后开前端拿到全量；运行中改场景整份转发；命令转发 + 回执 + 日志；不认识的命令回带 `requestId` 的 `editor_error`（不静默丢弃）；战争雾轨迹转发；前端不在 / 未进运行态的明确报错；编辑器刷新/断开不影响运行态；协议版本不一致 4002；**顺序断言**（`resources_prepare` → `project_settings` → `scene_sync`）；换项目重发 `resources_prepare`；前端上报资源包结果并在关闸后清掉；一组 HTTP 接口用例（`/api/health`、`/api/config`、`/api/resources/index`、`/api/resources/raw`、`/api/state`、未构建时的根路径提示） |
 | `project-api.test.ts` | 374 | 项目 CRUD（创建 `project.json` + 标准子目录、没有 `project.json` 的目录不算项目、项目文件可被编辑器直接打开、重名 400、非法名 400 且不落盘）；资源树与建目录（含目录穿越 400）；上传 → 出现 → 删除；删项目连资源一起清；**`/api/projects/reveal` 的 10 条用例**（路径由服务端拼、项目不存在 404、非法名 400、非 POST 405、系统打不开时如实报错、带 `path` 打开项目内那一层、`selectFile` 指向存在文件 / 指向目录 / 指向不存在文件、`path` 越界 400） |
-| `runtime-session.test.ts` | 234 | 会话初始态；开闸幂等不清场景；快照是摘要（名字 + 对象数 + 时间）；关闸清空全部字段；推 `null`；`sessionId` 稳定可读；资源包状态；设置摘要只报时间；`projectNameOfScene`（含推不出项目名的情形、换项目跟着变） |
+| `runtime-session.test.ts` | 263 | 会话初始态；开闸幂等不清场景；快照是摘要（名字 + 对象数 + 时间）；关闸清空全部字段；推 `null`；`sessionId` 稳定可读；资源包状态；设置摘要只报时间；`projectNameOfScene`（含推不出项目名的情形、换项目跟着变） |
 | `resources-bundle.test.ts` | 229 | 清单范围（只收 `Assets/`、排除 `project.json` 与 `.gitkeep`）；`bytes` 与排序稳定；指纹随内容变、内容不变则稳定、**把 mtime 算进去**；`ProjectNotFoundError` / `BundleTooLargeError`；zip 结构（条目名 = 项目根相对路径、另有清单文件、字节与源文件逐字节一致、中文名 UTF-8 位标记、响应头、空项目也能打包） |
 | `resources-bundle-api.test.ts` | 157 | 清单 API（只列 `Assets/`、给指纹与字节数）；整包下载（zip + 响应头 + 包内条目一致）；**指纹没变 → 304**；素材改了 → 缓存失效重下拿到新内容；超上限 413；项目不存在 404 / 缺参数 400 |
 | `resources-api.test.ts` | 145 | 资源重命名的 7 条：文件重命名后新 ID 可读、旧 ID 404；目标已存在 400 **且不覆盖**；源不存在 400；缺参数 400；非法 ID 400；方法不对 405；**目录重命名连其下资源一起搬** |
@@ -1632,20 +1743,21 @@ upgradeRawDocument
 | `config.test.ts` | 46 | 默认资源根由**模块位置**决定（不受启动目录影响）；`defaultResourceRoot` 是纯函数；默认配置能真正读到 `config/app.json`（不是静默退回内置默认值）；显式绝对路径生效 |
 | `helpers/http-server.ts` | 39 | 起一个临时资源根的测试用后端（供上面各 API 用例复用） |
 | `helpers/temp-root.ts` | 28 | 建/清临时资源根（临时根里没有 `app.json`，因此走内置默认值） |
-| `protocol-document-contract.test.ts` | 122 | **跨包契约**（v19 新增）：协议与文档的组件类型名逐字一致；每个特性组件两边都能解析；已知组件的坏 data 两边都拒（不能掉进「未知类型」的宽松分支）；7 种前端组件在协议侧仍是宽松分支。放在这里是因为只有后端同时依赖两个包，而架构测试只扫各包 `src` |
+| `protocol-document-contract.test.ts` | 205 | **跨包契约**（v19 新增、v20 加了两条）：协议与文档的组件类型名逐字一致；每个特性组件两边都能解析；已知组件的坏 data 两边都拒（不能掉进「未知类型」的宽松分支）；7 种前端组件在协议侧仍是宽松分支；**子图**：切分上限两边同值（`SPRITE_SHEET_MAX`）、「文档 + 工程表 → `resolveSceneSprites` → `sceneSchema` 收得下」整条链跑得通、文档 schema 不认 `spriteGrid`（落盘时留在场景文件里等于没写）。放在这里是因为只有后端同时依赖两个包，而架构测试只扫各包 `src` |
 
-#### 7.3.2 `packages/*/test`（23 文件 / 7,196 行）
+#### 7.3.2 `packages/*/test`（24 文件 / 7,877 行）
 
 | 文件 | 行数 | 覆盖的行为 |
 |---|---|---|
-| `document/document.test.ts` | 1,704 | 文档工厂（场景是容器、对象挂在场景上）；组件注册表；对象命令（改名/位置/锁定/激活/显示顺序/缩放/贴图/网格/组件/动作…）；**战争雾手动指定雾区**；文档校验；工程文件 schema 与版本迁移；场景文件 schema |
-| `protocol/protocol.test.ts` | 827 | 场景载荷（地图/精灵/声音/战争雾总开关/视频/传送阵/`position: null`/单轴缩放/额外字段不报错/网格尺寸约束）；四条通道的逐条成员；命令只带触发器（含战争雾只发轨迹、声音按层、BGM 带 clip、视频只带 objectId）；畸形结构被拒（缺 objectId、空轨迹、非有限数）；**拒绝旧模型消息**（`register_*`/`report_*`/`invoke_action`/`sync_state`）；三端 schema 都是判别式联合；JSON 解析与请求 id |
-| `document/video.test.ts` | 447 | 哪些对象能带视频；列表命令（去空去重、清空不删字段、移出的视频收拾干净、重复写不算变更）；选中与名字；循环与声音开关；总开关；文档校验；格式版本 |
+| `document/document.test.ts` | 1,760 | 文档工厂（场景是容器、对象挂在场景上）；组件注册表；对象命令（改名/位置/锁定/激活/显示顺序/缩放/贴图/网格/组件/动作…）；**战争雾手动指定雾区**；文档校验；工程文件 schema 与版本迁移；场景文件 schema |
+| `protocol/protocol.test.ts` | 979 | 场景载荷（地图/精灵/声音/战争雾总开关/视频/传送阵/`position: null`/单轴缩放/额外字段不报错/网格尺寸约束/**子图：`sprite` + `spriteGrid` 原样传给前端、越界被拒、只有整图时两项都不在**）；四条通道的逐条成员；命令只带触发器（含战争雾只发轨迹、声音按层、BGM 带 clip、视频只带 objectId）；畸形结构被拒（缺 objectId、空轨迹、非有限数）；**拒绝旧模型消息**（`register_*`/`report_*`/`invoke_action`/`sync_state`）；三端 schema 都是判别式联合；JSON 解析与请求 id |
+| `document/video.test.ts` | 467 | 哪些对象能带视频；列表命令（去空去重、清空不删字段、移出的视频收拾干净、重复写不算变更）；选中与名字；循环与声音开关；总开关；文档校验；格式版本 |
+| `document/sprite.test.ts` | 436 | **v20 新增**。切分只有一份：没有表项 = 整图、写进去/改回来/删掉这一串「值没变」不算变更、只删一张时字段留着、坏数字取整并夹到 1..64；对象引用哪一格（换图丢掉旧格子、同一 id 再挑保留格子、地图对象选格返回 `false`、坏格子收成非负整数）；解析（归一化矩形每格恰好 1/列 1/行、像素矩形按**加载到的**尺寸算、越界夹到最后一格、没有 `sprite` = 整图、地图一律没有子图、一格声明尺寸、预览图上点哪一格）；落盘（场景/工程文件往返 + v19 升 v20 需要回写、负数/小数格子被 schema 拒）；**推送解析**（补 `spriteGrid`、越界夹取、摘掉地图上的误写、不改输入文档）；校验（越界格 warning、地图带 sprite warning、`1×1` 多余项与空图片 ID warning）。**v21 加**：`TextureRenderer` 按 kind 改名（精灵 → `SpriteLayer`、Player / Item / Event → `ImageLayer`，组件 id 同步换、幂等、非 image 特性的 kind 不碰） |
 | `document/audio-meta.test.ts` | 426 | 显示名；标签表新建/改名；按序号命名（序号预先定好只填名字）；删除（留洞 + 摘引用）；文件上的标签 ID 列表；读写工程文件与 **v17 → v18 迁移**；校验 |
-| `document/teleport.test.ts` | 395 | 传送阵工厂；`setTeleportTargets`（加/移候选）；`setTeleportPicked`；解析与版本（含 `{target}` 老形状迁移）；校验 |
-| `document/sound.test.ts` | 379 | 声音对象工厂；声音命令（列表/选中/层级/名字）；场景文件 schema；校验 |
+| `document/teleport.test.ts` | 370 | 传送阵工厂；`setTeleportTargets`（加/移候选）；`setTeleportPicked`；解析与版本（含 `{target}` 老形状迁移）；校验 |
+| `document/sound.test.ts` | 406 | 声音对象工厂；声音命令（列表/选中/层级/名字）；场景文件 schema；校验 |
 | `renderer/gizmo.test.ts` | 363 | 矩形四角；绕枢轴旋转；八个缩放手柄与**边中点 = 相邻两角平均**；锚点对侧且随旋转转；角=等比 / 边=单轴；屏幕几何（中心点=平移量、柄落在角与边中点、太小不可绘制、移动轴贴着对象长、旋转环包住整个对象、**间距与环半径用矩形自己的半尺寸所以转过角度不「呼吸」**、转 45° 后绘制与命中仍是同一份坐标）；`toolHasGizmo` 与命中的口径一致；命中测试（容差是一条带子、旋转环内外都不命中、移动轴只认自己的轴、**拖动模式一个手柄都点不到**、太小一律不给命中） |
-| `document/bgm-settings.test.ts` | 299 | 全局设置缺省值；**v16 迁移**（歌单从工程文件里拿掉）；三档音量；校验；**场景格式 v15**（环境音并进背景音乐） |
+| `document/bgm-settings.test.ts` | 312 | 全局设置缺省值；**v16 迁移**（歌单从工程文件里拿掉）；三档音量；校验；**场景格式 v15**（环境音并进背景音乐） |
 | `document/scale.test.ts` | 294 | 有效缩放（读路径）；写法归一（写路径）；`setObjectScaleAxes`；**v10 → v11 迁移**；坏数据校验 |
 | `resources/project.test.ts` | 249 | 项目名校验（接受中文/空格/点/连字符；拒绝空、首尾空白、路径分隔符、Windows 非法字符、`.`/`..`、保留名、超长）；项目内相对路径校验（**逐段拒绝 `.` 与 `..`**）；创建/打开/删除项目（人类可读 JSON、重名拒绝、只有含 `project.json` 的目录才算项目、删除连资源清掉）；资源树（顶层只有 `Assets`、目录排在文件前、空目录也显示、目录来自真实条目而非凭空补、项目文件是特殊文件、只隐藏项目根那一个）；归属校验 |
 | `document/history.test.ts` | 226 | 补丁式撤销/重做；连续操作合并（含窗口与 `endCoalescing`）；上限与 `reset` |
@@ -1654,6 +1766,7 @@ upgradeRawDocument
 | `grid/brush.test.ts` | 205 | 画笔尺寸（与 Unity 整除语义一致，1/2→1×1、3/4→3×3）；覆盖格子；写入语义（按位或、橡皮清零、`eraseMask` 只清指定位）；`strokeCenters`（Bresenham 含两端）；`applyBrushStroke` 一整笔只拷贝一次 |
 | `grid/world.test.ts` | 144 | 世界坐标 ↔ 网格（同向不翻转、角点与格心、最上行 y 最大、越界钳制）；`worldToGridPoint` 不夹取（网格外返回越界坐标而不是边缘格、边界归属）；地图挪了格子跟着走、同一世界点在不同地图上落不同格、世界可以很大；`unionWorldRects`（单张、两张错开、无地图返回 `undefined`） |
 | `grid/mask-rle.test.ts` | 143 | 掩码位运算（数值与 Unity `GridCellType` 严格一致、可绘制类型 8 类顺序一致、`addMask` 不越界、`removeMask` 只清指定位、`hasMask`/`isEmptyMask`/`isBlocked`/`isFogMask`、`isValidMask` 拒绝越界与非整数、`maskToLabel`、区域显示名按可绘制顺序编号、`normalizeRegions`/`regionsToMask`）；RLE 往返（含跨行合并）、全空编码为单游程、空输入、格数不符抛错、游程非法抛错、64×36 真实尺寸往返 |
+| `document/scenes.test.ts` | 129 | 场景名校验（接受正常名字；拒绝空名、超长与非法字符——场景名会直接成为文件名）；场景查找与重名判定（大小写不敏感、可排除自身）；场景内容命令（新建场景是空场景、对象可以独立于地图添加、地图也可以后加）；对象命名（连续创建与复制共用：没被占用用原名、被占用依次递增、trim + 大小写不敏感） |
 | `renderer/viewport.test.ts` | 127 | 世界↔屏幕（原点落在 `(tx,ty)`、y 翻转、往返一致）；平移与缩放（锚点下的世界坐标不动、夹上下限、到上限返回原视口不漂移）；`fitViewport`（单张居中、宽高比不同按较小比例、地图不在原点时居中挪的是地图外框、多张按并集、无地图退回原点居中、视口尺寸 0 不产生 NaN）；`visibleWorldRect`（top 是 y 最大值） |
 | `grid/mask-style.test.ts` | 110 | 默认颜色与 Unity `GetDefaultColor` 严格一致（每类 `#rrggbb` + 固定透明度、覆盖全部可绘制类型、未知位退回不透明白、**RGB 可改但透明度不给改**）；`cellMaskCss`/`isHexColor`（大小写不敏感、脏数据退回白色）；`visibleMaskBits`（高位→低位、顺序恒为 `PaintableTypes` 倒序、隐藏位跳过、整格隐藏返回空） |
 | `grid/bytes.test.ts` | 88 | `.bytes` 编解码**对照 Unity 真实产物 `test/fixtures/Map001.bytes`**；合成数据与错误处理 |
@@ -1662,35 +1775,37 @@ upgradeRawDocument
 | `renderer/hit-test.test.ts` | 52 | 矩形碰撞：内部命中、边界含在内、中心不在原点的矩形按自己中心判、**旋转 90° 后长边转到竖直方向**（不是轴对齐包围盒） |
 | `editor/test/setup.ts` | 31 | jsdom 缺的浏览器 API 补齐 + `@testing-library/jest-dom` |
 
-> 上表按行数降序混排了各包；编辑器的 31 个测试文件见 §7.3.3。
+> 上表按行数降序混排了各包（表里的 `editor/test/setup.ts` 是搭头，**不算**在「24 文件 / 7,877 行」里）；
+> 编辑器的 34 个文件（含 `setup.ts`）见 §7.3.3。
 > `setup.ts` 只补两件「jsdom 缺、浏览器有」的 API：`window.matchMedia`（store 在**模块求值期**就用它判断
 > 紧凑布局，不补的话任何 import 了 store 的用例在收集阶段就炸；`matches` 恒为 `false` = 桌面布局）与
 > `Element.prototype.scrollIntoView`（资源面板把左树滚到当前层时用；补空实现，**刻意不在组件里加特性判断**）。
 
-#### 7.3.3 `apps/editor/test`（32 文件 / 7,707 行，jsdom）
+#### 7.3.3 `apps/editor/test`（34 文件 / 8,183 行，jsdom）
 
 | 文件 | 行数 | 覆盖的行为 |
 |---|---|---|
-| `sound-object.test.tsx` | 686 | 种类表里动作下的「播放声音」；创建声音对象；属性面板声音组；编辑声音窗口（store 侧加/删/起名字）；播放/停止能不能点；面板上看得见的状态；store 的记账与日志 |
-| `video-object.test.tsx` | 566 | 属性面板视频组；播放/暂停/停止的可用性与状态显示；失败原因都在运行日志里写明；store 的加/删/改名 |
+| `sound-object.test.tsx` | 697 | 种类表里动作下的「播放声音」；创建声音对象；属性面板声音组；编辑声音窗口（store 侧加/删/起名字）；播放/停止能不能点；面板上看得见的状态；store 的记账与日志 |
+| `video-object.test.tsx` | 573 | 属性面板视频组；播放/暂停/停止的可用性与状态显示；失败原因都在运行日志里写明；store 的加/删/改名 |
 | `bgm-dialog.test.tsx` | 535 | 顶栏「音乐」按钮；「背景音乐」弹框（清单、搜索、标签勾选、路径开关、选中跟随播放、自动滚到当前曲、底部三键）；**与项目设置分离** |
 | `run-mode.test.ts` | 497 | **运行中的改动不保存、退出即还原**；切场景 = 换台（运行态下立刻推）；运行基线跟着文档走；运行中的文件操作与断线 |
 | `bgm-settings.test.ts` | 438 | 推设置只剩三档音量；播放命令与补发；退出运行态音量还原、记账清零；音量编辑与场景编辑**共用一个撤销入口** |
-| `grid-annotate.test.tsx` | 391 | 属性面板编辑窗口入口；画笔偏好写进 store 也写进浏览器本地；涂抹写进 RLE 且**整笔可撤销**；网格线与网格标注两个总开关；格子颜色只画可见位且按低位在上叠加 |
+| `grid-annotate.test.tsx` | 392 | 属性面板编辑窗口入口；画笔偏好写进 store 也写进浏览器本地；涂抹写进 RLE 且**整笔可撤销**；网格线与网格标注两个总开关；格子颜色只画可见位且按低位在上叠加 |
 | `mask-math.test.ts` | 369 | `strokeStampCenters`；`applyEraseToPixels`（与 `MaskEraseStamp.shader` 同式）；`paintRegionPixels`（整区开/关）；`previewMaskSizeFor`/`brushRadiusFor`；`fillFogMaskPixels` |
-| `teleport-object.test.tsx` | 319 | 种类表；创建；属性面板（候选小方块 + ＋ + 传送）；「传送目标」窗口勾选；触发传送（**不改文档**） |
+| `teleport-object.test.tsx` | 324 | 种类表；创建；属性面板（候选小方块 + ＋ + 传送）；「传送目标」窗口勾选；触发传送（**不改文档**） |
 | `audio-catalog.test.ts` | 311 | 清单 = 项目音频 + 标注；标签表与文件上的标签；名字兜底链；搜索与标签筛选 |
 | `transform.test.ts` | 305 | 移动（相对按下时的指针）；旋转（相对按下时的方位角，**屏幕上跟手**）；缩放（相对按下时的指针偏移） |
-| `fog-mask.test.tsx` | 300 | 属性面板战争雾开关与雾区；揭示记账（**运行态才下发**给前端） |
+| `fog-mask.test.tsx` | 313 | 属性面板战争雾开关与雾区；揭示记账（**运行态才下发**给前端） |
 | `assets-panel.test.tsx` | 288 | 资源面板图标；展开三角；定位选中的文件 |
+| `sprite-sheet.test.tsx` | 271 | **v20 新增**。属性面板那一行：整图时不显示子图信息、有子图时写清「第X行第Y列（列×行）」、切分改小后越界格有提示、「改回整图」清掉引用（切分留着——别的对象还在用）；选择窗口：改行 / 列落进**工程文件**、点预览选一格、确定时图 + 格子一起写进对象、「使用整图」报 `null`、地图对象没有切分面板；**两条轨道**：窗口确定那一下 = **一条撤销记录**（整件事一起退回去），撤销切分**不动**场景里的对象 |
 | `audio-tag-editor.test.tsx` | 240 | 列出标签表；只填名字（没有新建/删除）；改名只改表；关闭 |
 | `inspector-groups.test.tsx` | 224 | 属性分组：基础/渲染/区域/战争雾/视频 |
 | `audio-tag-dialog.test.tsx` | 220 | 列标签/勾选；只从已有标签里挑（没有新建入口）；目标与关闭 |
 | `scene-switch.test.ts` | 218 | 切场景视口跟着场景走；**场景顺序（中文拼音序 + 数字按数值比）** |
 | `asset-audio-meta.test.tsx` | 212 | 显示名；标签；只对音频出现 |
-| `object-scale.test.tsx` | 161 | 缩放字段（所有对象都有）；`displayRectOf`（显示/拾取/选中框共用矩形） |
+| `object-scale.test.tsx` | 174 | 缩放字段（所有对象都有）；`displayRectOf`（显示/拾取/选中框共用矩形） |
 | `fog-reveal.test.ts` | 176 | 战争雾记账：擦除轨迹、整区开关、拖动中的分批、前端连上补发 |
-| `runtime-push.test.ts` | 130 | `shouldPushScene`；`scenePayloadText`；`ScenePushScheduler`（schedule/flush/cancel） |
+| `runtime-push.test.ts` | 202 | `shouldPushScene`；`scenePayloadText`；**子图：切分随载荷走、改切分文本就变、越界夹到最后一格**；`ScenePushScheduler`（schedule/flush/cancel） |
 | `object-lock.test.tsx` | 132 | 列表里的锁按钮；锁住 = 不能移动；属性面板里的锁定 |
 | `video-playback.test.ts` | 125 | 记账：哪个对象该放什么；前端刚连上时的补发计划 |
 | `open-project-folder.test.ts` | 120 | 「打开目录」 |
@@ -1700,36 +1815,37 @@ upgradeRawDocument
 | `object-visibility.test.tsx` | 106 | 场景对象列表的激活按钮；棋盘底纹的锚点 |
 | `editor-prefs.test.ts` | 88 | 默认值；解析；读写 |
 | `scene-serialize.test.ts` | 65 | `serializeSceneFile` 按场景对象引用缓存 |
-| `scene-rename-image.test.ts` | 88 | **回归护栏（v19 新增）**：重命名场景时同名贴图跟着改指——地图的贴图引用必须写进 `GridMap` 组件、**不能留下扁平 `map` 字段**（那会被 schema 丢掉 = 贴图丢失，而且类型检查抓不到）；精灵的图片不动、手工指定的贴图不动 |
+| `scene-rename-image.test.ts` | 83 | **回归护栏（v19 新增）**：重命名场景时同名贴图跟着改指——地图的贴图引用必须写进 `GridMap` 组件、**不能留下扁平 `map` 字段**（那会被 schema 丢掉 = 贴图丢失，而且类型检查抓不到）；精灵的图片不动、手工指定的贴图不动 |
 | `runtime-client.test.ts` | 57 | 断开原因（close code / reason → 一句人话）；**重连退避**（别拿 500ms 去捶一个注定拒绝你的服务端） |
 | `dialog-size.test.ts` | 55 | `dialogSizeFor`；`fitBox` |
 | `setup.ts` | 31 | jsdom 环境补齐 |
 
-### 7.4 E2E 清单（19 spec + 2 helper + 1 teardown / 8,127 行）
+### 7.4 E2E 清单（20 spec + 2 helper + 1 teardown / 8,790 行）
 
 | spec | 行数 | 覆盖的用户流程 | `@runtime` |
 |---|---|---|---|
-| `object-edit.spec.ts` | 1,186 | 创建与编辑场景对象（最大的一份：对象弹框、属性面板各组、改名/位置/贴图/网格、复制删除） | 否 |
-| `scene-transform.spec.ts` | 877 | 场景变换手柄（移动/旋转/缩放的精确指针手势）+ 画布上的其它拖动 | 否 |
-| `sound-object.spec.ts` | 664 | 动作对象「播放声音」（创建、属性面板、编辑窗口）+ 声音命令下发给前端 | **是**（第二部分） |
-| `scene-menu.spec.ts` | 462 | 场景菜单（新建/改名/删除/上下场）+ 场景切换（切换条与快捷键 `1`-`9`、`[`/`]`） | 否 |
+| `object-edit.spec.ts` | 1,185 | 创建与编辑场景对象（最大的一份：对象弹框、属性面板各组、改名/位置/贴图/网格、复制删除） | 否 |
+| `scene-transform.spec.ts` | 881 | 场景变换手柄（移动/旋转/缩放的精确指针手势）+ 画布上的其它拖动 | 否 |
+| `sound-object.spec.ts` | 634 | 动作对象「播放声音」（创建、属性面板、编辑窗口）+ 声音命令下发给前端 | **是**（第二部分） |
+| `scene-menu.spec.ts` | 456 | 场景菜单（新建/改名/删除/上下场）+ 场景切换（切换条与快捷键 `1`-`9`、`[`/`]`） | 否 |
 | `global-bgm.spec.ts` | 422 | 背景音乐：清单来自项目音频、与项目设置分离 + 背景音乐命令下发给前端 | **是**（第二部分） |
-| `hierarchy.spec.ts` | 353 | 场景数据（对象列表、种类/关键字过滤）+ 场景对象行操作；**含 4 条迁移用例**：旧版工程文件 v2、旧版场景文件 v3 / v4、以及 **v18 扁平字段 → v19 组件**（断言 `formatVersion` 19、组件 id/type/data 精确、5 个扁平字段消失、网格与声音层级仍然渲染出来） | 否 |
-| `smoke.spec.ts` | 351 | 编辑器外壳、画布视口交互、**平板紧凑布局**、编辑态/运行态 | **是**（第四部分） |
+| `hierarchy.spec.ts` | 498 | 场景数据（对象列表、种类/关键字过滤）+ 场景对象行操作；**含 4 条迁移用例**：旧版工程文件 v2、旧版场景文件 v3 / v4、以及 **v18 扁平字段 → v19 组件**（断言 `formatVersion` 19、组件 id/type/data 精确、5 个扁平字段消失、网格与声音层级仍然渲染出来） | 否 |
+| `smoke.spec.ts` | 354 | 编辑器外壳、画布视口交互、**平板紧凑布局**、编辑态/运行态 | **是**（第四部分） |
 | `video-object.spec.ts` | 347 | 地图/精灵的视频列表 + 视频命令下发给前端 | **是**（第二部分） |
-| `fog-mask.spec.ts` | 301 | 战争雾 Mask 窗口 | 否 |
-| `teleport.spec.ts` | 282 | 动作对象「传送阵」（候选、窗口、按一下换台） | 否 |
+| `fog-mask.spec.ts` | 307 | 战争雾 Mask 窗口 | 否 |
+| `teleport.spec.ts` | 261 | 动作对象「传送阵」（候选、窗口、按一下换台） | 否 |
+| `sprite-sheet.spec.ts` | 259 | **v20 新增**（三条）：① 选一格 → 只画那一格（画布采样四象限都成了那一格的颜色），并落进**两份文件**（场景文件只记「第几格」、工程文件记切分）；② 改切分 → 同一份引用换一块像素（对象侧一个字节都不改）；③ 地图对象的选择窗口**没有**切分面板（贴图不支持子图） | 否 |
 | `audio-meta.spec.ts` | 241 | 音频标注在属性面板里改（显示名 + 标签） | 否 |
-| `fog-reveal.spec.ts` | 238 | 战争雾：轨迹下发给前端 | **是** |
-| `grid-annotate.spec.ts` | 225 | 网格标注在画布上的显示（显示开关、颜色、叠加顺序） | 否 |
+| `fog-reveal.spec.ts` | 242 | 战争雾：轨迹下发给前端 | **是** |
+| `grid-annotate.spec.ts` | 229 | 网格标注在画布上的显示（显示开关、颜色、叠加顺序） | 否 |
 | `grid-edit-window.spec.ts` | 219 | 网格编辑窗口（落笔即格子、画笔、全部清除） | 否 |
 | `inspector-groups.spec.ts` | 209 | 属性分组 | 否 |
-| `project.spec.ts` | 195 | 项目（新建/打开/删除、资源树） | 否 |
-| `object-lock.spec.ts` | 182 | 对象锁定 | 否 |
-| `object-scale.spec.ts` | 120 | 对象缩放 | 否 |
+| `project.spec.ts` | 200 | 项目（新建/打开/删除、资源树） | 否 |
+| `object-lock.spec.ts` | 175 | 对象锁定 | 否 |
+| `object-scale.spec.ts` | 124 | 对象缩放 | 否 |
 | `startup.spec.ts` | 113 | 编辑器启动引导 | 否 |
-| `helpers/editor.ts` | 1,039 | 用例级助手：建/删项目、打开编辑器、按 `data-testid` 定位、断言状态；**v19 起还有一组组件读取助手**：`COMPONENT`（5 个组件名常量）、`componentId`、`findSceneObject`、`componentInstanceOf`、`objectComponentData`、`componentDataOf(file, {objectId?\|kind?}, component)`、`withComponent`、`readSceneFile`、`readSceneMap`、`readSceneFog`、`readSceneSound`、`readSceneTeleport`、`readSceneVideo`（spec 里**不再直接摸 `components`**，也不再有扁平字段读取） | — |
-| `helpers/canvas.ts` | 391 | 画布助手：世界↔屏幕换算、精确点/拖手柄、读取 `data-viewport-*` | — |
+| `helpers/editor.ts` | 917 | 用例级助手：建/删项目、打开编辑器、按 `data-testid` 定位、断言状态；**v19 起还有一组组件读取助手**：`COMPONENT`（**6 个**组件名常量：`gridMap` / `imageLayer` / `spriteLayer` / `playSound` / `teleport` / `videoOverlay`）、`componentId`、`findSceneObject`、`componentInstanceOf`、`objectComponentData`、`componentDataOf(file, {objectId?\|kind?}, component)`、`withComponent`、`readSceneFile`、`readSceneMap`、`readSceneFog`、`readSceneSound`、`readSceneTeleport`、`readSceneVideo`（缺省找 `Map`，贴图要显式传 `"Texture"`；spec 里**不再直接摸 `components`**，也不再有扁平字段读取）；**v20 起补子图助手**：`CURRENT_SCENE_FORMAT_VERSION = 21`、`colorGridPng(columns, rows, colors, cell)`（**每格一色的自编码 PNG**，用例靠它断言「画的是哪一格」）、`readProjectSpriteSheets`、`readObjectSprite`（读 `SpriteLayer` 的 `sprite`），`seedProjectDoc` 多了第四参 `projectPatch`（种一份带切分表的工程文件） | — |
+| `helpers/canvas.ts` | 392 | 画布助手：世界↔屏幕换算、精确点/拖手柄、读取 `data-viewport-*` | — |
 | `global-teardown.ts` | 15 | 按 `DTS_E2E_RESOURCES` 清掉临时资源根 | — |
 
 **并行与隔离**：
@@ -1749,9 +1865,9 @@ upgradeRawDocument
 - `globalTeardown` 只能是**文件路径**，所以临时根经环境变量 `DTS_E2E_RESOURCES` 传给 teardown。
 
 **helper 的两处「复述常量」**（升级时必须同步改，注释里都写明了）：
-`e2e/helpers/editor.ts` 的 `CURRENT_SCENE_FORMAT_VERSION = 18` 复述 `@dts/document` 的
+`e2e/helpers/editor.ts` 的 `CURRENT_SCENE_FORMAT_VERSION = 21` 复述 `@dts/document` 的
 `DOCUMENT_FORMAT_VERSION`；`fog-reveal.spec.ts` / `global-bgm.spec.ts` / `video-object.spec.ts` /
-`sound-object.spec.ts` 里写死的 `protocolVersion: 8` 复述 `@dts/protocol` 的 `PROTOCOL_VERSION`。
+`sound-object.spec.ts` 里写死的 `protocolVersion: 11` 复述 `@dts/protocol` 的 `PROTOCOL_VERSION`。
 E2E **不引用内部包**（根上没有 workspace 链接），所以这些常量不会被类型检查兜住。
 
 ---
@@ -1787,7 +1903,8 @@ resources/
 - 后端不依赖资源根存在：`loadConfig` 读不到 `config/app.json` 就用内置默认值，目录由首次写入时按需创建
   （E2E 依赖这一点）。
 
-**`测试项目` 的实际内容**（`formatVersion: 18`）：
+**`测试项目` 的实际内容**（磁盘上还是 `formatVersion: 20`——v21 改了图片组件的名字与 kind 名单，
+所以**编辑器打开它时会自动迁移并回写一次**，见 §6.4；下表的 `kind` / 组件名按**迁移后**的样子写）：
 
 | 文件 | 内容 |
 |---|---|
@@ -1797,6 +1914,9 @@ resources/
 | `Assets/scenes/场景3.json` | 1 个 `Map`「网格地图」（`Map003.png`）+ `video { enabled:false, clips:[Map003_1..3.mp4], picked:"Map003_1.mp4", loop:false, audio:false }` |
 
 这份数据是**四个大特性各一份样例**（战争雾 + 传送阵 + 声音对象 + 视频），改文档格式时它是最直接的回归样本。
+**精灵（子图）没有进这份数据**：它需要「每格一色的图集」才能断言画的是哪一格，所以由
+`e2e/sprite-sheet.spec.ts` 在临时资源根里现造（`colorGridPng` + `seedProjectDoc(..., projectPatch)`）。
+版本号升到 20 之后，这份数据本身没有 `spriteSheets`（没有子图引用 = 不需要切分表）。
 
 ### 8.2 `resources/config/*.json` 的键
 
@@ -1869,6 +1989,7 @@ resources/
 | **加一个变换工具** | `@dts/renderer`：`gizmo.ts` 的 `TransformTool` + `toolHasGizmo` + `gizmoScreenGeometry` + `hitTestGizmoHandles` + `scene-renderer` 的 `drawGizmo`；`apps/editor`：`panels/scene/transform.ts` 的 `resolveTransform` + `ScenePanel` + `store.setTool` + `services/editor-prefs` + `MenuBar` 的「视图」菜单；`gizmo.test.ts` |
 | **加一个校验项** | `document/src/validation.ts`（结构性）或 `actions/src/validation.ts`（依赖动作注册表）；对应 `*.test.ts`；若会影响进运行态，注意 `hasErrors` 的语义 |
 | **加一个文档版本迁移** | `document/src/schema.ts`：`upgradeRawDocument`（若改的是原始 JSON 形状）或 `withFilledObjectFields` / 新增 `migrateXxx`；`DOCUMENT_FORMAT_VERSION + 1`；`needsRewrite` 条件；`document.test.ts` 的迁移用例 |
+| **加一个「对象画成什么样」的渲染选项** | **先判断它是「数据」还是「新组件」**——子图（v20）就是数据：住在图片组件的 `image` 数据上（精灵 `SpriteLayer` / 贴图 `ImageLayer`，见 v21）而不是新组件里（理由见 §1.6）。数据式的加法：`@dts/document` 的 `sprites.ts`（口径与解析的**唯一归属地**）+ `types.ts` + `schema.ts` + `validation.ts`；`@dts/protocol` 的 `messages.ts`（前端也要用就 `+1`，并想清**老客户端会怎么错**——子图是「铺错整张图」，那必须靠握手挡住）；`@dts/renderer` 的 `SceneLayer`；编辑器：入口对话框 + 属性面板字段 + `slices/<功能>-slice.ts`；`client/`（解析 + UV）；跨包契约测试 + 单测 + E2E |
 
 ### 9.3 已知不一致与注意点（读代码时会踩到的）
 
@@ -1904,12 +2025,21 @@ resources/
     （必须相对且不越出资源根），写错会**直接拒绝启动**而不是静默降级。
 15. **README 与 `playwright.config.ts` 对 E2E worker 数的说法不一致**：`server/README.md` 写「worker 数默认按核数
     一半、封顶 8」，而配置里是固定的 `Number(process.env.E2E_WORKERS ?? 4)`。**以配置文件为准**。
-16. **E2E 里有几处「复述常量」不会被类型检查兜住**（见 §7.4 末）：`CURRENT_SCENE_FORMAT_VERSION = 18`、
-    各 spec 里写死的 `protocolVersion: 8`，以及 `scene-transform.spec.ts` 顶部复述的手柄几何常量
+16. **E2E 里有几处「复述常量」不会被类型检查兜住**（见 §7.4 末）：`CURRENT_SCENE_FORMAT_VERSION = 21`、
+    各 spec 里写死的 `protocolVersion: 11`，以及 `scene-transform.spec.ts` 顶部复述的手柄几何常量
     （`GIZMO_AXIS_GAP` 45 / `GIZMO_AXIS_LENGTH` 40 / `GIZMO_RING_GAP` 22）。改这些常量时要一起改。
 17. **`resources/projects/` 里唯一的项目是「测试项目」**（含 3 个场景、4 张图片、6 个视频、13 个音频），
     它是仓库里唯一「有 `project.json` 因此被接口认成项目」的目录——所以 `e2e/startup.spec.ts` 必须把
     `/api/projects` 打桩成空，才能稳定断言「一个项目都没有」。
+18. **切分表的孤儿项没有清理入口**（v20）：图片被删 / 改名之后，`spriteSheets` 里那一条**还在**
+    （与第 6 条 `audioMeta` 指向已删音频是同一个缺口——键是资源逻辑 ID，而资源列表与它没有联动）。
+    `validateProject` 只提醒「空图片 ID」，认不出「这个文件不存在了」。能做的只有：在选择窗口里对
+    **当前挑中的那张图**点「清除切分」（`sprite-clear-sheet`）——而且**还有对象在用这张图的格子时它是禁用的**
+    （提示先让那些对象「改回整图」）：删掉切分等于让它们的引用失去意义。
+19. **重切不会回头改对象在场景里的尺寸**（v20）：`ImageRef.width / height` 是**选格那一刻**声明出来的
+    （整图 = 图宽；子图 = 那一格的宽高，`spriteCellSizeOf`），改切分只改「画哪一块」，**不会**重算已放好的
+    对象的尺寸——要改大小请用缩放，或重新挑一格（那会写一条新的场景撤销记录）。这样做的理由是
+    「一次操作不跨两条撤销轨道」：改切分在工程轨、改尺寸在场景轨，混在一起会让撤销说不清退回了哪一半。
 
 ---
 

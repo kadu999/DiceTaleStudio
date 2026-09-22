@@ -1,6 +1,6 @@
 import type { FieldDef } from "./fields";
 import { defaultDataFromFields } from "./fields";
-import { FEATURE_COMPONENT, kindsCarrying, type ObjectFeatureField } from "./features";
+import { FEATURE_COMPONENT, SPRITE_COMPONENT, kindsCarrying, type ObjectFeatureField } from "./features";
 import type { ComponentDoc, ObjectKind } from "./types";
 
 /**
@@ -15,7 +15,7 @@ import type { ComponentDoc, ObjectKind } from "./types";
  * - `legacyField`：v19 之前它住在对象的哪个扁平字段里——迁移函数靠它把老字段搬成组件实例。
  */
 
-/** 组件类型 ID。前 7 种对齐前端组件类名；后 5 种是 v19 从对象特性提升上来的。 */
+/** 组件类型 ID。前 7 种对齐前端组件类名；后 6 种是 v19 从对象特性提升上来的。 */
 export type ComponentType =
   | "OptionValue"
   | "Backpack"
@@ -25,7 +25,8 @@ export type ComponentType =
   | "IntValue"
   | "BoolValue"
   | "GridMap"
-  | "TextureRenderer"
+  | "ImageLayer"
+  | "SpriteLayer"
   | "PlaySound"
   | "Teleport"
   | "VideoOverlay";
@@ -145,14 +146,29 @@ export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
     fields: [],
   },
   {
-    type: "TextureRenderer",
-    displayName: "贴图",
+    // 贴图对象的图片组件（精灵的那一份是下面的 `SpriteLayer`，两者共用同一份 `ImageRef` 形状）
+    type: "ImageLayer",
+    displayName: "图片层",
     gmEditable: true,
     kinds: kindsCarrying(FEATURE_COMPONENT.image),
     legacyField: "image",
     conditionValueTypes: [],
     commandTypes: [],
-    tooltip: "对象自己要显示的图片（精灵靠它显示；地图的贴图在 GridMap 里）",
+    tooltip: "对象自己要显示的图片，整张铺在对象矩形上（贴图对象用它；地图的贴图在 GridMap 里）",
+    fields: [],
+  },
+  {
+    // 精灵对象的图片组件：与 `ImageLayer` 同一份数据，差别是它**会取图集里的一格**
+    // （`ImageRef.sprite`）——所以两者分开，界面上「给不给切子图」就由组件本身说清了。
+    // v21 起取代 v20 的 `TextureRenderer`（迁移见 schema.ts 的 `renameSpriteImageComponent`）。
+    type: SPRITE_COMPONENT,
+    displayName: "精灵层",
+    gmEditable: true,
+    kinds: kindsCarrying(SPRITE_COMPONENT),
+    legacyField: "image",
+    conditionValueTypes: [],
+    commandTypes: [],
+    tooltip: "精灵要显示的图片：可以取图集里的一格（子图），由渲染那一组挑第几行第几列",
     fields: [],
   },
   {
@@ -195,9 +211,12 @@ export const FEATURE_COMPONENT_TYPES: readonly ComponentTypeDef[] = COMPONENT_TY
   (def) => def.legacyField !== undefined,
 );
 
-/** 按历史扁平字段名查组件定义（迁移用）。 */
-export function findComponentTypeByLegacyField(field: ObjectFeatureField): ComponentTypeDef | undefined {
-  return COMPONENT_TYPES.find((def) => def.legacyField === field);
+/** 这个对象（还没过 schema 的原始样子）上还有没有**旧的扁平特性字段**（迁移的入口判据）。 */
+export function hasLegacyFeatureField(raw: Record<string, unknown>): boolean {
+  return FEATURE_COMPONENT_TYPES.some((def) => {
+    const field = def.legacyField as string;
+    return field in raw;
+  });
 }
 
 const BY_TYPE = new Map<string, ComponentTypeDef>(COMPONENT_TYPES.map((def) => [def.type, def]));

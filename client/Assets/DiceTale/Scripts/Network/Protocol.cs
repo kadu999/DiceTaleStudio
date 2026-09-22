@@ -42,17 +42,33 @@ namespace DiceTale
         ///
         /// v9（2026-09-22）：**对象特性搬进组件**。场景对象上的 `map` / `image` / `sound` / `teleport` /
         /// `video` 这 5 个扁平字段没了，改成 `components[]` 里的组件实例（`GridMap` /
-        /// `TextureRenderer` / `PlaySound` / `Teleport` / `VideoOverlay`）。老前端按扁平字段读，
+        /// `ImageLayer` / `SpriteLayer` / `PlaySound` / `Teleport` / `VideoOverlay`）。老前端按扁平字段读，
         /// 迁移后的场景在它眼里会变成「一个什么都不带的空对象」，所以必须 +1。
         /// **命令那一组一个字节都没动。**
+        ///
+        /// v10（2026-09-22）：**精灵（子图）**。贴图引用多了 `sprite`（取这张图里的第几格，
+        /// `column` 从左数、`row` **从最上数**）与 `spriteGrid`（这张图几列几行）两项，
+        /// 前端据此只画出那一块矩形（见 <see cref="SpriteLayer"/> 的 UV）。
+        /// 老前端（v9）会**静默把整张图集铺出来**——不是崩，是画面错，所以照旧 +1：
+        /// 服务端与前端必须一起更新。**命令那一组仍然一个字节都没动**（子图是数据，不是新动作）。
+        ///
+        /// v11（2026-09-23）：**「显示一张图」拆成两种组件 + 多一个「贴图」对象**。
+        /// 对象自己那张图原来是 `TextureRenderer` 一种组件（精灵与贴图共用），现在分成
+        /// `SpriteLayer`（**精灵**用，会取图集里的一格）/ `ImageLayer`（**贴图**用，整张铺满）；
+        /// `kind` 多了一个 `Texture`（它是自由字符串，这一项本身不破坏兼容）。
+        /// 老前端（v10）不认这两个新组件名 → 图取不到、只画一块占位色，所以必须 +1。
+        /// **命令那一组仍然一个字节都没动**（这只是数据换了组件名）。
         /// </summary>
-        public const int Version = 9;
+        public const int Version = 11;
 
         /// <summary>对象特性组件的类型名（v9 起）。与服务端 `@dts/protocol` 的 `COMPONENT_TYPE` 逐字一致。</summary>
         public static class ComponentType
         {
             public const string Map = "GridMap";
-            public const string Image = "TextureRenderer";
+            /// <summary>「显示一张图」：**贴图对象**用它（`kind: "Texture"`），整张铺满。</summary>
+            public const string Image = "ImageLayer";
+            /// <summary>「显示一张图」：**精灵对象**用它（`kind: "SceneObject"`），会取图集里的一格。</summary>
+            public const string Sprite = "SpriteLayer";
             public const string Sound = "PlaySound";
             public const string Teleport = "Teleport";
             public const string Video = "VideoOverlay";

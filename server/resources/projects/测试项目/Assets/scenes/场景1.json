@@ -1,5 +1,5 @@
 {
-  "formatVersion": 19,
+  "formatVersion": 21,
   "objects": [
     {
       "id": "map_mu6uln3x1l7fg",
@@ -341,17 +341,17 @@
       "kind": "SceneObject",
       "active": true,
       "sortingOrder": 1,
-      "locked": true,
+      "locked": false,
       "position": {
-        "x": -108.73631692271957,
-        "y": -56.60175488292025
+        "x": -605.3508237304383,
+        "y": 53.06357309566075
       },
-      "rotation": -0.2617993877991494,
+      "rotation": 0,
       "scale": 1,
       "components": [
         {
-          "id": "obj_mu72r20g1mvao__TextureRenderer",
-          "type": "TextureRenderer",
+          "id": "obj_mu72r20g1mvao__SpriteLayer",
+          "type": "SpriteLayer",
           "data": {
             "id": "project:测试项目/Assets/images/Bridge.png",
             "width": 256,
@@ -414,6 +414,32 @@
               "场景3"
             ],
             "picked": "场景3"
+          },
+          "actions": []
+        }
+      ]
+    },
+    {
+      "id": "obj_muce2oqy1azuw",
+      "name": "贴图",
+      "kind": "Texture",
+      "active": true,
+      "sortingOrder": 1,
+      "position": {
+        "x": -108.74,
+        "y": -56.6
+      },
+      "rotation": -0.2617993877991494,
+      "scale": 1,
+      "locked": true,
+      "components": [
+        {
+          "id": "obj_muce2oqy1azuw__ImageLayer",
+          "type": "ImageLayer",
+          "data": {
+            "id": "project:测试项目/Assets/images/Bridge.png",
+            "width": 256,
+            "height": 256
           },
           "actions": []
         }

@@ -37,6 +37,22 @@ import { GIZMO_HANDLE_SIZE, toolHasGizmo, type GizmoHandle, type TransformTool }
 export interface SceneLayer {
   /** 贴图；还没加载好时为 `null`（只看得到底纹）。 */
   readonly image?: CanvasImageSource | null;
+  /**
+   * **只画图片里的这一块**（**图片像素**，左上角原点、y 向下，与 canvas `drawImage` 同向）。
+   *
+   * 有它 = 这个对象显示的是图集里的一个**子图**（v20 的精灵）：源矩形由调用方按
+   * 「切分 + 加载到的图片尺寸」算好（`@dts/document` 的 `spritePixelRectOf`）；
+   * 没有 = 铺满整张（老样子）。
+   *
+   * **它只影响「贴哪里」**：对象占的世界矩形（裁剪、命中测试、选中框、变换手柄）仍按
+   * `displayRectOf` 算——「看到的框」与「点得到的范围」因此照旧是同一块。
+   */
+  readonly sprite?: {
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+  };
   /** 这张图片占据的世界矩形（贴图铺满它，网格锚在它上面）。 */
   readonly rect: WorldRect;
   /**
@@ -200,6 +216,9 @@ const MAX_GRID_LINES = 4000;
 /** 对象类型色（弹框里那个小圆点、以及声音对象那枚内置图标都用它）。 */
 const KIND_MARKER_COLORS: Record<string, string> = {
   SceneObject: "#4f9cf9",
+  // 贴图对象（v21）：与精灵分开——两者都显示一张图，但精灵会取图集里的一格。
+  // 用一个偏青的粉紫，和上面五个都分得开（弹框里两个瓦片一眼看得出不是一个东西）
+  Texture: "#c084fc",
   Player: "#3fbf6f",
   Item: "#e0a13c",
   Event: "#b06ef0",
@@ -438,7 +457,23 @@ function drawLayer(
 
   if (layer.image != null) {
     context.imageSmoothingEnabled = viewport.scale < 4;
-    context.drawImage(layer.image, box.left, box.top, box.right - box.left, box.bottom - box.top);
+    // 九个参数的 drawImage = 从图片里**取一块**再铺到对象矩形上（子图）；没有源矩形时
+    // 走五个参数那条（整张铺满）——两条路的落点都是同一个 `box`
+    if (layer.sprite !== undefined) {
+      context.drawImage(
+        layer.image,
+        layer.sprite.x,
+        layer.sprite.y,
+        layer.sprite.width,
+        layer.sprite.height,
+        box.left,
+        box.top,
+        box.right - box.left,
+        box.bottom - box.top,
+      );
+    } else {
+      context.drawImage(layer.image, box.left, box.top, box.right - box.left, box.bottom - box.top);
+    }
   }
 
   if (layer.grid !== undefined) {

@@ -124,7 +124,7 @@ export const OBJECT_GROUPS: readonly ObjectGroupDef[] = [
     render: (object) => <FogFields object={object} />,
   },
   {
-    // 「视频」只对**地图与精灵**出现（`supportsVideo`）：视频画面盖在对象自己的矩形上，
+    // 「视频」只对**地图与贴图**出现（`supportsVideo`）：视频画面盖在对象自己的矩形上，
     // 所以它属于那个对象；在窗口里加一组视频，运行时在这里选一条放。
     group: "video",
     title: "视频",

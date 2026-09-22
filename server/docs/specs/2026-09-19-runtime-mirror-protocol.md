@@ -18,7 +18,11 @@
 > `teleport` / `video` 这 5 个扁平字段没了，改成 `components[]` 里的组件实例
 > （`GridMap` / `TextureRenderer` / `PlaySound` / `Teleport` / `VideoOverlay`，与文档格式 v19 同一批）。
 > 老前端按扁平字段读，迁移后的场景在它眼里会变成「一个什么都不带的空对象」，所以必须 +1。
-> **命令那一组一个字节都没动。** 取代
+> **命令那一组一个字节都没动。**
+> 同一天再升到 **协议 v10**：**精灵（子图）**——贴图引用多了 `sprite`（取第几格）与 `spriteGrid`
+> （这张图几列几行）两项（与文档格式 v20 同一批），前端据此只画那一块矩形。两项都是可选的，
+> 老前端（v9）会静默把整张图集铺出来——不是崩，是画面错，所以照旧 +1：服务端与前端必须同批更新。
+> **命令那一组仍然一个字节都没动**（子图是数据，不是新动作）。取代
 > [`2026-09-18-frontend-integration-contract.md`](2026-09-18-frontend-integration-contract.md)
 > （那份写的是「前端上报数据、后台按 id 寻址动作」的老模型，已整层删除）。
 
@@ -85,7 +89,9 @@
 
 **推送时机**：进运行态时推一次；之后文档一变就推（编辑器去抖 **200ms** + 内容去重，
 撤销回原样 / 画布重绘不会空推）；**切场景立刻推**（不等去抖——对 DM 而言这就是「换台」，
-投影晚一秒都比不换更让人困惑；payload 里带场景名，所以切场景必然算一次变更）。
+投影晚一秒都比不换更让人困惑；payload 里带场景名，所以切场景必然算一次变更）；
+**工程文件里的图片切分表（v20）一变也重推一次场景**——子图的「几行几列」随载荷走，
+改切分等于改了解析结果（文本比对保证「改的是别的项目级数据」时一个字节都不发）。
 **全量推送**，不做增量 patch——这个量级下最省心、永不失同步。
 
 ## `/client`（服务端 ↔ 前端）
@@ -119,11 +125,42 @@
 | 组件 `type` | 前端行为 |
 |---|---|
 | `GridMap` | 地图面片 + 网格 + 战争雾（`data` = `{image, grid, rowOrder, cells, fog?}`） |
-| `TextureRenderer` | 对象自己的贴图（`data` = `{id, width, height}`） |
+| `ImageLayer` | **贴图对象**自己那张图（`data` = `{id, width, height}`——整张铺满） |
+| `SpriteLayer` | **精灵对象**自己那张图（`data` = `{id, width, height, sprite?, spriteGrid?}`；后两项是 **v10 的子图**） |
 | `PlaySound` | **不建可见物**：数据留在镜像里（`play_sound` 时从 `data.picked` 取播哪一条） |
 | `Teleport` | **不建可见物**：数据留在镜像里（触发传送 = 编辑器换场景，整份 `scene_push`） |
 | `VideoOverlay` | 运行时在**对象自己的矩形**上建视频层（见下） |
 | 其余（`OptionValue` 等编辑器组件 / 将来的新组件） | 忽略 |
+
+**精灵（子图，v10）**：一张图可以按「行 × 列」切成格子，对象只显示其中一格。
+
+- `sprite = { column, row }`：取第几格。**`column` 从左数（0 起）、`row` 从最上面数（0 起）**
+  （对齐 Unity 的 Sprite Editor 的格子编号；与 `GridMap.rowOrder: "bottom-up"` 无关）。
+- `spriteGrid = { columns, rows }`：**这一项是协议比文档多的**。切分在编辑器那边只有一份
+  （工程文件的 `spriteSheets`），而前端手上没有工程文件——所以编辑器推送时把它解析进载荷
+  （`resolveSceneSprites`）。前端据此算 UV，不必知道「工程文件」这个概念：
+  `u0 = column / columns`、`u1 = (column + 1) / columns`、`v1 = 1 - row / rows`、
+  `v0 = 1 - (row + 1) / rows`（**全链路唯一一次 y 翻转**，在 `SpriteLayer.UvRectOf`）。
+- **不存像素**：矩形是上面那套**归一化除法**，图片尺寸不是行列的整数倍时两端算出来仍是同一块；
+  前端把 UV 烘进面片网格的顶点（换格子 = 重建网格），面片尺寸仍由 `width/height × scale` 决定。
+- 越界的格子（切分被改小之后）**在推送前已经被夹到最后一格**（协议 schema 的 `refine` 也会拒
+  越界值）——所以前端拿到的 `sprite` 一定落在 `spriteGrid` 里，不必自己防。
+- **地图贴图不支持子图**：编辑器不给入口，手写文件里带了也会在推送时被**摘掉**
+  （`GridMap.data.image` 上不会出现这两项）。
+- 老前端（协议 v9）不认这两项，会把整张图集铺出来——**画面错**，所以协议 +1，靠握手挡住。
+
+**贴图对象 + 两种图片组件（v11，2026-09-23）**：实体下多一个「贴图」（`kind: "Texture"`）——
+**只显示整张图**，与精灵的差别只有「不取图集里的一格」。数据上分成两个组件：
+
+- `ImageLayer`（**贴图**用，`data` = `{id, width, height}`）与 `SpriteLayer`（**精灵**用，
+  `data` 多可选的 `sprite` + `spriteGrid`）——**形状一样、名字不同**，名字就是那条判据
+  （编辑器据此决定给不给切图入口）；
+- v10 及更早两者共用一个 `TextureRenderer`，老文件里精灵的那一份会被编辑器改名成 `SpriteLayer`
+  （`renameSpriteImageComponent`）；
+- **视频那一组换了宿主**：只有 `Map` 与 `Texture` 会带 `VideoOverlay`（精灵不再带）。
+  旧文件里精灵身上的 `VideoOverlay` **不会被删**（不静默改用户数据），只是编辑器不再认它；
+- 老前端（v10）不认这两个新组件名 → 图取不到、对象只画一块占位色，所以协议 +1。
+  `kind` 是自由字符串，`Texture` 这个新值本身不破坏兼容。
 
 前端按需取用：
 
@@ -132,7 +169,7 @@
 | `id` | 镜像字典的 key：新 id 建对象、老 id 更新、名单里没有的销毁；场景名变了则整场景换 |
 | `name` | GameObject 名字 |
 | `kind` | **只用来取占位色 / 排查**（不再决定建不建可见物） |
-| `components` | **决定这个对象有什么**：`map` / `image` 这两个强类型字段由 `GridMap` / `TextureRenderer` 填；`sound` / `video` 由 `PlaySound` / `VideoOverlay` 填 |
+| `components` | **决定这个对象有什么**：`map` / `image` 这两个强类型字段由 `GridMap` / `ImageLayer` / `SpriteLayer` 填（后两个都是「对象自己那张图」，v11 起按对象类型分开）；`sound` / `video` 由 `PlaySound` / `VideoOverlay` 填 |
 | `position {x,y}` | `(x, 0, y)`：文档 y 向上 → 客户端 +Z（与 `GridMap.WorldToGrid` 同口径）；`null` = 未落位 → 不建视图 |
 | `active` | 是否显示（编辑器那个勾选框一改，前端就出现 / 消失） |
 | `scale` | 面片尺寸 = 声明尺寸（`image` / `map.image`）× `scale` |

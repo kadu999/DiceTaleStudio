@@ -2,9 +2,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import {
   DEFAULT_OBJECT_SCALE,
-  FEATURE_COMPONENT,
   MAX_OBJECT_SCALE,
   MIN_OBJECT_SCALE,
+  SPRITE_COMPONENT,
   featureComponent,
 } from "@dts/document";
 import { createMapObject, createSceneObject, type SceneObjectDoc } from "@dts/document";
@@ -27,9 +27,9 @@ const GRID = { width: 8, height: 6 };
 function sprite(scale = 1): SceneObjectDoc {
   return {
     ...createSceneObject({ id: "sprite-1", name: "精灵", position: { x: 100, y: 50 } }),
-    // 贴图是它的 `TextureRenderer` 组件（v19 起）
+    // 精灵显示的那张图住在它的 `SpriteLayer` 组件里（v21 起）
     components: [
-      featureComponent("sprite-1", FEATURE_COMPONENT.image, {
+      featureComponent("sprite-1", SPRITE_COMPONENT, {
         id: "project:测试/Assets/images/Sprite.png",
         width: 120,
         height: 80,

@@ -85,7 +85,7 @@ async function connectFakeClient(page: Page, port: number): Promise<void> {
           type: "client_hello",
           // 与 `@dts/protocol` 的 `PROTOCOL_VERSION` 一致（这里写死：e2e 不是 workspace 包，
           // 拿不到那个常量；版本一升这里会连不上、用例会当场失败，提醒同步改）
-          protocolVersion: 9,
+          protocolVersion: 11,
           name: "e2e 假前端",
           version: "0.0.0",
         }),
@@ -124,7 +124,7 @@ async function fakeCommands(page: Page): Promise<readonly FakeCommand[]> {
   return page.evaluate(() => (window as unknown as FakeClientWindow).__videoCommands ?? []);
 }
 
-/** 常见开头：建项目、放一张地图 + 一个精灵、上传两个假视频。 */
+/** 常见开头：建项目、放一张地图 + 一个**贴图**、上传两个假视频。 */
 async function seed(
   project: string,
   request: APIRequestContext,
@@ -134,7 +134,8 @@ async function seed(
 
   const mapDoc = mapObjectDoc(project, SCENE, "网格地图", MAP_SIZE, GRID);
   await seedProjectDoc(request, project, [
-    sceneDoc(SCENE, [mapDoc, sceneObjectDoc(SPRITE, "SceneObject", { x: 0, y: 0 })]),
+    // v21 起视频那一组的宿主是**贴图**（`kind: "Texture"`），不是精灵——见下面那条用例
+    sceneDoc(SCENE, [mapDoc, sceneObjectDoc(SPRITE, "Texture", { x: 0, y: 0 })]),
   ]);
   await uploadSceneImage(request, project, SCENE, solidPng(4, 4, [60, 60, 60]));
 
@@ -152,7 +153,7 @@ async function waitForSaved(page: Page): Promise<void> {
   await expect(page.getByTestId("status-scene-save")).toHaveAttribute("data-state", "saved");
 }
 
-test.describe("地图 / 精灵：视频列表", () => {
+test.describe("地图 / 贴图：视频列表", () => {
   test("面板空态 → 窗口加两条 → 起名字 → 选一条 → 循环 / 声音 → 全部落进场景文件", async ({
     page,
     request,
@@ -245,19 +246,38 @@ test.describe("地图 / 精灵：视频列表", () => {
     }
   });
 
-  test("精灵也有这一组（视频盖在它自己的矩形上）；声音对象 / 传送阵没有", async ({ page, request }) => {
+  test("贴图也有这一组（视频盖在它自己的矩形上）；精灵 / 声音对象 / 传送阵没有", async ({
+    page,
+    request,
+  }) => {
     const project = await newProject(request);
     try {
       await seed(project, request);
       await openFirstObject(page, project, "网格地图");
       await openLeftTab(page, "hierarchy");
 
-      // 第二个对象是精灵
+      // 第二个对象是**贴图**：v21 起视频那一组从精灵挪到了贴图
       await selectObject(page, 1);
       await expect(page.locator('[data-group="video"]')).toBeVisible();
-      // 精灵没有地图专属那两组
+      // 贴图没有地图专属那两组
       await expect(page.locator('[data-group="edit"]')).toHaveCount(0);
       await expect(page.locator('[data-group="fog"]')).toHaveCount(0);
+      // **贴图**身上也能真的把视频存进去（不是「面板长出来了、数据写不进去」）
+      const textureVideo = page.locator('[data-group="video"]');
+      await textureVideo.getByTestId("video-enable").check();
+      await waitForSaved(page);
+      expect(await readSceneVideo(request, project, SCENE, "Texture")).toMatchObject({
+        enabled: true,
+        clips: [],
+      });
+
+      // 再建一个**精灵**（新对象落在名单末尾）：它有「渲染」、**没有**视频那一组
+      await page.getByTestId("new-object").click();
+      await page.getByTestId("object-type-SceneObject").click();
+      await page.getByTestId("confirm-object").click();
+      await selectObject(page, 2);
+      await expect(page.locator('[data-group="render"]')).toBeVisible();
+      await expect(page.locator('[data-group="video"]')).toHaveCount(0);
     } finally {
       await dropProject(request, project);
     }

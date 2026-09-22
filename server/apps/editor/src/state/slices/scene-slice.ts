@@ -8,6 +8,7 @@ import {
   createEmptyScene,
   isSceneNameTaken,
   parseSceneFile,
+  validateScene,
   validateSceneName,
   type SceneDoc,
 } from "@dts/document";
@@ -113,6 +114,14 @@ export function createSceneSlice(
             name: file.name.slice(0, -PROJECT_SCENE_FILE_EXTENSION.length),
             objects: parsed.file.objects,
           };
+
+          // 语义校验（zod 只管形状，不管业务）：把项目当前的 spriteSheets 传进去，
+          // 格子越界这类子图 warning 才认得出来；warning 落进日志，不拦加载
+          for (const issue of validateScene(scene, { spriteSheets: get().doc.spriteSheets })) {
+            if (issue.level === "warning") {
+              pushLog(makeLog("warn", `场景「${scene.name}」：${issue.message}`));
+            }
+          }
 
           scenes.push(scene);
           if (parsed.needsRewrite) {

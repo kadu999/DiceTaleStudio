@@ -1,7 +1,7 @@
 /**
  * 本文件从 `editor-store.ts` 拆出（纯搬运，行为不变）。
  *
- * 视频（地图 / 精灵）：列表、选中、开关与下发播放。
+ * 视频（地图 / 贴图）：列表、选中、开关与下发播放。
  */
 import {
   FEATURE_COMPONENT,
@@ -47,7 +47,7 @@ export function createVideoSlice(
   const { pushLog, runtimeClient, videoTargetOf, objectWithFeature, deliverVideo } = ctx;
 
   return {
-    // ---------------------------------------------------------------- 视频（地图 / 精灵）
+    // ---------------------------------------------------------------- 视频（地图 / 贴图）
 
     playVideo(objectId) {
       const object = videoTargetOf(objectId, "播放视频");
@@ -108,7 +108,7 @@ export function createVideoSlice(
     },
 
     stopVideo(objectId) {
-      // 停**不要求**还选着一条视频 / 还是地图或精灵：对象被改成别的类型之后，
+      // 停**不要求**还选着一条视频 / 还是地图或贴图：对象被改成别的类型之后，
       // 前端那一层还挂着，「停止」得照样能拆掉它
       const object = findSceneByName(get().scenes, get().activeSceneName)?.objects.find(
         (item) => item.id === objectId,
@@ -155,7 +155,7 @@ export function createVideoSlice(
       return entries.length;
     },
 
-    // ------------------------------------------------------------ 视频（地图 / 精灵）
+    // ------------------------------------------------------------ 视频（地图 / 贴图）
 
     openVideoEditor(objectId) {
       set({ videoEditor: objectId !== null, videoEditorTarget: objectId });

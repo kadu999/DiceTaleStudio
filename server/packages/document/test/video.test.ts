@@ -28,8 +28,8 @@ import { DOCUMENT_FORMAT_VERSION, type SceneDoc, type SceneObjectDoc } from "../
  *
  * 它与「声音对象」是**两个不同的东西**，别混：
  * - 声音是单独一种动作对象（`kind: "PlaySound"`），带层级、能同时响好几条；
- * - 视频挂在**对象自己身上**（只有地图与精灵能带），画面盖在那个对象的矩形上，
- *   每个对象各自一条、互不影响。
+ * - 视频挂在**对象自己身上**（v21 起只有地图与**贴图**能带，精灵不行），画面盖在那个对象的
+ *   矩形上，每个对象各自一条、互不影响。
  *
  * 一条贯穿全篇的规矩（照抄声音那套）：**名字（`names`）与选中的那条（`picked`）都挂在
  * 「加进来的视频」上**，所以列表一变，这两样跟着走；而 `loop` / `audio` 是**对象自己的设置**，
@@ -69,15 +69,21 @@ function mapObject(id = "map-1"): SceneObjectDoc {
   return createMapObject({ id, name: "网格地图", image: IMAGE, grid: GRID });
 }
 
-/** 一个精灵（另一个合法宿主）。 */
+/** 一张贴图（另一个合法宿主，v21 起取代精灵）。 */
+function textureObject(id = "tex-1"): SceneObjectDoc {
+  return createSceneObject({ id, name: "贴图", kind: "Texture" });
+}
+
+/** 一个精灵（**不再是**视频宿主：它的渲染选项归「渲染」那一组）。 */
 function spriteObject(id = "sprite-1"): SceneObjectDoc {
   return createSceneObject({ id, name: "精灵" });
 }
 
 describe("视频：哪些对象能带", () => {
-  it("只有地图与精灵能放视频；动作对象不行", () => {
+  it("只有地图与贴图能放视频；精灵与动作对象不行", () => {
     expect(supportsVideo("Map")).toBe(true);
-    expect(supportsVideo("SceneObject")).toBe(true);
+    expect(supportsVideo("Texture")).toBe(true);
+    expect(supportsVideo("SceneObject")).toBe(false);
     expect(supportsVideo("PlaySound")).toBe(false);
     expect(supportsVideo("Teleport")).toBe(false);
     expect(supportsVideo("Player")).toBe(false);
@@ -89,7 +95,7 @@ describe("视频：哪些对象能带", () => {
     expect(DEFAULT_VIDEO_AUDIO).toBe(false);
   });
 
-  it("非地图 / 精灵对象上的视频命令一律不生效（返回 false，也不补字段）", () => {
+  it("非地图 / 贴图对象上的视频命令一律不生效（返回 false，也不补字段）", () => {
     const scene = sceneWith([createSoundObject({ name: "脚步", id: "s1" })]);
 
     expect(
@@ -265,13 +271,13 @@ describe("视频命令：循环与声音开关", () => {
     ).toBe(scene);
   });
 
-  it("精灵与地图一样能带视频（两个宿主同一套）", () => {
-    const scene = mutate(sceneWith([spriteObject()]), (draft) => {
-      setVideoClips(draft, "sprite-1", [CLIP_A]);
-      setVideoPicked(draft, "sprite-1", CLIP_A);
+  it("贴图与地图一样能带视频（两个宿主同一套）", () => {
+    const scene = mutate(sceneWith([textureObject()]), (draft) => {
+      setVideoClips(draft, "tex-1", [CLIP_A]);
+      setVideoPicked(draft, "tex-1", CLIP_A);
     });
 
-    expect(videoDataOf(objectOf(scene, "sprite-1")!)).toEqual({
+    expect(videoDataOf(objectOf(scene, "tex-1")!)).toEqual({
       enabled: true,
       clips: [CLIP_A],
       picked: CLIP_A,
@@ -354,17 +360,17 @@ describe("视频命令：总开关（启用）", () => {
   });
 
   it("重新打开：列表 / 循环 / 声音都原样回来", () => {
-    const scene = mutate(sceneWith([spriteObject()]), (draft) => {
-      setVideoClips(draft, "sprite-1", [CLIP_B]);
-      setVideoAudio(draft, "sprite-1", true);
-      setVideoEnabled(draft, "sprite-1", false);
+    const scene = mutate(sceneWith([textureObject()]), (draft) => {
+      setVideoClips(draft, "tex-1", [CLIP_B]);
+      setVideoAudio(draft, "tex-1", true);
+      setVideoEnabled(draft, "tex-1", false);
     });
 
     const reopened = mutate(scene, (draft) => {
-      expect(setVideoEnabled(draft, "sprite-1", true)).toBe(true);
+      expect(setVideoEnabled(draft, "tex-1", true)).toBe(true);
     });
 
-    expect(videoDataOf(objectOf(reopened, "sprite-1")!)).toEqual({
+    expect(videoDataOf(objectOf(reopened, "tex-1")!)).toEqual({
       enabled: true,
       clips: [CLIP_B],
       picked: CLIP_B,
@@ -375,9 +381,9 @@ describe("视频命令：总开关（启用）", () => {
 });
 
 describe("视频：文档校验", () => {
-  it("非地图 / 精灵带 video：只报警告（字段会被忽略）", () => {
+  it("非地图 / 贴图带 video：只报警告（字段会被忽略）", () => {
     const scene = mutate(sceneWith([createSoundObject({ name: "脚步", id: "s1" })]), (draft) => {
-      // v19 起「带视频」= 挂着 VideoOverlay 组件（kind 不是地图 / 精灵时校验会提醒）
+      // v19 起「带视频」= 挂着 VideoOverlay 组件（kind 不是地图 / 贴图时校验会提醒）
       draft.objects[0]?.components.push(
         featureComponent("s1", FEATURE_COMPONENT.video, {
           enabled: true,
@@ -390,7 +396,27 @@ describe("视频：文档校验", () => {
     });
 
     expect(hasErrors(validateScene(scene))).toBe(false);
-    expect(formatIssues(validateScene(scene))).toMatch(/只有地图与精灵能放视频/);
+    expect(formatIssues(validateScene(scene))).toMatch(/只有地图与贴图能放视频/);
+  });
+
+  it("精灵身上的旧 video 组件：只报警告，组件数据不删（不静默改用户数据）", () => {
+    const scene = mutate(sceneWith([spriteObject()]), (draft) => {
+      draft.objects[0]?.components.push(
+        featureComponent("sprite-1", FEATURE_COMPONENT.video, {
+          enabled: true,
+          clips: [CLIP_A],
+          picked: CLIP_A,
+          loop: false,
+          audio: false,
+        }),
+      );
+    });
+
+    expect(hasErrors(validateScene(scene))).toBe(false);
+    expect(formatIssues(validateScene(scene))).toMatch(/只有地图与贴图能放视频/);
+    expect(scene.objects[0]?.components.some((item) => item.type === FEATURE_COMPONENT.video)).toBe(
+      true,
+    );
   });
 
   it("空条目 / 选中的不在列表 / 空名字 / 孤儿名字：各一条警告", () => {
@@ -416,12 +442,12 @@ describe("视频：文档校验", () => {
   });
 
   it("干净的视频配置没有一句警告", () => {
-    const scene = mutate(sceneWith([mapObject(), spriteObject()]), (draft) => {
+    const scene = mutate(sceneWith([mapObject(), textureObject()]), (draft) => {
       setVideoClips(draft, "map-1", [CLIP_A]);
       setVideoClipName(draft, "map-1", CLIP_A, "开场");
-      setVideoClips(draft, "sprite-1", [CLIP_B]);
-      setVideoLoop(draft, "sprite-1", true);
-      setVideoAudio(draft, "sprite-1", true);
+      setVideoClips(draft, "tex-1", [CLIP_B]);
+      setVideoLoop(draft, "tex-1", true);
+      setVideoAudio(draft, "tex-1", true);
     });
 
     expect(formatIssues(validateScene(scene))).not.toMatch(/视频/);
@@ -440,14 +466,14 @@ describe("视频：格式版本", () => {
   });
 
   it("手写的 video 少写 enabled / loop / audio：schema 补上默认值（开着、不循环、静音）", () => {
-    const object = spriteObject();
+    const object = textureObject();
     const load = parseSceneFile({
       formatVersion: DOCUMENT_FORMAT_VERSION,
       objects: [
         {
           ...object,
           components: [
-            featureComponent("sprite-1", FEATURE_COMPONENT.video, {
+            featureComponent("tex-1", FEATURE_COMPONENT.video, {
               clips: [CLIP_A],
               picked: CLIP_A,
             }),

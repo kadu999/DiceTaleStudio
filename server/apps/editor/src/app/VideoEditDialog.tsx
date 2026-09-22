@@ -7,7 +7,7 @@ import { assetDisplayPath, listVideoAssets } from "../panels/asset-picker";
 import { VideoPickerDialog } from "./VideoPickerDialog";
 
 /**
- * 「编辑视频」窗口：给这个地图 / 精灵**加 / 删视频**，并给每个文件起个显示名。
+ * 「编辑视频」窗口：给这个地图 / 贴图**加 / 删视频**，并给每个文件起个显示名。
  *
  * 为什么要有窗口：属性面板上只放得下「一排小方块」（决定放哪条），而加素材、改名这些事
  * **必须挨着路径做**——面板太窄，看不到路径就不知道源文件是哪个。所以两边的分工是：

@@ -1,7 +1,7 @@
 /**
  * 编辑器状态（**组装点**）。
  *
- * 这个文件只做两件事：把初始状态与 15 个切片拼成一个 store，再把公开 API 原样再导出。
+ * 这个文件只做两件事：把初始状态与 16 个切片拼成一个 store，再把公开 API 原样再导出。
  * 「东西在哪」看这张表：
  *
  * | 想知道什么 | 去哪看 |
@@ -39,6 +39,7 @@ import { createAudioMetaSlice } from "./slices/audio-meta-slice";
 import { createTeleportSlice } from "./slices/teleport-slice";
 import { createGridPaintSlice } from "./slices/grid-paint-slice";
 import { createFogSlice } from "./slices/fog-slice";
+import { createSpriteSlice } from "./slices/sprite-slice";
 
 /**
  * **组装**：初始状态 + 各切片；每个切片就是一份显式列出的
@@ -66,6 +67,7 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
     ...createTeleportSlice(set, get, ctx),
     ...createGridPaintSlice(set, get, ctx),
     ...createFogSlice(set, get, ctx),
+    ...createSpriteSlice(set, get, ctx),
   };
 });
 

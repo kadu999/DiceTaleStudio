@@ -2,11 +2,13 @@
 import type { Draft } from "immer";
 // 全局设置的缺省值（形状 + 默认值都住在 schema 里）：命令在遇到缺字段的手搭文档时补一份可用的
 import { defaultAudioSettings, defaultProjectSettings } from "../schema";
+import { isTrivialSpriteSheet, normalizeSpriteSheet } from "../sprites";
 import type {
   AudioMetaDoc,
   AudioTagTableDoc,
   ProjectDoc,
   ProjectSettingsDoc,
+  SpriteSheetDoc,
 } from "../types";
 
 // ---------------------------------------------------------------- 项目级全局设置：三档音量
@@ -366,5 +368,62 @@ export function deleteAudioTag(project: Draft<ProjectDoc>, tagId: number): boole
     delete project.audioTags;
   }
 
+  return true;
+}
+
+// ---------------------------------------------------------------- 项目级数据：图片切分（精灵表）
+
+/**
+ * 改一张图的**切分**（`图片逻辑 ID → 列×行`）；`null` = 恢复整图。
+ *
+ * 这是「一张图按几行几列切」的**唯一一份**数据：对象身上只有「引用哪张图 + 第几格」，
+ * 所以改这里 = 所有引用它的对象一起变（对齐 Unity：Sprite 的矩形住在资源自己的导入设置里）。
+ *
+ * 三条收拾规矩：
+ * - 行列取整 + 夹到 `1..SPRITE_SHEET_MAX`（坏数字不该让整张图集画不出来）；
+ * - **`1×1` = 整图**，与 `null` 一样**把表项删掉**（不留空壳，与 `audioMeta` / `video` 同一个口径）；
+ * - 整个表空了就把字段删掉。
+ *
+ * 已经在用它的对象**不在这里动**：格子越界由渲染与推送统一夹到最后一格（那要跨到场景那条
+ * 撤销轨道去改对象，一次操作落在两条轨道上会让撤销说不清）。值没变返回 `false`。
+ */
+export function setSpriteSheet(
+  project: Draft<ProjectDoc>,
+  imageId: string,
+  sheet: SpriteSheetDoc | null,
+): boolean {
+  const id = imageId.trim();
+  if (id.length === 0) {
+    return false;
+  }
+
+  const current = project.spriteSheets?.[id];
+  const next = sheet === null ? null : normalizeSpriteSheet(sheet);
+  // 1×1 = 整图：与 `null` 一样按「把这一项删掉」处理
+  const removing = next === null || isTrivialSpriteSheet(next);
+
+  if (removing) {
+    if (current === undefined) {
+      // 本来就按整图算（没这项）：什么都没变
+      return false;
+    }
+
+    delete project.spriteSheets?.[id];
+    if (project.spriteSheets !== undefined && Object.keys(project.spriteSheets).length === 0) {
+      delete project.spriteSheets;
+    }
+
+    return true;
+  }
+
+  if (current !== undefined && current.columns === next.columns && current.rows === next.rows) {
+    return false;
+  }
+
+  if (project.spriteSheets === undefined) {
+    project.spriteSheets = {};
+  }
+
+  project.spriteSheets[id] = next;
   return true;
 }

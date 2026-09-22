@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { Group, Panel, Separator } from "react-resizable-panels";
-import { objectImage } from "@dts/document";
+import { objectImage, supportsSpriteSheet } from "@dts/document";
 import { useCompactLayout } from "../hooks/useMediaQuery";
 import { useEditorStore } from "../state/editor-store";
 import { LeftPanel } from "../panels/LeftPanel";
@@ -56,7 +56,7 @@ export function EditorShell(): React.JSX.Element {
   const gridEditor = useEditorStore((state) => state.gridEditor);
   const gridEditorTarget = useEditorStore((state) => state.gridEditorTarget);
   const openGridEditor = useEditorStore((state) => state.openGridEditor);
-  const setObjectImage = useEditorStore((state) => state.setObjectImage);
+  const setObjectImageSprite = useEditorStore((state) => state.setObjectImageSprite);
   const setTool = useEditorStore((state) => state.setTool);
   const cancelObjectTransform = useEditorStore((state) => state.cancelObjectTransform);
   const openSceneByIndex = useEditorStore((state) => state.openSceneByIndex);
@@ -268,14 +268,18 @@ export function EditorShell(): React.JSX.Element {
 
       <StatusBar />
 
-      {/* 选择图片：从项目已有的图片里挑（编辑器不导入素材） */}
+      {/* 选择贴图 / 精灵：从项目已有的图片里挑（编辑器不导入素材）。
+          右侧切分面板只对**精灵**出现（`supportsSpriteSheet`）——贴图与地图都只显示整张图 */}
       <ImagePickerDialog
         open={imagePicker && pickerTarget !== undefined}
         currentId={pickerTarget === undefined ? undefined : objectImage(pickerTarget)?.id}
+        currentSprite={pickerTarget === undefined ? undefined : objectImage(pickerTarget)?.sprite}
+        allowSprite={pickerTarget !== undefined && supportsSpriteSheet(pickerTarget.kind)}
         onClose={() => openImagePicker(null)}
-        onPick={(image) => {
+        onPick={(image, sprite) => {
           if (imagePickerTarget !== null) {
-            setObjectImage(imagePickerTarget, image);
+            // 图 + 格子一次写进去（同一条撤销记录）
+            setObjectImageSprite(imagePickerTarget, image, sprite);
           }
 
           openImagePicker(null);
@@ -296,7 +300,7 @@ export function EditorShell(): React.JSX.Element {
         onClose={() => openTeleportEditor(null)}
       />
 
-      {/* 编辑视频：地图 / 精灵的视频列表（放哪条在属性面板上点小方块选） */}
+      {/* 编辑视频：地图 / 贴图的视频列表（放哪条在属性面板上点小方块选） */}
       <VideoEditDialog
         open={videoEditor && videoEditorTarget !== null}
         objectId={videoEditorTarget}

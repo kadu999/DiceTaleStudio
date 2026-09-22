@@ -57,12 +57,24 @@ import { z } from "zod";
  *
  * v9（2026-09-22）：**对象特性搬进组件**（与文档格式 v19 同一批）。`sceneObjectSchema` 上
  * `map` / `image` / `sound` / `teleport` / `video` 这 5 个扁平字段没了，改成 `components[]` 里的
- * 组件实例（`GridMap` / `TextureRenderer` / `PlaySound` / `Teleport` / `VideoOverlay`）。
+ * 组件实例（`GridMap` / `ImageLayer` / `SpriteLayer` / `PlaySound` / `Teleport` / `VideoOverlay`）。
  * 老前端按扁平字段读，迁移后的场景在它眼里会变成「一个什么都不带的空对象」（贴图、网格、
  * 声音、视频全丢），所以必须 +1，靠版本握手把它挡在连上的那一刻。
  * **命令那一组一个字节都没动**：`play_sound` 仍只带 `objectId` + `layer`，数据在镜像里。
+ *
+ * v10（2026-09-22）：**精灵（子图）**（与文档格式 v20 同一批）。贴图引用多了 `sprite`
+ * （取这张图里的第几格）与 `spriteGrid`（这张图几列几行）两项，前端据此只画那一块矩形。
+ * 两项都是可选的，老前端（v9）会**静默把整张图集铺出来**——不是崩，是画面错，所以照旧 +1：
+ * 服务端与 Unity 客户端必须同批更新。
+ * **命令那一组仍然一个字节都没动**（子图是数据，不是新动作）。
+ *
+ * v11（2026-09-23）：**图片组件改名 + 多一个「贴图」对象**（与文档格式 v21 同一批）。
+ * 对象自己显示的图从一种组件（`TextureRenderer`）拆成两种——贴图 `ImageLayer`、精灵
+ * `SpriteLayer`；`kind` 多了一个 `Texture`（**kind 是自由字符串，这一项不破坏兼容**）。
+ * 老前端（v10）不认这两个新组件名，会把对象画成占位色（图取不到），所以必须 +1。
+ * **命令那一组仍然一个字节都没动。**
  */
-export const PROTOCOL_VERSION = 9;
+export const PROTOCOL_VERSION = 11;
 
 /** 未进入运行态时拒绝 `/client` 升级的 HTTP 状态与原因头。 */
 export const RUNTIME_INACTIVE_STATUS = 503;
@@ -86,12 +98,59 @@ export const worldPositionSchema = z.object({
   y: z.number(),
 });
 
-/** 图片引用：资源逻辑 ID + 声明的宽高（世界像素；实际尺寸 = 声明尺寸 × 对象 scale）。 */
-export const imageRefSchema = z.object({
-  id: z.string().min(1),
-  width: z.number().int().positive(),
-  height: z.number().int().positive(),
+/** 图片里的一格（v10 起）：`column` 从左数（0 起）、`row` **从最上数**（0 起）。 */
+export const spriteRefSchema = z.object({
+  column: z.number().int().nonnegative(),
+  row: z.number().int().nonnegative(),
 });
+
+/**
+ * 一张图的切分上限（列与行各自的上限）。
+ *
+ * 与 `@dts/document` 的 `SPRITE_SHEET_MAX` **同值**：`protocol` 是被三端共用的最底层包，
+ * 不能反过来依赖文档包，所以这里复刻一份（与 `DEFAULT_*_VOLUME` 同一套做法），
+ * 由 `apps/backend/test/protocol-document-contract.test.ts` 断言两边一致。
+ */
+export const SPRITE_SHEET_MAX = 64;
+
+/** 一张图的切分（v10 起）：几列几行。`1×1` = 整图。 */
+export const spriteGridSchema = z.object({
+  columns: z.number().int().min(1).max(SPRITE_SHEET_MAX),
+  rows: z.number().int().min(1).max(SPRITE_SHEET_MAX),
+});
+
+/**
+ * 图片引用：资源逻辑 ID + 声明的宽高（世界像素；实际尺寸 = 声明尺寸 × 对象 scale）。
+ *
+ * v10 起多了**精灵（子图）**两项，它们是一对：
+ * - `sprite`：取这张图里的第几格（缺省 = 整张图，与 v9 完全同义）；
+ * - `spriteGrid`：那张图的切分（几列几行）。
+ *
+ * **`spriteGrid` 是协议侧多出来的一项**：切分在编辑器那边只有一份（工程文件里的
+ * `spriteSheets`），而前端手上没有工程文件——所以编辑器在推送时把它解析进载荷里
+ * （见 `apps/editor/src/services/runtime-push.ts` 的 `scenePayloadOf`）。
+ * 前端据此算 UV，不必知道「工程文件」这个概念。
+ *
+ * 老前端（v9）不认这两项，会把整张图集当成一张图铺出来——那是**可见的错误**，
+ * 所以 `PROTOCOL_VERSION` 跟着 +1，靠握手把它挡在连上的那一刻。
+ */
+export const imageRefSchema = z
+  .object({
+    id: z.string().min(1),
+    width: z.number().int().positive(),
+    height: z.number().int().positive(),
+    sprite: spriteRefSchema.optional(),
+    spriteGrid: spriteGridSchema.optional(),
+  })
+  // 格子必须落在切分范围内：编辑器推送前统一夹过（`clampSpriteCell`），所以越界只可能是
+  // 坏载荷——这里明确拒掉，别让前端算出画到图外的 UV
+  .refine(
+    (image) =>
+      image.sprite === undefined ||
+      image.spriteGrid === undefined ||
+      (image.sprite.column < image.spriteGrid.columns && image.sprite.row < image.spriteGrid.rows),
+    { message: "子图超出切分范围" },
+  );
 
 /** RLE 一段：`[掩码, 连续格数]`（掩码值与 `@dts/grid` 的 `CellMask` 一致）。 */
 export const rleRunSchema = z.tuple([z.number().int(), z.number().int()]);
@@ -229,7 +288,10 @@ export const projectSettingsSchema = z.object({
  */
 export const COMPONENT_TYPE = {
   map: "GridMap",
-  image: "TextureRenderer",
+  /** 对象自己显示的图：**贴图对象**用它（整张铺满）。 */
+  image: "ImageLayer",
+  /** 对象自己显示的图：**精灵对象**用它（会取图集里的一格）。与 `image` 同一份 `imageRefSchema`。 */
+  sprite: "SpriteLayer",
   sound: "PlaySound",
   teleport: "Teleport",
   video: "VideoOverlay",
@@ -238,11 +300,12 @@ export const COMPONENT_TYPE = {
 /**
  * 一个组件实例（v9）。
  *
- * 从对象特性提升上来的 5 种按各自 schema 校验；其余类型（前端组件体系那 7 种、以及
- * 将来的自定义组件）走宽松分支：`data` 是任意记录。未知类型**不报错**是有意的——
+ * 从对象特性提升上来的 6 种按各自 schema 校验（`image` 那一份有 `ImageLayer` / `SpriteLayer`
+ * 两个名字，形状一样）；其余类型（前端组件体系那 7 种、以及将来的自定义组件）走宽松分支：
+ * `data` 是任意记录。未知类型**不报错**是有意的——
  * 编辑器加一个新组件时，老前端应当照常镜像其余数据，而不是整条场景消息被判非法。
  *
- * 「宽松」那一支**必须把 5 个已知名排除掉**：否则一个 data 写坏的 `GridMap` 会掉进这里
+ * 「宽松」那一支**必须把已知名排除掉**：否则一个 data 写坏的 `GridMap` 会掉进这里
  * 被当成「未知类型」收下，严格校验就形同虚设。
  */
 const TYPED_COMPONENT_NAMES: readonly string[] = Object.values(COMPONENT_TYPE);
@@ -276,10 +339,12 @@ function featureComponentSchema<T extends z.ZodTypeAny>(
   });
 }
 
-/** 场景对象上的组件：5 种特性组件按各自形状校验，其余宽松。 */
+/** 场景对象上的组件：6 种特性组件按各自形状校验，其余宽松。 */
 export const sceneComponentSchema = z.union([
   featureComponentSchema(COMPONENT_TYPE.map, mapDataSchema),
+  // 对象自己显示的图有两种承载（贴图 `ImageLayer` / 精灵 `SpriteLayer`），形状都是 `imageRefSchema`
   featureComponentSchema(COMPONENT_TYPE.image, imageRefSchema),
+  featureComponentSchema(COMPONENT_TYPE.sprite, imageRefSchema),
   featureComponentSchema(COMPONENT_TYPE.sound, soundDataSchema),
   featureComponentSchema(COMPONENT_TYPE.teleport, teleportDataSchema),
   featureComponentSchema(COMPONENT_TYPE.video, videoDataSchema),
@@ -289,7 +354,8 @@ export const sceneComponentSchema = z.union([
 /**
  * 场景对象（三端同构的那一个对象）。
  *
- * `kind`：`Map` / `SceneObject` / `Player` / `Item` / `Event` / `PlaySound` / `Teleport`。
+ * `kind`：`Map` / `SceneObject` / `Player` / `Item` / `Event` / `PlaySound` / `Teleport` / `Texture`。
+ * 它是**自由字符串**（不是枚举）：加一种对象类型不需要动协议，老前端照常镜像。
  * **v9 起 `kind` 只是「创建原型」标签**（列表归类、占位色），**不再决定行为**：
  * 「这个对象有什么」全看 `components`——前端据此决定建不建可见物、建哪几层。
  * `position` 为 null = 还没落位（前端不建可见物，与编辑器画布口径一致）。
@@ -312,9 +378,10 @@ export const sceneObjectSchema = z.object({
   /**
    * 对象身上挂的组件（v9 起）。
    *
-   * 前端按 `type` 分派：`GridMap` → 地图面片 + 网格 + 战争雾；`TextureRenderer` → 贴图；
-   * `PlaySound` / `Teleport` → **不建可见物**（数据留在镜像里，命令要用）；
-   * `VideoOverlay` → 运行时建视频层。不认识的类型忽略即可（数据仍留在镜像里）。
+   * 前端按 `type` 分派：`GridMap` → 地图面片 + 网格 + 战争雾；`ImageLayer`（贴图对象）/
+   * `SpriteLayer`（精灵对象）→ 那张图的显示层；`PlaySound` / `Teleport` → **不建可见物**
+   * （数据留在镜像里，命令要用）；`VideoOverlay` → 运行时建视频层。
+   * 不认识的类型忽略即可（数据仍留在镜像里）。
    *
    * 缺省给 `[]`：一份「什么都没有的对象」是合法状态，而**缺字段**在老编辑器 / 手写载荷里
    * 也可能出现，为此判整条消息非法不值得（对比 `scale` 那几项同一套取舍）。
@@ -349,9 +416,14 @@ export function componentDataOf<T = Record<string, unknown>>(
 export function resourceIdsOfObject(object: SceneObjectPayload): readonly string[] {
   const ids: string[] = [];
 
-  const image = componentDataOf<{ id?: string }>(object, COMPONENT_TYPE.image);
-  if (image?.id !== undefined) {
-    ids.push(image.id);
+  // 对象自己显示的图有两种承载：贴图 `ImageLayer` / 精灵 `SpriteLayer`
+  // （v10 及更早统一叫 `TextureRenderer`，v21 起拆开）——**两种都要扫**，
+  // 只扫一种会让装了精灵的场景不下发它引用的那张图。
+  for (const type of [COMPONENT_TYPE.image, COMPONENT_TYPE.sprite]) {
+    const image = componentDataOf<{ id?: string }>(object, type);
+    if (image?.id !== undefined) {
+      ids.push(image.id);
+    }
   }
 
   const map = componentDataOf<{ image?: { id?: string } }>(object, COMPONENT_TYPE.map);

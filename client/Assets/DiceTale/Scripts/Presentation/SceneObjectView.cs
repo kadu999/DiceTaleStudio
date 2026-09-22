@@ -11,14 +11,14 @@ namespace DiceTale
     ///   所以根节点可以自由平移 / 旋转 / **缩放**，整棵场景一起变，不用逐个改世界坐标；
     /// - 大小 = 声明尺寸（`image` / `map.image`）× `scale` × **<see cref="GlobalScale"/>**
     ///   ——后者是「文档像素 → 世界单位」的全局换算，位置也乘它；
-    ///   尺寸由 <see cref="TextureRenderer"/> 烘进网格顶点，本组件**不碰 `localScale`**
+    ///   尺寸由 <see cref="ImageLayer"/> 烘进网格顶点，本组件**不碰 `localScale`**
     ///   （保持 1，这样根节点的缩放才是唯一影响整体大小的因素）；
     /// - `active` = 是否显示（编辑器那个勾选框一改，这里就出现 / 消失）；
     /// - `sortingOrder` = 遮挡顺序（大的盖在上面）；
     /// - 有图就去取图贴上（本地资源包优先）；没图（或还没取回来）先用按 `kind` 区分的底色占位，
     ///   **保证每个对象都看得见**。
     ///
-    /// 面片本身由 <see cref="TextureRenderer"/> 画——它只认运行时纹理，
+    /// 面片本身由 <see cref="ImageLayer"/> 画——它只认运行时纹理，
     /// 因为镜像的图来自后台推下来的资源 ID，不是 Inspector 里拖的 Sprite。
     ///
     /// **动作对象不建视图**：`PlaySound` / `Teleport` 只是「一条给前端的指令」（要播哪条声音、
@@ -84,7 +84,7 @@ namespace DiceTale
         /// </summary>
         private const float VideoLift = 0.0015f;
 
-        private TextureRenderer quad;
+        private ImageLayer quad;
         private ResourceImageLoader imageLoader;
 
         /// <summary>这张对象的地图数据（仅 `Map`；`fogEnabled` 且 `map.fog.regions` 非空时才会建雾层）。</summary>
@@ -113,10 +113,19 @@ namespace DiceTale
         private float currentHeight = FallbackSize;
 
         /// <summary>
+        /// 这一帧要取的 UV 矩形（`x, y` = 左下角、`z, w` = 宽高）；整张图时是 `(0,0,1,1)`。
+        ///
+        /// 由对象数据里的**子图**算出来（<see cref="SpriteLayer.UvRectOf"/>）——
+        /// **地图也能带**（手写文件里可能出现），所以这里不判 kind：编辑器那边已经保证不写，
+        /// 而前端「收到的就是事实」（多认一种形状没有坏处）。
+        /// </summary>
+        private Vector4 currentUvRect = new Vector4(0f, 0f, 1f, 1f);
+
+        /// <summary>
         /// 这种对象在前端**要不要建视图**（连 GameObject 都不该建的那种返回 `false`）。
         ///
         /// **判据是组件，不是 `kind`**（协议 v9 起）：
-        /// - 有 `GridMap` 或 `TextureRenderer` → 当然要画；
+        /// - 有 `GridMap` 或 `ImageLayer` / `SpriteLayer`（对象自己那张图）→ 当然要画；
         /// - 都没有时，**只有「动作对象」不建**——它们只带 `PlaySound` / `Teleport` 的数据
         ///   （声音靠命令播、传送靠编辑器换场景），一个 GameObject 都不该建；
         /// - 其余（玩家 / 道具 / 事件 / 还没挑图的精灵）**仍要一块占位色面片**，
@@ -147,7 +156,13 @@ namespace DiceTale
             go.transform.SetParent(parent, false);
             var view = go.AddComponent<SceneObjectView>();
             view.imageLoader = loader;
-            view.quad = go.AddComponent<TextureRenderer>();
+            // 显示组件分派（v21）：精灵挂 SpriteLayer（取图集里的一格、UV 内缩半纹素防渗色），
+            // 贴图 / 地图 / 占位对象挂 ImageLayer（整张铺满）。判据优先认 hasSpriteLayer
+            // （解析器见到 SpriteLayer 组件就置位，精灵没挑格子时 sprite 可能还是 null）；
+            // 旧载荷缺这一位时退回 image.sprite 兜底——数据里带了子图的按精灵对待。
+            view.quad = obj.hasSpriteLayer || obj.image?.sprite != null
+                ? go.AddComponent<SpriteLayer>()
+                : go.AddComponent<ImageLayer>();
             return view;
         }
 
@@ -181,6 +196,9 @@ namespace DiceTale
             currentWidth = (image != null && image.width > 0 ? image.width : FallbackSize) * obj.scale;
             currentHeight = (image != null && image.height > 0 ? image.height : FallbackSize) * obj.scale;
             currentImageId = image != null ? image.id : "";
+            // 子图：只取那一块（`null` = 整张，与 v9 同义）。**尺寸不进这里**——
+            // 面片大小仍由声明尺寸 × scale 决定，换格子只换「取哪一块像素」
+            currentUvRect = SpriteLayer.UvRectOf(image != null ? image.sprite : null);
             currentKindColor = KindColor(obj.kind);
             currentSortingOrder = obj.sortingOrder;
             currentMap = obj.map;
@@ -236,6 +254,8 @@ namespace DiceTale
 
             // 声明尺寸（× 对象 scale）先乘全局缩放折成世界单位，再交给渲染器**烘进网格顶点**——
             // 这里不碰 transform.localScale（尺寸只有一个来源，网格自己）。
+            // **子图（v10）**：只取纹理里那一块（`currentUvRect` 由数据里的格子算好）；
+            // 整张图时它是 (0,0,1,1)，与 v9 的老行为逐字一样。
             var scale = GlobalScale;
             var lift = LiftFor(currentSortingOrder);
             quad.Apply(
@@ -244,7 +264,8 @@ namespace DiceTale
                 currentHeight * scale,
                 hasTexture ? Color.white : currentKindColor,
                 currentSortingOrder,
-                lift);
+                lift,
+                currentUvRect);
 
             ApplyFog(lift);
             ApplyVideoGeometry(lift);
@@ -459,8 +480,15 @@ namespace DiceTale
             {
                 case "Map":
                     return new Color(0.25f, 0.35f, 0.30f, 0.85f);
+                // 精灵与贴图分开（v21）：两者都显示一张图，差别是精灵取图集里的一格。
+                // 占位色只在这一张图还没取回来的那几百毫秒里看得见，但它是「这个对象是什么」的唯一提示
+                case "SceneObject":
+                    return new Color(0.31f, 0.61f, 0.98f, 0.85f);
+                case "Texture":
+                    return new Color(0.75f, 0.52f, 0.99f, 0.85f);
                 case "Player":
-                    return new Color(0.30f, 0.55f, 0.90f, 0.85f);
+                    // 橙：与精灵的蓝（0.31,0.61,0.98）、贴图的紫、道具的黄都拉开
+                    return new Color(0.95f, 0.55f, 0.10f, 0.85f);
                 case "Item":
                     return new Color(0.95f, 0.80f, 0.20f, 0.85f);
                 case "Event":

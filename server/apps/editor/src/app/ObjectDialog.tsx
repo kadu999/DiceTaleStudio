@@ -1,14 +1,14 @@
 import { useEffect, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { nextObjectName, type ObjectKind, type SceneObjectDoc } from "@dts/document";
+import { nextObjectName, type SceneObjectDoc } from "@dts/document";
 import { kindMarkerColor } from "@dts/renderer";
 import { useEditorStore } from "../state/editor-store";
 import {
   DEFAULT_CATEGORY,
-  KIND_LABELS,
   OBJECT_CATEGORIES,
   creatableObjects,
   type ObjectCategoryDef,
+  type ObjectTypeDef,
 } from "../panels/object-kinds";
 
 /**
@@ -27,8 +27,10 @@ export function ObjectDialog({ open, onClose }: ObjectDialogProps): React.JSX.El
   const createObject = useEditorStore((state) => state.createObject);
 
   const [category, setCategory] = useState<ObjectCategoryDef>(DEFAULT_CATEGORY);
-  const [selected, setSelected] = useState<ObjectKind | null>(
-    creatableObjects(DEFAULT_CATEGORY)[0]?.kind ?? null,
+  // **按类型（`ObjectTypeDef`）选，不按 kind**：实体下「精灵」与「贴图」是两个类型，
+  // 用 kind 当选中态会让两个瓦片一起亮
+  const [selected, setSelected] = useState<ObjectTypeDef | null>(
+    creatableObjects(DEFAULT_CATEGORY)[0] ?? null,
   );
   const [name, setName] = useState("");
   const [error, setError] = useState("");
@@ -42,6 +44,13 @@ export function ObjectDialog({ open, onClose }: ObjectDialogProps): React.JSX.El
     return state.scenes.find((scene) => scene.name === state.activeSceneName)?.objects ?? [];
   };
 
+  /** 选中某个类型：预填名按**它自己的展示名**（精灵 → 「精灵 2」、贴图 → 「贴图 2」）。 */
+  const chooseObject = (type: ObjectTypeDef): void => {
+    setSelected(type);
+    setName(nextObjectName(sceneObjects(), type.label));
+    setError("");
+  };
+
   // 每次打开都重置回默认种类
   useEffect(() => {
     if (!open) {
@@ -50,22 +59,16 @@ export function ObjectDialog({ open, onClose }: ObjectDialogProps): React.JSX.El
 
     const first = creatableObjects(DEFAULT_CATEGORY)[0];
     setCategory(DEFAULT_CATEGORY);
-    setSelected(first?.kind ?? null);
-    setName(first === undefined ? "" : nextObjectName(sceneObjects(), KIND_LABELS[first.kind]));
+    setSelected(first ?? null);
+    setName(first === undefined ? "" : nextObjectName(sceneObjects(), first.label));
     setError("");
   }, [open]);
 
   const chooseCategory = (next: ObjectCategoryDef): void => {
     const first = creatableObjects(next)[0];
     setCategory(next);
-    setSelected(first?.kind ?? null);
-    setName(first === undefined ? "" : nextObjectName(sceneObjects(), KIND_LABELS[first.kind]));
-    setError("");
-  };
-
-  const chooseObject = (kind: ObjectKind): void => {
-    setSelected(kind);
-    setName(nextObjectName(sceneObjects(), KIND_LABELS[kind]));
+    setSelected(first ?? null);
+    setName(first === undefined ? "" : nextObjectName(sceneObjects(), first.label));
     setError("");
   };
 
@@ -74,7 +77,7 @@ export function ObjectDialog({ open, onClose }: ObjectDialogProps): React.JSX.El
       return;
     }
 
-    const reason = await createObject(selected, name);
+    const reason = await createObject(selected.kind, name);
     if (reason === undefined) {
       onClose();
     } else {
@@ -124,25 +127,25 @@ export function ObjectDialog({ open, onClose }: ObjectDialogProps): React.JSX.El
               </div>
             ) : (
               <div className="grid grid-cols-5 gap-2">
-                {options.map(({ kind }) => (
+                {options.map((type) => (
                   <button
-                    key={kind}
+                    key={type.id}
                     type="button"
-                    data-testid={`object-type-${kind}`}
-                    data-selected={kind === selected}
-                    aria-pressed={kind === selected}
+                    data-testid={`object-type-${type.id}`}
+                    data-selected={type.id === selected?.id}
+                    aria-pressed={type.id === selected?.id}
                     className={`flex aspect-square flex-col items-center justify-center gap-1.5 rounded border px-1 text-[11px] ${
-                      kind === selected
+                      type.id === selected?.id
                         ? "border-[var(--color-editor-accent)] bg-[var(--color-editor-accent-dim)] text-white"
                         : "border-[var(--color-editor-border)] hover:bg-[var(--color-editor-panel-alt)]"
                     }`}
-                    onClick={() => chooseObject(kind)}
+                    onClick={() => chooseObject(type)}
                   >
                     <span
                       className="h-7 w-7 flex-none rounded-full"
-                      style={{ background: kindMarkerColor(kind) }}
+                      style={{ background: kindMarkerColor(type.kind) }}
                     />
-                    <span className="text-center leading-tight">{KIND_LABELS[kind]}</span>
+                    <span className="text-center leading-tight">{type.label}</span>
                   </button>
                 ))}
               </div>

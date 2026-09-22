@@ -22,7 +22,7 @@ export type LeftTab = "assets" | "hierarchy";
  * 要有意制造「旧版本文件」时别用它：自己写那个版本号（`formatVersion: 4` 之类），
  * 并预期编辑器会把它升上来回写一次。
  */
-export const CURRENT_SCENE_FORMAT_VERSION = 19;
+export const CURRENT_SCENE_FORMAT_VERSION = 21;
 
 /**
  * **承载对象特性的组件类型名**（v19 起特性住在 `object.components[]` 里）。
@@ -30,7 +30,7 @@ export const CURRENT_SCENE_FORMAT_VERSION = 19;
  * | 旧扁平字段（v18 及更早） | 组件 `type` |
  * |---|---|
  * | `object.map` | `gridMap` |
- * | `object.image` | `textureRenderer` |
+ * | `object.image` | `imageLayer`（贴图）/ `spriteLayer`（精灵）——v21 起拆成两种 |
  * | `object.sound` | `playSound` |
  * | `object.teleport` | `teleport` |
  * | `object.video` | `videoOverlay` |
@@ -40,7 +40,10 @@ export const CURRENT_SCENE_FORMAT_VERSION = 19;
  */
 export const COMPONENT = {
   gridMap: "GridMap",
-  textureRenderer: "TextureRenderer",
+  /** 对象自己那张图：**贴图对象**用它（整张铺满）。 */
+  imageLayer: "ImageLayer",
+  /** 对象自己那张图：**精灵对象**用它（会取图集里的一格）。 */
+  spriteLayer: "SpriteLayer",
   playSound: "PlaySound",
   teleport: "Teleport",
   videoOverlay: "VideoOverlay",
@@ -420,6 +423,46 @@ export function solidPng(width: number, height: number, color: readonly [number,
     }
   }
 
+  return encodePng(raw, width, height);
+}
+
+/**
+ * 造一张**图集**样的 PNG：按「列 × 行」切成格子，每格一种颜色。
+ *
+ * `colors` 的顺序是**从左到右、从上到下**（与文档里子图的格序数同一个读法：
+ * `row: 0` 是最上面一行）——于是「选中第 (column, row) 格」该看到哪种颜色一眼可算。
+ *
+ * 用例用它断言**只画了那一格**：采样画布上各格子的位置，只有选中那一格的颜色出现。
+ * 缺的颜色补黑（越界不报错，反正测的是「画出来的是哪一块」）。
+ */
+export function colorGridPng(
+  columns: number,
+  rows: number,
+  colors: readonly (readonly [number, number, number])[],
+  cell = 32,
+): Buffer {
+  const width = columns * cell;
+  const height = rows * cell;
+  const raw = Buffer.alloc(height * (1 + width * 3));
+  for (let y = 0; y < height; y += 1) {
+    const rowStart = y * (1 + width * 3);
+    raw[rowStart] = 0;
+    const row = Math.floor(y / cell);
+    for (let x = 0; x < width; x += 1) {
+      const column = Math.floor(x / cell);
+      const color = colors[row * columns + column] ?? [0, 0, 0];
+      const at = rowStart + 1 + x * 3;
+      raw[at] = color[0];
+      raw[at + 1] = color[1];
+      raw[at + 2] = color[2];
+    }
+  }
+
+  return encodePng(raw, width, height);
+}
+
+/** 把「每行 1 个过滤器字节 + RGB」的原始像素编成 PNG（`solidPng` / `colorGridPng` 共用）。 */
+function encodePng(raw: Buffer, width: number, height: number): Buffer {
   const chunk = (type: string, payload: Buffer): Buffer => {
     const head = Buffer.alloc(4);
     head.writeUInt32BE(payload.length, 0);
@@ -481,12 +524,15 @@ export async function seedProjectDoc(
   request: APIRequestContext,
   project: string,
   scenes: readonly Record<string, unknown>[],
+  /** 额外塞进工程文件的**项目级数据**（如 v20 的 `spriteSheets` 切分表）。 */
+  projectPatch?: Record<string, unknown>,
 ): Promise<void> {
   // 工程文件：项目级数据，场景不在里面
   const doc = {
     formatVersion: 4,
     name: project,
     items: { source: "item.xlsx", updatedAt: "2026-09-18", count: 0, items: [] },
+    ...projectPatch,
   };
 
   const projectResponse = await request.put(
@@ -629,8 +675,11 @@ export async function readSceneFogRegions(
 }
 
 /**
- * 读场景文件里**某个对象**的视频配置（地图 / 精灵上的 `VideoOverlay`），按 `kind` 找——
+ * 读场景文件里**某个对象**的视频配置（**地图 / 贴图**上的 `VideoOverlay`），按 `kind` 找——
  * 不按数组下标：用例里对象顺序不是契约，`readSceneFog` 也是这么做的。
+ *
+ * 缺省找 `Map`（大多数用例是给地图配视频）。v21 起视频那一组的宿主是**地图与贴图**
+ * （精灵不再带），一个场景里两种宿主可以同时有视频——所以想读哪一个必须由调用方说清。
  *
  * 没加过视频就是 `undefined`——「没加」在文件里是**没有这个组件**（v18 及更早是没有
  * `video` 这个字段；见 `setVideoClips`）。
@@ -639,7 +688,7 @@ export async function readSceneVideo(
   request: APIRequestContext,
   project: string,
   sceneName: string,
-  kind: "Map" | "SceneObject" = "Map",
+  kind: "Map" | "Texture" = "Map",
 ): Promise<
   | {
       clips?: readonly string[];
@@ -811,6 +860,49 @@ export async function readProjectAudioTags(
   }
 
   return (JSON.parse(await response.text()) as { audioTags?: Array<string | null> }).audioTags;
+}
+
+/**
+ * 读工程文件里的**图片切分表**（`spriteSheets`，v20 起）：`图片逻辑 ID → { columns, rows }`。
+ *
+ * 这是「一张图按几行几列切」的**唯一一份**（对象身上只存「引用哪张图 + 第几格」），
+ * 所以断言「切分落在工程文件而不是场景文件」就用它。
+ */
+export async function readProjectSpriteSheets(
+  request: APIRequestContext,
+  project: string,
+): Promise<Record<string, { columns: number; rows: number }> | undefined> {
+  const id = `project:${project}/project.json`;
+  const response = await request.get(`/api/resources/text?id=${encodeURIComponent(id)}`);
+  if (!response.ok()) {
+    throw new Error(`读工程文件失败：HTTP ${response.status()}（${id}）`);
+  }
+
+  return (JSON.parse(await response.text()) as {
+    spriteSheets?: Record<string, { columns: number; rows: number }>;
+  }).spriteSheets;
+}
+
+/**
+ * 读某个对象显示的**子图引用**（`SpriteLayer` 的 `sprite`，v20 起）：`{ column, row }`。
+ *
+ * 没有子图（整张图）时返回 `undefined`——**对象身上只有格子引用**，「几行几列」在工程文件里。
+ */
+export async function readObjectSprite(
+  request: APIRequestContext,
+  project: string,
+  sceneName: string,
+  selector: { readonly objectId?: string; readonly kind?: string },
+): Promise<{ column: number; row: number } | undefined> {
+  const file = await readSceneFile(request, project, sceneName);
+  const object = findSceneObject(file, selector);
+  const data = objectComponentData(object, COMPONENT.spriteLayer);
+  const sprite = data?.["sprite"];
+  if (typeof sprite !== "object" || sprite === null) {
+    return undefined;
+  }
+
+  return sprite as { column: number; row: number };
 }
 
 /**

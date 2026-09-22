@@ -754,7 +754,7 @@ describe("对象命令（都在场景上操作）", () => {
       expect(setObjectImage(draft, "map-1", next)).toBe(true);
     });
     expect(mapDataOf(withMap.objects[0]!)?.image).toEqual(next);
-    // 地图的贴图住在 GridMap 里，没有单独的 TextureRenderer 组件
+    // 地图的贴图住在 GridMap 里，没有单独的图片层组件
     expect(imageOf(withMap.objects[0]!)).toBeUndefined();
 
     const withSprite = mutate(withObject(makeScene(), "sprite"), (draft) => {
@@ -1149,8 +1149,8 @@ describe("文档校验", () => {
 
   it("地图对象带多余的 object.image 时给警告（贴图只认 map.image）", () => {
     const scene = mutate(withMapObject(makeScene()), (draft) => {
-      // 地图不该有 TextureRenderer：贴图只认 GridMap 里的那一份（手写文件里可能挂着）
-      addComponent(draft, "map-1", FEATURE_COMPONENT.image, { id: "map-1__TextureRenderer" });
+      // 地图不该有 ImageLayer：贴图只认 GridMap 里的那一份（手写文件里可能挂着）
+      addComponent(draft, "map-1", FEATURE_COMPONENT.image, { id: "map-1__ImageLayer" });
     });
 
     const issues = validateScene(scene);

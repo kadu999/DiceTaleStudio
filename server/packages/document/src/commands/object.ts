@@ -1,12 +1,13 @@
 // 本文件从 `commands.ts` 拆出（纯搬运，行为不变）：对象级命令。
 import type { Draft } from "immer";
-import { FEATURE_COMPONENT, displayImageField } from "../features";
+import { FEATURE_COMPONENT, componentForKind, displayImageField } from "../features";
 // 特性的读写一律走访问器（「数据存在哪个组件里」只有 access.ts 知道）
 import { mapDataOf, objectImage, writeFeature } from "../access";
 import { DEFAULT_OBJECT_SCALE, clampObjectScale, collapseScale } from "../scale";
 import { DEFAULT_SORTING_ORDER, createId, findObject } from "./shared";
 import type {
   ImageRef,
+  ImageSpriteRef,
   ObjectKind,
   SceneDoc,
   SceneObjectDoc,
@@ -307,6 +308,11 @@ export function objectsInDrawOrder(scene: SceneDoc): SceneObjectDoc[] {
  * **只动贴图引用**：地图的网格尺寸不变（网格是**导入时**按贴图算好的，换图不该悄悄改动
  * 格子数——那会让已经画好的格子全部错位）；精灵没有别的尺寸可动，它在世界里的尺寸
  * 就是引用里声明的宽高。宽高由调用方从素材本身读出来，保证与真实像素一致。
+ *
+ * **换了一张图就丢掉旧的子图引用**（v20）：`sprite` 说的是「这张图集里的第几格」，
+ * 换图之后那格子指的是另一张图上的位置——留着只会画出莫名其妙的一块，所以一并清掉，
+ * 由调用方按需要再挑一格（同一个 id 再挑一次则原样留着）。调用方**显式给了** `image.sprite`
+ * 时就用它（这一条命令于是也能一次把「图 + 格子」写进去，测试与批量脚本省一次调用）。
  */
 export function setObjectImage(
   scene: Draft<SceneDoc>,
@@ -319,16 +325,19 @@ export function setObjectImage(
   }
 
   const current = objectImage(object);
+  // 给什么用什么；没给（调用方只关心换图）就沿用同一个 id 上原有的那一格，换图则丢掉
+  const sprite = image.sprite ?? (current?.id === image.id ? current.sprite : undefined);
   if (
     current !== undefined &&
     current.id === image.id &&
     current.width === image.width &&
-    current.height === image.height
+    current.height === image.height &&
+    sameSpriteRef(current.sprite, sprite)
   ) {
     return false;
   }
 
-  const next = { id: image.id, width: image.width, height: image.height };
+  const next = withSpriteRef({ id: image.id, width: image.width, height: image.height }, sprite);
   if (displayImageField(object.kind) === "map") {
     const map = mapDataOf(object);
     if (map === undefined) {
@@ -338,8 +347,72 @@ export function setObjectImage(
     // 地图的贴图住在它自己的地图数据里：整份写回（组件实例不变，只换 data）
     writeFeature(object, FEATURE_COMPONENT.map, { ...map, image: next });
   } else {
-    writeFeature(object, FEATURE_COMPONENT.image, next);
+    // 精灵写进 `SpriteLayer`、贴图写进 `ImageLayer`（按 kind 取组件名，见 `componentForKind`）
+    writeFeature(object, componentForKind("image", object.kind), next);
   }
 
   return true;
+}
+
+/**
+ * 选这张图（图集）里的**第几格**；传 `null` = 改回整图（v20）。
+ *
+ * **只动那一格**：切分（几行几列）住在工程文件里，这里一个字节都不碰——所以「改切分，
+ * 所有引用它的对象一起变」这条口径成立。越界的格子不在这里报错（切分可能先被改小），
+ * 渲染与推送统一夹到最后一格。
+ *
+ * 三条拒掉的输入（都返回 `false`，不进撤销栈）：
+ * - 对象不存在；
+ * - 这个对象**没有图片**（还没挑图时先挑图，格子没有意义）；
+ * - 这个对象是**地图**类（地图的贴图不支持子图，见 `sprites.ts`）。
+ */
+export function setObjectSprite(
+  scene: Draft<SceneDoc>,
+  objectId: string,
+  sprite: ImageSpriteRef | null,
+): boolean {
+  const object = findObject(scene, objectId);
+  if (object === undefined || displayImageField(object.kind) === "map") {
+    return false;
+  }
+
+  const current = objectImage(object);
+  if (current === undefined) {
+    return false;
+  }
+
+  const next = sprite === null ? undefined : normalizeSpriteRef(sprite);
+  if (sameSpriteRef(current.sprite, next)) {
+    return false;
+  }
+
+  writeFeature(object, componentForKind("image", object.kind), withSpriteRef(current, next));
+  return true;
+}
+
+/** 收干净一份格子引用：取整 + 非负（越界要不要夹由渲染那条链路统一做，这里只保证是整数）。 */
+function normalizeSpriteRef(sprite: ImageSpriteRef): ImageSpriteRef {
+  return {
+    column: Number.isFinite(sprite.column) ? Math.max(0, Math.round(sprite.column)) : 0,
+    row: Number.isFinite(sprite.row) ? Math.max(0, Math.round(sprite.row)) : 0,
+  };
+}
+
+/** 带 / 不带格子引用的一份新图片引用（删字段，不留 `sprite: undefined` 去污染 JSON）。 */
+function withSpriteRef(image: ImageRef, sprite: ImageSpriteRef | undefined): ImageRef {
+  return sprite === undefined
+    ? { id: image.id, width: image.width, height: image.height }
+    : { id: image.id, width: image.width, height: image.height, sprite };
+}
+
+/** 两份格子引用是不是同一格（都不在也算同一格）。 */
+function sameSpriteRef(
+  left: ImageSpriteRef | undefined,
+  right: ImageSpriteRef | undefined,
+): boolean {
+  if (left === undefined || right === undefined) {
+    return left === right;
+  }
+
+  return left.column === right.column && left.row === right.row;
 }

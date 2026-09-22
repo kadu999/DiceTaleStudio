@@ -273,7 +273,7 @@ export function RuntimePanel(): React.JSX.Element {
               音量随设置下发、收到即生效。
             </div>
             <div className="mt-1">
-              地图 / 精灵的「视频」组同理：命令只带 <code>objectId</code>
+              地图 / 贴图的「视频」组同理：命令只带 <code>objectId</code>
               （<code>play_video</code> / <code>pause_video</code> / <code>resume_video</code> /{" "}
               <code>stop_video</code>），放哪一条、循环、声音都在那个对象的 <code>video</code> 数据里；
               每个对象各自一条，互不影响。

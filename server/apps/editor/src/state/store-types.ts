@@ -5,11 +5,13 @@
  */
 import {
   type ImageRef,
+  type ImageSpriteRef,
   type ObjectKind,
   type ProjectDoc,
   type SceneDoc,
   type SceneListDraft,
   type SoundLayer,
+  type SpriteSheetDoc,
   type WorldPosition,
 } from "@dts/document";
 import { type GridPoint, type GridSize } from "@dts/grid";
@@ -150,7 +152,7 @@ export interface EditorStoreState {
   readonly teleportEditor: boolean;
   /** 正在编辑哪个传送阵的候选目标；null 表示窗口没打开 */
   readonly teleportEditorTarget: string | null;
-  /** 「编辑视频」窗口是否打开（地图 / 精灵属性面板「视频」组上的按钮唤出） */
+  /** 「编辑视频」窗口是否打开（地图 / 贴图属性面板「视频」组上的按钮唤出） */
   readonly videoEditor: boolean;
   /** 正在编辑哪个对象的视频列表；null 表示窗口没打开 */
   readonly videoEditorTarget: string | null;
@@ -260,7 +262,7 @@ export interface EditorStoreState {
   zoomAtScreen(anchor: { x: number; y: number }, factor: number): void;
   panByScreen(dx: number, dy: number): void;
   /**
-   * **适配视图**：把当前场景里**画布上看得见的东西**（地图 / 精灵 / 徽标…）一起装进视口，
+   * **适配视图**：把当前场景里**画布上看得见的东西**（地图 / 贴图 / 徽标…）一起装进视口，
    * 外框居中、按需缩放。一个都没落位时退回「世界原点居中 1:1」。
    *
    * 「复位」按钮与「视图 → 适配视口」都走它：对 DM 而言这两件事是同一个意思——
@@ -305,7 +307,7 @@ export interface EditorStoreState {
    */
   flushSoundPlayback(): number;
   /**
-   * 让**前端**在某个地图 / 精灵上放它选中的那一条视频（编辑器自己不放，只**记账** + 尽力下发）。
+   * 让**前端**在某个地图 / 贴图上放它选中的那一条视频（编辑器自己不放，只**记账** + 尽力下发）。
    *
    * 命令里只有 `objectId`：**放哪一条、循环、声音都由前端从镜像里的那个对象读**
    * （数据在场景里，命令只是触发器）。编辑器还没连上服务端 / 前端没连时**照样能点**：
@@ -452,11 +454,11 @@ export interface EditorStoreState {
   openSceneDialog(mode: SceneDialogMode): void;
   openObjectDialog(open: boolean): void;
   /**
-   * 打开「选择贴图」弹框（传要换贴图的地图对象 id）；传 null 关闭。
+   * 打开「选择贴图」弹框（传要换贴图的对象 id，精灵与贴图都走这里）；传 null 关闭。
    *
    * 打开与关闭走同一条路：**记住当前目标是 store 的事**，弹框组件只读它。
    */
-  openImagePicker(mapObjectId: string | null): void;
+  openImagePicker(objectId: string | null): void;
   /**
    * 新建场景：在 `Assets/scenes/` 下建一个空场景文件。成功返回 undefined，失败返回原因。
    */
@@ -547,6 +549,25 @@ export interface EditorStoreState {
   setObjectScaleAxes(id: string, x: number, y: number): boolean;
   /** 换对象显示的图片（地图写进 map.image，精灵写进 image；宽高由调用方从素材本身读出）。 */
   setObjectImage(objectId: string, image: ImageRef): boolean;
+  /**
+   * 「选择贴图 / 精灵」窗口确定时的那一条命令：**图 + 格子一次写进去**（一条撤销记录）。
+   *
+   * `sprite` 为 `null` = 用整张图（会把对象上原来的子图引用清掉）。
+   */
+  setObjectImageSprite(objectId: string, image: ImageRef, sprite: ImageSpriteRef | null): boolean;
+  /**
+   * 选这张图（图集）里的**第几格**（`null` = 改回整图）。
+   *
+   * 落在**场景**那条轨道上（对象身上的引用）；「几行几列」在工程文件里，由
+   * `setSpriteSheet` 改——越界的格子在渲染与推送时统一夹到最后一格。
+   */
+  setObjectSprite(objectId: string, sprite: ImageSpriteRef | null): boolean;
+  /**
+   * 改一张图的**切分**（列 × 行；`null` = 恢复整图）：落在**工程文件**那条轨道上。
+   *
+   * 切分只有这一份（`ProjectDoc.spriteSheets`），所以「改它 = 所有引用它的对象一起变」。
+   */
+  setSpriteSheet(imageId: string, sheet: SpriteSheetDoc | null): boolean;
   /**
    * 替换声音对象的音频列表（资源逻辑 ID；去空去重，值没变不算变更）。
    *

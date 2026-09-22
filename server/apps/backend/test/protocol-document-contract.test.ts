@@ -1,21 +1,36 @@
 import { describe, expect, it } from "vitest";
 import {
   COMPONENT_TYPE,
+  SPRITE_SHEET_MAX as PROTOCOL_SPRITE_SHEET_MAX,
+  componentDataOf,
   componentSchema,
   sceneComponentSchema,
+  sceneSchema,
   type SceneObjectPayload,
 } from "@dts/protocol";
 import {
   COMPONENT_TYPES,
+  DOCUMENT_FORMAT_VERSION,
   FEATURE_COMPONENT,
   FEATURE_COMPONENT_TYPES,
+  FEATURE_COMPONENTS,
   OBJECT_FEATURES,
+  SPRITE_COMPONENT,
+  SPRITE_SHEET_MAX,
   componentId,
   createEmptyScene,
   createMapObject,
+  createSceneObject,
   createSoundObject,
   createTeleportObject,
+  hasErrors,
+  imageOf,
+  kindsCarrying,
+  parseSceneFile,
+  resolveSceneSprites,
   validateScene,
+  withFeature,
+  type ImageRef,
   type SceneObjectDoc,
 } from "@dts/document";
 
@@ -31,6 +46,8 @@ describe("契约：协议与文档的组件口径一致", () => {
   it("组件类型名逐字一致（改一处忘了另一处会在这里炸）", () => {
     expect(COMPONENT_TYPE.map).toBe(FEATURE_COMPONENT.map);
     expect(COMPONENT_TYPE.image).toBe(FEATURE_COMPONENT.image);
+    // 「对象自己显示的图」有两种承载：贴图 `ImageLayer` / 精灵 `SpriteLayer`
+    expect(COMPONENT_TYPE.sprite).toBe(SPRITE_COMPONENT);
     expect(COMPONENT_TYPE.sound).toBe(FEATURE_COMPONENT.sound);
     expect(COMPONENT_TYPE.teleport).toBe(FEATURE_COMPONENT.teleport);
     expect(COMPONENT_TYPE.video).toBe(FEATURE_COMPONENT.video);
@@ -45,11 +62,29 @@ describe("契约：协议与文档的组件口径一致", () => {
         component: def.component,
       });
       expect(registered?.legacyField).toBe(def.field);
-      // kinds 由注册表从 OBJECT_FEATURES 取回来，这里反向确认没有走偏
-      expect([...(registered?.kinds ?? [])].sort()).toEqual([...def.kinds].sort());
+      // kinds 由注册表按「缺省组件剔掉被路由走的 kind」取回来（image 特性的 SceneObject
+      // 归 SpriteLayer，缺省 ImageLayer 那份不再含它），这里用同一入口反向确认没有走偏
+      expect([...(registered?.kinds ?? [])].sort()).toEqual([...kindsCarrying(def.component)].sort());
     }
 
-    expect(FEATURE_COMPONENT_TYPES).toHaveLength(OBJECT_FEATURES.length);
+    // `FEATURE_COMPONENTS` 还包含 **kind 专属** 的组件名（精灵的 `SpriteLayer`），
+    // 它们同样必须在注册表里——只遍历 `OBJECT_FEATURES` 的 `component` 会漏掉它
+    for (const component of FEATURE_COMPONENTS) {
+      expect({
+        missing: !COMPONENT_TYPES.some((item) => item.type === component),
+        component,
+      }).toEqual({ missing: false, component });
+    }
+
+    // `FEATURE_COMPONENT_TYPES`（迁移按它把旧的扁平字段搬成组件）**恰好**是那些声明了
+    // `legacyField` 的特性组件：既不能漏（老文件的字段搬不动），也不能多
+    // （把一个没有历史字段的组件当成迁移目标）。注意它比 `OBJECT_FEATURES` 多一条：
+    // `image` 有两种承载（`ImageLayer` + `SpriteLayer`），两个都带 `legacyField: "image"`。
+    const featureTypesWithLegacy = FEATURE_COMPONENTS.filter(
+      (component) =>
+        COMPONENT_TYPES.find((item) => item.type === component)?.legacyField !== undefined,
+    ).sort();
+    expect(FEATURE_COMPONENT_TYPES.map((def) => def.type).sort()).toEqual(featureTypesWithLegacy);
   });
 
   it("文档校验接受的场景，协议侧也解析得开（真跑一遍工厂 → 校验 → 协议）", () => {
@@ -121,5 +156,73 @@ describe("契约：协议与文档的组件口径一致", () => {
       });
       expect(parsed.success, `协议拒了已知组件 ${def.type}`).toBe(true);
     }
+  });
+
+  it("精灵：切分上限两边同值；文档 + 工程表解析出的载荷协议收得下", () => {
+    // 两个常量各写一份（协议不能依赖文档包），值必须一样
+    expect(PROTOCOL_SPRITE_SHEET_MAX).toBe(SPRITE_SHEET_MAX);
+
+    const imageId = "project:P/Assets/images/sheet.png";
+    const scene = {
+      ...createEmptyScene("场景1"),
+      objects: [
+        withFeature<ImageRef>(createSceneObject({ id: "sprite_1", name: "精灵" }), SPRITE_COMPONENT, {
+          id: imageId,
+          width: 64,
+          height: 64,
+          sprite: { column: 1, row: 0 },
+        }),
+      ],
+    };
+    const spriteSheets = { [imageId]: { columns: 4, rows: 2 } };
+
+    // 文档侧：语义校验没有 error（格子落在切分范围内）
+    expect(hasErrors(validateScene(scene, { spriteSheets }))).toBe(false);
+
+    // 推送时的解析：切分随载荷走（前端没有工程文件），协议侧收下
+    const payload = { name: scene.name, objects: resolveSceneSprites(scene, spriteSheets).objects };
+    const parsed = sceneSchema.parse(JSON.parse(JSON.stringify(payload)) as unknown);
+    expect(componentDataOf(parsed.objects[0]!, COMPONENT_TYPE.sprite)).toEqual({
+      id: imageId,
+      width: 64,
+      height: 64,
+      sprite: { column: 1, row: 0 },
+      spriteGrid: { columns: 4, rows: 2 },
+    });
+  });
+
+  it("精灵：文档 schema 不认 spriteGrid（那是载荷专有的字段，落盘时不该留在场景文件里）", () => {
+    const raw = {
+      formatVersion: DOCUMENT_FORMAT_VERSION,
+      objects: [
+        {
+          id: "sprite_1",
+          name: "精灵",
+          kind: "SceneObject",
+          active: true,
+          locked: false,
+          sortingOrder: 0,
+          position: null,
+          rotation: 0,
+          scale: 1,
+          components: [
+            {
+              id: `sprite_1__${SPRITE_COMPONENT}`,
+              type: SPRITE_COMPONENT,
+              data: { id: "project:P/Assets/images/sheet.png", width: 64, height: 64, spriteGrid: { columns: 4, rows: 2 } },
+              actions: [],
+            },
+          ],
+        },
+      ],
+    };
+
+    const loaded = parseSceneFile(raw);
+    // zod 的「丢掉不认识的键」是静默的：读进来就当没有过（磁盘上的文件由此自描述）
+    expect(imageOf(loaded.file.objects[0]!)).toEqual({
+      id: "project:P/Assets/images/sheet.png",
+      width: 64,
+      height: 64,
+    });
   });
 });

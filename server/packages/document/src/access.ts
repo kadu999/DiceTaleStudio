@@ -7,6 +7,7 @@ import {
   DEFAULT_VIDEO_LOOP,
   FEATURE_COMPONENT,
   carriesKind,
+  componentsOfField,
   displayImageField,
 } from "./features";
 import type {
@@ -22,7 +23,7 @@ import type {
 /**
  * 对象特性的**唯一访问路径**。
  *
- * v19 起特性住在 `components[]` 里（`GridMap` / `TextureRenderer` / `PlaySound` /
+ * v19 起特性住在 `components[]` 里（`GridMap` / `ImageLayer` / `SpriteLayer` / `PlaySound` /
  * `Teleport` / `VideoOverlay`），而**「数据存在哪」只有这个文件知道**：调用方一律写
  * `mapDataOf(object)` / `ensureSoundData(draft)`，不写 `object.components.find(...)`。
  * 于是「把特性从扁平字段搬进组件」这件事的改动面被压在这个文件里（迁移那一次）。
@@ -66,9 +67,22 @@ export function mapDataOf(object: SceneObjectDoc): MapDataDoc | undefined {
   return componentDataOf<MapDataDoc>(object, FEATURE_COMPONENT.map);
 }
 
-/** 对象自己那一份图片（**不含地图贴图**；地图的贴图在 `mapDataOf(object)?.image` 里）。 */
+/**
+ * 对象自己那一份图片（**不含地图贴图**；地图的贴图在 `mapDataOf(object)?.image` 里）。
+ *
+ * **两种组件都认**：精灵的图住在 `SpriteLayer`、贴图的图住在 `ImageLayer`
+ * （`componentsOfField("image")`）。调用方因此不必知道「这个对象是精灵还是贴图」——
+ * 「它显示了哪张图」是同一个问题的两种存法。
+ */
 export function imageOf(object: SceneObjectDoc): ImageRef | undefined {
-  return componentDataOf<ImageRef>(object, FEATURE_COMPONENT.image);
+  for (const component of componentsOfField("image")) {
+    const image = componentDataOf<ImageRef>(object, component);
+    if (image !== undefined) {
+      return image;
+    }
+  }
+
+  return undefined;
 }
 
 /**

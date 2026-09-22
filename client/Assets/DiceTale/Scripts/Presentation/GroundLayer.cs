@@ -4,7 +4,19 @@ using UnityEngine.Rendering;
 namespace DiceTale
 {
     /// <summary>
-    /// 与地面平行的 4 顶点面片，**直接显示一张运行时纹理**（镜像对象专用的渲染器）。
+    /// 与地面平行的 4 顶点面片，**直接显示一张运行时纹理**——镜像对象「显示一张图」这件事的公共实现。
+    ///
+    /// 它有两个具体的子类，对应**两种不同的图片组件**（协议 v11 / 文档 v21 起）：
+    /// <list type="bullet">
+    /// <item><see cref="ImageLayer"/> —— 「贴图对象」（`kind: "Texture"`，组件 `ImageLayer`）：
+    /// 显示**整张图**；</item>
+    /// <item><see cref="SpriteLayer"/> —— 「精灵对象」（`kind: "SceneObject"`，组件 `SpriteLayer`）：
+    /// 显示图集里的**一格**（子图）。</item>
+    /// </list>
+    /// 两者共用这一份网格 / 材质 / UV 逻辑，差别只有「取样矩形要不要内缩半个纹素躲开邻格渗色」
+    /// ——那正是「一张图 vs 图集里的一块」的实质差别，所以它落在 <see cref="InsetUv"/> 里。
+    /// 本类**故意是 abstract**：它自己不是组件（`AddComponent` 只能加两个子类之一），
+    /// 组件名与类名一一对应，前端按组件名分派。
     ///
     /// 与它的前身 `GroundSpriteRenderer` 的区别：那个是给 Inspector 用的（拖一张 `Sprite` 字段、
     /// `OnValidate` 即时预览、自己管序列化资源），而镜像是**运行时数据驱动**的——
@@ -15,7 +27,7 @@ namespace DiceTale
     ///
     /// **但 Inspector 里要能看见**：尺寸 / 显示顺序全是 `Apply(...)` 传进来的，而 `MeshRenderer`
     /// 的 Inspector 看不到 Sorting Layer / Order in Layer——所以另有一个只读的 Inspector
-    /// （`Editor/TextureRendererEditor.cs`）把实际生效的 `sortingOrder` 与长宽显示出来。
+    /// （`Editor/LayerInspector.cs`）把实际生效的 `sortingOrder` 与长宽显示出来。
     ///
     /// 尺寸口径：**宽高直接烘进网格顶点，不靠 Transform 缩放**。调用方给的就是世界单位下的
     /// 宽与高（文档像素到世界单位的换算在 <see cref="SceneObjectView.GlobalScale"/>，
@@ -25,9 +37,9 @@ namespace DiceTale
     /// 改错一个就变形的问题。
     ///
     /// 地面网格**不用内置 Quad**：它原生躺在 XY 平面、要贴地面必须旋转；这里代码自建 XZ 网格
-    /// （法线朝上 +Y、无需旋转），俯视相机看到正面。战争雾那层也用本组件、同一套网格，
-    /// 所以「地图」与「盖在地图上的雾」永远严丝合缝。
-    /// 材质用项目自建 Shader `DiceTale/TextureRenderer`（纹理 × 顶点色、straight alpha），
+    /// （法线朝上 +Y、无需旋转），俯视相机看到正面。战争雾那层也用同一套网格（它挂
+    /// <see cref="ImageLayer"/>），所以「地图」与「盖在地图上的雾」永远严丝合缝。
+    /// 材质用项目自建 Shader `DiceTale/ImageLayer`（纹理 × 顶点色、straight alpha），
     /// 支持带透明通道的 PNG，不受场景光照影响；染色走**顶点色**（与 `SpriteRenderer` 同路线）。
     ///
     /// 生命周期：自建的 Mesh / Material 归本组件所有（换尺寸重建、销毁旧对象，`HideFlags.DontSave` 不入库），
@@ -37,18 +49,22 @@ namespace DiceTale
     [DisallowMultipleComponent]
     [RequireComponent(typeof(MeshFilter))]
     [RequireComponent(typeof(MeshRenderer))]
-    public class TextureRenderer : MonoBehaviour
+    public abstract class GroundLayer : MonoBehaviour
     {
         private const string MeshName = "GroundTexturePlane";
-        private const string ShaderName = "DiceTale/TextureRenderer";
+        private const string ShaderName = "DiceTale/ImageLayer";
 
         private Mesh ownedMesh;
         private Material ownedMaterial;
 
-        /// <summary>当前网格烘进去的尺寸（世界单位）与染色（变了才重建 / 重刷）。</summary>
+        /// <summary>整张图的 UV 矩形（`x, y` = 左下角、`z, w` = 宽高）。</summary>
+        protected static readonly Vector4 FullUvRect = new Vector4(0f, 0f, 1f, 1f);
+
+        /// <summary>当前网格烘进去的尺寸（世界单位）、染色与 UV 矩形（任一变了才重建）。</summary>
         private float builtWidth = -1f;
         private float builtHeight = -1f;
         private Color builtTint = new Color(-1f, -1f, -1f, -1f);
+        private Vector4 builtUvRect = new Vector4(-1f, -1f, -1f, -1f);
 
         /// <summary>
         /// 应用一次显示参数（每次收到新数据都调，幂等）。
@@ -60,7 +76,7 @@ namespace DiceTale
         ///   直接烘进网格顶点；`&lt;= 0` 按 1 处理；
         /// - <paramref name="tint"/>：染色（有图时给白色 = 原图）；
         /// - <paramref name="order"/>：`MeshRenderer.sortingOrder`（决定谁盖谁）；
-        /// - <paramref name="lift"/>：离地高度（**世界单位**，略抬离地面避免与地图底图共面闪烁）。
+        /// - <paramref name="lift"/>：离地高度（**世界单位**，略抬离地面避免与地图底面共面闪烁）。
         ///
         /// 顺带把 `localScale` 校正回 `(1,1,1)`：尺寸已经由网格决定，缩放再参与进来只会让
         /// 「实际多大」变成两个来源相乘。摆位置与旋转仍由调用方负责（本组件不碰）。
@@ -70,11 +86,31 @@ namespace DiceTale
         /// </summary>
         public void Apply(Texture texture, float width, float height, Color tint, int order, float lift)
         {
+            Apply(texture, width, height, tint, order, lift, FullUvRect);
+        }
+
+        /// <summary>
+        /// 同上，外加**只取纹理里的一块**（精灵的子图；贴图永远传整张）。
+        ///
+        /// <paramref name="uvRect"/> 由调用方按「切分 + 加载到的纹理尺寸」算好
+        /// （`x, y` = 左下角、`z, w` = 宽高）；整张图传 `(0, 0, 1, 1)`。
+        /// 要不要再内缩半个纹素由子类决定（见 <see cref="InsetUv"/>）。
+        /// </summary>
+        public void Apply(
+            Texture texture,
+            float width,
+            float height,
+            Color tint,
+            int order,
+            float lift,
+            Vector4 uvRect)
+        {
             // 给进来的就是世界单位（文档像素 → 世界单位在 SceneObjectView.GlobalScale 做掉了）
             var safeWidth = width <= 0f ? 1f : width;
             var safeHeight = height <= 0f ? 1f : height;
+            var safeUv = InsetUv(uvRect, texture);
 
-            EnsureMesh(safeWidth, safeHeight, tint);
+            EnsureMesh(safeWidth, safeHeight, tint, safeUv);
             EnsureMaterial();
 
             ownedMaterial.mainTexture = texture;
@@ -94,14 +130,25 @@ namespace DiceTale
             transform.localPosition = new Vector3(position.x, lift, position.z);
         }
 
+        /// <summary>
+        /// 子类的取样矩形微调：**内缩半个纹素**是为了躲开双线性过滤的渗色（图集切得越密越明显，
+        /// 边界会把邻格的边采进来），整张图不需要缩（它外面没有别的格子）。
+        ///
+        /// 缺省（<see cref="ImageLayer"/>）：原样返回——贴图显示的就是整张图。
+        /// </summary>
+        protected virtual Vector4 InsetUv(Vector4 uv, Texture texture)
+        {
+            return uv;
+        }
+
         private void OnDestroy()
         {
             ReleaseMesh();
             ReleaseMaterial();
         }
 
-        /// <summary>缺哪块补哪块；尺寸或染色变了才重建网格（只改染色时刷顶点色即可）。</summary>
-        private void EnsureMesh(float width, float height, Color tint)
+        /// <summary>缺哪块补哪块；尺寸 / 染色 / UV 矩形变了才重建网格（只改染色时刷顶点色即可）。</summary>
+        private void EnsureMesh(float width, float height, Color tint, Vector4 uvRect)
         {
             var filter = GetComponent<MeshFilter>();
             if (filter == null)
@@ -110,8 +157,9 @@ namespace DiceTale
             }
 
             var sizeChanged = !Mathf.Approximately(builtWidth, width) || !Mathf.Approximately(builtHeight, height);
+            var uvChanged = !Approximately(builtUvRect, uvRect);
             var tintChanged = !Approximately(builtTint, tint);
-            if (filter.sharedMesh == ownedMesh && ownedMesh != null && !sizeChanged)
+            if (filter.sharedMesh == ownedMesh && ownedMesh != null && !sizeChanged && !uvChanged)
             {
                 if (tintChanged)
                 {
@@ -123,12 +171,13 @@ namespace DiceTale
             }
 
             ReleaseMesh();
-            ownedMesh = CreateGroundPlaneMesh(width, height, tint);
+            ownedMesh = CreateGroundPlaneMesh(width, height, tint, uvRect);
             ownedMesh.hideFlags = HideFlags.DontSave;
             filter.sharedMesh = ownedMesh;
             builtWidth = width;
             builtHeight = height;
             builtTint = tint;
+            builtUvRect = uvRect;
         }
 
         /// <summary>材质归本组件管理：没有就创建（渲染器上挂了别人的材质也不动它，直接换用自建的）。</summary>
@@ -164,6 +213,14 @@ namespace DiceTale
                 && Mathf.Approximately(left.g, right.g)
                 && Mathf.Approximately(left.b, right.b)
                 && Mathf.Approximately(left.a, right.a);
+        }
+
+        private static bool Approximately(Vector4 left, Vector4 right)
+        {
+            return Mathf.Approximately(left.x, right.x)
+                && Mathf.Approximately(left.y, right.y)
+                && Mathf.Approximately(left.z, right.z)
+                && Mathf.Approximately(left.w, right.w);
         }
 
         private void ReleaseMesh()
@@ -209,12 +266,20 @@ namespace DiceTale
 
         /// <summary>
         /// 生成面片：X 跨 ±width/2、Z 跨 ±height/2（**尺寸烘进顶点**，配合 localScale = 1），
-        /// UV 0..1；绕序 {0,2,1}/{1,2,3} 保证法线朝 +Y（俯视可见）。
+        /// 绕序 {0,2,1}/{1,2,3} 保证法线朝 +Y（俯视可见）。
+        ///
+        /// **UV 也烘进顶点**：整张图是 0..1；子图用调用方算好的那一块
+        /// （`uv.x, uv.y` = 左下角，`z, w` = 宽高），于是「取哪一块」与裁剪、选中框都不相干
+        /// —— 那两样始终按对象矩形算。
         /// </summary>
-        private static Mesh CreateGroundPlaneMesh(float width, float height, Color tint)
+        private static Mesh CreateGroundPlaneMesh(float width, float height, Color tint, Vector4 uv)
         {
             var halfWidth = width * 0.5f;
             var halfHeight = height * 0.5f;
+            var u0 = uv.x;
+            var v0 = uv.y;
+            var u1 = uv.x + uv.z;
+            var v1 = uv.y + uv.w;
 
             var mesh = new Mesh { name = MeshName };
             mesh.vertices = new[]
@@ -224,12 +289,13 @@ namespace DiceTale
                 new Vector3(-halfWidth, 0f, halfHeight),
                 new Vector3(halfWidth, 0f, halfHeight),
             };
+            // 顶点顺序与上面一一对应：左下 / 右下 / 左上 / 右上
             mesh.uv = new[]
             {
-                new Vector2(0f, 0f),
-                new Vector2(1f, 0f),
-                new Vector2(0f, 1f),
-                new Vector2(1f, 1f),
+                new Vector2(u0, v0),
+                new Vector2(u1, v0),
+                new Vector2(u0, v1),
+                new Vector2(u1, v1),
             };
             mesh.triangles = new[] { 0, 2, 1, 1, 2, 3 };
             ApplyVertexColor(mesh, tint);

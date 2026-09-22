@@ -167,6 +167,10 @@ namespace DiceTale
                 }
 
                 texture.name = logicalId; // Hierarchy / 调试里认得出是哪张
+                // 子图（v10）要在纹理里采样**一块**：掉出格子边界时 Repeat 会绕到图片另一头
+                // （双线性过滤下表现为「边缘混进对面的颜色」），Clamp 才贴着边不外溢。
+                // 整张图用 Clamp 也无副作用（UV 本来就落在 0..1 内）。
+                texture.wrapMode = TextureWrapMode.Clamp;
                 cache[logicalId] = texture;
                 Complete(logicalId, texture);
             }

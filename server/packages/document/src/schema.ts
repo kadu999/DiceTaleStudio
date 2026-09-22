@@ -1,10 +1,19 @@
 import { z } from "zod";
-import { COMPONENT_TYPES, FEATURE_COMPONENT_TYPES, componentId } from "./components";
-import { FEATURE_COMPONENT } from "./features";
+import { COMPONENT_TYPES, FEATURE_COMPONENT_TYPES, componentId, hasLegacyFeatureField } from "./components";
+import {
+  FEATURE_COMPONENT,
+  LEGACY_IMAGE_COMPONENT,
+  SPRITE_COMPONENT,
+  componentForKind,
+  featureOfComponent,
+  featureOfField,
+} from "./features";
+import { SPRITE_SHEET_MAX } from "./sprites";
 import {
   DOCUMENT_FORMAT_VERSION,
   SOUND_LAYERS,
   type BgmSettingsDoc,
+  type ObjectKind,
   type ProjectDoc,
   type ProjectSettingsDoc,
   type SceneDoc,
@@ -25,10 +34,29 @@ export const worldPositionSchema = z.object({
   y: z.number(),
 });
 
+/**
+ * 「图集里的第几格」（v20 起）：`column` 从左数（0 起）、`row` **从最上数**（0 起），
+ * 对齐 Unity 的 Sprite Editor 的格子编号。
+ *
+ * 这里只保证「是非负整数」：越界（`column >= columns`）**不算解析错误**——切分被改小之后
+ * 老对象的格子会暂时越界，读不开文件比读出来再提示更糟；它由渲染与推送统一夹到最后一格
+ * （`sprites.ts` 的 `clampSpriteCell`），`validateScene` 报 warning。
+ */
+export const imageSpriteRefSchema = z.object({
+  column: z.number().int().nonnegative(),
+  row: z.number().int().nonnegative(),
+});
+
+/**
+ * 图片引用（v20 起多了可选的 `sprite`）：资源逻辑 ID + 声明尺寸 + 「取哪一格」。
+ *
+ * `sprite` 只是一份**引用**：「几行几列」住在工程文件的 `spriteSheets` 里，只有那一份。
+ */
 export const imageRefSchema = z.object({
   id: z.string().min(1),
   width: z.number().int().positive(),
   height: z.number().int().positive(),
+  sprite: imageSpriteRefSchema.optional(),
 });
 
 export const gridSpecSchema = z.object({
@@ -186,7 +214,9 @@ function componentSchemaOf<T extends z.ZodTypeAny>(
 
 export const sceneComponentSchema = z.union([
   componentSchemaOf(FEATURE_COMPONENT.map, mapDataSchema),
+  // 对象自己显示的图有**两种承载**：贴图 `ImageLayer`、精灵 `SpriteLayer`（同一份 `imageRefSchema`）
   componentSchemaOf(FEATURE_COMPONENT.image, imageRefSchema),
+  componentSchemaOf(SPRITE_COMPONENT, imageRefSchema),
   componentSchemaOf(FEATURE_COMPONENT.sound, soundDataSchema),
   componentSchemaOf(FEATURE_COMPONENT.teleport, teleportDataSchema),
   componentSchemaOf(FEATURE_COMPONENT.video, videoDataSchema),
@@ -196,7 +226,17 @@ export const sceneComponentSchema = z.union([
 export const sceneObjectSchema = z.object({
   id: z.string().min(1),
   name: z.string(),
-  kind: z.enum(["Map", "SceneObject", "Player", "Item", "Event", "PlaySound", "Teleport"]),
+  // Texture = 实体里的「贴图」：只显示整张图的那种对象（与精灵同一个数据形状，见 `types.ts`）
+  kind: z.enum([
+    "Map",
+    "SceneObject",
+    "Player",
+    "Item",
+    "Event",
+    "PlaySound",
+    "Teleport",
+    "Texture",
+  ]),
   // v7 起：是否显示 + 显示顺序。**给默认值**是有意的——v6 及更早的文件没有这两个字段，
   // 「没写」只能是「显示、顺序 0」；写成必填会让所有旧文件直接读不开。
   active: z.boolean().default(true),
@@ -316,10 +356,21 @@ export const audioMetaEntrySchema = z.object({
 export const audioTagTableSchema = z.array(z.string().nullable());
 
 /**
+ * 图片切分表的一项（v20 起）：一张图按几列几行切成网格。
+ *
+ * 上限 `SPRITE_SHEET_MAX`（64）挡的是「没有一格可言」的坏数据；`1×1`（= 整图）**不写这项**
+ * （取值由 `setSpriteSheet` 收干净），手写文件里留了一个 1×1 的项由 `validateProject` 提醒。
+ */
+export const spriteSheetSchema = z.object({
+  columns: z.number().int().min(1).max(SPRITE_SHEET_MAX),
+  rows: z.number().int().min(1).max(SPRITE_SHEET_MAX),
+});
+
+/**
  * 工程文件：只有项目级数据，场景在 `Assets/scenes/` 下各自成文件。
  *
- * `audioMeta` / `audioTags` **可选且不给默认值**：缺省 = 这个项目还没整理过音频
- * （v14 的 `video` 同一条规矩：不拿空壳冒充「有这个字段」）。
+ * `audioMeta` / `audioTags` / `spriteSheets` **可选且不给默认值**：缺省 = 这个项目还没整理过
+ * 音频 / 还没切过图（v14 的 `video` 同一条规矩：不拿空壳冒充「有这个字段」）。
  */
 export const projectDocSchema = z.object({
   formatVersion: z.number().int().positive(),
@@ -332,6 +383,8 @@ export const projectDocSchema = z.object({
   audioMeta: z.record(z.string(), audioMetaEntrySchema).optional(),
   // v18 起：音频标签表（下标 = tag ID，值 = 名字）。与 audioMeta 一起构成「标签」这一套。
   audioTags: audioTagTableSchema.optional(),
+  // v20 起：图片切分表（图片逻辑 ID → 列×行）。**切分只有这一份**，对象只存「引用哪张图 + 第几格」。
+  spriteSheets: z.record(z.string(), spriteSheetSchema).optional(),
 });
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -818,8 +871,8 @@ export function parseProjectDoc(raw: unknown): ProjectDoc {
  * v18 → v19：把对象上的 5 个**特性扁平字段**搬成组件实例。
  *
  * 只搬键、不解释内容（内容由各自的 schema 校验）：
- * - 处理顺序 = 注册表顺序（`GridMap` → `TextureRenderer` → `PlaySound` → `Teleport` →
- *   `VideoOverlay`），于是写盘顺序稳定、属性面板的分组顺序也稳定；
+ * - 处理顺序 = 注册表顺序（`GridMap` → `ImageLayer` → `SpriteLayer` → `PlaySound` →
+ *   `Teleport` → `VideoOverlay`），于是写盘顺序稳定、属性面板的分组顺序也稳定；
  * - 组件 id 用 `<对象 id>__<组件类型>`；对象没有合法 id 时退化成 `obj<下标>__<类型>`
  *   （手写文件里 id 可能是空的，但组件 id 必须非空且唯一）；
  * - **幂等**：目标对象上已经有同类型组件时不再追加（只把老字段删掉）——
@@ -839,7 +892,7 @@ function migrateFeaturesToComponents(raw: Record<string, unknown>): {
       return object;
     }
 
-    if (!FEATURE_COMPONENT_TYPES.some((def) => isRecord(object[def.legacyField as string]))) {
+    if (!hasLegacyFeatureField(object)) {
       return object;
     }
 
@@ -858,11 +911,17 @@ function migrateFeaturesToComponents(raw: Record<string, unknown>): {
       delete rest[field];
       changed = true;
 
-      const already = components.some((item) => isRecord(item) && item.type === def.type);
+      // **按 kind 取组件名**：v20 及更早一个对象只有一种图片组件，v21 起精灵与贴图各一种。
+      // 走 `componentForKind`（唯一入口）而不是 `def.type`，否则老文件里的精灵会被搬进贴图的组件。
+      // 特性字段名从组件名反查（`featureOfComponent`），对 `ImageLayer` / `SpriteLayer`
+      // 两个名字都会回到 `image` 那一条。
+      const feature = featureOfComponent(def.type);
+      const component = componentForKind(feature?.field ?? "image", kindOf(rest));
+      const already = components.some((item) => isRecord(item) && item.type === component);
       if (!already) {
         components.push({
-          id: componentId(baseId, def.type),
-          type: def.type,
+          id: componentId(baseId, component),
+          type: component,
           data: value,
           actions: [],
         });
@@ -870,6 +929,83 @@ function migrateFeaturesToComponents(raw: Record<string, unknown>): {
     }
 
     return { ...rest, components };
+  });
+
+  return changed ? { raw: { ...raw, objects: next }, changed } : { raw, changed };
+}
+
+/** 读一个（还没过 schema 的）对象的 `kind`；认不出来时按 `SceneObject` 算（`MirrorObject` 同一个兜底）。 */
+function kindOf(raw: Record<string, unknown>): ObjectKind {
+  const kind = raw.kind;
+  return typeof kind === "string" ? (kind as ObjectKind) : "SceneObject";
+}
+
+/**
+ * v20 → v21：把旧名 `TextureRenderer` 的图片组件按 **kind 路由**换成现行名字。
+ *
+ * v20 及更早，「对象自己显示的图」只有一种组件（`TextureRenderer`），所有 kind 共用它。
+ * v21 把它拆成两种——精灵 `SpriteLayer`（会取图集里的一格）、其余 `ImageLayer`
+ * （只显示整张图）——所以老文件里的实例必须改名，否则它会带着旧组件名的形状留下来，
+ * 两种形状长期共存。
+ *
+ * v19 时 `image` 特性的 kinds 是 `["SceneObject","Player","Item","Event"]`（旧编辑器对
+ * 这些 kind 也开放渲染分组），所以**不止精灵**：Player / Item / Event 上的
+ * `TextureRenderer` 同样要改名——目标名一律走 `componentForKind("image", kind)`
+ * （与运行期/写盘同一条路由，见 `features.ts`），不在这里另写映射：
+ * SceneObject → `SpriteLayer`，其余 image 特性 kind → `ImageLayer`。
+ * 不在 image 特性 kinds 里的 kind（地图 / 声音 / …）上的 `TextureRenderer` 不是这条特性
+ * 的数据，原样留着让 schema 报错。
+ *
+ * 幂等：改名目标是现行名字之后，对象上不再有 `TextureRenderer`，这一趟什么都不做。
+ */
+function renameSpriteImageComponent(raw: Record<string, unknown>): {
+  readonly raw: Record<string, unknown>;
+  readonly changed: boolean;
+} {
+  const objects = Array.isArray(raw.objects) ? raw.objects : [];
+  const imageKinds = featureOfField("image")?.kinds ?? [];
+  let changed = false;
+
+  const next = objects.map((object, index) => {
+    if (!isRecord(object)) {
+      return object;
+    }
+
+    const kind = kindOf(object);
+    // 「空 kinds = 任何 kind」与 features.ts 同一语义（`carriesKind`）
+    if (imageKinds.length > 0 && !imageKinds.includes(kind)) {
+      return object;
+    }
+
+    const target = componentForKind("image", kind);
+    if (target === LEGACY_IMAGE_COMPONENT) {
+      return object;
+    }
+
+    const components = Array.isArray(object.components) ? object.components : [];
+    if (!components.some((item) => isRecord(item) && item.type === LEGACY_IMAGE_COMPONENT)) {
+      return object;
+    }
+
+    const baseId =
+      typeof object.id === "string" && object.id.length > 0 ? object.id : `obj${index}`;
+
+    changed = true;
+    return {
+      ...object,
+      components: components.map((item) =>
+        isRecord(item) && item.type === LEGACY_IMAGE_COMPONENT
+          ? {
+              ...item,
+              type: target,
+              // **id 也要跟着改**：组件 id 的规范是 `<对象 id>__<组件类型>`
+              // （`componentId`）。只改类型不改 id 的话，编辑器下一次写这个组件时
+              // 按新名字找不到旧实例、于是**多补一个**，对象上就挂了两份图。
+              id: componentId(baseId, target),
+            }
+          : item,
+      ),
+    };
   });
 
   return changed ? { raw: { ...raw, objects: next }, changed } : { raw, changed };
@@ -913,13 +1049,18 @@ export function parseSceneFile(raw: unknown, size?: SceneSizeHint): SceneFileLoa
     const teleport = migrateTeleportTarget(filled.raw);
     // v15：声音层级四档 → 三档（环境音并进背景音乐）
     const layers = migrateSoundLayers(teleport.raw);
-    // v19：对象特性搬进组件（`map` / `image` / `sound` / `teleport` / `video`）
-    const features = migrateFeaturesToComponents(layers.raw);
+    // v19：对象特性搬进组件（`map` / `image` / `sound` / `teleport` / `video`）。
+    // v21：图片组件在精灵身上叫 `SpriteLayer`——所以**先改名、再搬字段**
+    // （老文件里精灵的图已经是 `TextureRenderer` 组件，那时 `features` 那一趟什么都不用做）
+    const renamed = renameSpriteImageComponent(layers.raw);
+    const features = migrateFeaturesToComponents(renamed.raw);
     // v13：战争雾的总开关（`fog.enabled`）**不用单独迁移**——schema 给它默认值 `true`
     // （v10–v12 的文件里「有 fog」就等于「开着」），而版本号一升就会回写一次，
     // 于是磁盘上的文件重新变得自描述。
     // v14：地图 / 精灵上的视频列表（`video`）同样**不用补壳**——整个字段是可选的，
     // 「没有它」就是「这个对象不放视频」，版本号 +1 触发一次回写即可。
+    // v21：视频那一组从精灵挪到贴图，**精灵身上的 `VideoOverlay` 不在这里删**——
+    // 静默删用户数据比留一条校验警告更糟（见 `validation.ts` 那一条）。
     // 读出来的文档一律是当前版本（v6 起网格里不再存 `cellSize`，顺手被 schema 丢掉）
     normalized = { ...features.raw, formatVersion: DOCUMENT_FORMAT_VERSION };
     needsRewrite =
@@ -927,6 +1068,7 @@ export function parseSceneFile(raw: unknown, size?: SceneSizeHint): SceneFileLoa
       filled.changed ||
       teleport.changed ||
       layers.changed ||
+      renamed.changed ||
       features.changed;
   }
 

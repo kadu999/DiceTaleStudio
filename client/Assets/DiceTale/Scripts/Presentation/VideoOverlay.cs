@@ -20,13 +20,13 @@ namespace DiceTale
     /// **显示顺序**：`short.MaxValue - 1`（所有对象之上、战争雾之下）——未探索的地方连视频
     /// 一起盖住；抬升比对象高一点点、比雾低一点点，避免共面闪烁。
     ///
-    /// **首帧之前不显示**：`TextureRenderer` 没有纹理时会画一块纯色占位，如果一建出来就显示，
+    /// **首帧之前不显示**：`ImageLayer` 没有纹理时会画一块纯色占位，如果一建出来就显示，
     /// 视频还没解码就先闪一块白底。所以先把 renderer 关掉，`prepareCompleted` 再打开。
     ///
     /// 视频自带的声音由 `video.audio` 决定（缺省静音）：对应 `VideoPlayer.audioOutputMode`。
     /// </summary>
     [DisallowMultipleComponent]
-    [RequireComponent(typeof(TextureRenderer))]
+    [RequireComponent(typeof(ImageLayer))]
     public class VideoOverlay : MonoBehaviour
     {
         /// <summary>视频层的显示顺序：**在战争雾之下**（雾是 `short.MaxValue`）。</summary>
@@ -39,7 +39,7 @@ namespace DiceTale
         private const float PrepareTimeoutSeconds = 15f;
 
         private VideoPlayer player;
-        private TextureRenderer quad;
+        private ImageLayer quad;
         private Renderer quadRenderer;
 
         /// <summary>等首帧的看门狗（见 <see cref="PrepareTimeoutSeconds"/>）。</summary>
@@ -75,18 +75,18 @@ namespace DiceTale
             overlay.LogicalId = logicalId ?? "";
 
             /*
-              `VideoOverlay` 声明了 `[RequireComponent(typeof(TextureRenderer))]`：上面那一行
-              **已经**把 TextureRenderer（以及它要求的 MeshFilter / MeshRenderer）挂好了。
-              所以这里只能**取**——再 `AddComponent<TextureRenderer>()` 一次会被
+              `VideoOverlay` 声明了 `[RequireComponent(typeof(ImageLayer))]`：上面那一行
+              **已经**把 ImageLayer（以及它要求的 MeshFilter / MeshRenderer）挂好了。
+              所以这里只能**取**——再 `AddComponent<ImageLayer>()` 一次会被
               `[DisallowMultipleComponent]` 拒掉并返回 null，于是 `quad` 是 null、
               `ApplyGeometry` 直接返回：**网格永远建不出来、尺寸也从来没应用过**（踩过一次，
-              Unity 控制台里那句就是「Can't add 'TextureRenderer' … already added」）。
+              Unity 控制台里那句就是「Can't add 'ImageLayer' … already added」）。
             */
-            overlay.quad = go.GetComponent<TextureRenderer>();
+            overlay.quad = go.GetComponent<ImageLayer>();
             if (overlay.quad == null)
             {
                 // 兜底：万一以后有人把 RequireComponent 去掉
-                overlay.quad = go.AddComponent<TextureRenderer>();
+                overlay.quad = go.AddComponent<ImageLayer>();
             }
 
             overlay.quadRenderer = overlay.quad.GetComponent<Renderer>();
@@ -118,7 +118,7 @@ namespace DiceTale
             if (quad == null)
             {
                 // 走到这里说明初始化漏了（Create 是唯一入口）：说清楚，别让它表现成「视频层是空的」
-                Debug.LogError($"[视频] 视频层没有 TextureRenderer，网格建不出来：{LogicalId}");
+                Debug.LogError($"[视频] 视频层没有 ImageLayer，网格建不出来：{LogicalId}");
                 return;
             }
 

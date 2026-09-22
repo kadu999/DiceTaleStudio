@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import {
+  displaySpriteOf,
   mapDataOf,
   objectsInDrawOrder,
+  spritePixelRectOf,
   type SceneDoc,
   type SceneObjectDoc,
   type WorldPosition,
@@ -841,6 +843,7 @@ export function ScenePanel(): React.JSX.Element {
         gridPaint,
         soundPlayback,
         ui,
+        doc,
       } = useEditorStore.getState();
 
       // 光标：悬停手柄 = 手；拖拽中 = 抓住（拖本体也算，那一下同样是「抓住了东西」）。
@@ -908,9 +911,16 @@ export function ScenePanel(): React.JSX.Element {
         const ref = displayImageOf(object);
         const image = ref === undefined ? null : sceneImage(ref.id);
 
-        // 图片实际像素与引用里声明的尺寸不一致时说一声：画面会被拉伸到声明的尺寸
+        // 子图（v20）：只画图集里的那一格。源矩形按**加载到的图片尺寸**算（真实像素说了算），
+        // 声明尺寸只决定「铺多大」；图片还没加载好时先不传（这一帧仍是棋盘格/占位色）。
+        // 「地图贴图不支持子图」的口径在 `displaySpriteOf` 里，这里不再判一次 kind
+        const sprite = displaySpriteOf(object, doc.spriteSheets);
+
+        // 图片实际像素与引用里声明的尺寸不一致时说一声：画面会被拉伸到声明的尺寸。
+        // 精灵豁免：它的声明尺寸是一格的尺寸，自然尺寸是整张图集，对不上是常态（见上面子图逻辑）
         if (
           ref !== undefined &&
+          sprite === undefined &&
           image !== null &&
           (image.naturalWidth !== ref.width || image.naturalHeight !== ref.height)
         ) {
@@ -920,6 +930,11 @@ export function ScenePanel(): React.JSX.Element {
           );
         }
 
+        const spriteRect =
+          sprite === undefined || image === null
+            ? undefined
+            : spritePixelRectOf(sprite, { width: image.naturalWidth, height: image.naturalHeight });
+
         const map = mapDataOf(object);
         const grid = map?.grid;
         // 「网格标注」总开关：关掉就整层不着色（只是不画，格子数据不动）
@@ -927,6 +942,8 @@ export function ScenePanel(): React.JSX.Element {
         return [
           {
             image,
+            // 子图时只取那一块；没有子图就是 `undefined`（铺满整张）
+            sprite: spriteRect,
             rect,
             // 角度（弧度）：绘制绕矩形中心旋转，与拾取（`hitTestRect(point, rect, rotation)`）
             // 用同一个值，所以「看到的」与「点得到的」始终是同一块

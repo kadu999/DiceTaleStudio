@@ -3,6 +3,7 @@ import { findComponentType, isKnownComponentType } from "./components";
 import { collectActionIds, isMapFogEnabled } from "./commands";
 import { imageOf, mapDataOf, soundDataOf, teleportDataOf, videoDataOf } from "./access";
 import { FEATURE_COMPONENT, carriesKind } from "./features";
+import { isTrivialSpriteSheet, spriteSheetOf } from "./sprites";
 import type { ProjectDoc, ProjectSettingsDoc, SceneDoc, SceneObjectDoc } from "./types";
 
 /**
@@ -21,6 +22,50 @@ export interface ValidationIssue {
 
 export function hasErrors(issues: readonly ValidationIssue[]): boolean {
   return issues.some((issue) => issue.level === "error");
+}
+
+/**
+ * `validateScene` 的可选输入：**跨文件的知识**。
+ *
+ * 场景文件里只有「引用哪张图 + 第几格」，而「几行几列」住在工程文件里——不把那张表传进来，
+ * 就只能校验格子是非负整数（schema 那一层已经做了），查不出「格子超出这张图的切分」。
+ * 不传 = 跳过这条（只读场景文件、手上没有工程文件的调用方不必伪造一份）。
+ */
+export interface SceneValidationOptions {
+  readonly spriteSheets?: ProjectDoc["spriteSheets"];
+}
+
+/**
+ * 子图引用的校验（v20）：格子必须落在那张图的切分范围内。
+ *
+ * 越界**不算错**：切分可能先被改小（改的是工程文件，对象留在场景文件里没动），
+ * 而渲染与推送会统一夹到最后一格——所以这里只提醒「你看到的不是你要的那一格」。
+ * 地图对象走的是 `map.image`，由 `validateObject` 里那条「不支持子图」管。
+ */
+function validateObjectSprite(
+  object: SceneObjectDoc,
+  path: string,
+  spriteSheets: ProjectDoc["spriteSheets"],
+  issues: ValidationIssue[],
+): void {
+  if (spriteSheets === undefined) {
+    return;
+  }
+
+  const image = imageOf(object);
+  const sprite = image?.sprite;
+  if (image === undefined || sprite === undefined) {
+    return;
+  }
+
+  const sheet = spriteSheetOf(spriteSheets, image.id);
+  if (sprite.column >= sheet.columns || sprite.row >= sheet.rows) {
+    issues.push({
+      level: "warning",
+      path: `${path}/image/sprite`,
+      message: `子图 (${sprite.column}, ${sprite.row}) 超出这张图的切分 ${sheet.columns}×${sheet.rows}（按最后一格显示）`,
+    });
+  }
 }
 
 function checkPosition(
@@ -95,6 +140,17 @@ function validateObject(
 
       if (map.image.id.trim().length === 0) {
         issues.push({ level: "warning", path: `${path}/map/image`, message: "地图贴图未指定" });
+      }
+
+      // 地图贴图不支持子图（v20）：网格的格子是按**整张**贴图算好的，取一块会让已经画好的
+      // 格子标注含义静默改变。编辑器与前端都按整图渲染（见 `sprites.ts` 的 `displaySpriteOf`），
+      // 所以这里要说出来——不然「明明切了却不生效」无从排查
+      if (map.image.sprite !== undefined) {
+        issues.push({
+          level: "warning",
+          path: `${path}/map/image/sprite`,
+          message: "地图贴图不支持子图（取一块会让已有格子错位），这一项会被忽略",
+        });
       }
 
       // 战争雾指定的雾区位必须是可绘制的区域位：手写文件里写了别的值（0、3、256…），
@@ -282,8 +338,10 @@ function validateObject(
   }
 
   /*
-    视频列表（v14 起）：**只有地图与精灵**能带（`carriesKind`）。
+    视频列表（v14 起）：**只有地图与贴图**能带（`carriesKind`）。
     与声音那几条同一个口径——错了都是「按没加 / 按没选处理」，所以只报警告不拦运行。
+    **旧文件里精灵身上的视频就走这条**：v21 起「能放视频」的名单从精灵换成了贴图，
+    那份组件数据**照样留着不删**（不静默改用户数据），只是编辑器不再认它、这里报一条警告。
     **扩展名不在这里校验**：webm 在 Windows 上多半解不了属于「这台机器的解码器」问题，
     提醒放在界面上（选择器 / 面板），免得每次打开场景都报一遍。
   */
@@ -293,7 +351,7 @@ function validateObject(
       issues.push({
         level: "warning",
         path: `${path}/video`,
-        message: `只有地图与精灵能放视频（kind=${object.kind} 的 video 字段会被忽略）`,
+        message: `只有地图与贴图能放视频（kind=${object.kind} 的 video 字段会被忽略）`,
       });
     }
 
@@ -408,7 +466,10 @@ function validateObject(
 }
 
 /** 校验单个场景。 */
-export function validateScene(scene: SceneDoc): ValidationIssue[] {
+export function validateScene(
+  scene: SceneDoc,
+  options: SceneValidationOptions = {},
+): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
   const base = `scenes/${scene.name}`;
 
@@ -430,6 +491,7 @@ export function validateScene(scene: SceneDoc): ValidationIssue[] {
     }
 
     validateObject(object, path, issues, scene.name);
+    validateObjectSprite(object, path, options.spriteSheets, issues);
   }
 
   // 动作 id 全场景唯一（运行态靠 actionId 寻址，重名会触发到错误动作）
@@ -609,8 +671,39 @@ export function validateProject(doc: ProjectDoc): ValidationIssue[] {
   validateAudioSettings(doc.settings, issues);
   validateAudioTags(doc.audioTags, issues);
   validateAudioMeta(doc.audioMeta, doc.audioTags, issues);
+  validateSpriteSheets(doc.spriteSheets, issues);
 
   return issues;
+}
+
+/**
+ * 切分表（v20）：`图片逻辑 ID → 列×行`。
+ *
+ * 只查**表自己**能看出来的问题：图片没指定、`1×1`（= 整图，这一项多余）。
+ * 「表项指向的图片已经不在项目里」查不出来——校验拿不到资源树（与 `audioMeta` 的孤儿记录
+ * 同一个缺口，见 README 的已知不一致）。格子越界是场景那一侧的规则（`validateObjectSprite`）。
+ */
+function validateSpriteSheets(
+  sheets: ProjectDoc["spriteSheets"],
+  issues: ValidationIssue[],
+): void {
+  if (sheets === undefined) {
+    return;
+  }
+
+  for (const [imageId, sheet] of Object.entries(sheets)) {
+    if (imageId.trim().length === 0) {
+      issues.push({ level: "warning", path: "spriteSheets", message: "切分表的图片 ID 不能为空" });
+    }
+
+    if (isTrivialSpriteSheet(sheet)) {
+      issues.push({
+        level: "warning",
+        path: `spriteSheets/${imageId}`,
+        message: "1×1 等于整图，这一项多余（会被忽略）",
+      });
+    }
+  }
 }
 
 /** 把问题列表整理成可读多行文本（进入运行态被阻止时展示）。 */
