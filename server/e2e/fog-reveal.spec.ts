@@ -1,8 +1,10 @@
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
 import {
+  COMPONENT,
   dropProject,
   mapObjectDoc,
   newProject,
+  objectComponentData,
   openFirstObject,
   sceneDoc,
   seedProjectDoc,
@@ -80,7 +82,7 @@ async function connectFakeClient(page: Page, port: number): Promise<void> {
           type: "client_hello",
           // 与 `@dts/protocol` 的 `PROTOCOL_VERSION` 一致（这里写死：e2e 不是 workspace 包，
           // 拿不到那个常量；版本一升这里会连不上、用例会当场失败，提醒同步改）
-          protocolVersion: 8,
+          protocolVersion: 9,
           name: "e2e 假前端",
           version: "0.0.0",
         }),
@@ -136,14 +138,16 @@ async function eraseAcross(
 /** 一张带雾的地图：左下角 4 格是「区域1」，且**只有区域1 算雾区**。 */
 function fogMapDoc(project: string): Record<string, unknown> {
   const mapDoc = mapObjectDoc(project, SCENE, "网格地图", MAP_SIZE, GRID);
-  (mapDoc.map as { cells: unknown }).cells = {
+  // v19 起网格与战争雾都在 `GridMap` 组件的数据里（改的就是夹具里那一份活数据）
+  const gridMap = objectComponentData(mapDoc, COMPONENT.gridMap)!;
+  gridMap.cells = {
     encoding: "rle",
     runs: [
       [1, FOG_CELLS],
       [0, GRID.width * GRID.height - FOG_CELLS],
     ],
   };
-  (mapDoc.map as { fog?: unknown }).fog = { enabled: true, regions: [1] };
+  gridMap.fog = { enabled: true, regions: [1] };
   return mapDoc;
 }
 

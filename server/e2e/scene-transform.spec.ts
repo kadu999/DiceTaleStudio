@@ -1,5 +1,6 @@
 import { expect, test, type APIRequestContext, type Locator, type Page } from "@playwright/test";
 import {
+  COMPONENT,
   closeDrawers,
   dropProject,
   enterEditor,
@@ -11,6 +12,7 @@ import {
   seedProjectDoc,
   selectObject,
   solidPng,
+  withComponent,
 } from "./helpers/editor";
 import { exactWorldPoint, findEmptyCanvasPoint, sceneViewport, worldSamplePoint } from "./helpers/canvas";
 
@@ -64,9 +66,11 @@ async function openSprite(page: Page, request: APIRequestContext): Promise<strin
   const project = await newProject(request);
   await seedProjectDoc(request, project, [
     sceneDoc(SCENE, [
-      sceneObjectDoc(SPRITE, "SceneObject", { x: 0, y: 0 }, {
-        image: { id: `project:${project}/${IMAGE_PATH}`, width: SIZE.width, height: SIZE.height },
-      }),
+      withComponent(
+        sceneObjectDoc(SPRITE, "SceneObject", { x: 0, y: 0 }),
+        COMPONENT.textureRenderer,
+        { id: `project:${project}/${IMAGE_PATH}`, width: SIZE.width, height: SIZE.height },
+      ),
     ]),
   ]);
   await request.put(

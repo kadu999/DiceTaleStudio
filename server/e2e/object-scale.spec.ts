@@ -1,5 +1,6 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import {
+  COMPONENT,
   closeDrawers,
   dropProject,
   enterEditor,
@@ -12,6 +13,7 @@ import {
   seedProjectDoc,
   selectObject,
   solidPng,
+  withComponent,
 } from "./helpers/editor";
 import {
   canvasAverageColor,
@@ -60,9 +62,11 @@ test.describe("对象缩放", () => {
     try {
       await seedProjectDoc(request, project, [
         sceneDoc(SCENE, [
-          sceneObjectDoc("精灵", "SceneObject", { x: 0, y: 0 }, {
-            image: { id: `project:${project}/${IMAGE_PATH}`, width: SIZE.width, height: SIZE.height },
-          }),
+          withComponent(
+            sceneObjectDoc("精灵", "SceneObject", { x: 0, y: 0 }),
+            COMPONENT.textureRenderer,
+            { id: `project:${project}/${IMAGE_PATH}`, width: SIZE.width, height: SIZE.height },
+          ),
         ]),
       ]);
       const uploaded = await request.put(

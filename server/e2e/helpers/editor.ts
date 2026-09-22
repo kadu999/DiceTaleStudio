@@ -22,7 +22,123 @@ export type LeftTab = "assets" | "hierarchy";
  * 要有意制造「旧版本文件」时别用它：自己写那个版本号（`formatVersion: 4` 之类），
  * 并预期编辑器会把它升上来回写一次。
  */
-export const CURRENT_SCENE_FORMAT_VERSION = 18;
+export const CURRENT_SCENE_FORMAT_VERSION = 19;
+
+/**
+ * **承载对象特性的组件类型名**（v19 起特性住在 `object.components[]` 里）。
+ *
+ * | 旧扁平字段（v18 及更早） | 组件 `type` |
+ * |---|---|
+ * | `object.map` | `gridMap` |
+ * | `object.image` | `textureRenderer` |
+ * | `object.sound` | `playSound` |
+ * | `object.teleport` | `teleport` |
+ * | `object.video` | `videoOverlay` |
+ *
+ * 与 `@dts/document` 的 `FEATURE_COMPONENT` 一致（e2e 不引用内部包，所以这里是**复述**）；
+ * 组件名只在 helpers 里写这一份，spec 不该再散落字符串字面量。
+ */
+export const COMPONENT = {
+  gridMap: "GridMap",
+  textureRenderer: "TextureRenderer",
+  playSound: "PlaySound",
+  teleport: "Teleport",
+  videoOverlay: "VideoOverlay",
+} as const;
+
+/** 场景文件（或内存里的场景文档）的形状：只声明 e2e 真正会读的字段。 */
+export interface SceneFileLike {
+  readonly formatVersion?: number;
+  readonly objects?: readonly Record<string, unknown>[];
+}
+
+/** 组件实例 id 的约定：`<对象 id>__<组件类型>`（与 `@dts/document` 的 `componentId` 一致）。 */
+export function componentId(objectId: string, component: string): string {
+  return `${objectId}__${component}`;
+}
+
+/** 按 `id` / `kind` 在场景文件里找一个对象（两个条件都给时都要满足）。 */
+export function findSceneObject(
+  file: SceneFileLike | undefined,
+  selector: { readonly objectId?: string; readonly kind?: string },
+): Record<string, unknown> | undefined {
+  return file?.objects?.find((object) => {
+    if (selector.objectId !== undefined && object.id !== selector.objectId) {
+      return false;
+    }
+
+    return selector.kind === undefined || object.kind === selector.kind;
+  });
+}
+
+/** 某个对象身上的组件实例（v19 起特性住在 `components[]` 里；没有实例就是 `undefined`）。 */
+export function componentInstanceOf(
+  object: Record<string, unknown> | undefined,
+  component: string,
+): Record<string, unknown> | undefined {
+  const components = object?.["components"];
+  if (!Array.isArray(components)) {
+    return undefined;
+  }
+
+  return components.find(
+    (item): item is Record<string, unknown> =>
+      typeof item === "object" && item !== null && item["type"] === component,
+  );
+}
+
+/**
+ * 某个对象身上的组件**数据**（`undefined` = 这个对象没有这个组件）。
+ *
+ * 返回的是那一份**活引用**：造夹具的用例可以直接改它（例如换掉地图的 `cells`）。
+ */
+export function objectComponentData(
+  object: Record<string, unknown> | undefined,
+  component: string,
+): Record<string, unknown> | undefined {
+  const data = componentInstanceOf(object, component)?.["data"];
+  return typeof data === "object" && data !== null ? (data as Record<string, unknown>) : undefined;
+}
+
+/**
+ * 取某个对象的某个组件的数据（v19 起特性住在 `components` 里）。
+ *
+ * 两种找法都在用，且都只认**显式声明的条件**：
+ * - 按 `kind`：地图 / 声音 / 传送阵这种「一种类型一个对象」的场景；
+ * - 按 `objectId`：同一个 kind 在场景里有多个、要指名道姓的时候。
+ */
+export function componentDataOf(
+  file: SceneFileLike | undefined,
+  objectIdOrKind: { readonly objectId?: string; readonly kind?: string },
+  component: string,
+): Record<string, unknown> | undefined {
+  return objectComponentData(findSceneObject(file, objectIdOrKind), component);
+}
+
+/**
+ * 给一个场景对象**挂上**一个组件实例（造夹具用；同类型的旧实例会被替换）。
+ *
+ * 组件 id 就是 `componentId(对象 id, 组件类型)`（与编辑器写盘时同一套约定），
+ * 不传 `actions` —— 特性组件的动作列表在夹具里一律是空的（与迁移产出的形状一致）。
+ */
+export function withComponent(
+  object: Record<string, unknown>,
+  component: string,
+  data: Record<string, unknown>,
+): Record<string, unknown> {
+  const existing = Array.isArray(object["components"]) ? (object["components"] as unknown[]) : [];
+  const kept = existing.filter(
+    (item) => !(typeof item === "object" && item !== null && (item as { type?: unknown }).type === component),
+  );
+
+  return {
+    ...object,
+    components: [
+      ...kept,
+      { id: componentId(String(object["id"]), component), type: component, data, actions: [] },
+    ],
+  };
+}
 
 /** 用接口建一个真项目（含 `project.json`），返回项目名。 */
 export async function newProject(request: APIRequestContext): Promise<string> {
@@ -207,8 +323,12 @@ export function sceneDoc(
  * 造一个场景里的普通对象（形状与 `createSceneObject` 一致，无组件无动作）。
  *
  * `position` 是**世界坐标**（场景中心为原点，x 向右、y 向上，单位像素）；不传即未放置。
- * `active` / `sortingOrder` 是 v7 起、`scale` 是 v8 起、`locked` 是 v9 起、地图的 `map.fog`（战争雾；
- * v13 起里面还有总开关 `enabled`）是 v10 起的显式字段（默认「显示、顺序 0、缩放 1、不锁、没开战争雾」）。
+ * `active` / `sortingOrder` 是 v7 起、`scale` 是 v8 起、`locked` 是 v9 起、地图的战争雾
+ * （v19 起在 `GridMap` 组件的 `fog` 里，v10–v18 是 `map.fog`；v13 起里面还有总开关 `enabled`）
+ * 是 v10 起的显式字段（默认「显示、顺序 0、缩放 1、不锁、没开战争雾」）。
+ *
+ * 对象特性（地图 / 贴图 / 声音 / 传送 / 视频）**不在这里给参数**：v19 起它们是
+ * `components[]` 里的实例，要带就自己用 `withComponent` 挂上去（见 `mapObjectDoc`）。
  */
 export function sceneObjectDoc(
   name: string,
@@ -237,6 +357,8 @@ export function sceneObjectDoc(
  * 地图**有世界坐标**（贴图中心，默认世界原点），`size` 是贴图里声明的尺寸——
  * 声明得比视口小就能在画布上看到这块棋盘的边界。
  * 显示顺序用编辑器建地图时的默认值（`MAP_DEFAULT_SORTING_ORDER = -10`，垫在最下面）。
+ *
+ * 贴图与网格是它的 **`GridMap` 组件**（v19 起；v18 及更早写在 `object.map` 里）。
  */
 export function mapObjectDoc(
   project: string,
@@ -245,9 +367,10 @@ export function mapObjectDoc(
   size: { width: number; height: number } = { width: 1920, height: 1080 },
   grid: { width: number; height: number } = { width: 64, height: 36 },
 ): Record<string, unknown> {
-  return {
-    ...sceneObjectDoc(name, "Map", { x: 0, y: 0 }, { sortingOrder: -10 }),
-    map: {
+  return withComponent(
+    sceneObjectDoc(name, "Map", { x: 0, y: 0 }, { sortingOrder: -10 }),
+    COMPONENT.gridMap,
+    {
       image: {
         id: `project:${project}/Assets/images/${sceneName}.png`,
         width: size.width,
@@ -257,7 +380,7 @@ export function mapObjectDoc(
       rowOrder: "bottom-up",
       cells: { encoding: "rle", runs: [[0, grid.width * grid.height]] },
     },
-  };
+  );
 }
 
 /**
@@ -393,23 +516,32 @@ export async function seedProjectDoc(
   }
 }
 
+/** 场景文件里的一个对象（e2e 断言落盘用）：只声明用例真正会读的字段。 */
+export interface PersistedSceneObject {
+  readonly id?: string;
+  readonly name: string;
+  readonly kind: string;
+  readonly position: { x: number; y: number } | null;
+  readonly active?: boolean;
+  readonly locked?: boolean;
+  readonly sortingOrder?: number;
+  readonly rotation?: number;
+  readonly scale?: number;
+}
+
 /** 直接读一个场景文件里的对象（e2e 断言用）。 */
 export async function readSceneObjects(
   request: APIRequestContext,
   project: string,
   sceneName: string,
-): Promise<
-  Array<{ name: string; kind: string; position: { x: number; y: number } | null }>
-> {
+): Promise<PersistedSceneObject[]> {
   const id = `project:${project}/Assets/scenes/${sceneName}.json`;
   const response = await request.get(`/api/resources/text?id=${encodeURIComponent(id)}`);
   if (!response.ok()) {
     return [];
   }
 
-  const file = JSON.parse(await response.text()) as {
-    objects?: Array<{ name: string; kind: string; position: { x: number; y: number } | null }>;
-  };
+  const file = JSON.parse(await response.text()) as { objects?: PersistedSceneObject[] };
   return file.objects ?? [];
 }
 
@@ -420,65 +552,72 @@ export interface SceneMapData {
 }
 
 /**
+ * 读一个场景文件的**整份内容**（断言格式版本 / 组件时用它 + `componentDataOf`）。
+ *
+ * 读不到、或读到的是**半截 JSON**（迁移回写与这次读撞在一起）都返回 `undefined`：
+ * 调用方多半在 `expect.poll` 里，`undefined` 会让它再试一轮，而不是当场炸成偶发失败。
+ */
+export async function readSceneFile(
+  request: APIRequestContext,
+  project: string,
+  sceneName: string,
+): Promise<SceneFileLike | undefined> {
+  const id = `project:${project}/Assets/scenes/${sceneName}.json`;
+  const response = await request.get(`/api/resources/text?id=${encodeURIComponent(id)}`);
+  if (!response.ok()) {
+    return undefined;
+  }
+
+  try {
+    return JSON.parse(await response.text()) as SceneFileLike;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * 读场景文件里第一个地图对象的网格数据（尺寸 + 展开前的游程）。
  *
- * 游程在文件里的位置是 `object.map.cells.runs`（`cells` 是 `{encoding, runs}`），
- * 这里把它摊平成 `{grid, runs}`：用例只关心这两样。
+ * 游程在文件里的位置是 **`GridMap` 组件的 `data.cells.runs`**（`cells` 是 `{encoding, runs}`；
+ * v18 及更早是 `object.map.cells.runs`），这里把它摊平成 `{grid, runs}`：用例只关心这两样。
  */
 export async function readSceneMap(
   request: APIRequestContext,
   project: string,
   sceneName: string,
 ): Promise<SceneMapData | undefined> {
-  const id = `project:${project}/Assets/scenes/${sceneName}.json`;
-  const response = await request.get(`/api/resources/text?id=${encodeURIComponent(id)}`);
-  if (!response.ok()) {
+  const file = await readSceneFile(request, project, sceneName);
+  const data = componentDataOf(file, { kind: "Map" }, COMPONENT.gridMap);
+  const grid = data?.["grid"] as SceneMapData["grid"] | undefined;
+  const runs = (data?.["cells"] as { runs?: SceneMapData["runs"] } | undefined)?.runs;
+  if (grid === undefined || runs === undefined) {
     return undefined;
   }
 
-  const file = JSON.parse(await response.text()) as {
-    objects?: Array<{
-      kind?: string;
-      map?: { grid?: SceneMapData["grid"]; cells?: { runs?: SceneMapData["runs"] } };
-    }>;
-  };
-
-  const map = file.objects?.find((object) => object.kind === "Map")?.map;
-  if (map?.grid === undefined || map.cells?.runs === undefined) {
-    return undefined;
-  }
-
-  return { grid: map.grid, runs: map.cells.runs };
+  return { grid, runs };
 }
 
 /**
  * 读场景文件里地图对象的**战争雾配置**（总开关 + 指定的雾区位）。
  *
- * 没开过战争雾就是 `undefined`——「没开也没指定」在文件里是**没有 `map.fog` 这个字段**
- * （见 `setMapFogEnabled` / `setMapFogRegions`）。
+ * 没开过战争雾就是 `undefined`——「没开也没指定」在文件里是 **`GridMap` 组件里没有 `fog`**
+ * （v18 及更早是没有 `map.fog`；见 `setMapFogEnabled` / `setMapFogRegions`）。
  */
 export async function readSceneFog(
   request: APIRequestContext,
   project: string,
   sceneName: string,
 ): Promise<{ enabled?: boolean; regions?: readonly number[] } | undefined> {
-  const id = `project:${project}/Assets/scenes/${sceneName}.json`;
-  const response = await request.get(`/api/resources/text?id=${encodeURIComponent(id)}`);
-  if (!response.ok()) {
-    return undefined;
-  }
-
-  const file = JSON.parse(await response.text()) as {
-    objects?: Array<{ kind?: string; map?: { fog?: { enabled?: boolean; regions?: number[] } } }>;
-  };
-
-  return file.objects?.find((object) => object.kind === "Map")?.map?.fog;
+  const file = await readSceneFile(request, project, sceneName);
+  return componentDataOf(file, { kind: "Map" }, COMPONENT.gridMap)?.["fog"] as
+    | { enabled?: boolean; regions?: readonly number[] }
+    | undefined;
 }
 
 /**
  * 读场景文件里地图对象的**战争雾绑定**（指定的雾区位）。
  *
- * 没指定过雾区就是 `undefined`——「没指定」在文件里是**没有 `map.fog` 这个字段**
+ * 没指定过雾区就是 `undefined`——「没指定」在文件里是**没有 `fog` 这个字段**
  * （见 `setMapFogRegions`）。
  */
 export async function readSceneFogRegions(
@@ -490,10 +629,11 @@ export async function readSceneFogRegions(
 }
 
 /**
- * 读场景文件里**某个对象**的视频配置（地图 / 精灵上的 `video`），按 `kind` 找——
+ * 读场景文件里**某个对象**的视频配置（地图 / 精灵上的 `VideoOverlay`），按 `kind` 找——
  * 不按数组下标：用例里对象顺序不是契约，`readSceneFog` 也是这么做的。
  *
- * 没加过视频就是 `undefined`——「没加」在文件里是**没有 `video` 这个字段**（见 `setVideoClips`）。
+ * 没加过视频就是 `undefined`——「没加」在文件里是**没有这个组件**（v18 及更早是没有
+ * `video` 这个字段；见 `setVideoClips`）。
  */
 export async function readSceneVideo(
   request: APIRequestContext,
@@ -507,6 +647,7 @@ export async function readSceneVideo(
       names?: Record<string, string>;
       loop?: boolean;
       audio?: boolean;
+      enabled?: boolean;
     }
   | undefined
 > {
@@ -517,14 +658,80 @@ export async function readSceneVideo(
     throw new Error(`读场景文件失败：HTTP ${response.status()}（${id}）`);
   }
 
-  const file = JSON.parse(await response.text()) as {
-    objects?: Array<{
-      kind?: string;
-      video?: { clips?: string[]; picked?: string; names?: Record<string, string>; loop?: boolean; audio?: boolean };
-    }>;
-  };
+  const file = JSON.parse(await response.text()) as SceneFileLike;
+  const data = componentDataOf(file, { kind }, COMPONENT.videoOverlay);
+  if (data === undefined) {
+    return undefined;
+  }
 
-  return file.objects?.find((object) => object.kind === kind)?.video;
+  return {
+    enabled: data["enabled"] as boolean | undefined,
+    clips: data["clips"] as readonly string[] | undefined,
+    picked: data["picked"] as string | undefined,
+    names: data["names"] as Record<string, string> | undefined,
+    loop: data["loop"] as boolean | undefined,
+    audio: data["audio"] as boolean | undefined,
+  };
+}
+
+/**
+ * 读场景文件里**声音对象**的数据（音频列表 + 选中的那条 + 名字 + 层级）。
+ *
+ * 连对象自己的 `position` 一起带出来：声音对象的用例既断言「配置落盘」也断言「落位」。
+ * 场景里没有 `kind: "PlaySound"` 的对象时 `undefined`；对象在、但**没有 `PlaySound` 组件**
+ * 时（手写文件）也 `undefined`——两种都是「这份数据不存在」。
+ */
+export async function readSceneSound(
+  request: APIRequestContext,
+  project: string,
+  sceneName: string,
+): Promise<
+  | {
+      clips?: readonly string[];
+      picked?: string;
+      names?: Record<string, string>;
+      layer?: string;
+      position?: { x: number; y: number } | null;
+    }
+  | undefined
+> {
+  const file = await readSceneFile(request, project, sceneName);
+  const object = findSceneObject(file, { kind: "PlaySound" });
+  if (object === undefined) {
+    return undefined;
+  }
+
+  const data = objectComponentData(object, COMPONENT.playSound);
+  return {
+    clips: data?.["clips"] as readonly string[] | undefined,
+    picked: data?.["picked"] as string | undefined,
+    names: data?.["names"] as Record<string, string> | undefined,
+    layer: data?.["layer"] as string | undefined,
+    position: object["position"] as { x: number; y: number } | null | undefined,
+  };
+}
+
+/**
+ * 读场景文件里**传送阵**的数据（候选目标场景 + 选中的那一个）。
+ *
+ * 与 `readSceneSound` 同一套：没有 `kind: "Teleport"` 的对象、或它没带 `Teleport` 组件时
+ * 都返回 `undefined`。
+ */
+export async function readSceneTeleport(
+  request: APIRequestContext,
+  project: string,
+  sceneName: string,
+): Promise<{ targets?: readonly string[]; picked?: string } | undefined> {
+  const file = await readSceneFile(request, project, sceneName);
+  const data = componentDataOf(file, { kind: "Teleport" }, COMPONENT.teleport);
+  if (data === undefined) {
+    return undefined;
+  }
+
+  return {
+    targets: data["targets"] as readonly string[] | undefined,
+    picked: data["picked"] as string | undefined,
+  };
 }
 
 /**

@@ -3,6 +3,7 @@ import {
   closeDrawers,
   dropProject,
   enterEditor,
+  mapObjectDoc,
   newProject,
   openInspector,
   openLeftTab,
@@ -117,25 +118,17 @@ test.describe("对象锁定", () => {
   });
 
   test("列表里的锁：锁住地图后点画布仍能选中它，但拖不走", async ({ page, request }) => {
+    // 本文件里最重的一条：建项目 → 开编辑器 → 开抽屉 → 点锁 → **轮询磁盘** → 关抽屉 →
+    // 点画布 → 开属性面板断言 → 再关抽屉 → 一次真实拖拽（8 步）→ 等 1.2s → 再断言。
+    // 满载并行跑（4+ worker，还要跟后端抢 HTTP）时 30s 不够，实测偶发超时——放宽到 60s，
+    // 与 `scene-transform.spec.ts` 里那条拖拽用例同一处理（**没有放宽任何断言**）。
+    test.setTimeout(60_000);
+
     const project = await newProject(request);
     try {
       // 地图声明成 1920×1080（铺满视口）——正是最容易被误拖的那种对象
       await seedProjectDoc(request, project, [
-        sceneDoc(SCENE, [
-          {
-            ...sceneObjectDoc("网格地图", "Map", { x: 0, y: 0 }, { sortingOrder: -10 }),
-            map: {
-              image: {
-                id: `project:${project}/Assets/images/${SCENE}.png`,
-                width: 1920,
-                height: 1080,
-              },
-              grid: { width: 64, height: 36 },
-              rowOrder: "bottom-up",
-              cells: { encoding: "rle", runs: [[0, 64 * 36]] },
-            },
-          },
-        ]),
+        sceneDoc(SCENE, [mapObjectDoc(project, SCENE, "网格地图")]),
       ]);
 
       await enterEditor(page);

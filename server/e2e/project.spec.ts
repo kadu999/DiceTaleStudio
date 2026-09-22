@@ -53,9 +53,14 @@ test.describe("项目", () => {
       await expect(treeRows.filter({ hasText: name })).toHaveCount(0);
       // 每行都带类型图标（内联 SVG，不是字体字形）；`data-icon` 是给这里钉的
       await expect(treeRows.first()).toHaveAttribute("data-icon", "folder");
-      await expect(treeRows.first().locator("svg")).toHaveCount(1);
+      // 目录树的行 = **展开三角 + 文件夹图标**两枚 SVG（三角能展开 / 收起那一层）；
+      // 内层行（内容列）没有三角，只有类型图标。按具体的 `data-icon` 断言，
+      // 别按 `svg` 的条数——那样下次多加一枚装饰图标就会变成假红。
+      await expect(treeRows.first().locator('svg[data-icon="chevron"]')).toHaveCount(1);
+      await expect(treeRows.first().locator('svg[data-icon="folder"]')).toHaveCount(1);
       await expect(contentRows.first()).toHaveAttribute("data-icon", "folder");
-      await expect(contentRows.first().locator("svg")).toHaveCount(1);
+      await expect(contentRows.first().locator('svg[data-icon="folder"]')).toHaveCount(1);
+      await expect(contentRows.first().locator('svg[data-icon="chevron"]')).toHaveCount(0);
 
       // 右列默认显示 Assets 的内容
       await expect(page.getByTestId("folder-breadcrumb")).toHaveText("/");

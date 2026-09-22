@@ -1,5 +1,6 @@
-import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import {
+  COMPONENT,
   closeDrawers,
   dropProject,
   enterEditor,
@@ -8,11 +9,13 @@ import {
   openInspector,
   openLeftTab,
   openProject,
+  readSceneTeleport,
   sceneDoc,
   sceneObjectDoc,
   seedProjectDoc,
   solidPng,
   uploadSceneImage,
+  withComponent,
 } from "./helpers/editor";
 import { canvasAverageColor, preciseWorldPoint } from "./helpers/canvas";
 
@@ -35,32 +38,6 @@ import { canvasAverageColor, preciseWorldPoint } from "./helpers/canvas";
 
 const SCENE = "Map001";
 const OTHER = "Map002";
-
-/** 场景文件里的传送阵（断言落盘用）。 */
-async function readTeleport(
-  request: APIRequestContext,
-  project: string,
-  sceneName: string,
-): Promise<{ targets?: unknown; picked?: unknown } | null> {
-  const id = `project:${project}/Assets/scenes/${sceneName}.json`;
-  const response = await request.get(`/api/resources/text?id=${encodeURIComponent(id)}`);
-  if (!response.ok()) {
-    return null;
-  }
-
-  const file = (await response.json()) as {
-    objects?: Array<{
-      kind?: string;
-      teleport?: { targets?: unknown; picked?: unknown };
-    }>;
-  };
-  const object = file.objects?.find((item) => item.kind === "Teleport");
-  if (object === undefined) {
-    return null;
-  }
-
-  return { targets: object.teleport?.targets, picked: object.teleport?.picked };
-}
 
 /** 新建一个传送阵（弹框：动作 → 传送阵），名字按类型预填。 */
 async function createTeleport(page: Page): Promise<void> {
@@ -158,10 +135,10 @@ test.describe("动作对象：传送阵", () => {
 
       // 落盘：清单 + 选中的那一个都写进文件
       await expect
-        .poll(async () => (await readTeleport(request, project, SCENE))?.targets)
+        .poll(async () => (await readSceneTeleport(request, project, SCENE))?.targets)
         .toEqual([OTHER]);
       await expect
-        .poll(async () => (await readTeleport(request, project, SCENE))?.picked)
+        .poll(async () => (await readSceneTeleport(request, project, SCENE))?.picked)
         .toBe(OTHER);
 
       // 按一下 = 换台（按钮在「传送」组里，平板下就是右抽屉，所以别把它关掉）
@@ -170,7 +147,7 @@ test.describe("动作对象：传送阵", () => {
       await expect(page.getByTestId("scene-bar")).toHaveAttribute("data-scene", OTHER);
 
       // 换台不是编辑：文档一个字节没改（落盘还是按下之前那份）
-      expect(await readTeleport(request, project, SCENE)).toEqual({
+      expect(await readSceneTeleport(request, project, SCENE)).toEqual({
         targets: [OTHER],
         picked: OTHER,
       });
@@ -230,14 +207,16 @@ test.describe("动作对象：传送阵", () => {
       // 手写两份：一份指向不存在的场景；一份指向自己（当前场景）
       await seedProjectDoc(request, project, [
         sceneDoc(SCENE, [
-          sceneObjectDoc("死名字", "Teleport", { x: 0, y: 0 }, {
-            id: "teleport_dead",
-            teleport: { targets: ["Map999"], picked: "Map999" },
-          }),
-          sceneObjectDoc("自指", "Teleport", { x: 120, y: 0 }, {
-            id: "teleport_self",
-            teleport: { targets: [SCENE], picked: SCENE },
-          }),
+          withComponent(
+            sceneObjectDoc("死名字", "Teleport", { x: 0, y: 0 }, { id: "teleport_dead" }),
+            COMPONENT.teleport,
+            { targets: ["Map999"], picked: "Map999" },
+          ),
+          withComponent(
+            sceneObjectDoc("自指", "Teleport", { x: 120, y: 0 }, { id: "teleport_self" }),
+            COMPONENT.teleport,
+            { targets: [SCENE], picked: SCENE },
+          ),
         ]),
         sceneDoc(OTHER, []),
       ]);

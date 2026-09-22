@@ -1,5 +1,6 @@
 import { expect, test, type APIRequestContext, type TestInfo } from "@playwright/test";
 import {
+  COMPONENT,
   closeDrawers,
   dropProject,
   enterEditor,
@@ -9,6 +10,7 @@ import {
   sceneDoc,
   sceneObjectDoc,
   seedProjectDoc,
+  withComponent,
 } from "./helpers/editor";
 
 /**
@@ -324,10 +326,11 @@ test.describe("编辑态 / 运行态", { tag: "@runtime" }, () => {
     try {
       await seedProjectDoc(request, project, [
         sceneDoc(RUN_SCENE, [
-          sceneObjectDoc("传送阵", "Teleport", { x: 0, y: 0 }, {
-            id: "teleport_01",
-            teleport: { targets: [OTHER_SCENE], picked: OTHER_SCENE },
-          }),
+          withComponent(
+            sceneObjectDoc("传送阵", "Teleport", { x: 0, y: 0 }, { id: "teleport_01" }),
+            COMPONENT.teleport,
+            { targets: [OTHER_SCENE], picked: OTHER_SCENE },
+          ),
         ]),
         sceneDoc(OTHER_SCENE),
       ]);

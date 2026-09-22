@@ -1,12 +1,18 @@
 import { expect, test } from "@playwright/test";
 import {
+  COMPONENT,
   CURRENT_SCENE_FORMAT_VERSION,
+  componentInstanceOf,
   dropProject,
   enterEditor,
+  findSceneObject,
   mapObjectDoc,
   newProject,
   openLeftTab,
   openProject,
+  readSceneFile,
+  readSceneMap,
+  readSceneSound,
   sceneDoc,
   sceneObjectDoc,
   seedProjectDoc,
@@ -265,6 +271,145 @@ test.describe("场景数据", () => {
       // 对象照样在列表里（迁移不会丢对象）
       await openLeftTab(page, "hierarchy");
       await expect(page.getByTestId("object-row").filter({ hasText: "木门" })).toBeVisible();
+    } finally {
+      await dropProject(request, project);
+    }
+  });
+
+  test("旧版场景文件（v18，特性还是扁平字段）打开时自动升级：搬进组件、内容不丢", async ({
+    page,
+    request,
+  }) => {
+    const project = await newProject(request);
+    try {
+      // v18 的形状：对象特性还写在**扁平字段**里（`map` / `sound`）——这正是升级的输入，
+      // 所以要一字不改地按老样子写，不能图省事用 helpers 造。
+      const legacyProject = {
+        formatVersion: 18,
+        name: project,
+        items: { source: "item.xlsx", updatedAt: "2026-09-18", count: 0, items: [] },
+      };
+      const clip = `project:${project}/Assets/audio/step1.mp3`;
+      const legacyScene = {
+        formatVersion: 18,
+        objects: [
+          {
+            id: "map_01",
+            name: "网格地图",
+            kind: "Map",
+            active: true,
+            sortingOrder: -10,
+            position: { x: 0, y: 0 },
+            rotation: 0,
+            scale: 1,
+            locked: false,
+            components: [],
+            map: {
+              image: {
+                id: `project:${project}/Assets/images/${SCENE_A}.png`,
+                width: 400,
+                height: 300,
+              },
+              grid: { width: 8, height: 6 },
+              rowOrder: "bottom-up",
+              cells: { encoding: "rle", runs: [[0, 8 * 6]] },
+            },
+          },
+          {
+            id: "step_01",
+            name: "脚步",
+            kind: "PlaySound",
+            active: true,
+            sortingOrder: 0,
+            position: { x: 120, y: 0 },
+            rotation: 0,
+            scale: 1,
+            locked: false,
+            components: [],
+            // 层级刻意写**非默认**的「旁白」：迁移若把它丢了 / 换成默认值，这条断言会立刻炸
+            sound: { clips: [clip], picked: clip, layer: "voice" },
+          },
+        ],
+      };
+
+      for (const [subPath, body] of [
+        ["project.json", legacyProject],
+        [`Assets/scenes/${SCENE_A}.json`, legacyScene],
+      ] as const) {
+        const response = await request.put(
+          `/api/resources/text?id=${encodeURIComponent(`project:${project}/${subPath}`)}`,
+          {
+            headers: { "content-type": "text/plain; charset=utf-8" },
+            data: `${JSON.stringify(body, null, 2)}\n`,
+          },
+        );
+        expect(response.ok()).toBeTruthy();
+      }
+
+      await enterEditor(page);
+      await openProject(page, project);
+
+      // 回写后的文件：版本升到当前，扁平字段没了、特性搬进 `components`
+      await expect
+        .poll(async () => {
+          const file = await readSceneFile(request, project, SCENE_A);
+          if (file === undefined) {
+            return null;
+          }
+
+          const mapObject = findSceneObject(file, { objectId: "map_01" });
+          const soundObject = findSceneObject(file, { objectId: "step_01" });
+          return {
+            version: file.formatVersion,
+            gridMap: componentInstanceOf(mapObject, COMPONENT.gridMap),
+            playSound: componentInstanceOf(soundObject, COMPONENT.playSound),
+            // 扁平字段必须**真的被搬走**（留着就是两处数据源，迟早对不上）
+            legacyFields: [
+              "map" in (mapObject ?? {}),
+              "sound" in (soundObject ?? {}),
+              "image" in (soundObject ?? {}),
+              "teleport" in (soundObject ?? {}),
+              "video" in (soundObject ?? {}),
+            ],
+          };
+        })
+        .toEqual({
+          version: CURRENT_SCENE_FORMAT_VERSION,
+          gridMap: {
+            id: "map_01__GridMap",
+            type: "GridMap",
+            actions: [],
+            data: {
+              image: {
+                id: `project:${project}/Assets/images/${SCENE_A}.png`,
+                width: 400,
+                height: 300,
+              },
+              grid: { width: 8, height: 6 },
+              rowOrder: "bottom-up",
+              cells: { encoding: "rle", runs: [[0, 8 * 6]] },
+            },
+          },
+          playSound: {
+            id: "step_01__PlaySound",
+            type: "PlaySound",
+            actions: [],
+            data: { clips: [clip], picked: clip, layer: "voice" },
+          },
+          legacyFields: [false, false, false, false, false],
+        });
+
+      // 内容没丢：网格尺寸与声音层级按**读文件**的辅助再确认一遍（与 UI 断言互为独立证据）
+      expect((await readSceneMap(request, project, SCENE_A))?.grid).toEqual({ width: 8, height: 6 });
+      const sound = await readSceneSound(request, project, SCENE_A);
+      expect(sound?.layer).toBe("voice");
+      expect(sound?.clips).toEqual([clip]);
+
+      // 渲染 / 行为也没丢：列表里两个对象都在，地图行仍显示网格尺寸、声音行仍显示层级
+      await openLeftTab(page, "hierarchy");
+      const mapRow = page.getByTestId("object-row").filter({ hasText: "网格地图" });
+      await expect(mapRow).toContainText("8×6");
+      await expect(page.getByTestId("object-row").filter({ hasText: "脚步" })).toContainText("旁白");
     } finally {
       await dropProject(request, project);
     }

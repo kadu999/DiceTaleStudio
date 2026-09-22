@@ -1,9 +1,11 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import {
+  COMPONENT,
   dropProject,
   expandRuns,
   mapObjectDoc,
   newProject,
+  objectComponentData,
   openFirstObject,
   readSceneFog,
   readSceneFogRegions,
@@ -127,7 +129,9 @@ test.describe("战争雾 Mask 窗口", () => {
     const project = await newProject(request);
     try {
       const mapDoc = mapObjectDoc(project, SCENE, "网格地图", MAP_SIZE, GRID);
-      (mapDoc.map as { cells: unknown }).cells = {
+      // v19 起网格与战争雾都在 `GridMap` 组件的数据里（改的就是夹具里那一份活数据）
+      const gridMap = objectComponentData(mapDoc, COMPONENT.gridMap)!;
+      gridMap.cells = {
         encoding: "rle",
         runs: [
           [1, FOG_CELLS],
@@ -194,7 +198,8 @@ test.describe("战争雾 Mask 窗口", () => {
     try {
       const mapDoc = mapObjectDoc(project, SCENE, "网格地图", MAP_SIZE, GRID);
       // 左下角 4 格区域1、接着 4 格区域4
-      (mapDoc.map as { cells: unknown }).cells = {
+      const gridMap = objectComponentData(mapDoc, COMPONENT.gridMap)!;
+      gridMap.cells = {
         encoding: "rle",
         runs: [
           [1, FOG_CELLS],
@@ -259,7 +264,8 @@ test.describe("战争雾 Mask 窗口", () => {
     try {
       const mapDoc = mapObjectDoc(project, SCENE, "网格地图", MAP_SIZE, GRID);
       // 第一格「区域1」（默认红）、第二格「区域4」（默认浅灰）
-      (mapDoc.map as { cells: unknown }).cells = {
+      const gridMap = objectComponentData(mapDoc, COMPONENT.gridMap)!;
+      gridMap.cells = {
         encoding: "rle",
         runs: [
           [1, 1],

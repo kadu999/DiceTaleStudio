@@ -1,7 +1,9 @@
-import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import {
+  COMPONENT,
   CURRENT_SCENE_FORMAT_VERSION,
   closeDrawers,
+  componentDataOf,
   dropProject,
   enterEditor,
   mapObjectDoc,
@@ -9,11 +11,13 @@ import {
   openLeftTab,
   openMenu,
   openProject,
+  readSceneFile,
   sceneDoc,
   sceneObjectDoc,
   seedProjectDoc,
   selectObject,
   solidPng,
+  type SceneFileLike,
   uploadSceneImage,
 } from "./helpers/editor";
 
@@ -26,18 +30,6 @@ import {
 
 function sceneFileId(project: string, name: string): string {
   return `project:${project}/Assets/scenes/${name}.json`;
-}
-
-async function readSceneFile(
-  request: APIRequestContext,
-  project: string,
-  name: string,
-): Promise<Record<string, unknown>> {
-  const response = await request.get(
-    `/api/resources/text?id=${encodeURIComponent(sceneFileId(project, name))}`,
-  );
-  expect(response.ok()).toBeTruthy();
-  return JSON.parse(await response.text()) as Record<string, unknown>;
 }
 
 /** 打开「场景」菜单里的一项。 */
@@ -65,9 +57,10 @@ test.describe("场景菜单", () => {
 
       // 文件落在 Assets/scenes/ 下，而且**名字不进文件**（名字就是文件名）
       const file = await readSceneFile(request, project, "酒馆");
-      expect(file.objects).toEqual([]);
-      expect(file.formatVersion).toBe(CURRENT_SCENE_FORMAT_VERSION);
-      expect("name" in file).toBe(false);
+      expect(file).toBeDefined();
+      expect(file?.objects).toEqual([]);
+      expect(file?.formatVersion).toBe(CURRENT_SCENE_FORMAT_VERSION);
+      expect(file).not.toHaveProperty("name");
     } finally {
       await dropProject(request, project);
     }
@@ -94,10 +87,10 @@ test.describe("场景菜单", () => {
       // **不再比对整个文件**：打开旧版本文件时它已被升到当前版本并补上新增字段
       // （`active` / `sortingOrder` / `scale` / `locked`），所以「一字不动」只对**对象内容**成立。
       const after = await readSceneFile(request, project, "大厅");
-      expect(after.formatVersion).toBe(CURRENT_SCENE_FORMAT_VERSION);
+      expect(after?.formatVersion).toBe(CURRENT_SCENE_FORMAT_VERSION);
 
-      const door = (file: Record<string, unknown>): Record<string, unknown> =>
-        (file.objects as Record<string, unknown>[] | undefined)?.[0] ?? {};
+      const door = (file: SceneFileLike | undefined): Record<string, unknown> =>
+        file?.objects?.[0] ?? {};
       // 除新增字段外，其余字段逐字一致（id / 名字 / 类型 / 位置 / 旋转 / 组件）
       const NEW_OBJECT_FIELDS = ["active", "sortingOrder", "scale", "locked"];
       const withoutNewFields = (object: Record<string, unknown>): Record<string, unknown> =>
@@ -135,12 +128,13 @@ test.describe("场景菜单", () => {
       await expect(page.getByTestId("status-active-scene")).toHaveText("当前场景 大厅");
 
       // 贴图是按「与场景同名」约定引用的，所以引用要一起改指到 大厅.png
-      const file = (await readSceneFile(request, project, "大厅")) as {
-        objects: Array<{ map?: { image?: { id?: string } } }>;
-      };
-      expect(file.objects[0]?.map?.image?.id).toBe(
-        `project:${project}/Assets/images/大厅.png`,
-      );
+      // （只改引用：声明尺寸原样留着）
+      const file = await readSceneFile(request, project, "大厅");
+      expect(componentDataOf(file, { kind: "Map" }, COMPONENT.gridMap)?.["image"]).toEqual({
+        id: `project:${project}/Assets/images/大厅.png`,
+        width: 1920,
+        height: 1080,
+      });
     } finally {
       await dropProject(request, project);
     }

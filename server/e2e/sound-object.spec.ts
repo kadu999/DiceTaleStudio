@@ -1,5 +1,6 @@
 import { expect, test, type APIRequestContext, type Page, type TestInfo } from "@playwright/test";
 import {
+  COMPONENT,
   closeDrawers,
   dropProject,
   enterEditor,
@@ -8,11 +9,13 @@ import {
   openInspector,
   openLeftTab,
   openProject,
+  readSceneSound,
   sceneDoc,
   sceneObjectDoc,
   seedProjectDoc,
   selectObject,
   useMoveTool,
+  withComponent,
 } from "./helpers/editor";
 import { canvasAverageColor, offsetFrom, preciseWorldPoint, worldSamplePoint } from "./helpers/canvas";
 
@@ -43,45 +46,6 @@ async function uploadAudio(
   });
   expect(response.ok()).toBeTruthy();
   return id;
-}
-
-/** 场景文件里的声音对象（断言落盘用）。 */
-async function readSound(
-  request: APIRequestContext,
-  project: string,
-  sceneName: string,
-): Promise<{
-  clips?: unknown;
-  picked?: unknown;
-  names?: unknown;
-  layer?: unknown;
-  position?: unknown;
-} | null> {
-  const id = `project:${project}/Assets/scenes/${sceneName}.json`;
-  const response = await request.get(`/api/resources/text?id=${encodeURIComponent(id)}`);
-  if (!response.ok()) {
-    return null;
-  }
-
-  const file = (await response.json()) as {
-    objects?: Array<{
-      kind?: string;
-      position?: unknown;
-      sound?: { clips?: unknown; picked?: unknown; names?: unknown; layer?: unknown };
-    }>;
-  };
-  const object = file.objects?.find((item) => item.kind === "PlaySound");
-  if (object === undefined) {
-    return null;
-  }
-
-  return {
-    clips: object.sound?.clips,
-    picked: object.sound?.picked,
-    names: object.sound?.names,
-    layer: object.sound?.layer,
-    position: object.position,
-  };
 }
 
 /** 某个屏幕点的「暖度」（r − g）：音频图标的牌面是暖橙，棋盘底纹是中性灰。 */
@@ -231,7 +195,7 @@ test.describe("动作对象：播放声音", () => {
 
       // 落盘：加进来的清单 + 选中的那条 + 每个文件的名字表 + 层级，对象和实体一样摆在世界原点
       await expect
-        .poll(() => readSound(request, project, SCENE))
+        .poll(() => readSceneSound(request, project, SCENE))
         .toEqual({
           clips: [step1, step2],
           picked: step2,
@@ -247,13 +211,14 @@ test.describe("动作对象：播放声音", () => {
   test("世界里看得见：画布上是一枚音频徽标，能点选、能拖", async ({ page, request }) => {
     const project = await newProject(request);
     try {
-      // 一个摆在世界原点的声音对象（手写文件里的样子：只有 kind + sound）
+      // 一个摆在世界原点的声音对象（手写文件里的样子：kind + PlaySound 组件）
       await seedProjectDoc(request, project, [
         sceneDoc(SCENE, [
-          {
-            ...sceneObjectDoc("脚步", "PlaySound", { x: 0, y: 0 }),
-            sound: { clips: [], layer: "sfx" },
-          },
+          withComponent(
+            sceneObjectDoc("脚步", "PlaySound", { x: 0, y: 0 }),
+            COMPONENT.playSound,
+            { clips: [], layer: "sfx" },
+          ),
         ]),
       ]);
 
@@ -297,7 +262,7 @@ test.describe("动作对象：播放声音", () => {
       await page.mouse.up();
 
       await expect
-        .poll(async () => (await readSound(request, project, SCENE))?.position?.x ?? 0)
+        .poll(async () => (await readSceneSound(request, project, SCENE))?.position?.x ?? 0)
         .toBeGreaterThan(-100);
     } finally {
       await dropProject(request, project);
@@ -315,13 +280,14 @@ test.describe("动作对象：播放声音", () => {
   }) => {
     const project = await newProject(request);
     try {
-      // 手写文件里的样子：有 kind 与 sound，但 position 是 null
+      // 手写文件里的样子：有 kind 与 PlaySound 组件，但 position 是 null
       await seedProjectDoc(request, project, [
         sceneDoc(SCENE, [
-          {
-            ...sceneObjectDoc("脚步", "PlaySound", null),
-            sound: { clips: [], layer: "sfx" },
-          },
+          withComponent(
+            sceneObjectDoc("脚步", "PlaySound", null),
+            COMPONENT.playSound,
+            { clips: [], layer: "sfx" },
+          ),
         ]),
       ]);
 
@@ -345,7 +311,7 @@ test.describe("动作对象：播放声音", () => {
       await expect.poll(() => redness(page, origin)).toBeGreaterThan(plainRedness + 20);
       await expect(row).not.toContainText("未放置");
       await expect
-        .poll(async () => (await readSound(request, project, SCENE))?.position)
+        .poll(async () => (await readSceneSound(request, project, SCENE))?.position)
         .toEqual({ x: 0, y: 0 });
     } finally {
       await dropProject(request, project);
@@ -368,10 +334,11 @@ test.describe("动作对象：播放声音", () => {
 
       await seedProjectDoc(request, project, [
         sceneDoc(SCENE, [
-          {
-            ...sceneObjectDoc("脚步", "PlaySound", { x: 0, y: 0 }),
-            sound: { clips: [], layer: "sfx" },
-          },
+          withComponent(
+            sceneObjectDoc("脚步", "PlaySound", { x: 0, y: 0 }),
+            COMPONENT.playSound,
+            { clips: [], layer: "sfx" },
+          ),
         ]),
       ]);
 
@@ -466,11 +433,12 @@ test.describe("动作对象：播放声音", () => {
 
       await seedProjectDoc(request, project, [
         sceneDoc(SCENE, [
-          {
-            ...sceneObjectDoc("脚步", "PlaySound", { x: 0, y: 0 }),
-            // 加进来一条并选中它（`picked`），否则「播放」点不了
-            sound: { clips: [clip], picked: clip, layer: "sfx" },
-          },
+          // 加进来一条并选中它（`picked`），否则「播放」点不了
+          withComponent(
+            sceneObjectDoc("脚步", "PlaySound", { x: 0, y: 0 }),
+            COMPONENT.playSound,
+            { clips: [clip], picked: clip, layer: "sfx" },
+          ),
         ]),
       ]);
 
@@ -552,7 +520,7 @@ async function connectFakeSoundClient(page: Page, port: number): Promise<void> {
           type: "client_hello",
           // 与 `@dts/protocol` 的 `PROTOCOL_VERSION` 一致（这里写死：e2e 不是 workspace 包，
           // 拿不到那个常量；版本一升这里会连不上、用例会当场失败，提醒同步改）
-          protocolVersion: 8,
+          protocolVersion: 9,
           name: "e2e 假前端",
           version: "0.0.0",
         }),
@@ -603,9 +571,11 @@ test.describe("声音：命令下发给前端", { tag: "@runtime" }, () => {
 
     try {
       const clip = await uploadAudio(request, project, "step1.mp3");
-      const soundDoc = sceneObjectDoc("脚步", "PlaySound", { x: 0, y: 0 }, {
-        sound: { clips: [clip], picked: clip, layer: "sfx" },
-      });
+      const soundDoc = withComponent(
+        sceneObjectDoc("脚步", "PlaySound", { x: 0, y: 0 }),
+        COMPONENT.playSound,
+        { clips: [clip], picked: clip, layer: "sfx" },
+      );
       await seedProjectDoc(request, project, [sceneDoc(SCENE, [soundDoc])]);
       await openFirstObject(page, project, "脚步");
 

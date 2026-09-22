@@ -1,9 +1,11 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import {
+  COMPONENT,
   dropProject,
   expandRuns,
   mapObjectDoc,
   newProject,
+  objectComponentData,
   openFirstObject,
   readSceneMap,
   sceneDoc,
@@ -192,11 +194,13 @@ test.describe("网格标注：画布显示", () => {
       const mapDoc = mapObjectDoc(project, SCENE, "网格地图", MAP_SIZE, GRID);
       // 整张网格涂「区域1」（掩码 1），并把区域1 指定成雾区：
       // 画布若给雾另加一层覆盖，同一格会被画第二遍（红 α0.6 叠两次 → 绿通道 102 掉到 41）
-      (mapDoc.map as { cells: unknown }).cells = {
+      // v19 起网格与战争雾都在 `GridMap` 组件的数据里（改的就是夹具里那一份活数据）
+      const gridMap = objectComponentData(mapDoc, COMPONENT.gridMap)!;
+      gridMap.cells = {
         encoding: "rle",
         runs: [[1, GRID.width * GRID.height]],
       };
-      (mapDoc.map as { fog?: unknown }).fog = { enabled: true, regions: [1] };
+      gridMap.fog = { enabled: true, regions: [1] };
 
       await seedProjectDoc(request, project, [sceneDoc(SCENE, [mapDoc])]);
       await uploadSceneImage(request, project, SCENE, solidPng(4, 4, [255, 255, 255]));

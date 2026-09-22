@@ -193,11 +193,12 @@ export async function canvasColorAt(
 ): Promise<{ r: number; g: number; b: number; a: number }> {
   return page.evaluate(
     ({ testId, x, y, radius }) => {
-      const canvas =
+      const found =
         testId === null
           ? document.querySelector("canvas")
           : document.querySelector(`[data-testid="${testId}"]`);
-      const context = canvas instanceof HTMLCanvasElement ? canvas.getContext("2d") : null;
+      const canvas = found instanceof HTMLCanvasElement ? found : null;
+      const context = canvas === null ? null : canvas.getContext("2d");
       if (canvas === null || context === null) {
         return { r: -1, g: -1, b: -1, a: -1 };
       }

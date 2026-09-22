@@ -1,13 +1,18 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import {
+  COMPONENT,
   closeDrawers,
+  componentDataOf,
   dropProject,
   enterEditor,
   expectPersistedObjectNames,
+  findSceneObject,
   mapObjectDoc,
   newProject,
+  objectComponentData,
   openLeftTab,
   openProject,
+  readSceneFile,
   readSceneObjects,
   sceneDoc,
   sceneObjectDoc,
@@ -16,6 +21,7 @@ import {
   solidPng,
   uploadSceneImage,
   useMoveTool,
+  withComponent,
 } from "./helpers/editor";
 import {
   canvasAverageColor,
@@ -318,10 +324,8 @@ test.describe("创建与编辑场景对象", () => {
 
       await expect
         .poll(async () => {
-          const object = (
-            await readSceneObjects(request, project, SCENE_A)
-          )[0] as unknown as { map?: { image?: { id: string; width: number; height: number } } };
-          return object?.map?.image;
+          const file = await readSceneFile(request, project, SCENE_A);
+          return componentDataOf(file, { kind: "Map" }, COMPONENT.gridMap)?.["image"];
         })
         .toEqual({
           id: `project:${project}/Assets/images/floor.png`,
@@ -465,14 +469,16 @@ test.describe("创建与编辑场景对象", () => {
       const bigId = `project:${project}/Assets/images/big.png`;
       await seedProjectDoc(request, project, [
         sceneDoc(SCENE_A, [
-          sceneObjectDoc("大红", "SceneObject", { x: 0, y: 0 }, {
-            sortingOrder: 5,
-            image: { id: bigId, width: 120, height: 120 },
-          }),
-          sceneObjectDoc("小蓝", "SceneObject", { x: 0, y: 0 }, {
-            sortingOrder: 1,
-            image: { id: smallId, width: 120, height: 120 },
-          }),
+          withComponent(
+            sceneObjectDoc("大红", "SceneObject", { x: 0, y: 0 }, { sortingOrder: 5 }),
+            COMPONENT.textureRenderer,
+            { id: bigId, width: 120, height: 120 },
+          ),
+          withComponent(
+            sceneObjectDoc("小蓝", "SceneObject", { x: 0, y: 0 }, { sortingOrder: 1 }),
+            COMPONENT.textureRenderer,
+            { id: smallId, width: 120, height: 120 },
+          ),
         ]),
       ]);
       for (const [id, color] of [
@@ -559,13 +565,13 @@ test.describe("创建与编辑场景对象", () => {
       if (!isTouch) {
         const canvasFingerprint = async (): Promise<number> =>
           page.evaluate(() => {
-            const canvas = document.querySelector("canvas");
-            const ctx = canvas.getContext("2d");
+            const canvas = document.querySelector("canvas")!;
+            const ctx = canvas.getContext("2d")!;
             const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
             // 粗采样 + 回传一个数字：整块画布在平板 DPR=2 下有几 MB，别往回传
             let hash = 0;
             for (let i = 0; i < data.length; i += 512) {
-              hash = (hash * 31 + data[i]) % 2147483647;
+              hash = (hash * 31 + (data[i] ?? 0)) % 2147483647;
             }
             return hash;
           });
@@ -713,15 +719,8 @@ test.describe("创建与编辑场景对象", () => {
       // 落盘：网格是新规格，格子数据按新格数重建（校验要求展开格数 = 列 × 行）
       await expect
         .poll(async () => {
-          const file = await request.get(
-            `/api/resources/text?id=${encodeURIComponent(
-              `project:${project}/Assets/scenes/${SCENE_A}.json`,
-            )}`,
-          );
-          const raw = (await file.json()) as {
-            objects?: Array<{ map?: { grid: unknown; cells: { runs: Array<[number, number]> } } }>;
-          };
-          return raw.objects?.[0]?.map?.grid ?? null;
+          const file = await readSceneFile(request, project, SCENE_A);
+          return componentDataOf(file, { kind: "Map" }, COMPONENT.gridMap)?.["grid"] ?? null;
         })
         .toEqual({ width: 32, height: 36 });
 
@@ -779,23 +778,21 @@ test.describe("创建与编辑场景对象", () => {
         .poll(async () => (await canvasAverageColor(page, await worldSamplePoint(page, inside))).g)
         .toBeGreaterThan(200);
 
-      // 落盘：图片挂在对象自己的 image 上（不是 map.image），宽高就是素材本身
+      // 落盘：图片挂在对象自己的 `TextureRenderer` 上（不是 `GridMap.image`），宽高就是素材本身
       await expect
         .poll(async () => {
-          const file = await request.get(
-            `/api/resources/text?id=${encodeURIComponent(
-              `project:${project}/Assets/scenes/${SCENE_A}.json`,
-            )}`,
-          );
-          const raw = (await file.json()) as {
-            objects?: Array<{ image?: unknown; map?: unknown }>;
-          };
-          const object = raw.objects?.[0];
-          return object === undefined ? null : { image: object.image, map: object.map };
+          const file = await readSceneFile(request, project, SCENE_A);
+          const sprite = findSceneObject(file, { kind: "SceneObject" });
+          return sprite === undefined
+            ? null
+            : {
+                texture: objectComponentData(sprite, COMPONENT.textureRenderer),
+                gridMap: objectComponentData(sprite, COMPONENT.gridMap),
+              };
         })
         .toEqual({
-          image: { id: imageId, width: 200, height: 150 },
-          map: undefined,
+          texture: { id: imageId, width: 200, height: 150 },
+          gridMap: undefined,
         });
     } finally {
       await dropProject(request, project);
@@ -994,14 +991,16 @@ test.describe("创建与编辑场景对象", () => {
       const blueId = `project:${project}/Assets/images/blue.png`;
       await seedProjectDoc(request, project, [
         sceneDoc(SCENE_A, [
-          sceneObjectDoc("绿块", "SceneObject", { x: 0, y: 0 }, {
-            sortingOrder: 5,
-            image: { id: greenId, width: 120, height: 120 },
-          }),
-          sceneObjectDoc("蓝块", "SceneObject", { x: 0, y: 0 }, {
-            sortingOrder: 1,
-            image: { id: blueId, width: 120, height: 120 },
-          }),
+          withComponent(
+            sceneObjectDoc("绿块", "SceneObject", { x: 0, y: 0 }, { sortingOrder: 5 }),
+            COMPONENT.textureRenderer,
+            { id: greenId, width: 120, height: 120 },
+          ),
+          withComponent(
+            sceneObjectDoc("蓝块", "SceneObject", { x: 0, y: 0 }, { sortingOrder: 1 }),
+            COMPONENT.textureRenderer,
+            { id: blueId, width: 120, height: 120 },
+          ),
         ]),
       ]);
       for (const [id, color] of [
