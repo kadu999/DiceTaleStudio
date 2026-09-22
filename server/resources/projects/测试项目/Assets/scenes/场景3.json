@@ -1,5 +1,5 @@
 {
-  "formatVersion": 18,
+  "formatVersion": 19,
   "objects": [
     {
       "id": "map_mu7t58za2yr2b",
@@ -14,39 +14,50 @@
       },
       "rotation": 0,
       "scale": 1,
-      "components": [],
-      "map": {
-        "image": {
-          "id": "project:测试项目/Assets/images/Map003.png",
-          "width": 1920,
-          "height": 1080
+      "components": [
+        {
+          "id": "map_mu7t58za2yr2b__GridMap",
+          "type": "GridMap",
+          "data": {
+            "image": {
+              "id": "project:测试项目/Assets/images/Map003.png",
+              "width": 1920,
+              "height": 1080
+            },
+            "grid": {
+              "width": 64,
+              "height": 36
+            },
+            "rowOrder": "bottom-up",
+            "cells": {
+              "encoding": "rle",
+              "runs": [
+                [
+                  0,
+                  2304
+                ]
+              ]
+            }
+          },
+          "actions": []
         },
-        "grid": {
-          "width": 64,
-          "height": 36
-        },
-        "rowOrder": "bottom-up",
-        "cells": {
-          "encoding": "rle",
-          "runs": [
-            [
-              0,
-              2304
-            ]
-          ]
+        {
+          "id": "map_mu7t58za2yr2b__VideoOverlay",
+          "type": "VideoOverlay",
+          "data": {
+            "enabled": true,
+            "clips": [
+              "project:测试项目/Assets/video/Map003_1.mp4",
+              "project:测试项目/Assets/video/Map003_2.mp4",
+              "project:测试项目/Assets/video/Map003_3.mp4"
+            ],
+            "picked": "project:测试项目/Assets/video/Map003_1.mp4",
+            "loop": false,
+            "audio": false
+          },
+          "actions": []
         }
-      },
-      "video": {
-        "enabled": false,
-        "clips": [
-          "project:测试项目/Assets/video/Map003_1.mp4",
-          "project:测试项目/Assets/video/Map003_2.mp4",
-          "project:测试项目/Assets/video/Map003_3.mp4"
-        ],
-        "picked": "project:测试项目/Assets/video/Map003_1.mp4",
-        "loop": false,
-        "audio": false
-      }
+      ]
     }
   ]
 }

@@ -1,5 +1,5 @@
 {
-  "formatVersion": 18,
+  "formatVersion": 19,
   "objects": [
     {
       "id": "map_mu6uln3x1l7fg",
@@ -14,320 +14,326 @@
       },
       "rotation": 0,
       "scale": 1,
-      "components": [],
-      "map": {
-        "image": {
-          "id": "project:测试项目/Assets/images/Map001.png",
-          "width": 1920,
-          "height": 1080
-        },
-        "grid": {
-          "width": 64,
-          "height": 36
-        },
-        "rowOrder": "bottom-up",
-        "cells": {
-          "encoding": "rle",
-          "runs": [
-            [
-              0,
-              47
-            ],
-            [
-              4,
-              17
-            ],
-            [
-              0,
-              47
-            ],
-            [
-              4,
-              17
-            ],
-            [
-              0,
-              47
-            ],
-            [
-              4,
-              17
-            ],
-            [
-              0,
-              47
-            ],
-            [
-              4,
-              17
-            ],
-            [
-              0,
-              46
-            ],
-            [
-              4,
-              18
-            ],
-            [
-              0,
-              46
-            ],
-            [
-              4,
-              18
-            ],
-            [
-              0,
-              46
-            ],
-            [
-              4,
-              18
-            ],
-            [
-              0,
-              46
-            ],
-            [
-              4,
-              18
-            ],
-            [
-              0,
-              46
-            ],
-            [
-              4,
-              18
-            ],
-            [
-              0,
-              46
-            ],
-            [
-              4,
-              18
-            ],
-            [
-              0,
-              46
-            ],
-            [
-              4,
-              18
-            ],
-            [
-              0,
-              46
-            ],
-            [
-              2,
-              18
-            ],
-            [
-              0,
-              46
-            ],
-            [
-              2,
-              18
-            ],
-            [
-              0,
-              46
-            ],
-            [
-              2,
-              18
-            ],
-            [
-              0,
-              46
-            ],
-            [
-              2,
-              18
-            ],
-            [
-              0,
-              46
-            ],
-            [
-              2,
-              18
-            ],
-            [
-              0,
-              46
-            ],
-            [
-              2,
-              18
-            ],
-            [
-              0,
-              46
-            ],
-            [
-              2,
-              18
-            ],
-            [
-              0,
-              46
-            ],
-            [
-              2,
-              18
-            ],
-            [
-              0,
-              46
-            ],
-            [
-              2,
-              18
-            ],
-            [
-              0,
-              46
-            ],
-            [
-              2,
-              18
-            ],
-            [
-              0,
-              46
-            ],
-            [
-              2,
-              18
-            ],
-            [
-              0,
-              46
-            ],
-            [
-              2,
-              18
-            ],
-            [
-              0,
-              46
-            ],
-            [
-              2,
-              18
-            ],
-            [
-              0,
-              46
-            ],
-            [
-              2,
-              18
-            ],
-            [
-              0,
-              46
-            ],
-            [
-              2,
-              18
-            ],
-            [
-              0,
-              46
-            ],
-            [
-              2,
-              18
-            ],
-            [
-              0,
-              46
-            ],
-            [
-              2,
-              18
-            ],
-            [
-              0,
-              46
-            ],
-            [
-              1,
-              18
-            ],
-            [
-              0,
-              46
-            ],
-            [
-              1,
-              18
-            ],
-            [
-              0,
-              46
-            ],
-            [
-              1,
-              18
-            ],
-            [
-              0,
-              44
-            ],
-            [
-              1,
-              20
-            ],
-            [
-              0,
-              44
-            ],
-            [
-              1,
-              20
-            ],
-            [
-              0,
-              44
-            ],
-            [
-              1,
-              20
-            ],
-            [
-              0,
-              44
-            ],
-            [
-              1,
-              20
-            ],
-            [
-              0,
-              44
-            ],
-            [
-              1,
-              20
-            ]
-          ]
-        },
-        "fog": {
-          "enabled": false,
-          "regions": [
-            1,
-            2,
-            4
-          ]
+      "components": [
+        {
+          "id": "map_mu6uln3x1l7fg__GridMap",
+          "type": "GridMap",
+          "data": {
+            "image": {
+              "id": "project:测试项目/Assets/images/Map001.png",
+              "width": 1920,
+              "height": 1080
+            },
+            "grid": {
+              "width": 64,
+              "height": 36
+            },
+            "rowOrder": "bottom-up",
+            "cells": {
+              "encoding": "rle",
+              "runs": [
+                [
+                  0,
+                  47
+                ],
+                [
+                  4,
+                  17
+                ],
+                [
+                  0,
+                  47
+                ],
+                [
+                  4,
+                  17
+                ],
+                [
+                  0,
+                  47
+                ],
+                [
+                  4,
+                  17
+                ],
+                [
+                  0,
+                  47
+                ],
+                [
+                  4,
+                  17
+                ],
+                [
+                  0,
+                  46
+                ],
+                [
+                  4,
+                  18
+                ],
+                [
+                  0,
+                  46
+                ],
+                [
+                  4,
+                  18
+                ],
+                [
+                  0,
+                  46
+                ],
+                [
+                  4,
+                  18
+                ],
+                [
+                  0,
+                  46
+                ],
+                [
+                  4,
+                  18
+                ],
+                [
+                  0,
+                  46
+                ],
+                [
+                  4,
+                  18
+                ],
+                [
+                  0,
+                  46
+                ],
+                [
+                  4,
+                  18
+                ],
+                [
+                  0,
+                  46
+                ],
+                [
+                  4,
+                  18
+                ],
+                [
+                  0,
+                  46
+                ],
+                [
+                  2,
+                  18
+                ],
+                [
+                  0,
+                  46
+                ],
+                [
+                  2,
+                  18
+                ],
+                [
+                  0,
+                  46
+                ],
+                [
+                  2,
+                  18
+                ],
+                [
+                  0,
+                  46
+                ],
+                [
+                  2,
+                  18
+                ],
+                [
+                  0,
+                  46
+                ],
+                [
+                  2,
+                  18
+                ],
+                [
+                  0,
+                  46
+                ],
+                [
+                  2,
+                  18
+                ],
+                [
+                  0,
+                  46
+                ],
+                [
+                  2,
+                  18
+                ],
+                [
+                  0,
+                  46
+                ],
+                [
+                  2,
+                  18
+                ],
+                [
+                  0,
+                  46
+                ],
+                [
+                  2,
+                  18
+                ],
+                [
+                  0,
+                  46
+                ],
+                [
+                  2,
+                  18
+                ],
+                [
+                  0,
+                  46
+                ],
+                [
+                  2,
+                  18
+                ],
+                [
+                  0,
+                  46
+                ],
+                [
+                  2,
+                  18
+                ],
+                [
+                  0,
+                  46
+                ],
+                [
+                  2,
+                  18
+                ],
+                [
+                  0,
+                  46
+                ],
+                [
+                  2,
+                  18
+                ],
+                [
+                  0,
+                  46
+                ],
+                [
+                  2,
+                  18
+                ],
+                [
+                  0,
+                  46
+                ],
+                [
+                  2,
+                  18
+                ],
+                [
+                  0,
+                  46
+                ],
+                [
+                  2,
+                  18
+                ],
+                [
+                  0,
+                  46
+                ],
+                [
+                  1,
+                  18
+                ],
+                [
+                  0,
+                  46
+                ],
+                [
+                  1,
+                  18
+                ],
+                [
+                  0,
+                  46
+                ],
+                [
+                  1,
+                  18
+                ],
+                [
+                  0,
+                  44
+                ],
+                [
+                  1,
+                  20
+                ],
+                [
+                  0,
+                  44
+                ],
+                [
+                  1,
+                  20
+                ],
+                [
+                  0,
+                  44
+                ],
+                [
+                  1,
+                  20
+                ],
+                [
+                  0,
+                  44
+                ],
+                [
+                  1,
+                  20
+                ],
+                [
+                  0,
+                  44
+                ],
+                [
+                  1,
+                  20
+                ]
+              ]
+            },
+            "fog": {
+              "enabled": true,
+              "regions": [
+                1,
+                2,
+                4
+              ]
+            }
+          },
+          "actions": []
         }
-      }
+      ]
     },
     {
       "id": "obj_mu72r20g1mvao",
@@ -342,12 +348,18 @@
       },
       "rotation": -0.2617993877991494,
       "scale": 1,
-      "components": [],
-      "image": {
-        "id": "project:测试项目/Assets/images/Bridge.png",
-        "width": 256,
-        "height": 256
-      }
+      "components": [
+        {
+          "id": "obj_mu72r20g1mvao__TextureRenderer",
+          "type": "TextureRenderer",
+          "data": {
+            "id": "project:测试项目/Assets/images/Bridge.png",
+            "width": 256,
+            "height": 256
+          },
+          "actions": []
+        }
+      ]
     },
     {
       "id": "sound_mu7z5bqp15o91",
@@ -362,16 +374,22 @@
       },
       "rotation": 0,
       "scale": 1,
-      "components": [],
-      "sound": {
-        "clips": [
-          "project:测试项目/Assets/audio/act-2-to-act-3/06-altar-transition.mp3",
-          "project:测试项目/Assets/audio/act-2/01-bird-capture-part-1.mp3",
-          "project:测试项目/Assets/audio/act-2/02-bird-capture-part-2.mp3"
-        ],
-        "picked": "project:测试项目/Assets/audio/act-2-to-act-3/06-altar-transition.mp3",
-        "layer": "voice"
-      }
+      "components": [
+        {
+          "id": "sound_mu7z5bqp15o91__PlaySound",
+          "type": "PlaySound",
+          "data": {
+            "clips": [
+              "project:测试项目/Assets/audio/act-2-to-act-3/06-altar-transition.mp3",
+              "project:测试项目/Assets/audio/act-2/01-bird-capture-part-1.mp3",
+              "project:测试项目/Assets/audio/act-2/02-bird-capture-part-2.mp3"
+            ],
+            "picked": "project:测试项目/Assets/audio/act-2-to-act-3/06-altar-transition.mp3",
+            "layer": "voice"
+          },
+          "actions": []
+        }
+      ]
     },
     {
       "id": "teleport_mua13jbo1iopa",
@@ -386,14 +404,20 @@
       },
       "rotation": 0,
       "scale": 1,
-      "components": [],
-      "teleport": {
-        "targets": [
-          "场景2",
-          "场景3"
-        ],
-        "picked": "场景3"
-      }
+      "components": [
+        {
+          "id": "teleport_mua13jbo1iopa__Teleport",
+          "type": "Teleport",
+          "data": {
+            "targets": [
+              "场景2",
+              "场景3"
+            ],
+            "picked": "场景3"
+          },
+          "actions": []
+        }
+      ]
     }
   ]
 }

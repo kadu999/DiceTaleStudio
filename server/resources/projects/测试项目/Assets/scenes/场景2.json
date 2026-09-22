@@ -1,5 +1,5 @@
 {
-  "formatVersion": 18,
+  "formatVersion": 19,
   "objects": [
     {
       "id": "map_mu7t4t731b222",
@@ -14,28 +14,34 @@
       },
       "rotation": 0,
       "scale": 1,
-      "components": [],
-      "map": {
-        "image": {
-          "id": "project:测试项目/Assets/images/Map002.png",
-          "width": 1920,
-          "height": 1080
-        },
-        "grid": {
-          "width": 64,
-          "height": 36
-        },
-        "rowOrder": "bottom-up",
-        "cells": {
-          "encoding": "rle",
-          "runs": [
-            [
-              0,
-              2304
-            ]
-          ]
+      "components": [
+        {
+          "id": "map_mu7t4t731b222__GridMap",
+          "type": "GridMap",
+          "data": {
+            "image": {
+              "id": "project:测试项目/Assets/images/Map002.png",
+              "width": 1920,
+              "height": 1080
+            },
+            "grid": {
+              "width": 64,
+              "height": 36
+            },
+            "rowOrder": "bottom-up",
+            "cells": {
+              "encoding": "rle",
+              "runs": [
+                [
+                  0,
+                  2304
+                ]
+              ]
+            }
+          },
+          "actions": []
         }
-      }
+      ]
     }
   ]
 }

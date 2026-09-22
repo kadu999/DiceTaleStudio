@@ -1,5 +1,5 @@
 {
-  "formatVersion": 18,
+  "formatVersion": 19,
   "name": "测试项目",
   "items": {
     "source": "item.xlsx",
@@ -28,8 +28,11 @@
       ]
     },
     "project:测试项目/Assets/audio/act-2/01-bird-capture-part-1.mp3": {
+      "name": "声音1",
       "tags": [
-        0
+        0,
+        1,
+        2
       ]
     }
   },
