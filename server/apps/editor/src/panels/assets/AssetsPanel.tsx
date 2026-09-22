@@ -555,7 +555,11 @@ const ContentRow = memo(function ContentRow({
         >
           <AssetChevron expanded={spriteExpanded} />
         </button>
-      ) : null}
+      ) : (
+        // 没有子项的行**也占住这一格**（空占位）：否则「切好的图集」整行会被三角推右 18px，
+        // 看起来像挂在上一行下面——同级的图片行必须左边缘对齐（对齐 Unity 的 Project 窗口）
+        <span aria-hidden className="h-[18px] w-[18px] flex-none" />
+      )}
       <button
         type="button"
         data-testid="folder-content-label"
@@ -591,7 +595,7 @@ function SpriteContentRow({
       data-parent={node.id}
       data-index={index}
       data-selected={selected}
-      className={`flex items-center rounded px-1 pl-8 ${
+      className={`flex items-center rounded px-1 pl-12 ${
         selected
           ? "bg-[var(--color-editor-accent-dim)] text-white"
           : "hover:bg-[var(--color-editor-panel-alt)]"

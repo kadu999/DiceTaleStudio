@@ -6,6 +6,7 @@ import {
   createAssetMetas,
   createEmptyProject,
   createSceneObject,
+  emptyAssetMetas,
   featureComponent,
   spriteSettingsOfMeta,
   type AssetMetaDoc,
@@ -94,6 +95,9 @@ afterEach(() => {
   cleanup();
   sceneHistory.reset([]);
   projectHistory.reset(createEmptyProject("测试"));
+  // 素材 meta 是**第三条轨道**：不重置它，上一个用例写下的切分 / 导入设置会漏到下一个用例
+  metaHistory.reset({});
+  useEditorStore.setState({ assetMetaTable: {}, assetMetas: emptyAssetMetas() });
   useEditorStore.setState({
     scenes: [],
     activeSceneName: null,
@@ -300,7 +304,7 @@ describe("入口：图片资源上也能切（精灵是这张图自己的属性�
     fireEvent.change(screen.getByTestId("sprite-editor-columns"), { target: { value: "4" } });
     fireEvent.change(screen.getByTestId("sprite-editor-rows"), { target: { value: "2" } });
     fireEvent.click(screen.getByTestId("sprite-editor-cancel"));
-    expect(useEditorStore.getState().assetMetas.byId[IMAGE_ID]).toBeUndefined();
+    expect(useEditorStore.getState().assetMetas.byId[IMAGE_ID]?.sprite?.sheet).toBeUndefined();
 
     fireEvent.click(screen.getByTestId("sprite-edit"));
     fireEvent.change(screen.getByTestId("sprite-editor-columns"), { target: { value: "4" } });
@@ -335,7 +339,7 @@ describe("入口：图片资源上也能切（精灵是这张图自己的属性�
     render(<InspectorPanel />);
     expect(screen.getByTestId("sprite-edit")).not.toBeNull();
     fireEvent.change(screen.getByTestId("sprite-import-mode"), { target: { value: "Single" } });
-    expect(useEditorStore.getState().assetMetas.byId[IMAGE_ID]).toBeUndefined();
+    expect(useEditorStore.getState().assetMetas.byId[IMAGE_ID]?.sprite?.sheet).toBeUndefined();
     expect(screen.queryByTestId("sprite-edit")).toBeNull();
   });
 });
@@ -366,7 +370,7 @@ describe("两条轨道：图 + 格子是一条撤销记录，切分自己一条"
     expect(useEditorStore.getState().assetMetas.byId[IMAGE_ID]?.sprite?.sheet).toEqual({ columns: 4, rows: 4 });
 
     useEditorStore.getState().undo();
-    expect(useEditorStore.getState().assetMetas.byId[IMAGE_ID]).toBeUndefined();
+    expect(useEditorStore.getState().assetMetas.byId[IMAGE_ID]?.sprite?.sheet).toBeUndefined();
     // 对象上那一格照旧（切分没了 = 按整图算，但引用本身没被谁改过）
     expect(
       (objectOf("sprite-1")?.components[0]?.data as { sprite?: unknown }).sprite,

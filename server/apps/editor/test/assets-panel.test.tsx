@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";import { AssetsPanel } from "../src/panels/assets/AssetsPanel";
-import { createEmptyProject } from "@dts/document";
+import { createAssetMetas, createEmptyProject, type AssetMetaDoc } from "@dts/document";
 import { useEditorStore } from "../src/state/editor-store";
+import { metaHistory } from "../src/state/store-core";
 import type { ResourceTreeNode } from "../src/services/project-api";
 
 /**
@@ -290,6 +291,28 @@ describe("资源面板：定位选中的文件", () => {
 });
 
 describe("资源面板：精灵子项", () => {
+  /**
+   * 种一条「切好的图集」的素材 meta（v23 起切分住在素材自己的 `.meta` 里，不再进工程文件）。
+   *
+   * 面板按 `state.assetMetas` 索引查切分，所以**表与索引要一起换掉**——与真实打开项目后
+   * store 的装配方式一致（只换表会让索引留在旧的一份上）。
+   */
+  function seedSpriteMeta(imageId: string, sheet: { columns: number; rows: number }): void {
+    const table: Record<string, AssetMetaDoc> = {
+      [imageId]: {
+        formatVersion: 1,
+        guid: "0".repeat(32),
+        importer: "texture",
+        sprite: { mode: "Multiple", sheet },
+      },
+    };
+    metaHistory.reset(table);
+    useEditorStore.setState({
+      assetMetaTable: table,
+      assetMetas: createAssetMetas(Object.entries(table).map(([id, meta]) => ({ id, meta }))),
+    });
+  }
+
   it("同名文件夹里的同名图集不再重复显示文件层", () => {
     const imageId = "project:测试/Assets/images/20260922-141046/20260922-141046.png";
     const nestedTree: ResourceTreeNode[] = [
@@ -324,14 +347,8 @@ describe("资源面板：精灵子项", () => {
         ],
       },
     ];
-    useEditorStore.setState((state) => ({
-      project: { ...state.project, tree: nestedTree },
-      doc: {
-        ...state.doc,
-        spriteSettings: { [imageId]: { type: "Sprite", mode: "Multiple" } },
-        spriteSheets: { [imageId]: { columns: 2, rows: 1 } },
-      },
-    }));
+    useEditorStore.setState((state) => ({ project: { ...state.project, tree: nestedTree } }));
+    seedSpriteMeta(imageId, { columns: 2, rows: 1 });
     render(<AssetsPanel />);
 
     fireEvent.click(contentButton("Assets/images"));
@@ -349,19 +366,7 @@ describe("资源面板：精灵子项", () => {
       throw new Error("test image asset missing");
     }
 
-    useEditorStore.setState((state) => ({
-      doc: {
-        ...state.doc,
-        spriteSettings: {
-          [imageId]: { type: "Sprite", mode: "Multiple" },
-          ["project:娴嬭瘯/Assets/images/Map001.png"]: { type: "Sprite", mode: "Multiple" },
-        },
-        spriteSheets: {
-          [imageId]: { columns: 2, rows: 2 },
-          ["project:娴嬭瘯/Assets/images/Map001.png"]: { columns: 2, rows: 2 },
-        },
-      },
-    }));
+    seedSpriteMeta(imageId, { columns: 2, rows: 2 });
     render(<AssetsPanel />);
 
     fireEvent.click(contentButton("Assets/images"));
