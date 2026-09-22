@@ -1,5 +1,5 @@
 {
-  "formatVersion": 23,
+  "formatVersion": 24,
   "name": "测试项目",
   "items": {
     "source": "item.xlsx",
@@ -18,22 +18,6 @@
       "voice": {
         "volume": 1
       }
-    }
-  },
-  "audioMeta": {
-    "project:测试项目/Assets/audio/act-2-to-act-3/06-altar-transition.mp3": {
-      "tags": [
-        0,
-        2
-      ]
-    },
-    "project:测试项目/Assets/audio/act-2/01-bird-capture-part-1.mp3": {
-      "name": "声音1",
-      "tags": [
-        0,
-        1,
-        2
-      ]
     }
   },
   "audioTags": [

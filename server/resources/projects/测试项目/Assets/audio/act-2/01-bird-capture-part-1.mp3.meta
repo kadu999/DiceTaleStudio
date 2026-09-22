@@ -1,0 +1,13 @@
+{
+  "formatVersion": 1,
+  "guid": "04810aa3bddfc24129b4ceb6bf09cd0c",
+  "importer": "audio",
+  "audio": {
+    "name": "声音1",
+    "tags": [
+      0,
+      1,
+      2
+    ]
+  }
+}
