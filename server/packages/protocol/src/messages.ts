@@ -54,8 +54,15 @@ import { z } from "zod";
  * 「歌单 + 默认曲 + 循环 + 音量」收敛成**只有音量**（曲目清单不再进文档，编辑器弹框直接列项目音频）；
  * 命令那一组**不变**（还是四条 `*_bgm`，`play_bgm` 仍带 `clip`）。
  * 载荷形状变了、老前端读到的 `bgm` 少三项，所以照旧 +1。
+ *
+ * v9（2026-09-22）：**对象特性搬进组件**（与文档格式 v19 同一批）。`sceneObjectSchema` 上
+ * `map` / `image` / `sound` / `teleport` / `video` 这 5 个扁平字段没了，改成 `components[]` 里的
+ * 组件实例（`GridMap` / `TextureRenderer` / `PlaySound` / `Teleport` / `VideoOverlay`）。
+ * 老前端按扁平字段读，迁移后的场景在它眼里会变成「一个什么都不带的空对象」（贴图、网格、
+ * 声音、视频全丢），所以必须 +1，靠版本握手把它挡在连上的那一刻。
+ * **命令那一组一个字节都没动**：`play_sound` 仍只带 `objectId` + `layer`，数据在镜像里。
  */
-export const PROTOCOL_VERSION = 8;
+export const PROTOCOL_VERSION = 9;
 
 /** 未进入运行态时拒绝 `/client` 升级的 HTTP 状态与原因头。 */
 export const RUNTIME_INACTIVE_STATUS = 503;
@@ -214,11 +221,77 @@ export const projectSettingsSchema = z.object({
 });
 
 /**
+ * 对象特性组件的类型名（v9 起）。
+ *
+ * 与 `@dts/document` 的 `FEATURE_COMPONENT` **必须逐字一致**——两处是刻意复刻的
+ * （`protocol` 不能反过来依赖文档包），由 `apps/backend/test/protocol-document-contract.test.ts`
+ * 断言两边一致，改一处忘了另一处会直接测试失败。
+ */
+export const COMPONENT_TYPE = {
+  map: "GridMap",
+  image: "TextureRenderer",
+  sound: "PlaySound",
+  teleport: "Teleport",
+  video: "VideoOverlay",
+} as const;
+
+/**
+ * 一个组件实例（v9）。
+ *
+ * 从对象特性提升上来的 5 种按各自 schema 校验；其余类型（前端组件体系那 7 种、以及
+ * 将来的自定义组件）走宽松分支：`data` 是任意记录。未知类型**不报错**是有意的——
+ * 编辑器加一个新组件时，老前端应当照常镜像其余数据，而不是整条场景消息被判非法。
+ *
+ * 「宽松」那一支**必须把 5 个已知名排除掉**：否则一个 data 写坏的 `GridMap` 会掉进这里
+ * 被当成「未知类型」收下，严格校验就形同虚设。
+ */
+const TYPED_COMPONENT_NAMES: readonly string[] = Object.values(COMPONENT_TYPE);
+
+export const componentSchema = z.object({
+  id: z.string().min(1),
+  type: z.string().min(1).refine((type) => !TYPED_COMPONENT_NAMES.includes(type), {
+    message: "已知特性组件的 data 不符合它的 schema",
+  }),
+  displayName: z.string().optional(),
+  data: z.record(z.string(), z.unknown()),
+  actions: z.array(z.unknown()).optional(),
+});
+
+function featureComponentSchema<T extends z.ZodTypeAny>(
+  type: string,
+  data: T,
+): z.ZodObject<{
+  id: z.ZodString;
+  type: z.ZodLiteral<string>;
+  displayName: z.ZodOptional<z.ZodString>;
+  data: T;
+  actions: z.ZodOptional<z.ZodArray<z.ZodUnknown>>;
+}> {
+  return z.object({
+    id: z.string().min(1),
+    type: z.literal(type),
+    displayName: z.string().optional(),
+    data,
+    actions: z.array(z.unknown()).optional(),
+  });
+}
+
+/** 场景对象上的组件：5 种特性组件按各自形状校验，其余宽松。 */
+export const sceneComponentSchema = z.union([
+  featureComponentSchema(COMPONENT_TYPE.map, mapDataSchema),
+  featureComponentSchema(COMPONENT_TYPE.image, imageRefSchema),
+  featureComponentSchema(COMPONENT_TYPE.sound, soundDataSchema),
+  featureComponentSchema(COMPONENT_TYPE.teleport, teleportDataSchema),
+  featureComponentSchema(COMPONENT_TYPE.video, videoDataSchema),
+  componentSchema,
+]);
+
+/**
  * 场景对象（三端同构的那一个对象）。
  *
  * `kind`：`Map` / `SceneObject` / `Player` / `Item` / `Event` / `PlaySound` / `Teleport`。
- * 前端按需取用字段：`components`（编辑器侧的组件与动作，前端不执行）等字段会被忽略；
- * `teleport`（传送阵的目标场景）只有编辑器用——见 `teleportDataSchema` 的说明。
+ * **v9 起 `kind` 只是「创建原型」标签**（列表归类、占位色），**不再决定行为**：
+ * 「这个对象有什么」全看 `components`——前端据此决定建不建可见物、建哪几层。
  * `position` 为 null = 还没落位（前端不建可见物，与编辑器画布口径一致）。
  */
 export const sceneObjectSchema = z.object({
@@ -236,16 +309,17 @@ export const sceneObjectSchema = z.object({
   // 所以协议不需要版本号变更——新字段对旧实现是无害的额外信息。
   scaleX: z.number().optional(),
   scaleY: z.number().optional(),
-  components: z.array(z.unknown()).optional(),
-  map: mapDataSchema.optional(),
-  sound: soundDataSchema.optional(),
-  // v12 起文档里可能带传送阵的目标场景（可选）：**前端不用它**（切场景靠整份 `scene_push`），
-  // 但它是 SceneObjectDoc 的一部分，缺了就等于在这一层丢了字段。
-  teleport: teleportDataSchema.optional(),
-  // v14 起文档里可能带视频列表（可选，只有地图 / 精灵会带）：前端据此在**那个对象自己的矩形**上
-  // 建一层视频，命令（`play_video` 等）只给 `objectId`。
-  video: videoDataSchema.optional(),
-  image: imageRefSchema.optional(),
+  /**
+   * 对象身上挂的组件（v9 起）。
+   *
+   * 前端按 `type` 分派：`GridMap` → 地图面片 + 网格 + 战争雾；`TextureRenderer` → 贴图；
+   * `PlaySound` / `Teleport` → **不建可见物**（数据留在镜像里，命令要用）；
+   * `VideoOverlay` → 运行时建视频层。不认识的类型忽略即可（数据仍留在镜像里）。
+   *
+   * 缺省给 `[]`：一份「什么都没有的对象」是合法状态，而**缺字段**在老编辑器 / 手写载荷里
+   * 也可能出现，为此判整条消息非法不值得（对比 `scale` 那几项同一套取舍）。
+   */
+  components: z.array(sceneComponentSchema).default([]),
 });
 
 /** 场景 = 场景名（就是文件名）+ 对象列表；整份推送 / 整份镜像。 */
@@ -256,6 +330,42 @@ export const sceneSchema = z.object({
 
 export type ScenePayload = z.infer<typeof sceneSchema>;
 export type SceneObjectPayload = z.infer<typeof sceneObjectSchema>;
+
+/** 从对象上取某个组件的数据（协议层不解释内容，只按 `type` 找）。 */
+export function componentDataOf<T = Record<string, unknown>>(
+  object: SceneObjectPayload,
+  type: string,
+): T | undefined {
+  return object.components.find((item) => item.type === type)?.data as T | undefined;
+}
+
+/**
+ * 这个对象引用到的**全部资源逻辑 ID**（贴图 / 地图贴图 / 音频 / 视频）。
+ *
+ * 服务端用它从推下来的场景里反推「这是哪个项目的资源」（`RuntimeSession.resourceProject`），
+ * 好让前端**先下资源包、再载入场景**。放在协议包里是因为它只依赖协议自己的字段形状；
+ * 换成一个组件时只改这里，服务端与 Mock 前端都不用动。
+ */
+export function resourceIdsOfObject(object: SceneObjectPayload): readonly string[] {
+  const ids: string[] = [];
+
+  const image = componentDataOf<{ id?: string }>(object, COMPONENT_TYPE.image);
+  if (image?.id !== undefined) {
+    ids.push(image.id);
+  }
+
+  const map = componentDataOf<{ image?: { id?: string } }>(object, COMPONENT_TYPE.map);
+  if (map?.image?.id !== undefined) {
+    ids.push(map.image.id);
+  }
+
+  for (const type of [COMPONENT_TYPE.sound, COMPONENT_TYPE.video]) {
+    const media = componentDataOf<{ clips?: readonly string[] }>(object, type);
+    ids.push(...(media?.clips ?? []));
+  }
+
+  return ids;
+}
 export type SoundLayer = z.infer<typeof soundLayerSchema>;
 /** 项目级全局设置（`settings_push` / `project_settings` 的载荷）。 */
 export type ProjectSettingsPayload = z.infer<typeof projectSettingsSchema>;

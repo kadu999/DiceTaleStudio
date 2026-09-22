@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { COMPONENT_TYPES, FEATURE_COMPONENT_TYPES, componentId } from "./components";
+import { FEATURE_COMPONENT } from "./features";
 import {
   DOCUMENT_FORMAT_VERSION,
   SOUND_LAYERS,
@@ -141,6 +143,56 @@ export const componentSchema = z.object({
   actions: z.array(actionInstanceSchema),
 });
 
+/**
+ * 组件实例（v19）。
+ *
+ * 从对象特性提升上来的那 5 种**按各自的 schema 硬校验**（`GridMap` 的 RLE、`PlaySound` 的层级…），
+ * 前端组件体系那 7 种与未知类型走宽松分支（`data` 是任意记录）——这样手写文件里的自定义组件
+ * 照样读得回来，而**已知的 5 种写坏了会直接读不开**（与 v18 之前扁平字段的严格程度一致）。
+ *
+ * 「未知类型」分支把已知的 12 个名字排除掉：否则一个 data 坏掉的 `GridMap` 会掉进宽松分支，
+ * 严格校验就形同虚设。
+ */
+const KNOWN_COMPONENT_TYPE_NAMES: readonly string[] = COMPONENT_TYPES.map((def) => def.type);
+
+const permissiveComponentSchema = z.object({
+  id: z.string().min(1),
+  type: z.string().min(1).refine((type) => !KNOWN_COMPONENT_TYPE_NAMES.includes(type), {
+    message: "已知组件类型的 data 不符合它的 schema",
+  }),
+  displayName: z.string().optional(),
+  data: z.record(z.string(), z.unknown()),
+  actions: z.array(actionInstanceSchema),
+});
+
+function componentSchemaOf<T extends z.ZodTypeAny>(
+  type: string,
+  data: T,
+): z.ZodObject<{
+  id: z.ZodString;
+  type: z.ZodLiteral<string>;
+  displayName: z.ZodOptional<z.ZodString>;
+  data: T;
+  actions: z.ZodArray<typeof actionInstanceSchema>;
+}> {
+  return z.object({
+    id: z.string().min(1),
+    type: z.literal(type),
+    displayName: z.string().optional(),
+    data,
+    actions: z.array(actionInstanceSchema),
+  });
+}
+
+export const sceneComponentSchema = z.union([
+  componentSchemaOf(FEATURE_COMPONENT.map, mapDataSchema),
+  componentSchemaOf(FEATURE_COMPONENT.image, imageRefSchema),
+  componentSchemaOf(FEATURE_COMPONENT.sound, soundDataSchema),
+  componentSchemaOf(FEATURE_COMPONENT.teleport, teleportDataSchema),
+  componentSchemaOf(FEATURE_COMPONENT.video, videoDataSchema),
+  permissiveComponentSchema,
+]);
+
 export const sceneObjectSchema = z.object({
   id: z.string().min(1),
   name: z.string(),
@@ -161,17 +213,7 @@ export const sceneObjectSchema = z.object({
   // 取值与坏值处理同 `scale`（见 `@dts/document` 的 `effectiveScaleX` / `validateScene`）
   scaleX: z.number().optional(),
   scaleY: z.number().optional(),
-  components: z.array(componentSchema),
-  map: mapDataSchema.optional(),
-  // 动作对象（播放声音）的声音数据
-  sound: soundDataSchema.optional(),
-  // v12 起：动作对象「传送阵」携带的目标场景（可选）。同样**不给默认值**——
-  // 「没写」的语义是「还没指定目标」，别拿空壳冒充；类型见 `ObjectKind`。
-  teleport: teleportDataSchema.optional(),
-  // v14 起：地图 / 精灵上的视频列表（可选）。缺省 = 这个对象不放视频（见 `videoDataSchema`）
-  video: videoDataSchema.optional(),
-  // 对象要显示的图片（精灵用；地图的贴图在 map.image 里）
-  image: imageRefSchema.optional(),
+  components: z.array(sceneComponentSchema),
 });
 
 /** 场景文件内容：**不含场景名**——名字就是文件名，重复存名字迟早会和磁盘上的名字不一致。 */
@@ -772,6 +814,67 @@ export function parseProjectDoc(raw: unknown): ProjectDoc {
   return parseProjectFile(raw).doc;
 }
 
+/**
+ * v18 → v19：把对象上的 5 个**特性扁平字段**搬成组件实例。
+ *
+ * 只搬键、不解释内容（内容由各自的 schema 校验）：
+ * - 处理顺序 = 注册表顺序（`GridMap` → `TextureRenderer` → `PlaySound` → `Teleport` →
+ *   `VideoOverlay`），于是写盘顺序稳定、属性面板的分组顺序也稳定；
+ * - 组件 id 用 `<对象 id>__<组件类型>`；对象没有合法 id 时退化成 `obj<下标>__<类型>`
+ *   （手写文件里 id 可能是空的，但组件 id 必须非空且唯一）；
+ * - **幂等**：目标对象上已经有同类型组件时不再追加（只把老字段删掉）——
+ *   于是「迁移过一次的文件再打开」不会多出第二个实例；
+ * - **不猜**：老字段不是对象就原样留着（由 schema 报错），`kind` 一个字节都不动
+ *   （只搬字段，不改原型标签，否则画布色点与列表归类会跟着变）。
+ */
+function migrateFeaturesToComponents(raw: Record<string, unknown>): {
+  readonly raw: Record<string, unknown>;
+  readonly changed: boolean;
+} {
+  const objects = Array.isArray(raw.objects) ? raw.objects : [];
+  let changed = false;
+
+  const next = objects.map((object, index) => {
+    if (!isRecord(object)) {
+      return object;
+    }
+
+    if (!FEATURE_COMPONENT_TYPES.some((def) => isRecord(object[def.legacyField as string]))) {
+      return object;
+    }
+
+    const baseId =
+      typeof object.id === "string" && object.id.length > 0 ? object.id : `obj${index}`;
+    const components = Array.isArray(object.components) ? [...object.components] : [];
+    const rest: Record<string, unknown> = { ...object };
+
+    for (const def of FEATURE_COMPONENT_TYPES) {
+      const field = def.legacyField as string;
+      const value = rest[field];
+      if (!isRecord(value)) {
+        continue;
+      }
+
+      delete rest[field];
+      changed = true;
+
+      const already = components.some((item) => isRecord(item) && item.type === def.type);
+      if (!already) {
+        components.push({
+          id: componentId(baseId, def.type),
+          type: def.type,
+          data: value,
+          actions: [],
+        });
+      }
+    }
+
+    return { ...rest, components };
+  });
+
+  return changed ? { raw: { ...raw, objects: next }, changed } : { raw, changed };
+}
+
 /** 场景文件加载结果。 */
 export interface SceneFileLoad {
   readonly file: SceneFileDoc;
@@ -810,14 +913,21 @@ export function parseSceneFile(raw: unknown, size?: SceneSizeHint): SceneFileLoa
     const teleport = migrateTeleportTarget(filled.raw);
     // v15：声音层级四档 → 三档（环境音并进背景音乐）
     const layers = migrateSoundLayers(teleport.raw);
+    // v19：对象特性搬进组件（`map` / `image` / `sound` / `teleport` / `video`）
+    const features = migrateFeaturesToComponents(layers.raw);
     // v13：战争雾的总开关（`fog.enabled`）**不用单独迁移**——schema 给它默认值 `true`
     // （v10–v12 的文件里「有 fog」就等于「开着」），而版本号一升就会回写一次，
     // 于是磁盘上的文件重新变得自描述。
     // v14：地图 / 精灵上的视频列表（`video`）同样**不用补壳**——整个字段是可选的，
     // 「没有它」就是「这个对象不放视频」，版本号 +1 触发一次回写即可。
     // 读出来的文档一律是当前版本（v6 起网格里不再存 `cellSize`，顺手被 schema 丢掉）
-    normalized = { ...layers.raw, formatVersion: DOCUMENT_FORMAT_VERSION };
-    needsRewrite = version < DOCUMENT_FORMAT_VERSION || filled.changed || teleport.changed || layers.changed;
+    normalized = { ...features.raw, formatVersion: DOCUMENT_FORMAT_VERSION };
+    needsRewrite =
+      version < DOCUMENT_FORMAT_VERSION ||
+      filled.changed ||
+      teleport.changed ||
+      layers.changed ||
+      features.changed;
   }
 
   const result = sceneFileSchema.safeParse(normalized);

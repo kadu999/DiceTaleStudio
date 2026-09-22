@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { produce, type Draft } from "immer";
 import { addObject, findScene, isSceneNameTaken, nextObjectName, validateSceneName } from "../src/commands";
+import { mapDataOf } from "../src/access";
 import { createEmptyScene, createMapObject } from "../src/factory";
 import type { SceneDoc } from "../src/types";
 
@@ -86,7 +87,8 @@ describe("场景内容命令", () => {
     });
 
     expect(result.objects[0]?.kind).toBe("Map");
-    expect(result.objects[0]?.map?.grid).toEqual(GRID);
+    // v19 起地图数据住在 `GridMap` 组件里，读走 `mapDataOf`
+    expect(mapDataOf(result.objects[0]!)?.grid).toEqual(GRID);
   });
 });
 

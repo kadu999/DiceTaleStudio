@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  COMPONENT_TYPE,
   PROTOCOL_VERSION,
   clientToServerSchema,
   createRequestId,
@@ -11,8 +12,29 @@ import {
   parseServerToEditor,
   sceneSchema,
   serverToClientSchema,
+  type SceneObjectPayload,
   type ScenePayload,
 } from "../src/messages";
+
+/**
+ * 造一个组件实例（v9：对象特性住在 `components` 里）。
+ *
+ * id 只要非空即可——协议这一层不解释它（那是编辑器的事）。
+ */
+function feature(
+  type: string,
+  data: Record<string, unknown>,
+): { id: string; type: string; data: Record<string, unknown> } {
+  return { id: `c_${type}`, type, data };
+}
+
+/** 从解析后的对象上取某个组件的数据（断言用；协议层不提供访问器）。 */
+function featureData(
+  object: SceneObjectPayload | undefined,
+  type: string,
+): Record<string, unknown> | undefined {
+  return object?.components.find((item) => item.type === type)?.data;
+}
 
 /** 一份最小可用场景：一个地图对象 + 一个精灵对象 + 一个声音对象。 */
 function sampleScene(): ScenePayload {
@@ -29,13 +51,14 @@ function sampleScene(): ScenePayload {
         position: { x: 0, y: 0 },
         rotation: 0,
         scale: 1,
-        components: [],
-        map: {
-          image: { id: "project:测试项目/Assets/images/场景1.png", width: 1920, height: 1080 },
-          grid: { width: 64, height: 36 },
-          rowOrder: "bottom-up",
-          cells: { encoding: "rle", runs: [[0, 2304]] },
-        },
+        components: [
+          feature(COMPONENT_TYPE.map, {
+            image: { id: "project:测试项目/Assets/images/场景1.png", width: 1920, height: 1080 },
+            grid: { width: 64, height: 36 },
+            rowOrder: "bottom-up",
+            cells: { encoding: "rle", runs: [[0, 2304]] },
+          }),
+        ],
       },
       {
         id: "sprite_01",
@@ -47,8 +70,13 @@ function sampleScene(): ScenePayload {
         position: { x: -345, y: 118 },
         rotation: 0,
         scale: 1.5,
-        components: [],
-        image: { id: "project:测试项目/Assets/images/door.png", width: 128, height: 256 },
+        components: [
+          feature(COMPONENT_TYPE.image, {
+            id: "project:测试项目/Assets/images/door.png",
+            width: 128,
+            height: 256,
+          }),
+        ],
       },
       {
         id: "sound_01",
@@ -60,15 +88,25 @@ function sampleScene(): ScenePayload {
         position: { x: 0, y: 0 },
         rotation: 0,
         scale: 1,
-        components: [],
-        sound: {
-          clips: ["project:测试项目/Assets/audio/step1.mp3"],
-          picked: "project:测试项目/Assets/audio/step1.mp3",
-          layer: "sfx",
-        },
+        components: [
+          feature(COMPONENT_TYPE.sound, {
+            clips: ["project:测试项目/Assets/audio/step1.mp3"],
+            picked: "project:测试项目/Assets/audio/step1.mp3",
+            layer: "sfx",
+          }),
+        ],
       },
     ],
   };
+}
+
+/** 把样例场景的第一个对象（地图）换成「同一个对象、带别的组件」。 */
+function mapObjectWith(component: { id: string; type: string; data: Record<string, unknown> }): Record<
+  string,
+  unknown
+> {
+  const map = sampleScene().objects[0] as unknown as Record<string, unknown>;
+  return { ...map, components: [component] };
 }
 
 describe("协议：场景（镜像的那份对象数据）", () => {
@@ -77,46 +115,56 @@ describe("协议：场景（镜像的那份对象数据）", () => {
     expect(scene.objects).toHaveLength(3);
     expect(scene.objects[1]?.position).toEqual({ x: -345, y: 118 });
     expect(scene.objects[1]?.active).toBe(false);
-    expect(scene.objects[1]?.image?.width).toBe(128);
-    expect(scene.objects[2]?.sound?.layer).toBe("sfx");
+    expect(featureData(scene.objects[1], COMPONENT_TYPE.image)?.width).toBe(128);
+    expect(featureData(scene.objects[2], COMPONENT_TYPE.sound)?.layer).toBe("sfx");
   });
 
   it("战争雾的总开关（v13）：缺省算开（老场景只有 regions），关着时原样传给前端", () => {
-    const mapObject = sampleScene().objects[0] as Record<string, unknown>;
+    const mapData = featureData(
+      sceneSchema.parse(sampleScene()).objects[0],
+      COMPONENT_TYPE.map,
+    ) as Record<string, unknown>;
+
     const parseWithFog = (fog: unknown): ReturnType<typeof sceneSchema.parse> =>
       sceneSchema.parse({
         name: "s",
-        objects: [{ ...mapObject, map: { ...(mapObject.map as Record<string, unknown>), fog } }],
+        objects: [mapObjectWith(feature(COMPONENT_TYPE.map, { ...mapData, fog }))],
       });
 
     // 老场景（协议 v3 及更早）里只有 regions：「有 fog」就等于「开着」
-    expect(parseWithFog({ regions: [8] }).objects[0]?.map?.fog).toEqual({
+    expect(featureData(parseWithFog({ regions: [8] }).objects[0], COMPONENT_TYPE.map)?.fog).toEqual({
       enabled: true,
       regions: [8],
     });
 
     // 编辑器关掉了：前端看到的就是关着（**不是**建了再藏起来）
-    expect(parseWithFog({ enabled: false, regions: [8] }).objects[0]?.map?.fog).toEqual({
+    expect(
+      featureData(parseWithFog({ enabled: false, regions: [8] }).objects[0], COMPONENT_TYPE.map)?.fog,
+    ).toEqual({
       enabled: false,
       regions: [8],
     });
   });
 
   it("视频（v14）：列表 / 选中 / 循环 / 声音原样传给前端；显示名不进协议", () => {
-    const mapObject = sampleScene().objects[0] as Record<string, unknown>;
     const clip = "project:测试项目/Assets/video/opening.mp4";
 
     const parsed = sceneSchema.parse({
       name: "s",
       objects: [
-        {
-          ...mapObject,
-          video: { clips: [clip], picked: clip, names: { [clip]: "开场" }, loop: true, audio: true },
-        },
+        mapObjectWith(
+          feature(COMPONENT_TYPE.video, {
+            clips: [clip],
+            picked: clip,
+            names: { [clip]: "开场" },
+            loop: true,
+            audio: true,
+          }),
+        ),
       ],
     });
 
-    expect(parsed.objects[0]?.video).toEqual({
+    expect(featureData(parsed.objects[0], COMPONENT_TYPE.video)).toEqual({
       // 总开关缺省算开（与文档 schema 同一口径）
       enabled: true,
       clips: [clip],
@@ -125,22 +173,29 @@ describe("协议：场景（镜像的那份对象数据）", () => {
       audio: true,
     });
 
-    // 老编辑器（还没这个字段）不发，前端的 `video` 就是 undefined（= 这个对象不放视频）
-    expect(sceneSchema.parse(sampleScene()).objects[0]?.video).toBeUndefined();
+    // 老编辑器（还没有这个组件）不发，前端的 `video` 就是 undefined（= 这个对象不放视频）
+    expect(featureData(sceneSchema.parse(sampleScene()).objects[1], COMPONENT_TYPE.video)).toBeUndefined();
 
     // 手写的少写几个开关：默认开着、不循环、静音
     const minimal = sceneSchema.parse({
       name: "s",
-      objects: [{ ...mapObject, video: { clips: [clip] } }],
+      objects: [mapObjectWith(feature(COMPONENT_TYPE.video, { clips: [clip] }))],
     });
-    expect(minimal.objects[0]?.video).toEqual({ enabled: true, clips: [clip], loop: false, audio: false });
+    expect(featureData(minimal.objects[0], COMPONENT_TYPE.video)).toEqual({
+      enabled: true,
+      clips: [clip],
+      loop: false,
+      audio: false,
+    });
 
     // 关掉总开关：原样传给前端（前端据此连那一层都不建）
     const disabled = sceneSchema.parse({
       name: "s",
-      objects: [{ ...mapObject, video: { enabled: false, clips: [clip], picked: clip } }],
+      objects: [
+        mapObjectWith(feature(COMPONENT_TYPE.video, { enabled: false, clips: [clip], picked: clip })),
+      ],
     });
-    expect(disabled.objects[0]?.video).toEqual({
+    expect(featureData(disabled.objects[0], COMPONENT_TYPE.video)).toEqual({
       enabled: false,
       clips: [clip],
       picked: clip,
@@ -149,33 +204,36 @@ describe("协议：场景（镜像的那份对象数据）", () => {
     });
   });
 
-  it("传送阵（动作对象）也接得住：kind 是字符串、teleport 是「候选 + 选中的那个」", () => {
+  it("传送阵（动作对象）也接得住：kind 是字符串、Teleport 组件是「候选 + 选中的那个」", () => {
+    const base = sampleScene().objects[0] as unknown as Record<string, unknown>;
     const withTeleport = sceneSchema.parse({
       name: "s",
       objects: [
         {
-          ...(sampleScene().objects[0] as Record<string, unknown>),
+          ...base,
           id: "teleport_01",
           name: "传送阵",
           kind: "Teleport",
-          teleport: { targets: ["Map002", "Map003"], picked: "Map003" },
+          components: [
+            feature(COMPONENT_TYPE.teleport, { targets: ["Map002", "Map003"], picked: "Map003" }),
+          ],
         },
         // 还没勾任何目标的传送阵（`targets: []`）同样合法
         {
-          ...(sampleScene().objects[0] as Record<string, unknown>),
+          ...base,
           id: "teleport_02",
           name: "传送阵 2",
           kind: "Teleport",
-          teleport: { targets: [] },
+          components: [feature(COMPONENT_TYPE.teleport, { targets: [] })],
         },
       ],
     });
 
-    expect(withTeleport.objects[0]?.teleport).toEqual({
+    expect(featureData(withTeleport.objects[0], COMPONENT_TYPE.teleport)).toEqual({
       targets: ["Map002", "Map003"],
       picked: "Map003",
     });
-    expect(withTeleport.objects[1]?.teleport).toEqual({ targets: [] });
+    expect(featureData(withTeleport.objects[1], COMPONENT_TYPE.teleport)).toEqual({ targets: [] });
   });
 
   it("position 允许 null（还没落位的对象）", () => {
@@ -196,6 +254,8 @@ describe("协议：场景（镜像的那份对象数据）", () => {
     });
 
     expect(scene.objects[0]?.position).toBeNull();
+    // 组件缺省给空数组（「什么都没有的对象」是合法状态）
+    expect(scene.objects[0]?.components).toEqual([]);
   });
 
   it("单轴缩放（v11）是可选的：带与不带都能解析，且原样传给前端", () => {
@@ -241,7 +301,7 @@ describe("协议：场景（镜像的那份对象数据）", () => {
     expect(perAxis.objects[0]?.scaleY).toBe(0.25);
   });
 
-  it("编辑器侧的额外字段不报错（前端按需取用）", () => {
+  it("前端组件体系那 7 种与未知类型都收下（data 宽松，不因新组件把整条消息判非法）", () => {
     const parsed = sceneSchema.parse({
       name: "s",
       objects: [
@@ -254,22 +314,31 @@ describe("协议：场景（镜像的那份对象数据）", () => {
           position: { x: 0, y: 0 },
           rotation: 0,
           scale: 1,
-          components: [{ id: "c1", type: "OptionValue", data: { currentOption: "关" }, actions: [] }],
+          components: [
+            feature("OptionValue", { options: ["开", "关"], current: "关" }),
+            feature("将来的新组件", { whatever: 1 }),
+          ],
         },
       ],
     });
 
-    expect(parsed.objects[0]?.components).toHaveLength(1);
+    expect(parsed.objects[0]?.components).toHaveLength(2);
+    expect(featureData(parsed.objects[0], "OptionValue")?.current).toBe("关");
   });
 
   it("网格尺寸必须是正整数、rowOrder 只认 bottom-up", () => {
+    // zod 的 `parse` 抛的是 issue 列表（消息是 JSON），所以这里只要求「确实被拒了」
+    const rejected = /校验失败|Invalid|too_small|custom/;
+
     const bad = sampleScene();
-    bad.objects[0]!.map!.grid = { width: 0, height: 36 };
-    expect(() => sceneSchema.parse(bad)).toThrow(/校验失败|too_small|Invalid/);
+    const badMap = featureData(bad.objects[0], COMPONENT_TYPE.map);
+    (badMap as { grid: unknown }).grid = { width: 0, height: 36 };
+    expect(() => sceneSchema.parse(bad)).toThrow(rejected);
 
     const bad2 = sampleScene();
-    (bad2.objects[0]!.map as { rowOrder: string }).rowOrder = "top-down";
-    expect(() => sceneSchema.parse(bad2)).toThrow(/校验失败|Invalid/);
+    const badMap2 = featureData(bad2.objects[0], COMPONENT_TYPE.map) as { rowOrder: string };
+    badMap2.rowOrder = "top-down";
+    expect(() => sceneSchema.parse(bad2)).toThrow(rejected);
   });
 });
 

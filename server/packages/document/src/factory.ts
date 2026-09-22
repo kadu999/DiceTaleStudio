@@ -1,10 +1,12 @@
 import {
   DEFAULT_OBJECT_SCALE,
   DEFAULT_SORTING_ORDER,
-  DEFAULT_SOUND_LAYER,
   MAP_DEFAULT_SORTING_ORDER,
   createId,
 } from "./commands";
+import { featureComponent } from "./components";
+// 特性缺省值与组件类型名住在 `features.ts`（那张表是「哪个 kind 带哪个特性」的唯一归属地）
+import { DEFAULT_SOUND_LAYER, FEATURE_COMPONENT } from "./features";
 // 全局设置的缺省值住在 schema 里（那里也是「形状 + 默认值」的家）：新建工程与读老文件
 // 补齐共用同一份，不会出现「新建的缺一样、读出来的缺另一样」
 import { defaultProjectSettings } from "./schema";
@@ -52,6 +54,7 @@ export function createMapObject(input: {
   /** 地图中心的世界坐标；不传就是世界原点。 */
   readonly position?: WorldPosition;
 }): SceneObjectDoc {
+  const id = input.id ?? createId("map");
   const map: MapDataDoc = {
     image: input.image,
     grid: { ...input.grid },
@@ -62,7 +65,7 @@ export function createMapObject(input: {
   };
 
   return {
-    id: input.id ?? createId("map"),
+    id,
     name: input.name,
     kind: "Map",
     // 地图默认是「垫在所有东西下面」的那一层，所以给一个负的显示顺序
@@ -73,8 +76,8 @@ export function createMapObject(input: {
     scale: DEFAULT_OBJECT_SCALE,
     // 新建出来的对象都不锁：锁是「摆好之后别再被拖走」，不是默认状态
     locked: false,
-    components: [],
-    map,
+    // 贴图与网格就是它的 `GridMap` 组件（v19 起）
+    components: [featureComponent(id, FEATURE_COMPONENT.map, map)],
   };
 }
 
@@ -82,7 +85,7 @@ export function createMapObject(input: {
  * 新建**声音对象**（动作对象）：和实体一样摆在世界里，另带「候选音频列表 + 层级」。
  *
  * 位置 / 缩放 / 激活 / 锁定 / 显示顺序与实体完全同一套；**画布上的样子是固定的**：
- * 编辑器给它画一枚**内置音频图标**（不给换贴图，所以没有 `image`），不然一个没有图的
+ * 编辑器给它画一枚**内置音频图标**（不给换贴图，所以没有贴图组件），不然一个没有图的
  * 「播放声音」在场景里既看不见也点不到。
  * 新建时音频列表是空的（还没挑素材）——空列表 = 这条声音还不响；给了 `clips` 就把第一条
  * 当作已选中（点开面板就能直接播）。
@@ -95,11 +98,12 @@ export function createSoundObject(input: {
   /** 对象中心的世界坐标；不传 = 未放置（与普通对象同一个口径，由调用方给落点）。 */
   readonly position?: WorldPosition | null;
 }): SceneObjectDoc {
+  const id = input.id ?? createId("sound");
   const clips = [...(input.clips ?? [])];
   const picked = clips.length > 0 ? clips[0] : undefined;
 
   return {
-    id: input.id ?? createId("sound"),
+    id,
     name: input.name,
     kind: "PlaySound",
     active: true,
@@ -108,12 +112,13 @@ export function createSoundObject(input: {
     rotation: 0,
     scale: DEFAULT_OBJECT_SCALE,
     locked: false,
-    components: [],
-    sound: {
-      clips,
-      layer: input.layer ?? DEFAULT_SOUND_LAYER,
-      ...(picked === undefined ? {} : { picked }),
-    },
+    components: [
+      featureComponent(id, FEATURE_COMPONENT.sound, {
+        clips,
+        layer: input.layer ?? DEFAULT_SOUND_LAYER,
+        ...(picked === undefined ? {} : { picked }),
+      }),
+    ],
   };
 }
 
@@ -121,7 +126,7 @@ export function createSoundObject(input: {
  * 新建**传送阵**（动作对象）：和实体一样摆在世界里，另带「候选目标场景 + 选中的那一个」。
  *
  * 位置 / 缩放 / 激活 / 锁定 / 显示顺序与实体完全同一套；**画布上的样子是固定的**：
- * 编辑器给它画一枚**内置传送徽标**（不给换贴图，所以没有 `image`），不然一个没有图的
+ * 编辑器给它画一枚**内置传送徽标**（不给换贴图，所以没有贴图组件），不然一个没有图的
  * 「传送阵」在场景里既看不见也点不到。
  *
  * 新建时候选是空的（还没勾场景）——「传送目标」窗口里勾几个，「传送」才点得动。
@@ -135,11 +140,12 @@ export function createTeleportObject(input: {
   /** 对象中心的世界坐标；不传 = 未放置（与普通对象同一个口径，由调用方给落点）。 */
   readonly position?: WorldPosition | null;
 }): SceneObjectDoc {
+  const id = input.id ?? createId("teleport");
   const targets = [...(input.targets ?? [])];
   const picked = input.picked ?? targets[0];
 
   return {
-    id: input.id ?? createId("teleport"),
+    id,
     name: input.name,
     kind: "Teleport",
     active: true,
@@ -148,8 +154,12 @@ export function createTeleportObject(input: {
     rotation: 0,
     scale: DEFAULT_OBJECT_SCALE,
     locked: false,
-    components: [],
-    teleport: { targets, ...(picked === undefined ? {} : { picked }) },
+    components: [
+      featureComponent(id, FEATURE_COMPONENT.teleport, {
+        targets,
+        ...(picked === undefined ? {} : { picked }),
+      }),
+    ],
   };
 }
 

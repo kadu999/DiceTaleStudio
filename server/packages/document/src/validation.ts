@@ -1,6 +1,8 @@
 import { PAINTABLE_MASKS, decodeRle } from "@dts/grid";
 import { findComponentType, isKnownComponentType } from "./components";
-import { collectActionIds, isMapFogEnabled, supportsVideo } from "./commands";
+import { collectActionIds, isMapFogEnabled } from "./commands";
+import { imageOf, mapDataOf, soundDataOf, teleportDataOf, videoDataOf } from "./access";
+import { FEATURE_COMPONENT, carriesKind } from "./features";
 import type { ProjectDoc, ProjectSettingsDoc, SceneDoc, SceneObjectDoc } from "./types";
 
 /**
@@ -76,12 +78,13 @@ function validateObject(
   }
 
   // 地图对象：数据必须完整（没有数据的「地图对象」在场景里就是个空壳）
-  if (object.kind === "Map") {
-    if (object.map === undefined) {
+  const map = mapDataOf(object);
+  if (carriesKind(FEATURE_COMPONENT.map, object.kind)) {
+    if (map === undefined) {
       issues.push({ level: "error", path, message: "地图对象缺少地图数据（贴图 / 网格）" });
     } else {
       try {
-        decodeRle(object.map.cells.runs, object.map.grid.width * object.map.grid.height);
+        decodeRle(map.cells.runs, map.grid.width * map.grid.height);
       } catch (error) {
         issues.push({
           level: "error",
@@ -90,13 +93,13 @@ function validateObject(
         });
       }
 
-      if (object.map.image.id.trim().length === 0) {
+      if (map.image.id.trim().length === 0) {
         issues.push({ level: "warning", path: `${path}/map/image`, message: "地图贴图未指定" });
       }
 
       // 战争雾指定的雾区位必须是可绘制的区域位：手写文件里写了别的值（0、3、256…），
       // 编辑器会把它丢掉，所以这里得说出来——不然「明明指定了却不生效」无从排查
-      const fogRegions = object.map.fog?.regions ?? [];
+      const fogRegions = map.fog?.regions ?? [];
       const unknownRegions = fogRegions.filter((bit) => !PAINTABLE_MASKS.some((value) => value === bit));
       if (unknownRegions.length > 0) {
         issues.push({
@@ -108,7 +111,7 @@ function validateObject(
 
       // 「开关开着但一个雾区都没指定」= 前端不会建雾层，也不会有雾：这不是错，
       // 但画面上什么都不会发生，得说一句（属性面板 → 战争雾 → 指定雾区）
-      if (isMapFogEnabled(object.map) && fogRegions.length === 0) {
+      if (isMapFogEnabled(map) && fogRegions.length === 0) {
         issues.push({
           level: "warning",
           path: `${path}/map/fog/regions`,
@@ -117,7 +120,7 @@ function validateObject(
       }
 
       // 反过来同理：开关关着时绑定是留着的（再打开就回来），但「现在没有雾」这件事要说清
-      if (!isMapFogEnabled(object.map) && fogRegions.length > 0) {
+      if (!isMapFogEnabled(map) && fogRegions.length > 0) {
         issues.push({
           level: "warning",
           path: `${path}/map/fog/enabled`,
@@ -127,14 +130,14 @@ function validateObject(
     }
 
     // 地图的贴图在 map.image 里：再挂一份 object.image 就是同一件事写了两遍（显示到底听谁的？）
-    if (object.image !== undefined) {
+    if (imageOf(object) !== undefined) {
       issues.push({
         level: "warning",
         path: `${path}/image`,
         message: "地图对象的贴图写在 map.image 里，多余的 image 字段会被忽略",
       });
     }
-  } else if (object.map !== undefined) {
+  } else if (map !== undefined) {
     issues.push({
       level: "warning",
       path: `${path}/map`,
@@ -143,8 +146,8 @@ function validateObject(
   }
 
   // 声音对象（动作对象）：基础属性与实体一样，另加声音数据——缺了就是个什么都不播的空壳
-  if (object.kind === "PlaySound") {
-    const sound = object.sound;
+  const sound = soundDataOf(object);
+  if (carriesKind(FEATURE_COMPONENT.sound, object.kind)) {
     if (sound === undefined) {
       issues.push({
         level: "error",
@@ -203,14 +206,14 @@ function validateObject(
     }
 
     // 它画的是**固定的内置图标**（不给换贴图），所以 `image` 字段没有意义
-    if (object.image !== undefined) {
+    if (imageOf(object) !== undefined) {
       issues.push({
         level: "warning",
         path: `${path}/image`,
         message: "声音对象用固定的内置图标（不允许改贴图），多余的 image 字段会被忽略",
       });
     }
-  } else if (object.sound !== undefined) {
+  } else if (sound !== undefined) {
     issues.push({
       level: "warning",
       path: `${path}/sound`,
@@ -219,8 +222,8 @@ function validateObject(
   }
 
   // 传送阵（动作对象）：基础属性与实体一样，另加「候选目标场景 + 选中的那一个」
-  if (object.kind === "Teleport") {
-    const teleport = object.teleport;
+  const teleport = teleportDataOf(object);
+  if (carriesKind(FEATURE_COMPONENT.teleport, object.kind)) {
     if (teleport === undefined) {
       issues.push({
         level: "error",
@@ -263,14 +266,14 @@ function validateObject(
     }
 
     // 它画的是**固定的内置徽标**（不给换贴图），所以 `image` 字段没有意义
-    if (object.image !== undefined) {
+    if (imageOf(object) !== undefined) {
       issues.push({
         level: "warning",
         path: `${path}/image`,
         message: "传送阵用固定的内置徽标（不允许改贴图），多余的 image 字段会被忽略",
       });
     }
-  } else if (object.teleport !== undefined) {
+  } else if (teleport !== undefined) {
     issues.push({
       level: "warning",
       path: `${path}/teleport`,
@@ -279,15 +282,14 @@ function validateObject(
   }
 
   /*
-    视频列表（v14 起）：**只有地图与精灵**能带（`supportsVideo`）。
+    视频列表（v14 起）：**只有地图与精灵**能带（`carriesKind`）。
     与声音那几条同一个口径——错了都是「按没加 / 按没选处理」，所以只报警告不拦运行。
     **扩展名不在这里校验**：webm 在 Windows 上多半解不了属于「这台机器的解码器」问题，
     提醒放在界面上（选择器 / 面板），免得每次打开场景都报一遍。
   */
-  if (object.video !== undefined) {
-    const video = object.video;
-
-    if (!supportsVideo(object.kind)) {
+  const video = videoDataOf(object);
+  if (video !== undefined) {
+    if (!carriesKind(FEATURE_COMPONENT.video, object.kind)) {
       issues.push({
         level: "warning",
         path: `${path}/video`,

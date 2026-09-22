@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { produce, type Draft } from "immer";
 import { setTeleportPicked, setTeleportTargets } from "../src/commands";
+import { imageOf, mapDataOf, soundDataOf, teleportDataOf } from "../src/access";
+import { featureComponent } from "../src/components";
+import { FEATURE_COMPONENT } from "../src/features";
 import { createEmptyScene, createTeleportObject } from "../src/factory";
 import { parseSceneFile } from "../src/schema";
 import { formatIssues, hasErrors, validateScene } from "../src/validation";
@@ -39,20 +42,50 @@ function objectOf(scene: SceneDoc, id: string): SceneObjectDoc | undefined {
   return scene.objects.find((object) => object.id === id);
 }
 
+/**
+ * v18 形状的原始 JSON：传送数据还挂在对象的扁平字段 `teleport` 上。
+ *
+ * 这是**迁移的输入**，所以保持扁平写法不变——`parseSceneFile` 会把它搬进
+ * `Teleport` 组件的 `data`（断言一律走 `teleportDataOf`）。
+ */
+function rawFile(formatVersion: number, teleport?: Record<string, unknown>): unknown {
+  return {
+    formatVersion,
+    objects: [
+      {
+        id: "t1",
+        name: "传送阵",
+        kind: "Teleport",
+        position: { x: 0, y: 0 },
+        rotation: 0,
+        scale: 1,
+        sortingOrder: 0,
+        active: true,
+        locked: false,
+        components: [],
+        ...(teleport === undefined ? {} : { teleport }),
+      },
+    ],
+  };
+}
+
 describe("传送阵的工厂", () => {
   it("新建：kind = Teleport，候选是空的（还没勾场景）；不给落点就是未放置", () => {
     const teleport = createTeleportObject({ name: "传送阵", id: "t1" });
 
     expect(teleport.kind).toBe("Teleport");
-    expect(teleport.teleport).toEqual({ targets: [] });
+    expect(teleportDataOf(teleport)).toEqual({ targets: [] });
     expect(teleport.position).toBeNull();
     // 和实体一样：没有地图数据、也没有默认贴图（画布上画内置的传送徽标）
-    expect(teleport.image).toBeUndefined();
-    expect(teleport.map).toBeUndefined();
-    expect(teleport.sound).toBeUndefined();
+    expect(imageOf(teleport)).toBeUndefined();
+    expect(mapDataOf(teleport)).toBeUndefined();
+    expect(soundDataOf(teleport)).toBeUndefined();
     expect(teleport.scale).toBe(1);
     expect(teleport.locked).toBe(false);
-    expect(teleport.components).toEqual([]);
+    // v19 起传送数据就是它身上唯一的组件
+    expect(teleport.components.map((component) => component.type)).toEqual([
+      FEATURE_COMPONENT.teleport,
+    ]);
   });
 
   it("可以带着候选场景与世界坐标新建；没指定选哪个就默认选第一条", () => {
@@ -62,14 +95,14 @@ describe("传送阵的工厂", () => {
       position: { x: 120, y: -40 },
     });
 
-    expect(teleport.teleport).toEqual({ targets: [A, B], picked: A });
+    expect(teleportDataOf(teleport)).toEqual({ targets: [A, B], picked: A });
     expect(teleport.position).toEqual({ x: 120, y: -40 });
   });
 
   it("也可以指定选中的那一个（面板上点小方块选出来的就是它）", () => {
     const teleport = createTeleportObject({ name: "传送阵", targets: [A, B], picked: B, id: "t1" });
 
-    expect(teleport.teleport).toEqual({ targets: [A, B], picked: B });
+    expect(teleportDataOf(teleport)).toEqual({ targets: [A, B], picked: B });
   });
 });
 
@@ -80,7 +113,7 @@ describe("setTeleportTargets：加 / 移候选场景", () => {
       expect(setTeleportTargets(draft, "t1", ["  Map002  ", "Map003", "Map002", ""])).toBe(true);
     });
 
-    expect(objectOf(next, "t1")?.teleport).toEqual({ targets: [A, B], picked: A });
+    expect(teleportDataOf(objectOf(next, "t1")!)).toEqual({ targets: [A, B], picked: A });
   });
 
   it("清单没变就不算改动（不进撤销栈）", () => {
@@ -102,7 +135,7 @@ describe("setTeleportTargets：加 / 移候选场景", () => {
       expect(setTeleportTargets(draft, "t1", [B])).toBe(true);
     });
 
-    expect(objectOf(next, "t1")?.teleport).toEqual({ targets: [B], picked: B });
+    expect(teleportDataOf(objectOf(next, "t1")!)).toEqual({ targets: [B], picked: B });
   });
 
   it("一条都不剩：`picked` 整个删掉（不留空壳）", () => {
@@ -112,20 +145,20 @@ describe("setTeleportTargets：加 / 移候选场景", () => {
       expect(setTeleportTargets(draft, "t1", [])).toBe(true);
     });
 
-    expect(objectOf(next, "t1")?.teleport).toEqual({ targets: [] });
+    expect(teleportDataOf(objectOf(next, "t1")!)).toEqual({ targets: [] });
   });
 
-  it("手写文件里整个 teleport 都没有时兜底补一份，而不是静默失败", () => {
+  it("手写文件里整个传送组件都没有时兜底补一份，而不是静默失败", () => {
     const broken: SceneObjectDoc = {
       ...createTeleportObject({ name: "传送阵", id: "t1" }),
-      teleport: undefined,
+      components: [],
     };
 
     const next = mutate(sceneWith([broken]), (draft) => {
       expect(setTeleportTargets(draft, "t1", [A])).toBe(true);
     });
 
-    expect(objectOf(next, "t1")?.teleport).toEqual({ targets: [A], picked: A });
+    expect(teleportDataOf(objectOf(next, "t1")!)).toEqual({ targets: [A], picked: A });
   });
 
   it("非传送阵对象：改不动（返回 false）", () => {
@@ -139,7 +172,7 @@ describe("setTeleportTargets：加 / 移候选场景", () => {
       expect(setTeleportTargets(draft, "d1", [A])).toBe(false);
     });
 
-    expect(objectOf(scene, "d1")?.teleport).toEqual({ targets: [] });
+    expect(teleportDataOf(objectOf(scene, "d1")!)).toEqual({ targets: [] });
   });
 });
 
@@ -157,7 +190,7 @@ describe("setTeleportPicked：选「传送」送到哪一个", () => {
       expect(setTeleportPicked(draft, "t1", "Map999")).toBe(false);
     });
 
-    expect(objectOf(next, "t1")?.teleport).toEqual({ targets: [A, B], picked: A });
+    expect(teleportDataOf(objectOf(next, "t1")!)).toEqual({ targets: [A, B], picked: A });
   });
 
   it("选另一个候选：写进文档；值没变就不算改动", () => {
@@ -166,7 +199,7 @@ describe("setTeleportPicked：选「传送」送到哪一个", () => {
     const next = mutate(scene, (draft) => {
       expect(setTeleportPicked(draft, "t1", B)).toBe(true);
     });
-    expect(objectOf(next, "t1")?.teleport).toEqual({ targets: [A, B], picked: B });
+    expect(teleportDataOf(objectOf(next, "t1")!)).toEqual({ targets: [A, B], picked: B });
 
     const same = mutate(next, (draft) => {
       expect(setTeleportPicked(draft, "t1", B)).toBe(false);
@@ -179,7 +212,7 @@ describe("setTeleportPicked：选「传送」送到哪一个", () => {
       expect(setTeleportPicked(draft, "t1", null)).toBe(true);
     });
 
-    expect(objectOf(next, "t1")?.teleport).toEqual({ targets: [A, B] });
+    expect(teleportDataOf(objectOf(next, "t1")!)).toEqual({ targets: [A, B] });
 
     // 本来就没选：再取消一次不算改动
     const again = mutate(next, (draft) => {
@@ -216,97 +249,31 @@ describe("传送阵的解析与版本", () => {
   });
 
   it("带候选与选中的传送阵能往返解析", () => {
-    const parsed = parseSceneFile({
-      formatVersion: DOCUMENT_FORMAT_VERSION,
-      objects: [
-        {
-          id: "t1",
-          name: "传送阵",
-          kind: "Teleport",
-          position: { x: 0, y: 0 },
-          rotation: 0,
-          scale: 1,
-          sortingOrder: 0,
-          active: true,
-          locked: false,
-          components: [],
-          teleport: { targets: [A, B], picked: B },
-        },
-      ],
-    });
+    const parsed = parseSceneFile(rawFile(DOCUMENT_FORMAT_VERSION, { targets: [A, B], picked: B }));
 
-    expect(parsed.file.objects[0]?.teleport).toEqual({ targets: [A, B], picked: B });
+    expect(teleportDataOf(parsed.file.objects[0]!)).toEqual({ targets: [A, B], picked: B });
   });
 
   it("`targets` 不写就当成空清单（还没加目标），`picked` 不写就是还没选", () => {
-    const parsed = parseSceneFile({
-      formatVersion: DOCUMENT_FORMAT_VERSION,
-      objects: [
-        {
-          id: "t1",
-          name: "传送阵",
-          kind: "Teleport",
-          position: { x: 0, y: 0 },
-          rotation: 0,
-          scale: 1,
-          sortingOrder: 0,
-          active: true,
-          locked: false,
-          components: [],
-          teleport: {},
-        },
-      ],
-    });
+    const parsed = parseSceneFile(rawFile(DOCUMENT_FORMAT_VERSION, {}));
 
-    expect(parsed.file.objects[0]?.teleport).toEqual({ targets: [] });
+    expect(teleportDataOf(parsed.file.objects[0]!)).toEqual({ targets: [] });
   });
 
   it("中间那一版写下的「单目标」文件读得回来：搬进候选清单，并顺手选中它", () => {
-    const parsed = parseSceneFile({
-      formatVersion: 11,
-      objects: [
-        {
-          id: "t1",
-          name: "传送阵",
-          kind: "Teleport",
-          position: { x: 0, y: 0 },
-          rotation: 0,
-          scale: 1,
-          sortingOrder: 0,
-          active: true,
-          locked: false,
-          components: [],
-          teleport: { target: A },
-        },
-      ],
-    });
+    const parsed = parseSceneFile(rawFile(11, { target: A }));
 
     // 不搬的话 `target` 会被 schema 静默丢掉、变成「还没加目标」——文件里明明写着
-    expect(parsed.file.objects[0]?.teleport).toEqual({ targets: [A], picked: A });
+    expect(teleportDataOf(parsed.file.objects[0]!)).toEqual({ targets: [A], picked: A });
     expect(parsed.needsRewrite).toBe(true);
   });
 
   it("已经有 `targets` 的就不动它（哪怕同一个对象里还留着 `target` 这种脏数据）", () => {
-    const parsed = parseSceneFile({
-      formatVersion: DOCUMENT_FORMAT_VERSION,
-      objects: [
-        {
-          id: "t1",
-          name: "传送阵",
-          kind: "Teleport",
-          position: { x: 0, y: 0 },
-          rotation: 0,
-          scale: 1,
-          sortingOrder: 0,
-          active: true,
-          locked: false,
-          components: [],
-          teleport: { targets: [A, B], picked: B, target: A },
-        },
-      ],
-    });
+    const parsed = parseSceneFile(
+      rawFile(DOCUMENT_FORMAT_VERSION, { targets: [A, B], picked: B, target: A }),
+    );
 
-    expect(parsed.file.objects[0]?.teleport).toEqual({ targets: [A, B], picked: B });
+    expect(teleportDataOf(parsed.file.objects[0]!)).toEqual({ targets: [A, B], picked: B });
   });
 
   it("没见过的 kind 仍然被枚举挡住（不是「什么都能塞」）", () => {
@@ -334,9 +301,10 @@ describe("传送阵的解析与版本", () => {
 
 describe("传送阵的校验", () => {
   it("缺传送数据（整个 teleport 没有）= error", () => {
+    // v19 下「缺传送数据」= 没有 `Teleport` 组件
     const broken: SceneObjectDoc = {
       ...createTeleportObject({ name: "传送阵", id: "t1" }),
-      teleport: undefined,
+      components: [],
     };
 
     const issues = validateScene(sceneWith([broken]));
@@ -354,13 +322,13 @@ describe("传送阵的校验", () => {
   it("有候选但没选 = warning；选中的不在候选里也 = warning", () => {
     const unpicked: SceneObjectDoc = {
       ...createTeleportObject({ name: "传送阵", id: "t1", targets: [A, B] }),
-      teleport: { targets: [A, B] },
+      components: [featureComponent("t1", FEATURE_COMPONENT.teleport, { targets: [A, B] })],
     };
     expect(formatIssues(validateScene(sceneWith([unpicked])))).toMatch(/还没选要传送到哪一张场景/);
 
     const stale: SceneObjectDoc = {
       ...createTeleportObject({ name: "传送阵", id: "t2", targets: [A] }),
-      teleport: { targets: [A], picked: B },
+      components: [featureComponent("t2", FEATURE_COMPONENT.teleport, { targets: [A], picked: B })],
     };
     expect(formatIssues(validateScene(sceneWith([stale])))).toMatch(/不在候选里/);
   });
@@ -377,7 +345,14 @@ describe("传送阵的校验", () => {
   it("传送阵挂了贴图会被提醒（它画的是固定徽标）", () => {
     const withImage: SceneObjectDoc = {
       ...createTeleportObject({ name: "传送阵", id: "t1", targets: [A], picked: A }),
-      image: { id: "project:C/Assets/images/a.png", width: 64, height: 64 },
+      components: [
+        featureComponent("t1", FEATURE_COMPONENT.teleport, { targets: [A], picked: A }),
+        featureComponent("t1", FEATURE_COMPONENT.image, {
+          id: "project:C/Assets/images/a.png",
+          width: 64,
+          height: 64,
+        }),
+      ],
     };
 
     expect(formatIssues(validateScene(sceneWith([withImage])))).toMatch(/不允许改贴图/);
@@ -387,7 +362,7 @@ describe("传送阵的校验", () => {
     const door: SceneObjectDoc = {
       ...createTeleportObject({ name: "木门", id: "d1" }),
       kind: "SceneObject",
-      teleport: { targets: [A] },
+      components: [featureComponent("d1", FEATURE_COMPONENT.teleport, { targets: [A] })],
     };
 
     expect(formatIssues(validateScene(sceneWith([door])))).toMatch(/不应携带传送数据/);

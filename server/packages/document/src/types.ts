@@ -45,8 +45,14 @@ import type { RleRun } from "@dts/grid";
  * （`audioTags`：下标即 tag ID，值即名字；对齐 Unity 的 TagManager）——
  * 文件里只记 `[0, 2]` 这样的 ID，改标签名只改那张表。v17 的字符串标签由
  * `migrateAudioTags` 按出现顺序建成表并换成 ID，只做一次。
+ *
+ * v19（2026-09-22）：**对象特性搬进组件**。`map` / `image` / `sound` / `teleport` / `video`
+ * 这 5 个扁平字段变成 `components[]` 里的实例（`GridMap` / `TextureRenderer` / `PlaySound` /
+ * `Teleport` / `VideoOverlay`），由 `migrateFeaturesToComponents` 搬一次。
+ * 于是「对象 = 实体（id / 名字 / 变换 / 可见性 / 排序）+ 组件列表」，加一个新特性
+ * 只需要往组件注册表里加一条，不用再改校验、序列化、协议与客户端解析各一处。
  */
-export const DOCUMENT_FORMAT_VERSION = 18;
+export const DOCUMENT_FORMAT_VERSION = 19;
 
 /** 网格行序：`bottom-up` 表示 cells 第 0 行是图片最下面一行（与 Unity GridMap 一致）。 */
 export type RowOrder = "bottom-up";
@@ -371,39 +377,20 @@ export interface SceneObjectDoc {
    */
   readonly scaleX?: number;
   readonly scaleY?: number;
+  /**
+   * **实体身上挂的组件**（v19 起，对象特性也在这里）。
+   *
+   * 「对象是什么、画成什么样、运行时能做什么」全由这里声明：
+   * - 前端组件体系那 7 种（`OptionValue` / `Backpack` / …）——条件、动作挂在它们上面；
+   * - 从对象特性提升上来的 5 种（`GridMap` / `TextureRenderer` / `PlaySound` / `Teleport` /
+   *   `VideoOverlay`）——v18 及更早它们住在对象的扁平字段里（`map` / `image` / `sound` /
+   *   `teleport` / `video`），由 `migrateFeaturesToComponents` 搬进来。
+   *
+   * **读它们一律走 `access.ts` 的访问器**（`mapDataOf` / `soundDataOf` / …），
+   * 不要在调用处 `components.find(...)`：那样「哪个类型带什么数据」又会散开。
+   * 同一类型在一个对象上**最多一个实例**；顺序 = 注册表顺序（新建与迁移都按它 append）。
+   */
   readonly components: ComponentDoc[];
-  /** 仅 `kind === "Map"` 的地图对象携带；其它对象没有。 */
-  readonly map?: MapDataDoc;
-  /**
-   * 仅 `kind === "PlaySound"` 的声音对象携带：音频列表 + 选中的那条 + 层级。
-   *
-   * 它的其余属性（位置 / 缩放 / 激活 / 锁定 / 显示顺序）与实体完全同一套；
-   * 画布上的样子是**固定的内置音频图标**，所以它没有 `image`（挂了也会被忽略并警告）。
-   */
-  readonly sound?: SoundDataDoc;
-  /**
-   * 仅 `kind === "Teleport"` 的传送阵携带：候选目标场景 + 选中的那一个。
-   *
-   * 与声音对象同一套口径：其余属性（位置 / 缩放 / 激活 / 锁定 / 显示顺序）跟实体完全一样，
-   * 画布上是**固定的内置徽标**，所以它没有 `image`（挂了也会被忽略并警告）。
-   * `teleport` 整个缺失 = 数据坏了（`validateScene` 报错），界面上按「还没加目标」显示。
-   */
-  readonly teleport?: TeleportDataDoc;
-  /**
-   * **只有地图与精灵**（`kind === "Map"` / `"SceneObject"`）携带（v14 起，可选）：
-   * 视频列表 + 选中哪条 + 循环 / 声音两个开关。
-   *
-   * 缺省（字段不存在）= 这个对象不放视频，与「列表是空的」同义——没加视频时**不写这个字段**，
-   * 免得每个对象文件里都留一个空壳。运行时前端据此决定「要不要建那一层视频」。
-   */
-  readonly video?: VideoDataDoc;
-  /**
-   * 对象要显示的图片（**精灵**就靠它显示图片；地图的贴图在 `map.image` 里）。
-   *
-   * 声明宽高就是它在世界里的尺寸（1 图片像素 = 1 世界像素，再乘上 `scale`），
-   * 位置是它的中心——和地图贴图同一套规矩。没有图片的对象只有一块兜底矩形。
-   */
-  readonly image?: ImageRef;
 }
 
 /**

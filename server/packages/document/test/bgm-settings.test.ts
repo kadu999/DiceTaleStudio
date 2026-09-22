@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { produce, type Draft } from "immer";
 import { setBgmVolume, setSfxVolume, setVoiceVolume } from "../src/commands";
+import { soundDataOf } from "../src/access";
 import { createEmptyProject, createEmptyScene, createSoundObject } from "../src/factory";
 import {
   DEFAULT_BGM_VOLUME,
@@ -257,6 +258,7 @@ describe("校验", () => {
 });
 
 describe("场景格式 v15：环境音并进背景音乐", () => {
+  /** v18 形状的原始 JSON：声音数据还挂在扁平字段 `sound` 上（迁移的输入，保持扁平写法）。 */
   function sceneFileWithLayer(layer: string): unknown {
     return {
       formatVersion: 14,
@@ -281,7 +283,8 @@ describe("场景格式 v15：环境音并进背景音乐", () => {
   it("layer: \"ambient\" → bgm，并要求回写一次", () => {
     const load = parseSceneFile(sceneFileWithLayer("ambient"));
 
-    expect(load.file.objects[0]?.sound?.layer).toBe("bgm");
+    // 迁移把扁平 `sound` 搬进了 `PlaySound` 组件（层级跟着一起搬）
+    expect(soundDataOf(load.file.objects[0]!)?.layer).toBe("bgm");
     expect(load.file.formatVersion).toBe(DOCUMENT_FORMAT_VERSION);
     expect(load.needsRewrite).toBe(true);
   });
@@ -289,11 +292,21 @@ describe("场景格式 v15：环境音并进背景音乐", () => {
   it("其它层级原样读回来（sfx / voice / 老文件里的 bgm）", () => {
     for (const layer of ["sfx", "voice", "bgm"] as const) {
       const load = parseSceneFile(sceneFileWithLayer(layer));
-      expect(load.file.objects[0]?.sound?.layer).toBe(layer);
+      expect(soundDataOf(load.file.objects[0]!)?.layer).toBe(layer);
     }
   });
 
   it("已经删掉的第四档不再是合法值：写了别的 slug 直接读不开（不猜）", () => {
-    expect(() => parseSceneFile(sceneFileWithLayer("music"))).toThrow(/层级|layer|invalid/i);
+    /*
+      v19 起 `layer` 住在 `PlaySound` 组件的 `data` 里，而 `sceneComponentSchema` 是
+      「5 个特性组件 + 宽松未知类型」的 union：`PlaySound` 分支的 data 校验失败后，
+      宽松分支又因为 `type` 是已知组件名而被 refine 挡掉，于是最终报的是
+      「已知组件类型的 data 不符合它的 schema」并指到那个组件——**仍然读不开**，
+      只是 zod 不再把内层的 `layer` 报出来了。语义没变，断言跟着路径走。
+    */
+    expect(() => parseSceneFile(sceneFileWithLayer("music"))).toThrow(/场景文件校验失败/);
+    expect(() => parseSceneFile(sceneFileWithLayer("music"))).toThrow(
+      /objects\.0\.components\.0\.type/,
+    );
   });
 });

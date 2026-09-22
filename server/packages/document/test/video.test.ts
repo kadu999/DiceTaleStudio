@@ -1,19 +1,23 @@
 import { describe, expect, it } from "vitest";
 import { produce, type Draft } from "immer";
 import {
-  DEFAULT_VIDEO_AUDIO,
-  DEFAULT_VIDEO_ENABLED,
-  DEFAULT_VIDEO_LOOP,
   createSceneObject,
-  isVideoEnabled,
   setVideoAudio,
   setVideoClipName,
   setVideoClips,
   setVideoEnabled,
   setVideoLoop,
   setVideoPicked,
-  supportsVideo,
 } from "../src/commands";
+import { isVideoEnabled, videoDataOf } from "../src/access";
+import { featureComponent } from "../src/components";
+import { FEATURE_COMPONENT } from "../src/features";
+import {
+  DEFAULT_VIDEO_AUDIO,
+  DEFAULT_VIDEO_ENABLED,
+  DEFAULT_VIDEO_LOOP,
+  supportsVideo,
+} from "../src/features";
 import { createEmptyScene, createMapObject, createSoundObject } from "../src/factory";
 import { parseSceneFile } from "../src/schema";
 import { formatIssues, hasErrors, validateScene } from "../src/validation";
@@ -107,7 +111,7 @@ describe("视频命令：列表", () => {
       expect(setVideoClips(draft, "map-1", [CLIP_A, "  ", CLIP_B, CLIP_A])).toBe(true);
     });
 
-    expect(objectOf(scene, "map-1")?.video).toEqual({
+    expect(videoDataOf(objectOf(scene, "map-1")!)).toEqual({
       enabled: true,
       clips: [CLIP_A, CLIP_B],
       picked: CLIP_A,
@@ -127,14 +131,14 @@ describe("视频命令：列表", () => {
       expect(setVideoClips(draft, "map-1", [])).toBe(true);
     });
 
-    expect(objectOf(cleared, "map-1")?.video).toEqual({
+    expect(videoDataOf(objectOf(cleared, "map-1")!)).toEqual({
       enabled: true,
       clips: [],
       loop: true,
       audio: true,
     });
     // 选中的那条跟着列表走：一条都没有了就不留 `picked`
-    expect(objectOf(cleared, "map-1")?.video?.picked).toBeUndefined();
+    expect(videoDataOf(objectOf(cleared, "map-1")!)?.picked).toBeUndefined();
   });
 
   it("setVideoClips 把移出去的视频一起收拾掉：名字不留，选中的那条顺到下一条", () => {
@@ -148,7 +152,7 @@ describe("视频命令：列表", () => {
     const withoutA = mutate(start, (draft) => {
       setVideoClips(draft, "map-1", [CLIP_B]);
     });
-    expect(objectOf(withoutA, "map-1")?.video).toEqual({
+    expect(videoDataOf(objectOf(withoutA, "map-1")!)).toEqual({
       enabled: true,
       clips: [CLIP_B],
       picked: CLIP_B,
@@ -161,7 +165,7 @@ describe("视频命令：列表", () => {
     const empty = mutate(withoutA, (draft) => {
       setVideoClips(draft, "map-1", []);
     });
-    expect(objectOf(empty, "map-1")?.video).toEqual({
+    expect(videoDataOf(objectOf(empty, "map-1")!)).toEqual({
       enabled: true,
       clips: [],
       loop: false,
@@ -188,7 +192,7 @@ describe("视频命令：选中与名字", () => {
       setVideoClips(draft, "map-1", [CLIP_A, CLIP_B]);
       expect(setVideoPicked(draft, "map-1", CLIP_B)).toBe(true);
     });
-    expect(objectOf(scene, "map-1")?.video?.picked).toBe(CLIP_B);
+    expect(videoDataOf(objectOf(scene, "map-1")!)?.picked).toBe(CLIP_B);
 
     // 不在列表里的：直接拒掉，不悄悄把它加进去
     expect(
@@ -207,7 +211,7 @@ describe("视频命令：选中与名字", () => {
     const cleared = mutate(scene, (draft) => {
       expect(setVideoPicked(draft, "map-1", null)).toBe(true);
     });
-    expect(objectOf(cleared, "map-1")?.video?.picked).toBeUndefined();
+    expect(videoDataOf(objectOf(cleared, "map-1")!)?.picked).toBeUndefined();
 
     // 取消一个本来就没选的 = 没变更
     expect(
@@ -225,7 +229,7 @@ describe("视频命令：选中与名字", () => {
     scene = mutate(scene, (draft) => {
       expect(setVideoClipName(draft, "map-1", CLIP_A, "  开场动画  ")).toBe(true);
     });
-    expect(objectOf(scene, "map-1")?.video?.names).toEqual({ [CLIP_A]: "开场动画" });
+    expect(videoDataOf(objectOf(scene, "map-1")!)?.names).toEqual({ [CLIP_A]: "开场动画" });
 
     // 不在列表里的文件：名字挂不上去
     expect(
@@ -238,7 +242,7 @@ describe("视频命令：选中与名字", () => {
     const cleared = mutate(scene, (draft) => {
       expect(setVideoClipName(draft, "map-1", CLIP_A, "   ")).toBe(true);
     });
-    expect(objectOf(cleared, "map-1")?.video?.names).toBeUndefined();
+    expect(videoDataOf(objectOf(cleared, "map-1")!)?.names).toBeUndefined();
   });
 });
 
@@ -250,8 +254,8 @@ describe("视频命令：循环与声音开关", () => {
       expect(setVideoAudio(draft, "map-1", true)).toBe(true);
     });
 
-    expect(objectOf(scene, "map-1")?.video?.loop).toBe(true);
-    expect(objectOf(scene, "map-1")?.video?.audio).toBe(true);
+    expect(videoDataOf(objectOf(scene, "map-1")!)?.loop).toBe(true);
+    expect(videoDataOf(objectOf(scene, "map-1")!)?.audio).toBe(true);
 
     expect(
       mutate(scene, (draft) => {
@@ -267,7 +271,7 @@ describe("视频命令：循环与声音开关", () => {
       setVideoPicked(draft, "sprite-1", CLIP_A);
     });
 
-    expect(objectOf(scene, "sprite-1")?.video).toEqual({
+    expect(videoDataOf(objectOf(scene, "sprite-1")!)).toEqual({
       enabled: true,
       clips: [CLIP_A],
       picked: CLIP_A,
@@ -286,7 +290,7 @@ describe("视频命令：总开关（启用）", () => {
     scene = mutate(scene, (draft) => {
       expect(setVideoEnabled(draft, "map-1", true)).toBe(true);
     });
-    expect(objectOf(scene, "map-1")?.video).toEqual({
+    expect(videoDataOf(objectOf(scene, "map-1")!)).toEqual({
       enabled: true,
       clips: [],
       loop: false,
@@ -306,7 +310,7 @@ describe("视频命令：总开关（启用）", () => {
       setVideoClips(draft, "map-1", [CLIP_A]);
       setVideoLoop(draft, "map-1", true);
     });
-    expect(objectOf(scene, "map-1")?.video).toEqual({
+    expect(videoDataOf(objectOf(scene, "map-1")!)).toEqual({
       enabled: true,
       clips: [CLIP_A],
       picked: CLIP_A,
@@ -318,7 +322,7 @@ describe("视频命令：总开关（启用）", () => {
     scene = mutate(scene, (draft) => {
       expect(setVideoEnabled(draft, "map-1", false)).toBe(true);
     });
-    expect(objectOf(scene, "map-1")?.video).toEqual({
+    expect(videoDataOf(objectOf(scene, "map-1")!)).toEqual({
       enabled: false,
       clips: [CLIP_A],
       picked: CLIP_A,
@@ -331,14 +335,14 @@ describe("视频命令：总开关（启用）", () => {
     scene = mutate(scene, (draft) => {
       setVideoClips(draft, "map-1", [CLIP_A, CLIP_B]);
     });
-    expect(objectOf(scene, "map-1")?.video?.clips).toEqual([CLIP_A, CLIP_B]);
+    expect(videoDataOf(objectOf(scene, "map-1")!)?.clips).toEqual([CLIP_A, CLIP_B]);
 
     // 关着且一条都没有：字段整个摘掉（与「从没开过」同义，不留空壳）
     const off = mutate(sceneWith([mapObject()]), (draft) => {
       setVideoEnabled(draft, "map-1", true);
       setVideoEnabled(draft, "map-1", false);
     });
-    expect(objectOf(off, "map-1")?.video).toBeUndefined();
+    expect(videoDataOf(objectOf(off, "map-1")!)).toBeUndefined();
 
     // 关着一个本来就没开的 = 没变更
     const fresh = sceneWith([mapObject()]);
@@ -360,7 +364,7 @@ describe("视频命令：总开关（启用）", () => {
       expect(setVideoEnabled(draft, "sprite-1", true)).toBe(true);
     });
 
-    expect(objectOf(reopened, "sprite-1")?.video).toEqual({
+    expect(videoDataOf(objectOf(reopened, "sprite-1")!)).toEqual({
       enabled: true,
       clips: [CLIP_B],
       picked: CLIP_B,
@@ -373,10 +377,16 @@ describe("视频命令：总开关（启用）", () => {
 describe("视频：文档校验", () => {
   it("非地图 / 精灵带 video：只报警告（字段会被忽略）", () => {
     const scene = mutate(sceneWith([createSoundObject({ name: "脚步", id: "s1" })]), (draft) => {
-      const object = draft.objects[0];
-      if (object !== undefined) {
-        object.video = { enabled: true, clips: [CLIP_A], picked: CLIP_A, loop: false, audio: false };
-      }
+      // v19 起「带视频」= 挂着 VideoOverlay 组件（kind 不是地图 / 精灵时校验会提醒）
+      draft.objects[0]?.components.push(
+        featureComponent("s1", FEATURE_COMPONENT.video, {
+          enabled: true,
+          clips: [CLIP_A],
+          picked: CLIP_A,
+          loop: false,
+          audio: false,
+        }),
+      );
     });
 
     expect(hasErrors(validateScene(scene))).toBe(false);
@@ -385,17 +395,16 @@ describe("视频：文档校验", () => {
 
   it("空条目 / 选中的不在列表 / 空名字 / 孤儿名字：各一条警告", () => {
     const scene = mutate(sceneWith([mapObject()]), (draft) => {
-      const object = draft.objects[0];
-      if (object !== undefined) {
-        object.video = {
+      draft.objects[0]?.components.push(
+        featureComponent("map-1", FEATURE_COMPONENT.video, {
           enabled: true,
           clips: [CLIP_A, "  "],
           picked: "project:C/Assets/video/ghost.mp4",
           names: { [CLIP_A]: "  ", "project:C/Assets/video/ghost.mp4": "幽灵" },
           loop: false,
           audio: false,
-        };
-      }
+        }),
+      );
     });
 
     const issues = formatIssues(validateScene(scene));
@@ -425,7 +434,8 @@ describe("视频：格式版本", () => {
     const load = parseSceneFile({ formatVersion: 13, objects: [object] });
 
     expect(load.file.formatVersion).toBe(DOCUMENT_FORMAT_VERSION);
-    expect(load.file.objects[0]?.video).toBeUndefined();
+    // 没有 VideoOverlay 组件 = 这个对象不放视频（不补空壳）
+    expect(videoDataOf(load.file.objects[0]!)).toBeUndefined();
     expect(load.needsRewrite).toBe(true);
   });
 
@@ -433,10 +443,20 @@ describe("视频：格式版本", () => {
     const object = spriteObject();
     const load = parseSceneFile({
       formatVersion: DOCUMENT_FORMAT_VERSION,
-      objects: [{ ...object, video: { clips: [CLIP_A], picked: CLIP_A } }],
+      objects: [
+        {
+          ...object,
+          components: [
+            featureComponent("sprite-1", FEATURE_COMPONENT.video, {
+              clips: [CLIP_A],
+              picked: CLIP_A,
+            }),
+          ],
+        },
+      ],
     });
 
-    expect(load.file.objects[0]?.video).toEqual({
+    expect(videoDataOf(load.file.objects[0]!)).toEqual({
       enabled: true,
       clips: [CLIP_A],
       picked: CLIP_A,

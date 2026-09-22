@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { produce, type Draft } from "immer";
 import { setSoundClipName, setSoundClips, setSoundLayer, setSoundPicked } from "../src/commands";
+import { imageOf, mapDataOf, soundDataOf } from "../src/access";
+import { featureComponent } from "../src/components";
+import { FEATURE_COMPONENT } from "../src/features";
 import { createEmptyScene, createSoundObject } from "../src/factory";
 import { parseSceneFile } from "../src/schema";
 import { formatIssues, hasErrors, validateScene } from "../src/validation";
@@ -39,16 +42,39 @@ function objectOf(scene: SceneDoc, id: string): SceneObjectDoc | undefined {
   return scene.objects.find((object) => object.id === id);
 }
 
+/** 场景文件里的原始 JSON 形状：v19 起声音数据住在 `PlaySound` 组件的 `data` 里。 */
+function rawFile(sound: Record<string, unknown>): unknown {
+  return {
+    formatVersion: DOCUMENT_FORMAT_VERSION,
+    objects: [
+      {
+        id: "s1",
+        name: "脚步",
+        kind: "PlaySound",
+        active: true,
+        sortingOrder: 0,
+        locked: false,
+        position: null,
+        rotation: 0,
+        scale: 1,
+        components: [
+          { id: "s1__PlaySound", type: FEATURE_COMPONENT.sound, data: sound, actions: [] },
+        ],
+      },
+    ],
+  };
+}
+
 describe("声音对象的工厂", () => {
   it("新建：kind = PlaySound，带（空的）音频列表与默认层级；不给落点就是未放置", () => {
     const sound = createSoundObject({ name: "脚步", id: "s1" });
 
     expect(sound.kind).toBe("PlaySound");
-    expect(sound.sound).toEqual({ clips: [], layer: "sfx" });
+    expect(soundDataOf(sound)).toEqual({ clips: [], layer: "sfx" });
     expect(sound.position).toBeNull();
     // 和实体一样：没有地图数据、也没有默认贴图（画布上画内置的音频徽标）
-    expect(sound.image).toBeUndefined();
-    expect(sound.map).toBeUndefined();
+    expect(imageOf(sound)).toBeUndefined();
+    expect(mapDataOf(sound)).toBeUndefined();
     expect(sound.scale).toBe(1);
     expect(sound.locked).toBe(false);
   });
@@ -61,7 +87,7 @@ describe("声音对象的工厂", () => {
       position: { x: -120, y: 80 },
     });
 
-    expect(sound.sound).toEqual({ clips: [CLIP_A, CLIP_B], picked: CLIP_A, layer: "bgm" });
+    expect(soundDataOf(sound)).toEqual({ clips: [CLIP_A, CLIP_B], picked: CLIP_A, layer: "bgm" });
     expect(sound.position).toEqual({ x: -120, y: 80 });
   });
 
@@ -80,9 +106,9 @@ describe("声音对象的命令", () => {
       expect(setSoundClips(draft, "s1", [CLIP_A, "  ", CLIP_B, CLIP_A])).toBe(true);
     });
 
-    expect(objectOf(scene, "s1")?.sound?.clips).toEqual([CLIP_A, CLIP_B]);
+    expect(soundDataOf(objectOf(scene, "s1")!)?.clips).toEqual([CLIP_A, CLIP_B]);
     // 加进来却没选中时面板上「播放」是灰的，很容易以为是坏的：兜底选第一条
-    expect(objectOf(scene, "s1")?.sound?.picked).toBe(CLIP_A);
+    expect(soundDataOf(objectOf(scene, "s1")!)?.picked).toBe(CLIP_A);
   });
 
   it("setSoundClips 把移出去的音频一起收拾掉：名字不留，选中的那条顺到下一条", () => {
@@ -94,7 +120,7 @@ describe("声音对象的命令", () => {
       setSoundClipName(draft, "s1", CLIP_A, "雷雨·高");
       setSoundClipName(draft, "s1", CLIP_B, "雷雨·低");
     });
-    expect(objectOf(named, "s1")?.sound).toEqual({
+    expect(soundDataOf(objectOf(named, "s1")!)).toEqual({
       clips: [CLIP_A, CLIP_B],
       picked: CLIP_A,
       names: { [CLIP_A]: "雷雨·高", [CLIP_B]: "雷雨·低" },
@@ -105,7 +131,7 @@ describe("声音对象的命令", () => {
     const removed = mutate(named, (draft) => {
       expect(setSoundClips(draft, "s1", [CLIP_B])).toBe(true);
     });
-    expect(objectOf(removed, "s1")?.sound).toEqual({
+    expect(soundDataOf(objectOf(removed, "s1")!)).toEqual({
       clips: [CLIP_B],
       picked: CLIP_B,
       names: { [CLIP_B]: "雷雨·低" },
@@ -116,7 +142,7 @@ describe("声音对象的命令", () => {
     const empty = mutate(removed, (draft) => {
       expect(setSoundClips(draft, "s1", [])).toBe(true);
     });
-    expect(objectOf(empty, "s1")?.sound).toEqual({ clips: [], layer: "sfx" });
+    expect(soundDataOf(objectOf(empty, "s1")!)).toEqual({ clips: [], layer: "sfx" });
   });
 
   it("setSoundPicked：只能选加进来的那几条；再点同一条 / 取消都不算变更", () => {
@@ -130,14 +156,14 @@ describe("声音对象的命令", () => {
       // 不在列表里的（还没加进来）：直接拒掉，不悄悄把它加进 clips
       expect(setSoundPicked(draft, "s1", "project:C/Assets/audio/别的.mp3")).toBe(false);
     });
-    expect(objectOf(switched, "s1")?.sound?.picked).toBe(CLIP_B);
-    expect(objectOf(switched, "s1")?.sound?.clips).toEqual([CLIP_A, CLIP_B]);
+    expect(soundDataOf(objectOf(switched, "s1")!)?.picked).toBe(CLIP_B);
+    expect(soundDataOf(objectOf(switched, "s1")!)?.clips).toEqual([CLIP_A, CLIP_B]);
 
     const none = mutate(switched, (draft) => {
       expect(setSoundPicked(draft, "s1", null)).toBe(true);
       expect(setSoundPicked(draft, "s1", null)).toBe(false);
     });
-    expect(objectOf(none, "s1")?.sound?.picked).toBeUndefined();
+    expect(soundDataOf(objectOf(none, "s1")!)?.picked).toBeUndefined();
   });
 
   it("setSoundClips / setSoundLayer：值没变就不算变更（历史不入栈）", () => {
@@ -151,7 +177,7 @@ describe("声音对象的命令", () => {
       },
     );
 
-    expect(objectOf(scene, "s1")?.sound).toEqual({ clips: [CLIP_A], picked: CLIP_A, layer: "voice" });
+    expect(soundDataOf(objectOf(scene, "s1")!)).toEqual({ clips: [CLIP_A], picked: CLIP_A, layer: "voice" });
   });
 
   it("setSoundLayer：换成同一层不算变更、换成别的层才算", () => {
@@ -160,12 +186,12 @@ describe("声音对象的命令", () => {
     const same = mutate(start, (draft) => {
       expect(setSoundLayer(draft, "s1", "sfx")).toBe(false);
     });
-    expect(objectOf(same, "s1")?.sound?.layer).toBe("sfx");
+    expect(soundDataOf(objectOf(same, "s1")!)?.layer).toBe("sfx");
 
     const changed = mutate(start, (draft) => {
       expect(setSoundLayer(draft, "s1", "bgm")).toBe(true);
     });
-    expect(objectOf(changed, "s1")?.sound?.layer).toBe("bgm");
+    expect(soundDataOf(objectOf(changed, "s1")!)?.layer).toBe("bgm");
   });
 
   it("setSoundClipName：按文件起名写进文档；留空删掉这个名字（退回素材文件名）", () => {
@@ -176,11 +202,11 @@ describe("声音对象的命令", () => {
     const named = mutate(start, (draft) => {
       expect(setSoundClipName(draft, "s1", CLIP_A, "  雷雨·高  ")).toBe(true);
     });
-    expect(objectOf(named, "s1")?.sound?.names).toEqual({ [CLIP_A]: "雷雨·高" });
+    expect(soundDataOf(objectOf(named, "s1")!)?.names).toEqual({ [CLIP_A]: "雷雨·高" });
     // 名字只是标签：加进来的列表、选中的那条与层级一动不动
-    expect(objectOf(named, "s1")?.sound?.clips).toEqual([CLIP_A, CLIP_B]);
-    expect(objectOf(named, "s1")?.sound?.picked).toBe(CLIP_A);
-    expect(objectOf(named, "s1")?.sound?.layer).toBe("sfx");
+    expect(soundDataOf(objectOf(named, "s1")!)?.clips).toEqual([CLIP_A, CLIP_B]);
+    expect(soundDataOf(objectOf(named, "s1")!)?.picked).toBe(CLIP_A);
+    expect(soundDataOf(objectOf(named, "s1")!)?.layer).toBe("sfx");
 
     // 同一个名字（含首尾空白）不算变更
     mutate(named, (draft) => {
@@ -191,7 +217,7 @@ describe("声音对象的命令", () => {
     const two = mutate(named, (draft) => {
       expect(setSoundClipName(draft, "s1", CLIP_B, "雷雨·低")).toBe(true);
     });
-    expect(objectOf(two, "s1")?.sound?.names).toEqual({ [CLIP_A]: "雷雨·高", [CLIP_B]: "雷雨·低" });
+    expect(soundDataOf(objectOf(two, "s1")!)?.names).toEqual({ [CLIP_A]: "雷雨·高", [CLIP_B]: "雷雨·低" });
 
     // 没加进来的音频没有名字可起（名字挂在加进来的音频上）
     mutate(two, (draft) => {
@@ -202,12 +228,12 @@ describe("声音对象的命令", () => {
     const one = mutate(two, (draft) => {
       expect(setSoundClipName(draft, "s1", CLIP_B, "  ")).toBe(true);
     });
-    expect(objectOf(one, "s1")?.sound?.names).toEqual({ [CLIP_A]: "雷雨·高" });
+    expect(soundDataOf(objectOf(one, "s1")!)?.names).toEqual({ [CLIP_A]: "雷雨·高" });
 
     const cleared = mutate(one, (draft) => {
       expect(setSoundClipName(draft, "s1", CLIP_A, "")).toBe(true);
     });
-    expect(objectOf(cleared, "s1")?.sound?.names).toBeUndefined();
+    expect(soundDataOf(objectOf(cleared, "s1")!)?.names).toBeUndefined();
   });
 
   it("普通对象挂不上声音数据（命令返回 false，不动文档）", () => {
@@ -231,78 +257,57 @@ describe("声音对象的命令", () => {
       expect(setSoundClipName(draft, "door", CLIP_A, "雷雨")).toBe(false);
     });
 
-    expect(objectOf(scene, "door")?.sound).toBeUndefined();
+    expect(soundDataOf(objectOf(scene, "door")!)).toBeUndefined();
   });
 
-  it("手写文件里缺 sound 字段：第一次编辑把默认的补出来", () => {
-    // 只有 kind，没有 sound（schema 里 sound 是可选的，读得开——校验会报错提醒）
-    const broken: SceneObjectDoc = { ...createSoundObject({ name: "脚步", id: "s1" }) };
-    delete (broken as { sound?: unknown }).sound;
+  it("手写文件里缺声音组件：第一次编辑把默认的补出来", () => {
+    // 只有 kind，没有 PlaySound 组件（schema 里组件是可选的，读得开——校验会报错提醒）
+    const broken: SceneObjectDoc = { ...createSoundObject({ name: "脚步", id: "s1" }), components: [] };
 
     const scene = mutate(sceneWith([broken]), (draft) => {
       expect(setSoundLayer(draft, "s1", "voice")).toBe(true);
     });
 
-    expect(objectOf(scene, "s1")?.sound).toEqual({ clips: [], layer: "voice" });
+    expect(soundDataOf(objectOf(scene, "s1")!)).toEqual({ clips: [], layer: "voice" });
   });
 });
 
 describe("声音对象的场景文件 schema", () => {
-  function rawFile(sound: Record<string, unknown>): unknown {
-    return {
-      formatVersion: DOCUMENT_FORMAT_VERSION,
-      objects: [
-        {
-          id: "s1",
-          name: "脚步",
-          kind: "PlaySound",
-          active: true,
-          sortingOrder: 0,
-          locked: false,
-          position: null,
-          rotation: 0,
-          scale: 1,
-          components: [],
-          sound,
-        },
-      ],
-    };
-  }
-
   it("读得回来（层级四档 + 音频列表）", () => {
     const parsed = parseSceneFile(rawFile({ clips: [CLIP_A, CLIP_B], layer: "bgm" }));
 
     expect(parsed.needsRewrite).toBe(false);
     expect(parsed.file.objects[0]?.kind).toBe("PlaySound");
-    expect(parsed.file.objects[0]?.sound).toEqual({ clips: [CLIP_A, CLIP_B], layer: "bgm" });
+    // 文件里的声音数据住在 `PlaySound` 组件里，`data` 就是原来那份 `sound`
+    expect(soundDataOf(parsed.file.objects[0]!)).toEqual({ clips: [CLIP_A, CLIP_B], layer: "bgm" });
   });
 
   it("选中的那条（picked）读得回来；没写就没有这个字段", () => {
     const picked = parseSceneFile(
       rawFile({ clips: [CLIP_A, CLIP_B], picked: CLIP_B, layer: "sfx" }),
     );
-    expect(picked.file.objects[0]?.sound?.picked).toBe(CLIP_B);
+    expect(soundDataOf(picked.file.objects[0]!)?.picked).toBe(CLIP_B);
 
     const none = parseSceneFile(rawFile({ clips: [CLIP_A] }));
-    expect(none.file.objects[0]?.sound?.picked).toBeUndefined();
+    expect(soundDataOf(none.file.objects[0]!)?.picked).toBeUndefined();
   });
 
   it("显示名表（可选）读得回来；没写就没有这个字段", () => {
     const named = parseSceneFile(
       rawFile({ clips: [CLIP_A], names: { [CLIP_A]: "雷雨·高" }, layer: "sfx" }),
     );
-    expect(named.file.objects[0]?.sound?.names).toEqual({ [CLIP_A]: "雷雨·高" });
+    expect(soundDataOf(named.file.objects[0]!)?.names).toEqual({ [CLIP_A]: "雷雨·高" });
 
     const unnamed = parseSceneFile(rawFile({ clips: [CLIP_A] }));
-    expect(unnamed.file.objects[0]?.sound?.names).toBeUndefined();
+    expect(soundDataOf(unnamed.file.objects[0]!)?.names).toBeUndefined();
   });
 
   it("少写一项时按默认值读（列表空、层级音效）", () => {
     const parsed = parseSceneFile(rawFile({ clips: [CLIP_A] }));
-    expect(parsed.file.objects[0]?.sound).toEqual({ clips: [CLIP_A], layer: "sfx" });
+    expect(soundDataOf(parsed.file.objects[0]!)).toEqual({ clips: [CLIP_A], layer: "sfx" });
 
     const minimal = parseSceneFile(rawFile({}));
-    expect(minimal.file.objects[0]?.sound).toEqual({ clips: [], layer: "sfx" });
+    expect(soundDataOf(minimal.file.objects[0]!)).toEqual({ clips: [], layer: "sfx" });
   });
 
   it("层级写了四档以外的值：拒绝读入（不静默改成默认）", () => {
@@ -314,8 +319,8 @@ describe("声音对象的场景文件 schema", () => {
 
 describe("声音对象的校验", () => {
   it("声音对象缺少声音数据 → 报错（它是个什么都不播的空壳）", () => {
-    const broken = { ...createSoundObject({ name: "脚步", id: "s1" }) };
-    delete (broken as { sound?: unknown }).sound;
+    // 「缺少声音数据」在 v19 下 = 没有 `PlaySound` 组件（手写文件里可能整个组件都没有）
+    const broken = { ...createSoundObject({ name: "脚步", id: "s1" }), components: [] };
 
     const issues = validateScene(sceneWith([broken]));
     expect(hasErrors(issues)).toBe(true);
@@ -329,6 +334,7 @@ describe("声音对象的校验", () => {
   });
 
   it("普通对象带声音数据 / 声音对象带贴图 → 各给一条警告", () => {
+    // v19 起「带声音数据」= 挂着 PlaySound 组件（kind 不是 PlaySound 时校验会提醒）
     const door: SceneObjectDoc = {
       id: "door",
       name: "木门",
@@ -339,13 +345,21 @@ describe("声音对象的校验", () => {
       rotation: 0,
       scale: 1,
       locked: false,
-      components: [],
-      sound: { clips: [CLIP_A], layer: "sfx" },
+      components: [
+        featureComponent("door", FEATURE_COMPONENT.sound, { clips: [CLIP_A], layer: "sfx" }),
+      ],
     };
-    // 声音对象画的是**固定的内置图标**，贴图字段没有意义（手写文件里可能挂着一个）
+    // 声音对象画的是**固定的内置图标**，贴图组件没有意义（手写文件里可能挂着一个）
     const soundWithImage: SceneObjectDoc = {
       ...createSoundObject({ name: "脚步", id: "s1", position: { x: 0, y: 0 } }),
-      image: { id: "project:C/Assets/images/audio.png", width: 32, height: 32 },
+      components: [
+        featureComponent("s1", FEATURE_COMPONENT.sound, { clips: [], layer: "sfx" }),
+        featureComponent("s1", FEATURE_COMPONENT.image, {
+          id: "project:C/Assets/images/audio.png",
+          width: 32,
+          height: 32,
+        }),
+      ],
     };
 
     const issues = validateScene(sceneWith([door, soundWithImage]));
@@ -357,7 +371,13 @@ describe("声音对象的校验", () => {
   it("空白的声音名字 → 警告（会被当成没起名字，退回素材文件名）", () => {
     const blank: SceneObjectDoc = {
       ...createSoundObject({ name: "雷雨", id: "s1", clips: [CLIP_A] }),
-      sound: { clips: [CLIP_A], names: { [CLIP_A]: "   " }, layer: "sfx" },
+      components: [
+        featureComponent("s1", FEATURE_COMPONENT.sound, {
+          clips: [CLIP_A],
+          names: { [CLIP_A]: "   " },
+          layer: "sfx",
+        }),
+      ],
     };
 
     const issues = validateScene(sceneWith([blank]));
@@ -368,7 +388,14 @@ describe("声音对象的校验", () => {
   it("选中的那条不在列表里 / 名字挂在没加进来的音频上 → 各给一条警告（手写文件才会这样）", () => {
     const stale: SceneObjectDoc = {
       ...createSoundObject({ name: "脚步", id: "s1", clips: [CLIP_A] }),
-      sound: { clips: [CLIP_A], picked: CLIP_B, names: { [CLIP_B]: "雷雨·低" }, layer: "sfx" },
+      components: [
+        featureComponent("s1", FEATURE_COMPONENT.sound, {
+          clips: [CLIP_A],
+          picked: CLIP_B,
+          names: { [CLIP_B]: "雷雨·低" },
+          layer: "sfx",
+        }),
+      ],
     };
 
     const issues = validateScene(sceneWith([stale]));
