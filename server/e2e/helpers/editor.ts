@@ -22,7 +22,7 @@ export type LeftTab = "assets" | "hierarchy";
  * 要有意制造「旧版本文件」时别用它：自己写那个版本号（`formatVersion: 4` 之类），
  * 并预期编辑器会把它升上来回写一次。
  */
-export const CURRENT_SCENE_FORMAT_VERSION = 22;
+export const CURRENT_SCENE_FORMAT_VERSION = 23;
 
 /**
  * **承载对象特性的组件类型名**（v19 起特性住在 `object.components[]` 里）。
