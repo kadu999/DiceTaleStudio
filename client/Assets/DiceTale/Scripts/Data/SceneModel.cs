@@ -79,6 +79,10 @@ namespace DiceTale
         /// **原始数据一律留着**：已知的特性组件会同时填进上面那几个强类型字段
         /// （`map` / `image` / `sound` / `video`），未知类型只留在这里备查——
         /// 编辑器加一个新组件时，老前端不该整份场景解析失败，它只是不认那一个组件而已。
+        ///
+        /// **加新字段的规矩**：用 <see cref="ComponentBool"/> / <see cref="ComponentString"/> /
+        /// <see cref="ComponentNumber"/> 就地读，**不要**再扩那几个强类型镜像类，
+        /// 也不要再往 <see cref="SceneParser"/> 里加解析行（理由见 <see cref="ComponentData"/>）。
         /// </summary>
         public readonly List<MirrorComponent> components = new List<MirrorComponent>();
 
@@ -94,6 +98,58 @@ namespace DiceTale
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// 某个组件实例的**原始数据**（没挂这个组件时 `null`）。
+        ///
+        /// 上面那几个强类型字段（`map` / `image` / `sound` / `video`）是给**已知字段**用的便利层，
+        /// 它们不是必需的第二份真相——<see cref="MirrorComponent.data"/> 本来就是原样的那一份。
+        /// 所以**新字段一律用下面这几个读取器读**，不要再往 `MirrorXxx` 上加字段、也不要再改
+        /// <see cref="SceneParser"/>：那样每加一个布尔都要手抄两处（镜像字段 + 解析行），
+        /// 而泛型这条路一直是通的。
+        ///
+        /// 例：`obj.ComponentBool("VideoOverlay", "autoPlay")`。
+        /// </summary>
+        public Dictionary<string, object> ComponentData(string type)
+        {
+            foreach (var component in components)
+            {
+                if (component.type == type)
+                {
+                    return component.data;
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// 读某个组件上的布尔字段；组件没挂 / 字段没写 / 值不是布尔时返回 `fallback`。
+        ///
+        /// 判据与 <see cref="JsonParser.GetBool"/> 逐字一致（类型不对就当没写），所以「老编辑器不发
+        /// 这一项」与「手写载荷写错类型」都落到同一个兜底上。
+        /// </summary>
+        public bool ComponentBool(string type, string key, bool fallback = false)
+        {
+            return JsonParser.GetBool(ComponentData(type), key, fallback);
+        }
+
+        /// <summary>读某个组件上的字符串字段；缺失时返回 `null`（与 `JsonParser.GetString` 同口径）。</summary>
+        public string ComponentString(string type, string key)
+        {
+            return JsonParser.GetString(ComponentData(type), key);
+        }
+
+        /// <summary>
+        /// 读某个组件上的数字字段；缺失时返回 `fallback`。
+        ///
+        /// JSON 里的数字一律解析成 `double`（见 <see cref="JsonParser"/>），所以这里也是 `double`
+        /// ——要整数请在调用处自己转，别在这里悄悄取整（那会把「1.5」变成「1」而没人发现）。
+        /// </summary>
+        public double ComponentNumber(string type, string key, double fallback = 0)
+        {
+            return JsonParser.GetNumber(ComponentData(type), key, fallback);
         }
     }
 

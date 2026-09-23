@@ -80,6 +80,20 @@ Assets/
 `SceneModel` 就是后端 `SceneDoc` 的同构副本，`SceneMirror` 负责把它变成 Unity 对象。
 **网络层**同理只做「连接 + 会话 + 协议」，一行游戏逻辑都没有。
 
+**加一个字段时读哪里（规矩）**：`MirrorObject.components` 里**一直留着**每个组件的原始 `data`
+（`MirrorComponent.data`），所以新字段**就地读**，用
+`obj.ComponentBool("VideoOverlay", "autoPlay")` / `ComponentString` / `ComponentNumber`
+（`SceneModel.cs` 的四个读取器）。
+
+**不要**再往 `MirrorVideo` / `MirrorSound` 这类强类型镜像上加字段，也不要往 `SceneParser`
+里加解析行——那是同一个事实抄两遍（镜像字段 + 解析行），而且会让「这个字段到底谁说了算」
+变成两个地方。既有的强类型字段（`map` / `image` / `sound` / `video`）是历史沉淀的便利层，
+保持不动即可，新代码优先用读取器。
+
+> 这条规矩的来历：实测「给视频加一个布尔」原本要碰 6 个生产文件，其中 2 个就是这个重复抄写；
+> 泛型那条路一直是通的（`SceneParser.cs` 早就把整份 `data` 存进了 `components`）。
+> 详见 `server/docs/BASELINE-加一个组件要碰哪些文件.md` 的附录。
+
 **已知的「逻辑层碰表现层」3 处**（不是随手写的，是现状）：
 
 | 位置 | 碰了什么 | 说明 |
