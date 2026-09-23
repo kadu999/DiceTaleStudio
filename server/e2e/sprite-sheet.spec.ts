@@ -5,7 +5,7 @@ import {
   componentDataOf,
   dropProject,
   enterEditor,
-  findSceneObject,
+  findGameObject,
   mapObjectDoc,
   newProject,
   openLeftTab,
@@ -14,7 +14,7 @@ import {
   readSceneFile,
   readSpriteSheet,
   sceneDoc,
-  sceneObjectDoc,
+  gameObjectDoc,
   seedProjectDoc,
   selectObject,
   withComponent,
@@ -70,7 +70,7 @@ test.describe("精灵：把图集切成子图", () => {
         [
           sceneDoc(SCENE, [
             withComponent(
-              sceneObjectDoc("精灵", "Sprite", { x: 0, y: 0 }),
+              gameObjectDoc("精灵", "Sprite", { x: 0, y: 0 }),
               COMPONENT.spriteLayer,
               { id: imageId, width: CELL * 2, height: CELL * 2 },
             ),
@@ -157,7 +157,7 @@ test.describe("精灵：把图集切成子图", () => {
         [
           sceneDoc(SCENE, [
             withComponent(
-              sceneObjectDoc("精灵", "Sprite", { x: 0, y: 0 }),
+              gameObjectDoc("精灵", "Sprite", { x: 0, y: 0 }),
               COMPONENT.spriteLayer,
               { id: imageId, width: CELL, height: 16, sprite: { column: 1, row: 0 } },
             ),
@@ -250,7 +250,7 @@ test.describe("精灵：把图集切成子图", () => {
         | { image?: Record<string, unknown> }
         | undefined;
       expect(Object.keys(data?.image ?? {}).sort()).toEqual(["height", "id", "width"]);
-      expect(findSceneObject(file, { kind: "Map" })).toBeDefined();
+      expect(findGameObject(file, { kind: "Map" })).toBeDefined();
     } finally {
       await dropProject(request, project);
     }

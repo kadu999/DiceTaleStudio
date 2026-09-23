@@ -2,9 +2,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   createEmptyProject,
   createMapObject,
-  createSceneObject,
+  createGameObject,
   type SceneDoc,
-  type SceneObjectDoc,
+  type GameObjectDoc,
 } from "@dts/document";
 import { createViewport, fitViewport } from "@dts/renderer";
 import {
@@ -27,7 +27,7 @@ import {
 const VIEW = { width: 800, height: 600 };
 
 /** 一张 400×300 的地图对象，摆在世界原点（激活的、已落位的才参与「适配」）。 */
-function mapOf(id: string): SceneObjectDoc {
+function mapOf(id: string): GameObjectDoc {
   return createMapObject({
     id,
     name: `地图 ${id}`,
@@ -36,13 +36,13 @@ function mapOf(id: string): SceneObjectDoc {
   });
 }
 
-function sceneOf(name: string, objects: readonly SceneObjectDoc[]): SceneDoc {
+function sceneOf(name: string, objects: readonly GameObjectDoc[]): SceneDoc {
   return { name, objects: [...objects] };
 }
 
 /** 两块地图大小不同的场景：适配出来的 scale 必然不同，好判断「到底跟了谁」。 */
 const SCENE_A = sceneOf("Map001", [mapOf("map-a")]);
-const SCENE_B = sceneOf("Map002", [mapOf("map-b"), createSceneObject({ id: "door", name: "木门" })]);
+const SCENE_B = sceneOf("Map002", [mapOf("map-b"), createGameObject({ id: "door", name: "木门" })]);
 
 /**
  * 铺一份干净的状态。
@@ -130,7 +130,7 @@ describe("切场景：视口跟着场景走", () => {
   it("切到**什么都没有**的场景：退回「世界原点居中」，不会抛", () => {
     seed("Map001");
     useEditorStore.setState({
-      scenes: [SCENE_A, sceneOf("Map002", [createSceneObject({ id: "door", name: "木门" })])],
+      scenes: [SCENE_A, sceneOf("Map002", [createGameObject({ id: "door", name: "木门" })])],
     });
 
     useEditorStore.getState().openScene("Map002");
@@ -140,7 +140,7 @@ describe("切场景：视口跟着场景走", () => {
 
   it("适配装的是**画布上看得见的东西**：摆在地图外的对象不会被切掉", () => {
     // 地图 400×300 摆在原点，另有一个 64×64 的精灵落在很远的 (900, 0)
-    const outside = createSceneObject({
+    const outside = createGameObject({
       id: "far",
       name: "远处的东西",
       position: { x: 900, y: 0 },
@@ -172,7 +172,7 @@ describe("切场景：视口跟着场景走", () => {
   });
 
   it("装得下就不放大：一张 120×120 的精灵在 1:1 下居中，而不是铺满整块画布", () => {
-    const sprite = createSceneObject({
+    const sprite = createGameObject({
       id: "sprite",
       name: "精灵",
       position: { x: 0, y: 0 },

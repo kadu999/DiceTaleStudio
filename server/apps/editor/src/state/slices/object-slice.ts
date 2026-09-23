@@ -7,21 +7,21 @@ import {
   addObject,
   createId,
   nextObjectName,
-  removeObject as removeSceneObject,
-  renameObject as renameSceneObject,
+  removeObject as removeGameObject,
+  renameObject as renameGameObject,
   setMapGrid as setSceneMapGrid,
-  setObjectActive as setSceneObjectActive,
-  setObjectImage as setSceneObjectImage,
-  setObjectPosition as setSceneObjectPosition,
-  setObjectLocked as setSceneObjectLocked,
-  setObjectScale as setSceneObjectScale,
-  setObjectScaleAxes as setSceneObjectScaleAxes,
-  setObjectRotation as setSceneObjectRotation,
-  setObjectSortingOrder as setSceneObjectSortingOrder,
-  type SceneObjectDoc,
+  setObjectActive as setGameObjectActive,
+  setObjectImage as setGameObjectImage,
+  setObjectPosition as setGameObjectPosition,
+  setObjectLocked as setGameObjectLocked,
+  setObjectScale as setGameObjectScale,
+  setObjectScaleAxes as setGameObjectScaleAxes,
+  setObjectRotation as setGameObjectRotation,
+  setObjectSortingOrder as setGameObjectSortingOrder,
+  type GameObjectDoc,
 } from "@dts/document";
 import { type StoreSet, type StoreGet, type EditorStoreState } from "../store-types";
-import { createSceneObjectForKind } from "../scene-object-factory";
+import { createGameObjectForKind } from "../game-object-factory";
 import {
   sceneHistory,
   makeLog,
@@ -93,7 +93,7 @@ export function createObjectSlice(
 
       // 世界无限大：落点就是给的那个坐标，不夹取
       const at = position === undefined ? { ...SCENE_CENTER } : { x: position.x, y: position.y };
-      const object = createSceneObjectForKind(kind, {
+      const object = createGameObjectForKind(kind, {
         project,
         sceneName,
         name: trimmed,
@@ -126,7 +126,7 @@ export function createObjectSlice(
       return get().applyScenes(`重命名对象 ${trimmed}`, (draft) => {
         const scene = draft.find((item) => item.name === sceneName);
         if (scene !== undefined) {
-          renameSceneObject(scene, id, trimmed);
+          renameGameObject(scene, id, trimmed);
         }
       });
     },
@@ -146,7 +146,7 @@ export function createObjectSlice(
       const changed = get().applyScenes(active ? `激活 ${object.name}` : `停用 ${object.name}`, (draft) => {
         const target = draft.find((item) => item.name === sceneName);
         if (target !== undefined) {
-          setSceneObjectActive(target, id, active);
+          setGameObjectActive(target, id, active);
         }
       });
 
@@ -184,7 +184,7 @@ export function createObjectSlice(
         (draft) => {
           const target = draft.find((item) => item.name === sceneName);
           if (target !== undefined) {
-            setSceneObjectLocked(target, id, locked);
+            setGameObjectLocked(target, id, locked);
           }
         },
       );
@@ -218,7 +218,7 @@ export function createObjectSlice(
         (draft) => {
           const scene = draft.find((item) => item.name === sceneName);
           if (scene !== undefined) {
-            setSceneObjectSortingOrder(scene, id, sortingOrder);
+            setGameObjectSortingOrder(scene, id, sortingOrder);
           }
         },
         // 连续敲数字 / 按住微调按钮合并成一条撤销记录
@@ -237,7 +237,7 @@ export function createObjectSlice(
         (draft) => {
           const scene = draft.find((item) => item.name === sceneName);
           if (scene !== undefined) {
-            setSceneObjectScale(scene, id, scale);
+            setGameObjectScale(scene, id, scale);
           }
         },
         // 连续输入合并成一条撤销记录（与显示顺序同一套做法）
@@ -256,7 +256,7 @@ export function createObjectSlice(
         (draft) => {
           const scene = draft.find((item) => item.name === sceneName);
           if (scene !== undefined) {
-            setSceneObjectRotation(scene, id, rotationRadians);
+            setGameObjectRotation(scene, id, rotationRadians);
           }
         },
         // 连续输入合并成一条撤销记录
@@ -280,7 +280,7 @@ export function createObjectSlice(
           }
 
           for (const id of targetIds) {
-            removeSceneObject(scene, id);
+            removeGameObject(scene, id);
           }
         },
       );
@@ -325,7 +325,7 @@ export function createObjectSlice(
               continue;
             }
 
-            const copy: SceneObjectDoc = {
+            const copy: GameObjectDoc = {
               ...source,
               id: createId("obj"),
               // 名字与位置都错开，复制出来的东西不会与原对象完全重叠 / 同名
@@ -368,7 +368,7 @@ export function createObjectSlice(
         (draft) => {
           const scene = draft.find((item) => item.name === sceneName);
           if (scene !== undefined) {
-            setSceneObjectPosition(scene, id, position);
+            setGameObjectPosition(scene, id, position);
           }
         },
         { coalesceKey: `move:${id}` },
@@ -390,7 +390,7 @@ export function createObjectSlice(
         (draft) => {
           const scene = draft.find((item) => item.name === sceneName);
           if (scene !== undefined) {
-            setSceneObjectScaleAxes(scene, id, { x, y });
+            setGameObjectScaleAxes(scene, id, { x, y });
           }
         },
         // 连续输入合并成一条撤销记录（与等比缩放同一套做法）
@@ -421,7 +421,7 @@ export function createObjectSlice(
       const changed = get().applyScenes("更换贴图", (draft) => {
         const scene = draft.find((item) => item.name === sceneName);
         if (scene !== undefined) {
-          setSceneObjectImage(scene, objectId, image);
+          setGameObjectImage(scene, objectId, image);
         }
       });
 

@@ -8,7 +8,7 @@ import {
   openFirstObject,
   openProject,
   sceneDoc,
-  sceneObjectDoc,
+  gameObjectDoc,
   seedProjectDoc,
   withComponent,
 } from "./helpers/editor";
@@ -237,7 +237,7 @@ test.describe("编辑态 / 运行态", { tag: "@runtime" }, () => {
     const project = await newProject(request);
     try {
       await seedProjectDoc(request, project, [
-        sceneDoc(RUN_SCENE, [sceneObjectDoc(RUN_OBJECT, "Sprite", { x: 0, y: 0 })]),
+        sceneDoc(RUN_SCENE, [gameObjectDoc(RUN_OBJECT, "Sprite", { x: 0, y: 0 })]),
       ]);
       await openFirstObject(page, project, RUN_OBJECT);
 
@@ -327,7 +327,7 @@ test.describe("编辑态 / 运行态", { tag: "@runtime" }, () => {
       await seedProjectDoc(request, project, [
         sceneDoc(RUN_SCENE, [
           withComponent(
-            sceneObjectDoc("传送阵", "Teleport", { x: 0, y: 0 }, { id: "teleport_01" }),
+            gameObjectDoc("传送阵", "Teleport", { x: 0, y: 0 }, { id: "teleport_01" }),
             COMPONENT.teleport,
             { targets: [OTHER_SCENE], picked: OTHER_SCENE },
           ),

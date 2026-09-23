@@ -33,5 +33,8 @@ export default defineConfig({
     target: "safari15.4",
     outDir: "dist",
     sourcemap: true,
+    // 主 chunk 是有意的单页面板应用（约 550 kB）；阈值调到 600 消掉常态警告，
+    // 真膨胀过头（>600）时警告仍会响。
+    chunkSizeWarningLimit: 600,
   },
 });

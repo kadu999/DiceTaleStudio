@@ -5,12 +5,12 @@ import {
   SPRITE_COMPONENT,
   createAssetMetas,
   createEmptyProject,
-  createSceneObject,
+  createGameObject,
   emptyAssetMetas,
   featureComponent,
   spriteSettingsOfMeta,
   type AssetMetaDoc,
-  type SceneObjectDoc,
+  type GameObjectDoc,
 } from "@dts/document";
 import { ImagePickerDialog } from "../src/app/ImagePickerDialog";
 import { SpriteEditorDialog } from "../src/app/SpriteEditorDialog";
@@ -48,9 +48,9 @@ const TREE: ResourceTreeNode[] = [
 ];
 
 /** 一个挑了图的精灵。 */
-function spriteWith(image: SceneObjectDoc["components"][number]["data"]): SceneObjectDoc {
+function spriteWith(image: GameObjectDoc["components"][number]["data"]): GameObjectDoc {
   return {
-    ...createSceneObject({ id: "sprite-1", name: "精灵", position: { x: 0, y: 0 } }),
+    ...createGameObject({ id: "sprite-1", name: "精灵", position: { x: 0, y: 0 } }),
     components: [featureComponent("sprite-1", SPRITE_COMPONENT, image)],
   };
 }
@@ -61,7 +61,7 @@ function spriteWith(image: SceneObjectDoc["components"][number]["data"]): SceneO
  * 「工程里的切分」与「场景里的对象」是**两份文件**，所以这里两条历史都重置：
  * 与真实打开项目后的样子一致（`doc` 是工程文件，`scenes` 是场景文件）。
  */
-function seed(objects: SceneObjectDoc[], spriteSheets?: Record<string, { columns: number; rows: number }>): void {
+function seed(objects: GameObjectDoc[], spriteSheets?: Record<string, { columns: number; rows: number }>): void {
   const scenes = [{ name: "Map001", objects }];
   sceneHistory.reset(scenes);
   const doc = createEmptyProject("测试");
@@ -91,7 +91,7 @@ function seed(objects: SceneObjectDoc[], spriteSheets?: Record<string, { columns
   });
 }
 
-const objectOf = (id: string): SceneObjectDoc | undefined =>
+const objectOf = (id: string): GameObjectDoc | undefined =>
   useEditorStore.getState().scenes[0]?.objects.find((item) => item.id === id);
 
 afterEach(() => {

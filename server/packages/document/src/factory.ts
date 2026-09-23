@@ -5,8 +5,8 @@ import {
   createId,
 } from "./commands";
 import { featureComponent } from "./components";
-// 特性缺省值与组件类型名住在 `features.ts`（那张表是「哪个 kind 带哪个特性」的唯一归属地）
-import { DEFAULT_SOUND_LAYER, FEATURE_COMPONENT } from "./features";
+// 特性缺省值与缺省承载组件住在 `presets.ts`（那张表是「哪个 kind 允许哪个槽位」的唯一归属地）
+import { DEFAULT_SLOT_COMPONENT, DEFAULT_SOUND_LAYER } from "./presets";
 // 全局设置的缺省值住在 schema 里（那里也是「形状 + 默认值」的家）：新建工程与读老文件
 // 补齐共用同一份，不会出现「新建的缺一样、读出来的缺另一样」
 import { defaultProjectSettings } from "./schema";
@@ -18,7 +18,7 @@ import {
   type ProjectDoc,
   type SceneDoc,
   type SceneFileDoc,
-  type SceneObjectDoc,
+  type GameObjectDoc,
   type SoundLayer,
   type WorldPosition,
 } from "./types";
@@ -53,7 +53,7 @@ export function createMapObject(input: {
   readonly id?: string;
   /** 地图中心的世界坐标；不传就是世界原点。 */
   readonly position?: WorldPosition;
-}): SceneObjectDoc {
+}): GameObjectDoc {
   const id = input.id ?? createId("map");
   const map: MapDataDoc = {
     image: input.image,
@@ -77,7 +77,7 @@ export function createMapObject(input: {
     // 新建出来的对象都不锁：锁是「摆好之后别再被拖走」，不是默认状态
     locked: false,
     // 贴图与网格就是它的 `GridMap` 组件（v19 起）
-    components: [featureComponent(id, FEATURE_COMPONENT.map, map)],
+    components: [featureComponent(id, DEFAULT_SLOT_COMPONENT.map, map)],
   };
 }
 
@@ -97,7 +97,7 @@ export function createSoundObject(input: {
   readonly id?: string;
   /** 对象中心的世界坐标；不传 = 未放置（与普通对象同一个口径，由调用方给落点）。 */
   readonly position?: WorldPosition | null;
-}): SceneObjectDoc {
+}): GameObjectDoc {
   const id = input.id ?? createId("sound");
   const clips = [...(input.clips ?? [])];
   const picked = clips.length > 0 ? clips[0] : undefined;
@@ -113,7 +113,7 @@ export function createSoundObject(input: {
     scale: DEFAULT_OBJECT_SCALE,
     locked: false,
     components: [
-      featureComponent(id, FEATURE_COMPONENT.sound, {
+      featureComponent(id, DEFAULT_SLOT_COMPONENT.sound, {
         clips,
         layer: input.layer ?? DEFAULT_SOUND_LAYER,
         ...(picked === undefined ? {} : { picked }),
@@ -139,7 +139,7 @@ export function createTeleportObject(input: {
   readonly id?: string;
   /** 对象中心的世界坐标；不传 = 未放置（与普通对象同一个口径，由调用方给落点）。 */
   readonly position?: WorldPosition | null;
-}): SceneObjectDoc {
+}): GameObjectDoc {
   const id = input.id ?? createId("teleport");
   const targets = [...(input.targets ?? [])];
   const picked = input.picked ?? targets[0];
@@ -155,7 +155,7 @@ export function createTeleportObject(input: {
     scale: DEFAULT_OBJECT_SCALE,
     locked: false,
     components: [
-      featureComponent(id, FEATURE_COMPONENT.teleport, {
+      featureComponent(id, DEFAULT_SLOT_COMPONENT.teleport, {
         targets,
         ...(picked === undefined ? {} : { picked }),
       }),

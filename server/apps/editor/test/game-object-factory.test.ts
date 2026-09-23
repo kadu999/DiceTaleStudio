@@ -7,7 +7,7 @@ import {
   type ObjectKind,
 } from "@dts/document";
 import { DEFAULT_MAP_IMAGE } from "../src/state/store-core";
-import { createSceneObjectForKind } from "../src/state/scene-object-factory";
+import { createGameObjectForKind } from "../src/state/game-object-factory";
 
 const input = {
   project: "测试项目",
@@ -19,15 +19,15 @@ const input = {
 describe("场景对象工厂", () => {
   it("为每种对象类型提供工厂并保留请求的名称与位置", () => {
     for (const kind of OBJECT_KINDS) {
-      const object = createSceneObjectForKind(kind, input);
-      expect(object.kind, kind).toBe(kind === "SceneObject" ? "SceneObject" : kind);
+      const object = createGameObjectForKind(kind, input);
+      expect(object.kind, kind).toBe(kind === "GameObject" ? "GameObject" : kind);
       expect(object.name, kind).toBe(input.name);
       expect(object.position, kind).toEqual(input.position);
     }
   });
 
   it("地图工厂按场景图片约定生成地图贴图与网格", () => {
-    const object = createSceneObjectForKind("Map", input);
+    const object = createGameObjectForKind("Map", input);
     const map = mapDataOf(object);
 
     expect(map?.image).toEqual({
@@ -38,7 +38,7 @@ describe("场景对象工厂", () => {
   });
 
   it.each(["PlaySound", "Teleport"] as const)("%s 工厂保留专属组件", (kind: ObjectKind) => {
-    const object = createSceneObjectForKind(kind, input);
+    const object = createGameObjectForKind(kind, input);
 
     if (kind === "PlaySound") {
       expect(soundDataOf(object)).toEqual({ clips: [], layer: "sfx" });

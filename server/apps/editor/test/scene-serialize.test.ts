@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createMapObject, createSceneObject, type SceneDoc } from "@dts/document";
+import { createMapObject, createGameObject, type SceneDoc } from "@dts/document";
 import { serializeSceneFile } from "../src/state/editor-store";
 
 /**
@@ -20,7 +20,7 @@ function scene(name: string): SceneDoc {
     image: { id: "project:测试/Assets/images/Map001.png", width: 400, height: 300 },
     grid: { width: 8, height: 6 },
   });
-  const sprite = createSceneObject({ id: "sprite-1", name: "精灵", position: { x: 10, y: 20 } });
+  const sprite = createGameObject({ id: "sprite-1", name: "精灵", position: { x: 10, y: 20 } });
 
   return { name, objects: [map, sprite] };
 }

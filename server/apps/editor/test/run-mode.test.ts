@@ -5,8 +5,8 @@ import {
   createAssetMetas,
   createEmptyProject,
   createMapObject,
-  createSceneObject,
-  type SceneObjectDoc,
+  createGameObject,
+  type GameObjectDoc,
 } from "@dts/document";
 import { sceneHistory, useEditorStore } from "../src/state/editor-store";
 import type { ResourceTreeNode } from "../src/services/project-api";
@@ -168,7 +168,7 @@ const sceneFileId = (project: string, scene = SCENE): string =>
 const readUrl = (id: string): string => `/api/resources/text?id=${encodeURIComponent(id)}`;
 
 /** 场景文件的内容（形状与编辑器写出去的一致，装载时不会因为缺字段被重写）。 */
-function sceneFileText(objects: readonly SceneObjectDoc[]): string {
+function sceneFileText(objects: readonly GameObjectDoc[]): string {
   return `${JSON.stringify({ formatVersion: DOCUMENT_FORMAT_VERSION, objects }, null, 2)}\n`;
 }
 
@@ -197,8 +197,8 @@ function scenesTree(project: string, scenes: readonly string[]): ResourceTreeNod
   ];
 }
 
-function door(position: { x: number; y: number } = { x: 0, y: 0 }): SceneObjectDoc {
-  return createSceneObject({ id: DOOR, name: "木门", position });
+function door(position: { x: number; y: number } = { x: 0, y: 0 }): GameObjectDoc {
+  return createGameObject({ id: DOOR, name: "木门", position });
 }
 
 /**
@@ -210,7 +210,7 @@ function door(position: { x: number; y: number } = { x: 0, y: 0 }): SceneObjectD
  * 返回后端调用记录（写盘 = `PUT`）。
  */
 async function seedScene(
-  objects: readonly SceneObjectDoc[],
+  objects: readonly GameObjectDoc[],
   sceneNames: readonly string[] = [SCENE],
 ): Promise<BackendCalls> {
   const files: Record<string, string> = {};
@@ -237,7 +237,7 @@ async function seedScene(
   return calls;
 }
 
-const objectOf = (id: string): SceneObjectDoc | undefined =>
+const objectOf = (id: string): GameObjectDoc | undefined =>
   useEditorStore.getState().scenes[0]?.objects.find((item) => item.id === id);
 
 /** 运行态里那两下改动：隐藏 + 挪到 x=500。 */

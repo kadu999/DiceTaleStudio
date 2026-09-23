@@ -8,7 +8,7 @@ import {
   maskToLabel,
   type RleRun,
 } from "@dts/grid";
-import { createMapObject, createSceneObject, mapDataOf, type SceneObjectDoc } from "@dts/document";
+import { createMapObject, createGameObject, mapDataOf, type GameObjectDoc } from "@dts/document";
 import { InspectorPanel } from "../src/panels/inspector/InspectorPanel";
 import { cellColorsOf } from "../src/panels/scene/grid-paint";
 import { sceneHistory, useEditorStore } from "../src/state/editor-store";
@@ -29,7 +29,7 @@ import { sceneHistory, useEditorStore } from "../src/state/editor-store";
 const IMAGE = { id: "project:测试/Assets/images/Map001.png", width: 400, height: 300 };
 const GRID = { width: 8, height: 6 };
 
-function mapObject(): SceneObjectDoc {
+function mapObject(): GameObjectDoc {
   return createMapObject({ id: "map-1", name: "网格地图", image: IMAGE, grid: GRID });
 }
 
@@ -39,7 +39,7 @@ function mapObject(): SceneObjectDoc {
  * **必须同时 `sceneHistory.reset`**：对象编辑走的是历史容器，
  * 忘了这一步 `applyScenes` 会在空数组里找场景、永远「没产生变更」。
  */
-function seedScene(objects: SceneObjectDoc[], selected: readonly string[]): void {
+function seedScene(objects: GameObjectDoc[], selected: readonly string[]): void {
   const scenes = [{ name: "Map001", objects }];
   sceneHistory.reset(scenes);
   useEditorStore.setState({
@@ -82,12 +82,12 @@ afterEach(() => {
 
 describe("属性面板：编辑窗口入口", () => {
   it("地图对象有「编辑」入口，精灵没有", () => {
-    seedScene([mapObject(), createSceneObject({ id: "sprite", name: "精灵" })], ["map-1"]);
+    seedScene([mapObject(), createGameObject({ id: "sprite", name: "精灵" })], ["map-1"]);
     const { unmount } = render(<InspectorPanel />);
     expect(screen.getByTestId("grid-editor-open")).toBeDefined();
     unmount();
 
-    seedScene([mapObject(), createSceneObject({ id: "sprite", name: "精灵" })], ["sprite"]);
+    seedScene([mapObject(), createGameObject({ id: "sprite", name: "精灵" })], ["sprite"]);
     render(<InspectorPanel />);
     expect(screen.queryByTestId("grid-editor-open")).toBeNull();
   });
@@ -353,7 +353,7 @@ describe("显示开关：网格线与网格标注", () => {
   });
 
   it("精灵没有这两个开关（格子是地图的事）", () => {
-    seedScene([mapObject(), createSceneObject({ id: "sprite", name: "精灵" })], ["sprite"]);
+    seedScene([mapObject(), createGameObject({ id: "sprite", name: "精灵" })], ["sprite"]);
     render(<InspectorPanel />);
 
     expect(screen.queryByTestId("grid-lines-toggle")).toBeNull();

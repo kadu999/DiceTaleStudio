@@ -12,7 +12,7 @@ import {
   parseServerToEditor,
   sceneSchema,
   serverToClientSchema,
-  type SceneObjectPayload,
+  type GameObjectPayload,
   type ScenePayload,
 } from "../src/messages";
 
@@ -30,7 +30,7 @@ function feature(
 
 /** 从解析后的对象上取某个组件的数据（断言用；协议层不提供访问器）。 */
 function featureData(
-  object: SceneObjectPayload | undefined,
+  object: GameObjectPayload | undefined,
   type: string,
 ): Record<string, unknown> | undefined {
   return object?.components.find((item) => item.type === type)?.data;

@@ -7,7 +7,7 @@ import {
   SPRITE_COMPONENT,
   featureComponent,
 } from "@dts/document";
-import { createMapObject, createSceneObject, type SceneObjectDoc } from "@dts/document";
+import { createMapObject, createGameObject, type GameObjectDoc } from "@dts/document";
 import { InspectorPanel } from "../src/panels/inspector/InspectorPanel";
 import { displayRectOf } from "../src/panels/scene/display";
 import { sceneHistory, useEditorStore } from "../src/state/editor-store";
@@ -24,9 +24,9 @@ import { sceneHistory, useEditorStore } from "../src/state/editor-store";
 const IMAGE = { id: "project:测试/Assets/images/Map001.png", width: 400, height: 300 };
 const GRID = { width: 8, height: 6 };
 
-function sprite(scale = 1): SceneObjectDoc {
+function sprite(scale = 1): GameObjectDoc {
   return {
-    ...createSceneObject({ id: "sprite-1", name: "精灵", position: { x: 100, y: 50 } }),
+    ...createGameObject({ id: "sprite-1", name: "精灵", position: { x: 100, y: 50 } }),
     // 精灵显示的那张图住在它的 `SpriteLayer` 组件里（v21 起）
     components: [
       featureComponent("sprite-1", SPRITE_COMPONENT, {
@@ -39,7 +39,7 @@ function sprite(scale = 1): SceneObjectDoc {
   };
 }
 
-function seedScene(objects: SceneObjectDoc[], selected: readonly string[]): void {
+function seedScene(objects: GameObjectDoc[], selected: readonly string[]): void {
   const scenes = [{ name: "Map001", objects }];
   sceneHistory.reset(scenes);
   useEditorStore.setState({
@@ -51,7 +51,7 @@ function seedScene(objects: SceneObjectDoc[], selected: readonly string[]): void
   });
 }
 
-const objectOf = (id: string): SceneObjectDoc | undefined =>
+const objectOf = (id: string): GameObjectDoc | undefined =>
   useEditorStore.getState().scenes[0]?.objects.find((item) => item.id === id);
 
 afterEach(() => {
@@ -140,7 +140,7 @@ describe("displayRectOf：显示 / 拾取 / 选中框共用的矩形", () => {
   });
 
   it("没有图片（刚建出来的精灵）用兜底矩形，同样乘缩放", () => {
-    const bare = createSceneObject({ id: "bare", name: "空对象", position: { x: 0, y: 0 } });
+    const bare = createGameObject({ id: "bare", name: "空对象", position: { x: 0, y: 0 } });
     expect(displayRectOf(bare)?.size).toEqual({ width: 64, height: 64 });
     expect(displayRectOf({ ...bare, scale: 2 })?.size).toEqual({ width: 128, height: 128 });
   });
@@ -168,7 +168,7 @@ describe("displayRectOf：显示 / 拾取 / 选中框共用的矩形", () => {
 
   it("没有位置的对象没有矩形（不画也点不到）", () => {
     expect(displayRectOf(sprite())).toBeDefined();
-    const unplaced = createSceneObject({ id: "x", name: "未放置" });
+    const unplaced = createGameObject({ id: "x", name: "未放置" });
     expect(displayRectOf(unplaced)).toBeUndefined();
   });
 });

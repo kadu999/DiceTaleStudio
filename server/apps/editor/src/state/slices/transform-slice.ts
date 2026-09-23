@@ -6,9 +6,9 @@
 import {
   effectiveScaleX,
   effectiveScaleY,
-  setObjectPosition as setSceneObjectPosition,
-  setObjectScaleAxes as setSceneObjectScaleAxes,
-  setObjectRotation as setSceneObjectRotation,
+  setObjectPosition as setGameObjectPosition,
+  setObjectScaleAxes as setGameObjectScaleAxes,
+  setObjectRotation as setGameObjectRotation,
 } from "@dts/document";
 import { worldRectOf } from "@dts/grid";
 import { isCornerScaleHandle, scaleAnchorFor, scaleAxisOf } from "@dts/renderer";
@@ -128,9 +128,9 @@ export function createTransformSlice(
             return;
           }
 
-          setSceneObjectPosition(scene, start.id, result.position);
-          setSceneObjectRotation(scene, start.id, result.rotation);
-          setSceneObjectScaleAxes(scene, start.id, { x: result.scaleX, y: result.scaleY });
+          setGameObjectPosition(scene, start.id, result.position);
+          setGameObjectRotation(scene, start.id, result.rotation);
+          setGameObjectScaleAxes(scene, start.id, { x: result.scaleX, y: result.scaleY });
         },
         { coalesceKey: `transform:${start.id}` },
       );
@@ -162,9 +162,9 @@ export function createTransformSlice(
             return;
           }
 
-          setSceneObjectPosition(scene, start.id, start.base);
-          setSceneObjectRotation(scene, start.id, start.rotation);
-          setSceneObjectScaleAxes(scene, start.id, { x: start.scaleX, y: start.scaleY });
+          setGameObjectPosition(scene, start.id, start.base);
+          setGameObjectRotation(scene, start.id, start.rotation);
+          setGameObjectScaleAxes(scene, start.id, { x: start.scaleX, y: start.scaleY });
         },
         { coalesceKey: `transform:${start.id}` },
       );

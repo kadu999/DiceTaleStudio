@@ -1,8 +1,8 @@
 import type { RleRun } from "@dts/grid";
-// 对象类型与它们的层级住在 `kinds.ts`（那张表是「谁是谁的子类型」的唯一归属地）。
-// **只 import 不转出口**：barrel 里 `./kinds` 已经把它导出去了，两处都 `export *`
+// 对象类型（= 预设 id）住在 `presets.ts`（那张表是「哪个 kind 允许哪个能力槽位」的唯一归属地）。
+// **只 import 不转出口**：barrel 里 `./presets` 已经把它导出去了，两处都 `export *`
 // 会让这个同名类型变成「来源不明」，TS 会直接报重名。
-import type { ObjectKind } from "./kinds";
+import type { ObjectKind } from "./presets";
 
 /**
  * 编辑器文档模型。
@@ -13,7 +13,7 @@ import type { ObjectKind } from "./kinds";
  * 项目（一个项目 = 一个文件夹 + 一个 `project.json`）
  * ├─ 项目级数据（道具库…）           ← `project.json` 里只有这些
  * └─ 场景（每个场景 = `Assets/scenes/<场景名>.json`，场景名就是文件名）
- *    └─ 对象 SceneObjectDoc[]       ← 所有对象都在场景上
+ *    └─ 对象 GameObjectDoc[]       ← 所有对象都在场景上
  *       ├─ 地图对象（kind = "Map"） ← 携带贴图 + 网格数据
  *       └─ 其它对象                 ← 携带若干能力组件与动作
  * ```
@@ -66,15 +66,16 @@ import type { ObjectKind } from "./kinds";
  * - 新 kind `Texture`：只把一张图渲染出来，**不引用图集里的格子**；
  * - 图片组件从一种拆成两种——精灵 `SpriteLayer`、贴图 `ImageLayer`（v20 及更早两者共用
  *   `TextureRenderer`），`renameSpriteImageComponent` 把老文件里精灵的那一份改名一次；
- * - 视频那一组从**精灵**挪到**贴图**（`OBJECT_FEATURES` 里 `video` 的 kinds）：
+ * - 视频那一组从**精灵**挪到**贴图**（预设表 `OBJECT_PRESETS` 里 video 槽位只声明在这两个预设上）：
  *   旧文件里精灵身上的 `VideoOverlay` **不删**（不静默改用户数据），只由 `validateScene` 报一条警告。
  *   协议侧同步升到 v11（新增组件名 `SpriteLayer` / `ImageLayer`，老前端不认会把对象画成占位色）。
  *
- * v22（2026-09-23）：**两种实体的 kind 各归其位，并给对象类型立了层级**——`SceneObject`
+ * v22（2026-09-23）：**两种实体的 kind 各归其位**——`GameObject`
  * 从此是**抽象基类**（老文件里写这个值的对象就是当时的「精灵」，由 `renameObjectKinds`
  * 改成 `Sprite`），`Sprite`（精灵）与 `Image`（贴图，v21 时叫 `Texture`）是它的子类型；
- * 「凡场景对象都有的东西」（现在只有一张显示图）因此只声明一次，子类型继承下去
- * （层级住在 `kinds.ts`，判据走 `kindIsA`）。数据形状一个字没动，改名与层级都不动内容。
+ * 「凡场景对象都有的东西」（现在只有一张显示图）因此只声明一次，子类型继承下去。
+ * 数据形状一个字没动，改名与层级都不动内容。（层级后来在架构统一中移除：
+ * 现在 kind 只是预设 id，能力槽位直接声明在 `presets.ts` 的 `OBJECT_PRESETS` 上。）
  * 协议侧同步升到 v12：老前端（v11）不认这两个值，占位色会退成灰（图照常显示，因为
  * 显示走组件名）——属于「不是崩，是画面错」，按同一条纪律靠握手挡住。
  *
@@ -228,8 +229,8 @@ export interface ComponentDoc {
   readonly actions: ActionInstanceDoc[];
 }
 
-// 对象类型（`ObjectKind`）与它们的层级住在 `kinds.ts`：那张表是「谁是谁的子类型」的
-// 唯一归属地，本文件只在 `SceneObjectDoc.kind` 上用到它。
+// 对象类型（`ObjectKind` = 预设 id）与能力槽位住在 `presets.ts`：那张表是
+// 「哪个 kind 允许哪个槽位」的唯一归属地，本文件只在 `GameObjectDoc.kind` 上用到它。
 
 /** 地图对象携带的数据（贴图 + 网格）。 */
 export interface MapDataDoc {
@@ -427,7 +428,7 @@ export interface VideoDataDoc {
   readonly audio: boolean;
 }
 
-export interface SceneObjectDoc {
+export interface GameObjectDoc {
   readonly id: string;
   readonly name: string;
   readonly kind: ObjectKind;
@@ -576,14 +577,14 @@ export interface ProjectDoc {
 /** 场景文件（Assets/scenes/<场景名>.json）的内容：场景名就是文件名，文件里不存名字。 */
 export interface SceneFileDoc {
   readonly formatVersion: number;
-  readonly objects: SceneObjectDoc[];
+  readonly objects: GameObjectDoc[];
 }
 
 /** 内存里的场景 = 场景名（= 文件名）+ 文件内容。 */
 export interface SceneDoc {
   readonly name: string;
   /** ★ 所有对象都在场景上 */
-  readonly objects: SceneObjectDoc[];
+  readonly objects: GameObjectDoc[];
 }
 
 export interface ItemDef {

@@ -5,7 +5,7 @@
  */
 import {
   DEFAULT_SOUND_LAYER,
-  FEATURE_COMPONENT,
+  DEFAULT_SLOT_COMPONENT,
   soundDataOf,
   SOUND_LAYER_LABELS,
   setSoundClips as setSceneSoundClips,
@@ -217,7 +217,7 @@ export function createSoundSlice(
         return false;
       }
 
-      if (objectWithFeature(objectId, FEATURE_COMPONENT.sound) === undefined) {
+      if (objectWithFeature(objectId, DEFAULT_SLOT_COMPONENT.sound) === undefined) {
         return false;
       }
 
@@ -237,7 +237,7 @@ export function createSoundSlice(
         return false;
       }
 
-      const object = objectWithFeature(objectId, FEATURE_COMPONENT.sound);
+      const object = objectWithFeature(objectId, DEFAULT_SLOT_COMPONENT.sound);
       if (object === undefined) {
         return false;
       }
@@ -270,7 +270,7 @@ export function createSoundSlice(
         return false;
       }
 
-      const object = objectWithFeature(objectId, FEATURE_COMPONENT.sound);
+      const object = objectWithFeature(objectId, DEFAULT_SLOT_COMPONENT.sound);
       if (object === undefined) {
         return false;
       }

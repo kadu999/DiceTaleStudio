@@ -5,7 +5,7 @@
  */
 import {
   DOCUMENT_FORMAT_VERSION,
-  FEATURE_COMPONENT,
+  DEFAULT_SLOT_COMPONENT,
   mapDataOf,
   withFeature,
   DocumentHistory,
@@ -244,7 +244,7 @@ export function withRenamedSceneImage(
     changed += 1;
     // v19：贴图在 `GridMap` 组件里——**必须经访问器替换**，不能再往对象上写一个扁平 `map`
     // （那样 schema 会在下次解析时把它当未知键丢掉，场景一改名贴图就找不到了）
-    return withFeature(object, FEATURE_COMPONENT.map, {
+    return withFeature(object, DEFAULT_SLOT_COMPONENT.map, {
       ...map,
       image: { ...map.image, id: projectSceneImageId(project, newName) },
     });

@@ -3,14 +3,14 @@ import { produce, type Draft } from "immer";
 import { setTeleportPicked, setTeleportTargets } from "../src/commands";
 import { imageOf, mapDataOf, soundDataOf, teleportDataOf } from "../src/access";
 import { featureComponent } from "../src/components";
-import { FEATURE_COMPONENT } from "../src/features";
+import { DEFAULT_SLOT_COMPONENT } from "../src/presets";
 import { createEmptyScene, createTeleportObject } from "../src/factory";
 import { parseSceneFile } from "../src/schema";
 import { formatIssues, hasErrors, validateScene } from "../src/validation";
 import {
   DOCUMENT_FORMAT_VERSION,
   type SceneDoc,
-  type SceneObjectDoc,
+  type GameObjectDoc,
 } from "../src/types";
 
 /**
@@ -30,7 +30,7 @@ import {
 const A = "Map002";
 const B = "Map003";
 
-function sceneWith(objects: readonly SceneObjectDoc[]): SceneDoc {
+function sceneWith(objects: readonly GameObjectDoc[]): SceneDoc {
   return { ...createEmptyScene("Map001"), objects: [...objects] };
 }
 
@@ -38,7 +38,7 @@ function mutate(scene: SceneDoc, recipe: (draft: Draft<SceneDoc>) => void): Scen
   return produce(scene, recipe);
 }
 
-function objectOf(scene: SceneDoc, id: string): SceneObjectDoc | undefined {
+function objectOf(scene: SceneDoc, id: string): GameObjectDoc | undefined {
   return scene.objects.find((object) => object.id === id);
 }
 
@@ -84,7 +84,7 @@ describe("传送阵的工厂", () => {
     expect(teleport.locked).toBe(false);
     // v19 起传送数据就是它身上唯一的组件
     expect(teleport.components.map((component) => component.type)).toEqual([
-      FEATURE_COMPONENT.teleport,
+      DEFAULT_SLOT_COMPONENT.teleport,
     ]);
   });
 
@@ -149,7 +149,7 @@ describe("setTeleportTargets：加 / 移候选场景", () => {
   });
 
   it("手写文件里整个传送组件都没有时兜底补一份，而不是静默失败", () => {
-    const broken: SceneObjectDoc = {
+    const broken: GameObjectDoc = {
       ...createTeleportObject({ name: "传送阵", id: "t1" }),
       components: [],
     };
@@ -162,7 +162,7 @@ describe("setTeleportTargets：加 / 移候选场景", () => {
   });
 
   it("非传送阵对象：改不动（返回 false）", () => {
-    const door: SceneObjectDoc = {
+    const door: GameObjectDoc = {
       ...createTeleportObject({ name: "木门", id: "d1" }),
       kind: "Sprite",
     };
@@ -302,7 +302,7 @@ describe("传送阵的解析与版本", () => {
 describe("传送阵的校验", () => {
   it("缺传送数据（整个 teleport 没有）= error", () => {
     // v19 下「缺传送数据」= 没有 `Teleport` 组件
-    const broken: SceneObjectDoc = {
+    const broken: GameObjectDoc = {
       ...createTeleportObject({ name: "传送阵", id: "t1" }),
       components: [],
     };
@@ -320,15 +320,15 @@ describe("传送阵的校验", () => {
   });
 
   it("有候选但没选 = warning；选中的不在候选里也 = warning", () => {
-    const unpicked: SceneObjectDoc = {
+    const unpicked: GameObjectDoc = {
       ...createTeleportObject({ name: "传送阵", id: "t1", targets: [A, B] }),
-      components: [featureComponent("t1", FEATURE_COMPONENT.teleport, { targets: [A, B] })],
+      components: [featureComponent("t1", DEFAULT_SLOT_COMPONENT.teleport, { targets: [A, B] })],
     };
     expect(formatIssues(validateScene(sceneWith([unpicked])))).toMatch(/还没选要传送到哪一张场景/);
 
-    const stale: SceneObjectDoc = {
+    const stale: GameObjectDoc = {
       ...createTeleportObject({ name: "传送阵", id: "t2", targets: [A] }),
-      components: [featureComponent("t2", FEATURE_COMPONENT.teleport, { targets: [A], picked: B })],
+      components: [featureComponent("t2", DEFAULT_SLOT_COMPONENT.teleport, { targets: [A], picked: B })],
     };
     expect(formatIssues(validateScene(sceneWith([stale])))).toMatch(/不在候选里/);
   });
@@ -343,11 +343,11 @@ describe("传送阵的校验", () => {
   });
 
   it("传送阵挂了贴图会被提醒（它画的是固定徽标）", () => {
-    const withImage: SceneObjectDoc = {
+    const withImage: GameObjectDoc = {
       ...createTeleportObject({ name: "传送阵", id: "t1", targets: [A], picked: A }),
       components: [
-        featureComponent("t1", FEATURE_COMPONENT.teleport, { targets: [A], picked: A }),
-        featureComponent("t1", FEATURE_COMPONENT.image, {
+        featureComponent("t1", DEFAULT_SLOT_COMPONENT.teleport, { targets: [A], picked: A }),
+        featureComponent("t1", DEFAULT_SLOT_COMPONENT.image, {
           id: "project:C/Assets/images/a.png",
           width: 64,
           height: 64,
@@ -359,10 +359,10 @@ describe("传送阵的校验", () => {
   });
 
   it("非传送阵对象带了传送数据会被提醒", () => {
-    const door: SceneObjectDoc = {
+    const door: GameObjectDoc = {
       ...createTeleportObject({ name: "木门", id: "d1" }),
       kind: "Sprite",
-      components: [featureComponent("d1", FEATURE_COMPONENT.teleport, { targets: [A] })],
+      components: [featureComponent("d1", DEFAULT_SLOT_COMPONENT.teleport, { targets: [A] })],
     };
 
     expect(formatIssues(validateScene(sceneWith([door])))).toMatch(/不应携带传送数据/);

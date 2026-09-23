@@ -1,10 +1,11 @@
-import { FEATURE_COMPONENT, carriesKind, type ObjectKind } from "@dts/document";
+import { presetOf, type ObjectKind } from "@dts/document";
 
 /**
  * 对象类型表：**先分种类，种类下再放对象**。
  *
  * 种类是编辑器侧的归类（实体 / 动作 / 事件），落进文档的仍然是对象的 `kind`——
- * `kind` 是前端也认的字段，不能为了分类随意造新值。
+ * `kind` 是前端也认的字段，不能为了分类随意造新值。它只是**预设 id**
+ * （预设在 `@dts/document` 的 `presets.ts`：哪个 kind 允许哪些能力槽位），不携带行为。
  *
  * 这张表同时服务两处，所以每个类型带一个 `creatable`：
  * - 「新建对象」弹框只列 `creatable` 的（实体 → 网格地图 / 精灵 / 贴图；动作 → 播放声音）；
@@ -13,14 +14,14 @@ import { FEATURE_COMPONENT, carriesKind, type ObjectKind } from "@dts/document";
  * **每个类型自带 `id` 与 `label`，不要拿 `kind` 当它们用**：
  * - 「网格地图」「精灵」「贴图」是三个**显示名不同的实体类型**，落进文档的 `kind` 是
  *   文档级的值——网格地图 `Map`、精灵 `Sprite`、贴图 `Image`（v22 起：精灵以前写的是基类
- *   `SceneObject`、贴图以前叫 `Texture`），所以同一个 kind 可以在表里出现多次（现在没有，
+ *   `GameObject`、贴图以前叫 `Texture`），所以同一个 kind 可以在表里出现多次（现在没有，
  *   但表的设计允许），而名字是**每个类型自己的**。
  * - 弹框的瓦片 key / 选中态一律用 `id`（用 `kind` 会让同 kind 的两个瓦片共用 key、点一个
  *   另一个跟着亮），名字用 `label`（`KIND_LABELS[kind]` 给的是 kind 的规范名，
  *   不一定等于瓦片上的名字）。
  *
- * **`SceneObject` 只作为归类项留在表里**（`creatable: false`）：它是所有场景对象的**抽象基类**
- * （层级在 `@dts/document` 的 `kinds.ts`），所有具体类型都继承它——没有对象会带着这个 kind
+ * **`GameObject` 只作为归类项留在表里**（`creatable: false`）：它是所有场景对象的**抽象基类**
+ * （预设在 `@dts/document` 的 `presets.ts`，标了 `abstract`），没有对象会带着这个 kind
  * 落进文档（老文件里的由 v22 迁移改成 `Sprite`）。留在表里是为了两条既有规矩：
  * **每个 kind 都要有种类归属**（面板按种类过滤，手写文件里真出现这个值时不能凭空消失），
  * 以及 `KIND_LABELS` 是 `Record<ObjectKind, string>`（少一个键就编译不过）。
@@ -68,7 +69,7 @@ export const OBJECT_CATEGORIES: readonly ObjectCategoryDef[] = [
       { id: "Image", kind: "Image", label: "贴图", creatable: true },
       // 基类本身不可创建：没有「什么都不指定」的对象，落进文档的永远是具体类型。
       // 它只参与归类（手写文件里真写了这个值时，面板照样把它列在实体里）
-      { id: "SceneObject", kind: "SceneObject", label: "场景对象", creatable: false },
+      { id: "GameObject", kind: "GameObject", label: "游戏对象", creatable: false },
       { id: "Player", kind: "Player", label: "玩家", creatable: false },
       { id: "Item", kind: "Item", label: "道具", creatable: false },
     ],
@@ -111,17 +112,17 @@ export function categoryOfKind(kind: ObjectKind): ObjectCategoryDef | undefined 
  * 3. 列表行尾显示什么提示（层级 / 目标场景）。
  */
 export function badgeIconOf(kind: ObjectKind): "audio" | "teleport" | undefined {
-  if (carriesKind(FEATURE_COMPONENT.sound, kind)) {
+  if (presetOf(kind)?.slots.sound !== undefined) {
     return "audio";
   }
 
-  return carriesKind(FEATURE_COMPONENT.teleport, kind) ? "teleport" : undefined;
+  return presetOf(kind)?.slots.teleport !== undefined ? "teleport" : undefined;
 }
 
 /** 对象类型的展示名（弹框的瓦片、面板的提示共用）。**只有这里写中文**，代码一律用英文。 */
 export const KIND_LABELS: Record<ObjectKind, string> = {
   // 基类：它不落进文档，所以这个名字只可能在「手写文件写了这个值」时露出来
-  SceneObject: "场景对象",
+  GameObject: "游戏对象",
   Sprite: "精灵",
   Image: "贴图",
   Map: "网格地图",

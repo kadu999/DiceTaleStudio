@@ -2,13 +2,13 @@ import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen, act } from "@testing-library/react";
 import { CellMask } from "@dts/grid";
 import {
-  FEATURE_COMPONENT,
+  DEFAULT_SLOT_COMPONENT,
   createMapObject,
-  createSceneObject,
+  createGameObject,
   isMapFogEnabled,
   mapDataOf,
   withFeature,
-  type SceneObjectDoc,
+  type GameObjectDoc,
 } from "@dts/document";
 import { InspectorPanel } from "../src/panels/inspector/InspectorPanel";
 import { sceneHistory, useEditorStore } from "../src/state/editor-store";
@@ -34,26 +34,26 @@ import { emptyFogReveal } from "../src/services/fog-reveal";
 const IMAGE = { id: "project:测试/Assets/images/Map001.png", width: 400, height: 300 };
 const GRID = { width: 8, height: 6 };
 
-function mapObject(): SceneObjectDoc {
+function mapObject(): GameObjectDoc {
   return createMapObject({ id: "map-1", name: "网格地图", image: IMAGE, grid: GRID });
 }
 
 /** 一张**开了战争雾、绑了「区域4」**的地图（揭示记账只认这样的地图）。 */
-function fogMap(): SceneObjectDoc {
+function fogMap(): GameObjectDoc {
   const object = mapObject();
   const map = mapDataOf(object);
   if (map === undefined) {
     throw new Error("createMapObject 应当带 GridMap 组件");
   }
 
-  return withFeature(object, FEATURE_COMPONENT.map, {
+  return withFeature(object, DEFAULT_SLOT_COMPONENT.map, {
     ...map,
     fog: { enabled: true, regions: [CellMask.Fog1] },
   });
 }
 
 /** 一张**开了战争雾、但还没指定雾区**的地图（揭示记账会明确拒绝它，与「开关关着」不是一回事）。 */
-function enabledMapWithoutRegions(): SceneObjectDoc {
+function enabledMapWithoutRegions(): GameObjectDoc {
   const object = mapObject();
   const map = mapDataOf(object);
   if (map === undefined) {
@@ -62,7 +62,7 @@ function enabledMapWithoutRegions(): SceneObjectDoc {
 
   return withFeature(
     { ...object, id: "map-2", name: "开了没绑的地图" },
-    FEATURE_COMPONENT.map,
+    DEFAULT_SLOT_COMPONENT.map,
     { ...map, fog: { enabled: true, regions: [] } },
   );
 }
@@ -73,7 +73,7 @@ function enabledMapWithoutRegions(): SceneObjectDoc {
  * **必须同时 `sceneHistory.reset`**：对象编辑走的是历史容器，
  * 忘了这一步 `applyScenes` 会在空数组里找场景、永远「没产生变更」。
  */
-function seedScene(objects: SceneObjectDoc[], selected: readonly string[]): void {
+function seedScene(objects: GameObjectDoc[], selected: readonly string[]): void {
   const scenes = [{ name: "Map001", objects }];
   sceneHistory.reset(scenes);
   useEditorStore.setState({
@@ -125,7 +125,7 @@ afterEach(() => {
 
 describe("属性面板：战争雾开关与雾区", () => {
   it("地图对象有「战争雾」的开关，精灵没有", () => {
-    seedScene([mapObject(), createSceneObject({ id: "sprite", name: "精灵" })], ["map-1"]);
+    seedScene([mapObject(), createGameObject({ id: "sprite", name: "精灵" })], ["map-1"]);
     const { unmount } = render(<InspectorPanel />);
 
     expect(screen.getByTestId("fog-enable")).toBeDefined();
@@ -134,7 +134,7 @@ describe("属性面板：战争雾开关与雾区", () => {
     expect(screen.queryByTestId("fog-mask-open")).toBeNull();
 
     unmount();
-    seedScene([mapObject(), createSceneObject({ id: "sprite", name: "精灵" })], ["sprite"]);
+    seedScene([mapObject(), createGameObject({ id: "sprite", name: "精灵" })], ["sprite"]);
     render(<InspectorPanel />);
 
     expect(screen.queryByTestId("fog-enable")).toBeNull();
@@ -284,7 +284,7 @@ describe("战争雾：揭示记账（运行态才下发给前端）", () => {
 
   it("目标不对时给明确原因、不记账（对象不存在 / 不是地图 / 开关关着 / 还没指定雾区）", () => {
     seedScene(
-      [mapObject(), enabledMapWithoutRegions(), createSceneObject({ id: "sprite", name: "精灵" })],
+      [mapObject(), enabledMapWithoutRegions(), createGameObject({ id: "sprite", name: "精灵" })],
       ["map-1"],
     );
     act(() => useEditorStore.setState({ mode: "run" }));

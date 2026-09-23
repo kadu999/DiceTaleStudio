@@ -12,7 +12,7 @@ import {
   type GridPoint,
   type RleRun,
 } from "@dts/grid";
-import { FEATURE_COMPONENT, carriesKind } from "../features";
+import { DEFAULT_SLOT_COMPONENT, carriesComponent } from "../presets";
 // 特性的读写一律走访问器（「数据存在哪个组件里」只有 access.ts 知道）
 import { mapDraftOf, writeFeature } from "../access";
 import { findObject } from "./shared";
@@ -347,10 +347,10 @@ export function setMapData(
   map: MapDataDoc,
 ): boolean {
   const object = findObject(scene, mapObjectId);
-  if (object === undefined || !carriesKind(FEATURE_COMPONENT.map, object.kind)) {
+  if (object === undefined || !carriesComponent(DEFAULT_SLOT_COMPONENT.map, object.kind)) {
     return false;
   }
 
-  writeFeature(object, FEATURE_COMPONENT.map, map);
+  writeFeature(object, DEFAULT_SLOT_COMPONENT.map, map);
   return true;
 }

@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import {
-  FEATURE_COMPONENT,
+  DEFAULT_SLOT_COMPONENT,
   audioNameOfMeta,
   audioTagsOfMeta,
-  carriesKind,
+  carriesComponent,
   isSpriteMeta,
   metaOfImage,
   spriteCellSizeOf,
@@ -91,8 +91,8 @@ export function InspectorPanel(): React.JSX.Element {
             <Field
               label="地图对象"
               value={
-                activeScene.objects.some((object) => carriesKind(FEATURE_COMPONENT.map, object.kind))
-                  ? `${activeScene.objects.filter((object) => carriesKind(FEATURE_COMPONENT.map, object.kind)).length} 个`
+                activeScene.objects.some((object) => carriesComponent(DEFAULT_SLOT_COMPONENT.map, object.kind))
+                  ? `${activeScene.objects.filter((object) => carriesComponent(DEFAULT_SLOT_COMPONENT.map, object.kind)).length} 个`
                   : "无（对象不依赖地图，可直接添加）"
               }
             />

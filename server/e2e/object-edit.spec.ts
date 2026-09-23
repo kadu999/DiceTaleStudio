@@ -6,16 +6,16 @@ import {
   dropProject,
   enterEditor,
   expectPersistedObjectNames,
-  findSceneObject,
+  findGameObject,
   mapObjectDoc,
   newProject,
   objectComponentData,
   openLeftTab,
   openProject,
   readSceneFile,
-  readSceneObjects,
+  readGameObjects,
   sceneDoc,
-  sceneObjectDoc,
+  gameObjectDoc,
   seedProjectDoc,
   selectObject,
   solidPng,
@@ -113,7 +113,7 @@ test.describe("创建与编辑场景对象", () => {
       await expect(page.getByTestId("object-category-event")).toBeVisible();
 
       // 二级：实体下有 网格地图 / 精灵 / 贴图，默认选中第一个（网格地图），名字按类型预填
-      // （基类 `SceneObject` 那一项不可创建，所以弹框里看不到它——它只参与归类）
+      // （基类 `GameObject` 那一项不可创建，所以弹框里看不到它——它只参与归类）
       await expect(page.getByTestId("object-type-Map")).toHaveAttribute("data-selected", "true");
       await expect(page.getByTestId("object-type-Sprite")).toBeVisible();
       // 贴图（v21 起，v22 改叫 `Image`）：实体下的第三个类型
@@ -148,7 +148,7 @@ test.describe("创建与编辑场景对象", () => {
 
       // 生成在场景正中 = 世界原点
       await expect
-        .poll(async () => (await readSceneObjects(request, project, SCENE_A))[0]?.position ?? null)
+        .poll(async () => (await readGameObjects(request, project, SCENE_A))[0]?.position ?? null)
         .toEqual({ x: 0, y: 0 });
 
       // 再开一次：同类类型（精灵）已存在，预填名自动避开重名
@@ -184,10 +184,10 @@ test.describe("创建与编辑场景对象", () => {
       await page.getByTestId("confirm-object").click();
       await expect(page.getByTestId("object-dialog")).toHaveCount(0);
 
-      // 落盘的是精灵自己的 kind `Sprite`（v22 起：以前写的是基类 `SceneObject`），且生成在场景正中
+      // 落盘的是精灵自己的 kind `Sprite`（v22 起：以前写的是基类 `GameObject`），且生成在场景正中
       await expect
         .poll(async () =>
-          (await readSceneObjects(request, project, SCENE_A)).map((object) => ({
+          (await readGameObjects(request, project, SCENE_A)).map((object) => ({
             name: object.name,
             kind: object.kind,
             position: object.position,
@@ -368,8 +368,8 @@ test.describe("创建与编辑场景对象", () => {
     try {
       await openSceneForEdit(page, request, project, [
         sceneDoc(SCENE_A, [
-          sceneObjectDoc("木门"),
-          sceneObjectDoc("机关", "Event"),
+          gameObjectDoc("木门"),
+          gameObjectDoc("机关", "Event"),
           mapObjectDoc(project, SCENE_A),
         ]),
       ]);
@@ -415,7 +415,7 @@ test.describe("创建与编辑场景对象", () => {
     const project = await newProject(request);
     try {
       await openSceneForEdit(page, request, project, [
-        sceneDoc(SCENE_A, [sceneObjectDoc("木门", "Sprite", { x: 0, y: 0 })]),
+        sceneDoc(SCENE_A, [gameObjectDoc("木门", "Sprite", { x: 0, y: 0 })]),
       ]);
 
       // 先把对象挪到「三种视口都点得到」的落点（平板竖屏左边是抽屉，
@@ -443,7 +443,7 @@ test.describe("创建与编辑场景对象", () => {
       // 也满足「比起点大 100 以上」，于是断言立刻读到旧值，y 就成了 0
       await expect
         .poll(async () => {
-          const position = (await readSceneObjects(request, project, SCENE_A))[0]?.position ?? null;
+          const position = (await readGameObjects(request, project, SCENE_A))[0]?.position ?? null;
           return (
             position !== null &&
             position.x - probed.world.x > 100 &&
@@ -452,7 +452,7 @@ test.describe("创建与编辑场景对象", () => {
         })
         .toBe(true);
 
-      const moved = (await readSceneObjects(request, project, SCENE_A))[0]?.position ?? null;
+      const moved = (await readGameObjects(request, project, SCENE_A))[0]?.position ?? null;
       // 轴约束：只有 x 变，y 保持按下时的值
       expect(Math.abs((moved?.y ?? 0) - probed.world.y)).toBeLessThan(2);
     } finally {
@@ -476,12 +476,12 @@ test.describe("创建与编辑场景对象", () => {
       await seedProjectDoc(request, project, [
         sceneDoc(SCENE_A, [
           withComponent(
-            sceneObjectDoc("大红", "Sprite", { x: 0, y: 0 }, { sortingOrder: 5 }),
+            gameObjectDoc("大红", "Sprite", { x: 0, y: 0 }, { sortingOrder: 5 }),
             COMPONENT.spriteLayer,
             { id: bigId, width: 120, height: 120 },
           ),
           withComponent(
-            sceneObjectDoc("小蓝", "Sprite", { x: 0, y: 0 }, { sortingOrder: 1 }),
+            gameObjectDoc("小蓝", "Sprite", { x: 0, y: 0 }, { sortingOrder: 1 }),
             COMPONENT.spriteLayer,
             { id: smallId, width: 120, height: 120 },
           ),
@@ -530,7 +530,7 @@ test.describe("创建与编辑场景对象", () => {
       await page.getByTestId("inspector-object-sorting").blur();
       await expect
         .poll(async () => {
-          const objects = await readSceneObjects(request, project, SCENE_A);
+          const objects = await readGameObjects(request, project, SCENE_A);
           return objects.find((object) => object.name === "小蓝")?.sortingOrder ?? null;
         })
         .toBe(9);
@@ -564,7 +564,7 @@ test.describe("创建与编辑场景对象", () => {
       //    「中键平移了」与「中键被当成左键去点对象」（后者画面基本不变）。
       const center = await worldSamplePoint(page, { x: 0, y: 0 });
       const positionOf = async (name: string): Promise<unknown> =>
-        (await readSceneObjects(request, project, SCENE_A)).find((object) => object.name === name)
+        (await readGameObjects(request, project, SCENE_A)).find((object) => object.name === name)
           ?.position ?? null;
       const before = await positionOf("小蓝");
 
@@ -616,7 +616,7 @@ test.describe("创建与编辑场景对象", () => {
     const project = await newProject(request);
     try {
       await openSceneForEdit(page, request, project, [
-        sceneDoc(SCENE_A, [sceneObjectDoc("木门", "Sprite", { x: 0, y: 0 })]),
+        sceneDoc(SCENE_A, [gameObjectDoc("木门", "Sprite", { x: 0, y: 0 })]),
       ]);
 
       // 挪到一个「三种视口都点得到」的落点（平板竖屏左边是抽屉）
@@ -644,7 +644,7 @@ test.describe("创建与编辑场景对象", () => {
       // 平移只动相机，对象的世界坐标不变（落盘防抖，所以轮询）
       await expect
         .poll(async () => {
-          const position = (await readSceneObjects(request, project, SCENE_A))[0]?.position ?? null;
+          const position = (await readGameObjects(request, project, SCENE_A))[0]?.position ?? null;
           return position === null
             ? null
             : Math.hypot(position.x - probed.world.x, position.y - probed.world.y) < 1;
@@ -668,7 +668,7 @@ test.describe("创建与编辑场景对象", () => {
     const project = await newProject(request);
     try {
       await openSceneForEdit(page, request, project, [
-        sceneDoc(SCENE_A, [sceneObjectDoc("木门", "Sprite", { x: -320, y: 270 })]),
+        sceneDoc(SCENE_A, [gameObjectDoc("木门", "Sprite", { x: -320, y: 270 })]),
       ]);
       await selectObject(page);
 
@@ -746,7 +746,7 @@ test.describe("创建与编辑场景对象", () => {
     const project = await newProject(request);
     try {
       await seedProjectDoc(request, project, [
-        sceneDoc(SCENE_A, [sceneObjectDoc("精灵", "Sprite", { x: 0, y: 0 })]),
+        sceneDoc(SCENE_A, [gameObjectDoc("精灵", "Sprite", { x: 0, y: 0 })]),
       ]);
       // 200×150 的纯绿图：声明尺寸就是它在世界里的尺寸（1 图片像素 = 1 世界像素）
       const imageId = `project:${project}/Assets/images/sprite.png`;
@@ -788,7 +788,7 @@ test.describe("创建与编辑场景对象", () => {
       await expect
         .poll(async () => {
           const file = await readSceneFile(request, project, SCENE_A);
-          const sprite = findSceneObject(file, { kind: "Sprite" });
+          const sprite = findGameObject(file, { kind: "Sprite" });
           return sprite === undefined
             ? null
             : {
@@ -812,7 +812,7 @@ test.describe("创建与编辑场景对象", () => {
     const project = await newProject(request);
     try {
       await openSceneForEdit(page, request, project, [
-        sceneDoc(SCENE_A, [sceneObjectDoc("木门"), mapObjectDoc(project, SCENE_A)]),
+        sceneDoc(SCENE_A, [gameObjectDoc("木门"), mapObjectDoc(project, SCENE_A)]),
       ]);
 
       await page.getByTestId("object-row").filter({ hasText: "木门" }).first().click();
@@ -831,7 +831,7 @@ test.describe("创建与编辑场景对象", () => {
       await expect(fields).not.toContainText("ID");
       await expect(fields).not.toContainText("组件");
       // id 的具体值也不该露出来
-      await expect(fields).not.toContainText(sceneObjectDoc("木门").id as string);
+      await expect(fields).not.toContainText(gameObjectDoc("木门").id as string);
 
       // 列表行：普通对象不再挂「0 组件」，地图那行保留网格尺寸
       const doorRow = page.getByTestId("object-row").filter({ hasText: "木门" }).first();
@@ -889,7 +889,7 @@ test.describe("创建与编辑场景对象", () => {
       // 落盘：位置就是世界坐标（贴图中心）
       await expect
         .poll(async () => {
-          const map = (await readSceneObjects(request, project, SCENE_A)).find(
+          const map = (await readGameObjects(request, project, SCENE_A)).find(
             (object) => object.kind === "Map",
           );
           return map?.position ?? null;
@@ -916,7 +916,7 @@ test.describe("创建与编辑场景对象", () => {
       await page.mouse.up();
 
       await expect
-        .poll(async () => (await readSceneObjects(request, project, SCENE_A))[0]?.position?.x ?? 0)
+        .poll(async () => (await readGameObjects(request, project, SCENE_A))[0]?.position?.x ?? 0)
         .toBeGreaterThan(probed.world.x + 100);
     } finally {
       await dropProject(request, project);
@@ -926,7 +926,7 @@ test.describe("创建与编辑场景对象", () => {
   test("列表里双击改名", async ({ page, request }) => {
     const project = await newProject(request);
     try {
-      await openSceneForEdit(page, request, project, [sceneDoc(SCENE_A, [sceneObjectDoc("木门")])]);
+      await openSceneForEdit(page, request, project, [sceneDoc(SCENE_A, [gameObjectDoc("木门")])]);
 
       // 「双击那一行」现在要点名字那一块：行首多了一枚激活按钮，`.first()` 会点到它
       await page.getByTestId("object-row").first().locator("button", { hasText: "木门" }).dblclick();
@@ -977,7 +977,7 @@ test.describe("创建与编辑场景对象", () => {
 
       // 落盘：active 写进场景文件
       await expect
-        .poll(async () => (await readSceneObjects(request, project, SCENE_A))[0]?.active)
+        .poll(async () => (await readGameObjects(request, project, SCENE_A))[0]?.active)
         .toBe(false);
 
       // 再点一下 = 又显示出来（第二下必须能切回来）
@@ -998,12 +998,12 @@ test.describe("创建与编辑场景对象", () => {
       await seedProjectDoc(request, project, [
         sceneDoc(SCENE_A, [
           withComponent(
-            sceneObjectDoc("绿块", "Sprite", { x: 0, y: 0 }, { sortingOrder: 5 }),
+            gameObjectDoc("绿块", "Sprite", { x: 0, y: 0 }, { sortingOrder: 5 }),
             COMPONENT.spriteLayer,
             { id: greenId, width: 120, height: 120 },
           ),
           withComponent(
-            sceneObjectDoc("蓝块", "Sprite", { x: 0, y: 0 }, { sortingOrder: 1 }),
+            gameObjectDoc("蓝块", "Sprite", { x: 0, y: 0 }, { sortingOrder: 1 }),
             COMPONENT.spriteLayer,
             { id: blueId, width: 120, height: 120 },
           ),
@@ -1050,7 +1050,7 @@ test.describe("创建与编辑场景对象", () => {
       // 落盘：顺序写进场景文件
       await expect
         .poll(async () => {
-          const objects = await readSceneObjects(request, project, SCENE_A);
+          const objects = await readGameObjects(request, project, SCENE_A);
           return objects.find((object) => object.name === "绿块")?.sortingOrder ?? null;
         })
         .toBe(-1);
@@ -1062,7 +1062,7 @@ test.describe("创建与编辑场景对象", () => {
   test("属性面板里改名字与坐标（未放置的对象也能一键落位）", async ({ page, request }) => {
     const project = await newProject(request);
     try {
-      await openSceneForEdit(page, request, project, [sceneDoc(SCENE_A, [sceneObjectDoc("木门")])]);
+      await openSceneForEdit(page, request, project, [sceneDoc(SCENE_A, [gameObjectDoc("木门")])]);
       await page.getByTestId("object-row").first().click();
 
       // 平板下属性是右抽屉，先唤出来
@@ -1081,7 +1081,7 @@ test.describe("创建与编辑场景对象", () => {
       // 只比关心的两个字段（对象上还有 id / kind / components 等）
       await expect
         .poll(async () => {
-          const object = (await readSceneObjects(request, project, SCENE_A))[0];
+          const object = (await readGameObjects(request, project, SCENE_A))[0];
           return object === undefined ? null : { name: object.name, position: object.position };
         })
         .toEqual({ name: "大门", position: { x: -320, y: 270 } });
@@ -1094,7 +1094,7 @@ test.describe("创建与编辑场景对象", () => {
     const project = await newProject(request);
     try {
       await openSceneForEdit(page, request, project, [
-        sceneDoc(SCENE_A, [sceneObjectDoc("木门"), sceneObjectDoc("酒桶")]),
+        sceneDoc(SCENE_A, [gameObjectDoc("木门"), gameObjectDoc("酒桶")]),
       ]);
 
       const rows = page.getByTestId("object-row");
@@ -1119,7 +1119,7 @@ test.describe("创建与编辑场景对象", () => {
   test("复制对象：名字加「副本」、位置错开，并自动落盘", async ({ page, request }) => {
     const project = await newProject(request);
     try {
-      await openSceneForEdit(page, request, project, [sceneDoc(SCENE_A, [sceneObjectDoc("木门")])]);
+      await openSceneForEdit(page, request, project, [sceneDoc(SCENE_A, [gameObjectDoc("木门")])]);
 
       await page.getByTestId("object-row").first().click();
       await page.keyboard.press("Control+d");
@@ -1183,7 +1183,7 @@ test.describe("创建与编辑场景对象", () => {
       await expect(page.getByTestId("object-row")).toHaveCount(0);
 
       await expectPersistedObjectNames(request, project, SCENE_A, ["网格地图"]);
-      expect(await readSceneObjects(request, project, SCENE_B)).toEqual([]);
+      expect(await readGameObjects(request, project, SCENE_B)).toEqual([]);
     } finally {
       await dropProject(request, project);
     }

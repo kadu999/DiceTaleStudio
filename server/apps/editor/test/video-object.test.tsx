@@ -1,14 +1,14 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import {
-  FEATURE_COMPONENT,
+  DEFAULT_SLOT_COMPONENT,
   createMapObject,
-  createSceneObject,
+  createGameObject,
   createSoundObject,
   createTeleportObject,
   videoDataOf,
   withFeature,
-  type SceneObjectDoc,
+  type GameObjectDoc,
   type VideoDataDoc,
 } from "@dts/document";
 import { InspectorPanel } from "../src/panels/inspector/InspectorPanel";
@@ -59,21 +59,21 @@ const TREE: ResourceTreeNode[] = [
   },
 ];
 
-function mapWith(video?: VideoDataDoc, id = "map-1"): SceneObjectDoc {
+function mapWith(video?: VideoDataDoc, id = "map-1"): GameObjectDoc {
   const object = createMapObject({ id, name: "网格地图", image: IMAGE, grid: GRID });
   // 视频是它的 `VideoOverlay` 组件（v19 起）
-  return video === undefined ? object : withFeature(object, FEATURE_COMPONENT.video, video);
+  return video === undefined ? object : withFeature(object, DEFAULT_SLOT_COMPONENT.video, video);
 }
 
-function textureWith(video?: VideoDataDoc, id = "tex-1"): SceneObjectDoc {
-  const object = createSceneObject({ id, name: "贴图", kind: "Image" });
-  return video === undefined ? object : withFeature(object, FEATURE_COMPONENT.video, video);
+function textureWith(video?: VideoDataDoc, id = "tex-1"): GameObjectDoc {
+  const object = createGameObject({ id, name: "贴图", kind: "Image" });
+  return video === undefined ? object : withFeature(object, DEFAULT_SLOT_COMPONENT.video, video);
 }
 
 /** 精灵：**不再是**视频宿主（v21 起视频那一组归贴图）。 */
-function spriteWith(video?: VideoDataDoc, id = "sprite-1"): SceneObjectDoc {
-  const object = createSceneObject({ id, name: "精灵" });
-  return video === undefined ? object : withFeature(object, FEATURE_COMPONENT.video, video);
+function spriteWith(video?: VideoDataDoc, id = "sprite-1"): GameObjectDoc {
+  const object = createGameObject({ id, name: "精灵" });
+  return video === undefined ? object : withFeature(object, DEFAULT_SLOT_COMPONENT.video, video);
 }
 
 /** 一条视频（默认开着、选中、不循环、静音）。 */
@@ -86,7 +86,7 @@ function unpicked(clips: readonly string[]): VideoDataDoc {
   return { enabled: true, autoPlay: false, clips: [...clips], loop: false, audio: false };
 }
 
-function seedScene(objects: SceneObjectDoc[], selected: readonly string[]): void {
+function seedScene(objects: GameObjectDoc[], selected: readonly string[]): void {
   const scenes = [{ name: "Map001", objects }];
   sceneHistory.reset(scenes);
   useEditorStore.setState({
@@ -112,7 +112,7 @@ function seedRuntime(input: { status: RuntimeStatus; clientConnected: boolean })
   }));
 }
 
-const objectOf = (id: string): SceneObjectDoc | undefined =>
+const objectOf = (id: string): GameObjectDoc | undefined =>
   useEditorStore.getState().scenes[0]?.objects.find((item) => item.id === id);
 
 const videoOf = (id: string): VideoDataDoc | undefined => {
@@ -463,7 +463,7 @@ describe("失败原因：都在运行日志里写明", () => {
         // 声音对象（动作对象）与**精灵**都不是视频宿主：
         // 精灵这一条是 v21 的行为变化——视频那一组从精灵挪到了贴图
         createSoundObject({ id: "sound-1", name: "脚步" }),
-        createSceneObject({ id: "sprite-1", name: "精灵" }),
+        createGameObject({ id: "sprite-1", name: "精灵" }),
       ],
       ["map-1"],
     );

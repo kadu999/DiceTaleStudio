@@ -7,16 +7,14 @@ import {
   withMetaSpriteSheet,
 } from "./asset-meta";
 import type { AssetMetaDoc } from "./asset-meta";
-import { COMPONENT_TYPES, FEATURE_COMPONENT_TYPES, componentId, hasLegacyFeatureField } from "./components";
+import { COMPONENT_TYPES, FEATURE_COMPONENT_TYPES, componentId, findComponentType, hasLegacyFeatureField } from "./components";
 import {
-  FEATURE_COMPONENT,
-  LEGACY_IMAGE_COMPONENT,
+  DEFAULT_SLOT_COMPONENT,
   SPRITE_COMPONENT,
-  carriesKind,
-  componentForKind,
-  featureOfComponent,
-} from "./features";
-import { OBJECT_KINDS, type ObjectKind } from "./kinds";
+  componentForSlot,
+  presetOf,
+} from "./presets";
+import { OBJECT_KINDS, type ObjectKind } from "./presets";
 import {
   DOCUMENT_FORMAT_VERSION,
   SOUND_LAYERS,
@@ -226,21 +224,21 @@ function componentSchemaOf<T extends z.ZodTypeAny>(
 }
 
 export const sceneComponentSchema = z.union([
-  componentSchemaOf(FEATURE_COMPONENT.map, mapDataSchema),
+  componentSchemaOf(DEFAULT_SLOT_COMPONENT.map, mapDataSchema),
   // 对象自己显示的图有**两种承载**：贴图 `ImageLayer`、精灵 `SpriteLayer`（同一份 `imageRefSchema`）
-  componentSchemaOf(FEATURE_COMPONENT.image, imageRefSchema),
+  componentSchemaOf(DEFAULT_SLOT_COMPONENT.image, imageRefSchema),
   componentSchemaOf(SPRITE_COMPONENT, imageRefSchema),
-  componentSchemaOf(FEATURE_COMPONENT.sound, soundDataSchema),
-  componentSchemaOf(FEATURE_COMPONENT.teleport, teleportDataSchema),
-  componentSchemaOf(FEATURE_COMPONENT.video, videoDataSchema),
+  componentSchemaOf(DEFAULT_SLOT_COMPONENT.sound, soundDataSchema),
+  componentSchemaOf(DEFAULT_SLOT_COMPONENT.teleport, teleportDataSchema),
+  componentSchemaOf(DEFAULT_SLOT_COMPONENT.video, videoDataSchema),
   permissiveComponentSchema,
 ]);
 
-export const sceneObjectSchema = z.object({
+export const gameObjectSchema = z.object({
   id: z.string().min(1),
   name: z.string(),
-  // 取值就是 `OBJECT_KINDS`（**单一来源**：加/改一个对象类型只动 `kinds.ts`）。
-  // `SceneObject` 是抽象基类，schema 照收（它是合法类型），但编辑器不会写它、老文件由迁移换掉
+  // 取值就是 `OBJECT_KINDS`（**单一来源**：加/改一个对象类型只动 `presets.ts`）。
+  // `GameObject` 是抽象基类，schema 照收（它是合法类型），但编辑器不会写它、老文件由迁移换掉
   kind: z.enum(OBJECT_KINDS),
   // v7 起：是否显示 + 显示顺序。**给默认值**是有意的——v6 及更早的文件没有这两个字段，
   // 「没写」只能是「显示、顺序 0」；写成必填会让所有旧文件直接读不开。
@@ -264,7 +262,7 @@ export const sceneObjectSchema = z.object({
 /** 场景文件内容：**不含场景名**——名字就是文件名，重复存名字迟早会和磁盘上的名字不一致。 */
 export const sceneFileSchema = z.object({
   formatVersion: z.number().int().positive(),
-  objects: z.array(sceneObjectSchema),
+  objects: z.array(gameObjectSchema),
 });
 
 export const itemDefSchema = z.object({
@@ -1096,11 +1094,10 @@ function migrateFeaturesToComponents(raw: Record<string, unknown>): {
       changed = true;
 
       // **按 kind 取组件名**：v20 及更早一个对象只有一种图片组件，v21 起精灵与贴图各一种。
-      // 走 `componentForKind`（唯一入口）而不是 `def.type`，否则老文件里的精灵会被搬进贴图的组件。
-      // 特性字段名从组件名反查（`featureOfComponent`），对 `ImageLayer` / `SpriteLayer`
-      // 两个名字都会回到 `image` 那一条。
-      const feature = featureOfComponent(def.type);
-      const component = componentForKind(feature?.field ?? "image", kindOf(rest));
+      // 走 `componentForSlot`（唯一入口）而不是 `def.type`，否则老文件里的精灵会被搬进贴图的组件。
+      // 槽位从组件定义自报的 `slot` 反查（`findComponentType`），对 `ImageLayer` / `SpriteLayer`
+      // 两个名字都会回到 `image` 那一个槽位。
+      const component = componentForSlot(findComponentType(def.type)?.slot ?? "image", kindOf(rest));
       const already = components.some((item) => isRecord(item) && item.type === component);
       if (!already) {
         components.push({
@@ -1132,28 +1129,33 @@ function kindOf(raw: Record<string, unknown>): ObjectKind {
 }
 
 /**
- * 老 kind 值 → 现行值（v22 改名）。
+ * 不该留在现行文档里的 kind 值 → 现行值。
  *
- * 两个都是纯改名：`Texture`（贴图）→ `Image`、`SceneObject`（那时**所有**场景对象都写它，
- * 编辑器里那一个原型就是「精灵」）→ `Sprite`。
- * 表里只放**确实存在过**的老值，其余（`Portal` 这种手写文件里的怪值）**原样留着**——
+ * 两类：
+ * - v22 改名的老值（`Texture`（贴图）→ `Image`、`SceneObject`（那时**所有**场景对象都写它，
+ *   编辑器里那一个原型就是「精灵」）→ `Sprite`）；
+ * - **抽象基类** `GameObject`：它不落进文档，手写文件真写了就规范化到 `Sprite`
+ *   （与上面老值同一个口径——基类只表达层级归属，对象必须落具体类型）。
+ *
+ * 表里只放**确实有来由**的值，其余（`Portal` 这种手写文件里的怪值）**原样留着**——
  * 让 schema 去报错，而不是替它猜一个新归属。
  */
 const LEGACY_KINDS: Readonly<Record<string, ObjectKind>> = {
   Texture: "Image",
   SceneObject: "Sprite",
+  GameObject: "Sprite",
 };
 
 /**
  * v21 → v22：把两种实体的 kind 改成现行值（贴图 `Texture` → `Image`、精灵 `SceneObject` → `Sprite`）。
  *
- * v22 起 `Sprite` / `Image` 是**基类 `SceneObject` 的子类型**（层级见 `kinds.ts`），
+ * v22 起 `Sprite` / `Image` 是**基类 `GameObject` 的子类型**（层级见 `kinds.ts`），
  * 而基类**不落进文档**——所以老文件里那些 `SceneObject` 必须落到具体类型上：
  * 编辑器那时只有「精灵」这一个原型写这个值，于是它就是精灵 `Sprite`。
  *
  * **必须排在其它迁移前面**：v21 的 `renameSpriteImageComponent` 与 v19 的
  * `migrateFeaturesToComponents` 都按 kind 选图片组件名（`componentForKind("image", kind)`）。
- * 现行路由下 `Sprite` 有自己的 `SpriteLayer`，**基类 `SceneObject` 只落到缺省的 `ImageLayer`**
+ * 现行路由下 `Sprite` 有自己的 `SpriteLayer`，**基类 `GameObject` 只落到缺省的 `ImageLayer`**
  * ——老文件里的精灵一旦没先改名，子图能力就静默消失（图还在，取不到格子）。
  *
  * 幂等：改名成现行值之后表里再也查不到，这一趟什么都不做。
@@ -1183,6 +1185,15 @@ function renameObjectKinds(raw: Record<string, unknown>): {
 }
 
 /**
+ * 上一个格式版本里承载 `image` 的组件名（v20 及更早）。
+ *
+ * 老文件里的精灵与贴图**都**写的是 `TextureRenderer`；v21 起拆成
+ * `SpriteLayer`（精灵）/ `ImageLayer`（贴图），旧名只在迁移里认一次。
+ * （住在本文件而不是 `presets.ts`：它是纯迁移知识，现行结构里没有它的位置。）
+ */
+const LEGACY_IMAGE_COMPONENT: string = "TextureRenderer";
+
+/**
  * v20 → v21：把旧名 `TextureRenderer` 的图片组件按 **kind 路由**换成现行名字。
  *
  * v20 及更早，「对象自己显示的图」只有一种组件（`TextureRenderer`），所有 kind 共用它。
@@ -1190,17 +1201,17 @@ function renameObjectKinds(raw: Record<string, unknown>): {
  * （只显示整张图）——所以老文件里的实例必须改名，否则它会带着旧组件名的形状留下来，
  * 两种形状长期共存。
  *
- * v19 时 `image` 特性的 kinds 是 `["SceneObject","Player","Item","Event"]`（旧编辑器对
+ * v19 时 `image` 特性只开放给 `["SceneObject","Player","Item","Event"]`（旧编辑器对
  * 这些 kind 也开放渲染分组），所以**不止精灵**：Player / Item / Event 上的
- * `TextureRenderer` 同样要改名——目标名一律走 `componentForKind("image", kind)`
- * （与运行期/写盘同一条路由，见 `features.ts`），不在这里另写映射：
+ * `TextureRenderer` 同样要改名——目标名一律走 `componentForSlot("image", kind)`
+ * （与运行期/写盘同一条路由，见 `presets.ts`），不在这里另写映射：
  * 精灵 → `SpriteLayer`，其余 → `ImageLayer`。
- * 不在 image 特性 kinds 里的 kind（地图 / 声音 / …）上的 `TextureRenderer` 不是这条特性
- * 的数据，原样留着让 schema 报错。
+ * 没声明 image 槽位的 kind（地图 / 声音 / …）上的 `TextureRenderer` 不是这份数据，
+ * 原样留着让 schema 报错。
  *
  * **v22 起这条迁移拿到的 kind 已经是具体类型**（`renameObjectKinds` 排在它前面）：老文件里的
- * `SceneObject` 那时已经叫 `Sprite`——所以这里判「带不带 image」也必须走 `carriesKind`
- * （按层级），不能拿 kinds 名单直接 `includes`（名单里是基类 `SceneObject`）。
+ * `SceneObject` 那时已经叫 `Sprite`——所以这里判「带不带 image」看预设表
+ * （`presetOf(kind)?.slots.image`），认不出的 kind 没槽位、一律不碰。
  *
  * 幂等：改名目标是现行名字之后，对象上不再有 `TextureRenderer`，这一趟什么都不做。
  */
@@ -1217,13 +1228,13 @@ function renameSpriteImageComponent(raw: Record<string, unknown>): {
     }
 
     const kind = kindOf(object);
-    // 「这个 kind 带不带 image」按特性表与类型层级判（`carriesKind`），不能在这里
-    // 另写 kind 名单或用 `kinds.includes`，否则新增子类型时迁移容易漏掉
-    if (!carriesKind(FEATURE_COMPONENT.image, kind)) {
+    // 「这个 kind 带不带 image」查预设表的 image 槽位（`presetOf`），不能在这里
+    // 另写 kind 名单，否则新增预设时迁移容易漏掉
+    if (presetOf(kind)?.slots.image === undefined) {
       return object;
     }
 
-    const target = componentForKind("image", kind);
+    const target = componentForSlot("image", kind);
     if (target === LEGACY_IMAGE_COMPONENT) {
       return object;
     }

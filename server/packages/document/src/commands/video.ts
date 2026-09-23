@@ -1,6 +1,12 @@
 // 本文件从 `commands.ts` 拆出（纯搬运，行为不变）：视频（地图 / 精灵）命令。
 import type { Draft } from "immer";
-import { DEFAULT_VIDEO_AUDIO, DEFAULT_VIDEO_AUTO_PLAY, DEFAULT_VIDEO_LOOP, FEATURE_COMPONENT, carriesKind } from "../features";
+import {
+  DEFAULT_SLOT_COMPONENT,
+  DEFAULT_VIDEO_AUDIO,
+  DEFAULT_VIDEO_AUTO_PLAY,
+  DEFAULT_VIDEO_LOOP,
+  supportsVideo,
+} from "../presets";
 // 特性的读写一律走访问器（「数据存在哪个组件里」只有 access.ts 知道）
 import { ensureVideoData, removeFeature, videoDataOf, writeFeature } from "../access";
 import { findObject } from "./shared";
@@ -31,7 +37,7 @@ export function setVideoEnabled(
   }
 
   const video = videoDataOf(object);
-  if (video === undefined && !carriesKind(FEATURE_COMPONENT.video, object.kind)) {
+  if (video === undefined && !supportsVideo(object.kind)) {
     return false;
   }
 
@@ -44,7 +50,7 @@ export function setVideoEnabled(
     // （`map.fog.enabled` 那边能重建是因为它只有 regions；视频字段多，重建会悄悄丢掉选中与名字）
     writeFeature(
       object,
-      FEATURE_COMPONENT.video,
+      DEFAULT_SLOT_COMPONENT.video,
       video === undefined
         ? {
             enabled: true,
@@ -64,10 +70,10 @@ export function setVideoEnabled(
 
   if (video.clips.length === 0) {
     // 没加过视频：没有内容要记了，**组件整个摘掉**（与「从没开过」同义）
-    return removeFeature(object, FEATURE_COMPONENT.video);
+    return removeFeature(object, DEFAULT_SLOT_COMPONENT.video);
   }
 
-  writeFeature(object, FEATURE_COMPONENT.video, { ...video, enabled: false });
+  writeFeature(object, DEFAULT_SLOT_COMPONENT.video, { ...video, enabled: false });
   return true;
 }
 
@@ -112,7 +118,7 @@ export function setVideoClips(
 
   if (next.length === 0 && video.enabled === false) {
     // 关着且一个都不剩：没有内容要记了，**组件整个摘掉**（与「从没开过」同义）
-    removeFeature(object, FEATURE_COMPONENT.video);
+    removeFeature(object, DEFAULT_SLOT_COMPONENT.video);
     return true;
   }
 

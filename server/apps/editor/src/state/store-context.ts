@@ -4,8 +4,8 @@
  * **闭包状态与局部工具**：所有切片共享的那一份（`createStoreContext(set, get)`）。
  */
 import {
-  FEATURE_COMPONENT,
-  carriesKind,
+  DEFAULT_SLOT_COMPONENT,
+  carriesComponent,
   createAssetMetas,
   mapDataOf,
   serializeAssetMetaFile,
@@ -15,10 +15,11 @@ import {
   isVideoEnabled,
   supportsVideo,
   type AssetMetas,
+  type ComponentType,
   type ProjectDoc,
   type ProjectSettingsDoc,
   type SceneDoc,
-  type SceneObjectDoc,
+  type GameObjectDoc,
   type SoundLayer,
 } from "@dts/document";
 import { type Viewport } from "@dts/renderer";
@@ -106,19 +107,19 @@ export interface StoreContext {
     what: string,
   ): string | undefined;
   /** 找出「能揭示战争雾」的对象（找不到就写日志并返回 null）。 */
-  fogTargetOf(objectId: string, what: string): SceneObjectDoc | null;
+  fogTargetOf(objectId: string, what: string): GameObjectDoc | null;
   /** 这个对象**现在**还能揭示雾吗（与 `fogTargetOf` 同口径，但不写日志）。 */
   canRevealFog(objectId: string): boolean;
   /** 找出「能放视频」的对象（找不到就写日志并返回 null）。 */
-  videoTargetOf(objectId: string, what: string): SceneObjectDoc | null;
+  videoTargetOf(objectId: string, what: string): GameObjectDoc | null;
   /** 按 id 找当前场景里的对象。 */
-  findObjectById(objectId: string): SceneObjectDoc | undefined;
+  findObjectById(objectId: string): GameObjectDoc | undefined;
   /** 找一个**带某个特性**的对象（不写日志）。 */
-  objectWithFeature(objectId: string, component: string): SceneObjectDoc | undefined;
+  objectWithFeature(objectId: string, component: string): GameObjectDoc | undefined;
   /** 找一个**声音对象**；找不到就写一条日志。 */
-  requireSoundObject(objectId: string): SceneObjectDoc | undefined;
+  requireSoundObject(objectId: string): GameObjectDoc | undefined;
   /** 找一个**传送阵**；找不到就写一条日志。 */
-  requireTeleportObject(objectId: string): SceneObjectDoc | undefined;
+  requireTeleportObject(objectId: string): GameObjectDoc | undefined;
   /** 把一条视频命令**尽力**发给前端。 */
   deliverVideo(
     kind: "play_video" | "pause_video" | "resume_video" | "stop_video",
@@ -169,7 +170,7 @@ export interface StoreContext {
   /** 标注偏好的落盘（画笔类型 / 大小 / 每类的显示与颜色）。 */
   persistGridPaint(gridPaint: GridPaintState): void;
   /** 当前场景里按 id 找一个对象（画布与变换用）。 */
-  currentObjectOf(id: string): SceneObjectDoc | undefined;
+  currentObjectOf(id: string): GameObjectDoc | undefined;
   /** **切场景的唯一路径**。 */
   switchScene(
     name: string | null,
@@ -541,7 +542,7 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
    * 找不到就写一条**说明原因**的运行日志并返回 null（不静默失败）：
    * 这类失败恰恰说明瞄准的目标不对（对象被删了 / 拿精灵去擦雾 / 开关关着 / 还没指定雾区）。
    */
-  const fogTargetOf = (objectId: string, what: string): SceneObjectDoc | null => {
+  const fogTargetOf = (objectId: string, what: string): GameObjectDoc | null => {
     const object = findSceneByName(get().scenes, get().activeSceneName)?.objects.find(
       (item) => item.id === objectId,
     );
@@ -551,7 +552,7 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
       return null;
     }
 
-    if (!carriesKind(FEATURE_COMPONENT.map, object.kind)) {
+    if (!carriesComponent(DEFAULT_SLOT_COMPONENT.map, object.kind)) {
       pushLog(makeLog("warn", `${what}失败：「${object.name}」不是地图，没有雾层`));
       return null;
     }
@@ -576,7 +577,7 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
       (item) => item.id === objectId,
     );
 
-    if (object === undefined || !carriesKind(FEATURE_COMPONENT.map, object.kind)) {
+    if (object === undefined || !carriesComponent(DEFAULT_SLOT_COMPONENT.map, object.kind)) {
       return false;
     }
 
@@ -590,7 +591,7 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
    * 与 `fogTargetOf` 同一个口径：找不到就写一条**说明原因**的运行日志并返回 null（不静默失败）。
    * 「能放视频」的判据只有 `supportsVideo` 一处（文档命令与校验走的是同一个函数）。
    */
-  const videoTargetOf = (objectId: string, what: string): SceneObjectDoc | null => {
+  const videoTargetOf = (objectId: string, what: string): GameObjectDoc | null => {
     const object = findSceneByName(get().scenes, get().activeSceneName)?.objects.find(
       (item) => item.id === objectId,
     );
@@ -628,23 +629,23 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
   };
 
   /** 按 id 找当前场景里的对象。 */
-  const findObjectById = (objectId: string): SceneObjectDoc | undefined =>
+  const findObjectById = (objectId: string): GameObjectDoc | undefined =>
     findSceneByName(get().scenes, get().activeSceneName)?.objects.find((item) => item.id === objectId);
 
   /**
-   * 找一个**带某个特性**的对象（`component` 用 `FEATURE_COMPONENT.*`）；不写日志。
+   * 找一个**带某个特性**的对象（`component` 用 `DEFAULT_SLOT_COMPONENT.*`）；不写日志。
    *
-   * 判据走**特性表**（`carriesKind`）而不是字面量 `kind === "PlaySound"`：加新对象种类、
-   * 或把某个特性变成能挂在别处的组件时，这里不用回来改。
+   * 判据走**预设表**（`carriesComponent`）而不是字面量 `kind === "PlaySound"`：加新对象预设、
+   * 或把某个槽位换承载组件时，这里不用回来改。
    */
-  const objectWithFeature = (objectId: string, component: string): SceneObjectDoc | undefined => {
+  const objectWithFeature = (objectId: string, component: ComponentType): GameObjectDoc | undefined => {
     const object = findObjectById(objectId);
-    return object !== undefined && carriesKind(component, object.kind) ? object : undefined;
+    return object !== undefined && carriesComponent(component, object.kind) ? object : undefined;
   };
 
   /** 找一个**声音对象**；找不到就写一条日志（给「点下去该有反馈」的动作面板用）。 */
-  const requireSoundObject = (objectId: string): SceneObjectDoc | undefined => {
-    const object = objectWithFeature(objectId, FEATURE_COMPONENT.sound);
+  const requireSoundObject = (objectId: string): GameObjectDoc | undefined => {
+    const object = objectWithFeature(objectId, DEFAULT_SLOT_COMPONENT.sound);
     if (object === undefined) {
       pushLog(makeLog("error", "找不到这个声音对象"));
     }
@@ -653,8 +654,8 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
   };
 
   /** 找一个**传送阵**；找不到就写一条日志（与 `requireSoundObject` 同一个口径）。 */
-  const requireTeleportObject = (objectId: string): SceneObjectDoc | undefined => {
-    const object = objectWithFeature(objectId, FEATURE_COMPONENT.teleport);
+  const requireTeleportObject = (objectId: string): GameObjectDoc | undefined => {
+    const object = objectWithFeature(objectId, DEFAULT_SLOT_COMPONENT.teleport);
     if (object === undefined) {
       pushLog(makeLog("error", "找不到这个传送阵"));
     }
@@ -1128,7 +1129,7 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
   const storedGridPaint = readGridPaintPrefs();
 
   /** 当前场景里按 id 找一个对象（画布与变换用；找不到返回 undefined）。 */
-  const currentObjectOf = (id: string): SceneObjectDoc | undefined =>
+  const currentObjectOf = (id: string): GameObjectDoc | undefined =>
     findSceneByName(get().scenes, get().activeSceneName)?.objects.find((object) => object.id === id);
 
   /**

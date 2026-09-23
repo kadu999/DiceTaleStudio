@@ -21,7 +21,7 @@ import {
   withMetaSpriteSheet,
   type AssetMetaDoc,
 } from "../src/asset-meta";
-import { setObjectImage, createSceneObject } from "../src/commands";
+import { setObjectImage, createGameObject } from "../src/commands";
 import { createEmptyProject, createEmptyScene } from "../src/factory";
 import { parseProjectFile } from "../src/schema";
 import { resolveSceneSprites } from "../src/sprites";
@@ -539,7 +539,7 @@ describe("推送载荷：形状与 v22 及更早一模一样", () => {
   it("只多 spriteGrid、只少 guid（路径换算由 sprites.ts 负责）", () => {
     const scene: SceneDoc = {
       ...createEmptyScene("Map001"),
-      objects: [createSceneObject({ id: "sprite-1", name: "精灵" })],
+      objects: [createGameObject({ id: "sprite-1", name: "精灵" })],
     };
     setObjectImage(scene, "sprite-1", {
       id: IMAGE_ID,

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { createMapObject, createSceneObject, type SceneObjectDoc } from "@dts/document";
+import { createMapObject, createGameObject, type GameObjectDoc } from "@dts/document";
 import { InspectorPanel } from "../src/panels/inspector/InspectorPanel";
 import { sceneHistory, useEditorStore } from "../src/state/editor-store";
 
@@ -18,16 +18,16 @@ import { sceneHistory, useEditorStore } from "../src/state/editor-store";
 const IMAGE = { id: "project:测试/Assets/images/Map001.png", width: 400, height: 300 };
 const GRID = { width: 8, height: 6 };
 
-function mapObject(): SceneObjectDoc {
+function mapObject(): GameObjectDoc {
   return createMapObject({ id: "map-1", name: "网格地图", image: IMAGE, grid: GRID });
 }
 
 /** 贴图（v21 起取代精灵成为视频的另一个宿主）。 */
-function textureObject(): SceneObjectDoc {
-  return createSceneObject({ id: "tex-1", name: "贴图", kind: "Image" });
+function textureObject(): GameObjectDoc {
+  return createGameObject({ id: "tex-1", name: "贴图", kind: "Image" });
 }
 
-function seedScene(objects: SceneObjectDoc[], selected: readonly string[]): void {
+function seedScene(objects: GameObjectDoc[], selected: readonly string[]): void {
   const scenes = [{ name: "Map001", objects }];
   sceneHistory.reset(scenes);
   useEditorStore.setState({
@@ -82,7 +82,7 @@ afterEach(() => {
 
 describe("属性分组：基础 / 渲染 / 区域 / 战争雾 / 视频", () => {
   it("地图对象分五组；精灵只有基础 / 渲染；贴图有基础 / 渲染 / 视频", () => {
-    seedScene([mapObject(), createSceneObject({ id: "sprite", name: "精灵" })], ["map-1"]);
+    seedScene([mapObject(), createGameObject({ id: "sprite", name: "精灵" })], ["map-1"]);
     const { unmount } = render(<InspectorPanel />);
 
     expect(headerOf("basic")).toBeDefined();
@@ -120,7 +120,7 @@ describe("属性分组：基础 / 渲染 / 区域 / 战争雾 / 视频", () => {
     expect(within(groupOf("basic")).queryByText("行序")).toBeNull();
 
     unmount();
-    seedScene([mapObject(), createSceneObject({ id: "sprite", name: "精灵" })], ["sprite"]);
+    seedScene([mapObject(), createGameObject({ id: "sprite", name: "精灵" })], ["sprite"]);
     const spritePanel = render(<InspectorPanel />);
 
     // 精灵也有「渲染」（每个对象都能显示图片），但**没有**「视频」——v21 起视频宿主换成了贴图；
@@ -201,7 +201,7 @@ describe("属性分组：基础 / 渲染 / 区域 / 战争雾 / 视频", () => {
   });
 
   it("换对象时分组回到展开（上一个对象收起的分组不会跟过来）", () => {
-    seedScene([mapObject(), createSceneObject({ id: "sprite", name: "精灵" })], ["map-1"]);
+    seedScene([mapObject(), createGameObject({ id: "sprite", name: "精灵" })], ["map-1"]);
     render(<InspectorPanel />);
 
     fireEvent.click(headerOf("render"));

@@ -7,7 +7,7 @@ import {
   openLeftTab,
   readSceneVideo,
   sceneDoc,
-  sceneObjectDoc,
+  gameObjectDoc,
   seedProjectDoc,
   selectObject,
   solidPng,
@@ -135,7 +135,7 @@ async function seed(
   const mapDoc = mapObjectDoc(project, SCENE, "网格地图", MAP_SIZE, GRID);
   await seedProjectDoc(request, project, [
     // v21 起视频那一组的宿主是**贴图**（`kind: "Image"`），不是精灵——见下面那条用例
-    sceneDoc(SCENE, [mapDoc, sceneObjectDoc(SPRITE, "Image", { x: 0, y: 0 })]),
+    sceneDoc(SCENE, [mapDoc, gameObjectDoc(SPRITE, "Image", { x: 0, y: 0 })]),
   ]);
   await uploadSceneImage(request, project, SCENE, solidPng(4, 4, [60, 60, 60]));
 

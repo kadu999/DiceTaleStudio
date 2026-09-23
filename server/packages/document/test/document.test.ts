@@ -11,7 +11,7 @@ import {
   clearMapCells,
   clearMapFog,
   collectActionIds,
-  createSceneObject,
+  createGameObject,
   findMapObject,
   isMapFogEnabled,
   listMapObjects,
@@ -37,7 +37,7 @@ import {
 } from "../src/commands";
 import { componentOf, imageOf, mapDataOf, objectImage } from "../src/access";
 import { defaultComponentData, findComponentType, isKnownComponentType } from "../src/components";
-import { FEATURE_COMPONENT } from "../src/features";
+import { DEFAULT_SLOT_COMPONENT } from "../src/presets";
 import {
   createEmptyProject,
   createEmptyScene,
@@ -47,7 +47,7 @@ import {
 import { parseProjectDoc, parseProjectFile, parseSceneFile, upgradeRawDocument } from "../src/schema";
 import { DEFAULT_HISTORY_LIMIT } from "../src/history";
 import { formatIssues, hasErrors, validateProject, validateScene } from "../src/validation";
-import { DOCUMENT_FORMAT_VERSION, type MapDataDoc, type ProjectDoc, type SceneDoc, type SceneObjectDoc } from "../src/types";
+import { DOCUMENT_FORMAT_VERSION, type MapDataDoc, type ProjectDoc, type SceneDoc, type GameObjectDoc } from "../src/types";
 
 const IMAGE = { id: "project:C/Assets/images/Map001.png", width: 1920, height: 1080 };
 const GRID = { width: 8, height: 6 };
@@ -91,7 +91,7 @@ function mutate<T>(value: T, recipe: (draft: Draft<T>) => void): T {
  * 用例里只关心其中一两个字段，缺的字段用这里的默认值补上——手写整个对象会在
  * 每次加字段时把所有用例都拖下水。
  */
-function plainObject(id: string, patch: Partial<SceneObjectDoc> = {}): SceneObjectDoc {
+function plainObject(id: string, patch: Partial<GameObjectDoc> = {}): GameObjectDoc {
   return {
     id,
     name: id,
@@ -114,7 +114,7 @@ function plainObject(id: string, patch: Partial<SceneObjectDoc> = {}): SceneObje
  * 组件带着 `undefined` 的 `fog` 之类非 JSON 值，所以先过一遍 `JSON.parse(JSON.stringify(...))`——
  * 与真实读写路径完全一致，也免得手写整份对象（每次加字段都要改一遍）。
  */
-function rawObjects(objects: readonly SceneObjectDoc[]): unknown[] {
+function rawObjects(objects: readonly GameObjectDoc[]): unknown[] {
   return JSON.parse(JSON.stringify(objects)) as unknown[];
 }
 
@@ -738,7 +738,7 @@ describe("对象命令（都在场景上操作）", () => {
   });
 
   it("isPositionableObject 早就不在了；对象图片：地图在 map.image，精灵在 image", () => {
-    const sprite = createSceneObject({
+    const sprite = createGameObject({
       name: "精灵",
       kind: "Sprite",
       position: { x: 0, y: 0 },
@@ -848,7 +848,7 @@ describe("战争雾：手动指定雾区", () => {
   }
 
   /** 场景里那张地图的地图数据（断言用；没有就抛，免得断言在 `undefined` 上空转）。 */
-  function firstMap(file: { readonly objects: readonly SceneObjectDoc[] }): MapDataDoc {
+  function firstMap(file: { readonly objects: readonly GameObjectDoc[] }): MapDataDoc {
     const map = mapDataOf(file.objects[0]!);
     if (map === undefined) {
       throw new Error("场景里没有地图对象");
@@ -1083,7 +1083,7 @@ describe("文档校验", () => {
     const scene = mutate(withMapObject(makeScene()), (draft) => {
       // 手写文件里才会出现的坏值：`mapDataOf` 是只读入口，这里直接改组件 data
       const component = draft.objects[0]?.components.find(
-        (item) => item.type === FEATURE_COMPONENT.map,
+        (item) => item.type === DEFAULT_SLOT_COMPONENT.map,
       );
       if (component !== undefined) {
         // 3 = 两位之和、256 = 越界：编辑器读取时会被 normalizeRegions 丢掉
@@ -1131,7 +1131,7 @@ describe("文档校验", () => {
     // v19 起「带地图数据」= 挂着 GridMap 组件（`kind` 不是 Map 时校验会提醒）
     const scene = mutate(makeScene(), (draft) => {
       addObject(draft, plainObject("odd", { name: "怪对象" }));
-      addComponent(draft, "odd", FEATURE_COMPONENT.map, {
+      addComponent(draft, "odd", DEFAULT_SLOT_COMPONENT.map, {
         id: "odd__GridMap",
         data: {
           image: IMAGE,
@@ -1150,7 +1150,7 @@ describe("文档校验", () => {
   it("地图对象带多余的 object.image 时给警告（贴图只认 map.image）", () => {
     const scene = mutate(withMapObject(makeScene()), (draft) => {
       // 地图不该有 ImageLayer：贴图只认 GridMap 里的那一份（手写文件里可能挂着）
-      addComponent(draft, "map-1", FEATURE_COMPONENT.image, { id: "map-1__ImageLayer" });
+      addComponent(draft, "map-1", DEFAULT_SLOT_COMPONENT.image, { id: "map-1__ImageLayer" });
     });
 
     const issues = validateScene(scene);
@@ -1161,7 +1161,7 @@ describe("文档校验", () => {
   it("地图网格格数与网格尺寸不符时报错", () => {
     const scene = mutate(withMapObject(makeScene()), (draft) => {
       const component = draft.objects[0]?.components.find(
-        (item) => item.type === FEATURE_COMPONENT.map,
+        (item) => item.type === DEFAULT_SLOT_COMPONENT.map,
       );
       if (component !== undefined) {
         component.data.cells = { encoding: "rle", runs: [[1, 3]] };
@@ -1359,7 +1359,7 @@ describe("工程文件 schema 与版本迁移", () => {
       }),
     ) as { objects: Array<{ components: Array<{ type: string; data: { rowOrder: string } }> }> };
     const mapObject = scene.objects[0];
-    const mapComponent = mapObject?.components.find((item) => item.type === FEATURE_COMPONENT.map);
+    const mapComponent = mapObject?.components.find((item) => item.type === DEFAULT_SLOT_COMPONENT.map);
     if (mapComponent !== undefined) {
       mapComponent.data.rowOrder = "top-down";
     }
@@ -1674,7 +1674,7 @@ describe("场景文件 schema", () => {
           // v5 的网格里还留着一个没人读的 `cellSize`，schema 会顺手丢掉它
           components: [
             {
-              ...componentOf(scene.objects[0]!, FEATURE_COMPONENT.map),
+              ...componentOf(scene.objects[0]!, DEFAULT_SLOT_COMPONENT.map),
               data: {
                 ...mapDataOf(scene.objects[0]!),
                 grid: { width: 64, height: 36, cellSize: 1 },
@@ -1748,7 +1748,7 @@ describe("场景文件 schema", () => {
           position: null,
           components: [
             {
-              ...componentOf(map, FEATURE_COMPONENT.map),
+              ...componentOf(map, DEFAULT_SLOT_COMPONENT.map),
               data: { ...mapDataOf(map), rowOrder: "top-down" },
             },
           ],

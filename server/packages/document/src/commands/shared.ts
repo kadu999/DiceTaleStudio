@@ -1,7 +1,7 @@
 // 本文件从 `commands.ts` 拆出（纯搬运，行为不变）：命令模块共用的常量与查找工具。
 import type { Draft } from "immer";
-import { FEATURE_COMPONENT, carriesKind } from "../features";
-import type { ComponentDoc, SceneDoc, SceneObjectDoc } from "../types";
+import { DEFAULT_SLOT_COMPONENT, carriesComponent } from "../presets";
+import type { ComponentDoc, SceneDoc, GameObjectDoc } from "../types";
 
 let idCounter = 0;
 
@@ -24,7 +24,7 @@ export { DEFAULT_OBJECT_SCALE, MAX_OBJECT_SCALE, MIN_OBJECT_SCALE } from "../sca
 /**
  * 角度的归一化区间：`(-180, 180]`（**度**）。
  *
- * 文档里存的是**弧度**（`SceneObjectDoc.rotation`），面板上按**度**编辑——
+ * 文档里存的是**弧度**（`GameObjectDoc.rotation`），面板上按**度**编辑——
  * Unity 的 Inspector 也是度数，策划对着两边看才不会算错。
  * 转 370° 和转 10° 是同一个姿态，归一化后数字才不会失控。
  */
@@ -39,7 +39,7 @@ export function createId(prefix: string): string {
     .slice(2, 6)}`;
 }
 
-export function findObject(scene: Draft<SceneDoc>, objectId: string): Draft<SceneObjectDoc> | undefined {
+export function findObject(scene: Draft<SceneDoc>, objectId: string): Draft<GameObjectDoc> | undefined {
   return scene.objects.find((object) => object.id === objectId);
 }
 
@@ -52,13 +52,13 @@ export function findComponent(
 }
 
 /** 场景里的地图对象（可能没有，也可能有多个；取第一个用于渲染底图）。 */
-export function findMapObject(scene: SceneDoc): SceneObjectDoc | undefined {
-  return scene.objects.find((object) => carriesKind(FEATURE_COMPONENT.map, object.kind));
+export function findMapObject(scene: SceneDoc): GameObjectDoc | undefined {
+  return scene.objects.find((object) => carriesComponent(DEFAULT_SLOT_COMPONENT.map, object.kind));
 }
 
 /** 场景里所有地图对象。 */
-export function listMapObjects(scene: SceneDoc): SceneObjectDoc[] {
-  return scene.objects.filter((object) => carriesKind(FEATURE_COMPONENT.map, object.kind));
+export function listMapObjects(scene: SceneDoc): GameObjectDoc[] {
+  return scene.objects.filter((object) => carriesComponent(DEFAULT_SLOT_COMPONENT.map, object.kind));
 }
 
 /** 收集某场景内全部动作 id（校验唯一性用）。 */

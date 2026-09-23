@@ -11,7 +11,7 @@ import {
   openProject,
   readSceneTeleport,
   sceneDoc,
-  sceneObjectDoc,
+  gameObjectDoc,
   seedProjectDoc,
   solidPng,
   uploadSceneImage,
@@ -208,12 +208,12 @@ test.describe("动作对象：传送阵", () => {
       await seedProjectDoc(request, project, [
         sceneDoc(SCENE, [
           withComponent(
-            sceneObjectDoc("死名字", "Teleport", { x: 0, y: 0 }, { id: "teleport_dead" }),
+            gameObjectDoc("死名字", "Teleport", { x: 0, y: 0 }, { id: "teleport_dead" }),
             COMPONENT.teleport,
             { targets: ["Map999"], picked: "Map999" },
           ),
           withComponent(
-            sceneObjectDoc("自指", "Teleport", { x: 120, y: 0 }, { id: "teleport_self" }),
+            gameObjectDoc("自指", "Teleport", { x: 120, y: 0 }, { id: "teleport_self" }),
             COMPONENT.teleport,
             { targets: [SCENE], picked: SCENE },
           ),

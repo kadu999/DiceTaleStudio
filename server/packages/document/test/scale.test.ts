@@ -16,7 +16,7 @@ import {
   setObjectScaleAxes,
   validateScene,
   type SceneDoc,
-  type SceneObjectDoc,
+  type GameObjectDoc,
 } from "../src";
 import { formatIssues } from "../src/validation";
 
@@ -34,7 +34,7 @@ function scene(): SceneDoc {
 }
 
 /** 一个只有 id 的普通对象（其余字段用默认值，见 `plainObject` 的同一套理由）。 */
-function object(id = "door", patch: Partial<SceneObjectDoc> = {}): SceneObjectDoc {
+function object(id = "door", patch: Partial<GameObjectDoc> = {}): GameObjectDoc {
   return {
     id,
     name: id,
@@ -50,9 +50,9 @@ function object(id = "door", patch: Partial<SceneObjectDoc> = {}): SceneObjectDo
   };
 }
 
-function withObject(target: SceneDoc, value: SceneObjectDoc): SceneDoc {
+function withObject(target: SceneDoc, value: GameObjectDoc): SceneDoc {
   return produce(target, (draft) => {
-    draft.objects.push(value as Draft<SceneObjectDoc>);
+    draft.objects.push(value as Draft<GameObjectDoc>);
   });
 }
 
@@ -236,8 +236,8 @@ describe("v10 → v11 迁移", () => {
   it("老文件读进来仍然等比；回写只因为**版本号**低于当前，不是因为缺单轴字段", () => {
     const parsed = parseSceneFile(v10File());
 
-    expect(effectiveScaleX(parsed.file.objects[0] as SceneObjectDoc)).toBe(2);
-    expect(effectiveScaleY(parsed.file.objects[0] as SceneObjectDoc)).toBe(2);
+    expect(effectiveScaleX(parsed.file.objects[0] as GameObjectDoc)).toBe(2);
+    expect(effectiveScaleY(parsed.file.objects[0] as GameObjectDoc)).toBe(2);
     // v10 低于当前版本 → 会回写一次把版本号升上来。**单轴字段本身不是回写理由**：
     // 它是可选字段，「没写」是合法且有意义的写法
     expect(parsed.needsRewrite).toBe(true);
@@ -262,7 +262,7 @@ describe("v10 → v11 迁移", () => {
     objects[0] = { ...objects[0], scale: 1, scaleX: 4, scaleY: 0.25 };
 
     const parsed = parseSceneFile({ ...file, formatVersion: DOCUMENT_FORMAT_VERSION });
-    const object = parsed.file.objects[0] as SceneObjectDoc;
+    const object = parsed.file.objects[0] as GameObjectDoc;
 
     expect(effectiveScaleX(object)).toBe(4);
     expect(effectiveScaleY(object)).toBe(0.25);

@@ -17,7 +17,7 @@ import {
   DOCUMENT_FORMAT_VERSION,
   type ProjectDoc,
   type SceneDoc,
-  type SceneObjectDoc,
+  type GameObjectDoc,
 } from "../src/types";
 
 /**
@@ -232,7 +232,7 @@ describe("校验", () => {
       objects: [
         {
           ...createSoundObject({ name: "酒馆 BGM", id: "s1", clips: [CLIP_A], layer: "bgm" }),
-        } as SceneObjectDoc,
+        } as GameObjectDoc,
       ],
     };
 

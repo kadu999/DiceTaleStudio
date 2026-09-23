@@ -17,8 +17,8 @@
  */
 import {
   createAssetMeta,
-  setObjectImage as setSceneObjectImage,
-  setObjectSprite as setSceneObjectSprite,
+  setObjectImage as setGameObjectImage,
+  setObjectSprite as setGameObjectSprite,
   withMetaSpriteSheet,
   withMetaSpriteSettings,
   type ImageRef,
@@ -84,7 +84,7 @@ export function createSpriteSlice(
 
         // 整图时**显式不带 `sprite`**（换回整图就是这一条）；带格子时由 `setObjectImage`
         // 原样写进去（它「给什么用什么」，见文档命令）
-        setSceneObjectImage(scene, objectId, sprite === null ? ref : { ...ref, sprite });
+        setGameObjectImage(scene, objectId, sprite === null ? ref : { ...ref, sprite });
       });
     },
 
@@ -99,7 +99,7 @@ export function createSpriteSlice(
       const changed = get().applyScenes(label, (draft) => {
         const scene = sceneOf(draft);
         if (scene !== undefined) {
-          setSceneObjectSprite(scene, objectId, sprite);
+          setGameObjectSprite(scene, objectId, sprite);
         }
       });
 

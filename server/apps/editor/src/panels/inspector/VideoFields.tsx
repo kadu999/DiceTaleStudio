@@ -2,7 +2,7 @@ import { assetDisplayName } from "../asset-info";
 import { assetDisplayPath, findAssetByReference } from "../asset-picker";
 import { useEditorStore, type EditorMode } from "../../state/editor-store";
 import type { RuntimeStatus } from "../../services/runtime-client";
-import { isVideoEnabled, videoDataOf, type SceneObjectDoc } from "@dts/document";
+import { isVideoEnabled, videoDataOf, type GameObjectDoc } from "@dts/document";
 import {
   FieldRow,
   PLAYBACK_BUTTON_ACTIVE_CLASS,
@@ -73,7 +73,7 @@ function formatHint(path: string): string | undefined {
     : undefined;
 }
 
-export function VideoFields({ object }: { readonly object: SceneObjectDoc }): React.JSX.Element {
+export function VideoFields({ object }: { readonly object: GameObjectDoc }): React.JSX.Element {
   const tree = useEditorStore((state) => state.project.tree);
   const assetMetas = useEditorStore((state) => state.assetMetas);
   const playback = useEditorStore((state) => state.videoPlayback);

@@ -1,13 +1,13 @@
 import { useState } from "react";
 import {
   DEFAULT_SOUND_LAYER,
-  FEATURE_COMPONENT,
+  DEFAULT_SLOT_COMPONENT,
   SOUND_LAYER_LABELS,
-  carriesKind,
+  carriesComponent,
   mapDataOf,
   soundDataOf,
   teleportDataOf,
-  type SceneObjectDoc,
+  type GameObjectDoc,
 } from "@dts/document";
 import { useEditorStore } from "../../state/editor-store";
 import { EmptyState } from "../EmptyState";
@@ -227,7 +227,7 @@ function CategoryButton({
 }
 
 interface ObjectRowProps {
-  readonly object: SceneObjectDoc;
+  readonly object: GameObjectDoc;
   readonly selected: boolean;
   readonly renaming: boolean;
   readonly renameDraft: string;
@@ -261,11 +261,11 @@ function ObjectRow({
   // 声音对象（动作对象）和实体一样摆在世界里，行尾显示它落在**哪一层**——那是这条声音
   // 除了名字之外最该一眼看到的东西。
   // 「未放置」是额外的一枚标记（位置为 null，只可能来自手写文件），所以不能顶掉这些信息
-  const hint = carriesKind(FEATURE_COMPONENT.map, object.kind)
+  const hint = carriesComponent(DEFAULT_SLOT_COMPONENT.map, object.kind)
     ? `${mapDataOf(object)?.grid.width ?? 0}×${mapDataOf(object)?.grid.height ?? 0}`
-    : carriesKind(FEATURE_COMPONENT.sound, object.kind)
+    : carriesComponent(DEFAULT_SLOT_COMPONENT.sound, object.kind)
       ? SOUND_LAYER_LABELS[soundDataOf(object)?.layer ?? DEFAULT_SOUND_LAYER]
-      : carriesKind(FEATURE_COMPONENT.teleport, object.kind)
+      : carriesComponent(DEFAULT_SLOT_COMPONENT.teleport, object.kind)
         ? // 传送阵：行尾写它当前会把人送到哪张图（没加 / 没选就明说，别留白）
           (teleportDataOf(object)?.picked ??
           (teleportDataOf(object)?.targets.length === 0 ? "未加目标" : "未选目标"))

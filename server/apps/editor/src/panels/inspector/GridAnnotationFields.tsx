@@ -1,4 +1,4 @@
-import { mapDataOf, type SceneObjectDoc } from "@dts/document";
+import { mapDataOf, type GameObjectDoc } from "@dts/document";
 import { useEditorStore } from "../../state/editor-store";
 import { FieldRow } from "./fields";
 
@@ -12,7 +12,7 @@ import { FieldRow } from "./fields";
 export function GridAnnotationFields({
   object,
 }: {
-  readonly object: SceneObjectDoc;
+  readonly object: GameObjectDoc;
 }): React.JSX.Element {
   const openGridEditor = useEditorStore((state) => state.openGridEditor);
 

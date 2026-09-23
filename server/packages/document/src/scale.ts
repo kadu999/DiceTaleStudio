@@ -1,4 +1,4 @@
-import type { SceneObjectDoc } from "./types";
+import type { GameObjectDoc } from "./types";
 
 /**
  * 对象缩放的**单一事实来源**：等比 `scale` 与单轴 `scaleX` / `scaleY` 的关系。
@@ -66,12 +66,12 @@ function axisScale(axis: number | undefined, uniform: number): number {
 }
 
 /** 对象在 **X 轴**上实际生效的缩放值（画布宽度、拾取矩形、手柄都用它）。 */
-export function effectiveScaleX(object: SceneObjectDoc): number {
+export function effectiveScaleX(object: GameObjectDoc): number {
   return axisScale(object.scaleX, object.scale);
 }
 
 /** 对象在 **Y 轴**上实际生效的缩放值（画布高度、拾取矩形、手柄都用它）。 */
-export function effectiveScaleY(object: SceneObjectDoc): number {
+export function effectiveScaleY(object: GameObjectDoc): number {
   return axisScale(object.scaleY, object.scale);
 }
 
@@ -93,7 +93,7 @@ export function isUniformScale(x: number, y: number): boolean {
  *
  * 返回新对象（不改原对象）：文档是不可变数据，且调用方常常只需要一个投影。
  */
-export function collapseScale(object: SceneObjectDoc): SceneObjectDoc {
+export function collapseScale(object: GameObjectDoc): GameObjectDoc {
   const x = effectiveScaleX(object);
   const y = effectiveScaleY(object);
   const alreadyUniform = object.scaleX === undefined && object.scaleY === undefined;

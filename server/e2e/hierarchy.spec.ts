@@ -5,7 +5,7 @@ import {
   componentInstanceOf,
   dropProject,
   enterEditor,
-  findSceneObject,
+  findGameObject,
   mapObjectDoc,
   newProject,
   openLeftTab,
@@ -14,7 +14,7 @@ import {
   readSceneMap,
   readSceneSound,
   sceneDoc,
-  sceneObjectDoc,
+  gameObjectDoc,
   seedProjectDoc,
   startupDialogMode,
   waitForBootstrap,
@@ -357,8 +357,8 @@ test.describe("场景数据", () => {
             return null;
           }
 
-          const mapObject = findSceneObject(file, { objectId: "map_01" });
-          const soundObject = findSceneObject(file, { objectId: "step_01" });
+          const mapObject = findGameObject(file, { objectId: "map_01" });
+          const soundObject = findGameObject(file, { objectId: "step_01" });
           return {
             version: file.formatVersion,
             gridMap: componentInstanceOf(mapObject, COMPONENT.gridMap),
@@ -447,7 +447,7 @@ test.describe("场景对象", () => {
   test("对象挂在场景上：没有地图对象也照样有对象", async ({ page, request }) => {
     const project = await newProject(request);
     try {
-      await openSeededProject(page, request, project, [sceneDoc(SCENE_A, [sceneObjectDoc("木门")])]);
+      await openSeededProject(page, request, project, [sceneDoc(SCENE_A, [gameObjectDoc("木门")])]);
       await openLeftTab(page, "hierarchy");
 
       await expect(page.getByTestId("object-row").filter({ hasText: "木门" })).toBeVisible();

@@ -9,7 +9,7 @@ import {
   openLeftTab,
   openProject,
   sceneDoc,
-  sceneObjectDoc,
+  gameObjectDoc,
   seedProjectDoc,
   selectObject,
   solidPng,
@@ -63,7 +63,7 @@ test.describe("对象缩放", () => {
       await seedProjectDoc(request, project, [
         sceneDoc(SCENE, [
           withComponent(
-            sceneObjectDoc("精灵", "Sprite", { x: 0, y: 0 }),
+            gameObjectDoc("精灵", "Sprite", { x: 0, y: 0 }),
             COMPONENT.spriteLayer,
             { id: `project:${project}/${IMAGE_PATH}`, width: SIZE.width, height: SIZE.height },
           ),

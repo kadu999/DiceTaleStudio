@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { createEmptyScene, createMapObject, createSceneObject, type SceneObjectDoc } from "@dts/document";
+import { createEmptyScene, createMapObject, createGameObject, type GameObjectDoc } from "@dts/document";
 import { HierarchyPanel } from "../src/panels/hierarchy/HierarchyPanel";
 import { InspectorPanel } from "../src/panels/inspector/InspectorPanel";
 import { sceneHistory, useEditorStore } from "../src/state/editor-store";
@@ -16,7 +16,7 @@ import { sceneHistory, useEditorStore } from "../src/state/editor-store";
 
 const IMAGE = { id: "project:测试/Assets/images/Map001.png", width: 400, height: 300 };
 
-function seedScene(objects: SceneObjectDoc[], selected: readonly string[] = []): void {
+function seedScene(objects: GameObjectDoc[], selected: readonly string[] = []): void {
   const scenes = [{ ...createEmptyScene("Map001"), objects }];
   sceneHistory.reset(scenes);
   useEditorStore.setState({
@@ -28,7 +28,7 @@ function seedScene(objects: SceneObjectDoc[], selected: readonly string[] = []):
   });
 }
 
-const objectOf = (id: string): SceneObjectDoc | undefined =>
+const objectOf = (id: string): GameObjectDoc | undefined =>
   useEditorStore.getState().scenes[0]?.objects.find((item) => item.id === id);
 
 afterEach(() => {
@@ -41,7 +41,7 @@ describe("列表里的锁按钮", () => {
   it("每个对象都有一枚锁，默认不锁；点一下锁上、再点解开", () => {
     seedScene([
       createMapObject({ id: "map-1", name: "网格地图", image: IMAGE, grid: { width: 8, height: 6 } }),
-      createSceneObject({ id: "door", name: "木门", position: { x: 0, y: 0 } }),
+      createGameObject({ id: "door", name: "木门", position: { x: 0, y: 0 } }),
     ]);
     render(<HierarchyPanel />);
 
@@ -63,7 +63,7 @@ describe("列表里的锁按钮", () => {
   });
 
   it("锁上不动别的字段（位置 / 激活 / 缩放照旧）", () => {
-    seedScene([createSceneObject({ id: "door", name: "木门", position: { x: 12, y: -34 } })]);
+    seedScene([createGameObject({ id: "door", name: "木门", position: { x: 12, y: -34 } })]);
     render(<HierarchyPanel />);
 
     screen.getByTestId("object-lock-toggle").click();
@@ -78,7 +78,7 @@ describe("列表里的锁按钮", () => {
 
 describe("锁住 = 不能移动", () => {
   it("moveObject 对锁住的对象直接不生效（画布拖动与坐标输入都走它）", () => {
-    seedScene([createSceneObject({ id: "door", name: "木门", position: { x: 0, y: 0 } })]);
+    seedScene([createGameObject({ id: "door", name: "木门", position: { x: 0, y: 0 } })]);
 
     // 未锁：能移动
     useEditorStore.getState().moveObject("door", { x: 100, y: 50 });
@@ -108,7 +108,7 @@ describe("锁住 = 不能移动", () => {
 
 describe("属性面板里的锁定", () => {
   it("勾选框能锁 / 解锁，并禁用世界坐标输入", () => {
-    seedScene([createSceneObject({ id: "door", name: "木门", position: { x: 7, y: 8 } })], ["door"]);
+    seedScene([createGameObject({ id: "door", name: "木门", position: { x: 7, y: 8 } })], ["door"]);
     render(<InspectorPanel />);
 
     const locked = screen.getByTestId("inspector-object-locked") as HTMLInputElement;

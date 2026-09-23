@@ -3,7 +3,7 @@ import {
   OBJECT_SOUND_LAYERS,
   SOUND_LAYER_LABELS,
   soundDataOf,
-  type SceneObjectDoc,
+  type GameObjectDoc,
   type SoundLayer,
 } from "@dts/document";
 import { useEditorStore, type EditorMode } from "../../state/editor-store";
@@ -72,7 +72,7 @@ export function soundDeliveryHint(input: {
   return undefined;
 }
 
-export function SoundFields({ object }: { readonly object: SceneObjectDoc }): React.JSX.Element {
+export function SoundFields({ object }: { readonly object: GameObjectDoc }): React.JSX.Element {
   const audioMetas = useEditorStore((state) => state.assetMetaTable);
   const assetMetas = useEditorStore((state) => state.assetMetas);
   const scenes = useEditorStore((state) => state.scenes);

@@ -6,34 +6,33 @@ import {
   componentSchema,
   sceneComponentSchema,
   sceneSchema,
-  type SceneObjectPayload,
+  type GameObjectPayload,
 } from "@dts/protocol";
 import {
   ASSET_META_FORMAT_VERSION,
   COMPONENT_TYPES,
+  DEFAULT_SLOT_COMPONENT,
   DOCUMENT_FORMAT_VERSION,
-  FEATURE_COMPONENT,
   FEATURE_COMPONENT_TYPES,
-  FEATURE_COMPONENTS,
-  OBJECT_FEATURES,
+  OBJECT_PRESETS,
+  SLOT_COMPONENT_TYPES,
   SPRITE_COMPONENT,
   SPRITE_SHEET_MAX,
   componentId,
   createAssetMetas,
   createEmptyScene,
   createMapObject,
-  createSceneObject,
+  createGameObject,
   createSoundObject,
   createTeleportObject,
   hasErrors,
   imageOf,
-  kindsCarrying,
   parseSceneFile,
   resolveSceneSprites,
   validateScene,
   withFeature,
   type ImageRef,
-  type SceneObjectDoc,
+  type GameObjectDoc,
 } from "@dts/document";
 
 /**
@@ -46,51 +45,45 @@ import {
  */
 describe("契约：协议与文档的组件口径一致", () => {
   it("组件类型名逐字一致（改一处忘了另一处会在这里炸）", () => {
-    expect(COMPONENT_TYPE.map).toBe(FEATURE_COMPONENT.map);
-    expect(COMPONENT_TYPE.image).toBe(FEATURE_COMPONENT.image);
+    expect(COMPONENT_TYPE.map).toBe(DEFAULT_SLOT_COMPONENT.map);
+    expect(COMPONENT_TYPE.image).toBe(DEFAULT_SLOT_COMPONENT.image);
     // 「对象自己显示的图」有两种承载：贴图 `ImageLayer` / 精灵 `SpriteLayer`
     expect(COMPONENT_TYPE.sprite).toBe(SPRITE_COMPONENT);
-    expect(COMPONENT_TYPE.sound).toBe(FEATURE_COMPONENT.sound);
-    expect(COMPONENT_TYPE.teleport).toBe(FEATURE_COMPONENT.teleport);
-    expect(COMPONENT_TYPE.video).toBe(FEATURE_COMPONENT.video);
+    expect(COMPONENT_TYPE.sound).toBe(DEFAULT_SLOT_COMPONENT.sound);
+    expect(COMPONENT_TYPE.teleport).toBe(DEFAULT_SLOT_COMPONENT.teleport);
+    expect(COMPONENT_TYPE.video).toBe(DEFAULT_SLOT_COMPONENT.video);
   });
 
-  it("每个特性组件在文档注册表里都有定义，且能挂的 kind 与 OBJECT_FEATURES 一致", () => {
-    for (const def of OBJECT_FEATURES) {
-      const registered = COMPONENT_TYPES.find((item) => item.type === def.component);
-      // 注册表里缺组件时这里会失败（消息里带上是谁）
-      expect({ missing: registered === undefined, component: def.component }).toEqual({
-        missing: false,
-        component: def.component,
+  it("每个槽位承载组件都在注册表里有定义，且 slot 与 legacyField 一一对应", () => {
+    // 预设表允许的全部承载组件（含精灵专属 `SpriteLayer`）都必须在注册表里
+    // （消息里带上是谁）——只遍历缺省承载会漏掉它
+    for (const preset of Object.values(OBJECT_PRESETS)) {
+      for (const component of Object.values(preset.slots)) {
+        expect({
+          missing: !COMPONENT_TYPES.some((item) => item.type === component),
+          component,
+        }).toEqual({ missing: false, component });
+      }
+    }
+
+    // 带 slot 的组件（对象能力组件）**恰好**是那 6 种从对象特性提升上来的：
+    // `legacyField`（v19 之前住的扁平字段名）与自报的 `slot` 一一对应，
+    // 既不能漏（老文件的字段搬不动），也不能多（把没有历史字段的组件当成迁移目标）
+    for (const def of SLOT_COMPONENT_TYPES) {
+      expect({ component: def.type, legacyField: def.legacyField }).toEqual({
+        component: def.type,
+        legacyField: def.slot,
       });
-      expect(registered?.legacyField).toBe(def.field);
-      // kinds 由注册表按「缺省组件剔掉被路由走的 kind」取回来（image 特性的 SceneObject
-      // 归 SpriteLayer，缺省 ImageLayer 那份不再含它），这里用同一入口反向确认没有走偏
-      expect([...(registered?.kinds ?? [])].sort()).toEqual([...kindsCarrying(def.component)].sort());
+      expect(FEATURE_COMPONENT_TYPES).toContain(def);
     }
 
-    // `FEATURE_COMPONENTS` 还包含 **kind 专属** 的组件名（精灵的 `SpriteLayer`），
-    // 它们同样必须在注册表里——只遍历 `OBJECT_FEATURES` 的 `component` 会漏掉它
-    for (const component of FEATURE_COMPONENTS) {
-      expect({
-        missing: !COMPONENT_TYPES.some((item) => item.type === component),
-        component,
-      }).toEqual({ missing: false, component });
-    }
-
-    // `FEATURE_COMPONENT_TYPES`（迁移按它把旧的扁平字段搬成组件）**恰好**是那些声明了
-    // `legacyField` 的特性组件：既不能漏（老文件的字段搬不动），也不能多
-    // （把一个没有历史字段的组件当成迁移目标）。注意它比 `OBJECT_FEATURES` 多一条：
-    // `image` 有两种承载（`ImageLayer` + `SpriteLayer`），两个都带 `legacyField: "image"`。
-    const featureTypesWithLegacy = FEATURE_COMPONENTS.filter(
-      (component) =>
-        COMPONENT_TYPES.find((item) => item.type === component)?.legacyField !== undefined,
-    ).sort();
-    expect(FEATURE_COMPONENT_TYPES.map((def) => def.type).sort()).toEqual(featureTypesWithLegacy);
+    expect(SLOT_COMPONENT_TYPES.map((def) => def.type).sort()).toEqual(
+      FEATURE_COMPONENT_TYPES.map((def) => def.type).sort(),
+    );
   });
 
   it("文档校验接受的场景，协议侧也解析得开（真跑一遍工厂 → 校验 → 协议）", () => {
-    const objects: SceneObjectDoc[] = [
+    const objects: GameObjectDoc[] = [
       createMapObject({
         name: "地图",
         image: { id: "project:P/Assets/images/场景1.png", width: 1920, height: 1080 },
@@ -125,7 +118,7 @@ describe("契约：协议与文档的组件口径一致", () => {
         rotation: object.rotation,
         scale: object.scale,
         components: object.components,
-      } as SceneObjectPayload;
+      } as GameObjectPayload;
 
       expect(sceneComponentSchema.safeParse(withComponent.components[0]).success).toBe(true);
     }
@@ -168,7 +161,7 @@ describe("契约：协议与文档的组件口径一致", () => {
     const scene = {
       ...createEmptyScene("场景1"),
       objects: [
-        withFeature<ImageRef>(createSceneObject({ id: "sprite_1", name: "精灵" }), SPRITE_COMPONENT, {
+        withFeature<ImageRef>(createGameObject({ id: "sprite_1", name: "精灵" }), SPRITE_COMPONENT, {
           id: imageId,
           width: 64,
           height: 64,

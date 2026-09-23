@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { nextObjectName, type SceneObjectDoc } from "@dts/document";
+import { nextObjectName, type GameObjectDoc } from "@dts/document";
 import { kindMarkerColor } from "@dts/renderer";
 import { useEditorStore } from "../state/editor-store";
 import {
@@ -39,7 +39,7 @@ export function ObjectDialog({ open, onClose }: ObjectDialogProps): React.JSX.El
   const options = creatableObjects(category);
 
   /** 当前场景里的对象（名字预填要拿它避开重名）。 */
-  const sceneObjects = (): readonly SceneObjectDoc[] => {
+  const gameObjects = (): readonly GameObjectDoc[] => {
     const state = useEditorStore.getState();
     return state.scenes.find((scene) => scene.name === state.activeSceneName)?.objects ?? [];
   };
@@ -47,7 +47,7 @@ export function ObjectDialog({ open, onClose }: ObjectDialogProps): React.JSX.El
   /** 选中某个类型：预填名按**它自己的展示名**（精灵 → 「精灵 2」、贴图 → 「贴图 2」）。 */
   const chooseObject = (type: ObjectTypeDef): void => {
     setSelected(type);
-    setName(nextObjectName(sceneObjects(), type.label));
+    setName(nextObjectName(gameObjects(), type.label));
     setError("");
   };
 
@@ -60,7 +60,7 @@ export function ObjectDialog({ open, onClose }: ObjectDialogProps): React.JSX.El
     const first = creatableObjects(DEFAULT_CATEGORY)[0];
     setCategory(DEFAULT_CATEGORY);
     setSelected(first ?? null);
-    setName(first === undefined ? "" : nextObjectName(sceneObjects(), first.label));
+    setName(first === undefined ? "" : nextObjectName(gameObjects(), first.label));
     setError("");
   }, [open]);
 
@@ -68,7 +68,7 @@ export function ObjectDialog({ open, onClose }: ObjectDialogProps): React.JSX.El
     const first = creatableObjects(next)[0];
     setCategory(next);
     setSelected(first ?? null);
-    setName(first === undefined ? "" : nextObjectName(sceneObjects(), first.label));
+    setName(first === undefined ? "" : nextObjectName(gameObjects(), first.label));
     setError("");
   };
 

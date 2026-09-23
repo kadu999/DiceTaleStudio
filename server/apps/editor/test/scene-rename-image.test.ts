@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
-  FEATURE_COMPONENT,
+  DEFAULT_SLOT_COMPONENT,
   SPRITE_COMPONENT,
   componentOf,
   createMapObject,
-  createSceneObject,
+  createGameObject,
   mapDataOf,
   withFeature,
   type SceneFileDoc,
-  type SceneObjectDoc,
+  type GameObjectDoc,
 } from "@dts/document";
 import { withRenamedSceneImage } from "../src/state/editor-store";
 
@@ -26,7 +26,7 @@ import { withRenamedSceneImage } from "../src/state/editor-store";
 
 const MAP_IMAGE = "project:测试/Assets/images/旧名.png";
 
-function mapFile(): SceneObjectDoc {
+function mapFile(): GameObjectDoc {
   return createMapObject({
     id: "map-1",
     name: "地图",
@@ -35,7 +35,7 @@ function mapFile(): SceneObjectDoc {
   });
 }
 
-function file(objects: readonly SceneObjectDoc[]): SceneFileDoc {
+function file(objects: readonly GameObjectDoc[]): SceneFileDoc {
   return { formatVersion: 19, objects: [...objects] };
 }
 
@@ -52,14 +52,14 @@ describe("重命名场景：同名贴图跟着改指", () => {
     expect((object as unknown as Record<string, unknown>).map).toBeUndefined();
     // 组件实例还是原来那一个（id 不变、只有 data 换了）
     expect(object.components).toHaveLength(1);
-    expect(componentOf(object, FEATURE_COMPONENT.map)?.id).toBe("map-1__GridMap");
+    expect(componentOf(object, DEFAULT_SLOT_COMPONENT.map)?.id).toBe("map-1__GridMap");
     // 网格数据一个字节都没动
     expect(mapDataOf(object)?.cells.runs).toEqual([[0, 48]]);
   });
 
   it("精灵的图片不动（那是用户明确挑的文件，哪怕它和场景同名）", () => {
     const sprite = withFeature(
-      createSceneObject({ id: "sprite-1", name: "精灵" }),
+      createGameObject({ id: "sprite-1", name: "精灵" }),
       SPRITE_COMPONENT,
       { id: MAP_IMAGE, width: 100, height: 100 },
     );
@@ -71,7 +71,7 @@ describe("重命名场景：同名贴图跟着改指", () => {
   });
 
   it("地图用的是别的贴图（手工指定的）时不动它", () => {
-    const handPicked = withFeature(mapFile(), FEATURE_COMPONENT.map, {
+    const handPicked = withFeature(mapFile(), DEFAULT_SLOT_COMPONENT.map, {
       ...mapDataOf(mapFile())!,
       image: { id: "project:测试/Assets/images/Bridge.png", width: 400, height: 300 },
     });

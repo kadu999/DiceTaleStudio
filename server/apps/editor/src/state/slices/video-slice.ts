@@ -4,7 +4,7 @@
  * 视频（地图 / 贴图）：列表、选中、开关与下发播放。
  */
 import {
-  FEATURE_COMPONENT,
+  DEFAULT_SLOT_COMPONENT,
   videoDataOf,
   setVideoAudio as setSceneVideoAudio,
   setVideoAutoPlay as setSceneVideoAutoPlay,
@@ -194,7 +194,7 @@ export function createVideoSlice(
         return false;
       }
 
-      const object = objectWithFeature(objectId, FEATURE_COMPONENT.video);
+      const object = objectWithFeature(objectId, DEFAULT_SLOT_COMPONENT.video);
       if (object === undefined) {
         return false;
       }
@@ -258,7 +258,7 @@ export function createVideoSlice(
         return false;
       }
 
-      if (objectWithFeature(objectId, FEATURE_COMPONENT.video) === undefined) {
+      if (objectWithFeature(objectId, DEFAULT_SLOT_COMPONENT.video) === undefined) {
         return false;
       }
 

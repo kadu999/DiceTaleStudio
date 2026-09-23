@@ -1,10 +1,10 @@
 import type { ReactNode } from "react";
 import {
-  FEATURE_COMPONENT,
-  carriesKind,
+  DEFAULT_SLOT_COMPONENT,
+  carriesComponent,
   mapDataOf,
   supportsVideo,
-  type SceneObjectDoc,
+  type GameObjectDoc,
 } from "@dts/document";
 import { badgeIconOf } from "../object-kinds";
 import { Field } from "./fields";
@@ -35,7 +35,7 @@ import {
  * 插一个 `kind === …` 判断。
  *
  * 两件事由 `object-fields.tsx` 的字段控件与 `@dts/document` 的访问器回答：
- * - `applies`：这一组要不要显示。判据一律走**组件与特性表**（`carriesKind` / `mapDataOf`），
+ * - `applies`：这一组要不要显示。判据一律走**组件与预设表**（`carriesComponent` / `mapDataOf`），
  *   不看 `kind` 字面量——「有地图数据就显示区域与战争雾」比「是 Map 就显示」更贴近事实；
  * - `render`：这一组的内容（**不含** `FieldGroup` 外壳，外壳由面板统一包，
  *   这样组的标题、`data-group`、折叠行为都只有一处实现）。
@@ -48,11 +48,11 @@ export interface ObjectGroupDef {
   /** `data-group` 的 slug（测试与调试用；沿用历史值，改标题不改它）。 */
   readonly group: string;
   readonly title: string;
-  readonly applies: (object: SceneObjectDoc) => boolean;
-  readonly render: (object: SceneObjectDoc) => ReactNode;
+  readonly applies: (object: GameObjectDoc) => boolean;
+  readonly render: (object: GameObjectDoc) => ReactNode;
 }
 
-const hasMapData = (object: SceneObjectDoc): boolean => mapDataOf(object) !== undefined;
+const hasMapData = (object: GameObjectDoc): boolean => mapDataOf(object) !== undefined;
 
 export const OBJECT_GROUPS: readonly ObjectGroupDef[] = [
   {
@@ -86,7 +86,7 @@ export const OBJECT_GROUPS: readonly ObjectGroupDef[] = [
     // 「声音」只对声音对象出现：音频列表 + 层级就是它自己那点东西（基础属性照旧）
     group: "sound",
     title: "声音",
-    applies: (object) => carriesKind(FEATURE_COMPONENT.sound, object.kind),
+    applies: (object) => carriesComponent(DEFAULT_SLOT_COMPONENT.sound, object.kind),
     render: (object) => <SoundFields object={object} />,
   },
   {
@@ -94,7 +94,7 @@ export const OBJECT_GROUPS: readonly ObjectGroupDef[] = [
     // （DM 的「换台」），画布上双击那枚徽标是同一件事。
     group: "teleport",
     title: "传送",
-    applies: (object) => carriesKind(FEATURE_COMPONENT.teleport, object.kind),
+    applies: (object) => carriesComponent(DEFAULT_SLOT_COMPONENT.teleport, object.kind),
     render: (object) => <TeleportFields object={object} />,
   },
   {

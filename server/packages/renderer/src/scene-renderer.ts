@@ -56,7 +56,7 @@ export interface SceneLayer {
   /** 这张图片占据的世界矩形（贴图铺满它，网格锚在它上面）。 */
   readonly rect: WorldRect;
   /**
-   * 绕**矩形中心**的旋转（弧度，与文档的 `SceneObject.rotation` 同一套）。
+   * 绕**矩形中心**的旋转（弧度，与文档的 `GameObject.rotation` 同一套）。
    *
    * 贴图、格子、网格线、选中框**一起转**——它们本来就画在同一块矩形上，
    * 而拾取走 `hitTestRect(point, rect, rotation)`，所以「看到的框」与「点得到的范围」
@@ -215,7 +215,7 @@ const MAX_GRID_LINES = 4000;
 
 /** 对象类型色（弹框里那个小圆点、以及声音对象那枚内置图标都用它）。 */
 const KIND_MARKER_COLORS: Record<string, string> = {
-  // 精灵（v22 前叫 `SceneObject`：那时它复用泛用的场景对象名）
+  // 精灵（v22 前叫 `GameObject`：那时它复用泛用的场景对象名）
   Sprite: "#4f9cf9",
   // 贴图对象（v21，v22 前叫 `Texture`）：与精灵分开——两者都显示一张图，但精灵会取图集里的一格。
   // 用一个偏青的粉紫，和上面五个都分得开（弹框里两个瓦片一眼看得出不是一个东西）

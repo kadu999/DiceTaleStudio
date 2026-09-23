@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { videoDataOf, type SceneObjectDoc } from "@dts/document";
+import { videoDataOf, type GameObjectDoc } from "@dts/document";
 import { useEditorStore } from "../state/editor-store";
 import { assetDisplayName } from "../panels/asset-info";
 import { assetDisplayPath, findAssetByReference, listVideoAssets } from "../panels/asset-picker";
@@ -96,7 +96,7 @@ function VideoEditBody({
   object,
   tree,
 }: {
-  readonly object: SceneObjectDoc;
+  readonly object: GameObjectDoc;
   readonly tree: ReturnType<typeof useEditorStore.getState>["project"]["tree"];
 }): React.JSX.Element {
   const setVideoClipName = useEditorStore((state) => state.setVideoClipName);

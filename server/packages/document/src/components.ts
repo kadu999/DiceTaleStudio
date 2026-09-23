@@ -1,7 +1,6 @@
 import type { FieldDef } from "./fields";
 import { defaultDataFromFields } from "./fields";
-import { FEATURE_COMPONENT, SPRITE_COMPONENT, kindsCarrying, type ObjectFeatureField } from "./features";
-import type { ObjectKind } from "./kinds";
+import type { ComponentSlot } from "./presets";
 import type { ComponentDoc } from "./types";
 
 /**
@@ -11,8 +10,8 @@ import type { ComponentDoc } from "./types";
  * 保证编辑器保存的组件数据能被前端直接消费。
  *
  * **v19 起，对象身上那些「可插拔特性」也是组件**：地图 / 贴图 / 声音 / 传送 / 视频
- * （见 `features.ts` 的 `OBJECT_FEATURES`）。这些组件多两项：
- * - `kinds`：能挂在哪些对象类型上（**从 `OBJECT_FEATURES` 取回来**，不在这里重复写）；
+ * （见 `presets.ts` 的 `OBJECT_PRESETS`）。这些组件多两项：
+ * - `slot`：它承担对象哪种能力（**组件自报**；访问器按 slot 找对象上的组件，不看 kind）；
  * - `legacyField`：v19 之前它住在对象的哪个扁平字段里——迁移函数靠它把老字段搬成组件实例。
  */
 
@@ -43,22 +42,23 @@ export interface ComponentTypeDef {
   readonly conditionValueTypes: readonly ("Bool" | "String" | "Number" | "Integer")[];
   /** 前端命令类型（该组件能处理的后台命令），供运行态直接下发展示。 */
   readonly commandTypes: readonly string[];
-  /** 能挂在哪些对象类型上；**空数组 = 任何类型都允许**。 */
-  readonly kinds: readonly ObjectKind[];
+  /**
+   * 这个组件承担对象哪种能力（v19 从对象特性提升上来的那 6 种才有）。
+   *
+   * **组件是唯一功能载体**：访问器（`access.ts`）按 slot 在对象的组件列表上查找；
+   * 「哪个 kind 允许哪个槽位」住在 `presets.ts` 的 `OBJECT_PRESETS`，不在这里重复写。
+   */
+  readonly slot?: ComponentSlot;
   /** v19 之前这个特性住在对象的哪个扁平字段里（只有从对象特性提升上来的组件有）。 */
-  readonly legacyField?: ObjectFeatureField;
+  readonly legacyField?: ComponentSlot;
   readonly tooltip?: string;
 }
-
-/** 「任何 kind 都能挂」的组件（前端组件体系里那 7 种）。 */
-const ANY_KIND: readonly ObjectKind[] = [];
 
 export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
   {
     type: "OptionValue",
     displayName: "选项值",
     gmEditable: true,
-    kinds: ANY_KIND,
     conditionValueTypes: ["String", "Integer"],
     commandTypes: ["set_option"],
     tooltip: "选项列表 + 当前选项；String 条件比较当前选项名，Integer 条件比较选项索引",
@@ -71,7 +71,6 @@ export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
     type: "Backpack",
     displayName: "背包",
     gmEditable: true,
-    kinds: ANY_KIND,
     conditionValueTypes: [],
     commandTypes: ["set_object_items"],
     tooltip: "玩家持有的道具列表",
@@ -81,7 +80,6 @@ export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
     type: "ItemExchange",
     displayName: "道具货源",
     gmEditable: true,
-    kinds: ANY_KIND,
     conditionValueTypes: [],
     commandTypes: [],
     tooltip: "场景中的道具货源：道具名 + 固定总数（剩余由前端按玩家持有量推导）",
@@ -94,7 +92,6 @@ export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
     type: "MaskImage",
     displayName: "遮罩图",
     gmEditable: true,
-    kinds: ANY_KIND,
     conditionValueTypes: [],
     commandTypes: ["set_mask_image", "erase_mask"],
     tooltip: "可被 GM 擦除的遮罩贴图",
@@ -107,7 +104,6 @@ export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
     type: "FloatValue",
     displayName: "浮点值",
     gmEditable: true,
-    kinds: ANY_KIND,
     conditionValueTypes: ["Number"],
     commandTypes: ["set_float"],
     fields: [{ key: "value", label: "值", kind: "number", step: 0.1 }],
@@ -116,7 +112,6 @@ export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
     type: "IntValue",
     displayName: "整数值",
     gmEditable: true,
-    kinds: ANY_KIND,
     conditionValueTypes: ["Integer"],
     commandTypes: ["set_int"],
     fields: [{ key: "value", label: "值", kind: "integer" }],
@@ -125,7 +120,6 @@ export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
     type: "BoolValue",
     displayName: "布尔值",
     gmEditable: true,
-    kinds: ANY_KIND,
     conditionValueTypes: ["Bool"],
     commandTypes: ["set_bool"],
     fields: [{ key: "value", label: "值", kind: "boolean" }],
@@ -133,13 +127,13 @@ export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
 
   // ---------------------------------------------------------------- v19：对象特性提升上来的组件
   //
-  // 这 5 条的 `kinds` **不在本地重复写**：它是 `features.ts` 那张 `OBJECT_FEATURES` 表的
-  // 一部分（「哪个 kind 带哪个特性」只有那一处归属地），这里按组件名取回来。
+  // 这 6 条自报 `slot`（「哪个 kind 允许哪个槽位」只有 `presets.ts` 的 `OBJECT_PRESETS`
+  // 那一处归属地，不在这里重复写）；`legacyField` 记着 v19 之前它住在对象的哪个扁平字段里。
   {
     type: "GridMap",
     displayName: "网格地图",
     gmEditable: true,
-    kinds: kindsCarrying(FEATURE_COMPONENT.map),
+    slot: "map",
     legacyField: "map",
     conditionValueTypes: [],
     commandTypes: [],
@@ -151,7 +145,7 @@ export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
     type: "ImageLayer",
     displayName: "图片层",
     gmEditable: true,
-    kinds: kindsCarrying(FEATURE_COMPONENT.image),
+    slot: "image",
     legacyField: "image",
     conditionValueTypes: [],
     commandTypes: [],
@@ -162,10 +156,10 @@ export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
     // 精灵对象的图片组件：与 `ImageLayer` 同一份数据，差别是它**会取图集里的一格**
     // （`ImageRef.sprite`）——所以两者分开，界面上「给不给切子图」就由组件本身说清了。
     // v21 起取代 v20 的 `TextureRenderer`（迁移见 schema.ts 的 `renameSpriteImageComponent`）。
-    type: SPRITE_COMPONENT,
+    type: "SpriteLayer",
     displayName: "精灵层",
     gmEditable: true,
-    kinds: kindsCarrying(SPRITE_COMPONENT),
+    slot: "image",
     legacyField: "image",
     conditionValueTypes: [],
     commandTypes: [],
@@ -176,7 +170,7 @@ export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
     type: "PlaySound",
     displayName: "播放声音",
     gmEditable: true,
-    kinds: kindsCarrying(FEATURE_COMPONENT.sound),
+    slot: "sound",
     legacyField: "sound",
     conditionValueTypes: [],
     commandTypes: ["play_sound", "stop_sound", "pause_sound", "resume_sound"],
@@ -187,7 +181,7 @@ export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
     type: "Teleport",
     displayName: "传送阵",
     gmEditable: true,
-    kinds: kindsCarrying(FEATURE_COMPONENT.teleport),
+    slot: "teleport",
     legacyField: "teleport",
     conditionValueTypes: [],
     commandTypes: [],
@@ -198,7 +192,7 @@ export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
     type: "VideoOverlay",
     displayName: "视频",
     gmEditable: true,
-    kinds: kindsCarrying(FEATURE_COMPONENT.video),
+    slot: "video",
     legacyField: "video",
     conditionValueTypes: [],
     commandTypes: ["play_video", "pause_video", "resume_video", "stop_video"],
@@ -206,6 +200,14 @@ export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
     fields: [],
   },
 ];
+
+/**
+ * 带 slot 的组件（对象能力组件，原「特性组件」）：迁移按注册表顺序处理它们，
+ * 也是 `presets.ts` 各预设槽位声明里允许出现的全部组件名。
+ */
+export const SLOT_COMPONENT_TYPES: readonly ComponentTypeDef[] = COMPONENT_TYPES.filter(
+  (def) => def.slot !== undefined,
+);
 
 /** 只由对象特性提升上来、带历史扁平字段的组件（迁移按注册表顺序处理它们）。 */
 export const FEATURE_COMPONENT_TYPES: readonly ComponentTypeDef[] = COMPONENT_TYPES.filter(

@@ -36,7 +36,7 @@ export const CURRENT_SCENE_FORMAT_VERSION = 24;
  * | `object.teleport` | `teleport` |
  * | `object.video` | `videoOverlay` |
  *
- * 与 `@dts/document` 的 `FEATURE_COMPONENT` 一致（e2e 不引用内部包，所以这里是**复述**）；
+ * 与 `@dts/document` 的 `DEFAULT_SLOT_COMPONENT` 一致（e2e 不引用内部包，所以这里是**复述**）；
  * 组件名只在 helpers 里写这一份，spec 不该再散落字符串字面量。
  */
 export const COMPONENT = {
@@ -62,7 +62,7 @@ export function componentId(objectId: string, component: string): string {
 }
 
 /** 按 `id` / `kind` 在场景文件里找一个对象（两个条件都给时都要满足）。 */
-export function findSceneObject(
+export function findGameObject(
   file: SceneFileLike | undefined,
   selector: { readonly objectId?: string; readonly kind?: string },
 ): Record<string, unknown> | undefined {
@@ -116,7 +116,7 @@ export function componentDataOf(
   objectIdOrKind: { readonly objectId?: string; readonly kind?: string },
   component: string,
 ): Record<string, unknown> | undefined {
-  return objectComponentData(findSceneObject(file, objectIdOrKind), component);
+  return objectComponentData(findGameObject(file, objectIdOrKind), component);
 }
 
 /**
@@ -324,9 +324,9 @@ export function sceneDoc(
 }
 
 /**
- * 造一个场景里的普通对象（形状与 `createSceneObject` 一致，无组件无动作）。
+ * 造一个场景里的普通对象（形状与 `createGameObject` 一致，无组件无动作）。
  *
- * `kind` 缺省是**精灵** `Sprite`（`SceneObject` 是抽象基类，不落进文档）。
+ * `kind` 缺省是**精灵** `Sprite`（`GameObject` 是抽象基类，不落进文档）。
  *
  * `position` 是**世界坐标**（场景中心为原点，x 向右、y 向上，单位像素）；不传即未放置。
  * `active` / `sortingOrder` 是 v7 起、`scale` 是 v8 起、`locked` 是 v9 起、地图的战争雾
@@ -336,7 +336,7 @@ export function sceneDoc(
  * 对象特性（地图 / 贴图 / 声音 / 传送 / 视频）**不在这里给参数**：v19 起它们是
  * `components[]` 里的实例，要带就自己用 `withComponent` 挂上去（见 `mapObjectDoc`）。
  */
-export function sceneObjectDoc(
+export function gameObjectDoc(
   name: string,
   kind = "Sprite",
   position: { x: number; y: number } | null = null,
@@ -374,7 +374,7 @@ export function mapObjectDoc(
   grid: { width: number; height: number } = { width: 64, height: 36 },
 ): Record<string, unknown> {
   return withComponent(
-    sceneObjectDoc(name, "Map", { x: 0, y: 0 }, { sortingOrder: -10 }),
+    gameObjectDoc(name, "Map", { x: 0, y: 0 }, { sortingOrder: -10 }),
     COMPONENT.gridMap,
     {
       image: {
@@ -572,7 +572,7 @@ export async function seedProjectDoc(
 }
 
 /** 场景文件里的一个对象（e2e 断言落盘用）：只声明用例真正会读的字段。 */
-export interface PersistedSceneObject {
+export interface PersistedGameObject {
   readonly id?: string;
   readonly name: string;
   readonly kind: string;
@@ -585,18 +585,18 @@ export interface PersistedSceneObject {
 }
 
 /** 直接读一个场景文件里的对象（e2e 断言用）。 */
-export async function readSceneObjects(
+export async function readGameObjects(
   request: APIRequestContext,
   project: string,
   sceneName: string,
-): Promise<PersistedSceneObject[]> {
+): Promise<PersistedGameObject[]> {
   const id = `project:${project}/Assets/scenes/${sceneName}.json`;
   const response = await request.get(`/api/resources/text?id=${encodeURIComponent(id)}`);
   if (!response.ok()) {
     return [];
   }
 
-  const file = JSON.parse(await response.text()) as { objects?: PersistedSceneObject[] };
+  const file = JSON.parse(await response.text()) as { objects?: PersistedGameObject[] };
   return file.objects ?? [];
 }
 
@@ -754,7 +754,7 @@ export async function readSceneSound(
   | undefined
 > {
   const file = await readSceneFile(request, project, sceneName);
-  const object = findSceneObject(file, { kind: "PlaySound" });
+  const object = findGameObject(file, { kind: "PlaySound" });
   if (object === undefined) {
     return undefined;
   }
@@ -930,7 +930,7 @@ export async function readObjectSprite(
   selector: { readonly objectId?: string; readonly kind?: string },
 ): Promise<{ column: number; row: number } | undefined> {
   const file = await readSceneFile(request, project, sceneName);
-  const object = findSceneObject(file, selector);
+  const object = findGameObject(file, selector);
   const data = objectComponentData(object, COMPONENT.spriteLayer);
   const sprite = data?.["sprite"];
   if (typeof sprite !== "object" || sprite === null) {
@@ -1036,7 +1036,7 @@ export async function expectPersistedObjectNames(
   expected: readonly string[],
 ): Promise<void> {
   await expect
-    .poll(async () => (await readSceneObjects(request, project, sceneName)).map((o) => o.name), {
+    .poll(async () => (await readGameObjects(request, project, sceneName)).map((o) => o.name), {
       timeout: 8000,
       message: "等待场景文件落盘",
     })

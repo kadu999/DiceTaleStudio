@@ -6,7 +6,7 @@ import {
   objectsInDrawOrder,
   spritePixelRectOf,
   type SceneDoc,
-  type SceneObjectDoc,
+  type GameObjectDoc,
   type WorldPosition,
 } from "@dts/document";
 import {
@@ -54,7 +54,7 @@ const MIDDLE_BUTTON = 1;
  * 真正的四个角上，旋转环与移动轴条的间距也不随角度变化（见 `gizmoScreenGeometry`）。
  */
 function gizmoGeometryOf(
-  object: SceneObjectDoc,
+  object: GameObjectDoc,
   viewport: Viewport,
 ): GizmoScreenHandles | undefined {
   const rect = displayRectOf(object);
@@ -67,7 +67,7 @@ function gizmoGeometryOf(
  * 几何本身来自 `gizmoGeometryOf`——与命中测试同一个函数，所以画出来的就是点得到的。
  */
 function buildToolHandles(
-  object: SceneObjectDoc,
+  object: GameObjectDoc,
   tool: TransformTool,
   viewport: Viewport,
 ): SceneToolHandles | undefined {
@@ -93,7 +93,7 @@ function buildToolHandles(
  *
  * 缩放锚点要用它：四角、对边中点都定义在对象自己的轴上。
  */
-function localHalfSizeOf(object: SceneObjectDoc): { readonly width: number; readonly height: number } {
+function localHalfSizeOf(object: GameObjectDoc): { readonly width: number; readonly height: number } {
   const size = displaySizeOf(object);
   return { width: size.width / 2, height: size.height / 2 };
 }
@@ -179,7 +179,7 @@ function activeSceneImageIds(
  *
  * `objects` 必须是**画布上的对象**（已按显示顺序排好、且只剩激活的）。
  */
-export function checkerOriginOf(objects: readonly SceneObjectDoc[]): WorldPosition {
+export function checkerOriginOf(objects: readonly GameObjectDoc[]): WorldPosition {
   for (const object of objects) {
     if (object.kind !== "Map") {
       continue;
@@ -486,7 +486,7 @@ export function ScenePanel(): React.JSX.Element {
     };
 
     /** 当前**单选**的那个对象；多选 / 没选 / 没落位都返回 `undefined`（手柄只作用于单选）。 */
-    const singleSelectedObject = (): SceneObjectDoc | undefined => {
+    const singleSelectedObject = (): GameObjectDoc | undefined => {
       const store = useEditorStore.getState();
       if (store.selectedObjectIds.length !== 1) {
         return undefined;

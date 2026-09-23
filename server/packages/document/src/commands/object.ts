@@ -1,16 +1,16 @@
 // 本文件从 `commands.ts` 拆出（纯搬运，行为不变）：对象级命令。
 import type { Draft } from "immer";
-import { FEATURE_COMPONENT, componentForKind, displayImageField } from "../features";
+import { DEFAULT_SLOT_COMPONENT, componentForSlot, displayImageField } from "../presets";
 // 特性的读写一律走访问器（「数据存在哪个组件里」只有 access.ts 知道）
 import { mapDataOf, objectImage, writeFeature } from "../access";
 import { DEFAULT_OBJECT_SCALE, clampObjectScale, collapseScale } from "../scale";
 import { DEFAULT_SORTING_ORDER, createId, findObject } from "./shared";
-import type { ObjectKind } from "../kinds";
+import type { ObjectKind } from "../presets";
 import type {
   ImageRef,
   ImageSpriteRef,
   SceneDoc,
-  SceneObjectDoc,
+  GameObjectDoc,
   WorldPosition,
 } from "../types";
 
@@ -34,10 +34,10 @@ export interface CreateObjectInput {
 /**
  * 新建普通对象（地图对象请用工厂的 `createMapObject`，它要带地图数据）。
  *
- * 缺省 `kind` 是**精灵** `Sprite`：`SceneObject` 是抽象基类（不落进文档），
+ * 缺省 `kind` 是**精灵** `Sprite`：`GameObject` 是抽象基类（不落进文档），
  * 而「一个还没细看的场景对象」最接近的就是它——能挂一张图、能取图集里的一格。
  */
-export function createSceneObject(input: CreateObjectInput): SceneObjectDoc {
+export function createGameObject(input: CreateObjectInput): GameObjectDoc {
   return {
     id: input.id ?? createId("obj"),
     name: input.name,
@@ -52,8 +52,8 @@ export function createSceneObject(input: CreateObjectInput): SceneObjectDoc {
   };
 }
 
-export function addObject(scene: Draft<SceneDoc>, object: SceneObjectDoc): void {
-  scene.objects.push(object as Draft<SceneObjectDoc>);
+export function addObject(scene: Draft<SceneDoc>, object: GameObjectDoc): void {
+  scene.objects.push(object as Draft<GameObjectDoc>);
 }
 
 /**
@@ -62,7 +62,7 @@ export function addObject(scene: Draft<SceneDoc>, object: SceneObjectDoc): void 
  * 对象名**不要求唯一**（前端不靠名字寻址，靠 id），但列表里一堆同名行没法看，
  * 所以「连续创建」与「复制」都走这里自动去重。比较与场景名一致：trim + 大小写不敏感。
  */
-export function nextObjectName(objects: readonly SceneObjectDoc[], base: string): string {
+export function nextObjectName(objects: readonly GameObjectDoc[], base: string): string {
   const taken = new Set(objects.map((object) => object.name.trim().toLowerCase()));
   const trimmed = base.trim();
   if (!taken.has(trimmed.toLowerCase())) {
@@ -218,7 +218,7 @@ export function setObjectScale(
  * 画布上的等比拖角、单轴拖边都走这里；`collapseScale` 保证写出来的形状是规范的
  * （两轴相等只留 `scale`），所以反复拖手柄不会把对象钉死在非等比形态上。
  *
- * 位置（矩形中心）不动——`SceneObjectDoc.position` 的语义就是「缩放之后那块矩形的中心」。
+ * 位置（矩形中心）不动——`GameObjectDoc.position` 的语义就是「缩放之后那块矩形的中心」。
  */
 export function setObjectScaleAxes(
   scene: Draft<SceneDoc>,
@@ -301,7 +301,7 @@ export function normalizeDegrees(degrees: number): number {
  * 只比较 `sortingOrder`，相同的保持场景文件里的先后（`Array.prototype.sort` 自 ES2019 起稳定）；
  * **不改动 `scene.objects` 本身**——文件里的顺序是数据，不是渲染排序的结果。
  */
-export function objectsInDrawOrder(scene: SceneDoc): SceneObjectDoc[] {
+export function objectsInDrawOrder(scene: SceneDoc): GameObjectDoc[] {
   return [...scene.objects].sort((a, b) => a.sortingOrder - b.sortingOrder);
 }
 
@@ -362,10 +362,10 @@ export function setObjectImage(
     }
 
     // 地图的贴图住在它自己的地图数据里：整份写回（组件实例不变，只换 data）
-    writeFeature(object, FEATURE_COMPONENT.map, { ...map, image: next });
+    writeFeature(object, DEFAULT_SLOT_COMPONENT.map, { ...map, image: next });
   } else {
-    // 精灵写进 `SpriteLayer`、贴图写进 `ImageLayer`（按 kind 取组件名，见 `componentForKind`）
-    writeFeature(object, componentForKind("image", object.kind), next);
+    // 精灵写进 `SpriteLayer`、贴图写进 `ImageLayer`（按 kind 取组件名，见 `componentForSlot`）
+    writeFeature(object, componentForSlot("image", object.kind), next);
   }
 
   return true;
@@ -403,7 +403,7 @@ export function setObjectSprite(
     return false;
   }
 
-  writeFeature(object, componentForKind("image", object.kind), withSpriteRef(current, next));
+  writeFeature(object, componentForSlot("image", object.kind), withSpriteRef(current, next));
   return true;
 }
 

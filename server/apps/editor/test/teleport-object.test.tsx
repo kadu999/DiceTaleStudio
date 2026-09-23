@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import {
-  FEATURE_COMPONENT,
+  DEFAULT_SLOT_COMPONENT,
   createTeleportObject,
   teleportDataOf,
   withFeature,
   type SceneDoc,
-  type SceneObjectDoc,
+  type GameObjectDoc,
 } from "@dts/document";
 import { TeleportEditDialog } from "../src/app/TeleportEditDialog";
 import { InspectorPanel } from "../src/panels/inspector/InspectorPanel";
@@ -29,7 +29,7 @@ const A = "Map002";
 const B = "Map003";
 
 /** 一个传送阵：候选 + 选中的那个（默认不传 = 候选空、没选）。 */
-function teleport(targets: readonly string[] = [], picked?: string): SceneObjectDoc {
+function teleport(targets: readonly string[] = [], picked?: string): GameObjectDoc {
   return createTeleportObject({
     id: "teleport-1",
     name: "传送阵",
@@ -40,7 +40,7 @@ function teleport(targets: readonly string[] = [], picked?: string): SceneObject
 }
 
 /** 铺场景：默认三张图（当前在 Map001），对象列表按传入的来。 */
-function seedScene(objects: SceneObjectDoc[], extraScenes: readonly SceneDoc[] = []): void {
+function seedScene(objects: GameObjectDoc[], extraScenes: readonly SceneDoc[] = []): void {
   const scenes: SceneDoc[] = [{ name: "Map001", objects }, ...extraScenes];
   sceneHistory.reset(scenes);
   useEditorStore.setState({
@@ -54,7 +54,7 @@ function seedScene(objects: SceneObjectDoc[], extraScenes: readonly SceneDoc[] =
   });
 }
 
-const objectOf = (id: string): SceneObjectDoc | undefined =>
+const objectOf = (id: string): GameObjectDoc | undefined =>
   useEditorStore
     .getState()
     .scenes.flatMap((scene) => scene.objects)
@@ -174,7 +174,7 @@ describe("属性面板：候选小方块 + ＋ + 传送", () => {
   });
 
   it("选中的场景不在候选里（手写文件）：按钮写「先选一个目标」", () => {
-    const handWritten: SceneObjectDoc = withFeature(teleport([A]), FEATURE_COMPONENT.teleport, {
+    const handWritten: GameObjectDoc = withFeature(teleport([A]), DEFAULT_SLOT_COMPONENT.teleport, {
       targets: [A],
       picked: B,
     });
@@ -295,9 +295,9 @@ describe("触发传送：按一下换台（不改文档）", () => {
 
   it("候选空 / 没选 / 目标不存在 / 目标是当前场景：拒绝并写明理由（场景不动）", () => {
     // 四种「点不动」与面板上的护栏是同一套判断，理由要对得上
-    const cases: ReadonlyArray<readonly [string, SceneObjectDoc, RegExp]> = [
+    const cases: ReadonlyArray<readonly [string, GameObjectDoc, RegExp]> = [
       ["候选空", teleport(), /还没有加目标场景/],
-      ["没选", withFeature(teleport([A]), FEATURE_COMPONENT.teleport, { targets: [A] }), /还没选要传送到哪一张/],
+      ["没选", withFeature(teleport([A]), DEFAULT_SLOT_COMPONENT.teleport, { targets: [A] }), /还没选要传送到哪一张/],
       ["目标不存在", teleport(["Map999"], "Map999"), /不存在/],
       ["目标是自己", teleport(["Map001"], "Map001"), /目标就是当前场景/],
     ];
@@ -315,7 +315,7 @@ describe("触发传送：按一下换台（不改文档）", () => {
   });
 
   it("不是传送阵：拒绝（拿着 id 乱调也进不去）", () => {
-    const door: SceneObjectDoc = { ...teleport([A], A), kind: "Sprite" };
+    const door: GameObjectDoc = { ...teleport([A], A), kind: "Sprite" };
     seedScene([door]);
 
     expect(useEditorStore.getState().teleport("teleport-1")).toBe(false);

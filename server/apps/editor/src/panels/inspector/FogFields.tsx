@@ -1,5 +1,5 @@
 import { PAINTABLE_MASKS, maskToLabel, regionsToMask } from "@dts/grid";
-import { isMapFogEnabled, mapDataOf, type SceneObjectDoc } from "@dts/document";
+import { isMapFogEnabled, mapDataOf, type GameObjectDoc } from "@dts/document";
 import { useEditorStore } from "../../state/editor-store";
 import { FieldRow } from "./fields";
 
@@ -18,7 +18,7 @@ import { FieldRow } from "./fields";
  * 不与玩法绑定，所以雾区要在这里**手动指定**；指定之后才能在 Mask 窗口里擦除 / 整区开合
  * （真正的编辑在窗口里做，这里只负责指定与入口）。
  */
-export function FogFields({ object }: { readonly object: SceneObjectDoc }): React.JSX.Element {
+export function FogFields({ object }: { readonly object: GameObjectDoc }): React.JSX.Element {
   const setFogRegions = useEditorStore((state) => state.setFogRegions);
   const setFogEnabled = useEditorStore((state) => state.setFogEnabled);
   const openFogMask = useEditorStore((state) => state.openFogMask);

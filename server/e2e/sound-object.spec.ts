@@ -11,7 +11,7 @@ import {
   openProject,
   readSceneSound,
   sceneDoc,
-  sceneObjectDoc,
+  gameObjectDoc,
   seedProjectDoc,
   selectObject,
   useMoveTool,
@@ -215,7 +215,7 @@ test.describe("动作对象：播放声音", () => {
       await seedProjectDoc(request, project, [
         sceneDoc(SCENE, [
           withComponent(
-            sceneObjectDoc("脚步", "PlaySound", { x: 0, y: 0 }),
+            gameObjectDoc("脚步", "PlaySound", { x: 0, y: 0 }),
             COMPONENT.playSound,
             { clips: [], layer: "sfx" },
           ),
@@ -284,7 +284,7 @@ test.describe("动作对象：播放声音", () => {
       await seedProjectDoc(request, project, [
         sceneDoc(SCENE, [
           withComponent(
-            sceneObjectDoc("脚步", "PlaySound", null),
+            gameObjectDoc("脚步", "PlaySound", null),
             COMPONENT.playSound,
             { clips: [], layer: "sfx" },
           ),
@@ -335,7 +335,7 @@ test.describe("动作对象：播放声音", () => {
       await seedProjectDoc(request, project, [
         sceneDoc(SCENE, [
           withComponent(
-            sceneObjectDoc("脚步", "PlaySound", { x: 0, y: 0 }),
+            gameObjectDoc("脚步", "PlaySound", { x: 0, y: 0 }),
             COMPONENT.playSound,
             { clips: [], layer: "sfx" },
           ),
@@ -435,7 +435,7 @@ test.describe("动作对象：播放声音", () => {
         sceneDoc(SCENE, [
           // 加进来一条并选中它（`picked`），否则「播放」点不了
           withComponent(
-            sceneObjectDoc("脚步", "PlaySound", { x: 0, y: 0 }),
+            gameObjectDoc("脚步", "PlaySound", { x: 0, y: 0 }),
             COMPONENT.playSound,
             { clips: [clip], picked: clip, layer: "sfx" },
           ),
@@ -572,7 +572,7 @@ test.describe("声音：命令下发给前端", { tag: "@runtime" }, () => {
     try {
       const clip = await uploadAudio(request, project, "step1.mp3");
       const soundDoc = withComponent(
-        sceneObjectDoc("脚步", "PlaySound", { x: 0, y: 0 }),
+        gameObjectDoc("脚步", "PlaySound", { x: 0, y: 0 }),
         COMPONENT.playSound,
         { clips: [clip], picked: clip, layer: "sfx" },
       );

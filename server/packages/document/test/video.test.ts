@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { produce, type Draft } from "immer";
 import {
-  createSceneObject,
+  createGameObject,
   setVideoAudio,
   setVideoAutoPlay,
   setVideoClipName,
@@ -12,18 +12,18 @@ import {
 } from "../src/commands";
 import { isVideoEnabled, videoDataOf } from "../src/access";
 import { featureComponent } from "../src/components";
-import { FEATURE_COMPONENT } from "../src/features";
+import { DEFAULT_SLOT_COMPONENT } from "../src/presets";
 import {
   DEFAULT_VIDEO_AUDIO,
   DEFAULT_VIDEO_AUTO_PLAY,
   DEFAULT_VIDEO_ENABLED,
   DEFAULT_VIDEO_LOOP,
   supportsVideo,
-} from "../src/features";
+} from "../src/presets";
 import { createEmptyScene, createMapObject, createSoundObject } from "../src/factory";
 import { parseSceneFile } from "../src/schema";
 import { formatIssues, hasErrors, validateScene } from "../src/validation";
-import { DOCUMENT_FORMAT_VERSION, type SceneDoc, type SceneObjectDoc } from "../src/types";
+import { DOCUMENT_FORMAT_VERSION, type SceneDoc, type GameObjectDoc } from "../src/types";
 
 /**
  * 地图 / 精灵上的**视频列表**（v14 起）：一组视频 + 选中哪条 + 循环 / 声音两个开关。
@@ -44,7 +44,7 @@ const CLIP_B = "project:C/Assets/video/rain.webm";
 const IMAGE = { id: "project:C/Assets/images/Map001.png", width: 400, height: 300 };
 const GRID = { width: 8, height: 6 };
 
-function sceneWith(objects: readonly SceneObjectDoc[]): SceneDoc {
+function sceneWith(objects: readonly GameObjectDoc[]): SceneDoc {
   return { ...createEmptyScene("Map001"), objects: [...objects] };
 }
 
@@ -52,7 +52,7 @@ function mutate(scene: SceneDoc, recipe: (draft: Draft<SceneDoc>) => void): Scen
   return produce(scene, recipe);
 }
 
-function objectOf(scene: SceneDoc, id: string): SceneObjectDoc | undefined {
+function objectOf(scene: SceneDoc, id: string): GameObjectDoc | undefined {
   return scene.objects.find((object) => object.id === id);
 }
 
@@ -67,18 +67,18 @@ function videoEnabled(scene: SceneDoc, id: string): boolean {
 }
 
 /** 一张地图（视频的合法宿主之一）。 */
-function mapObject(id = "map-1"): SceneObjectDoc {
+function mapObject(id = "map-1"): GameObjectDoc {
   return createMapObject({ id, name: "网格地图", image: IMAGE, grid: GRID });
 }
 
 /** 一张贴图（另一个合法宿主，v21 起取代精灵）。 */
-function textureObject(id = "tex-1"): SceneObjectDoc {
-  return createSceneObject({ id, name: "贴图", kind: "Image" });
+function textureObject(id = "tex-1"): GameObjectDoc {
+  return createGameObject({ id, name: "贴图", kind: "Image" });
 }
 
 /** 一个精灵（**不再是**视频宿主：它的渲染选项归「渲染」那一组）。 */
-function spriteObject(id = "sprite-1"): SceneObjectDoc {
-  return createSceneObject({ id, name: "精灵" });
+function spriteObject(id = "sprite-1"): GameObjectDoc {
+  return createGameObject({ id, name: "精灵" });
 }
 
 describe("视频：哪些对象能带", () => {
@@ -113,7 +113,7 @@ describe("视频：哪些对象能带", () => {
       objects: [
         {
           ...mapObject(),
-          components: [featureComponent("map-1", FEATURE_COMPONENT.video, { clips: [CLIP_A] })],
+          components: [featureComponent("map-1", DEFAULT_SLOT_COMPONENT.video, { clips: [CLIP_A] })],
         },
       ],
     });
@@ -419,7 +419,7 @@ describe("视频：文档校验", () => {
     const scene = mutate(sceneWith([createSoundObject({ name: "脚步", id: "s1" })]), (draft) => {
       // v19 起「带视频」= 挂着 VideoOverlay 组件（kind 不是地图 / 贴图时校验会提醒）
       draft.objects[0]?.components.push(
-        featureComponent("s1", FEATURE_COMPONENT.video, {
+        featureComponent("s1", DEFAULT_SLOT_COMPONENT.video, {
           enabled: true,
           clips: [CLIP_A],
           picked: CLIP_A,
@@ -436,7 +436,7 @@ describe("视频：文档校验", () => {
   it("精灵身上的旧 video 组件：只报警告，组件数据不删（不静默改用户数据）", () => {
     const scene = mutate(sceneWith([spriteObject()]), (draft) => {
       draft.objects[0]?.components.push(
-        featureComponent("sprite-1", FEATURE_COMPONENT.video, {
+        featureComponent("sprite-1", DEFAULT_SLOT_COMPONENT.video, {
           enabled: true,
           clips: [CLIP_A],
           picked: CLIP_A,
@@ -448,7 +448,7 @@ describe("视频：文档校验", () => {
 
     expect(hasErrors(validateScene(scene))).toBe(false);
     expect(formatIssues(validateScene(scene))).toMatch(/只有地图与贴图能放视频/);
-    expect(scene.objects[0]?.components.some((item) => item.type === FEATURE_COMPONENT.video)).toBe(
+    expect(scene.objects[0]?.components.some((item) => item.type === DEFAULT_SLOT_COMPONENT.video)).toBe(
       true,
     );
   });
@@ -456,7 +456,7 @@ describe("视频：文档校验", () => {
   it("空条目 / 选中的不在列表 / 空名字 / 孤儿名字：各一条警告", () => {
     const scene = mutate(sceneWith([mapObject()]), (draft) => {
       draft.objects[0]?.components.push(
-        featureComponent("map-1", FEATURE_COMPONENT.video, {
+        featureComponent("map-1", DEFAULT_SLOT_COMPONENT.video, {
           enabled: true,
           clips: [CLIP_A, "  "],
           picked: "project:C/Assets/video/ghost.mp4",
@@ -507,7 +507,7 @@ describe("视频：格式版本", () => {
         {
           ...object,
           components: [
-            featureComponent("tex-1", FEATURE_COMPONENT.video, {
+            featureComponent("tex-1", DEFAULT_SLOT_COMPONENT.video, {
               clips: [CLIP_A],
               picked: CLIP_A,
             }),

@@ -1,5 +1,5 @@
 import { useShallow } from "zustand/react/shallow";
-import { teleportDataOf, type SceneObjectDoc } from "@dts/document";
+import { teleportDataOf, type GameObjectDoc } from "@dts/document";
 import { useEditorStore } from "../../state/editor-store";
 import { FieldRow } from "./fields";
 
@@ -18,7 +18,7 @@ import { FieldRow } from "./fields";
  * 写回改动、记住视口、换场景、**立刻 `scene_push`**；画布上**双击徽标**是同一件事。
  * **不改文档、不进撤销栈**：按一下换台不是编辑（与「播放声音」同一条规矩）。
  */
-export function TeleportFields({ object }: { readonly object: SceneObjectDoc }): React.JSX.Element {
+export function TeleportFields({ object }: { readonly object: GameObjectDoc }): React.JSX.Element {
   // 只要场景名（拖手柄时文档每帧都在变，但场景名不变 → 这个面板不会因此重渲染）
   const sceneNames = useEditorStore(useShallow((state) => state.scenes.map((scene) => scene.name)));
   const activeSceneName = useEditorStore((state) => state.activeSceneName);

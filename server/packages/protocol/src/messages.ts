@@ -55,7 +55,7 @@ import { z } from "zod";
  * 命令那一组**不变**（还是四条 `*_bgm`，`play_bgm` 仍带 `clip`）。
  * 载荷形状变了、老前端读到的 `bgm` 少三项，所以照旧 +1。
  *
- * v9（2026-09-22）：**对象特性搬进组件**（与文档格式 v19 同一批）。`sceneObjectSchema` 上
+ * v9（2026-09-22）：**对象特性搬进组件**（与文档格式 v19 同一批）。`gameObjectSchema` 上
  * `map` / `image` / `sound` / `teleport` / `video` 这 5 个扁平字段没了，改成 `components[]` 里的
  * 组件实例（`GridMap` / `ImageLayer` / `SpriteLayer` / `PlaySound` / `Teleport` / `VideoOverlay`）。
  * 老前端按扁平字段读，迁移后的场景在它眼里会变成「一个什么都不带的空对象」（贴图、网格、
@@ -94,7 +94,7 @@ export const PROTOCOL_MISMATCH_CODE = 4002;
 // ---------------------------------------------------------------- 场景（文档模型的只读复刻）
 
 /**
- * 场景对象数据 = 编辑器文档模型里的 `SceneObjectDoc`（`@dts/document`）。
+ * 场景对象数据 = 编辑器文档模型里的 `GameObjectDoc`（`@dts/document`）。
  *
  * 这里**复刻一份只读 schema**而不是 import `@dts/document`：`protocol` 是被三端共用的
  * 最底层包，不该反过来依赖文档包。字段口径与文档严格一致，文档加字段时这里同步补。
@@ -239,7 +239,7 @@ export const videoDataSchema = z.object({
  *
  * **前端不需要它**：触发传送阵 = 编辑器切换当前场景 → 整份 `scene_push` 下来，
  * 前端只管换镜像（没有一个「teleport」命令，也不需要）。放进协议 schema 是因为它就是
- * `SceneObjectDoc` 的一部分——这份 schema 是文档形状的只读复刻，少了字段等于悄悄丢数据。
+ * `GameObjectDoc` 的一部分——这份 schema 是文档形状的只读复刻，少了字段等于悄悄丢数据。
  */
 export const teleportDataSchema = z.object({
   targets: z.array(z.string()),
@@ -289,7 +289,7 @@ export const projectSettingsSchema = z.object({
 /**
  * 对象特性组件的类型名（v9 起）。
  *
- * 与 `@dts/document` 的 `FEATURE_COMPONENT` **必须逐字一致**——两处是刻意复刻的
+ * 与 `@dts/document` 的 `DEFAULT_SLOT_COMPONENT` **必须逐字一致**——两处是刻意复刻的
  * （`protocol` 不能反过来依赖文档包），由 `apps/backend/test/protocol-document-contract.test.ts`
  * 断言两边一致，改一处忘了另一处会直接测试失败。
  */
@@ -368,7 +368,7 @@ export const sceneComponentSchema = z.union([
  * 「这个对象有什么」全看 `components`——前端据此决定建不建可见物、建哪几层。
  * `position` 为 null = 还没落位（前端不建可见物，与编辑器画布口径一致）。
  */
-export const sceneObjectSchema = z.object({
+export const gameObjectSchema = z.object({
   id: z.string().min(1),
   name: z.string(),
   kind: z.string().min(1),
@@ -400,15 +400,15 @@ export const sceneObjectSchema = z.object({
 /** 场景 = 场景名（就是文件名）+ 对象列表；整份推送 / 整份镜像。 */
 export const sceneSchema = z.object({
   name: z.string(),
-  objects: z.array(sceneObjectSchema),
+  objects: z.array(gameObjectSchema),
 });
 
 export type ScenePayload = z.infer<typeof sceneSchema>;
-export type SceneObjectPayload = z.infer<typeof sceneObjectSchema>;
+export type GameObjectPayload = z.infer<typeof gameObjectSchema>;
 
 /** 从对象上取某个组件的数据（协议层不解释内容，只按 `type` 找）。 */
 export function componentDataOf<T = Record<string, unknown>>(
-  object: SceneObjectPayload,
+  object: GameObjectPayload,
   type: string,
 ): T | undefined {
   return object.components.find((item) => item.type === type)?.data as T | undefined;
@@ -421,7 +421,7 @@ export function componentDataOf<T = Record<string, unknown>>(
  * 好让前端**先下资源包、再载入场景**。放在协议包里是因为它只依赖协议自己的字段形状；
  * 换成一个组件时只改这里，服务端与 Mock 前端都不用动。
  */
-export function resourceIdsOfObject(object: SceneObjectPayload): readonly string[] {
+export function resourceIdsOfObject(object: GameObjectPayload): readonly string[] {
   const ids: string[] = [];
 
   // 对象自己显示的图有两种承载：贴图 `ImageLayer` / 精灵 `SpriteLayer`

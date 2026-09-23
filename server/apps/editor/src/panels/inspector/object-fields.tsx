@@ -8,7 +8,7 @@ import {
   objectImage,
   spriteSheetOf,
   supportsSpriteSheet,
-  type SceneObjectDoc,
+  type GameObjectDoc,
 } from "@dts/document";
 import { cellPixelSize } from "@dts/grid";
 import { useEditorStore } from "../../state/editor-store";
@@ -23,7 +23,7 @@ import { Field, FieldRow } from "./fields";
  */
 
 /** 对象名称：就地改名（Enter / 失焦提交，Esc 还原）。 */
-export function NameField({ object }: { readonly object: SceneObjectDoc }): React.JSX.Element {
+export function NameField({ object }: { readonly object: GameObjectDoc }): React.JSX.Element {
   const renameObject = useEditorStore((state) => state.renameObject);
   const [draft, setDraft] = useState(object.name);
 
@@ -69,7 +69,7 @@ export function NameField({ object }: { readonly object: SceneObjectDoc }): Reac
  *
  * 对象本身还在场景里、还在列表里，所以这不是「删除」——随时可以再勾回来。
  */
-export function ActiveField({ object }: { readonly object: SceneObjectDoc }): React.JSX.Element {
+export function ActiveField({ object }: { readonly object: GameObjectDoc }): React.JSX.Element {
   const setObjectActive = useEditorStore((state) => state.setObjectActive);
 
   return (
@@ -94,7 +94,7 @@ export function ActiveField({ object }: { readonly object: SceneObjectDoc }): Re
  * 只锁「位置」这一件事：改名 / 显示顺序 / 缩放 / 激活 / 换贴图、以及地图的网格标注都照常改。
  * 摆场景时最容易被误拖的就是铺满视口的底图，所以这个开关虽然简单，但要和「激活」一样显眼。
  */
-export function LockedField({ object }: { readonly object: SceneObjectDoc }): React.JSX.Element {
+export function LockedField({ object }: { readonly object: GameObjectDoc }): React.JSX.Element {
   const setObjectLocked = useEditorStore((state) => state.setObjectLocked);
 
   return (
@@ -125,10 +125,10 @@ export function LockedField({ object }: { readonly object: SceneObjectDoc }): Re
  * （刚建出来的精灵）只画一个标记点，这里给一行说明 + 同一个「选择」入口。
  *
  * **子图（v20）**：图片是图集时显示「子图 第2行第3列（4×4）」。整图 / 子精灵在选择窗口中选择。
- * 只有**自己拥有贴图特性**的对象（`carriesKind(image)`，即精灵 / 玩家 / 道具 / 事件）才有这套 UI；
+ * 只有**预设允许贴图槽位**的对象（`OBJECT_PRESETS` 里声明了 image 槽位，即精灵 / 玩家 / 道具 / 事件）才有这套 UI；
  * 地图的贴图在 `GridMap` 里、且不允许取子图（取一块会让已有格子标注错位）。
  */
-export function TextureField({ object }: { readonly object: SceneObjectDoc }): React.JSX.Element {
+export function TextureField({ object }: { readonly object: GameObjectDoc }): React.JSX.Element {
   const tree = useEditorStore((state) => state.project.tree);
   const assetMetas = useEditorStore((state) => state.assetMetas);
   const openImagePicker = useEditorStore((state) => state.openImagePicker);
@@ -213,7 +213,7 @@ export function TextureField({ object }: { readonly object: SceneObjectDoc }): R
  * 和坐标输入框一样是「各自提交、失焦/回车生效」，区别在于这里是**整数**且会**夹**到
  * 允许范围内——顺序只是个层号，敲出小数或超大值没有意义。连续输入合并成一条撤销记录。
  */
-export function SortingOrderField({ object }: { readonly object: SceneObjectDoc }): React.JSX.Element {
+export function SortingOrderField({ object }: { readonly object: GameObjectDoc }): React.JSX.Element {
   const setObjectSortingOrder = useEditorStore((state) => state.setObjectSortingOrder);
   const inputRef = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState(String(object.sortingOrder));
@@ -275,7 +275,7 @@ export function SortingOrderField({ object }: { readonly object: SceneObjectDoc 
  * 缩放是**等比 / 单轴都作用于同一块矩形**：地图的贴图与网格、精灵的图片、拾取范围、
  * 选中框一起缩放。
  */
-export function ScaleField({ object }: { readonly object: SceneObjectDoc }): React.JSX.Element {
+export function ScaleField({ object }: { readonly object: GameObjectDoc }): React.JSX.Element {
   const setObjectScale = useEditorStore((state) => state.setObjectScale);
   const setObjectScaleAxes = useEditorStore((state) => state.setObjectScaleAxes);
   // 两轴有效值（单轴字段缺省 = 用等比 `scale`，所以不能直接读 object.scale）
@@ -447,13 +447,13 @@ export function formatScale(value: number): string {
  * 对象的**角度**（绕竖轴旋转，单位**度**）。
  *
  * 与缩放同一套提交方式（失焦 / 回车生效、连续输入合并成一条撤销记录、Esc 还原）。
- * 文档里存的是**弧度**（`SceneObjectDoc.rotation`），这里只做度 ↔ 弧度的换算，
+ * 文档里存的是**弧度**（`GameObjectDoc.rotation`），这里只做度 ↔ 弧度的换算，
  * 因为 Unity 的 Inspector 也是度数——两边对着看才不会算错。
  *
  * **符号与 Unity 一致**：这里填 `30`，Unity 里就是 `Quaternion.Euler(0, 30, 0)`。
  * 越界（超过半圈）先归一化到 `(-180, 180]`，框里回填归一化后的值。
  */
-export function RotationField({ object }: { readonly object: SceneObjectDoc }): React.JSX.Element {
+export function RotationField({ object }: { readonly object: GameObjectDoc }): React.JSX.Element {
   const setObjectRotation = useEditorStore((state) => state.setObjectRotation);
   const inputRef = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState(formatDegrees(object.rotation));
@@ -526,7 +526,7 @@ export function formatDegrees(rotationRadians: number): string {
  * **锁定的对象禁用这两个框**：锁上就是「不能被移动」，留一个还能改坐标的入口等于没锁
  * （store 的 `moveObject` 也会拒掉，那是第二道保险）。
  */
-export function PositionFields({ object }: { readonly object: SceneObjectDoc }): React.JSX.Element {
+export function PositionFields({ object }: { readonly object: GameObjectDoc }): React.JSX.Element {
   const moveObject = useEditorStore((state) => state.moveObject);
   const xRef = useRef<HTMLInputElement>(null);
   const yRef = useRef<HTMLInputElement>(null);
@@ -677,7 +677,7 @@ export function NumberInput({
  * 改尺寸会把格子按新规格重建（重叠部分原样保留，多出来的格子是空、被缩掉的丢弃）——
  * 格子数据是铺满整张网格的，尺寸与格数必须一致。
  */
-export function GridFields({ object }: { readonly object: SceneObjectDoc }): React.JSX.Element {
+export function GridFields({ object }: { readonly object: GameObjectDoc }): React.JSX.Element {
   const setMapGrid = useEditorStore((state) => state.setMapGrid);
   const columnsRef = useRef<HTMLInputElement>(null);
   const rowsRef = useRef<HTMLInputElement>(null);
@@ -750,7 +750,7 @@ export function GridFields({ object }: { readonly object: SceneObjectDoc }): Rea
  *
  * 文档里不存这个数（v6 起那个恒为 1 的 `cellSize` 已经删掉）——存一份只会和事实不一致。
  */
-export function CellSizeField({ object }: { readonly object: SceneObjectDoc }): React.JSX.Element {
+export function CellSizeField({ object }: { readonly object: GameObjectDoc }): React.JSX.Element {
   const image = mapDataOf(object)?.image;
   const grid = mapDataOf(object)?.grid;
   if (image === undefined || grid === undefined) {

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { soundDataOf, type SceneObjectDoc } from "@dts/document";
+import { soundDataOf, type GameObjectDoc } from "@dts/document";
 import { useEditorStore } from "../state/editor-store";
 import { audioNameOf } from "../panels/audio-catalog";
 import { assetDisplayName } from "../panels/asset-info";
@@ -97,7 +97,7 @@ function SoundEditBody({
   object,
   tree,
 }: {
-  readonly object: SceneObjectDoc;
+  readonly object: GameObjectDoc;
   readonly tree: ReturnType<typeof useEditorStore.getState>["project"]["tree"];
 }): React.JSX.Element {
   const setSoundClipName = useEditorStore((state) => state.setSoundClipName);

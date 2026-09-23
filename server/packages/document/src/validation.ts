@@ -3,14 +3,14 @@ import { findComponentType, isKnownComponentType } from "./components";
 import { collectActionIds, isMapFogEnabled } from "./commands";
 import { imageOf, mapDataOf, soundDataOf, teleportDataOf, videoDataOf } from "./access";
 import type { AssetMetaDoc, AssetMetas } from "./asset-meta";
-import { FEATURE_COMPONENT, carriesKind } from "./features";
+import { presetOf, supportsVideo } from "./presets";
 import { spriteSheetOf } from "./sprites";
 import type {
   AudioTagTableDoc,
   ProjectDoc,
   ProjectSettingsDoc,
   SceneDoc,
-  SceneObjectDoc,
+  GameObjectDoc,
 } from "./types";
 
 /**
@@ -51,7 +51,7 @@ export interface SceneValidationOptions {
  * 地图对象走的是 `map.image`，由 `validateObject` 里那条「不支持子图」管。
  */
 function validateObjectSprite(
-  object: SceneObjectDoc,
+  object: GameObjectDoc,
   path: string,
   metas: AssetMetas | undefined,
   issues: ValidationIssue[],
@@ -97,7 +97,7 @@ function checkPosition(
  * （按下去什么都不会发生）——别的规则都只看对象自己。
  */
 function validateObject(
-  object: SceneObjectDoc,
+  object: GameObjectDoc,
   path: string,
   issues: ValidationIssue[],
   sceneName?: string,
@@ -133,7 +133,7 @@ function validateObject(
 
   // 地图对象：数据必须完整（没有数据的「地图对象」在场景里就是个空壳）
   const map = mapDataOf(object);
-  if (carriesKind(FEATURE_COMPONENT.map, object.kind)) {
+  if (presetOf(object.kind)?.slots.map !== undefined) {
     if (map === undefined) {
       issues.push({ level: "error", path, message: "地图对象缺少地图数据（贴图 / 网格）" });
     } else {
@@ -212,7 +212,7 @@ function validateObject(
 
   // 声音对象（动作对象）：基础属性与实体一样，另加声音数据——缺了就是个什么都不播的空壳
   const sound = soundDataOf(object);
-  if (carriesKind(FEATURE_COMPONENT.sound, object.kind)) {
+  if (presetOf(object.kind)?.slots.sound !== undefined) {
     if (sound === undefined) {
       issues.push({
         level: "error",
@@ -288,7 +288,7 @@ function validateObject(
 
   // 传送阵（动作对象）：基础属性与实体一样，另加「候选目标场景 + 选中的那一个」
   const teleport = teleportDataOf(object);
-  if (carriesKind(FEATURE_COMPONENT.teleport, object.kind)) {
+  if (presetOf(object.kind)?.slots.teleport !== undefined) {
     if (teleport === undefined) {
       issues.push({
         level: "error",
@@ -347,7 +347,7 @@ function validateObject(
   }
 
   /*
-    视频列表（v14 起）：**只有地图与贴图**能带（`carriesKind`）。
+    视频列表（v14 起）：**只有地图与贴图**能带（预设表 `OBJECT_PRESETS` 的 video 槽位）。
     与声音那几条同一个口径——错了都是「按没加 / 按没选处理」，所以只报警告不拦运行。
     **旧文件里精灵身上的视频就走这条**：v21 起「能放视频」的名单从精灵换成了贴图，
     那份组件数据**照样留着不删**（不静默改用户数据），只是编辑器不再认它、这里报一条警告。
@@ -356,7 +356,7 @@ function validateObject(
   */
   const video = videoDataOf(object);
   if (video !== undefined) {
-    if (!carriesKind(FEATURE_COMPONENT.video, object.kind)) {
+    if (!supportsVideo(object.kind)) {
       issues.push({
         level: "warning",
         path: `${path}/video`,

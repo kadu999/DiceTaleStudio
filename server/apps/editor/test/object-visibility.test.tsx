@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
-import { createEmptyScene, createMapObject, createSceneObject, type SceneObjectDoc } from "@dts/document";
+import { createEmptyScene, createMapObject, createGameObject, type GameObjectDoc } from "@dts/document";
 import { HierarchyPanel } from "../src/panels/hierarchy/HierarchyPanel";
 import { checkerOriginOf } from "../src/panels/scene/ScenePanel";
 import { sceneHistory, useEditorStore } from "../src/state/editor-store";
@@ -21,7 +21,7 @@ const IMAGE = { id: "project:测试/Assets/images/Map001.png", width: 400, heigh
  * **必须同时 `sceneHistory.reset`**：对象编辑走的是历史容器，
  * 忘了这一步 `applyScenes` 会在空数组里找场景、永远「没产生变更」。
  */
-function seedScene(objects: SceneObjectDoc[]): void {
+function seedScene(objects: GameObjectDoc[]): void {
   const scenes = [{ ...createEmptyScene("Map001"), objects }];
   sceneHistory.reset(scenes);
   useEditorStore.setState({
@@ -42,7 +42,7 @@ describe("场景对象列表：激活按钮", () => {
   it("每个对象都有一枚激活按钮，默认是激活的", () => {
     seedScene([
       createMapObject({ name: "网格地图", image: IMAGE, grid: { width: 8, height: 6 } }),
-      createSceneObject({ name: "木门", position: { x: 0, y: 0 } }),
+      createGameObject({ name: "木门", position: { x: 0, y: 0 } }),
     ]);
 
     render(<HierarchyPanel />);
@@ -56,7 +56,7 @@ describe("场景对象列表：激活按钮", () => {
   });
 
   it("点一下就隐藏，再点一下回到显示", () => {
-    seedScene([createSceneObject({ id: "door", name: "木门", position: { x: 0, y: 0 } })]);
+    seedScene([createGameObject({ id: "door", name: "木门", position: { x: 0, y: 0 } })]);
     render(<HierarchyPanel />);
 
     const toggle = screen.getByTestId("object-active-toggle");
@@ -74,7 +74,7 @@ describe("场景对象列表：激活按钮", () => {
   });
 
   it("隐藏只动 active，不碰位置与显示顺序", () => {
-    seedScene([createSceneObject({ id: "door", name: "木门", position: { x: 12, y: -34 } })]);
+    seedScene([createGameObject({ id: "door", name: "木门", position: { x: 12, y: -34 } })]);
     render(<HierarchyPanel />);
 
     screen.getByTestId("object-active-toggle").click();
@@ -100,7 +100,7 @@ describe("棋盘底纹的锚点", () => {
   });
 
   it("没有地图时退回世界原点（底纹总得有个相位）", () => {
-    expect(checkerOriginOf([createSceneObject({ name: "木门" })])).toEqual({ x: 0, y: 0 });
+    expect(checkerOriginOf([createGameObject({ name: "木门" })])).toEqual({ x: 0, y: 0 });
     expect(checkerOriginOf([])).toEqual({ x: 0, y: 0 });
   });
 });

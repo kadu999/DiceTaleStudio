@@ -5,7 +5,7 @@ import {
   createAssetMeta,
   createAssetMetas,
   createEmptyScene,
-  createSceneObject,
+  createGameObject,
   setObjectImage,
   sceneAssetRefsToGuids,
   sceneAssetRefsToIds,
@@ -19,7 +19,7 @@ describe("scene asset identity", () => {
     const metas = createAssetMetas([{ id: IMAGE_ID, meta }]);
     const scene = {
       ...createEmptyScene("Map001"),
-      objects: [createSceneObject({ id: "sprite-1", name: "sprite" })],
+      objects: [createGameObject({ id: "sprite-1", name: "sprite" })],
     };
     setObjectImage(scene, "sprite-1", { id: IMAGE_ID, width: 64, height: 64 });
 
@@ -41,7 +41,7 @@ describe("scene asset identity", () => {
     const oldMetas = createAssetMetas([{ id: IMAGE_ID, meta }]);
     const scene = {
       ...createEmptyScene("Map001"),
-      objects: [createSceneObject({ id: "sprite-1", name: "sprite" })],
+      objects: [createGameObject({ id: "sprite-1", name: "sprite" })],
     };
     setObjectImage(scene, "sprite-1", { id: IMAGE_ID, width: 64, height: 64 });
     const persisted = sceneAssetRefsToGuids(scene, oldMetas);
@@ -62,7 +62,7 @@ describe("scene asset identity", () => {
       ...createEmptyScene("Map001"),
       objects: [
         {
-          ...createSceneObject({ id: "sound-1", name: "sound" }),
+          ...createGameObject({ id: "sound-1", name: "sound" }),
           components: [
             {
               id: "custom",
@@ -98,7 +98,7 @@ describe("scene asset identity", () => {
       ...createEmptyScene("Map001"),
       objects: [
         {
-          ...createSceneObject({ id: "sound-1", name: "sound" }),
+          ...createGameObject({ id: "sound-1", name: "sound" }),
           components: [
             {
               id: "sound-1__PlaySound",
@@ -109,7 +109,7 @@ describe("scene asset identity", () => {
           ],
         },
         {
-          ...createSceneObject({ id: "image-1", name: "image", kind: "Image" }),
+          ...createGameObject({ id: "image-1", name: "image", kind: "Image" }),
           components: [
             {
               id: "image-1__VideoOverlay",
@@ -137,7 +137,7 @@ describe("scene asset identity", () => {
   it("leaves unresolved legacy references untouched", () => {
     const scene = {
       ...createEmptyScene("Map001"),
-      objects: [createSceneObject({ id: "sprite-1", name: "sprite" })],
+      objects: [createGameObject({ id: "sprite-1", name: "sprite" })],
     };
     setObjectImage(scene, "sprite-1", { id: IMAGE_ID, width: 64, height: 64 });
 

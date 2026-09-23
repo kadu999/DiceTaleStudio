@@ -3,7 +3,7 @@ import { produce, type Draft } from "immer";
 import { setSoundClipName, setSoundClips, setSoundLayer, setSoundPicked } from "../src/commands";
 import { imageOf, mapDataOf, soundDataOf } from "../src/access";
 import { featureComponent } from "../src/components";
-import { FEATURE_COMPONENT } from "../src/features";
+import { DEFAULT_SLOT_COMPONENT } from "../src/presets";
 import { createEmptyScene, createSoundObject } from "../src/factory";
 import { parseSceneFile } from "../src/schema";
 import { formatIssues, hasErrors, validateScene } from "../src/validation";
@@ -12,7 +12,7 @@ import {
   OBJECT_SOUND_LAYERS,
   SOUND_LAYERS,
   type SceneDoc,
-  type SceneObjectDoc,
+  type GameObjectDoc,
 } from "../src/types";
 
 /**
@@ -29,7 +29,7 @@ import {
 const CLIP_A = "project:C/Assets/audio/step1.mp3";
 const CLIP_B = "project:C/Assets/audio/step2.mp3";
 
-function sceneWith(objects: readonly SceneObjectDoc[]): SceneDoc {
+function sceneWith(objects: readonly GameObjectDoc[]): SceneDoc {
   return { ...createEmptyScene("Map001"), objects: [...objects] };
 }
 
@@ -38,7 +38,7 @@ function mutate(scene: SceneDoc, recipe: (draft: Draft<SceneDoc>) => void): Scen
 }
 
 /** 手里的对象（命令都是按 id 找的）。 */
-function objectOf(scene: SceneDoc, id: string): SceneObjectDoc | undefined {
+function objectOf(scene: SceneDoc, id: string): GameObjectDoc | undefined {
   return scene.objects.find((object) => object.id === id);
 }
 
@@ -58,7 +58,7 @@ function rawFile(sound: Record<string, unknown>): unknown {
         rotation: 0,
         scale: 1,
         components: [
-          { id: "s1__PlaySound", type: FEATURE_COMPONENT.sound, data: sound, actions: [] },
+          { id: "s1__PlaySound", type: DEFAULT_SLOT_COMPONENT.sound, data: sound, actions: [] },
         ],
       },
     ],
@@ -237,7 +237,7 @@ describe("声音对象的命令", () => {
   });
 
   it("普通对象挂不上声音数据（命令返回 false，不动文档）", () => {
-    const door: SceneObjectDoc = {
+    const door: GameObjectDoc = {
       id: "door",
       name: "木门",
       kind: "Sprite",
@@ -262,7 +262,7 @@ describe("声音对象的命令", () => {
 
   it("手写文件里缺声音组件：第一次编辑把默认的补出来", () => {
     // 只有 kind，没有 PlaySound 组件（schema 里组件是可选的，读得开——校验会报错提醒）
-    const broken: SceneObjectDoc = { ...createSoundObject({ name: "脚步", id: "s1" }), components: [] };
+    const broken: GameObjectDoc = { ...createSoundObject({ name: "脚步", id: "s1" }), components: [] };
 
     const scene = mutate(sceneWith([broken]), (draft) => {
       expect(setSoundLayer(draft, "s1", "voice")).toBe(true);
@@ -335,7 +335,7 @@ describe("声音对象的校验", () => {
 
   it("普通对象带声音数据 / 声音对象带贴图 → 各给一条警告", () => {
     // v19 起「带声音数据」= 挂着 PlaySound 组件（kind 不是 PlaySound 时校验会提醒）
-    const door: SceneObjectDoc = {
+    const door: GameObjectDoc = {
       id: "door",
       name: "木门",
       kind: "Sprite",
@@ -346,15 +346,15 @@ describe("声音对象的校验", () => {
       scale: 1,
       locked: false,
       components: [
-        featureComponent("door", FEATURE_COMPONENT.sound, { clips: [CLIP_A], layer: "sfx" }),
+        featureComponent("door", DEFAULT_SLOT_COMPONENT.sound, { clips: [CLIP_A], layer: "sfx" }),
       ],
     };
     // 声音对象画的是**固定的内置图标**，贴图组件没有意义（手写文件里可能挂着一个）
-    const soundWithImage: SceneObjectDoc = {
+    const soundWithImage: GameObjectDoc = {
       ...createSoundObject({ name: "脚步", id: "s1", position: { x: 0, y: 0 } }),
       components: [
-        featureComponent("s1", FEATURE_COMPONENT.sound, { clips: [], layer: "sfx" }),
-        featureComponent("s1", FEATURE_COMPONENT.image, {
+        featureComponent("s1", DEFAULT_SLOT_COMPONENT.sound, { clips: [], layer: "sfx" }),
+        featureComponent("s1", DEFAULT_SLOT_COMPONENT.image, {
           id: "project:C/Assets/images/audio.png",
           width: 32,
           height: 32,
@@ -369,10 +369,10 @@ describe("声音对象的校验", () => {
   });
 
   it("空白的声音名字 → 警告（会被当成没起名字，退回素材文件名）", () => {
-    const blank: SceneObjectDoc = {
+    const blank: GameObjectDoc = {
       ...createSoundObject({ name: "雷雨", id: "s1", clips: [CLIP_A] }),
       components: [
-        featureComponent("s1", FEATURE_COMPONENT.sound, {
+        featureComponent("s1", DEFAULT_SLOT_COMPONENT.sound, {
           clips: [CLIP_A],
           names: { [CLIP_A]: "   " },
           layer: "sfx",
@@ -386,10 +386,10 @@ describe("声音对象的校验", () => {
   });
 
   it("选中的那条不在列表里 / 名字挂在没加进来的音频上 → 各给一条警告（手写文件才会这样）", () => {
-    const stale: SceneObjectDoc = {
+    const stale: GameObjectDoc = {
       ...createSoundObject({ name: "脚步", id: "s1", clips: [CLIP_A] }),
       components: [
-        featureComponent("s1", FEATURE_COMPONENT.sound, {
+        featureComponent("s1", DEFAULT_SLOT_COMPONENT.sound, {
           clips: [CLIP_A],
           picked: CLIP_B,
           names: { [CLIP_B]: "雷雨·低" },

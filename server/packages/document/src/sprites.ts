@@ -1,13 +1,14 @@
 import type { ImageSize } from "@dts/grid";
 import { imageOf, mapDataOf } from "./access";
 import type { AssetMetaDoc, AssetMetas } from "./asset-meta";
-import { FEATURE_COMPONENT, carriesFeatureComponent, carriesKind } from "./features";
+import { findComponentType } from "./components";
+import { presetOf } from "./presets";
 import type {
   ImageRef,
   ImageSpriteRef,
   ResolvedSprite,
   SceneDoc,
-  SceneObjectDoc,
+  GameObjectDoc,
   SpriteSheetDoc,
 } from "./types";
 
@@ -136,11 +137,11 @@ export function resolvedSpriteOf(
  * 不会出现「编辑器画的是裁过的一块、前端铺的是整张」这种对不上的半套状态。
  */
 export function displaySpriteOf(
-  object: SceneObjectDoc,
+  object: GameObjectDoc,
   metas: AssetMetas,
 ): ResolvedSprite | undefined {
   // 地图的贴图住在 GridMap 里，格子按整张贴图算：取一块会让已有标注的含义静默改变
-  if (carriesKind(FEATURE_COMPONENT.map, object.kind)) {
+  if (presetOf(object.kind)?.slots.map !== undefined) {
     return undefined;
   }
 
@@ -294,9 +295,9 @@ export function resolveSceneSprites(scene: SceneDoc, metas: AssetMetas): SceneDo
 
     changed = true;
     const components = object.components.map((component) => {
-      // 图片有两种组件（精灵 `SpriteLayer` / 贴图 `ImageLayer`）——**有格子要写回的那个**
-      // 只可能是其中实际存在的那一种，所以按组件名匹配，不再按 kind 判一次
-      if (carriesFeatureComponent("image", component.type) && sprite !== undefined) {
+      // 图片槽位有两种组件（精灵 `SpriteLayer` / 贴图 `ImageLayer`）——**有格子要写回的那个**
+      // 只可能是其中实际存在的那一种，所以按组件自报的 slot 匹配，不再按 kind 判一次
+      if (findComponentType(component.type)?.slot === "image" && sprite !== undefined) {
         const image = imageOf(object);
         if (image === undefined) {
           return component;
@@ -316,7 +317,7 @@ export function resolveSceneSprites(scene: SceneDoc, metas: AssetMetas): SceneDo
         };
       }
 
-      if (component.type === FEATURE_COMPONENT.map && mapSprite !== undefined) {
+      if (findComponentType(component.type)?.slot === "map" && mapSprite !== undefined) {
         const map = mapDataOf(object);
         if (map === undefined) {
           return component;

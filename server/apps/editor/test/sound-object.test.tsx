@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import {
-  FEATURE_COMPONENT,
+  DEFAULT_SLOT_COMPONENT,
   createSoundObject,
   emptyAssetMetas,
   imageOf,
   soundDataOf,
   withFeature,
-  type SceneObjectDoc,
+  type GameObjectDoc,
   type SoundLayer,
 } from "@dts/document";
 import { InspectorPanel } from "../src/panels/inspector/InspectorPanel";
@@ -65,18 +65,18 @@ const TREE: ResourceTreeNode[] = [
   },
 ];
 
-function sound(clips: readonly string[] = [], layer: SoundLayer = "sfx"): SceneObjectDoc {
+function sound(clips: readonly string[] = [], layer: SoundLayer = "sfx"): GameObjectDoc {
   // 摆在场景正中（和实体一样）：没有贴图时显示矩形是 64×64 的兜底矩形，画内置音频徽标
   return createSoundObject({ id: "sound-1", name: "脚步", clips, layer, position: { x: 0, y: 0 } });
 }
 
 /** 手写文件里那种「有音频列表、但没写选了哪条」的样子（播放按钮该点不动）。 */
-function unpicked(clips: readonly string[]): SceneObjectDoc {
+function unpicked(clips: readonly string[]): GameObjectDoc {
   const object = sound(clips);
-  return withFeature(object, FEATURE_COMPONENT.sound, { clips: [...clips], layer: "sfx" });
+  return withFeature(object, DEFAULT_SLOT_COMPONENT.sound, { clips: [...clips], layer: "sfx" });
 }
 
-function seedScene(objects: SceneObjectDoc[], selected: readonly string[]): void {
+function seedScene(objects: GameObjectDoc[], selected: readonly string[]): void {
   const scenes = [{ name: "Map001", objects }];
   sceneHistory.reset(scenes);
   useEditorStore.setState({
@@ -88,7 +88,7 @@ function seedScene(objects: SceneObjectDoc[], selected: readonly string[]): void
   });
 }
 
-const objectOf = (id: string): SceneObjectDoc | undefined =>
+const objectOf = (id: string): GameObjectDoc | undefined =>
   useEditorStore.getState().scenes[0]?.objects.find((item) => item.id === id);
 
 const soundOf = (id: string) => {

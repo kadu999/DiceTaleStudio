@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { produce, type Draft } from "immer";
-import { createSceneObject, setObjectImage, setObjectSprite } from "../src/commands";
+import { createGameObject, setObjectImage, setObjectSprite } from "../src/commands";
 import { createEmptyScene, createMapObject } from "../src/factory";
 import { imageOf } from "../src/access";
 import {
@@ -31,7 +31,7 @@ import {
   DOCUMENT_FORMAT_VERSION,
   type ImageRef,
   type SceneDoc,
-  type SceneObjectDoc,
+  type GameObjectDoc,
   type SpriteSheetDoc,
 } from "../src/types";
 
@@ -55,7 +55,7 @@ const IMAGE = { id: IMAGE_ID, width: 400, height: 300 };
 /** 第二张图（测「几张图各一份」）。 */
 const OTHER_ID = "project:C/Assets/images/tiles.png";
 
-function sceneWith(objects: readonly SceneObjectDoc[]): SceneDoc {
+function sceneWith(objects: readonly GameObjectDoc[]): SceneDoc {
   return { ...createEmptyScene("Map001"), objects: [...objects] };
 }
 
@@ -86,11 +86,11 @@ function imageMetas(sheet?: SpriteSheetDoc): AssetMetas {
 }
 
 /** 一个挑了图的精灵（子图的宿主）。 */
-function spriteObject(id = "sprite-1", image: ImageRef = IMAGE): SceneObjectDoc {
-  return setImage(createSceneObject({ id, name: "精灵" }), id, image);
+function spriteObject(id = "sprite-1", image: ImageRef = IMAGE): GameObjectDoc {
+  return setImage(createGameObject({ id, name: "精灵" }), id, image);
 }
 
-function setImage(object: SceneObjectDoc, id: string, image: ImageRef = IMAGE): SceneObjectDoc {
+function setImage(object: GameObjectDoc, id: string, image: ImageRef = IMAGE): GameObjectDoc {
   const scene = sceneWith([object]);
   setObjectImage(scene, id, image);
   const next = scene.objects[0];
@@ -208,7 +208,7 @@ describe("对象：引用哪一格", () => {
   });
 
   it("没挑图、以及地图对象：选格返回 false（格子没有意义）", () => {
-    const noImage = createSceneObject({ id: "sprite-1", name: "精灵" });
+    const noImage = createGameObject({ id: "sprite-1", name: "精灵" });
     expect(
       mutateScene(sceneWith([noImage]), (draft) => {
         expect(setObjectSprite(draft, "sprite-1", { column: 0, row: 0 })).toBe(false);
@@ -673,7 +673,7 @@ describe("v21 迁移：图片组件改名（按 kind）", () => {
  * 幂等。真正的风险不在改名本身，而在**它必须排在按 kind 路由的那两条迁移前面**——
  * 那一条由上面「v18 扁平字段」与「v20 图片组件改名」两个用例兜着。
  */
-describe("v22 迁移：kind 改名（Texture → Image / SceneObject → Sprite）", () => {
+describe("v22 迁移：kind 改名（Texture → Image / GameObject → Sprite）", () => {
   const load = (objects: readonly Record<string, unknown>[], formatVersion = 21) =>
     parseSceneFile({ formatVersion, objects: [...objects] });
 

@@ -13,7 +13,7 @@ import {
   openProject,
   readSceneFile,
   sceneDoc,
-  sceneObjectDoc,
+  gameObjectDoc,
   seedProjectDoc,
   selectObject,
   solidPng,
@@ -370,7 +370,7 @@ test.describe("场景切换：切换条与快捷键", () => {
     const project = await newProject(request);
     try {
       await seedProjectDoc(request, project, [
-        sceneDoc("Map001", [sceneObjectDoc("木门", "Sprite", { x: 0, y: 0 })]),
+        sceneDoc("Map001", [gameObjectDoc("木门", "Sprite", { x: 0, y: 0 })]),
         sceneDoc("Map002"),
       ]);
       await enterEditor(page);
