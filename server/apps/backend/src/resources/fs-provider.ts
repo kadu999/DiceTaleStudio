@@ -2,8 +2,12 @@ import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/p
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import {
   RESOURCE_KINDS,
+  assetFolderPathsFor,
+  assetMetaIdFor,
+  assetMetaPathFor,
   formatResourceId,
   isAssetMetaPath,
+  newAssetMetaText,
   parseResourceId,
   type ResourceDirs,
   type ResourceEntry,
@@ -87,6 +91,13 @@ export class FsResourceProvider implements ResourceProvider {
           continue;
         }
 
+        // Resource listing is the single entry point for externally added assets.
+        try {
+          await this.ensureAssetMeta(formatResourceId(current, path));
+        } catch {
+          // Metadata is auxiliary; read-only or permission errors do not block listing.
+        }
+
         entries.push({
           id: formatResourceId(current, path),
           kind: current,
@@ -121,18 +132,28 @@ export class FsResourceProvider implements ResourceProvider {
 
   async writeText(id: string, text: string): Promise<void> {
     await writeAtomically(this.pathFor(id), text);
+    await this.ensureAssetMeta(id);
   }
 
   async writeBinary(id: string, data: ArrayBuffer): Promise<void> {
     await writeAtomically(this.pathFor(id), Buffer.from(data));
+    await this.ensureAssetMeta(id);
   }
 
   async ensureFolder(id: string): Promise<void> {
+    const parsed = parseResourceId(id);
     await mkdir(this.pathFor(id), { recursive: true });
+    for (const path of assetFolderPathsFor(parsed.kind, parsed.path)) {
+      await this.ensureAssetMeta(`${parsed.kind}:${path}`, true);
+    }
   }
 
   async remove(id: string): Promise<void> {
+    const metaId = assetMetaIdFor(id);
     await rm(this.pathFor(id), { force: true, recursive: true });
+    if (metaId !== undefined) {
+      await rm(this.pathFor(metaId), { force: true, recursive: false });
+    }
   }
 
   /**
@@ -160,8 +181,44 @@ export class FsResourceProvider implements ResourceProvider {
       throw new Error(`资源已存在: ${toId}`);
     }
 
+    const fromMeta = assetMetaIdFor(fromId);
+    const toMeta = assetMetaIdFor(toId);
+    const fromMetaPath = fromMeta === undefined ? undefined : this.pathFor(fromMeta);
+    const toMetaPath = toMeta === undefined ? undefined : this.pathFor(toMeta);
+    if (
+      fromMetaPath !== undefined &&
+      toMetaPath !== undefined &&
+      (await existsAt(fromMetaPath)) &&
+      (await existsAt(toMetaPath))
+    ) {
+      throw new Error(`资源已存在: ${toMeta}`);
+    }
+
     await mkdir(dirname(toPath), { recursive: true });
     await rename(fromPath, toPath);
+    if (fromMetaPath !== undefined && toMetaPath !== undefined && (await existsAt(fromMetaPath))) {
+      await mkdir(dirname(toMetaPath), { recursive: true });
+      await rename(fromMetaPath, toMetaPath);
+    }
+    await this.ensureAssetMeta(toId);
+  }
+
+  private async ensureAssetMeta(id: string, folder = false): Promise<void> {
+    const parsed = parseResourceId(id);
+    const metaId = assetMetaIdFor(id);
+    if (metaId === undefined || isAssetMetaPath(parsed.path) || (await this.exists(metaId))) {
+      return;
+    }
+
+    if (assetMetaPathFor(parsed.kind, parsed.path) === undefined) {
+      return;
+    }
+
+    const info = folder ? undefined : await stat(this.pathFor(id));
+    const text = newAssetMetaText(parsed.path, folder || info?.isDirectory() === true);
+    if (text !== undefined) {
+      await writeAtomically(this.pathFor(metaId), text);
+    }
   }
 
   private baseFor(kind: ResourceKind): string {

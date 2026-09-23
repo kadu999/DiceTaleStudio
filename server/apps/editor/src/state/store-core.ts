@@ -14,6 +14,8 @@ import {
   type ProjectDoc,
   type SceneDoc,
   type SceneFileDoc,
+  type AssetMetas,
+  sceneAssetRefsToGuids,
   type WorldPosition,
 } from "@dts/document";
 import { type ImageSize } from "@dts/grid";
@@ -292,8 +294,27 @@ export const TRANSFORM_LABELS: Record<TransformTool, string> = {
  * 所以拿引用当键不会读到脏文本。
  */
 const serializedScenes = new WeakMap<SceneDoc, string>();
+const serializedScenesWithMetas = new WeakMap<SceneDoc, WeakMap<AssetMetas, string>>();
 
-export function serializeSceneFile(scene: SceneDoc): string {
+export function serializeSceneFile(scene: SceneDoc, metas?: AssetMetas): string {
+  if (metas !== undefined) {
+    const cachedByMetas = serializedScenesWithMetas.get(scene);
+    const cached = cachedByMetas?.get(metas);
+    if (cached !== undefined) {
+      return cached;
+    }
+
+    const file: SceneFileDoc = {
+      formatVersion: DOCUMENT_FORMAT_VERSION,
+      objects: sceneAssetRefsToGuids(scene, metas).objects.map(collapseScale),
+    };
+    const text = `${JSON.stringify(file, null, 2)}\n`;
+    const nextCache = cachedByMetas ?? new WeakMap<AssetMetas, string>();
+    nextCache.set(metas, text);
+    serializedScenesWithMetas.set(scene, nextCache);
+    return text;
+  }
+
   const cached = serializedScenes.get(scene);
   if (cached !== undefined) {
     return cached;

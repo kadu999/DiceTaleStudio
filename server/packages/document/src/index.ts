@@ -11,6 +11,7 @@ export * from "./features";
 export * from "./access";
 export * from "./sprites";
 export * from "./asset-meta";
+export * from "./scene-asset-refs";
 export * from "./schema";
 export * from "./components";
 export * from "./factory";

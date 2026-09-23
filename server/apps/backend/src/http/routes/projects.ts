@@ -3,6 +3,7 @@ import { dirname, resolve, sep } from "node:path";
 import { createEmptyProject } from "@dts/document";
 import {
   assetMetaIdOf,
+  guidFromAssetMetaText,
   buildResourceTree,
   createProject,
   deleteProject,
@@ -15,7 +16,7 @@ import {
   validateProjectName,
   validateProjectRelativePath,
 } from "@dts/resources";
-import { bodyString, bodyTrimmed, queryRaw, readJsonBody } from "../requests";
+import { bodyString, bodyTrimmed, queryRaw, queryTrimmed, readJsonBody } from "../requests";
 import { HttpError, badRequest, sendJson } from "../responses";
 import type { RouteContext } from "../router";
 
@@ -134,6 +135,46 @@ export async function getProjectMetasRoute(ctx: RouteContext): Promise<void> {
   }
 
   sendJson(ctx.response, 200, { name, metas, unreadable });
+}
+
+/** `GET /api/projects/asset?name=&guid=`：按素材 GUID 取得当前逻辑资源 ID。 */
+export async function getProjectAssetByGuidRoute(ctx: RouteContext): Promise<void> {
+  const name = queryRaw(ctx.url, "name");
+  const guid = queryTrimmed(ctx.url, "guid");
+  if (name.length === 0 || guid.length === 0) {
+    throw badRequest("缺少 name / guid 参数");
+  }
+  if (!/^[0-9a-f]{32}$/.test(guid)) {
+    throw badRequest("guid 必须是 32 位小写十六进制字符串");
+  }
+
+  const entries = await readProjectEntries(ctx.provider, name);
+  const matches: Array<{ id: string; path: string }> = [];
+  for (const entry of entries) {
+    if (entry.type !== "file") {
+      continue;
+    }
+
+    const metaId = assetMetaIdOf(entry.id);
+    if (metaId === undefined || !(await ctx.provider.exists(metaId))) {
+      continue;
+    }
+
+    if (guidFromAssetMetaText(await ctx.provider.readText(metaId)) === guid) {
+      matches.push({ id: entry.id, path: entry.path.slice(name.length + 1) });
+    }
+  }
+
+  if (matches.length === 0) {
+    throw new HttpError(404, `找不到素材 GUID: ${guid}`);
+  }
+
+  if (matches.length > 1) {
+    throw new HttpError(409, `素材 GUID 重复: ${guid}`);
+  }
+
+  const match = matches[0]!;
+  sendJson(ctx.response, 200, { guid, id: match.id, path: match.path });
 }
 
 /** `POST /api/projects/folder`：在项目里建一个目录（路径必须过项目内相对路径校验）。 */export async function createProjectFolderRoute(ctx: RouteContext): Promise<void> {

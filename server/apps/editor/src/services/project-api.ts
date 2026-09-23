@@ -98,6 +98,12 @@ export const projectApi = {
     return { metas: body.metas, unreadable: body.unreadable ?? [] };
   },
 
+  async assetByGuid(name: string, guid: string): Promise<{ guid: string; id: string; path: string }> {
+    return request<{ guid: string; id: string; path: string }>(
+      `/api/projects/asset?name=${encodeURIComponent(name)}&guid=${encodeURIComponent(guid)}`,
+    );
+  },
+
   async createFolder(project: string, path: string): Promise<void> {
     await request("/api/projects/folder", {
       method: "POST",

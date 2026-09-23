@@ -146,7 +146,7 @@ describe("meta 文件：解析与序列化", () => {
   });
 
   it("四种导入器都认：texture / audio / video / scene（v24 起每种素材一份）", () => {
-    expect(ASSET_IMPORTERS).toEqual(["texture", "audio", "video", "scene"]);
+    expect(ASSET_IMPORTERS).toEqual(["texture", "audio", "video", "scene", "prefab"]);
 
     for (const importer of ASSET_IMPORTERS) {
       const meta = createAssetMeta(importer);

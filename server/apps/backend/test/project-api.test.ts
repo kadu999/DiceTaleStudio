@@ -161,6 +161,40 @@ describe("项目 API", () => {
     expect(await provider.exists(assetMetaIdOf(imageId))).toBe(true);
   });
 
+  it("按 GUID 返回素材当前的逻辑 ID 和项目相对路径", async () => {
+    await postJson("/api/projects", { name: TEST_PROJECT });
+    const imageId = projectAssetId(TEST_PROJECT, "Assets/images/Renamed.png");
+    const guid = "c".repeat(32);
+    await provider.writeText(imageId, "image");
+    await provider.writeText(
+      assetMetaIdOf(imageId),
+      JSON.stringify({ formatVersion: 1, guid, importer: "texture" }),
+    );
+
+    const response = await fetch(
+      `${baseUrl}/api/projects/asset?name=${encodeURIComponent(TEST_PROJECT)}&guid=${guid}`,
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      guid,
+      id: imageId,
+      path: "Assets/images/Renamed.png",
+    });
+  });
+
+  it("GUID 形状不合法时返回 400，不存在时返回 404", async () => {
+    await postJson("/api/projects", { name: TEST_PROJECT });
+    const malformed = await fetch(
+      `${baseUrl}/api/projects/asset?name=${encodeURIComponent(TEST_PROJECT)}&guid=not-a-guid`,
+    );
+    expect(malformed.status).toBe(400);
+
+    const missing = await fetch(
+      `${baseUrl}/api/projects/asset?name=${encodeURIComponent(TEST_PROJECT)}&guid=${"d".repeat(32)}`,
+    );
+    expect(missing.status).toBe(404);
+  });
+
   it("没有 project.json 的目录不算项目，不出现在列表里", async () => {
     await postJson("/api/projects", { name: TEST_PROJECT });
     // 直接落一个只有资源、没有 project.json 的目录

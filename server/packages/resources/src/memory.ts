@@ -1,4 +1,5 @@
 import { isAssetMetaPath, parseResourceId, type ResourceKind } from "./ids";
+import { assetFolderPathsFor, assetMetaIdFor, newAssetMetaText } from "./meta";
 import type { ResourceEntry, ResourceProvider } from "./provider";
 
 /**
@@ -38,6 +39,8 @@ export class MemoryResourceProvider implements ResourceProvider {
       if (isAssetMetaPath(parsed.path)) {
         continue;
       }
+
+      this.ensureAssetMeta(id);
 
       entries.push({
         id,
@@ -85,16 +88,21 @@ export class MemoryResourceProvider implements ResourceProvider {
   async writeText(id: string, text: string): Promise<void> {
     parseResourceId(id);
     this.files.set(id, new TextEncoder().encode(text));
+    this.ensureAssetMeta(id);
   }
 
   async writeBinary(id: string, data: ArrayBuffer): Promise<void> {
     parseResourceId(id);
     this.files.set(id, new Uint8Array(data.slice(0)));
+    this.ensureAssetMeta(id);
   }
 
   async ensureFolder(id: string): Promise<void> {
-    parseResourceId(id);
+    const parsed = parseResourceId(id);
     this.folders.add(id);
+    for (const path of assetFolderPathsFor(parsed.kind, parsed.path)) {
+      this.ensureAssetMeta(`${parsed.kind}:${path}`, true);
+    }
   }
 
   /**
@@ -103,6 +111,7 @@ export class MemoryResourceProvider implements ResourceProvider {
    */
   async remove(id: string): Promise<void> {
     parseResourceId(id);
+    const metaId = assetMetaIdFor(id);
     this.files.delete(id);
     this.folders.delete(id);
 
@@ -117,6 +126,10 @@ export class MemoryResourceProvider implements ResourceProvider {
       if (key.startsWith(prefix)) {
         this.folders.delete(key);
       }
+    }
+
+    if (metaId !== undefined) {
+      this.files.delete(metaId);
     }
   }
 
@@ -147,6 +160,12 @@ export class MemoryResourceProvider implements ResourceProvider {
     }
 
     // 源自身与「源目录下的一切」统一按前缀替换：文件就是 id === fromId 的那一条
+    const fromMeta = assetMetaIdFor(fromId);
+    const toMeta = assetMetaIdFor(toId);
+    if (fromMeta !== undefined && toMeta !== undefined && this.files.has(fromMeta) && this.files.has(toMeta)) {
+      throw new Error(`资源已存在: ${toMeta}`);
+    }
+
     const prefix = `${fromId}/`;
     const moved = (id: string): string => `${toId}${id.slice(fromId.length)}`;
 
@@ -162,6 +181,28 @@ export class MemoryResourceProvider implements ResourceProvider {
         this.folders.delete(id);
         this.folders.add(moved(id));
       }
+    }
+
+    if (fromMeta !== undefined && toMeta !== undefined) {
+      const bytes = this.files.get(fromMeta);
+      this.files.delete(fromMeta);
+      if (bytes !== undefined) {
+        this.files.set(toMeta, bytes);
+      }
+    }
+    this.ensureAssetMeta(toId);
+  }
+
+  private ensureAssetMeta(id: string, folder = false): void {
+    const metaId = assetMetaIdFor(id);
+    if (metaId === undefined || this.files.has(metaId)) {
+      return;
+    }
+
+    const { path } = parseResourceId(id);
+    const text = newAssetMetaText(path, folder || this.folders.has(id));
+    if (text !== undefined) {
+      this.files.set(metaId, new TextEncoder().encode(text));
     }
   }
 

@@ -247,4 +247,63 @@ describe("素材 meta（每个素材旁边一个 .meta）", () => {
     // 但按 ID 直接读得到（写 meta 走的就是这条路）
     expect(await provider.readText(assetMetaIdOf(asset))).toBe('{"formatVersion":1}');
   });
+
+  it("resource lifecycle keeps a sidecar identity", async () => {
+    const provider = createMemoryResourceProvider();
+    const asset = projectAssetId("C", "Assets/images/A.png");
+    const renamed = projectAssetId("C", "Assets/images/B.png");
+
+    await provider.writeBinary(asset, new Uint8Array([1, 2, 3]).buffer);
+    const metaId = assetMetaIdOf(asset);
+    const originalMeta = JSON.parse(await provider.readText(metaId)) as { guid: string; importer: string };
+    expect(originalMeta.importer).toBe("texture");
+    expect(originalMeta.guid).toMatch(/^[0-9a-f]{32}$/);
+
+    await provider.writeText(metaId, JSON.stringify({ ...originalMeta, custom: "keep" }));
+    await provider.writeBinary(asset, new Uint8Array([4]).buffer);
+    expect(await provider.readText(metaId)).toContain('"custom":"keep"');
+
+    await provider.rename(asset, renamed);
+    expect(await provider.exists(asset)).toBe(false);
+    expect(await provider.exists(metaId)).toBe(false);
+    const renamedMeta = JSON.parse(await provider.readText(assetMetaIdOf(renamed))) as {
+      guid: string;
+      custom: string;
+    };
+    expect(renamedMeta.guid).toBe(originalMeta.guid);
+    expect(renamedMeta.custom).toBe("keep");
+
+    await provider.remove(renamed);
+    expect(await provider.exists(assetMetaIdOf(renamed))).toBe(false);
+  });
+
+  it("listing discovers new assets and generates a prefab sidecar", async () => {
+    const provider = createMemoryResourceProvider();
+    const prefab = projectAssetId("C", "Assets/prefabs/Avatar.prefab");
+    provider.seed(prefab, "prefab");
+
+    const entries = await provider.list("project");
+    expect(entries.map((entry) => entry.id)).toContain(prefab);
+    const meta = JSON.parse(await provider.readText(assetMetaIdOf(prefab))) as {
+      guid: string;
+      importer: string;
+    };
+    expect(meta.importer).toBe("prefab");
+    expect(meta.guid).toMatch(/^[0-9a-f]{32}$/);
+  });
+
+  it("folders also have sidecar identities", async () => {
+    const provider = createMemoryResourceProvider();
+    const folder = projectFolderId("C", "Assets/images/old");
+    const renamed = projectFolderId("C", "Assets/images/new");
+
+    await provider.ensureFolder(folder);
+    const metaId = assetMetaIdOf(folder);
+    const meta = JSON.parse(await provider.readText(metaId)) as { guid: string; folderAsset: boolean };
+    expect(meta.folderAsset).toBe(true);
+
+    await provider.rename(folder, renamed);
+    expect(await provider.exists(metaId)).toBe(false);
+    expect((JSON.parse(await provider.readText(assetMetaIdOf(renamed))) as { guid: string }).guid).toBe(meta.guid);
+  });
 });

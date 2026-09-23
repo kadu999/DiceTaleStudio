@@ -58,7 +58,7 @@ export function createSaveSlice(
 
       // 同步取快照：调用方可能紧接着清空内存（例如关闭项目）
       const dirty = get().scenes.filter(
-        (scene) => savedScenes.get(scene.name) !== serializeSceneFile(scene),
+        (scene) => savedScenes.get(scene.name) !== serializeSceneFile(scene, get().assetMetas),
       );
       if (dirty.length === 0) {
         set({ sceneSaveState: "saved", sceneSaveError: "" });
@@ -68,7 +68,7 @@ export function createSaveSlice(
       set({ sceneSaveState: "saving", sceneSaveError: "" });
       try {
         for (const scene of dirty) {
-          const text = serializeSceneFile(scene);
+          const text = serializeSceneFile(scene, get().assetMetas);
           await projectApi.writeText(projectSceneFileId(project, scene.name), text);
           savedScenes.set(scene.name, text);
         }

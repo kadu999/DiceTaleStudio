@@ -11,6 +11,7 @@ import { PROJECT_FOLDERS, PROJECT_SCENE_FILE_EXTENSION } from "@dts/resources";
 const IMAGE_SUFFIXES = [".png", ".jpg", ".jpeg", ".webp", ".gif"] as const;
 const VIDEO_SUFFIXES = [".mp4", ".webm"] as const;
 const AUDIO_SUFFIXES = [".mp3", ".wav", ".ogg"] as const;
+const PREFAB_SUFFIXES = [".prefab"] as const;
 const TEXT_SUFFIXES = new Set([".json", ".txt", ".md", ".csv"]);
 
 const KIND_LABELS: Record<string, string> = {
@@ -65,6 +66,10 @@ export function assetIconKind(fileName: string): AssetIconKind {
     return "audio";
   }
 
+  if ((PREFAB_SUFFIXES as readonly string[]).includes(suffix)) {
+    return "file";
+  }
+
   if (suffix === PROJECT_SCENE_FILE_EXTENSION) {
     return "scene";
   }
@@ -98,6 +103,8 @@ export function assetImporterKind(path: string): AssetImporter | undefined {
       return "video";
     case "scene":
       return path.startsWith(`${PROJECT_FOLDERS.scenes}/`) ? "scene" : undefined;
+    case "file":
+      return fileName.toLowerCase().endsWith(".prefab") ? "prefab" : undefined;
     default:
       return undefined;
   }

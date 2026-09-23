@@ -6,6 +6,7 @@ import {
   createProjectRoute,
   deleteProjectRoute,
   getProjectMetasRoute,
+  getProjectAssetByGuidRoute,
   getProjectTreeRoute,
   listProjectsRoute,
   revealProjectPathRoute,
@@ -44,6 +45,7 @@ export const ROUTES: readonly Route[] = [
   { method: "DELETE", path: "/api/projects", handler: deleteProjectRoute },
   { method: "GET", path: "/api/projects/tree", handler: getProjectTreeRoute },
   { method: "GET", path: "/api/projects/meta", handler: getProjectMetasRoute },
+  { method: "GET", path: "/api/projects/asset", handler: getProjectAssetByGuidRoute },
   { method: "POST", path: "/api/projects/folder", handler: createProjectFolderRoute },
   { method: "POST", path: "/api/projects/reveal", handler: revealProjectPathRoute },
 

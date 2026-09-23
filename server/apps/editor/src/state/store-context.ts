@@ -927,7 +927,7 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
   /** 内存里与磁盘不一致的场景名（顺序与 scenes 一致）。 */
   const dirtySceneNames = (): string[] =>
     get()
-      .scenes.filter((scene) => savedScenes.get(scene.name) !== serializeSceneFile(scene))
+      .scenes.filter((scene) => savedScenes.get(scene.name) !== serializeSceneFile(scene, get().assetMetas))
       .map((scene) => scene.name);
 
   /**

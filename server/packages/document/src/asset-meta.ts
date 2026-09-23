@@ -42,7 +42,7 @@ export const ASSET_META_FORMAT_VERSION = 1;
  * 叫 `importer` 而不是 `kind`：它描述的是「这份素材是怎么被导入 / 整理的」，
  * 而不是「它是哪一类文件」——以后同类素材也可能有不同导入方式。
  */
-export const ASSET_IMPORTERS = ["texture", "audio", "video", "scene"] as const;
+export const ASSET_IMPORTERS = ["texture", "audio", "video", "scene", "prefab"] as const;
 
 export type AssetImporter = (typeof ASSET_IMPORTERS)[number];
 
@@ -523,6 +523,22 @@ export function metaOfImage(
   }
 
   return image.id === undefined ? undefined : metas.byId[image.id];
+}
+
+/** Resolve a stable asset GUID to its current logical resource ID. */
+export function assetIdOfGuid(metas: AssetMetas, guid: string): string | undefined {
+  for (const [id, meta] of Object.entries(metas.byId)) {
+    if (meta.guid === guid) {
+      return id;
+    }
+  }
+
+  return undefined;
+}
+
+/** Resolve a current logical resource ID to the GUID persisted in its sidecar. */
+export function assetGuidOfId(metas: AssetMetas, id: string): string | undefined {
+  return metas.byId[id]?.guid;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

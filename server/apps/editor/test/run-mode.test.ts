@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   DOCUMENT_FORMAT_VERSION,
+  createAssetMeta,
+  createAssetMetas,
   createEmptyProject,
+  createMapObject,
   createSceneObject,
   type SceneObjectDoc,
 } from "@dts/document";
@@ -129,14 +132,21 @@ const scenePushes = (socket: FakeSocket): Array<{ name?: string } | null> =>
     .map((message) => message.scene ?? null);
 
 /** 后端调用记录：写盘就是 `PUT`（这个用例集里唯一要防的事）。 */
-function stubBackend(files: Readonly<Record<string, string>> = {}): string[] {
+type BackendCalls = string[] & { readonly writesById: Map<string, string> };
+
+function stubBackend(files: Readonly<Record<string, string>> = {}): BackendCalls {
   const calls: string[] = [];
+  const writesById = new Map<string, string>();
 
   vi.stubGlobal("fetch", (input: string, init?: RequestInit) => {
     const method = init?.method ?? "GET";
     calls.push(`${method} ${input}`);
 
     const text = method === "GET" ? (files[input] ?? "") : "";
+    if (method !== "GET") {
+      const id = new URL(input, "http://localhost").searchParams.get("id");
+      if (id !== null && typeof init?.body === "string") writesById.set(id, init.body);
+    }
     return Promise.resolve({
       ok: true,
       status: 200,
@@ -146,7 +156,7 @@ function stubBackend(files: Readonly<Record<string, string>> = {}): string[] {
     });
   });
 
-  return calls;
+  return Object.assign(calls, { writesById });
 }
 
 const writes = (calls: readonly string[]): string[] =>
@@ -202,7 +212,7 @@ function door(position: { x: number; y: number } = { x: 0, y: 0 }): SceneObjectD
 async function seedScene(
   objects: readonly SceneObjectDoc[],
   sceneNames: readonly string[] = [SCENE],
-): Promise<string[]> {
+): Promise<BackendCalls> {
   const files: Record<string, string> = {};
   for (const name of sceneNames) {
     files[readUrl(sceneFileId(PROJECT, name))] = sceneFileText(name === SCENE ? objects : []);
@@ -285,6 +295,30 @@ afterEach(() => {
 });
 
 describe("运行中的改动：不保存、退出即还原", () => {
+  it("loads old path references and migrates the scene file to GUIDs", async () => {
+    const imageId = `project:${PROJECT}/Assets/images/Map001.png`;
+    const meta = createAssetMeta("texture");
+    const map = createMapObject({
+      id: "map-1",
+      name: "map",
+      image: { id: imageId, width: 64, height: 64 },
+      grid: { width: 8, height: 8 },
+    });
+    const calls = await seedScene([map]);
+    useEditorStore.setState({ assetMetas: createAssetMetas([{ id: imageId, meta }]) });
+
+    await useEditorStore.getState().loadScenes();
+
+    const write = calls.find((call) => call.startsWith("PUT "));
+    expect(write).toBeDefined();
+    const sceneUrl = readUrl(sceneFileId(PROJECT));
+    expect(write).toContain(sceneUrl);
+    const storedText = calls.writesById.get(sceneFileId(PROJECT));
+    expect(storedText).toBeDefined();
+    expect(storedText).toContain(meta.guid);
+    expect(storedText).not.toContain(imageId);
+  });
+
   it("隐藏 + 挪位置：运行中界面上生效，点「编辑」后原样还回来（一个字节都没写盘）", async () => {
     const calls = await seedScene([door()]);
     const socket = connect();

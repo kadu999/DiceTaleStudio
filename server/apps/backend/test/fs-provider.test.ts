@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { loadConfig } from "../src/config";
 import { createTempResourceRoot } from "./helpers/temp-root";
 import { FsResourceProvider } from "../src/resources/fs-provider";
+import { assetMetaIdOf, projectAssetId } from "@dts/resources";
 
 /**
  * 文件系统资源实现的单元测试（从旧的 `run-state.test.ts` 拆出来）：
@@ -82,6 +83,26 @@ describe("文件系统资源实现", () => {
       const payload = new Uint8Array([1, 2, 3, 250]).buffer;
       await provider.writeBinary(id, payload);
       expect(new Uint8Array(await provider.readBinary(id))).toEqual(new Uint8Array([1, 2, 3, 250]));
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("listing creates missing sidecars for externally added assets", async () => {
+    const { provider, dispose } = await withTempProvider();
+    const imageId = projectAssetId("external", "Assets/images/new.png");
+    try {
+      await provider.writeBinary(imageId, new Uint8Array([1, 2, 3]).buffer);
+      await provider.remove(assetMetaIdOf(imageId));
+
+      const entries = await provider.list("project");
+      expect(entries.map((entry) => entry.id)).toContain(imageId);
+      const meta = JSON.parse(await provider.readText(assetMetaIdOf(imageId))) as {
+        guid: string;
+        importer: string;
+      };
+      expect(meta.importer).toBe("texture");
+      expect(meta.guid).toMatch(/^[0-9a-f]{32}$/);
     } finally {
       await dispose();
     }

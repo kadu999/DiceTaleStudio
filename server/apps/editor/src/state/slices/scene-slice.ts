@@ -4,10 +4,11 @@
  * 场景：装载、切换、新建 / 重命名 / 删除。
  */
 import {
-  DOCUMENT_FORMAT_VERSION,
   createEmptyScene,
   isSceneNameTaken,
   parseSceneFile,
+  sceneAssetRefsToGuids,
+  sceneAssetRefsToIds,
   validateScene,
   validateSceneName,
   type SceneDoc,
@@ -109,11 +110,15 @@ export function createSceneSlice(
           // 旧格式（v4 及更早）的位置是归一化坐标，换算成世界坐标需要场景尺寸：
           // 先看文件里地图对象的贴图尺寸，没有再退回默认尺寸。
           const parsed = parseSceneFile(raw, sceneSizeHint(raw));
-          const scene: SceneDoc = {
+          const sceneName = file.name.slice(0, -PROJECT_SCENE_FILE_EXTENSION.length);
+          const persistedScene = { name: sceneName, objects: parsed.file.objects };
+          const needsGuidRewrite =
+            sceneAssetRefsToGuids(persistedScene, get().assetMetas).objects !== parsed.file.objects;
+          const scene: SceneDoc = sceneAssetRefsToIds({
             // 场景名就是文件名，文件内容里不存名字
-            name: file.name.slice(0, -PROJECT_SCENE_FILE_EXTENSION.length),
+            name: sceneName,
             objects: parsed.file.objects,
-          };
+          }, get().assetMetas);
 
           // 语义校验（zod 只管形状，不管业务）：把当前的**素材 meta 索引**传进去，
           // 格子越界这类子图 warning 才认得出来（「几行几列」现在住在素材自己的 `.meta` 里）；
@@ -125,7 +130,9 @@ export function createSceneSlice(
           }
 
           scenes.push(scene);
-          if (parsed.needsRewrite) {
+          if (
+            parsed.needsRewrite || needsGuidRewrite
+          ) {
             legacy.push(scene);
           }
         }
@@ -136,7 +143,7 @@ export function createSceneSlice(
         for (const scene of legacy) {
           await projectApi.writeText(
             projectSceneFileId(project, scene.name),
-            serializeSceneFile(scene),
+            serializeSceneFile(scene, get().assetMetas),
           );
         }
 
@@ -145,7 +152,7 @@ export function createSceneSlice(
         // 场景是**重新读盘**的（打开 / 切换项目、增删改名后重读）：记着的视口按名字对不上了
         sceneViewports.clear();
         for (const scene of scenes) {
-          savedScenes.set(scene.name, serializeSceneFile(scene));
+          savedScenes.set(scene.name, serializeSceneFile(scene, get().assetMetas));
         }
         set({ sceneSaveState: "saved", sceneSaveError: "" });
 
@@ -208,7 +215,7 @@ export function createSceneSlice(
         // 新场景是**空场景**；内容之后由外部工具填，编辑器不再写它
         await projectApi.writeText(
           projectSceneFileId(project, trimmed),
-          serializeSceneFile(createEmptyScene(trimmed)),
+          serializeSceneFile(createEmptyScene(trimmed), get().assetMetas),
         );
         await get().refreshTree();
         await get().loadScenes();
@@ -255,11 +262,18 @@ export function createSceneSlice(
         // 否则场景一改名，贴图（`Assets/images/<场景名>.png`）立刻就找不到了。
         const sceneFileId = projectSceneFileId(project, current);
         const raw: unknown = JSON.parse(await projectApi.readText(sceneFileId));
-        const renamed = withRenamedSceneImage(project, parseSceneFile(raw).file, current, trimmed);
+        const parsed = parseSceneFile(raw).file;
+        const resolved = sceneAssetRefsToIds({ name: current, objects: parsed.objects }, get().assetMetas);
+        const renamed = withRenamedSceneImage(
+          project,
+          { ...parsed, objects: resolved.objects },
+          current,
+          trimmed,
+        );
         if (renamed.changed > 0) {
           await projectApi.writeText(
             sceneFileId,
-            `${JSON.stringify({ ...renamed.file, formatVersion: DOCUMENT_FORMAT_VERSION }, null, 2)}\n`,
+            serializeSceneFile({ name: current, objects: renamed.file.objects }, get().assetMetas),
           );
           pushLog(
             makeLog("info", `场景贴图引用已同步为：${trimmed}.png（${renamed.changed} 个地图对象）`),
