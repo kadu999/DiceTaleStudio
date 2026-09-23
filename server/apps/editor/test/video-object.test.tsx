@@ -78,12 +78,12 @@ function spriteWith(video?: VideoDataDoc, id = "sprite-1"): SceneObjectDoc {
 
 /** 一条视频（默认开着、选中、不循环、静音）。 */
 function video(clips: readonly string[] = [], extra: Partial<VideoDataDoc> = {}): VideoDataDoc {
-  return { enabled: true, clips: [...clips], loop: false, audio: false, ...extra };
+  return { enabled: true, autoPlay: false, clips: [...clips], loop: false, audio: false, ...extra };
 }
 
 /** 手写文件里那种「有视频列表、但没写选了哪条」的样子（播放按钮该点不动）。 */
 function unpicked(clips: readonly string[]): VideoDataDoc {
-  return { enabled: true, clips: [...clips], loop: false, audio: false };
+  return { enabled: true, autoPlay: false, clips: [...clips], loop: false, audio: false };
 }
 
 function seedScene(objects: SceneObjectDoc[], selected: readonly string[]): void {
@@ -195,7 +195,7 @@ describe("属性面板：视频组", () => {
 
     // 打开：写进文档（可撤销），整组露出来
     fireEvent.click(enable);
-    expect(videoOf("map-1")).toEqual({ enabled: true, clips: [], loop: false, audio: false });
+    expect(videoOf("map-1")).toEqual({ enabled: true, autoPlay: false, clips: [], loop: false, audio: false });
     expect(screen.getByTestId("video-empty").textContent).toBe("还没加视频");
     expect(screen.getByTestId("video-edit")).toBeDefined();
     expect(screen.getByTestId("video-play")).toBeDefined();
@@ -206,7 +206,7 @@ describe("属性面板：视频组", () => {
     act(() => useEditorStore.getState().addVideoClip("map-1", CLIP));
     act(() => useEditorStore.getState().setVideoLoop("map-1", true));
     fireEvent.click(screen.getByTestId("video-enable"));
-    expect(videoOf("map-1")).toEqual({ enabled: false, clips: [CLIP], picked: CLIP, loop: true, audio: false });
+    expect(videoOf("map-1")).toEqual({ enabled: false, autoPlay: false, clips: [CLIP], picked: CLIP, loop: true, audio: false });
     expect(screen.queryByTestId("video-edit")).toBeNull();
     expect(screen.queryByTestId("video-play")).toBeNull();
     expect((screen.getByTestId("video-enable") as HTMLInputElement).checked).toBe(false);
@@ -251,14 +251,16 @@ describe("属性面板：视频组", () => {
     expect(videoOf("map-1")?.picked).toBeUndefined();
   });
 
-  it("循环 / 声音两个开关写进文档（可撤销）；行里只有勾选框，不写状态文字", () => {
+  it("循环 / 声音 / 自动播放开关写进文档（可撤销）", () => {
     seedScene([mapWith(video([CLIP]))], ["map-1"]);
     render(<InspectorPanel />);
 
     const loop = screen.getByTestId("video-loop") as HTMLInputElement;
     const audio = screen.getByTestId("video-audio") as HTMLInputElement;
+    const autoPlay = screen.getByTestId("video-auto-play") as HTMLInputElement;
     expect(loop.checked).toBe(false);
     expect(audio.checked).toBe(false);
+    expect(autoPlay.checked).toBe(false);
     // 开关行统一成「左边行名、右边勾选框」：不再挂「放一遍 / 静音」这类文字
     expect(screen.queryByText("放一遍")).toBeNull();
     expect(screen.queryByText("静音")).toBeNull();
@@ -270,16 +272,32 @@ describe("属性面板：视频组", () => {
 
     fireEvent.click(loop);
     fireEvent.click(audio);
+    fireEvent.click(autoPlay);
     expect(videoOf("map-1")?.loop).toBe(true);
     expect(videoOf("map-1")?.audio).toBe(true);
+    expect(videoOf("map-1")?.autoPlay).toBe(true);
     expect(loop.checked).toBe(true);
     expect(audio.checked).toBe(true);
 
-    // 两个开关各是一次文档编辑：撤销两次回到关着
+    // Undo autoplay and verify it did not alter the other video switches.
     act(() => useEditorStore.getState().undo());
+    expect(videoOf("map-1")?.autoPlay).toBe(false);
+    expect(videoOf("map-1")?.loop).toBe(true);
+    expect(videoOf("map-1")?.audio).toBe(true);
+  });
+
+  it("自动播放开关写进场景文档并可撤销", () => {
+    seedScene([mapWith(video([CLIP], { picked: CLIP }))], ["map-1"]);
+    render(<InspectorPanel />);
+
+    const autoPlay = screen.getByTestId("video-auto-play") as HTMLInputElement;
+    expect(autoPlay.checked).toBe(false);
+    fireEvent.click(autoPlay);
+    expect(videoOf("map-1")?.autoPlay).toBe(true);
+    expect(autoPlay.checked).toBe(true);
+
     act(() => useEditorStore.getState().undo());
-    expect(videoOf("map-1")?.loop).toBe(false);
-    expect(videoOf("map-1")?.audio).toBe(false);
+    expect(videoOf("map-1")?.autoPlay).toBe(false);
   });
 
   it("「编辑视频…」把目标写进 store（窗口由 EditorShell 挂）", () => {
@@ -506,6 +524,7 @@ describe("store：加 / 删 / 改名（「编辑视频」窗口走的那几个�
     act(() => useEditorStore.getState().addVideoClip("map-1", CLIP));
     expect(videoOf("map-1")).toEqual({
       enabled: true,
+      autoPlay: false,
       clips: [CLIP],
       picked: CLIP,
       loop: false,
@@ -530,6 +549,7 @@ describe("store：加 / 删 / 改名（「编辑视频」窗口走的那几个�
 
     expect(videoOf("map-1")).toEqual({
       enabled: true,
+      autoPlay: false,
       clips: [CLIP2],
       picked: CLIP2,
       names: undefined,
@@ -557,6 +577,7 @@ describe("store：加 / 删 / 改名（「编辑视频」窗口走的那几个�
     act(() => useEditorStore.getState().setVideoLoop("tex-1", true));
     expect(videoOf("tex-1")).toEqual({
       enabled: true,
+      autoPlay: false,
       clips: [CLIP],
       picked: CLIP,
       loop: true,
@@ -574,6 +595,7 @@ describe("store：加 / 删 / 改名（「编辑视频」窗口走的那几个�
     act(() => useEditorStore.getState().setVideoEnabled("map-1", false));
     expect(videoOf("map-1")).toEqual({
       enabled: false,
+      autoPlay: false,
       clips: [CLIP],
       picked: CLIP,
       loop: false,

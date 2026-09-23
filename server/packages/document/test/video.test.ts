@@ -3,6 +3,7 @@ import { produce, type Draft } from "immer";
 import {
   createSceneObject,
   setVideoAudio,
+  setVideoAutoPlay,
   setVideoClipName,
   setVideoClips,
   setVideoEnabled,
@@ -14,6 +15,7 @@ import { featureComponent } from "../src/components";
 import { FEATURE_COMPONENT } from "../src/features";
 import {
   DEFAULT_VIDEO_AUDIO,
+  DEFAULT_VIDEO_AUTO_PLAY,
   DEFAULT_VIDEO_ENABLED,
   DEFAULT_VIDEO_LOOP,
   supportsVideo,
@@ -91,8 +93,31 @@ describe("视频：哪些对象能带", () => {
 
   it("两个开关的默认值：开着、不循环、静音", () => {
     expect(DEFAULT_VIDEO_ENABLED).toBe(true);
+    expect(DEFAULT_VIDEO_AUTO_PLAY).toBe(false);
     expect(DEFAULT_VIDEO_LOOP).toBe(false);
     expect(DEFAULT_VIDEO_AUDIO).toBe(false);
+  });
+
+  it("autoplay setting defaults off and can be enabled", () => {
+    const scene = sceneWith([mapObject()]);
+    const withClip = mutate(scene, (draft) => {
+      setVideoClips(draft, "map-1", [CLIP_A]);
+    });
+    const autoplay = mutate(withClip, (draft) => {
+      expect(setVideoAutoPlay(draft, "map-1", true)).toBe(true);
+    });
+    expect(videoDataOf(objectOf(autoplay, "map-1")!)?.autoPlay).toBe(true);
+
+    const parsed = parseSceneFile({
+      formatVersion: DOCUMENT_FORMAT_VERSION,
+      objects: [
+        {
+          ...mapObject(),
+          components: [featureComponent("map-1", FEATURE_COMPONENT.video, { clips: [CLIP_A] })],
+        },
+      ],
+    });
+    expect(videoDataOf(parsed.file.objects[0]!)?.autoPlay).toBe(false);
   });
 
   it("非地图 / 贴图对象上的视频命令一律不生效（返回 false，也不补字段）", () => {
@@ -119,6 +144,7 @@ describe("视频命令：列表", () => {
 
     expect(videoDataOf(objectOf(scene, "map-1")!)).toEqual({
       enabled: true,
+      autoPlay: false,
       clips: [CLIP_A, CLIP_B],
       picked: CLIP_A,
       loop: false,
@@ -139,6 +165,7 @@ describe("视频命令：列表", () => {
 
     expect(videoDataOf(objectOf(cleared, "map-1")!)).toEqual({
       enabled: true,
+      autoPlay: false,
       clips: [],
       loop: true,
       audio: true,
@@ -160,6 +187,7 @@ describe("视频命令：列表", () => {
     });
     expect(videoDataOf(objectOf(withoutA, "map-1")!)).toEqual({
       enabled: true,
+      autoPlay: false,
       clips: [CLIP_B],
       picked: CLIP_B,
       names: { [CLIP_B]: "下雨" },
@@ -173,6 +201,7 @@ describe("视频命令：列表", () => {
     });
     expect(videoDataOf(objectOf(empty, "map-1")!)).toEqual({
       enabled: true,
+      autoPlay: false,
       clips: [],
       loop: false,
       audio: false,
@@ -279,6 +308,7 @@ describe("视频命令：循环与声音开关", () => {
 
     expect(videoDataOf(objectOf(scene, "tex-1")!)).toEqual({
       enabled: true,
+      autoPlay: false,
       clips: [CLIP_A],
       picked: CLIP_A,
       loop: false,
@@ -298,6 +328,7 @@ describe("视频命令：总开关（启用）", () => {
     });
     expect(videoDataOf(objectOf(scene, "map-1")!)).toEqual({
       enabled: true,
+      autoPlay: false,
       clips: [],
       loop: false,
       audio: false,
@@ -318,6 +349,7 @@ describe("视频命令：总开关（启用）", () => {
     });
     expect(videoDataOf(objectOf(scene, "map-1")!)).toEqual({
       enabled: true,
+      autoPlay: false,
       clips: [CLIP_A],
       picked: CLIP_A,
       loop: true,
@@ -330,6 +362,7 @@ describe("视频命令：总开关（启用）", () => {
     });
     expect(videoDataOf(objectOf(scene, "map-1")!)).toEqual({
       enabled: false,
+      autoPlay: false,
       clips: [CLIP_A],
       picked: CLIP_A,
       loop: true,
@@ -372,6 +405,7 @@ describe("视频命令：总开关（启用）", () => {
 
     expect(videoDataOf(objectOf(reopened, "tex-1")!)).toEqual({
       enabled: true,
+      autoPlay: false,
       clips: [CLIP_B],
       picked: CLIP_B,
       loop: false,
@@ -465,7 +499,7 @@ describe("视频：格式版本", () => {
     expect(load.needsRewrite).toBe(true);
   });
 
-  it("手写的 video 少写 enabled / loop / audio：schema 补上默认值（开着、不循环、静音）", () => {
+  it("手写的 video 少写 enabled / autoPlay / loop / audio：补兼容默认值", () => {
     const object = textureObject();
     const load = parseSceneFile({
       formatVersion: DOCUMENT_FORMAT_VERSION,
@@ -484,6 +518,7 @@ describe("视频：格式版本", () => {
 
     expect(videoDataOf(load.file.objects[0]!)).toEqual({
       enabled: true,
+      autoPlay: false,
       clips: [CLIP_A],
       picked: CLIP_A,
       loop: false,

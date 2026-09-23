@@ -263,5 +263,6 @@ export const DEFAULT_SOUND_LAYER: SoundLayer = "sfx";
  * 静音 = 现场跑团时「不小心点开视频就轰一声」比听不到更糟。
  */
 export const DEFAULT_VIDEO_ENABLED = true;
+export const DEFAULT_VIDEO_AUTO_PLAY = false;
 export const DEFAULT_VIDEO_LOOP = false;
 export const DEFAULT_VIDEO_AUDIO = false;

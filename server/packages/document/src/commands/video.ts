@@ -1,6 +1,6 @@
 // 本文件从 `commands.ts` 拆出（纯搬运，行为不变）：视频（地图 / 精灵）命令。
 import type { Draft } from "immer";
-import { DEFAULT_VIDEO_AUDIO, DEFAULT_VIDEO_LOOP, FEATURE_COMPONENT, carriesKind } from "../features";
+import { DEFAULT_VIDEO_AUDIO, DEFAULT_VIDEO_AUTO_PLAY, DEFAULT_VIDEO_LOOP, FEATURE_COMPONENT, carriesKind } from "../features";
 // 特性的读写一律走访问器（「数据存在哪个组件里」只有 access.ts 知道）
 import { ensureVideoData, removeFeature, videoDataOf, writeFeature } from "../access";
 import { findObject } from "./shared";
@@ -48,6 +48,7 @@ export function setVideoEnabled(
       video === undefined
         ? {
             enabled: true,
+            autoPlay: DEFAULT_VIDEO_AUTO_PLAY,
             clips: [],
             loop: DEFAULT_VIDEO_LOOP,
             audio: DEFAULT_VIDEO_AUDIO,
@@ -283,5 +284,21 @@ export function setVideoAudio(
   }
 
   video.audio = audio;
+  return true;
+}
+
+/** Set whether this object's selected video starts when its scene activates. */
+export function setVideoAutoPlay(
+  scene: Draft<SceneDoc>,
+  objectId: string,
+  autoPlay: boolean,
+): boolean {
+  const object = findObject(scene, objectId);
+  if (object === undefined) return false;
+
+  const video = ensureVideoData(object);
+  if (video === undefined || video.autoPlay === autoPlay) return false;
+
+  video.autoPlay = autoPlay;
   return true;
 }

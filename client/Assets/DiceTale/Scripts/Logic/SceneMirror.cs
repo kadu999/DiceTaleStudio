@@ -77,10 +77,24 @@ namespace DiceTale
         private readonly Dictionary<string, Dictionary<string, MirrorObject>> sceneObjects =
             new Dictionary<string, Dictionary<string, MirrorObject>>();
 
+        private readonly Dictionary<string, Dictionary<string, AutoplayState>> autoplayStates =
+            new Dictionary<string, Dictionary<string, AutoplayState>>();
+
+        private sealed class AutoplayState
+        {
+            public bool active;
+            public bool hasPosition;
+            public bool enabled;
+            public string picked;
+        }
+
         private Transform container;
         private ResourceImageLoader imageLoader;
         private ResourceBundleCache bundleCache;
         private ClientSession session;
+
+        /// <summary>Configured by the host to resolve and start an autoplay video.</summary>
+        public System.Action<string, string> AutoPlayVideoRequested { get; set; }
 
         /// <summary>等资源包期间挂起的那份场景（只留最新一份）。</summary>
         private MirrorScene pendingScene;
@@ -96,6 +110,8 @@ namespace DiceTale
 
         /// <summary>当前**显示中**的场景名（null = 还没镜像任何场景）。其余场景只是被隐藏。</summary>
         public string SceneName { get; private set; }
+
+        public System.Action<string, string> AutoPlayVideoRequested { get; set; }
 
         /// <summary>接上会话（由 <see cref="BackendManager"/> 调用一次）。</summary>
         public void Initialize(ClientSession clientSession, ResourceImageLoader loader, ResourceBundleCache cache = null)
@@ -362,15 +378,25 @@ namespace DiceTale
 
         private void ApplyNow(MirrorScene scene)
         {
+            var sceneActivated = SceneName != scene.name;
             var viewTable = ViewsOf(scene.name);
             var objectTable = ObjectsOf(scene.name);
+            var autoplayTable = AutoplayStatesOf(scene.name);
             var sceneRoot = RootOf(scene.name);
 
             var present = new HashSet<string>();
+            var autoPlayObjects = new List<string>();
             foreach (var obj in scene.objects)
             {
                 present.Add(obj.id);
+                autoplayTable.TryGetValue(obj.id, out var previousAutoplay);
                 objectTable[obj.id] = obj;
+
+                if (ShouldAutoplayVideo(obj, previousAutoplay, sceneActivated))
+                {
+                    autoPlayObjects.Add(obj.id);
+                }
+                autoplayTable[obj.id] = AutoplayStateOf(obj);
 
                 // **动作对象（PlaySound / Teleport）不建视图**：它们只是「一条给前端的指令」，
                 // 数据留在镜像里够用（命令要用它取数据）；编辑器画布上那两枚徽标是编辑器的画法。
@@ -418,6 +444,7 @@ namespace DiceTale
 
                 viewTable.Remove(id);
                 objectTable.Remove(id);
+                autoplayTable.Remove(id);
             }
 
             // **切换 = 只切可见性**：显示这份场景，其他场景藏起来（不销毁）
@@ -425,10 +452,67 @@ namespace DiceTale
             SceneName = scene.name;
             ShowOnly(scene.name);
 
+            foreach (var objectId in autoPlayObjects)
+            {
+                AutoPlayVideoRequested?.Invoke(scene.name, objectId);
+            }
+
             Debug.Log(
                 $"[镜像] 场景「{scene.name}」：{objectTable.Count} 个对象" +
                 (removed.Count > 0 ? $"，移除 {removed.Count} 个" : "") +
                 (switched || sceneRoots.Count > 1 ? $"（镜像里共 {sceneRoots.Count} 个场景，隐藏的不销毁）" : ""));
+        }
+
+        private Dictionary<string, AutoplayState> AutoplayStatesOf(string sceneName)
+        {
+            if (!autoplayStates.TryGetValue(sceneName, out var table))
+            {
+                table = new Dictionary<string, AutoplayState>();
+                autoplayStates.Add(sceneName, table);
+            }
+
+            return table;
+        }
+
+        private static AutoplayState AutoplayStateOf(MirrorObject obj)
+        {
+            return new AutoplayState
+            {
+                active = obj.active,
+                hasPosition = obj.hasPosition,
+                enabled = obj.video != null && obj.video.enabled && obj.video.autoPlay,
+                picked = obj.video != null ? obj.video.picked : null,
+            };
+        }
+
+        private static bool ShouldAutoplayVideo(MirrorObject current, AutoplayState previous, bool sceneActivated)
+        {
+            var video = current.video;
+            if (!current.active || !current.hasPosition || video == null || !video.enabled || !video.autoPlay
+                || string.IsNullOrEmpty(video.picked) || !video.clips.Contains(video.picked))
+            {
+                return false;
+            }
+
+            return sceneActivated
+                || previous == null
+                || !previous.active
+                || !previous.hasPosition
+                || !previous.enabled
+                || previous.picked != video.picked;
+        }
+
+        public MirrorObject FindInScene(string sceneName, string objectId)
+        {
+            if (sceneName == null || objectId == null) return null;
+            return ObjectsOf(sceneName).TryGetValue(objectId, out var obj) ? obj : null;
+        }
+
+        public SceneObjectView FindViewInScene(string sceneName, string objectId)
+        {
+            if (sceneName == null || objectId == null) return null;
+            var table = ViewsOf(sceneName);
+            return table.TryGetValue(objectId, out var view) ? view : null;
         }
 
         /// <summary>资源包处理完了（成功或失败）→ 把挂起的场景放行。</summary>

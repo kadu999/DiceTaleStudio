@@ -7,6 +7,7 @@ import {
   FEATURE_COMPONENT,
   videoDataOf,
   setVideoAudio as setSceneVideoAudio,
+  setVideoAutoPlay as setSceneVideoAutoPlay,
   setVideoClipName as setSceneVideoClipName,
   setVideoClips as setSceneVideoClips,
   setVideoEnabled as setSceneVideoEnabled,
@@ -42,6 +43,7 @@ export function createVideoSlice(
   | "setVideoClipName"
   | "setVideoLoop"
   | "setVideoAudio"
+  | "setVideoAutoPlay"
 > {
   // 共享的闭包状态与局部工具都在 ctx 里：这里解构一次，方法体与拆分前逐字一致
   const { pushLog, runtimeClient, videoTargetOf, objectWithFeature, deliverVideo } = ctx;
@@ -310,6 +312,16 @@ export function createVideoSlice(
           setSceneVideoAudio(scene, objectId, audio);
         }
       });
+    },
+
+    setVideoAutoPlay(objectId, autoPlay) {
+      const sceneName = get().activeSceneName;
+      if (sceneName === null) return false;
+
+      return get().applyScenes("修改视频自动播放", (draft) => {
+        const scene = draft.find((item) => item.name === sceneName);
+        if (scene !== undefined) setSceneVideoAutoPlay(scene, objectId, autoPlay);
+      }, { coalesceKey: `video-autoplay:${objectId}` });
     },
   };
 }

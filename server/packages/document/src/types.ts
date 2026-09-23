@@ -395,6 +395,8 @@ export interface VideoDataDoc {
    * 雾区 / 视频列表那些设置都收起来（与战争雾那一组的行为一致）。
    */
   readonly enabled: boolean;
+  /** Automatically play the selected clip when the scene activates; defaults to off. */
+  readonly autoPlay?: boolean;
   /**
    * **加进来的**视频（资源逻辑 ID，如 `project:我的项目/Assets/video/opening.mp4`）。
    *

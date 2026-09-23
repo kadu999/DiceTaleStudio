@@ -227,6 +227,7 @@ export const videoDataSchema = z.object({
   // 总开关：关着 = 这个对象现在不放视频（前端连那一层都不建）。缺省算开——`video` 只有
   // 加过视频才写出来，「字段在」本来就等于「在用」（与 `map.fog.enabled` 同一个口径）
   enabled: z.boolean().default(true),
+  autoPlay: z.boolean().default(false),
   clips: z.array(z.string()).default([]),
   picked: z.string().optional(),
   loop: z.boolean().default(false),

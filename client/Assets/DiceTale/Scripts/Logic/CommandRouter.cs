@@ -596,6 +596,33 @@ namespace DiceTale
             session.SendCommandResult(command, true, effects: new[] { effect });
         }
 
+        /// <summary>Play a video's selected clip from scene autoplay without a network command.</summary>
+        public void PlayVideoAutomatically(string sceneName, string objectId)
+        {
+            var obj = mirror != null ? mirror.FindInScene(sceneName, objectId) : null;
+            var view = mirror != null ? mirror.FindViewInScene(sceneName, objectId) : null;
+            if (obj == null || view == null || obj.video == null || !obj.video.enabled || !obj.video.autoPlay)
+            {
+                return;
+            }
+
+            var clip = obj.video.picked;
+            if (string.IsNullOrEmpty(clip) || !obj.video.clips.Contains(clip))
+            {
+                Debug.LogWarning($"[视频] 自动播放跳过：对象「{obj.name}」没有有效的选中视频");
+                return;
+            }
+
+            var url = VideoUrlOf(clip);
+            if (string.IsNullOrEmpty(url))
+            {
+                Debug.LogWarning($"[视频] 自动播放无法解析资源地址：{clip}");
+                return;
+            }
+
+            view.PlayVideo(url, clip, obj.video.loop, obj.video.audio);
+        }
+
         /// <summary>暂停：没在放就如实回失败（前端那一层可能已经被 `stop_video` 拆了）。</summary>
         private void HandlePauseVideo(CommandRequest command)
         {

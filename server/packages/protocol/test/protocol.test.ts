@@ -178,6 +178,7 @@ describe("协议：场景（镜像的那份对象数据）", () => {
     expect(featureData(parsed.objects[0], COMPONENT_TYPE.video)).toEqual({
       // 总开关缺省算开（与文档 schema 同一口径）
       enabled: true,
+      autoPlay: false,
       clips: [clip],
       picked: clip,
       loop: true,
@@ -194,6 +195,7 @@ describe("协议：场景（镜像的那份对象数据）", () => {
     });
     expect(featureData(minimal.objects[0], COMPONENT_TYPE.video)).toEqual({
       enabled: true,
+      autoPlay: false,
       clips: [clip],
       loop: false,
       audio: false,
@@ -208,6 +210,7 @@ describe("协议：场景（镜像的那份对象数据）", () => {
     });
     expect(featureData(disabled.objects[0], COMPONENT_TYPE.video)).toEqual({
       enabled: false,
+      autoPlay: false,
       clips: [clip],
       picked: clip,
       loop: false,

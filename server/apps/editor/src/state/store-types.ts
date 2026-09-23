@@ -407,6 +407,8 @@ export interface EditorStoreState {
   setVideoLoop(objectId: string, loop: boolean): boolean;
   /** 视频：是否放视频自带的声音（文档数据）。 */
   setVideoAudio(objectId: string, audio: boolean): boolean;
+  /** 视频：场景激活时自动播放选中视频（文档数据）。 */
+  setVideoAutoPlay(objectId: string, autoPlay: boolean): boolean;
   /**
    * 全局背景音乐（v16 起）：让前端放 / **切换**到某一首。
    *

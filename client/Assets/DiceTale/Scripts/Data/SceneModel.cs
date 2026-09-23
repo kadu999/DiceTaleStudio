@@ -185,6 +185,9 @@ namespace DiceTale
         /// </summary>
         public bool enabled = true;
 
+        /// <summary>Play the selected clip when this scene is activated.</summary>
+        public bool autoPlay;
+
         /// <summary>加进来的视频（资源逻辑 ID，如 `project:C/Assets/video/opening.mp4`）。</summary>
         public readonly List<string> clips = new List<string>();
 

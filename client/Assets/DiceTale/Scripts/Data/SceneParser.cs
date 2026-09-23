@@ -283,6 +283,7 @@ namespace DiceTale
             var video = new MirrorVideo
             {
                 enabled = JsonParser.GetBool(node, "enabled", true),
+                autoPlay = JsonParser.GetBool(node, "autoPlay", false),
                 picked = JsonParser.GetString(node, "picked") ?? "",
                 loop = JsonParser.GetBool(node, "loop", false),
                 audio = JsonParser.GetBool(node, "audio", false),

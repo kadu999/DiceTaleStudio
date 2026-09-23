@@ -3,6 +3,7 @@ import { componentId } from "./components";
 import {
   DEFAULT_SOUND_LAYER,
   DEFAULT_VIDEO_AUDIO,
+  DEFAULT_VIDEO_AUTO_PLAY,
   DEFAULT_VIDEO_ENABLED,
   DEFAULT_VIDEO_LOOP,
   FEATURE_COMPONENT,
@@ -249,6 +250,7 @@ export function ensureTeleportData(object: Draft<SceneObjectDoc>): Draft<Telepor
 export function ensureVideoData(object: Draft<SceneObjectDoc>): Draft<VideoDataDoc> | undefined {
   return ensureFeatureData<VideoDataDoc>(object, FEATURE_COMPONENT.video, () => ({
     enabled: DEFAULT_VIDEO_ENABLED,
+    autoPlay: DEFAULT_VIDEO_AUTO_PLAY,
     clips: [],
     loop: DEFAULT_VIDEO_LOOP,
     audio: DEFAULT_VIDEO_AUDIO,

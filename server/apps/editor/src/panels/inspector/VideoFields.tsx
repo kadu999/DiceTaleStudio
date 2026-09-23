@@ -81,6 +81,7 @@ export function VideoFields({ object }: { readonly object: SceneObjectDoc }): Re
   const selectVideoClip = useEditorStore((state) => state.selectVideoClip);
   const setVideoLoop = useEditorStore((state) => state.setVideoLoop);
   const setVideoAudio = useEditorStore((state) => state.setVideoAudio);
+  const setVideoAutoPlay = useEditorStore((state) => state.setVideoAutoPlay);
   const playVideo = useEditorStore((state) => state.playVideo);
   const pauseVideo = useEditorStore((state) => state.pauseVideo);
   const resumeVideo = useEditorStore((state) => state.resumeVideo);
@@ -96,6 +97,7 @@ export function VideoFields({ object }: { readonly object: SceneObjectDoc }): Re
   const picked = video?.picked;
   const loop = video?.loop ?? false;
   const audio = video?.audio ?? false;
+  const autoPlay = video?.autoPlay ?? false;
 
   /** 面板上显示什么名字：自己起过就用它，否则用素材文件名（去掉扩展名）。 */
   const nameOf = (clip: string): string => {
@@ -158,6 +160,18 @@ export function VideoFields({ object }: { readonly object: SceneObjectDoc }): Re
           title="视频自带音轨：默认静音，要出声才打开（现场别不小心轰一声）"
           className="h-3.5 w-3.5 flex-none accent-[var(--color-editor-accent)]"
           onChange={(event) => setVideoAudio(object.id, event.target.checked)}
+        />
+      </FieldRow>
+
+      <FieldRow label="自动播放">
+        <input
+          type="checkbox"
+          data-testid="video-auto-play"
+          aria-label="自动播放"
+          checked={autoPlay}
+          title="场景激活时自动播放当前选中的视频"
+          className="h-3.5 w-3.5 flex-none accent-[var(--color-editor-accent)]"
+          onChange={(event) => setVideoAutoPlay(object.id, event.target.checked)}
         />
       </FieldRow>
 

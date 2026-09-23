@@ -80,6 +80,7 @@ namespace DiceTale
                 HttpBaseUrl,
                 audioLoader,
                 game != null ? game.AudioPlayerManager : null);
+            mirror.AutoPlayVideoRequested = commandRouter.PlayVideoAutomatically;
 
             // 项目级全局设置：收到就整套应用到播放器（音量立刻生效，不需要命令）
             session.SettingsReceived += OnSettingsReceived;

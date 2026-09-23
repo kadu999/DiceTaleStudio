@@ -154,6 +154,7 @@ export const videoDataSchema = z.object({
   // v14 起，与 `map.fog.enabled` 同一个口径：老编辑器不发这一项时语义只能是「在用」
   // （`video` 只有加过视频才写出来），补成 false 会把已有的视频静默关掉
   enabled: z.boolean().default(true),
+  autoPlay: z.boolean().default(false),
   clips: z.array(z.string().min(1)).default([]),
   picked: z.string().min(1).optional(),
   names: z.record(z.string(), z.string()).optional(),
