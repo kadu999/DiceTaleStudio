@@ -12,6 +12,11 @@ const backendTarget = process.env.DTS_BACKEND ?? "http://127.0.0.1:1420";
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  optimizeDeps: {
+    rolldownOptions: {
+      transform: { target: "safari15.4" },
+    },
+  },
   server: {
     // 监听所有网卡：手机 / 平板可用本机局域网 IP 直接打开开发服务器
     // （http://<本机IP>:5173），后端与 WebSocket 由下面的代理转发。
@@ -25,6 +30,7 @@ export default defineConfig({
     },
   },
   build: {
+    target: "safari15.4",
     outDir: "dist",
     sourcemap: true,
   },
