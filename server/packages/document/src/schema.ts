@@ -1217,9 +1217,8 @@ function renameSpriteImageComponent(raw: Record<string, unknown>): {
     }
 
     const kind = kindOf(object);
-    // 「这个 kind 带不带 image」按**层级**判（`carriesKind`：`Sprite` / `Image` 继承
-    // `SceneObject`），不能拿 `kinds` 名单直接 `includes`——名单里写的是基类，
-    // 子类型一个都不在里面，这样判会把精灵整个漏掉
+    // 「这个 kind 带不带 image」按特性表与类型层级判（`carriesKind`），不能在这里
+    // 另写 kind 名单或用 `kinds.includes`，否则新增子类型时迁移容易漏掉
     if (!carriesKind(FEATURE_COMPONENT.image, kind)) {
       return object;
     }

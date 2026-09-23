@@ -18,7 +18,7 @@ import {
  * 地图 / 精灵上的**视频**（v14 起）：加一组视频，运行时选一条放。
  *
  * 两半：
- * 1. **编辑器怎么配**（不需要运行态）：面板「视频」组 → 「编辑视频…」窗口加 / 删 / 起名字 →
+ * 1. **编辑器怎么配**（不需要运行态）：面板「视频」组 → 「编辑」窗口加 / 删 / 起名字 →
  *    面板上点小方块选放哪条 → 循环 / 声音两个开关 → 都落进场景文件的 `video` 字段；
  * 2. **命令怎么下发**（`@runtime`）：浏览器里再开一条**假前端** WebSocket（`/client`），
  *    点播放 / 暂停 / 继续 / 停止 → 前端依次收到
@@ -176,7 +176,7 @@ test.describe("地图 / 贴图：视频列表", () => {
       // 打开「启用」：这才露出视频列表、编辑入口与那几个按钮
       await video.getByTestId("video-enable").check();
       await expect(video.getByTestId("video-empty")).toHaveText("还没加视频");
-      await expect(video.getByTestId("video-edit")).toHaveText("编辑视频…");
+      await expect(video.getByTestId("video-edit")).toHaveText("编辑");
       await expect(video.getByTestId("video-play")).toBeDisabled();
       await expect(video.getByTestId("video-play")).toHaveAttribute("title", /先加一条视频/);
       await waitForSaved(page);

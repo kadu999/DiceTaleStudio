@@ -12,7 +12,7 @@ import {
  *
  * 1. **每个 `kind` 都要有种类归属**——场景对象面板按种类过滤，归类漏一个，那种对象在
  *    面板上就会凭空消失（手写文件里真写了 `SceneObject` 这种值也一样）；
- * 2. **抽象基类不进弹框**——`SceneObject` 只作归类项（`creatable: false`），
+ * 2. **抽象基类不进弹框**——`SceneObject` 是所有场景对象的基类，只作归类项（`creatable: false`），
  *    落进文档的永远是具体类型（`Sprite` / `Image` / …）。
  *
  * 名字与「哪些类型可创建」的中文口径见 `object-kinds.ts` 的文件头注释；

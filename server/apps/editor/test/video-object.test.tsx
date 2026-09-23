@@ -300,7 +300,7 @@ describe("属性面板：视频组", () => {
     expect(videoOf("map-1")?.autoPlay).toBe(false);
   });
 
-  it("「编辑视频…」把目标写进 store（窗口由 EditorShell 挂）", () => {
+  it("「编辑」把目标写进 store（窗口由 EditorShell 挂）", () => {
     seedScene([mapWith(video([CLIP]))], ["map-1"]);
     render(<InspectorPanel />);
 

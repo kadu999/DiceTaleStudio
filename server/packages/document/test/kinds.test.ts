@@ -22,8 +22,7 @@ import {
 } from "../src";
 
 /**
- * **对象类型层级**（v22 起）：`SceneObject` 是抽象基类，`Sprite`（精灵）与 `Image`（贴图）
- * 继承它。
+ * `SceneObject` 是所有场景对象的抽象基类；每种具体对象类型都继承它。
  *
  * 表本身只有三件事要钉住：
  * 1. **`OBJECT_KINDS` 是唯一来源**——文档 schema 的枚举就是它，加一个类型只动 `kinds.ts`；
@@ -41,17 +40,17 @@ describe("对象类型层级（kinds.ts）", () => {
     expect(objectKindDef("Portal")).toBeUndefined();
   });
 
-  it("祖先链 / 自身链：Sprite 的父类是 SceneObject，SceneObject 自己是根", () => {
+  it("祖先链 / 自身链：所有具体对象类型的父类都是 SceneObject", () => {
     expect(kindAncestors("SceneObject")).toEqual([]);
-    expect(kindAncestors("Sprite")).toEqual(["SceneObject"]);
-    expect(kindAncestors("Image")).toEqual(["SceneObject"]);
-    // 根类型没有父类（Map / Player / PlaySound 都不是「场景对象」的子类型）
-    expect(kindAncestors("Map")).toEqual([]);
-    expect(kindAncestors("PlaySound")).toEqual([]);
+    for (const kind of OBJECT_KINDS) {
+      if (kind !== "SceneObject") {
+        expect(kindAncestors(kind), kind).toEqual(["SceneObject"]);
+      }
+    }
 
     // `kindLineage` 是「自己 + 祖先」，**从自己往上**（查组件路由靠这个顺序）
     expect(kindLineage("Sprite")).toEqual(["Sprite", "SceneObject"]);
-    expect(kindLineage("Map")).toEqual(["Map"]);
+    expect(kindLineage("PlaySound")).toEqual(["PlaySound", "SceneObject"]);
   });
 
   it("kindIsA：自己与子类型都算，父类不算子类型", () => {
@@ -60,9 +59,9 @@ describe("对象类型层级（kinds.ts）", () => {
     expect(kindIsA("SceneObject", "SceneObject")).toBe(true);
     // 反向不成立：基类不是子类型
     expect(kindIsA("SceneObject", "Sprite")).toBe(false);
-    // 平级之间互不相干
-    expect(kindIsA("Player", "SceneObject")).toBe(false);
-    expect(kindIsA("Map", "SceneObject")).toBe(false);
+    for (const kind of OBJECT_KINDS) {
+      expect(kindIsA(kind, "SceneObject"), kind).toBe(true);
+    }
   });
 
   it("抽象基类不落进文档；子类型列表按层级算出来", () => {
@@ -72,25 +71,22 @@ describe("对象类型层级（kinds.ts）", () => {
     }
 
     expect([...CONCRETE_KINDS]).toEqual(OBJECT_KINDS.filter((kind) => kind !== "SceneObject"));
-    expect(kindDescendants("SceneObject")).toEqual(["Sprite", "Image"]);
-    // 根类型没有子类型
-    expect(kindDescendants("Map")).toEqual([]);
+    expect(kindDescendants("SceneObject")).toEqual(OBJECT_KINDS.slice(1));
   });
 });
 
 /**
- * 层级是**给特性表用的**：`OBJECT_FEATURES` 里写基类，子类型继承——这三条是全部收益。
+ * 类型层级表达对象归属；特性表仍单独声明哪些子类型拥有哪项能力。
  */
 describe("层级落到特性表上（features.ts）", () => {
-  it("carriesKind：image 声明在基类上，两个子类型都继承得到", () => {
-    // 名单里只有基类 + 三个平级类型（见 OBJECT_FEATURES）
-    expect(carriesKind(FEATURE_COMPONENT.image, "SceneObject")).toBe(true);
+  it("carriesKind：image 只授予支持贴图的具体对象", () => {
+    expect(carriesKind(FEATURE_COMPONENT.image, "SceneObject")).toBe(false);
     expect(carriesKind(FEATURE_COMPONENT.image, "Sprite")).toBe(true);
     expect(carriesKind(FEATURE_COMPONENT.image, "Image")).toBe(true);
     expect(carriesKind(FEATURE_COMPONENT.image, "Player")).toBe(true);
     expect(carriesKind(FEATURE_COMPONENT.image, "Item")).toBe(true);
     expect(carriesKind(FEATURE_COMPONENT.image, "Event")).toBe(true);
-    // 不认识这个特性的类型一个都不沾
+    // 其它 SceneObject 子类不因此自动获得图片特性
     expect(carriesKind(FEATURE_COMPONENT.image, "Map")).toBe(false);
     expect(carriesKind(FEATURE_COMPONENT.image, "PlaySound")).toBe(false);
     expect(carriesKind(FEATURE_COMPONENT.image, "Teleport")).toBe(false);
@@ -101,9 +97,9 @@ describe("层级落到特性表上（features.ts）", () => {
     expect(carriesKind(FEATURE_COMPONENT.video, "Map")).toBe(true);
   });
 
-  it("componentForKind：精灵有自己的路由，其余沿基类落到缺省承载", () => {
+  it("componentForKind：精灵有自己的路由，其余图片对象使用缺省承载", () => {
     expect(componentForKind("image", "Sprite")).toBe(SPRITE_COMPONENT);
-    // 自己没写路由 → 退到基类那一份（缺省 ImageLayer）
+    // 自己没写路由 → 使用缺省 ImageLayer
     expect(componentForKind("image", "Image")).toBe(FEATURE_COMPONENT.image);
     expect(componentForKind("image", "SceneObject")).toBe(FEATURE_COMPONENT.image);
     expect(componentForKind("image", "Player")).toBe(FEATURE_COMPONENT.image);
@@ -123,7 +119,7 @@ describe("层级落到特性表上（features.ts）", () => {
     expect([...kindsCarrying(FEATURE_COMPONENT.map)]).toEqual(["Map"]);
   });
 
-  it("两个判据在层级上也一致：精灵能取格子、贴图不能，两者都不能放视频", () => {
+  it("按组件路由判断子图能力，按特性表判断视频能力", () => {
     expect(supportsSpriteSheet("Sprite")).toBe(true);
     expect(supportsSpriteSheet("Image")).toBe(false);
     // 基类本身没有子图能力（它那份缺省承载就是整图）

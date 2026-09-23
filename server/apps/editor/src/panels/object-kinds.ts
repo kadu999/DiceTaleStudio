@@ -19,8 +19,8 @@ import { FEATURE_COMPONENT, carriesKind, type ObjectKind } from "@dts/document";
  *   另一个跟着亮），名字用 `label`（`KIND_LABELS[kind]` 给的是 kind 的规范名，
  *   不一定等于瓦片上的名字）。
  *
- * **`SceneObject` 只作为归类项留在表里**（`creatable: false`）：它是对象类型的**基类**
- * （层级在 `@dts/document` 的 `kinds.ts`），精灵与贴图继承它——没有对象会带着这个 kind
+ * **`SceneObject` 只作为归类项留在表里**（`creatable: false`）：它是所有场景对象的**抽象基类**
+ * （层级在 `@dts/document` 的 `kinds.ts`），所有具体类型都继承它——没有对象会带着这个 kind
  * 落进文档（老文件里的由 v22 迁移改成 `Sprite`）。留在表里是为了两条既有规矩：
  * **每个 kind 都要有种类归属**（面板按种类过滤，手写文件里真出现这个值时不能凭空消失），
  * 以及 `KIND_LABELS` 是 `Record<ObjectKind, string>`（少一个键就编译不过）。

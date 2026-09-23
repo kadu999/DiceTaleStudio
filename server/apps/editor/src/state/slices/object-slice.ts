@@ -6,10 +6,6 @@
 import {
   addObject,
   createId,
-  createMapObject,
-  createSceneObject,
-  createSoundObject,
-  createTeleportObject,
   nextObjectName,
   removeObject as removeSceneObject,
   renameObject as renameSceneObject,
@@ -24,14 +20,12 @@ import {
   setObjectSortingOrder as setSceneObjectSortingOrder,
   type SceneObjectDoc,
 } from "@dts/document";
-import { gridSizeFromImage } from "@dts/grid";
-import { projectSceneImageId } from "@dts/resources";
 import { type StoreSet, type StoreGet, type EditorStoreState } from "../store-types";
+import { createSceneObjectForKind } from "../scene-object-factory";
 import {
   sceneHistory,
   makeLog,
   SCENE_CENTER,
-  DEFAULT_MAP_IMAGE,
   offsetPosition,
   findSceneByName,
 } from "../store-core";
@@ -99,30 +93,12 @@ export function createObjectSlice(
 
       // 世界无限大：落点就是给的那个坐标，不夹取
       const at = position === undefined ? { ...SCENE_CENTER } : { x: position.x, y: position.y };
-      const object: SceneObjectDoc =
-        kind === "Map"
-          ? // 地图对象的贴图按同名约定取 Assets/images/<场景名>.png，网格由贴图尺寸算出来；
-            // 它和别的对象一样有世界坐标（贴图中心），画布上能拖、属性面板能改
-            createMapObject({
-              name: trimmed,
-              image: {
-                id: projectSceneImageId(project, sceneName),
-                width: DEFAULT_MAP_IMAGE.width,
-                height: DEFAULT_MAP_IMAGE.height,
-              },
-              grid: gridSizeFromImage(DEFAULT_MAP_IMAGE),
-              position: at,
-            })
-          : kind === "PlaySound"
-            ? // 声音对象（动作对象）：和实体一样摆在世界里（画布上是一枚音频徽标，可以拖），
-              // 新建时音频列表是空的（还没挑素材）
-              createSoundObject({ name: trimmed, position: at })
-            : kind === "Teleport"
-              ? // 传送阵（动作对象）：同样摆在世界里（画布上是一枚传送徽标），
-                // 新建时**还没指定目标场景**——属性面板挑一个目标，传送按钮才点得动
-                createTeleportObject({ name: trimmed, position: at })
-              : // 其它实体（例如精灵，kind = "Sprite"）走普通对象：只有名字、类型与位置
-                createSceneObject({ name: trimmed, kind, position: at });
+      const object = createSceneObjectForKind(kind, {
+        project,
+        sceneName,
+        name: trimmed,
+        position: at,
+      });
 
       const changed = get().applyScenes(`新建对象 ${trimmed}`, (draft) => {
         const target = draft.find((item) => item.name === sceneName);

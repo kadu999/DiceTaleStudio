@@ -20,7 +20,7 @@ import type { SoundLayer } from "./types";
  * 别在调用处自己判 kind。
  *
  * **v22 起 `kinds` 里的名字可以是基类**：`Sprite` / `Image` 继承 `SceneObject`
- * （层级住在 `./kinds`），所以 `image` 那条只写基类 + 几个根类型，
+ * （层级住在 `./kinds`），特性可以声明在基类，也可以只声明在具体类型上，
  * 判据一律走 `kindIsA`——**`kinds.includes(kind)` 会把子类型漏掉**。
  */
 export type ObjectFeatureField = "map" | "image" | "sound" | "teleport" | "video";
@@ -71,13 +71,12 @@ export interface ObjectFeatureDef {
 export const OBJECT_FEATURES: readonly ObjectFeatureDef[] = [
   // 地图的贴图与网格都在这份数据里（`map.image`），所以它不吃 `image` 那一份
   { field: "map", component: FEATURE_COMPONENT.map, kinds: ["Map"] },
-  // 「对象自己显示的图」：**凡是场景对象都靠它显示图片**——所以声明写在基类 `SceneObject` 上，
-  // 精灵 `Sprite` 与贴图 `Image` 继承它（Player / Item / Event 与它平级，得单独列）。
+  // 只有支持贴图的场景对象携带 `image`；其它 SceneObject 子类不因此继承此特性。
   // **两种组件**：精灵 = SpriteLayer（会取图集里的一格），其余 = ImageLayer（只显示整张图）
   {
     field: "image",
     component: FEATURE_COMPONENT.image,
-    kinds: ["SceneObject", "Player", "Item", "Event"],
+    kinds: ["Sprite", "Image", "Player", "Item", "Event"],
     componentsByKind: { Sprite: SPRITE_COMPONENT },
   },
   // 动作对象：只声明「告诉前端播什么」，编辑器自己不播放
@@ -196,8 +195,7 @@ export function kindsCarrying(component: string): readonly ObjectKind[] {
  * 这个对象类型能不能携带某个组件。
  *
  * **「空 kinds = 任何类型都允许」在实现里**，调用方不必自己判空；
- * 命中判据是**层级**（`kindIsA`：`Sprite` / `Image` 继承 `SceneObject`），
- * 不是 `kinds.includes(kind)`——后者会把子类型漏掉。
+ * 命中判据是**层级**（`kindIsA`），不是 `kinds.includes(kind)`——后者会把子类型漏掉。
  */
 export function carriesKind(component: string, kind: ObjectKind): boolean {
   const def = featureOfComponent(component);

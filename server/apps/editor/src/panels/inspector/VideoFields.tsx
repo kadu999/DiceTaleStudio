@@ -13,7 +13,7 @@ import {
 } from "./fields";
 
 /**
- * 地图 / 贴图的「视频」组：**启用 → 视频列表 → 编辑视频… → 播放 / 暂停 / 停止 → 循环 / 声音**。
+ * 地图 / 贴图的「视频」组：**启用 → 视频列表 → 编辑 → 播放 / 暂停 / 停止 → 循环 / 声音**。
  *
  * 整组由第一行的**「启用」开关**管着（与战争雾那一组同一套）：关着时只留那一个开关，
  * 加视频 / 选哪条 / 循环 / 声音都收起来——没开视频的对象不该摆一排用不上的按钮。
@@ -21,7 +21,7 @@ import {
  *
  * 两个地方分工，别混（与「播放声音」同一套）：
  * - **这里（面板）**：把**加进来的视频全列出来**（小方块），点一下决定「放哪一条」；
- * - **「编辑视频」窗口**（`app/VideoEditDialog.tsx`，下面那行「编辑视频…」唤出）：加视频 /
+ * - **「编辑视频」窗口**（`app/VideoEditDialog.tsx`，下面那行「编辑」唤出）：加视频 /
  *   移出 / 起名字——那里看得见每个文件的路径，面板太窄放不下。
  *
  * 编辑器**不播放**：没有预览、不接视频解码。点「播放」只是**记账**（哪个对象该放什么）+
@@ -39,7 +39,7 @@ export function videoPlayBlockedReason(input: {
   readonly picked: string | undefined;
 }): string | undefined {
   if (input.clips === 0) {
-    return "先加一条视频（点「编辑视频…」从项目里挑）";
+    return "先加一条视频（点「编辑」从项目里挑）";
   }
 
   return input.picked === undefined ? "先选一条视频" : undefined;
@@ -185,7 +185,7 @@ export function VideoFields({ object }: { readonly object: SceneObjectDoc }): Re
             <span
               data-testid="video-empty"
               className="text-[11px] text-[var(--color-editor-text-dim)]"
-              title="点下面的「编辑视频…」从项目里的视频素材里挑"
+              title="点下面的「编辑」从项目里的视频素材里挑"
             >
               还没加视频
             </span>
@@ -233,10 +233,10 @@ export function VideoFields({ object }: { readonly object: SceneObjectDoc }): Re
           type="button"
           data-testid="video-edit"
           title="打开「编辑视频」窗口：加 / 删视频、看路径、给每个视频起名字"
-          className="toolbar-button flex-none hover:toolbar-button-hover"
+          className="flex-none rounded bg-[var(--color-editor-accent)] px-2 py-0.5 text-[11px] text-black hover:opacity-90"
           onClick={() => openVideoEditor(object.id)}
         >
-          编辑视频…
+          编辑
         </button>
       </FieldRow>
 

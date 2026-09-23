@@ -1,23 +1,20 @@
 /**
  * 对象类型（`ObjectKind`）**与它们之间的层级**。
  *
- * 一个场景对象总是「某一种场景对象」：`SceneObject` 是**基类**（抽象、不落进文档），
- * `Sprite`（精灵）与 `Image`（贴图）是它的两个子类型——两者都靠基类那条
- * 「对象自己显示的图」显示一张图，差别只在**取不取图集里的一格**（组件名把这条差别写死：
- * 精灵 `SpriteLayer`、贴图 `ImageLayer`，见 `features.ts`）。
+ * 所有场景对象都是 `SceneObject` 的子类型。`SceneObject` 是**抽象基类**（不落进文档），
+ * 地图、实体、动作与事件等具体类型都继承它。继承关系只表达类型归属；对象实际携带哪些
+ * 特性仍由 `features.ts` 独立声明。
  *
  * 这张表是「谁是谁的子类型」的**唯一归属地**：特性携带（`carriesKind`）、组件路由
  * （`componentForKind`）、校验都走这里的 `kindIsA` / `kindLineage`，**别在调用处写
  * `kind === "Sprite"` 这种判断**——再加一个子类型（例如会动的精灵）时只改这张表。
  *
- * 其余类型（`Map` / `Player` / `Item` / `Event` / `PlaySound` / `Teleport`）目前都是根类型：
- * 它们与「场景对象」这条线没有共同行为，硬认一个共同基类只会多一层空壳。
  */
 
 /**
  * 全部对象类型。**顺序就是规范顺序**（文档枚举、编辑器类型表都按它排）。
  *
- * 基类排在自己的子类型前面（`SceneObject` → `Sprite` / `Image`），其余保持既有顺序：
+ * 基类排在所有具体类型前面（`SceneObject` → 所有可落盘对象），其余保持既有顺序：
  * 前四个是前端 `BackendObjectKind` 就有的实体（`SceneObject` / `Player` / `Item` / `Event`），
  * 后面的是编辑器侧新增的（`Map` 是「带网格的图」、`Image` 是「只显示整张图的贴图」，
  * `PlaySound` / `Teleport` 是动作对象）。
@@ -37,13 +34,12 @@ export const OBJECT_KINDS = [
 /**
  * 对象类型。
  *
- * - `SceneObject`：**场景对象的基类**（抽象，见 `OBJECT_KIND_DEFS` 的 `abstract`）——
- *   它**不会出现在文档里**：老文件里写这个值的对象（那时「精灵」就是它）由 v22 迁移
- *   改成 `Sprite`。留着它是为了让「凡是场景对象都有的东西」（现在只有一张显示图）
- *   只声明一次，`Sprite` / `Image` 继承下去；
+ * - `SceneObject`：**所有场景对象的基类**（抽象，见 `OBJECT_KIND_DEFS` 的 `abstract`），
+ *   它**不会出现在文档里**；具体类型都继承它。老文件里写这个值的对象由 v22 迁移改成
+ *   `Sprite`，因为当时它代表精灵原型；
  * - `Sprite`：**精灵**——显示的一张图可以取图集里的一格（子图）；
  * - `Image`：**贴图**（v21 起，v22 前叫 `Texture`）——只把一张图整张铺出来，不引用格子；
- * - `Map`：地图就是场景里的一个对象，携带贴图与网格数据；
+ * - `Map`：地图是场景对象的一种，携带贴图与网格数据；
  * - `Player` / `Item` / `Event`：玩家 / 道具 / 事件（前端 `BackendObjectKind` 就有的实体）；
  * - `PlaySound`：**动作对象**（「播放声音」）——基础属性与实体一样，另带「播什么 + 哪个层级」，
  *   画布上画一枚**固定的内置音频图标**（不给换贴图），编辑器**不播放**（出声是前端的事）；
@@ -66,8 +62,8 @@ export interface ObjectKindDef {
   /**
    * 抽象类型：**只作基类，不落进文档**。
    *
-   * 现在只有 `SceneObject` 一个——它能被 `carriesKind` / `kindIsA` 命中（子类型继承它的特性），
-   * 但不会被算成「能挂某个组件的具体类型」（`kindsCarrying` 把它剔掉），
+   * 现在只有 `SceneObject` 一个——它能被 `kindIsA` 命中，但不会被算成
+   * 「能挂某个组件的具体类型」（`kindsCarrying` 把它剔掉）。特性是否沿基类继承由特性表决定，
    * 编辑器也不为新对象写这个值。
    */
   readonly abstract?: boolean;
@@ -78,12 +74,12 @@ export const OBJECT_KIND_DEFS: readonly ObjectKindDef[] = [
   { kind: "SceneObject", abstract: true },
   { kind: "Sprite", parent: "SceneObject" },
   { kind: "Image", parent: "SceneObject" },
-  { kind: "Map" },
-  { kind: "Player" },
-  { kind: "Item" },
-  { kind: "Event" },
-  { kind: "PlaySound" },
-  { kind: "Teleport" },
+  { kind: "Map", parent: "SceneObject" },
+  { kind: "Player", parent: "SceneObject" },
+  { kind: "Item", parent: "SceneObject" },
+  { kind: "Event", parent: "SceneObject" },
+  { kind: "PlaySound", parent: "SceneObject" },
+  { kind: "Teleport", parent: "SceneObject" },
 ];
 
 const BY_KIND = new Map(OBJECT_KIND_DEFS.map((def) => [def.kind, def]));

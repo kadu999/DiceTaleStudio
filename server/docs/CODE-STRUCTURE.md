@@ -188,9 +188,9 @@ SceneObjectDoc
       —— `image` 这个字段有**两种组件**（v21）：贴图整张铺满、精灵会取图集里的一格
 ```
 
-**对象类型还有一层层级**（v22，`packages/document/src/kinds.ts`）：`SceneObject` 是**抽象基类**
-（不落进文档），`Sprite`（精灵）与 `Image`（贴图）继承它，于是「凡场景对象都有的东西」
-（现在只有 `image` 那张显示图）只声明一次。判据走 `kindIsA` / `kindLineage`，
+**对象类型有一层层级**（`packages/document/src/kinds.ts`）：`SceneObject` 是所有场景对象的**抽象基类**
+（不落进文档），所有具体类型都继承它。继承只表达类型归属；对象能力由特性表单独决定。
+判据走 `kindIsA` / `kindLineage`，
 **`kinds.includes(kind)` 是错的**（名单里是基类，子类型一个都不在里面）。
 详见 §3.2.3。
 
@@ -234,9 +234,10 @@ v23 起切分搬出了工程文件（v22 及更早才是 `ProjectDoc.spriteSheet
 （`OBJECT_FEATURES` 的 `componentsByKind` 按 kind 路由，迁移也按 kind 改名），
 不像「两个显示组件同时挂着」那种歧义。
 
-**v22 给对象类型立了层级**，`image` 这一条因此声明在**基类** `SceneObject` 上
-（`kinds: ["SceneObject", "Player", "Item", "Event"]`）：精灵 `Sprite` 与贴图 `Image` 继承它，
-不用在名单里各写一遍。两条例外都是**故意**的：`video` 那一行**不写基类**
+**v22 给对象类型立了层级**，当时精灵 `Sprite` 与贴图 `Image` 继承抽象基类 `SceneObject`。
+当前所有具体对象类型都继承 `SceneObject`；`image` 仍只登记在支持贴图的具体类型上
+（`kinds: ["Sprite", "Image", "Player", "Item", "Event"]`），避免把显示图能力泛化到动作或地图。
+`video` 那一行也只写具体类型
 （写了精灵会继承到视频），精灵的图片组件仍由 `componentsByKind: { Sprite: SpriteLayer }`
 单独路由（继承管的是「能不能带」，路由管的是「带在哪」）。
 
@@ -402,7 +403,7 @@ build: { outDir: "dist", sourcemap: true },
 | 文件 | 行数 | 职责 | 关键导出 |
 |---|---|---|---|
 | `types.ts` | 602 | 全部文档类型与格式版本常量（**`ObjectKind` 不在这里：v22 起住在 `kinds.ts`**） | `DOCUMENT_FORMAT_VERSION`(=24)、`ProjectDoc`、`SceneDoc`、`SceneFileDoc`、`SceneObjectDoc`、`ComponentDoc`、`MapDataDoc`、`MapFogDoc`、`SoundDataDoc`、`TeleportDataDoc`、`VideoDataDoc`、`ActionInstanceDoc`、`ConditionDoc`、`ImageRef`、`GridSpec`、`CellRuns`、`ItemLibraryDoc`、`AudioTagTableDoc`、`SOUND_LAYERS`、`OBJECT_SOUND_LAYERS`、`ImageSpriteRef`、`SpriteSheetDoc`、`SpriteImportSettingsDoc`、`ResolvedSprite`、`SOUND_LAYER_LABELS` |
-| `kinds.ts` | 146 | **对象类型与它们之间的层级**（v22 新增）：`SceneObject` 是抽象基类、`Sprite` / `Image` 继承它；「谁能带某个特性」的层级判据都从这里走 | `OBJECT_KINDS`（=schema 枚举的那个列表）、`ObjectKind`、`ObjectKindDef`、`OBJECT_KIND_DEFS`、`objectKindDef`、`kindAncestors`、`kindLineage`、`kindIsA`、`isAbstractKind`、`CONCRETE_KINDS`、`kindDescendants` |
+| `kinds.ts` | 146 | **对象类型与它们之间的层级**（v22 新增）：`SceneObject` 是抽象基类，所有具体对象类型都继承它；层级判据由这里提供 | `OBJECT_KINDS`（=schema 枚举的那个列表）、`ObjectKind`、`ObjectKindDef`、`OBJECT_KIND_DEFS`、`objectKindDef`、`kindAncestors`、`kindLineage`、`kindIsA`、`isAbstractKind`、`CONCRETE_KINDS`、`kindDescendants` |
 | `features.ts` | 267 | **「哪个 kind 带哪个特性」的唯一归属地** + 组件类型名映射（含 `image` 的**按 kind 路由**）+ 特性缺省值 | `ObjectFeatureField`、`FEATURE_COMPONENT`、`SPRITE_COMPONENT`、`LEGACY_IMAGE_COMPONENT`、`OBJECT_FEATURES`、`FEATURE_COMPONENTS`、`featureOfField`、`featureOfComponent`、`componentsOfField`、`componentForKind`、`carriesFeatureComponent`、`kindsCarrying`、`carriesKind`、`supportsVideo`、`supportsSpriteSheet`、`displayImageField`、`DEFAULT_SOUND_LAYER`、`DEFAULT_VIDEO_*` |
 | `access.ts` | 256 | **对象特性的唯一访问路径**（数据存在哪只有这里知道；`image` 的两种组件都在这里收口） | 读：`componentOf`、`componentDataOf`、`hasFeature`、`mapDataOf`、`imageOf`（**两种图片组件都认**）、`objectImage`、`soundDataOf`、`teleportDataOf`、`videoDataOf`、`isVideoEnabled`；写：`mapDraftOf`、`writeFeature`、`removeFeature`、`ensureSoundData`、`ensureTeleportData`、`ensureVideoData`、`withFeature`、`withoutFeature` |
 | `schema.ts` | 1,336 | zod schema + **版本迁移链**（v23 / v24 的素材 meta 迁移也在这一段里）+ 文件解析 | `sceneFileSchema`、`projectDocSchema`、`imageSpriteRefSchema`、`upgradeRawDocument`、`migrateProjectDoc`、`parseProjectFile`、`parseProjectDoc`、`parseSceneFile`、`defaultProjectSettings`、`defaultAudioSettings`、`defaultBgmSettings`、`DEFAULT_BGM_VOLUME`(0.6)、`DEFAULT_SFX_VOLUME`(0.8)、`DEFAULT_VOICE_VOLUME`(1)；类型 `SceneSizeHint`、`ProjectFileLoad`、`SceneFileLoad` |
@@ -456,15 +457,15 @@ Assets/scenes/<场景名>.json（SceneFileDoc）   ← 场景名不进文件内�
 ```
 ObjectKind（`kinds.ts` 的 `OBJECT_KINDS`；schema 的枚举就是它，加一个类型只动一处）
 ├─ SceneObject                 ← **抽象基类**：不落进文档（老文件里的由 v22 迁移改成 Sprite）
-│  ├─ Sprite                   ← 精灵：图会取图集里的一格（组件 SpriteLayer）
-│  └─ Image                    ← 贴图（v21 时叫 Texture）：整张铺满（组件 ImageLayer）
-├─ Player / Item / Event       ← 前端 BackendObjectKind 就有的实体，与上面平级
-├─ Map                         ← 带网格的图（组件 GridMap）
-└─ PlaySound / Teleport        ← 动作对象（前端不建可见物）
+│  ├─ Sprite                    ← 精灵：图会取图集里的一格（组件 SpriteLayer）
+│  ├─ Image                     ← 贴图（v21 时叫 Texture）：整张铺满（组件 ImageLayer）
+│  ├─ Map                       ← 带网格的图（组件 GridMap）
+│  ├─ Player / Item / Event     ← 前端 BackendObjectKind 就有的实体
+│  └─ PlaySound / Teleport      ← 动作对象（前端不建可见物）
 ```
 
-`image` 那条特性**声明在基类上**（`kinds: ["SceneObject", "Player", "Item", "Event"]`），
-`Sprite` / `Image` 继承下来；`video` 那条**刻意只写具体类型**（`Map` / `Image`），
+`image` 那条特性只登记在支持贴图的具体类型上（`Sprite` / `Image` / `Player` / `Item` / `Event`）；
+`video` 那条**刻意只写具体类型**（`Map` / `Image`），
 不然精灵会跟着继承到视频。判据一律走 `kindIsA` / `kindLineage`，
 **`kinds.includes(kind)` 会把子类型整个漏掉**。
 
@@ -1158,6 +1159,7 @@ store 用 **zustand 切片**模式拆开了：原来是一个 4,493 行的 `edit
 | `slices/project-slice.ts` | 513 | 项目 CRUD、资源树、建目录、打开目录、上传、删资源，以及**素材 meta 的装配与迁移**：`loadAssetMetas` 读回全部 `.meta`、给缺的素材补一份（`assetImporterKind` 定导入器；**盘上有但读不出来的那份不补**——`readMetas` 的 `unreadable` 就是给它留的，补一份新 GUID 会盖掉盘上那份）、把 `migratedMetas` 落盘、迁移新建了场景文件时**重取一次资源树**、重建索引 | — |
 | `slices/scene-slice.ts` | 316 | 场景增删改、切换、排序、载入（打开场景时的校验带 `{ metas }`） | — |
 | `slices/object-slice.ts` | 467 | 对象增删改、选区、变换属性、贴图、网格规格 | — |
+| `scene-object-factory.ts` | — | 按 `ObjectKind` 注册新对象工厂；地图补同名贴图与网格，声音 / 传送阵使用文档专属工厂。 | `createSceneObjectForKind` |
 | `slices/transform-slice.ts` | 175 | 变换工具与手柄拖拽（`begin/apply/end/cancelObjectTransform`） | — |
 | `slices/viewport-slice.ts` | 76 | 视口缩放 / 平移 / 适配 / 尺寸 | — |
 | `slices/runtime-slice.ts` | 67 | `setMode` / `connectRuntime` / 推场景 / 清日志 | — |
@@ -1266,7 +1268,7 @@ export function createSoundSlice(
 | `object-fields.tsx` | 844 | 对象字段的控件本体（从 `InspectorPanel.tsx` 拆出，纯搬运）：名称 / 激活 / 锁定 / 显示顺序 / 位置 / 缩放 / 单轴缩放 / 旋转 / 贴图（含**子图那一行**：`子图 第2行第3列（4×4）` + 「改回整图」，越界时挂「格子越界」提示；testid `texture-sprite` / `texture-sprite-out-of-range` / `clear-sprite`）/ 网格规格 / 每格像素 / 网格显示开关 + 它们的格式化与解析助手 | `NameField`、`ActiveField`、`LockedField`、`SortingOrderField`、`PositionFields`、`ScaleField`、`ScaleAxisField`、`RotationField`、`TextureField`、`GridFields`、`CellSizeField`、`GridDisplayField`、`WORLD_ORIGIN_FALLBACK` 等 |
 | `fields.tsx` | 204 | 属性面板的行/分组外壳与**播放类控件**：可折叠 `FieldGroup`（`data-group` 英文 slug）、只读 `Field`、`FieldRow`（标签定宽 `w-20`，必须是行内第一个子元素）、`PlaybackRow`、`PlaybackStatus`、`PLAYBACK_BUTTON_CLASS` / `PLAYBACK_BUTTON_ACTIVE_CLASS`（高 34px、13px 字）。 | `FieldGroup`、`Field`、`FieldRow`、`PlaybackRow`、`PlaybackStatus`、`PLAYBACK_BUTTON_CLASS`、`PLAYBACK_BUTTON_ACTIVE_CLASS`；类型 `PlaybackState` |
 | `SoundFields.tsx` | 317 | 声音对象的「声音」组：层级下拉（对象只给 `OBJECT_SOUND_LAYERS`，老文件的 `bgm` 照显并提示改）、音频小方块单选、`编辑音频…` 入口、播放三键 + 状态行（多一档 `busy` = 本层被别的对象占着）；每条音频的显示名经 `assetMetaTable` 读（v24 起住在素材自己的 `.meta` 里）。 | `SoundFields`、`soundPlayBlockedReason`、`soundDeliveryHint` |
-| `VideoFields.tsx` | 313 | 地图/精灵的「视频」组：启用闸门（关着只留开关）、循环/声音开关、视频小方块单选、`编辑视频…` 入口、播放三键 + 状态行。 | `VideoFields`、`videoPlayBlockedReason`、`videoDeliveryHint` |
+| `VideoFields.tsx` | 313 | 地图/精灵的「视频」组：启用闸门（关着只留开关）、循环/声音开关、视频小方块单选、「编辑」入口、播放三键 + 状态行。 | `VideoFields`、`videoPlayBlockedReason`、`videoDeliveryHint` |
 | `TeleportFields.tsx` | 105 | 传送阵的「传送」组：候选目标小方块 + `＋` 开「传送目标」窗口 + 「传送」按钮（不能传时按钮上写原因）。 | `TeleportFields` |
 | `FogFields.tsx` | 126 | 战争雾编辑区：第一行总开关（`map.fog.enabled`，文档数据）闸住整组；打开后给「指定雾区」小方块与「雾格子 → 编辑」入口。 | `FogFields` |
 | `GridAnnotationFields.tsx` | 36 | 「区域」组里的一行入口：只留一个按钮打开 `GridEditDialog`。 | `GridAnnotationFields` |
@@ -1327,7 +1329,8 @@ export function createSoundSlice(
 旧格式迁移（内联场景落文件 / 缺 `settings` 回写）→ `refreshTree` → `loadScenes` → `writeLastProject`）、
 `closeProject`、`deleteProject`、`refreshTree`、`createFolder`、`openProjectFolder`、`uploadFiles`、`deleteResource`。
 
-**对象**：`setSelection`、`selectAsset`、`createObject(kind, name, position?)`（Map 按同名约定取
+**对象**：`setSelection`、`selectAsset`、`createObject(kind, name, position?)`（对象数据由 `scene-object-factory.ts`
+按 `ObjectKind` 选择工厂；地图按同名约定取
 `Assets/images/<场景名>.png` 并 `gridSizeFromImage`）、`renameObject`、`setObjectActive`/`toggleObjectActive`、
 `setObjectLocked`/`toggleObjectLocked`、`setObjectSortingOrder`、`setObjectScale`、`setObjectScaleAxes`、
 `setObjectRotation`（收弧度，面板按度）、`deleteObjects`（顺手关掉指向被删地图的窗口）、
@@ -1716,7 +1719,7 @@ upgradeRawDocument
 
 | 概念 | 位置 | 与前端的关系 |
 |---|---|---|
-| 对象类型 `ObjectKind`（9 种，含抽象基类） | `@dts/document` 的 `kinds.ts` | `SceneObject` 是**抽象基类**（不落进文档），`Sprite`（精灵）与 `Image`（贴图）继承它；`Player`/`Item`/`Event` 与它平级，另有编辑器侧的 `Map`/`PlaySound`/`Teleport`。**v19 起 `kind` 只是创建原型标签**（前端拿它取占位色），「建不建可见物」看组件（见下）；**v22 起「谁能带哪个特性」按层级判**（`kindIsA`），别写 `kinds.includes` |
+| 对象类型 `ObjectKind`（9 种，含抽象基类） | `@dts/document` 的 `kinds.ts` | `SceneObject` 是**抽象基类**（不落进文档），所有具体类型都继承它；继承表示类型归属，特性由 `OBJECT_FEATURES` 决定。**v19 起 `kind` 只是创建原型标签**（前端拿它取占位色），「建不建可见物」看组件（见下）；**v22 起「谁能带哪个特性」按层级判**（`kindIsA`），别写 `kinds.includes` |
 | 组件类型（13 种，`components.ts`） | `@dts/document` | 6 种对象特性（`GridMap` / `ImageLayer` / `SpriteLayer` / `PlaySound` / `Teleport` / `VideoOverlay`）**逐字对齐客户端 `Protocol.ComponentType`**，由 `apps/backend/test/protocol-document-contract.test.ts` 断言；另外 7 种是编辑器侧组件（前端忽略，数据留在镜像里）。**`image` 一个字段两种组件**（`componentsByKind` 按 kind 路由） |
 | 前端可见性判据 | `SceneObjectView.NeedsView(MirrorObject)`（客户端） | 有 `map`（GridMap）或 `image`（`ImageLayer` / `SpriteLayer`）**组件** → 建视图；都没有时**只有带 `PlaySound` / `Teleport` 组件的不建**（动作对象），其余（玩家 / 道具 / 事件 / 还没挑图的精灵）仍要一块占位色面片。**判据只此一处** |
 | 动作类型（5 种，`registry.ts`） | `@dts/actions` | `implemented: false` 的动作（当前是 `PlayAudio`，前端为空壳）在编辑器里可编辑但会报 warning、且导出后不产生效果 |
