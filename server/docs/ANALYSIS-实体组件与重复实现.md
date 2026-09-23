@@ -1,5 +1,24 @@
 # server 代码分析报告：场景对象架构 & 重复实现
 
+> ## ⚠️ 这是一份**历史快照（2025-06）**，不要照它下判断
+>
+> 它描述的不少东西**已经不存在**了。现行结构的权威说明是 [`CODE-STRUCTURE.md`](CODE-STRUCTURE.md)；
+> 「加一个功能要碰哪些文件」的实测数字看 [`BASELINE-加一个组件要碰哪些文件.md`](BASELINE-加一个组件要碰哪些文件.md)。
+> 下面逐条标出它已经过时的地方（都是核对过仓库现状的）：
+>
+> | 这份文档说 | 现状 |
+> |---|---|
+> | §1.2 组件注册表有 **13 种**组件（7 通用 + 6 特性），每项带 `fields` / `conditionValueTypes` / `commandTypes` | 现在只有 **6 种**（全部是从对象特性提升上来的）；没有 `conditionValueTypes` / `commandTypes`；`fields` 也已从注册表移除——字段的归属地改成了 `component-specs/` 的组件规格（`ComponentTypeDef` 现在只管**注册**：type / displayName / gmEditable / slot / legacyField / tooltip） |
+> | §1.2、§1.4 提到 `features.ts`（特性路由表）与 `kinds.ts`（kind 层级表） | **两个文件都已删除**。职能并进 `presets.ts` 的 `OBJECT_PRESETS`：kind 只是**预设 id**，每个预设的 `slots` 声明「允许哪些能力槽位、缺省由哪个组件承载」 |
+> | §1.3 说 kind 层级是声明式元数据（`OBJECT_KIND_DEFS` 带 `parent`） | v22 起**层级已整层移除**，`OBJECT_KIND_DEFS` 不存在。`kind` 不再有父子关系 |
+> | §1.5 说 `ComponentDoc` 的 `data` 是「属性 bag」且 **`actions[]` 挂在组件上** | `data` 仍然是不透明 bag（没错），但 **`actions[]` 那一层已整层删除**（连同 `invoke_action` / `register_*` / `report_*` 那套旧模型）。组件实例现在只有 `id` / `type` / `displayName?` / `data` |
+> | §2.1① 「`@dts/actions` 整个包是死代码，**建议删除**」 | ✅ **已删除**（整包 + `apps/editor/package.json` 里那条依赖声明）；同源的 7 种旧组件类型与 condition / action schema 也一并清了。现在 `packages/` 只有 5 个包：grid / resources / protocol / document / renderer |
+> | §2.1② protocol 与 document 两套复刻 schema（约 200 行复刻 + 240 行契约测试） | ⏳ **仍然存在**，且仍然是**有意的**依赖方向妥协（由 `server/test/architecture.test.ts` 的 `ALLOWED` 表守住 `protocol: []`）。收敛的三个选项与建议见 BASELINE 文档 §4 的「阶段 C（T1）」 |
+> | §2.1③ 三对模板级近似重复（播放记账 ×3、Sound/Video 弹框、Fog/Grid 窗口+切片） | ⏳ **基本仍然成立**——**这是这份文档现在唯一还值得读的部分** |
+> | §1.6 「已把 CODE-STRUCTURE 的『真 ECS』措辞改掉」 | ✅ 已改 |
+>
+> **处理建议**：不要删这份文档（§2.1③ 那份同构拷贝的对比还在用），但读之前先看这张表。
+
 > 范围：`server/` 下全部代码（apps/* + packages/*，不含 `client/` Unity 前端）。
 > 方法：静态阅读 + 全仓 grep 交叉验证（含 import 引用核查），2025-06 快照。
 > 结论速览：场景对象**确实是 Unity 式的实体+组件模式**（一个实体挂接多个组件，模拟 GameObject + Component；非 ECS 框架）；重复实现**存在但有边界**——1 处死代码、1 处刻意复刻、若干模板级近似重复；文件多的主因是竖切式拆分与高测试密度，而非重复造轮子。

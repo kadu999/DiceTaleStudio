@@ -29,7 +29,7 @@
 | **WS 一条消息一个函数** | `ws/hub.ts` 621 行、两条 `switch` | 8 个文件，`hub.ts` **465 行**（只管传输）+ `handlers/*` | 加一条消息 = 加一个函数（表的键完整性由类型保证） |
 | **Unity 式实体+组件（GameObject + Component）** | 对象上 5 个特性扁平字段 + 各处 `kind === "…"` | `components[]`（模拟 Unity GameObject 挂组件）+ 能力槽位（slot）/访问器；文档 v19 / 协议 v9 / Unity 客户端同步（子图改动后为 **v20 / v10**，见 §0） | 加一个特性 = 加一个组件 + 注册表一行 + 预设表一行（见 §1.6） |
 | **文档命令分模块** | `commands.ts` 2,069 行 | `commands/` 10 个文件（按特性） | 加一个特性的命令 = 加一个文件 |
-| **编辑器 store 分片** | `editor-store.ts` 4,493 行 | 组装点 **98 行** + 16 个切片 + 上下文（见 §5.2） | 加一个功能 = 加一个 `slices/<功能>-slice.ts` + 组装点一行 |
+| **编辑器 store 分片** | `editor-store.ts` 4,493 行 | 组装点 **100 行** + 17 个切片 + 上下文（见 §5.2） | 加一个功能 = 加一个 `slices/<功能>-slice.ts` + 组装点一行（**简单字段连切片都不用加**：`setComponentField` 已经在 `component-slice.ts` 里） |
 | **属性面板注册表** | `InspectorPanel.tsx` 1,195 行的 JSX 分支 | `InspectorPanel.tsx` **343 行** + `registry.tsx` + `object-fields.tsx` | 加一个特性分组 = 注册表一行 + 一个字段组件 |
 
 **代价是诚实的**：源码从 28,810 行长到 31,002 行（+7.6%；子图、kind、素材 meta 三次改动后全仓 34,624 行，见 §0）——多出来的是文件头注释、import/export
@@ -212,15 +212,32 @@ GameObjectDoc（= GameObject）
 
 1. `presets.ts`：给 `ComponentSlot` 加一个槽位名、给 `DEFAULT_SLOT_COMPONENT` 加一个缺省承载组件名、往 `OBJECT_PRESETS` 里相关预设的 `slots` 加一行；
 2. `components.ts`：加一条 `COMPONENT_TYPES`（自报 `slot`；`legacyField` 留空——新特性没有历史字段）；
-3. 新建一个 `components/<你的特性>.ts` 放它的 zod schema；`schema.ts` 的 `sceneComponentSchema` 加一个 `componentSchemaOf(...)`；
-4. `access.ts`：加 `xxxOf` / `ensureXxx`（**只在这一个文件里碰 `components`**）；
-5. `commands/`（或 `commands.ts`）：加它的写命令，全部经访问器；
-6. `validation.ts`：加它的语义校验；
-7. `protocol/src/messages.ts`：`COMPONENT_TYPE` 加一项、`sceneComponentSchema` 加一个分支（契约测试会盯着你别漏）；
-8. 编辑器 `panels/inspector/`：加一个分组视图组件；
-9. `client/.../SceneParser.cs`：加一个 `case`（不加也不会崩——未知组件会被安静地留下）。
+3. **`component-specs/<你的特性>.ts`（新建）**：用 `defineComponent` 声明**能被描述符表达的简单字段**（布尔 / 数字 / 枚举 / 字符串）与 `defaultData`，并在 `component-specs/index.ts` 的 `COMPONENT_SPECS` 里登记一行。**登记之后属性面板会自动出行（`DescriptorRows.tsx`）、泛型写入（`setComponentField`）自动接管——那两处都不必再改代码**；
+4. `schema.ts`：加这个组件数据的 zod schema，并给 `sceneComponentSchema` 加一个 `componentSchemaOf(...)` 分支。**schema 仍然手写在这一个文件里**（`packages/document/src/` 下**没有** `components/` 子目录，四个数据 schema 都在 `schema.ts`）；
+5. `access.ts`：加 `xxxOf` / `ensureXxx`（**只在这一个文件里碰 `components`**）；`ensureXxx` 的默认数据直接取 `defaultDataOf(type)`，**不要在别处再抄一份形状**；
+6. `commands/`：加它的写命令——**简单字段不必写**（`setComponentField` 已覆盖）；只有列表 / 引用 / 有副作用的开关才需要专用命令，且全部经访问器；
+7. `validation.ts`：加它的语义校验；
+8. `protocol/src/messages.ts`：`COMPONENT_TYPE` 加一项、`sceneComponentSchema` 加一个分支（契约测试会盯着你别漏）；
+9. 编辑器 `panels/inspector/`：**简单字段不用动**；有列表选择 / 播放按钮 / 对话框这类自定义交互时，加一个分组视图组件并在 `registry.tsx` 的 `OBJECT_GROUPS` 里登记；
+10. `client/.../SceneParser.cs`：加一个 `case`（不加也不会崩——未知组件会被安静地留下）。
 
 也就是说：**特性本身的代码是新增文件，而不是去十几处 `kind === "…"` 里插分支**。
+
+**三条「别再各写一遍」的规矩（v25 起）**：
+
+- **简单字段走组件规格**：给已有组件加一个布尔 / 数字 / 枚举 / 字符串，只碰
+  `component-specs/<组件>.ts` 一行 + `types.ts` + `schema.ts`（+ 协议那一行）。
+  store 的 action 声明、切片实现、属性面板控件**都不必动**——v25 之前这三处各要写一遍
+  （实测：一个布尔值过去要碰 6 个这样的文件，见 `docs/BASELINE-加一个组件要碰哪些文件.md` 的附录）；
+- **对象自身的简单字段同理**（`object-spec.ts` 的 `OBJECT_SPEC` + `setObjectField`）：加一行描述符，
+  面板的「基础」组会自动多一行。目前只有 `sortingOrder` 走这条路——其余六个基础字段各有一件
+  描述符表达不了的语义（改名联动贴图 / 写运行日志 / 等比折叠 / 弧度↔度换算 / `position: null` 落位），
+  **进去就会绕过那些语义**，所以各自留在手写路径上。加新基础字段时先问「它是不是一个普通标量」；
+- **规格不驱动 schema**：`schema.ts` 的手写 zod 仍是解析期的唯一权威。默认值语义
+  （例如 `video.enabled` 默认 `true`，补成 `false` 会把已有视频静默关掉）写在长注释里，
+  从描述符派生有静默改语义的风险。派生留作后续，且只对「描述符完全可表达」的组件做，
+  判据是**既有文档测试零改动**。**核对过 6 个组件，目前没有一个合格**（规格是有意的部分集），
+  所以这一条现在是「等到有合格对象再做」，理由与核对表见 BASELINE 文档的「#1」一节。
 
 **子图（v20）刻意没有做成第 6 个特性组件，它是一项数据**：精灵本来就是「纹理 + 一块矩形」
 （Unity 也是这么定义 `Sprite` 的），矩形由图片自己的切分算出来，所以它住在图片组件的
@@ -412,9 +429,13 @@ build: { outDir: "dist", sourcemap: true },
 | `asset-meta.ts` | 530 | **素材 meta 的全部知识**（v23 新增；v24 起覆盖**每一种素材**）：`<素材>.meta` 的形状（GUID + 导入器 + 精灵设置 / 切分 + 音频标注）、schema、解析、序列化、GUID 生成，以及「meta ↔ 文档词汇」的访问器与纯函数写入 | `ASSET_META_FORMAT_VERSION`(1)、`ASSET_IMPORTERS`、`AssetImporter`、`AssetMetaDoc`、`AssetMetaSpriteDoc`、`AssetMetaAudioDoc`、`AssetMetaFileLoad`、`assetMetaSchema`、`newAssetGuid`、`createAssetMeta`、`parseAssetMetaFile`（只容错"缺 guid"，补上并 `needsRewrite`）、`serializeAssetMetaFile`、`isSpriteMeta`、`spriteSettingsOfMeta`、`spriteSheetOfMeta`、`withMetaSpriteSettings`、`withMetaSpriteSheet`、`audioNameOfMeta`、`audioTagsOfMeta`、`withMetaAudioName`、`withMetaAudioTags`、`withoutMetaAudioTag`、`AssetMetas`（guid ↔ 路径双向索引）、`emptyAssetMetas`、`createAssetMetas`、`metaOfImage` |
 | `history.ts` | 222 | 补丁式撤销 / 重做容器 | `DocumentHistory`、`HistoryEntry`、`DEFAULT_HISTORY_LIMIT`(=200)、`DEFAULT_COALESCE_WINDOW_MS`(=700)、`SceneListDraft` |
 | `factory.ts` | 181 | 新建对象的工厂函数（默认值） | `createEmptyProject`、`createEmptyScene`、`createEmptySceneFile`、`createMapObject`、`createSoundObject`、`createTeleportObject` |
-| `components.ts` | 173 | 组件注册表（**6 种**，全部是从对象特性提升上来的——`image` 那一个字段有 `ImageLayer` / `SpriteLayer` 两种，各自自报 `slot`） | `ComponentType`、`ComponentTypeDef`、`COMPONENT_TYPES`、`SLOT_COMPONENT_TYPES`、`FEATURE_COMPONENT_TYPES`、`hasLegacyFeatureField`、`findComponentType`、`componentId`、`featureComponent`、`defaultComponentData`、`isKnownComponentType` |
+| `components.ts` | 158 | 组件注册表（**6 种**，全部是从对象特性提升上来的——`image` 那一个字段有 `ImageLayer` / `SpriteLayer` 两种，各自自报 `slot`）。**只登记「注册」信息**（type / displayName / gmEditable / slot / legacyField / tooltip）：字段的形状归 `component-specs/`，默认数据归 `defaultDataOf`——那条老的 `fields` + `defaultComponentData` 已删除 | `ComponentType`、`ComponentTypeDef`、`COMPONENT_TYPES`、`SLOT_COMPONENT_TYPES`、`FEATURE_COMPONENT_TYPES`、`hasLegacyFeatureField`、`findComponentType`、`componentId`、`featureComponent`、`isKnownComponentType` |
 | `scale.ts` | 118 | 对象缩放语义（等比 + v11 单轴覆盖） | `DEFAULT_OBJECT_SCALE`(1)、`MIN_OBJECT_SCALE`(0.01)、`MAX_OBJECT_SCALE`(100)、`clampObjectScale`、`effectiveScaleX`、`effectiveScaleY`、`isUniformScale`、`collapseScale` |
-| `fields.ts` | 89 | 组件字段定义与默认值推导 | `FieldDef`、`FieldKind`、`FieldOption`、`defaultValueFor`、`defaultDataFromFields` |
+| `fields.ts` | 144 | 字段**描述符**（纯数据、不含 React）：`key` / `label` / `kind` / 取值约束 / 默认值 / 面板 testid 与行序 / 撤销合并，以及默认值推导与「键必须真在这份数据上」的约束类型 `TypedFieldDef` | `FieldDef`、`TypedFieldDef`、`FieldKind`、`FieldOption`、`defaultValueFor`、`defaultDataFromFields` |
+| `component-spec.ts` | 122 | **组件规格**的形状与声明助手：一个组件「有哪些简单字段」的唯一声明处；值收窄规则也在这里 | `ComponentSpec`、`defineComponent`、`REJECT`、`coerceFieldValue` |
+| `component-specs/` | 117 | **一组件一个文件**的规格（`video.ts` = `VideoOverlay`）+ 注册表 + `defaultDataOf`（默认数据的唯一归属地） | `videoSpec`、`COMPONENT_SPECS`、`componentSpecOf`、`listComponentSpecs`、`defaultDataOf` |
+| `object-spec.ts` | 83 | **对象自身字段的规格**（「基础」那一组）：目前只接管 `sortingOrder`；表里逐条写明其余六个字段为什么留在手写路径 | `ObjectSpec`、`defineObjectSpec`、`OBJECT_SPEC`、`objectFieldOf` |
+| `commands/field.ts` | 98 | **规格驱动的泛型写入**：组件字段与对象字段两条（取代「一个字段写一条命令」） | `setComponentField`、`setObjectField` |
 | `index.ts` | 19 | barrel | — |
 
 #### 3.2.1 数据模型
@@ -1109,8 +1130,8 @@ store 用 **zustand 切片**模式拆开了：原来是一个 4,493 行的 `edit
 
 | 文件 | 行数 | 职责 | 对外导出 |
 |---|---|---|---|
-| `editor-store.ts` | **98** | **只剩组装与再导出**：`create<EditorStoreState>()` 里展开初始状态与 16 个切片，然后把公开 API 原样再导出（仓库里 30+ 处从这里导入） | `useEditorStore`、`sceneHistory`、`projectHistory`、`fitSceneViewport`、`serializeSceneFile`、`serializeProjectFile`、`compareSceneNames`、`findResourceNode`、`withRenamedSceneImage`；类型 `EditorMode`、`EditorUiState`、`RuntimeUiState`、`ProjectUiState`、`ProjectDialogMode`、`SceneDialogMode`、`SceneSaveState`、`GridPaintState`、`EditorStoreState` |
-| `store-types.ts` | 793 | 全部状态类型 + `EditorStoreState`（**134 个 action + 48 个状态字段**）+ `StoreSet` / `StoreGet` / `EditorStoreData`（由「全部 action 名」算出来的状态部分）；素材 meta 的 `AssetMetaTable`（真源表）、`AssetMetaDraft`（`applyMetas` 拿到的那份可写草稿）与 `assetMetas`（派生索引）也在这里 | 上表那些类型 |
+| `editor-store.ts` | **100** | **只剩组装与再导出**：`create<EditorStoreState>()` 里展开初始状态与 17 个切片，然后把公开 API 原样再导出（仓库里 30+ 处从这里导入） | `useEditorStore`、`sceneHistory`、`projectHistory`、`fitSceneViewport`、`serializeSceneFile`、`serializeProjectFile`、`compareSceneNames`、`findResourceNode`、`withRenamedSceneImage`；类型 `EditorMode`、`EditorUiState`、`RuntimeUiState`、`ProjectUiState`、`ProjectDialogMode`、`SceneDialogMode`、`SceneSaveState`、`GridPaintState`、`EditorStoreState` |
+| `store-types.ts` | 817 | 全部状态类型 + `EditorStoreState`（**136 个 action + 48 个状态字段**）+ `StoreSet` / `StoreGet` / `EditorStoreData`（由「全部 action 名」算出来的状态部分）；素材 meta 的 `AssetMetaTable`（真源表）、`AssetMetaDraft`（`applyMetas` 拿到的那份可写草稿）与 `assetMetas`（派生索引）也在这里 | 上表那些类型 |
 | `store-core.ts` | 379 | **模块级**工具与状态：**三份** `DocumentHistory`（`sceneHistory` / `projectHistory` / `metaHistory`）、撤销轨（`lastEditTrack` / `activeTrack` / `historyOf` / `EDIT_TRACKS` = `scenes` / `project` / `metas`）、常量、`fitSceneViewport`、`serializeSceneFile` / `serializeProjectFile`、`withRenamedSceneImage`、`compareSceneNames`、`findResourceNode`、`makeLog` / `nextLogId` | 同 `editor-store` 的值导出 |
 | `store-context.ts` | 1,306 | **闭包状态与局部工具**（原 `create()` 里那段）：`StoreContext` 54 个成员——41 个函数（`pushLog` / `switchScene` / `deliverSoundPlay` / `applyActiveScene` / `scheduleSceneSave` / `scheduleMetaSave` / `metaDirtyIds` / `fogTargetOf` / `currentSceneDoc` …）、8 个稳定引用（`runtimeClient` / 两个 `ScenePushScheduler` / `savedScenes` / **`savedMetas`** / `sceneViewports` / `quietCommandIds` / `storedGridPaint`）、5 个可变标量走 get/set（`lastPushedSceneText` / `pendingRunRequest` / `viewportAdjusted` / `bootstrapping` / `savedProjectText`）；**`metaHistory.subscribe` 在这里重建 `assetMetas` 索引并安排 meta 落盘** | `StoreContext`、`createStoreContext` |
 | `initialState.ts` | 84 | 初始状态（返回类型是 `EditorStoreData`，所以**少一个状态字段就编译报错**；素材 meta 两份初始为空） | `createInitialState` |
@@ -1119,6 +1140,7 @@ store 用 **zustand 切片**模式拆开了：原来是一个 4,493 行的 `edit
 | `slices/project-slice.ts` | 513 | 项目 CRUD、资源树、建目录、打开目录、上传、删资源，以及**素材 meta 的装配与迁移**：`loadAssetMetas` 读回全部 `.meta`、给缺的素材补一份（`assetImporterKind` 定导入器；**盘上有但读不出来的那份不补**——`readMetas` 的 `unreadable` 就是给它留的，补一份新 GUID 会盖掉盘上那份）、把 `migratedMetas` 落盘、迁移新建了场景文件时**重取一次资源树**、重建索引 | — |
 | `slices/scene-slice.ts` | 316 | 场景增删改、切换、排序、载入（打开场景时的校验带 `{ metas }`） | — |
 | `slices/object-slice.ts` | 367 | 对象增删改、选区、变换属性、贴图、网格规格 | — |
+| `slices/component-slice.ts` | 39 | **泛型组件字段写入**（只有 `setComponentField` 一条）：标签与撤销合并都从组件规格读，所以**加一个简单字段不必碰这个文件** | — |
 | `game-object-factory.ts` | — | 按 `ObjectKind` 注册新对象工厂；地图补同名贴图与网格，声音 / 传送阵使用文档专属工厂。 | `createGameObjectForKind` |
 | `slices/transform-slice.ts` | 160 | 变换工具与手柄拖拽（`begin/apply/end/cancelObjectTransform`） | — |
 | `slices/viewport-slice.ts` | 76 | 视口缩放 / 平移 / 适配 / 尺寸 | — |
@@ -1225,11 +1247,13 @@ export function createSoundSlice(
 | 文件 | 行数 | 职责 | 对外导出 |
 |---|---|---|---|
 | `InspectorPanel.tsx` | 493 | 右侧属性面板**只剩「显示哪一屏」**：按「资源 > 对象 > 场景 > 项目」的优先级选择视图，对象那一屏按注册表渲染分组；资源那一屏顺手显示该素材的 `.meta` 摘要（导入设置、切分几格） | `InspectorPanel` |
-| `registry.tsx` | 134 | **对象分组的注册表**：7 组（基础 / 渲染 / 声音 / 传送 / 区域 / 战争雾 / 视频）各自的 `applies`（判据走预设表与访问器，不看 `kind` 字面量）与 `render`；**数组顺序就是界面顺序**（e2e 断言它） | `ObjectGroupDef`、`OBJECT_GROUPS` |
-| `object-fields.tsx` | 844 | 对象字段的控件本体（从 `InspectorPanel.tsx` 拆出，纯搬运）：名称 / 激活 / 锁定 / 显示顺序 / 位置 / 缩放 / 单轴缩放 / 旋转 / 贴图（含**子图那一行**：`子图 第2行第3列（4×4）` + 「改回整图」，越界时挂「格子越界」提示；testid `texture-sprite` / `texture-sprite-out-of-range` / `clear-sprite`）/ 网格规格 / 每格像素 / 网格显示开关 + 它们的格式化与解析助手 | `NameField`、`ActiveField`、`LockedField`、`SortingOrderField`、`PositionFields`、`ScaleField`、`ScaleAxisField`、`RotationField`、`TextureField`、`GridFields`、`CellSizeField`、`GridDisplayField`、`WORLD_ORIGIN_FALLBACK` 等 |
+| `registry.tsx` | 145 | **对象分组的注册表**：7 组（基础 / 渲染 / 声音 / 传送 / 区域 / 战争雾 / 视频）各自的 `applies`（判据走预设表与访问器，不看 `kind` 字面量）与 `render`；**数组顺序就是界面顺序**（e2e 断言它）。「基础」组里 **`sortingOrder` 由对象字段规格自动出行**，其余六个字段仍是手写控件（各有专属语义，见 `object-spec.ts`） | `ObjectGroupDef`、`OBJECT_GROUPS` |
+| `object-fields.tsx` | 789 | 对象字段的控件本体（从 `InspectorPanel.tsx` 拆出，纯搬运）：名称 / 激活 / 锁定 / **位置** / 缩放 / 单轴缩放 / 旋转 / 贴图（含**子图那一行**：`子图 第2行第3列（4×4）` + 「改回整图」，越界时挂「格子越界」提示；testid `texture-sprite` / `texture-sprite-out-of-range` / `clear-sprite`）/ 网格规格 / 每格像素 / 网格显示开关 + 它们的格式化与解析助手。**「显示顺序」已搬去描述符**（`object-spec.ts`），所以这里没有它 | `NameField`、`ActiveField`、`LockedField`、`PositionFields`、`ScaleField`、`ScaleAxisField`、`RotationField`、`TextureField`、`GridFields`、`CellSizeField`、`GridDisplayField`、`WORLD_ORIGIN_FALLBACK` 等 |
 | `fields.tsx` | 204 | 属性面板的行/分组外壳与**播放类控件**：可折叠 `FieldGroup`（`data-group` 英文 slug）、只读 `Field`、`FieldRow`（标签定宽 `w-20`，必须是行内第一个子元素）、`PlaybackRow`、`PlaybackStatus`、`PLAYBACK_BUTTON_CLASS` / `PLAYBACK_BUTTON_ACTIVE_CLASS`（高 34px、13px 字）。 | `FieldGroup`、`Field`、`FieldRow`、`PlaybackRow`、`PlaybackStatus`、`PLAYBACK_BUTTON_CLASS`、`PLAYBACK_BUTTON_ACTIVE_CLASS`；类型 `PlaybackState` |
 | `SoundFields.tsx` | 317 | 声音对象的「声音」组：层级下拉（对象只给 `OBJECT_SOUND_LAYERS`，老文件的 `bgm` 照显并提示改）、音频小方块单选、`编辑音频…` 入口、播放三键 + 状态行（多一档 `busy` = 本层被别的对象占着）；每条音频的显示名经 `assetMetaTable` 读（v24 起住在素材自己的 `.meta` 里）。 | `SoundFields`、`soundPlayBlockedReason`、`soundDeliveryHint` |
-| `VideoFields.tsx` | 313 | 地图/精灵的「视频」组：启用闸门（关着只留开关）、循环/声音开关、视频小方块单选、「编辑」入口、播放三键 + 状态行。 | `VideoFields`、`videoPlayBlockedReason`、`videoDeliveryHint` |
+| `VideoFields.tsx` | 297 | 地图/贴图/精灵的「视频」组：启用闸门（关着只留开关，**保留自定义渲染**——关掉它要连带摘掉整个组件）、**循环 / 声音 / 自动播放三行由组件规格自动出行**（`descriptorRows(object, videoSpec, componentFields(...))`，见 `DescriptorRows.tsx`）、视频小方块单选、「编辑」入口、播放三键 + 状态行。 | `VideoFields`、`videoPlayBlockedReason`、`videoDeliveryHint` |
+| `registry.tsx` | 145 | **对象分组的注册表**：7 组（基础 / 渲染 / 声音 / 传送 / 区域 / 战争雾 / 视频）各自的 `applies`（判据走预设表与访问器，不看 `kind` 字面量）与 `render`；**数组顺序就是界面顺序**（e2e 断言它）。「基础」组里 **`sortingOrder` 由对象字段规格自动出行**，其余六个字段仍是手写控件（各有专属语义，见 `object-spec.ts`） | `ObjectGroupDef`、`OBJECT_GROUPS` |
+| `DescriptorRows.tsx` | 316 | **规格驱动的行渲染器**：按 `FieldDef.kind` 出行（布尔 / 数字 / 整数 / 字符串 / 多行文本 / 枚举），`FieldTarget` 抽象把「写哪份数据」与「这一行长什么样」分开——`componentFields(type)` 写组件 `data`、`objectFields` 写对象自身，**两种规格共用同一个渲染器**。`order` 排序、`testId` 直取描述符、`FieldRow` 外壳与「不被 store 回灌 / 非法值退回 / Esc 还原」三条约定与手写控件逐字一致。加一个简单字段 = 规格里加一行，这里不用动。 | `InspectorRow`、`FieldTarget`、`componentFields`、`objectFields`、`descriptorRows`、`sortInspectorRows` |
 | `TeleportFields.tsx` | 105 | 传送阵的「传送」组：候选目标小方块 + `＋` 开「传送目标」窗口 + 「传送」按钮（不能传时按钮上写原因）。 | `TeleportFields` |
 | `FogFields.tsx` | 126 | 战争雾编辑区：第一行总开关（`map.fog.enabled`，文档数据）闸住整组；打开后给「指定雾区」小方块与「雾格子 → 编辑」入口。 | `FogFields` |
 | `GridAnnotationFields.tsx` | 36 | 「区域」组里的一行入口：只留一个按钮打开 `GridEditDialog`。 | `GridAnnotationFields` |
@@ -1249,8 +1273,8 @@ export function createSoundSlice(
 
 ### 5.3 `state/` 详解（切片拆分后）
 
-> 拆分前的 `editor-store.ts` 是 4,493 行；现在组装点 98 行 + 16 个切片（见 §5.2 的表）。
-> 下面的状态与 action 清单**名字与拆分前完全一致**（契约检查：134 个 action + 48 个状态字段，
+> 拆分前的 `editor-store.ts` 是 4,493 行；现在组装点 100 行 + 17 个切片（见 §5.2 的表）。
+> 下面的状态与 action 清单**名字与拆分前完全一致**（契约检查：136 个 action + 48 个状态字段，
 > missing 0 / extra 0），只是各自住在哪个文件变了；相对拆分那会儿多出来的 5 + 4 个，
 > 全是 v23 / v24 的**素材 meta 那条轨道**（`assetMetas` / `assetMetaTable` / `metaSaveState` / `metaSaveError`
 > 与 `applyMetas` / `saveMetasNow` / `flushMetaSave` / `ensureAssetMeta` / `setSpriteImportSettings`）。
@@ -1466,7 +1490,8 @@ edit：取消去抖、`lastPushedSceneText=null`、发 `runtime_stop`）、`push
 | `HierarchyPanel` | `scenes`/`activeSceneName`/`selectedObjectIds`/`sceneSaveState`/`sceneSaveError` → `setSelection`、`renameObject`、`deleteObjects`、`duplicateObjects`、`toggleObjectActive`、`toggleObjectLocked`、`saveSceneNow` | 对象列表：种类过滤 + 关键字过滤、行内改名、眼睛/锁、删除、保存按钮与失败条 |
 | `AssetsPanel` | `project`(current/tree/error/busy)、`selectedAssetId`、`activeSceneName` → `refreshTree`、`openProjectFolder`、`selectAsset`、`openScene` | Unity Project 式只读浏览器；点场景文件即打开场景；「打开目录」在**服务端机器**上开文件管理器 |
 | `InspectorPanel` | 见 §5.3.2 的字段动作 + `doc`/`project`/`scenes`/选区 | 一个窗口回答四种对象：资源 / 对象 / 场景 / 项目 |
-| `SoundFields` / `VideoFields` / `TeleportFields` / `FogFields` / `GridAnnotationFields` | `soundPlayback`/`videoPlayback` + 各自字段动作 | 属性面板内的分组内容（声音、视频、传送、战争雾、网格标注入口） |
+| `SoundFields` / `TeleportFields` / `FogFields` / `GridAnnotationFields` | `soundPlayback` + 各自字段动作 | 属性面板内的分组内容（声音、传送、战争雾、网格标注入口） |
+| `VideoFields` + `DescriptorRows` | `videoPlayback` + 播放三键与启用闸门走各自的字段动作；**循环 / 声音 / 自动播放走 `setComponentField`**（键与 testid 来自 `component-specs/video.ts`） | 视频组：自定义行 + 规格自动出行混排（按 `order`） |
 | `RuntimePanel` | `mode`、`runtime`、`scenes`/`activeSceneName` → `pushRuntimeScene`、`clearRuntimeLogs` | 运行态四行状态 + 可复制日志 |
 | `ScenePanel` | `activeSceneName`、`viewport`、`viewportSize`、`scenes`、`selectedObjectIds`、`gridPaint`、`soundPlayback`、`ui.tool`；动作见 §5.3.2 | 画布：绘制/拾取/多选/手柄变换/缩放平移/双击传送/工具开关/场景切换条 |
 | `MenuBar` / `StatusBar` | 见 §5.2 各行 | 全部命令的菜单入口（平板无键盘）/ 底栏八个状态格 |
@@ -1731,7 +1756,7 @@ upgradeRawDocument
 | 层 | 位置 | 运行器 / 环境 | 数量 | 行数 |
 |---|---|---|---|---|
 | 架构边界 | `test/architecture.test.ts` | vitest `node` | 1 文件 / 3 describe / 6 用例 | 231 |
-| 单元测试 | `packages/*/test`、`apps/backend/test`、`apps/editor/test` | vitest（`node` / `jsdom` 两个 project） | 75 个测试文件（另 3 个 helper + 1 个 setup + 1 个 fixtures，共 80 个文件） | 21,375 |
+| 单元测试 | `packages/*/test`、`apps/backend/test`、`apps/editor/test` | vitest（`node` / `jsdom` 两个 project） | 77 个测试文件（另 3 个 helper + 1 个 setup + 1 个 fixtures，共 82 个文件） | 21,760 |
 | 端到端 | `e2e/*.spec.ts` | Playwright（三条档位线） | 20 个 spec（7,401）+ 2 helper（1,450）+ 1 teardown（15） | 8,866 |
 
 - `pnpm test` = `vitest run`（两个 project 一起跑，README 说约 1.5s）；
@@ -1787,6 +1812,7 @@ upgradeRawDocument
 |---|---|---|
 | `document/document.test.ts` | 1,670 | 文档工厂（场景是容器、对象挂在场景上）；组件注册表；对象命令（改名/位置/锁定/激活/显示顺序/缩放/贴图/网格/组件…）；**战争雾手动指定雾区**；文档校验；工程文件 schema 与版本迁移；场景文件 schema |
 | `protocol/protocol.test.ts` | 987 | 场景载荷（地图/精灵/声音/战争雾总开关/视频/传送阵/`position: null`/单轴缩放/额外字段不报错/网格尺寸约束/**子图：`sprite` + `spriteGrid` 原样传给前端、越界被拒、只有整图时两项都不在**）；四条通道的逐条成员；命令只带触发器（含战争雾只发轨迹、声音按层、BGM 带 clip、视频只带 objectId）；畸形结构被拒（缺 objectId、空轨迹、非有限数）；**拒绝旧模型消息**（`register_*`/`report_*`/`invoke_action`/`sync_state`）；三端 schema 都是判别式联合；JSON 解析与请求 id |
+| `document/component-field.test.ts` | 216 | **泛型组件字段写入**（v25）：组件规格只接管三个无副作用的开关（`enabled` / `clips` / `picked` 都不在里面）；能改的（改布尔、缺实例按规格补壳并补出**完整**形状）；不改的（值没变、字段不归规格管、未知组件、kind 不允许该槽位、对象身上有组件但 kind 不允许的脏数据、对象不存在、类型不对的值——一律 `false` 且文档不动）；`coerceFieldValue` 按 kind 收窄（布尔只认布尔、整数取整并夹取、number 夹取、enum 命中候选、字符串只认字符串、列表 / 引用 / 颜色一律 `REJECT`） |
 | `document/video.test.ts` | 467 | 哪些对象能带视频；列表命令（去空去重、清空不删字段、移出的视频收拾干净、重复写不算变更）；选中与名字；循环与声音开关；总开关；文档校验；格式版本 |
 | `document/sprite.test.ts` | 762 | **v20 新增**。切分只有一份：没有表项 = 整图、写进去/改回来/删掉这一串「值没变」不算变更、只删一张时字段留着、坏数字取整并夹到 1..64；对象引用哪一格（换图丢掉旧格子、同一 id 再挑保留格子、地图对象选格返回 `false`、坏格子收成非负整数）；解析（归一化矩形每格恰好 1/列 1/行、像素矩形按**加载到的**尺寸算、越界夹到最后一格、没有 `sprite` = 整图、地图一律没有子图、一格声明尺寸、预览图上点哪一格）；落盘（场景/工程文件往返 + v19 升 v20 需要回写、负数/小数格子被 schema 拒）；**推送解析**（补 `spriteGrid`、越界夹取、摘掉地图上的误写、不改输入文档）；校验（越界格 warning、地图带 sprite warning、`1×1` 多余项与空图片 ID warning）。**v21 加**：`TextureRenderer` 按 kind 改名（精灵 → `SpriteLayer`、Player / Item / Event → `ImageLayer`，组件 id 同步换、幂等、非 image 特性的 kind 不碰）。**v22 加**：kind 改名（`SceneObject`→`Sprite`、`Texture`→`Image`，回写一次、幂等、怪值原样留着让 schema 报错、只换 kind 一个字段） |
 | `document/presets.test.ts` | 165 | 对象预设表（kinds.test.ts 重写而来，v22 层级移除后）。预设表本身（每个 kind 有预设且顺序同 `OBJECT_KINDS`、槽位路由：Sprite 的 image 是 `SpriteLayer`、其余可贴图预设是 `ImageLayer`、video 槽位只给地图与贴图、承载组件都注册在组件表里）；查询语义（`componentForSlot` 对未知 kind / 无槽位预设落缺省承载、`carriesComponent` 未知 kind → false、`supportsSpriteSheet` / `supportsVideo` / `displayImageField`）；抽象基类不在 `CONCRETE_KINDS`；文档 schema 的枚举就是 `OBJECT_KINDS`（每个值都读得开、`GameObject` 一读出来就是 `Sprite` 并要回写、表外的值仍被挡住） |
@@ -1824,6 +1850,7 @@ upgradeRawDocument
 |---|---|---|
 | `sound-object.test.tsx` | 701 | 种类表里动作下的「播放声音」；创建声音对象；属性面板声音组；编辑声音窗口（store 侧加/删/起名字，显示名读素材 meta）；播放/停止能不能点；面板上看得见的状态；store 的记账与日志 |
 | `video-object.test.tsx` | 592 | 属性面板视频组；播放/暂停/停止的可用性与状态显示；失败原因都在运行日志里写明；store 的加/删/改名 |
+| `descriptor-rows.test.tsx` | 169 | **描述符行的等价性契约**（v25）：三个开关的 testid 与行序与手写版逐字一致、tooltip 仍在、勾选走泛型入口且是一次可撤销编辑（撤销说明取规格标签）、三个开关互不干扰、组件缺失时按规格补壳再写。**这一份红 = 重构改了行为；这一份绿 + 既有测试零改动 = 只是换了实现** |
 | `bgm-dialog.test.tsx` | 544 | 顶栏「音乐」按钮；「背景音乐」弹框（清单、搜索、标签勾选、路径开关、选中跟随播放、自动滚到当前曲、底部三键；显示名与标签来自各音频的 `.meta`）；**与项目设置分离** |
 | `run-mode.test.ts` | 440 | **运行中的改动不保存、退出即还原**；切场景 = 换台（运行态下立刻推）；运行基线跟着文档走；运行中的文件操作与断线 |
 | `bgm-settings.test.ts` | 340 | 推设置只剩三档音量；播放命令与补发；退出运行态音量还原、记账清零；音量编辑与场景编辑**共用一个撤销入口** |
