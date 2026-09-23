@@ -111,8 +111,6 @@ namespace DiceTale
         /// <summary>当前**显示中**的场景名（null = 还没镜像任何场景）。其余场景只是被隐藏。</summary>
         public string SceneName { get; private set; }
 
-        public System.Action<string, string> AutoPlayVideoRequested { get; set; }
-
         /// <summary>接上会话（由 <see cref="BackendManager"/> 调用一次）。</summary>
         public void Initialize(ClientSession clientSession, ResourceImageLoader loader, ResourceBundleCache cache = null)
         {

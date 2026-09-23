@@ -20,7 +20,7 @@
           "type": "GridMap",
           "data": {
             "image": {
-              "id": "project:测试项目/Assets/images/Map001.png",
+              "id": "b8f4bef4e8362b4aeb3d10322eaf9813",
               "width": 1920,
               "height": 1080
             },
@@ -339,9 +339,9 @@
           "data": {
             "enabled": true,
             "clips": [
-              "project:测试项目/Assets/video/Map001.mp4"
+              "90460513527bd5ab8725851ec775ca36"
             ],
-            "picked": "project:测试项目/Assets/video/Map001.mp4",
+            "picked": "90460513527bd5ab8725851ec775ca36",
             "loop": true,
             "audio": true
           },
@@ -367,13 +367,9 @@
           "id": "obj_mu72r20g1mvao__SpriteLayer",
           "type": "SpriteLayer",
           "data": {
-            "id": "project:测试项目/Assets/images/20260922-141038.png",
-            "width": 2048,
-            "height": 2048,
-            "sprite": {
-              "column": 0,
-              "row": 1
-            }
+            "id": "2d0195e4ae656c6fc24fd5ba68e79b1b",
+            "width": 4096,
+            "height": 4096
           },
           "actions": []
         }
@@ -398,11 +394,11 @@
           "type": "PlaySound",
           "data": {
             "clips": [
-              "project:测试项目/Assets/audio/act-2-to-act-3/06-altar-transition.mp3",
-              "project:测试项目/Assets/audio/act-2/01-bird-capture-part-1.mp3",
-              "project:测试项目/Assets/audio/act-2/02-bird-capture-part-2.mp3"
+              "1186f2a3f00c22e564d34ff0b01d3d4e",
+              "04810aa3bddfc24129b4ceb6bf09cd0c",
+              "d9845d4a9c164f9519fdb47bc26ed607"
             ],
-            "picked": "project:测试项目/Assets/audio/act-2-to-act-3/06-altar-transition.mp3",
+            "picked": "1186f2a3f00c22e564d34ff0b01d3d4e",
             "layer": "voice"
           },
           "actions": []
@@ -455,7 +451,7 @@
           "id": "obj_muce2oqy1azuw__ImageLayer",
           "type": "ImageLayer",
           "data": {
-            "id": "project:测试项目/Assets/images/Bridge.png",
+            "id": "2517ac5245edd0d02126f6307900717a",
             "width": 256,
             "height": 256
           },

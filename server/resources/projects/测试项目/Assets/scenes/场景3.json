@@ -20,7 +20,7 @@
           "type": "GridMap",
           "data": {
             "image": {
-              "id": "project:测试项目/Assets/images/Map003.png",
+              "id": "7b8aecadae302b5f2be171a7550a0b77",
               "width": 1920,
               "height": 1080
             },
@@ -47,11 +47,11 @@
           "data": {
             "enabled": true,
             "clips": [
-              "project:测试项目/Assets/video/Map003_1.mp4",
-              "project:测试项目/Assets/video/Map003_2.mp4",
-              "project:测试项目/Assets/video/Map003_3.mp4"
+              "39ef22fefa62050cd98e18909273fd4a",
+              "5a7751c778e5316113aee90814fc1f33",
+              "c37e21e6bbb8f8d07af2db0d9b072967"
             ],
-            "picked": "project:测试项目/Assets/video/Map003_1.mp4",
+            "picked": "39ef22fefa62050cd98e18909273fd4a",
             "loop": false,
             "audio": false
           },
