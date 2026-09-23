@@ -122,8 +122,9 @@ export function componentDataOf(
 /**
  * 给一个场景对象**挂上**一个组件实例（造夹具用；同类型的旧实例会被替换）。
  *
- * 组件 id 就是 `componentId(对象 id, 组件类型)`（与编辑器写盘时同一套约定），
- * 不传 `actions` —— 特性组件的动作列表在夹具里一律是空的（与迁移产出的形状一致）。
+ * 组件 id 就是 `componentId(对象 id, 组件类型)`（与编辑器写盘时同一套约定）。
+ * 组件实例的形状只有 `id` / `type` / `data`（`displayName` 可选）——
+ * **没有 `actions`**：那一层旧模型已经整层删除，见 `docs/ANALYSIS-实体组件与重复实现.md` 的横幅。
  */
 export function withComponent(
   object: Record<string, unknown>,
@@ -139,7 +140,12 @@ export function withComponent(
     ...object,
     components: [
       ...kept,
-      { id: componentId(String(object["id"]), component), type: component, data, actions: [] },
+      // 组件实例只有 `id` / `type` / `data`（`displayName` 可选）：**没有 `actions`**——
+      // 那一层（`invoke_action` / `register_*` 那套旧模型）已经整层删除。
+      // 以前这里多写一个 `actions: []`，因为 zod 会把它静默丢掉所以一直没出错，
+      // 但它让「组件上还有 actions」这件事看起来像是真的（`hierarchy.spec.ts` 的期望里
+      // 就照着它写了一份，于是那条用例一直红着）。
+      { id: componentId(String(object["id"]), component), type: component, data },
     ],
   };
 }
@@ -996,6 +1002,44 @@ export async function seedProjectAudioMeta(
     );
     expect(metaResponse.ok()).toBeTruthy();
   }
+}
+
+/**
+ * 把一张图片的 `<素材>.meta` 写成**已启用精灵**（`importer: "texture"` + `sprite` 段）。
+ *
+ * 为什么需要它：精灵对象的「选择贴图」弹框**只列 `spriteSettingsOfMeta(...).type === "Sprite"`
+ * 的图**（`ImagePickerDialog` 的 `allowSprite` 过滤）——而没有 `.meta` 的素材默认是 `Default`
+ * （`spriteSettingsOfMeta` 里 `sprite === undefined → { type: "Default" }`），
+ * 于是在精灵的弹框里**根本不出现**，用例会卡在选择器上。
+ *
+ * 两条路二选一：在这里把 meta 直接写下去，或者走界面的「精灵类型」开关
+ * （后者是 `sprite-sheet.spec.ts` 在验的东西，不在这里重复）。
+ *
+ * 要在 `openProject` **之前**调用：编辑器是在打开工程 / 刷新资源树时读 meta 的。
+ */
+export async function seedImageSpriteMeta(
+  request: APIRequestContext,
+  assetId: string,
+  sprite: {
+    readonly mode?: "Single" | "Multiple";
+    readonly sheet?: { readonly columns: number; readonly rows: number };
+  } = {},
+): Promise<void> {
+  const meta = {
+    formatVersion: 1,
+    guid: randomUUID().replaceAll("-", ""),
+    importer: "texture",
+    sprite,
+  };
+
+  const response = await request.put(
+    `/api/resources/text?id=${encodeURIComponent(`${assetId}.meta`)}`,
+    {
+      headers: { "content-type": "text/plain; charset=utf-8" },
+      data: `${JSON.stringify(meta, null, 2)}\n`,
+    },
+  );
+  expect(response.ok()).toBeTruthy();
 }
 
 /** 读工程文件的 `formatVersion`（迁移有没有把新形状回写进文件，看它）。 */

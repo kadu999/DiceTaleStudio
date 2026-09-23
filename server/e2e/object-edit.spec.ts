@@ -17,6 +17,7 @@ import {
   sceneDoc,
   gameObjectDoc,
   seedProjectDoc,
+  seedImageSpriteMeta,
   selectObject,
   solidPng,
   uploadSceneImage,
@@ -758,6 +759,10 @@ test.describe("创建与编辑场景对象", () => {
         },
       );
       expect(uploaded.ok()).toBeTruthy();
+      // 精灵的「选择贴图」弹框只列**已启用精灵**的图（没有 `.meta` 的素材默认是 `Default`、
+      // 在精灵的弹框里根本不出现）。界面那条路（「精灵类型」开关）在 `sprite-sheet.spec.ts` 里验，
+      // 这里直接把 meta 写下去，免得这条用例卡在选择器上。
+      await seedImageSpriteMeta(request, imageId);
 
       await enterEditor(page);
       await openProject(page, project);
@@ -778,8 +783,11 @@ test.describe("创建与编辑场景对象", () => {
       await page.getByTestId("image-picker-confirm").click();
       await expect(page.getByTestId("image-picker-dialog")).toHaveCount(0);
 
-      // 属性面板显示简化路径；精灵中心在 (0,0)，所以 (40,40) 落在它的图里 → 绿了
-      await expect(page.getByTestId("object-properties")).toContainText("images/sprite.png");
+      // 精灵那一行**不显示路径**（v21 起的设计：精灵显示的是「取图集里哪一格」，
+      // 路径只在贴图 / 地图上显示——见 `TextureField`）。所以这里只能断言「不再是无贴图」；
+      // 「面板显示简化路径」那条归 `object-edit.spec.ts` 的另一条用例（贴图对象）。
+      await expect(page.getByTestId("object-properties")).not.toContainText("（无贴图）");
+      // 精灵中心在 (0,0)，所以 (40,40) 落在它的图里 → 绿了
       await expect
         .poll(async () => (await canvasAverageColor(page, await worldSamplePoint(page, inside))).g)
         .toBeGreaterThan(200);

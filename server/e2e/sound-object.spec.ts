@@ -193,13 +193,38 @@ test.describe("动作对象：播放声音", () => {
       await page.getByLabel("声音层级").selectOption("voice");
       await expect(row).toContainText("旁白");
 
-      // 落盘：加进来的清单 + 选中的那条 + 每个文件的名字表 + 层级，对象和实体一样摆在世界原点
+      // 落盘：加进来的清单 + 选中的那条 + 每个文件的名字表 + 层级，对象和实体一样摆在世界原点。
+      //
+      // **这里比结构、不比具体 id**：场景文件按设计存**素材 GUID**而不是逻辑路径
+      // （`sceneAssetRefsToGuids`：内存里是逻辑 ID，落盘换 GUID，这样改文件名不会断引用）。
+      // 「哪条是哪条」由上面那几条 UI 断言兜住——小方块依次是「雷雨」（= step1）与 step2，
+      // 且点第二条之后选中的是第二条。
       await expect
-        .poll(() => readSceneSound(request, project, SCENE))
+        .poll(async () => {
+          const saved = await readSceneSound(request, project, SCENE);
+          if (saved === undefined) {
+            return null;
+          }
+
+          const clips = saved.clips ?? [];
+          return {
+            clipCount: clips.length,
+            allGuids: clips.every((clip) => /^[0-9a-f]{32}$/.test(clip)),
+            distinct: new Set(clips).size === clips.length,
+            picked: saved.picked === clips[1] ? "second" : saved.picked === clips[0] ? "first" : "other",
+            namedClip: Object.keys(saved.names ?? {})[0] === clips[0] ? "first" : "other",
+            nameValues: Object.values(saved.names ?? {}),
+            layer: saved.layer,
+            position: saved.position,
+          };
+        })
         .toEqual({
-          clips: [step1, step2],
-          picked: step2,
-          names: { [step1]: "雷雨" },
+          clipCount: 2,
+          allGuids: true,
+          distinct: true,
+          picked: "second",
+          namedClip: "first",
+          nameValues: ["雷雨"],
           layer: "voice",
           position: { x: 0, y: 0 },
         });

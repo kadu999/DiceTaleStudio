@@ -1,5 +1,6 @@
 import { expect, test, type APIRequestContext, type Page, type TestInfo } from "@playwright/test";
 import {
+  closeDrawers,
   dropProject,
   mapObjectDoc,
   newProject,
@@ -211,16 +212,23 @@ test.describe("地图 / 贴图：视频列表", () => {
       await dialog.getByTestId("video-edit-close").click();
       await expect(dialog).toHaveCount(0);
 
-      // 落盘：列表按加进来的顺序，第一条自动选中（加进来就能直接放）
+      // 落盘：列表按加进来的顺序，第一条自动选中（加进来就能直接放）。
+      //
+      // **这里比的是结构，不是具体 id**：场景文件按设计存的是**素材 GUID**、不是逻辑路径
+      // （`sceneAssetRefsToGuids`：内存里是逻辑 ID，落盘换成 GUID，这样改文件名不会断引用）。
+      // 所以断言「两条、顺序保持、第一条被选中、名字挂在第一条上」，id 用 32 位十六进制匹配；
+      // 「顺序 = [a, b]」由上面 UI 那条断言（小方块依次是「开场动画」「rain」）兜住。
       await waitForSaved(page);
-      expect(await readSceneVideo(request, project, SCENE)).toMatchObject({
-        enabled: true,
-        clips: [a, b],
-        picked: a,
-        loop: false,
-        audio: false,
-        names: { [a]: "开场动画" },
-      });
+      const saved = await readSceneVideo(request, project, SCENE);
+      const guid = /^[0-9a-f]{32}$/;
+      expect(saved).toMatchObject({ enabled: true, loop: false, audio: false });
+      expect(saved?.clips).toHaveLength(2);
+      expect(saved?.clips?.[0]).toMatch(guid);
+      expect(saved?.clips?.[1]).toMatch(guid);
+      expect(saved?.clips?.[0]).not.toBe(saved?.clips?.[1]);
+      expect(saved?.picked).toBe(saved?.clips?.[0]);
+      expect(Object.keys(saved?.names ?? {})).toEqual([saved?.clips?.[0]]);
+      expect(Object.values(saved?.names ?? {})).toEqual(["开场动画"]);
 
       // 面板上：两条小方块，名字用自定义名 / 素材名；点第二条 = 改成放它
       await expect(video.getByTestId("video-clip")).toHaveCount(2);
@@ -229,7 +237,7 @@ test.describe("地图 / 贴图：视频列表", () => {
       await video.getByTestId("video-clip").nth(1).click();
       await expect(video.getByTestId("video-clip").nth(1)).toHaveAttribute("data-selected", "true");
       await waitForSaved(page);
-      expect(await readSceneVideo(request, project, SCENE)).toMatchObject({ picked: b });
+      expect(await readSceneVideo(request, project, SCENE)).toMatchObject({ picked: saved?.clips?.[1] });
 
       // 循环 / 声音两个开关：写文档（行里只有勾选框，状态看勾没勾上）
       await video.getByTestId("video-loop").check();
@@ -272,6 +280,11 @@ test.describe("地图 / 贴图：视频列表", () => {
       });
 
       // 再建一个**精灵**（新对象落在名单末尾）：它有「渲染」、**没有**视频那一组
+      //
+      // 先关掉两个抽屉：`openFirstObject` 会把属性面板（平板下是**右抽屉**）露出来，
+      // 而「对象」按钮在场景标题栏的**最右端**——竖屏平板上正好被右抽屉的遮罩盖住，
+      // 直接点会一直等可点击直到用例超时。桌面档位没有抽屉，这个调用是空操作。
+      await closeDrawers(page);
       await page.getByTestId("new-object").click();
       await page.getByTestId("object-type-Sprite").click();
       await page.getByTestId("confirm-object").click();
@@ -311,7 +324,11 @@ test.describe("视频：命令下发给前端", { tag: "@runtime" }, () => {
       await picker.getByTestId("video-picker-close").click();
       await dialog.getByTestId("video-edit-close").click();
       await waitForSaved(page);
-      expect(await readSceneVideo(request, project, SCENE)).toMatchObject({ enabled: true, picked: a });
+      // 落盘是 **GUID**（见上一条用例的说明）；这里只关心「有一条被选中」，具体是哪条由面板单选钉住
+      const runtimeSaved = await readSceneVideo(request, project, SCENE);
+      expect(runtimeSaved).toMatchObject({ enabled: true });
+      expect(runtimeSaved?.clips).toHaveLength(1);
+      expect(runtimeSaved?.picked).toBe(runtimeSaved?.clips?.[0]);
 
       // 进入运行态：没点「运行」之前，前端根本连不上（503 拒握手）
       await page.getByTestId("mode-run").click();

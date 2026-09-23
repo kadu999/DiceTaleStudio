@@ -378,7 +378,6 @@ test.describe("场景数据", () => {
           gridMap: {
             id: "map_01__GridMap",
             type: "GridMap",
-            actions: [],
             data: {
               image: {
                 id: `project:${project}/Assets/images/${SCENE_A}.png`,
@@ -393,7 +392,6 @@ test.describe("场景数据", () => {
           playSound: {
             id: "step_01__PlaySound",
             type: "PlaySound",
-            actions: [],
             data: { clips: [clip], picked: clip, layer: "voice" },
           },
           legacyFields: [false, false, false, false, false],
