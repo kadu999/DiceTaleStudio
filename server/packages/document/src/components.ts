@@ -1,5 +1,3 @@
-import type { FieldDef } from "./fields";
-import { defaultDataFromFields } from "./fields";
 import type { ComponentSlot } from "./presets";
 import type { ComponentDoc } from "./types";
 
@@ -25,7 +23,6 @@ export interface ComponentTypeDef {
   /** 组件类型 ID（= 前端组件类名）。 */
   readonly type: ComponentType;
   readonly displayName: string;
-  readonly fields: readonly FieldDef[];
   /** 是否渲染在属性面板（对齐前端 `GmEditable`）。 */
   readonly gmEditable: boolean;
   /**
@@ -52,7 +49,6 @@ export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
     slot: "map",
     legacyField: "map",
     tooltip: "贴图 + 网格数据（列 / 行 / 行序 / 格子 RLE / 战争雾）；只有地图对象携带",
-    fields: [],
   },
   {
     // 贴图对象的图片组件（精灵的那一份是下面的 `SpriteLayer`，两者共用同一份 `ImageRef` 形状）
@@ -62,7 +58,6 @@ export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
     slot: "image",
     legacyField: "image",
     tooltip: "对象自己要显示的图片，整张铺在对象矩形上（贴图对象用它；地图的贴图在 GridMap 里）",
-    fields: [],
   },
   {
     // 精灵对象的图片组件：与 `ImageLayer` 同一份数据，差别是它**会取图集里的一格**
@@ -74,7 +69,6 @@ export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
     slot: "image",
     legacyField: "image",
     tooltip: "精灵要显示的图片：可以取图集里的一格（子图），由渲染那一组挑第几行第几列",
-    fields: [],
   },
   {
     type: "PlaySound",
@@ -83,7 +77,6 @@ export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
     slot: "sound",
     legacyField: "sound",
     tooltip: "音频列表 + 选中的那条 + 层级：声明「告诉前端播什么」，编辑器自己不播放",
-    fields: [],
   },
   {
     type: "Teleport",
@@ -92,7 +85,6 @@ export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
     slot: "teleport",
     legacyField: "teleport",
     tooltip: "候选目标场景 + 选中的那一个；触发 = 切换当前场景（不需要新协议命令）",
-    fields: [],
   },
   {
     type: "VideoOverlay",
@@ -101,7 +93,6 @@ export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
     slot: "video",
     legacyField: "video",
     tooltip: "视频列表 + 选中的那条 + 循环 / 声音两个开关；画面盖在对象自己的矩形上",
-    fields: [],
   },
 ];
 
@@ -160,12 +151,6 @@ export function componentId(objectId: string, component: string): string {
 /** 查组件定义；未知类型返回 undefined（编辑器据此提示「未知组件类型」而不崩）。 */
 export function findComponentType(type: string): ComponentTypeDef | undefined {
   return BY_TYPE.get(type);
-}
-
-/** 组件类型的默认数据。 */
-export function defaultComponentData(type: string): Record<string, unknown> {
-  const def = findComponentType(type);
-  return def === undefined ? {} : defaultDataFromFields(def.fields);
 }
 
 export function isKnownComponentType(type: string): boolean {

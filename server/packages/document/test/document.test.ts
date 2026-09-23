@@ -30,7 +30,7 @@ import {
   setObjectSortingOrder,
 } from "../src/commands";
 import { componentOf, imageOf, mapDataOf, objectImage, writeFeature } from "../src/access";
-import { defaultComponentData, isKnownComponentType } from "../src/components";
+import { isKnownComponentType } from "../src/components";
 import { DEFAULT_SLOT_COMPONENT } from "../src/presets";
 import {
   createEmptyProject,
@@ -182,12 +182,6 @@ describe("组件注册表", () => {
     }
 
     expect(isKnownComponentType("NotAComponent")).toBe(false);
-  });
-
-  it("默认数据按字段类型生成", () => {
-    // 6 种对象能力组件都不声明面板字段（fields: []），默认数据是空记录；未知类型同样落空
-    expect(defaultComponentData("GridMap")).toEqual({});
-    expect(defaultComponentData("Unknown")).toEqual({});
   });
 });
 

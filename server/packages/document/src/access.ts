@@ -1,11 +1,8 @@
 import type { Draft } from "immer";
 import { componentId, findComponentType } from "./components";
+import { defaultDataOf } from "./component-specs";
 import {
   DEFAULT_SOUND_LAYER,
-  DEFAULT_VIDEO_AUDIO,
-  DEFAULT_VIDEO_AUTO_PLAY,
-  DEFAULT_VIDEO_ENABLED,
-  DEFAULT_VIDEO_LOOP,
   displayImageField,
   presetOf,
 } from "./presets";
@@ -206,8 +203,11 @@ export function withFeature<T>(object: GameObjectDoc, component: string, data: T
  *
  * 准入判据是预设表（`presetOf(object.kind)?.slots[slot]`）：kind 没声明这个槽位就不补、
  * 返回 `undefined`（与旧「对象类型不允许这个特性」同一个口径）。
+ *
+ * 导出是为了让**泛型写入**（`commands/component.ts`）复用同一份准入判据——
+ * 那条路必须先确认「这个 kind 允许这个槽位」，否则会出现「面板给了入口、命令却拒了」的半套状态。
  */
-function ensureSlotData<T>(
+export function ensureSlotData<T>(
   object: Draft<GameObjectDoc>,
   slot: ComponentSlot,
   defaultData: () => T,
@@ -223,6 +223,30 @@ function ensureSlotData<T>(
   }
 
   return existing.data as Draft<T>;
+}
+
+/**
+ * 按**组件类型**（而不是槽位）取数据 draft，缺实例就按规格补一份。
+ *
+ * 与 `ensureSlotData` 同一套判据，多一道「这个槽位确实由**这个**组件承载」的核对：
+ * `image` 槽位在精灵上是 `SpriteLayer`、在贴图上是 `ImageLayer`，只按槽位找会拿错那一份。
+ * 核对不过（未知组件 / 这个 kind 不允许 / 该槽位由别的组件承载）返回 `undefined`，
+ * 调用方据此返回「无变更」——**不补、不抛**。
+ */
+export function ensureComponentData(
+  object: Draft<GameObjectDoc>,
+  type: string,
+): Draft<Record<string, unknown>> | undefined {
+  const slot = findComponentType(type)?.slot;
+  if (slot === undefined) {
+    return undefined;
+  }
+
+  if (presetOf(object.kind)?.slots[slot] !== type) {
+    return undefined;
+  }
+
+  return ensureSlotData<Record<string, unknown>>(object, slot, () => defaultDataOf(type));
 }
 
 /**
@@ -250,13 +274,11 @@ export function ensureTeleportData(object: Draft<GameObjectDoc>): Draft<Teleport
  * 视频数据的 draft；**缺实例就补一份默认的**。
  *
  * 不是地图 / 贴图的对象返回 `undefined`（预设表 `OBJECT_PRESETS`：只有这两种预设声明了 video 槽位）。
+ * 补壳用的那份形状住在 `component-specs/video.ts`（与属性面板、泛型写入同一份规格）。
  */
 export function ensureVideoData(object: Draft<GameObjectDoc>): Draft<VideoDataDoc> | undefined {
-  return ensureSlotData<VideoDataDoc>(object, "video", () => ({
-    enabled: DEFAULT_VIDEO_ENABLED,
-    autoPlay: DEFAULT_VIDEO_AUTO_PLAY,
-    clips: [],
-    loop: DEFAULT_VIDEO_LOOP,
-    audio: DEFAULT_VIDEO_AUDIO,
-  }));
+  // 规格里的默认数据是 `Record<string, unknown>`（泛型写入要能操作任意组件），这里收窄回视频那一份
+  return ensureSlotData<VideoDataDoc>(object, "video", () =>
+    defaultDataOf("VideoOverlay") as unknown as VideoDataDoc,
+  );
 }

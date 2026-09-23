@@ -5,6 +5,7 @@ import { DEFAULT_SLOT_COMPONENT, componentForSlot, displayImageField } from "../
 import { mapDataOf, objectImage, writeFeature } from "../access";
 import { DEFAULT_OBJECT_SCALE, clampObjectScale, collapseScale } from "../scale";
 import { DEFAULT_SORTING_ORDER, createId, findObject } from "./shared";
+import { setObjectField } from "./field";
 import type { ObjectKind } from "../presets";
 import type {
   ImageRef,
@@ -13,14 +14,6 @@ import type {
   GameObjectDoc,
   WorldPosition,
 } from "../types";
-
-/**
- * `sortingOrder` 的取值范围：足够表达「垫底 / 顶层」，又不至于让界面上的数字失控。
- *
- * 住在**本文件**（而不是 `shared.ts`）是有意的：只有 `setObjectSortingOrder` 用它，
- * 而 barrel 是 `export *`——放 shared 会让它凭空变成 `@dts/document` 的公开名字。
- */
-const SORTING_ORDER_LIMIT = 9999;
 
 // ---------------------------------------------------------------- 对象
 
@@ -159,26 +152,19 @@ export function setObjectActive(
 /**
  * 对象的显示顺序：**大的画在前面**。
  *
- * 取整并夹在 `±SORTING_ORDER_LIMIT` 内：顺序只是个层号，允许输入框里敲出小数 /
- * 极大值，但落到文档里必须是规规矩矩的整数，否则外部工具与画布对「谁在前」的理解会不一致。
+ * 取整并夹在 `±9999` 内：顺序只是个层号，允许输入框里敲出小数 / 极大值，但落到文档里必须是
+ * 规规矩矩的整数，否则外部工具与画布对「谁在前」的理解会不一致。
+ *
+ * 实现**转发给泛型写入**（`setObjectField`）：范围与取整现在写在字段描述符上
+ * （`object-spec.ts` 的 `OBJECT_SPEC`），这里只保留这个公开名字——仓库里有很多调用方，
+ * 而且「显示顺序」这条语义值得有一个说得出名字的入口。
  */
 export function setObjectSortingOrder(
   scene: Draft<SceneDoc>,
   objectId: string,
   sortingOrder: number,
 ): boolean {
-  const object = findObject(scene, objectId);
-  if (object === undefined || !Number.isFinite(sortingOrder)) {
-    return false;
-  }
-
-  const next = Math.min(SORTING_ORDER_LIMIT, Math.max(-SORTING_ORDER_LIMIT, Math.round(sortingOrder)));
-  if (object.sortingOrder === next) {
-    return false;
-  }
-
-  object.sortingOrder = next;
-  return true;
+  return setObjectField(scene, objectId, "sortingOrder", sortingOrder);
 }
 
 /**

@@ -15,6 +15,7 @@
  */
 export * from "./shared";
 export * from "./object";
+export * from "./field";
 export * from "./scene";
 export * from "./grid-map";
 export * from "./play-sound";

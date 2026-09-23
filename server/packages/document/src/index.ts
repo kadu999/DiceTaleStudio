@@ -4,6 +4,9 @@
 // 同名导出（如 `objectImage`、`supportsVideo`、`DEFAULT_SOUND_LAYER`）由它们提供，
 // `commands.ts` 只负责命令本身。加一层时请照这个顺序插。
 export * from "./fields";
+export * from "./component-spec";
+export * from "./component-specs";
+export * from "./object-spec";
 export * from "./types";
 export * from "./scale";
 export * from "./presets";
