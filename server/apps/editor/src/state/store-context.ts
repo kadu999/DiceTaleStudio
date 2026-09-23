@@ -19,6 +19,7 @@ import {
   type ProjectDoc,
   type ProjectSettingsDoc,
   type SceneDoc,
+  type SceneListDraft,
   type GameObjectDoc,
   type SoundLayer,
 } from "@dts/document";
@@ -55,7 +56,7 @@ import {
 import { emptyVideoPlayback, videoPlaybackResendPlan } from "../services/video-playback";
 import { emptyFogReveal, fogRevealResendPlan, type FogRevealPoint } from "../services/fog-reveal";
 import { MASK_BRUSH_RATIO, MASK_BRUSH_SOFTNESS } from "../services/mask-math";
-import { type StoreSet, type StoreGet, type AssetMetaTable, type GridPaintState } from "./store-types";
+import { type StoreSet, type StoreGet, type AssetMetaTable, type GridPaintState, type EditorStoreState } from "./store-types";
 import {
   sceneHistory,
   projectHistory,
@@ -114,6 +115,18 @@ export interface StoreContext {
   videoTargetOf(objectId: string, what: string): GameObjectDoc | null;
   /** 按 id 找当前场景里的对象。 */
   findObjectById(objectId: string): GameObjectDoc | undefined;
+  /**
+   * 对**当前场景**做一次可撤销编辑（`applyScenes` 的「当前场景」版）。
+   *
+   * 没有当前场景（`activeSceneName` 为 null，或场景列表里暂时没有它）时返回 false、
+   * 不进撤销栈；有就把 `recipe` 用在那个场景的 draft 上。包装只覆盖这段公共尾部——
+   * 各调用的前后检查（对象在不在 / 改完关不关窗口）仍留在切片里。
+   */
+  applyActiveScene(
+    label: string,
+    recipe: (scene: SceneListDraft[number]) => boolean | void,
+    options?: { coalesceKey?: string },
+  ): boolean;
   /** 找一个**带某个特性**的对象（不写日志）。 */
   objectWithFeature(objectId: string, component: string): GameObjectDoc | undefined;
   /** 找一个**声音对象**；找不到就写一条日志。 */
@@ -304,46 +317,55 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
         set({ bgmPlayback: emptyBgmPlayback() });
       }
 
-      // 前端刚连上：把记着的期望播放状态补发一遍（「点的时候前端不在」也不会丢）
-      const plan = soundPlaybackResendPlan({
-        wasClientConnected,
-        isClientConnected: snapshot.client !== null,
-        playback: get().soundPlayback,
-      });
-      if (plan.length > 0) {
-        get().flushSoundPlayback();
-      }
+      // 前端刚连上：把「点的时候它不在」记下的期望状态补发一遍（声音 / 视频 / 雾 / 音乐
+      // 同一段骨架：有计划就 flush）。判据的差异保留——前三个看「计划非空」，音乐的
+      // 「没放」是 null（期望「什么都没放」时一条都不发）。
+      const clientConnected = snapshot.client !== null;
+      const resendOnReconnect = (needsResend: boolean, flush: () => number): void => {
+        if (needsResend) {
+          flush();
+        }
+      };
 
-      // 视频同理：按对象补发（暂停态的先放再暂停）
-      const videoPlan = videoPlaybackResendPlan({
-        wasClientConnected,
-        isClientConnected: snapshot.client !== null,
-        playback: get().videoPlayback,
-      });
-      if (videoPlan.length > 0) {
-        get().flushVideoPlayback();
-      }
+      // 声音：这一层该响什么（补发时逐条写日志，所以这里不重复记）
+      resendOnReconnect(
+        soundPlaybackResendPlan({
+          wasClientConnected,
+          isClientConnected: clientConnected,
+          playback: get().soundPlayback,
+        }).length > 0,
+        () => get().flushSoundPlayback(),
+      );
 
-      // 战争雾同理：前端（重）连上时，把它还没看到的那些揭示轨迹补发一遍
-      const fogPlan = fogRevealResendPlan({
-        wasClientConnected,
-        isClientConnected: snapshot.client !== null,
-        reveal: get().fogReveal,
-      });
-      if (fogPlan.length > 0) {
-        get().flushFogReveal();
-      }
+      // 视频：按对象补发（暂停态的先放再暂停）
+      resendOnReconnect(
+        videoPlaybackResendPlan({
+          wasClientConnected,
+          isClientConnected: clientConnected,
+          playback: get().videoPlayback,
+        }).length > 0,
+        () => get().flushVideoPlayback(),
+      );
 
-      // 背景音乐同理：前端刚连上时把它还没听到的那一首补过去（暂停态先放再暂停）。
-      // 期望「什么都没放」时 `bgmResendPlan` 返回 null，一条都不发
-      const bgmPlan = bgmResendPlan({
-        wasClientConnected,
-        isClientConnected: snapshot.client !== null,
-        playback: get().bgmPlayback,
-      });
-      if (bgmPlan !== null) {
-        get().flushBgmPlayback();
-      }
+      // 战争雾：它还没看到的那些揭示轨迹
+      resendOnReconnect(
+        fogRevealResendPlan({
+          wasClientConnected,
+          isClientConnected: clientConnected,
+          reveal: get().fogReveal,
+        }).length > 0,
+        () => get().flushFogReveal(),
+      );
+
+      // 音乐：把它还没听到的那一首补过去（暂停态先放再暂停）
+      resendOnReconnect(
+        bgmResendPlan({
+          wasClientConnected,
+          isClientConnected: clientConnected,
+          playback: get().bgmPlayback,
+        }) !== null,
+        () => get().flushBgmPlayback(),
+      );
     },
 
     onServerLog: (entry) => {
@@ -536,6 +558,40 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
     return requestId;
   };
 
+  /** 按 id 找当前场景里的对象。 */
+  const findObjectById = (objectId: string): GameObjectDoc | undefined =>
+    findSceneByName(get().scenes, get().activeSceneName)?.objects.find((item) => item.id === objectId);
+
+  /**
+   * 对**当前场景**做一次可撤销编辑（`applyScenes` 的「当前场景」版）。
+   *
+   * 没有当前场景（`activeSceneName` 为 null，或场景列表里暂时没有它）时返回 false、
+   * 不进撤销栈；有就把 `recipe` 用在那个场景的 draft 上。包装只覆盖这段公共尾部——
+   * 各调用的前后检查（对象在不在 / 改完关不关窗口）仍留在切片里。
+   */
+  const applyActiveScene = (
+    label: string,
+    recipe: (scene: SceneListDraft[number]) => boolean | void,
+    options?: { coalesceKey?: string },
+  ): boolean => {
+    const sceneName = get().activeSceneName;
+    if (sceneName === null) {
+      return false;
+    }
+
+    return get().applyScenes(
+      label,
+      (draft) => {
+        const scene = draft.find((item) => item.name === sceneName);
+        if (scene !== undefined) {
+          return recipe(scene);
+        }
+        return undefined;
+      },
+      options,
+    );
+  };
+
   /**
    * 找出「能揭示战争雾」的对象：当前场景里那张**开了战争雾、也指定了雾区**的地图。
    *
@@ -543,9 +599,7 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
    * 这类失败恰恰说明瞄准的目标不对（对象被删了 / 拿精灵去擦雾 / 开关关着 / 还没指定雾区）。
    */
   const fogTargetOf = (objectId: string, what: string): GameObjectDoc | null => {
-    const object = findSceneByName(get().scenes, get().activeSceneName)?.objects.find(
-      (item) => item.id === objectId,
-    );
+    const object = findObjectById(objectId);
 
     if (object === undefined) {
       pushLog(makeLog("warn", `${what}失败：找不到这个对象（${objectId}）`));
@@ -573,9 +627,7 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
 
   /** 这个对象**现在**还能揭示雾吗？补发前筛掉没意义的记录用——与 `fogTargetOf` 同口径，但不写日志。 */
   const canRevealFog = (objectId: string): boolean => {
-    const object = findSceneByName(get().scenes, get().activeSceneName)?.objects.find(
-      (item) => item.id === objectId,
-    );
+    const object = findObjectById(objectId);
 
     if (object === undefined || !carriesComponent(DEFAULT_SLOT_COMPONENT.map, object.kind)) {
       return false;
@@ -592,9 +644,7 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
    * 「能放视频」的判据只有 `supportsVideo` 一处（文档命令与校验走的是同一个函数）。
    */
   const videoTargetOf = (objectId: string, what: string): GameObjectDoc | null => {
-    const object = findSceneByName(get().scenes, get().activeSceneName)?.objects.find(
-      (item) => item.id === objectId,
-    );
+    const object = findObjectById(objectId);
 
     if (object === undefined) {
       pushLog(makeLog("warn", `${what}失败：找不到这个对象（${objectId}）`));
@@ -628,10 +678,6 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
     return object;
   };
 
-  /** 按 id 找当前场景里的对象。 */
-  const findObjectById = (objectId: string): GameObjectDoc | undefined =>
-    findSceneByName(get().scenes, get().activeSceneName)?.objects.find((item) => item.id === objectId);
-
   /**
    * 找一个**带某个特性**的对象（`component` 用 `DEFAULT_SLOT_COMPONENT.*`）；不写日志。
    *
@@ -643,25 +689,31 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
     return object !== undefined && carriesComponent(component, object.kind) ? object : undefined;
   };
 
-  /** 找一个**声音对象**；找不到就写一条日志（给「点下去该有反馈」的动作面板用）。 */
-  const requireSoundObject = (objectId: string): GameObjectDoc | undefined => {
-    const object = objectWithFeature(objectId, DEFAULT_SLOT_COMPONENT.sound);
+  /**
+   * 找一个**带某个特性**的对象；找不到就写一条日志（给「点下去该有反馈」的动作面板用）。
+   *
+   * `noun` 是日志里对这个东西的称呼（「声音对象」/「传送阵」……）。
+   */
+  const requireObject = (
+    objectId: string,
+    component: ComponentType,
+    noun: string,
+  ): GameObjectDoc | undefined => {
+    const object = objectWithFeature(objectId, component);
     if (object === undefined) {
-      pushLog(makeLog("error", "找不到这个声音对象"));
+      pushLog(makeLog("error", `找不到这个${noun}`));
     }
 
     return object;
   };
+
+  /** 找一个**声音对象**；找不到就写一条日志（给「点下去该有反馈」的动作面板用）。 */
+  const requireSoundObject = (objectId: string): GameObjectDoc | undefined =>
+    requireObject(objectId, DEFAULT_SLOT_COMPONENT.sound, "声音对象");
 
   /** 找一个**传送阵**；找不到就写一条日志（与 `requireSoundObject` 同一个口径）。 */
-  const requireTeleportObject = (objectId: string): GameObjectDoc | undefined => {
-    const object = objectWithFeature(objectId, DEFAULT_SLOT_COMPONENT.teleport);
-    if (object === undefined) {
-      pushLog(makeLog("error", "找不到这个传送阵"));
-    }
-
-    return object;
-  };
+  const requireTeleportObject = (objectId: string): GameObjectDoc | undefined =>
+    requireObject(objectId, DEFAULT_SLOT_COMPONENT.teleport, "传送阵");
 
   /**
    * 把一条视频命令**尽力**发给前端（`play_video` / `pause_video` / `resume_video` / `stop_video`）。
@@ -911,7 +963,6 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
   const sceneViewports = new Map<string, Viewport>();
   /** 上次成功写盘时的场景内容（场景名 → 序列化文本），用来算「哪些场景有未保存改动」。 */
   const savedScenes = new Map<string, string>();
-  let saveTimer: number | null = null;
 
   /**
    * 上次成功写盘的**工程文件**文本；`null` = 还没装载过（或刚换过文档）。
@@ -919,7 +970,6 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
    * 与 `savedScenes` 同一个用途，只是工程文件只有一份，所以存文本而不是 Map。
    */
   let savedProjectText: string | null = null;
-  let projectSaveTimer: number | null = null;
 
   /** 内存里的工程文件与磁盘不一致（有未保存的全局设置改动）。 */
   const projectDirty = (): boolean =>
@@ -932,60 +982,61 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
       .map((scene) => scene.name);
 
   /**
-   * 有改动就延迟回写场景文件。
+   * 做一只「有改动就延迟回写」的去抖器：场景 / 工程文件 / 素材 meta 三条轨道同一份骨架，
+   * 差异只有保存状态字段与落盘动作（参数化进来）。
    *
    * 「改了就存」比「记得手动保存」更不容易丢东西，手动保存只是把它提前。
-   * 待保存的场景**按内容差异算**，所以撤销 / 重做、跨场景编辑都不会写错文件。
-   */
-  const scheduleSceneSave = (): void => {
-    if (get().project.current === null) {
-      return;
-    }
-
-    // 运行态下的改动**不落盘**（对齐 Unity 的播放模式）：退出运行时会整体还原，
-    // 写盘只会把「临时试出来的样子」留在文件里
-    if (get().runtime.runtimeActive) {
-      set({ sceneSaveState: "runtime" });
-      return;
-    }
-
-    set({ sceneSaveState: "pending" });
-    if (saveTimer !== null) {
-      window.clearTimeout(saveTimer);
-    }
-
-    saveTimer = window.setTimeout(() => {
-      saveTimer = null;
-      void get().saveSceneNow();
-    }, SCENE_SAVE_DEBOUNCE_MS);
-  };
-
-  /**
-   * 有改动就延迟回写**工程文件**（全局设置）。
+   * 防抖窗口共用 `SCENE_SAVE_DEBOUNCE_MS`：拖音量滑杆、连点导入设置的每一格都改文档，
+   * 但只该写一次盘。
+   * 运行态下的改动**不落盘**（对齐 Unity 的播放模式）：退出运行时会整体还原，
+   * 写盘只会把「临时试出来的样子」留在文件里。
    *
-   * 与场景那套同一份防抖窗口：拖音量滑杆时每一格都会改文档，但只该写一次盘。
-   * 运行态下不写（见 `saveProjectNow`）。
+   * 返回的 `[schedule, clearTimer]` 共用同一只定时器：手动保存 / flush 先 clearTimer
+   * 再立刻落盘，与「自动存」不会写出两条。
    */
-  const scheduleProjectSave = (): void => {
-    if (get().project.current === null) {
-      return;
-    }
+  const makeSaveScheduler = <K extends "sceneSaveState" | "projectSaveState" | "metaSaveState">(
+    saveStateKey: K,
+    saveNow: () => Promise<boolean>,
+  ): { readonly schedule: () => void; readonly clearTimer: () => void } => {
+    let timer: number | null = null;
 
-    if (get().runtime.runtimeActive) {
-      set({ projectSaveState: "runtime" });
-      return;
-    }
+    const schedule = (): void => {
+      if (get().project.current === null) {
+        return;
+      }
 
-    set({ projectSaveState: "pending" });
-    if (projectSaveTimer !== null) {
-      window.clearTimeout(projectSaveTimer);
-    }
+      if (get().runtime.runtimeActive) {
+        set({ [saveStateKey]: "runtime" } as Pick<EditorStoreState, K>);
+        return;
+      }
 
-    projectSaveTimer = window.setTimeout(() => {
-      projectSaveTimer = null;
-      void get().saveProjectNow();
-    }, SCENE_SAVE_DEBOUNCE_MS);
+      set({ [saveStateKey]: "pending" } as Pick<EditorStoreState, K>);
+      if (timer !== null) {
+        window.clearTimeout(timer);
+      }
+
+      timer = window.setTimeout(() => {
+        timer = null;
+        void saveNow();
+      }, SCENE_SAVE_DEBOUNCE_MS);
+    };
+
+    const clearTimer = (): void => {
+      if (timer !== null) {
+        window.clearTimeout(timer);
+        timer = null;
+      }
+    };
+
+    return { schedule, clearTimer };
   };
+
+  // 场景：待保存的场景**按内容差异算**，所以撤销 / 重做、跨场景编辑都不会写错文件。
+  const sceneSave = makeSaveScheduler("sceneSaveState", () => get().saveSceneNow());
+  // 工程文件（全局设置）。
+  const projectSave = makeSaveScheduler("projectSaveState", () => get().saveProjectNow());
+  // 素材 meta：每份一个 `<素材>.meta`，写的时候**只写内容变了的那几份**（比对 `savedMetas`）。
+  const metaSave = makeSaveScheduler("metaSaveState", () => get().saveMetasNow());
 
   /**
    * 上次成功写盘的**素材 meta**（素材路径 ID → 序列化文本），用来算「哪几份 meta 有未保存改动」。
@@ -993,41 +1044,12 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
    * 与 `savedScenes` 同一个用途，只是键是素材的路径 ID、值是那一份 `.meta` 的原文。
    */
   const savedMetas = new Map<string, string>();
-  let metaSaveTimer: number | null = null;
 
   /** 内存里与磁盘不一致的素材 meta（返回它们的路径 ID）。 */
   const metaDirtyIds = (): string[] =>
     Object.entries(metaHistory.current)
       .filter(([id, meta]) => savedMetas.get(id) !== serializeAssetMetaFile(meta))
       .map(([id]) => id);
-
-  /**
-   * 有改动就延迟回写**素材 meta**（每份一个 `<素材>.meta`）。
-   *
-   * 与场景 / 工程文件同一套：拖切分的行列、连点导入设置都会连着改文档，但只该写一次盘；
-   * 写的时候**只写内容变了的那几份**（比对 `savedMetas`），所以切一张图不会去碰别的素材的文件。
-   * 运行态下不写（见 `saveMetasNow`）。
-   */
-  const scheduleMetaSave = (): void => {
-    if (get().project.current === null) {
-      return;
-    }
-
-    if (get().runtime.runtimeActive) {
-      set({ metaSaveState: "runtime" });
-      return;
-    }
-
-    set({ metaSaveState: "pending" });
-    if (metaSaveTimer !== null) {
-      window.clearTimeout(metaSaveTimer);
-    }
-
-    metaSaveTimer = window.setTimeout(() => {
-      metaSaveTimer = null;
-      void get().saveMetasNow();
-    }, SCENE_SAVE_DEBOUNCE_MS);
-  };
 
   sceneHistory.subscribe(() => {
     syncHistoryFlags();
@@ -1044,7 +1066,7 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
       return;
     }
 
-    scheduleSceneSave();
+    sceneSave.schedule();
   });
 
   /**
@@ -1069,7 +1091,7 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
       return;
     }
 
-    scheduleProjectSave();
+    projectSave.schedule();
   });
 
   /**
@@ -1106,7 +1128,7 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
       return;
     }
 
-    scheduleMetaSave();
+    metaSave.schedule();
   });
 
   /**
@@ -1129,8 +1151,7 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
   const storedGridPaint = readGridPaintPrefs();
 
   /** 当前场景里按 id 找一个对象（画布与变换用；找不到返回 undefined）。 */
-  const currentObjectOf = (id: string): GameObjectDoc | undefined =>
-    findSceneByName(get().scenes, get().activeSceneName)?.objects.find((object) => object.id === id);
+  const currentObjectOf = (id: string): GameObjectDoc | undefined => findObjectById(id);
 
   /**
    * **切场景的唯一路径**：切之前写回改动与视口，切之后恢复视口、立刻推给前端。
@@ -1201,30 +1222,6 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
     }
   };
 
-  /** 取消待写的场景落盘定时器（手动保存 / flush 与切片共用这一份写法）。 */
-  const clearSceneSaveTimer = (): void => {
-    if (saveTimer !== null) {
-      window.clearTimeout(saveTimer);
-      saveTimer = null;
-    }
-  };
-
-  /** 取消待写的工程文件落盘定时器（与场景那份对称）。 */
-  const clearProjectSaveTimer = (): void => {
-    if (projectSaveTimer !== null) {
-      window.clearTimeout(projectSaveTimer);
-      projectSaveTimer = null;
-    }
-  };
-
-  /** 取消待写的素材 meta 落盘定时器（与上两份对称）。 */
-  const clearMetaSaveTimer = (): void => {
-    if (metaSaveTimer !== null) {
-      window.clearTimeout(metaSaveTimer);
-      metaSaveTimer = null;
-    }
-  };
-
   return {
     pushLog,
     currentSceneDoc,
@@ -1242,6 +1239,7 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
     canRevealFog,
     videoTargetOf,
     findObjectById,
+    applyActiveScene,
     objectWithFeature,
     requireSoundObject,
     requireTeleportObject,
@@ -1260,12 +1258,12 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
     projectDirty,
     dirtySceneNames,
     metaDirtyIds,
-    scheduleSceneSave,
-    scheduleProjectSave,
-    scheduleMetaSave,
-    clearSceneSaveTimer,
-    clearProjectSaveTimer,
-    clearMetaSaveTimer,
+    scheduleSceneSave: sceneSave.schedule,
+    scheduleProjectSave: projectSave.schedule,
+    scheduleMetaSave: metaSave.schedule,
+    clearSceneSaveTimer: sceneSave.clearTimer,
+    clearProjectSaveTimer: projectSave.clearTimer,
+    clearMetaSaveTimer: metaSave.clearTimer,
     persistGridPaint,
     currentObjectOf,
     switchScene,

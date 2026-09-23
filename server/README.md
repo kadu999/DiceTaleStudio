@@ -1,6 +1,6 @@
 # DiceTaleStudio / server
 
-跑团（TRPG）**Web 编辑器 + 服务端**。用于编辑地图网格、场景对象与对象上的动作，
+跑团（TRPG）**Web 编辑器 + 服务端**。用于编辑地图网格、场景对象与对象组件，
 并可在**运行状态**下把当前场景推给前端（Unity 客户端）——**后台有什么对象，前端就有什么对象**，
 前端只做镜像与播放；命令（如播放声音）由后台下发。
 
@@ -87,7 +87,6 @@ server/
 ├─ packages/           # 可独立测试的内部模块
 │  ├─ grid/            # 网格位掩码、坐标转换、RLE、.bytes 编解码（零依赖）
 │  ├─ document/        # 文档模型、特性表 + 访问器、组件注册表、zod 校验、命令（按特性分模块）、补丁式撤销
-│  ├─ actions/         # 动作注册表、条件求值、动作图校验
 │  ├─ protocol/        # WS 消息契约（编辑器与后端共用同一份 zod schema）
 │  ├─ resources/       # 资源逻辑 ID 规则、ResourceProvider 抽象、内存实现
 │  └─ renderer/        # Canvas 2D 渲染器与视口变换（不依赖 React）
@@ -100,17 +99,16 @@ server/
 ### 模块依赖规则（由测试强制）
 
 ```
-editor  → document, actions, protocol, resources, renderer, grid
+editor  → document, protocol, resources, renderer, grid
 backend → protocol, resources
 renderer→ grid
-actions → document
 document→ grid
 protocol, resources, grid → （无）
 ```
 
 约束写在 `test/architecture.test.ts` 里，破坏即测试失败：
 
-1. `grid / document / actions / protocol / resources` **不得** import React、Node 内置模块或 DOM 全局；
+1. `grid / document / protocol / resources` **不得** import React、Node 内置模块或 DOM 全局；
 2. `renderer` 可以用 DOM/Canvas，但**不得**依赖 React；
 3. 包之间只允许上面声明的依赖方向，且必须写进各自 `package.json`；
 4. 除 `resources` 包外，源码里**不得出现资源路径字面量**（一律用逻辑 ID）；
@@ -128,8 +126,6 @@ protocol, resources, grid → （无）
       ├─ 实体自身               ← id / name / kind / active / locked / sortingOrder /
       │                            position / rotation / scale（+ 可选 scaleX / scaleY）
       └─ components[]           ← **对象身上挂的组件**（v19 起，对象特性也在这里）
-         ├─ 前端组件体系：OptionValue / Backpack / ItemExchange / MaskImage /
-         │                 FloatValue / IntValue / BoolValue（条件与动作挂在它们上面）
          └─ 对象特性：GridMap（贴图 + 网格）/ ImageLayer（贴图显示整张图）/
                        SpriteLayer（精灵：图集里的第几格）/ PlaySound（播什么 + 哪一层）/
                        Teleport（传到哪张场景）/ VideoOverlay（一组视频 + 循环 / 声音）
@@ -184,8 +180,9 @@ protocol, resources, grid → （无）
 ——只搬键、不解释内容，且**幂等**，跑第二遍不会多出组件；`image.sprite`（子图引用）是
 **v20 起的可选**字段，同样**不补空壳**——版本号 +1 只是让老文件回写一次、从此自描述），只做一次。
 
-**出生点（传送落点）已经不在代码里**：它既不属于场景配置，也不由前端上报。`Teleport` /
-`TeleportZone` 动作的「目标标记点」参数仍然存在（那是发给前端的字符串，编辑器没有对应数据可校验）。
+**出生点（传送落点）已经不在代码里**：它既不属于场景配置，也不由前端上报。老 Unity 前端
+`Teleport` / `TeleportZone` 动作里的「目标标记点」参数仍按字符串下发（那是发给前端的字符串，
+编辑器没有对应数据可校验）。
 
 场景的建 / 删 / 改名在**顶部菜单「场景」**里（作用于当前场景），切换则在**画布上方的场景
 切换条**上——**一格一张图、点一下即切**，当前那格高亮：
@@ -368,8 +365,9 @@ protocol, resources, grid → （无）
 
 **写回会规范化 JSON**：内容是 `JSON.stringify(..., 2)` 的结果，手写的缩进 / 注释 / 键顺序不保留。
 
-新建出来的对象**组件与动作暂时是空的**（组件编辑尚未落地），所以对象目前只有名字、类型与位置
-（动作对象多一份「音频列表 + 选中的那条 + 层级」，见下节）。
+新建出来的对象带默认组件（地图对象带 `GridMap`、声音对象带 `PlaySound`、传送阵带 `Teleport`），
+所以对象目前只有名字、类型、位置与这些默认数据（动作对象多一份「音频列表 + 选中的那条 + 层级」，
+见下节）。
 
 没有项目 / 没有场景时，画布**不画假网格**（否则「什么都没有」看起来就像「有个空地图」），
 而是和场景对象、属性面板一起给出空状态占位。**没有场景的占位本身就是入口**：
@@ -993,7 +991,7 @@ Playwright 跑在临时资源根上（见 `playwright.config.ts` 的 `DTS_RESOUR
 - **编辑态**：编辑场景对象（新建 / 改名 / 删除 / 复制 / 拖动定位）、**动作对象**（播放声音：
   音频列表 + 层级；传送阵：候选场景 + 选中的那一张——按一下就是「换台」）与**地图网格标注**（画 / 擦格子类型），
   全程可撤销/重做（补丁式历史，连续拖拽 / 一整笔涂抹 / 复制会合并成一条记录）；
-  组件编辑与「把动作挂到组件上」的编排尚未落地（动作种类目前有两个对象：播放声音、传送阵）。
+  更一般的「动作挂在组件上」编排尚未落地（动作种类目前有两个对象：播放声音、传送阵）。
 - **运行态**：点「运行」后编辑器声明运行态（服务端**开闸**），把**当前场景整份推下去**；
   之后每次编辑（去抖 200ms）再推一份全量，前端按对象 `id` 增 / 改 / 删自己的对象。
   **运行中照样能改**（隐藏对象、拖位置、涂格子…这些改动立刻推给前端看效果），但**一律不写盘**：
@@ -1385,9 +1383,9 @@ v24 **每种素材一份 `.meta`，`audioMeta` 搬进素材的 `.meta`**（文�
 - 战争雾的绑定位（`map.fog.regions`）与总开关（`map.fog.enabled`）**都不进 `.bytes`**；
   运行时（Unity）按开关决定生不生成雾层、按绑定位挑雾格，**不再限定 `Fog1–Fog5`**——
   任意可绘制的区域位都算数（见「战争雾」一节）。
-- 视频（`object.video`）同样**不进 `.bytes`**；`@dts/actions` 里那个 **`PlayVideo` 动作**
-  （照抄老 Unity 的「按索引播某个对象上的视频」）**还没接线**：等组件 / 动作编辑那个里程碑落地时，
-  它应当触发**这一套同一个客户端视频层**，而不是另起一套播放器。
+- 视频（`object.video`）同样**不进 `.bytes`**；老 Unity 的「按索引播某个对象上的视频」
+  那条动作**还没接线**：等组件 / 动作编辑那个里程碑落地时，它应当触发**这一套同一个客户端视频层**，
+  而不是另起一套播放器。（动作注册表 `@dts/actions` 曾是这块的数据面，已作为死代码删除。）
 - 视频的**解码失败只在 Unity 控制台**（`[视频] 播放失败：…`）：命令回执是同步的（后端等 15 秒），
   而解码可能更久，所以协议里还没有「晚到的失败」这条通道。前端遇到解不了的编码（例如 Windows 上的
   `.webm`）时会明确报错，但编辑器那边只看到 `ok:true`。

@@ -10,6 +10,7 @@ import {
 } from "@dts/document";
 import { sceneHistory, useEditorStore } from "../src/state/editor-store";
 import type { ResourceTreeNode } from "../src/services/project-api";
+import { FakeSocket, connect, editorState, sentTypes } from "./helpers/fake-socket";
 
 /**
  * **运行态下的改动不保存、退出运行即还原**（对齐 Unity 的播放模式）。
@@ -31,98 +32,6 @@ const PROJECT = "Demo";
 const SCENE = "Map001";
 const OTHER_SCENE = "Map002";
 const DOOR = "door";
-
-/** 假的 WebSocket：测试决定什么时候「连上」、什么时候「收到服务端消息」。 */
-class FakeSocket {
-  static readonly CONNECTING = 0;
-  static readonly OPEN = 1;
-  static readonly CLOSING = 2;
-  static readonly CLOSED = 3;
-  static readonly instances: FakeSocket[] = [];
-
-  readyState = FakeSocket.CONNECTING;
-  /** 编辑器发出去的报文（原文，断言时再解析）。 */
-  readonly sent: string[] = [];
-  private readonly listeners = new Map<string, Array<(event: unknown) => void>>();
-
-  constructor(readonly url: string) {
-    FakeSocket.instances.push(this);
-  }
-
-  addEventListener(type: string, listener: (event: unknown) => void): void {
-    const list = this.listeners.get(type);
-    if (list === undefined) {
-      this.listeners.set(type, [listener]);
-      return;
-    }
-
-    list.push(listener);
-  }
-
-  send(data: string): void {
-    this.sent.push(data);
-  }
-
-  close(): void {
-    if (this.readyState === FakeSocket.CLOSED) {
-      return;
-    }
-
-    this.readyState = FakeSocket.CLOSED;
-    // 按真实形状给 close 事件（`code` / `reason` 是诊断「为什么断开」的唯一来源）
-    this.emit("close", { code: 1006, reason: "" });
-  }
-
-  /** 测试用：连上了。 */
-  open(): void {
-    this.readyState = FakeSocket.OPEN;
-    this.emit("open");
-  }
-
-  /** 测试用：服务端来了一条消息。 */
-  receive(message: unknown): void {
-    this.emit("message", { data: JSON.stringify(message) });
-  }
-
-  private emit(type: string, event: unknown = {}): void {
-    for (const listener of this.listeners.get(type) ?? []) {
-      listener(event);
-    }
-  }
-}
-
-const lastSocket = (): FakeSocket => {
-  const socket = FakeSocket.instances.at(-1);
-  if (socket === undefined) {
-    throw new Error("编辑器没有连服务端");
-  }
-
-  return socket;
-};
-
-/** 连上服务端（假的），返回那只 socket。 */
-function connect(): FakeSocket {
-  vi.stubGlobal("WebSocket", FakeSocket);
-  useEditorStore.getState().connectRuntime();
-  const socket = lastSocket();
-  socket.open();
-  return socket;
-}
-
-/** 服务端的运行态广播。 */
-const editorState = (runtimeActive: boolean): unknown => ({
-  type: "editor_state",
-  runtimeActive,
-  client: null,
-  scene: null,
-  resources: null,
-  settings: null,
-  serverTime: Date.now(),
-});
-
-/** 编辑器发出去的报文类型（顺序保留）。 */
-const sentTypes = (socket: FakeSocket): string[] =>
-  socket.sent.map((raw) => (JSON.parse(raw) as { type: string }).type);
 
 /** 编辑器推下去的场景（按顺序）：`scene_push` 的载荷，用来验「切场景有没有推」。 */
 const scenePushes = (socket: FakeSocket): Array<{ name?: string } | null> =>
@@ -326,7 +235,7 @@ describe("运行中的改动：不保存、退出即还原", () => {
     // 点「运行」：声明开闸 → 服务端广播运行态 → 当前场景整份推下去
     useEditorStore.getState().setMode("run");
     expect(sentTypes(socket)).toContain("runtime_start");
-    socket.receive(editorState(true));
+    socket.receive(editorState({ runtimeActive: true }));
 
     expect(useEditorStore.getState().mode).toBe("run");
     expect(useEditorStore.getState().sceneSaveState).toBe("runtime");
@@ -339,7 +248,7 @@ describe("运行中的改动：不保存、退出即还原", () => {
     // 点「编辑」：关闸 → 服务端广播 → 文档整体还原
     useEditorStore.getState().setMode("edit");
     expect(sentTypes(socket)).toContain("runtime_stop");
-    socket.receive(editorState(false));
+    socket.receive(editorState({ runtimeActive: false }));
 
     expect(useEditorStore.getState().mode).toBe("edit");
     expect(objectOf(DOOR)?.active).toBe(true);
@@ -352,12 +261,12 @@ describe("运行中的改动：不保存、退出即还原", () => {
   it("运行期间的编辑不进撤销栈：退出运行后撤销栈是空的", async () => {
     await seedScene([door()]);
     const socket = connect();
-    socket.receive(editorState(true));
+    socket.receive(editorState({ runtimeActive: true }));
 
     hideAndMove();
     expect(useEditorStore.getState().canUndo).toBe(true);
 
-    socket.receive(editorState(false));
+    socket.receive(editorState({ runtimeActive: false }));
     expect(useEditorStore.getState().canUndo).toBe(false);
     expect(useEditorStore.getState().canRedo).toBe(false);
   });
@@ -365,7 +274,7 @@ describe("运行中的改动：不保存、退出即还原", () => {
   it("运行中按「保存」也不写盘（手动保存同样拦下）", async () => {
     const calls = await seedScene([door()]);
     const socket = connect();
-    socket.receive(editorState(true));
+    socket.receive(editorState({ runtimeActive: true }));
 
     hideAndMove();
 
@@ -382,7 +291,7 @@ describe("切场景 = DM 的「换台」：运行态下立刻推", () => {
     await seedScene([door()], [SCENE, OTHER_SCENE]);
     const socket = connect();
     useEditorStore.getState().setMode("run");
-    socket.receive(editorState(true));
+    socket.receive(editorState({ runtimeActive: true }));
     expect(scenePushes(socket).map((scene) => scene?.name)).toEqual([SCENE]);
 
     useEditorStore.getState().openScene(OTHER_SCENE);
@@ -435,10 +344,10 @@ describe("运行基线跟着文档走", () => {
     const socket = connect();
 
     // 刷新后接回去：服务端还开着运行态，这只页面手上没有任何基线
-    socket.receive(editorState(true));
+    socket.receive(editorState({ runtimeActive: true }));
 
     hideAndMove();
-    socket.receive(editorState(false));
+    socket.receive(editorState({ runtimeActive: false }));
 
     expect(objectOf(DOOR)?.active).toBe(true);
     expect(objectOf(DOOR)?.position).toEqual({ x: 0, y: 0 });
@@ -452,7 +361,7 @@ describe("运行基线跟着文档走", () => {
 
     // 连上时服务端就已经在运行，而此刻还没打开任何项目（手上是空文档）
     const socket = connect();
-    socket.receive(editorState(true));
+    socket.receive(editorState({ runtimeActive: true }));
     expect(useEditorStore.getState().scenes).toEqual([]);
 
     // 运行中装载项目：`loadScenes` 把文档整份换掉，基线要跟着换
@@ -465,7 +374,7 @@ describe("运行基线跟着文档走", () => {
     expect(useEditorStore.getState().sceneSaveState).toBe("runtime");
 
     hideAndMove();
-    socket.receive(editorState(false));
+    socket.receive(editorState({ runtimeActive: false }));
 
     expect(useEditorStore.getState().scenes).toHaveLength(1);
     expect(objectOf(DOOR)?.active).toBe(true);
@@ -478,13 +387,13 @@ describe("运行基线跟着文档走", () => {
   it("运行中关掉项目：退出运行不会把上一个项目的场景又还原回来", async () => {
     const calls = await seedScene([door()]);
     const socket = connect();
-    socket.receive(editorState(true));
+    socket.receive(editorState({ runtimeActive: true }));
 
     useEditorStore.getState().closeProject();
     await useEditorStore.getState().loadScenes();
     expect(useEditorStore.getState().scenes).toEqual([]);
 
-    socket.receive(editorState(false));
+    socket.receive(editorState({ runtimeActive: false }));
 
     expect(useEditorStore.getState().scenes).toEqual([]);
 
@@ -497,7 +406,7 @@ describe("运行中的文件操作与断线", () => {
   it("场景的新建 / 改名 / 删除在运行态下一律挡住（那些是文件操作，还原不回来）", async () => {
     const calls = await seedScene([door()]);
     const socket = connect();
-    socket.receive(editorState(true));
+    socket.receive(editorState({ runtimeActive: true }));
 
     await expect(useEditorStore.getState().createScene("新场景")).resolves.toContain("运行态下不能");
     await expect(useEditorStore.getState().renameScene("别的名字")).resolves.toContain("运行态下不能");
@@ -511,7 +420,7 @@ describe("运行中的文件操作与断线", () => {
   it("运行中与服务端断线：运行态不清零，运行中的改动也不会被当成编辑写盘", async () => {
     const calls = await seedScene([door()]);
     const socket = connect();
-    socket.receive(editorState(true));
+    socket.receive(editorState({ runtimeActive: true }));
 
     hideAndMove();
     socket.close();

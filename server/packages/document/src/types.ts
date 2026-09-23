@@ -15,7 +15,7 @@ import type { ObjectKind } from "./presets";
  * └─ 场景（每个场景 = `Assets/scenes/<场景名>.json`，场景名就是文件名）
  *    └─ 对象 GameObjectDoc[]       ← 所有对象都在场景上
  *       ├─ 地图对象（kind = "Map"） ← 携带贴图 + 网格数据
- *       └─ 其它对象                 ← 携带若干能力组件与动作
+ *       └─ 其它对象                 ← 携带若干能力组件
  * ```
  *
  * 关键约定：**对象挂在场景上，不挂在地图上**——所以没有地图也能建对象；
@@ -203,30 +203,12 @@ export interface WorldPosition {
   readonly y: number;
 }
 
-/** 动作实例（挂在组件上，与前端 `BackendComponent.actions` 一一对齐）。 */
-export interface ActionInstanceDoc {
-  readonly id: string;
-  readonly type: string;
-  readonly enabled: boolean;
-  /** 触发条件；缺省表示恒满足（对齐前端 `condition == null` 语义）。 */
-  readonly condition?: ConditionDoc;
-  readonly params: Record<string, unknown>;
-}
-
-/** 组件条件（对齐前端 `ComponentCondition`）。 */
-export interface ConditionDoc {
-  readonly valueType: "Bool" | "String" | "Number" | "Integer";
-  readonly op: "Equal" | "NotEqual" | "AtLeast" | "AtMost";
-  readonly target: boolean | string | number;
-}
-
 export interface ComponentDoc {
   readonly id: string;
-  /** 组件类型 ID，与前端组件类名一致（OptionValue / Backpack / ItemExchange / MaskImage / FloatValue / IntValue / BoolValue）。 */
+  /** 组件类型 ID，与前端组件类名一致（`GridMap` / `ImageLayer` / `SpriteLayer` / `PlaySound` / `Teleport` / `VideoOverlay`）。 */
   readonly type: string;
   readonly displayName?: string;
   readonly data: Record<string, unknown>;
-  readonly actions: ActionInstanceDoc[];
 }
 
 // 对象类型（`ObjectKind` = 预设 id）与能力槽位住在 `presets.ts`：那张表是
@@ -482,11 +464,10 @@ export interface GameObjectDoc {
   /**
    * **实体身上挂的组件**（v19 起，对象特性也在这里）。
    *
-   * 「对象是什么、画成什么样、运行时能做什么」全由这里声明：
-   * - 前端组件体系那 7 种（`OptionValue` / `Backpack` / …）——条件、动作挂在它们上面；
-   * - 从对象特性提升上来的 6 种（`GridMap` / `ImageLayer` / `SpriteLayer` / `PlaySound` /
-   *   `Teleport` / `VideoOverlay`）——v18 及更早它们住在对象的扁平字段里（`map` / `image` /
-   *   `sound` / `teleport` / `video`），由 `migrateFeaturesToComponents` 搬进来。
+   * 「对象是什么、画成什么样、运行时能做什么」全由这里声明：6 种对象能力组件
+   * （`GridMap` / `ImageLayer` / `SpriteLayer` / `PlaySound` / `Teleport` / `VideoOverlay`）——
+   * v18 及更早它们住在对象的扁平字段里（`map` / `image` / `sound` / `teleport` / `video`），
+   * 由 `migrateFeaturesToComponents` 搬进来。
    *
    * **读它们一律走 `access.ts` 的访问器**（`mapDataOf` / `soundDataOf` / …），
    * 不要在调用处 `components.find(...)`：那样「哪个类型带什么数据」又会散开。

@@ -1,5 +1,4 @@
 import type { ResourceKind } from "./ids";
-import { RESOURCE_KINDS } from "./ids";
 
 /**
  * 资源访问抽象。
@@ -48,13 +47,3 @@ export const DEFAULT_RESOURCE_DIRS: ResourceDirs = {
   config: "config",
   project: "projects",
 };
-
-/** 校验 ResourceDirs 覆盖了全部类别。 */
-export function assertCompleteDirs(dirs: Partial<ResourceDirs>): ResourceDirs {
-  const missing = RESOURCE_KINDS.filter((kind) => !dirs[kind]);
-  if (missing.length > 0) {
-    throw new Error(`资源配置缺少目录: ${missing.join(", ")}`);
-  }
-
-  return dirs as ResourceDirs;
-}

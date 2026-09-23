@@ -59,7 +59,7 @@ export function createObjectSlice(
   | "openImagePicker"
 > {
   // 共享的闭包状态与局部工具都在 ctx 里：这里解构一次，方法体与拆分前逐字一致
-  const { pushLog } = ctx;
+  const { pushLog, applyActiveScene } = ctx;
 
   return {
     setSelection(objectIds) {
@@ -100,11 +100,8 @@ export function createObjectSlice(
         position: at,
       });
 
-      const changed = get().applyScenes(`新建对象 ${trimmed}`, (draft) => {
-        const target = draft.find((item) => item.name === sceneName);
-        if (target !== undefined) {
-          addObject(target, object);
-        }
+      const changed = applyActiveScene(`新建对象 ${trimmed}`, (scene) => {
+        addObject(scene, object);
       });
 
       if (!changed) {
@@ -117,17 +114,13 @@ export function createObjectSlice(
     },
 
     renameObject(id, name) {
-      const sceneName = get().activeSceneName;
       const trimmed = name.trim();
-      if (sceneName === null || trimmed.length === 0) {
+      if (trimmed.length === 0) {
         return false;
       }
 
-      return get().applyScenes(`重命名对象 ${trimmed}`, (draft) => {
-        const scene = draft.find((item) => item.name === sceneName);
-        if (scene !== undefined) {
-          renameGameObject(scene, id, trimmed);
-        }
+      return applyActiveScene(`重命名对象 ${trimmed}`, (scene) => {
+        renameGameObject(scene, id, trimmed);
       });
     },
 
@@ -143,11 +136,8 @@ export function createObjectSlice(
         return false;
       }
 
-      const changed = get().applyScenes(active ? `激活 ${object.name}` : `停用 ${object.name}`, (draft) => {
-        const target = draft.find((item) => item.name === sceneName);
-        if (target !== undefined) {
-          setGameObjectActive(target, id, active);
-        }
+      const changed = applyActiveScene(active ? `激活 ${object.name}` : `停用 ${object.name}`, (scene) => {
+        setGameObjectActive(scene, id, active);
       });
 
       if (changed) {
@@ -179,13 +169,10 @@ export function createObjectSlice(
         return false;
       }
 
-      const changed = get().applyScenes(
+      const changed = applyActiveScene(
         locked ? `锁定 ${object.name}` : `解锁 ${object.name}`,
-        (draft) => {
-          const target = draft.find((item) => item.name === sceneName);
-          if (target !== undefined) {
-            setGameObjectLocked(target, id, locked);
-          }
+        (scene) => {
+          setGameObjectLocked(scene, id, locked);
         },
       );
 
@@ -208,18 +195,10 @@ export function createObjectSlice(
     },
 
     setObjectSortingOrder(id, sortingOrder) {
-      const sceneName = get().activeSceneName;
-      if (sceneName === null) {
-        return false;
-      }
-
-      return get().applyScenes(
+      return applyActiveScene(
         "修改显示顺序",
-        (draft) => {
-          const scene = draft.find((item) => item.name === sceneName);
-          if (scene !== undefined) {
-            setGameObjectSortingOrder(scene, id, sortingOrder);
-          }
+        (scene) => {
+          setGameObjectSortingOrder(scene, id, sortingOrder);
         },
         // 连续敲数字 / 按住微调按钮合并成一条撤销记录
         { coalesceKey: `sorting:${id}` },
@@ -227,18 +206,10 @@ export function createObjectSlice(
     },
 
     setObjectScale(id, scale) {
-      const sceneName = get().activeSceneName;
-      if (sceneName === null) {
-        return false;
-      }
-
-      return get().applyScenes(
+      return applyActiveScene(
         "修改缩放",
-        (draft) => {
-          const scene = draft.find((item) => item.name === sceneName);
-          if (scene !== undefined) {
-            setGameObjectScale(scene, id, scale);
-          }
+        (scene) => {
+          setGameObjectScale(scene, id, scale);
         },
         // 连续输入合并成一条撤销记录（与显示顺序同一套做法）
         { coalesceKey: `scale:${id}` },
@@ -246,18 +217,10 @@ export function createObjectSlice(
     },
 
     setObjectRotation(id, rotationRadians) {
-      const sceneName = get().activeSceneName;
-      if (sceneName === null) {
-        return false;
-      }
-
-      return get().applyScenes(
+      return applyActiveScene(
         "修改角度",
-        (draft) => {
-          const scene = draft.find((item) => item.name === sceneName);
-          if (scene !== undefined) {
-            setGameObjectRotation(scene, id, rotationRadians);
-          }
+        (scene) => {
+          setGameObjectRotation(scene, id, rotationRadians);
         },
         // 连续输入合并成一条撤销记录
         { coalesceKey: `rotation:${id}` },
@@ -265,20 +228,14 @@ export function createObjectSlice(
     },
 
     deleteObjects(ids) {
-      const sceneName = get().activeSceneName;
       const targetIds = ids ?? get().selectedObjectIds;
-      if (sceneName === null || targetIds.length === 0) {
+      if (targetIds.length === 0) {
         return false;
       }
 
-      const changed = get().applyScenes(
+      const changed = applyActiveScene(
         targetIds.length === 1 ? "删除对象" : `删除 ${targetIds.length} 个对象`,
-        (draft) => {
-          const scene = draft.find((item) => item.name === sceneName);
-          if (scene === undefined) {
-            return;
-          }
-
+        (scene) => {
           for (const id of targetIds) {
             removeGameObject(scene, id);
           }
@@ -303,21 +260,15 @@ export function createObjectSlice(
     },
 
     duplicateObjects(ids) {
-      const sceneName = get().activeSceneName;
       const targetIds = ids ?? get().selectedObjectIds;
-      if (sceneName === null || targetIds.length === 0) {
+      if (targetIds.length === 0) {
         return false;
       }
 
       const copies: string[] = [];
-      const changed = get().applyScenes(
+      const changed = applyActiveScene(
         targetIds.length === 1 ? "复制对象" : `复制 ${targetIds.length} 个对象`,
-        (draft) => {
-          const scene = draft.find((item) => item.name === sceneName);
-          if (scene === undefined) {
-            return;
-          }
-
+        (scene) => {
           let step = 1;
           for (const id of targetIds) {
             const source = scene.objects.find((object) => object.id === id);
@@ -363,13 +314,10 @@ export function createObjectSlice(
         return;
       }
 
-      get().applyScenes(
+      applyActiveScene(
         "移动对象",
-        (draft) => {
-          const scene = draft.find((item) => item.name === sceneName);
-          if (scene !== undefined) {
-            setGameObjectPosition(scene, id, position);
-          }
+        (scene) => {
+          setGameObjectPosition(scene, id, position);
         },
         { coalesceKey: `move:${id}` },
       );
@@ -380,18 +328,10 @@ export function createObjectSlice(
     },
 
     setObjectScaleAxes(id, x, y) {
-      const sceneName = get().activeSceneName;
-      if (sceneName === null) {
-        return false;
-      }
-
-      return get().applyScenes(
+      return applyActiveScene(
         "修改缩放",
-        (draft) => {
-          const scene = draft.find((item) => item.name === sceneName);
-          if (scene !== undefined) {
-            setGameObjectScaleAxes(scene, id, { x, y });
-          }
+        (scene) => {
+          setGameObjectScaleAxes(scene, id, { x, y });
         },
         // 连续输入合并成一条撤销记录（与等比缩放同一套做法）
         { coalesceKey: `scale:${id}` },
@@ -399,30 +339,14 @@ export function createObjectSlice(
     },
 
     setMapGrid(mapObjectId, grid) {
-      const sceneName = get().activeSceneName;
-      if (sceneName === null) {
-        return false;
-      }
-
-      return get().applyScenes("修改网格尺寸", (draft) => {
-        const scene = draft.find((item) => item.name === sceneName);
-        if (scene !== undefined) {
-          setSceneMapGrid(scene, mapObjectId, grid);
-        }
+      return applyActiveScene("修改网格尺寸", (scene) => {
+        setSceneMapGrid(scene, mapObjectId, grid);
       });
     },
 
     setObjectImage(objectId, image) {
-      const sceneName = get().activeSceneName;
-      if (sceneName === null) {
-        return false;
-      }
-
-      const changed = get().applyScenes("更换贴图", (draft) => {
-        const scene = draft.find((item) => item.name === sceneName);
-        if (scene !== undefined) {
-          setGameObjectImage(scene, objectId, image);
-        }
+      const changed = applyActiveScene("更换贴图", (scene) => {
+        setGameObjectImage(scene, objectId, image);
       });
 
       if (changed) {

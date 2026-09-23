@@ -385,7 +385,6 @@ describe("推送用的解析：切分随载荷走", () => {
       {
         id: "sprite-1__SpriteLayer",
         type: "SpriteLayer",
-        actions: [],
         data: { ...IMAGE, sprite: { column: 1, row: 2 }, spriteGrid: sheetOf(4, 4) },
       },
     ]);

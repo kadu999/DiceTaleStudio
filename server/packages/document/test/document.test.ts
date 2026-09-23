@@ -5,21 +5,17 @@ import {
   DEFAULT_OBJECT_SCALE,
   MAX_OBJECT_SCALE,
   MIN_OBJECT_SCALE,
-  addAction,
-  addComponent,
   addObject,
   clearMapCells,
   clearMapFog,
-  collectActionIds,
   createGameObject,
   findMapObject,
+  findObject,
   isMapFogEnabled,
   listMapObjects,
   mapFogMask,
-  moveAction,
   objectsInDrawOrder,
   paintMapCells,
-  removeAction,
   removeObject,
   setMapCells,
   setMapFogEnabled,
@@ -32,11 +28,9 @@ import {
   setObjectRotation,
   setObjectScale,
   setObjectSortingOrder,
-  updateAction,
-  updateComponentData,
 } from "../src/commands";
-import { componentOf, imageOf, mapDataOf, objectImage } from "../src/access";
-import { defaultComponentData, findComponentType, isKnownComponentType } from "../src/components";
+import { componentOf, imageOf, mapDataOf, objectImage, writeFeature } from "../src/access";
+import { defaultComponentData, isKnownComponentType } from "../src/components";
 import { DEFAULT_SLOT_COMPONENT } from "../src/presets";
 import {
   createEmptyProject,
@@ -118,14 +112,10 @@ function rawObjects(objects: readonly GameObjectDoc[]): unknown[] {
   return JSON.parse(JSON.stringify(objects)) as unknown[];
 }
 
-/** 往场景里加一个普通对象（带一个可选组件）。 */
-function withObject(scene: SceneDoc, objectId = "door", componentType?: string): SceneDoc {
+/** 往场景里加一个普通对象。 */
+function withObject(scene: SceneDoc, objectId = "door"): SceneDoc {
   return produce(scene, (draft) => {
     addObject(draft, plainObject(objectId));
-
-    if (componentType !== undefined) {
-      addComponent(draft, objectId, componentType, { id: "cmp" });
-    }
   });
 }
 
@@ -179,15 +169,14 @@ describe("文档工厂：场景是容器，对象挂在场景上", () => {
 });
 
 describe("组件注册表", () => {
-  it("覆盖前端全部 7 个组件类型", () => {
+  it("覆盖全部 6 个对象能力组件类型", () => {
     for (const type of [
-      "OptionValue",
-      "Backpack",
-      "ItemExchange",
-      "MaskImage",
-      "FloatValue",
-      "IntValue",
-      "BoolValue",
+      "GridMap",
+      "ImageLayer",
+      "SpriteLayer",
+      "PlaySound",
+      "Teleport",
+      "VideoOverlay",
     ]) {
       expect(isKnownComponentType(type)).toBe(true);
     }
@@ -196,18 +185,9 @@ describe("组件注册表", () => {
   });
 
   it("默认数据按字段类型生成", () => {
-    expect(defaultComponentData("BoolValue")).toEqual({ value: false });
-    expect(defaultComponentData("IntValue")).toEqual({ value: 0 });
-    expect(defaultComponentData("OptionValue")).toEqual({ options: [], current: "" });
+    // 6 种对象能力组件都不声明面板字段（fields: []），默认数据是空记录；未知类型同样落空
+    expect(defaultComponentData("GridMap")).toEqual({});
     expect(defaultComponentData("Unknown")).toEqual({});
-  });
-
-  it("条件值形态与前端 Satisfies 覆写一致", () => {
-    expect(findComponentType("OptionValue")?.conditionValueTypes).toEqual(["String", "Integer"]);
-    expect(findComponentType("BoolValue")?.conditionValueTypes).toEqual(["Bool"]);
-    expect(findComponentType("IntValue")?.conditionValueTypes).toEqual(["Integer"]);
-    expect(findComponentType("FloatValue")?.conditionValueTypes).toEqual(["Number"]);
-    expect(findComponentType("Backpack")?.conditionValueTypes).toEqual([]);
   });
 });
 
@@ -288,19 +268,6 @@ describe("对象命令（都在场景上操作）", () => {
     expect(objectsInDrawOrder(scene).map((object) => object.id)).toEqual(["b", "a", "c"]);
     // 文件里的顺序是数据，不是渲染排序的结果
     expect(scene.objects.map((object) => object.id)).toEqual(["a", "b", "c"]);
-  });
-
-  it("添加组件时用注册表默认数据，并可浅合并修改", () => {
-    const scene = mutate(withObject(makeScene(), "chest"), (draft) => {
-      addComponent(draft, "chest", "OptionValue", { id: "cmp_1" });
-    });
-
-    expect(scene.objects[0]?.components[0]?.data).toEqual({ options: [], current: "" });
-
-    const updated = mutate(scene, (draft) => {
-      updateComponentData(draft, "chest", "cmp_1", { options: ["关闭", "打开"], current: "关闭" });
-    });
-    expect(updated.objects[0]?.components[0]?.data.current).toBe("关闭");
   });
 
   it("地图对象数据可写：setMapCells", () => {
@@ -779,61 +746,6 @@ describe("对象命令（都在场景上操作）", () => {
       y: 0,
     });
   });
-
-  it("动作的增删改与排序", () => {
-    let scene = withObject(makeScene(), "door", "BoolValue");
-    scene = mutate(scene, (draft) => {
-      addAction(draft, "door", "cmp", {
-        id: "act_1",
-        type: "ShowHide",
-        enabled: true,
-        params: { targetObjectId: "" },
-      });
-      addAction(draft, "door", "cmp", {
-        id: "act_2",
-        type: "PlayVideo",
-        enabled: true,
-        params: { targetObjectId: "tv", index: 0 },
-      });
-    });
-
-    expect(collectActionIds(scene).size).toBe(2);
-
-    scene = mutate(scene, (draft) => {
-      updateAction(draft, "door", "cmp", "act_1", { enabled: false });
-    });
-    expect(scene.objects[0]?.components[0]?.actions[0]?.enabled).toBe(false);
-
-    scene = mutate(scene, (draft) => {
-      moveAction(draft, "door", "cmp", "act_2", -1);
-    });
-    expect(scene.objects[0]?.components[0]?.actions.map((action) => action.id)).toEqual([
-      "act_2",
-      "act_1",
-    ]);
-
-    scene = mutate(scene, (draft) => {
-      removeAction(draft, "door", "cmp", "act_2");
-    });
-    expect(scene.objects[0]?.components[0]?.actions.map((action) => action.id)).toEqual(["act_1"]);
-  });
-
-  it("动作条件可设置与清除", () => {
-    let scene = withObject(makeScene(), "o", "BoolValue");
-    scene = mutate(scene, (draft) => {
-      addAction(draft, "o", "cmp", { id: "a", type: "ShowHide", enabled: true, params: {} });
-      updateAction(draft, "o", "cmp", "a", {
-        condition: { valueType: "Bool", op: "Equal", target: true },
-      });
-    });
-
-    expect(scene.objects[0]?.components[0]?.actions[0]?.condition?.target).toBe(true);
-
-    scene = mutate(scene, (draft) => {
-      updateAction(draft, "o", "cmp", "a", { condition: undefined });
-    });
-    expect(scene.objects[0]?.components[0]?.actions[0]?.condition).toBeUndefined();
-  });
 });
 
 describe("战争雾：手动指定雾区", () => {
@@ -1075,7 +987,7 @@ describe("文档校验", () => {
   });
 
   it("没有地图对象的场景也是合法的（对象挂在场景上，不依赖地图）", () => {
-    const scene = withObject(makeScene(), "door", "BoolValue");
+    const scene = withObject(makeScene(), "door");
     expect(hasErrors(validateScene(scene))).toBe(false);
   });
 
@@ -1131,15 +1043,15 @@ describe("文档校验", () => {
     // v19 起「带地图数据」= 挂着 GridMap 组件（`kind` 不是 Map 时校验会提醒）
     const scene = mutate(makeScene(), (draft) => {
       addObject(draft, plainObject("odd", { name: "怪对象" }));
-      addComponent(draft, "odd", DEFAULT_SLOT_COMPONENT.map, {
-        id: "odd__GridMap",
-        data: {
+      const object = findObject(draft, "odd");
+      if (object !== undefined) {
+        writeFeature(object, DEFAULT_SLOT_COMPONENT.map, {
           image: IMAGE,
           grid: GRID,
           rowOrder: "bottom-up",
           cells: { encoding: "rle", runs: [[0, GRID.width * GRID.height]] },
-        },
-      });
+        });
+      }
     });
 
     const issues = validateScene(scene);
@@ -1150,7 +1062,10 @@ describe("文档校验", () => {
   it("地图对象带多余的 object.image 时给警告（贴图只认 map.image）", () => {
     const scene = mutate(withMapObject(makeScene()), (draft) => {
       // 地图不该有 ImageLayer：贴图只认 GridMap 里的那一份（手写文件里可能挂着）
-      addComponent(draft, "map-1", DEFAULT_SLOT_COMPONENT.image, { id: "map-1__ImageLayer" });
+      const object = findObject(draft, "map-1");
+      if (object !== undefined) {
+        writeFeature(object, DEFAULT_SLOT_COMPONENT.image, {});
+      }
     });
 
     const issues = validateScene(scene);
@@ -1171,33 +1086,12 @@ describe("文档校验", () => {
     expect(formatIssues(validateScene(scene))).toMatch(/不匹配/);
   });
 
-  it("动作 id 重复时报错（运行态要靠 actionId 寻址）", () => {
-    let scene = withObject(makeScene(), "o1", "BoolValue");
-    scene = produce(scene, (draft) => {
-      addObject(draft, plainObject("o2"));
-      addComponent(draft, "o2", "BoolValue", { id: "cmp2" });
-      addAction(draft, "o1", "cmp", { id: "dup", type: "ShowHide", enabled: true, params: {} });
-      addAction(draft, "o2", "cmp2", { id: "dup", type: "ShowHide", enabled: true, params: {} });
-    });
-
-    expect(formatIssues(validateScene(scene))).toMatch(/动作 id 重复/);
-  });
-
-  it("OptionValue 当前选项不在列表里时报错", () => {
-    const scene = mutate(withObject(makeScene(), "o", "OptionValue"), (draft) => {
-      updateComponentData(draft, "o", "cmp", { options: ["关闭", "打开"], current: "爆炸" });
-    });
-
-    expect(formatIssues(validateScene(scene))).toMatch(/不在选项列表中/);
-  });
-
   it("未知组件类型只给警告（数据原样保留）", () => {
     const scene = mutate(withObject(makeScene(), "o"), (draft) => {
       draft.objects[0]?.components.push({
         id: "c",
         type: "FutureComponent",
         data: {},
-        actions: [],
       });
     });
 

@@ -11,7 +11,6 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@dts/actions": "workspace:*",
     "@dts/document": "workspace:*",
     "@dts/grid": "workspace:*",
     "@dts/protocol": "workspace:*",

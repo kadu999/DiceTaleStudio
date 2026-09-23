@@ -119,7 +119,7 @@
 
 **v9 起对象是「实体 + 组件」**：`id` / `name` / `kind` / `active` / `locked` / `sortingOrder` /
 `position` / `rotation` / `scale`（+ 可选 `scaleX` / `scaleY`）留在对象上，**其余全在 `components[]` 里**
-（`{ id, type, data, actions? }`）。`kind` 只是**创建原型**标签，**行为看组件**：
+（`{ id, type, data }`）。`kind` 只是**创建原型**标签，**行为看组件**：
 前端按 `type` 分派，不认识的类型安静忽略即可（数据留在镜像里）。
 
 | 组件 `type` | 前端行为 |
@@ -130,7 +130,7 @@
 | `PlaySound` | **不建可见物**：数据留在镜像里（`play_sound` 时从 `data.picked` 取播哪一条） |
 | `Teleport` | **不建可见物**：数据留在镜像里（触发传送 = 编辑器换场景，整份 `scene_push`） |
 | `VideoOverlay` | 运行时在**对象自己的矩形**上建视频层（见下） |
-| 其余（`OptionValue` 等编辑器组件 / 将来的新组件） | 忽略 |
+| 其余（未知类型 / 将来的新组件） | 忽略 |
 
 **精灵（子图，v10）**：一张图可以按「行 × 列」切成格子，对象只显示其中一格。
 

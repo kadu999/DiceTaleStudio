@@ -48,6 +48,22 @@ function clampVolume(volume: number): number {
   return Math.min(1, Math.max(0, volume));
 }
 
+/** 某一通道音量 `0..1`（越界值夹回来）；值没变返回 false。 */
+function setChannelVolume(
+  project: Draft<ProjectDoc>,
+  channel: "bgm" | "sfx" | "voice",
+  volume: number,
+): boolean {
+  const audio = audioSettingsOf(project);
+  const next = clampVolume(volume);
+  if (audio[channel].volume === next) {
+    return false;
+  }
+
+  audio[channel].volume = next;
+  return true;
+}
+
 /**
  * 背景音乐通道音量 `0..1`（越界值夹回来）；值没变返回 false。
  *
@@ -56,38 +72,17 @@ function clampVolume(volume: number): number {
  * 这一份只负责「这条声道多大声」——改完由 `settings_push` 整份下发，前端收到即生效。
  */
 export function setBgmVolume(project: Draft<ProjectDoc>, volume: number): boolean {
-  const audio = audioSettingsOf(project);
-  const next = clampVolume(volume);
-  if (audio.bgm.volume === next) {
-    return false;
-  }
-
-  audio.bgm.volume = next;
-  return true;
+  return setChannelVolume(project, "bgm", volume);
 }
 
 /** 音效通道音量 `0..1`。 */
 export function setSfxVolume(project: Draft<ProjectDoc>, volume: number): boolean {
-  const audio = audioSettingsOf(project);
-  const next = clampVolume(volume);
-  if (audio.sfx.volume === next) {
-    return false;
-  }
-
-  audio.sfx.volume = next;
-  return true;
+  return setChannelVolume(project, "sfx", volume);
 }
 
 /** 旁白通道音量 `0..1`。 */
 export function setVoiceVolume(project: Draft<ProjectDoc>, volume: number): boolean {
-  const audio = audioSettingsOf(project);
-  const next = clampVolume(volume);
-  if (audio.voice.volume === next) {
-    return false;
-  }
-
-  audio.voice.volume = next;
-  return true;
+  return setChannelVolume(project, "voice", volume);
 }
 
 // ---------------------------------------------------------------- 项目级数据：音频**标签表**（下标 = tag ID）

@@ -45,6 +45,7 @@ export function createSoundSlice(
   // 共享的闭包状态与局部工具都在 ctx 里：这里解构一次，方法体与拆分前逐字一致
   const {
     pushLog,
+    applyActiveScene,
     runtimeClient,
     deliverSoundPlay,
     deliverSoundControl,
@@ -198,45 +199,24 @@ export function createSoundSlice(
     // ------------------------------------------------------------ 声音对象（动作对象）
 
     setSoundClips(objectId, clips) {
-      const sceneName = get().activeSceneName;
-      if (sceneName === null) {
-        return false;
-      }
-
-      return get().applyScenes("修改音频列表", (draft) => {
-        const scene = draft.find((item) => item.name === sceneName);
-        if (scene !== undefined) {
-          setSceneSoundClips(scene, objectId, clips);
-        }
+      return applyActiveScene("修改音频列表", (scene) => {
+        setSceneSoundClips(scene, objectId, clips);
       });
     },
 
     selectSoundClip(objectId, clip) {
-      const sceneName = get().activeSceneName;
-      if (sceneName === null) {
-        return false;
-      }
-
       if (objectWithFeature(objectId, DEFAULT_SLOT_COMPONENT.sound) === undefined) {
         return false;
       }
 
       // 单选：只能选**加进来的**那几条（`setSoundPicked` 会把不在列表里的拒掉）。
       // 名字按文件记，换选不动它。
-      return get().applyScenes("选择声音", (draft) => {
-        const scene = draft.find((item) => item.name === sceneName);
-        if (scene !== undefined) {
-          setSceneSoundPicked(scene, objectId, clip);
-        }
+      return applyActiveScene("选择声音", (scene) => {
+        setSceneSoundPicked(scene, objectId, clip);
       });
     },
 
     addSoundClip(objectId, clipId) {
-      const sceneName = get().activeSceneName;
-      if (sceneName === null) {
-        return false;
-      }
-
       const object = objectWithFeature(objectId, DEFAULT_SLOT_COMPONENT.sound);
       if (object === undefined) {
         return false;
@@ -247,12 +227,7 @@ export function createSoundSlice(
       // 原来选中的那条要是还在，就不抢（正听着 A 加一条 B，选择不该被顶掉）
       const hadPicked = sound?.picked;
 
-      return get().applyScenes("添加声音", (draft) => {
-        const scene = draft.find((item) => item.name === sceneName);
-        if (scene === undefined) {
-          return;
-        }
-
+      return applyActiveScene("添加声音", (scene) => {
         if (!already) {
           setSceneSoundClips(scene, objectId, [...(sound?.clips ?? []), clipId]);
         }
@@ -265,11 +240,6 @@ export function createSoundSlice(
     },
 
     removeSoundClip(objectId, clipId) {
-      const sceneName = get().activeSceneName;
-      if (sceneName === null) {
-        return false;
-      }
-
       const object = objectWithFeature(objectId, DEFAULT_SLOT_COMPONENT.sound);
       if (object === undefined) {
         return false;
@@ -280,30 +250,19 @@ export function createSoundSlice(
         return false;
       }
 
-      // 名字与「选中的那条」由 `setSoundClips` 一起收拾（见 `syncSoundSideData`）
-      return get().applyScenes("移除声音", (draft) => {
-        const scene = draft.find((item) => item.name === sceneName);
-        if (scene !== undefined) {
-          setSceneSoundClips(
-            scene,
-            objectId,
-            clips.filter((id) => id !== clipId),
-          );
-        }
+      // 名字与「选中的那条」由 `setSoundClips` 一起收拾（见 `shared.ts` 的 `syncMediaSideData`）
+      return applyActiveScene("移除声音", (scene) => {
+        setSceneSoundClips(
+          scene,
+          objectId,
+          clips.filter((id) => id !== clipId),
+        );
       });
     },
 
     setSoundClipName(objectId, clipId, name) {
-      const sceneName = get().activeSceneName;
-      if (sceneName === null) {
-        return false;
-      }
-
-      return get().applyScenes("修改声音名字", (draft) => {
-        const scene = draft.find((item) => item.name === sceneName);
-        if (scene !== undefined) {
-          setSceneSoundClipName(scene, objectId, clipId, name);
-        }
+      return applyActiveScene("修改声音名字", (scene) => {
+        setSceneSoundClipName(scene, objectId, clipId, name);
       });
     },
 
@@ -316,16 +275,8 @@ export function createSoundSlice(
     },
 
     setSoundLayer(objectId, layer) {
-      const sceneName = get().activeSceneName;
-      if (sceneName === null) {
-        return false;
-      }
-
-      return get().applyScenes("修改声音层级", (draft) => {
-        const scene = draft.find((item) => item.name === sceneName);
-        if (scene !== undefined) {
-          setSceneSoundLayer(scene, objectId, layer);
-        }
+      return applyActiveScene("修改声音层级", (scene) => {
+        setSceneSoundLayer(scene, objectId, layer);
       });
     },
   };

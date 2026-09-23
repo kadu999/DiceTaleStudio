@@ -1,14 +1,7 @@
 import { applyPatches, enablePatches, produceWithPatches, type Draft, type Patch } from "immer";
-import type { ProjectDoc, SceneDoc } from "./types";
+import type { SceneDoc } from "./types";
 
 enablePatches();
-
-/**
- * 文档 recipe 的 draft 类型。
- *
- * 对外暴露这个别名，使用方（编辑器）就不必直接依赖 immer。
- */
-export type ProjectDraft = Draft<ProjectDoc>;
 
 /**
  * 场景列表 recipe 的 draft 类型。

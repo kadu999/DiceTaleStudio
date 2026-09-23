@@ -24,36 +24,20 @@ export function createTeleportSlice(
   | "teleport"
 > {
   // 共享的闭包状态与局部工具都在 ctx 里：这里解构一次，方法体与拆分前逐字一致
-  const { pushLog, requireTeleportObject, switchScene } = ctx;
+  const { pushLog, applyActiveScene, requireTeleportObject, switchScene } = ctx;
 
   return {
     // ------------------------------------------------------------ 传送阵（动作对象）
 
     setTeleportTargets(objectId, targets) {
-      const sceneName = get().activeSceneName;
-      if (sceneName === null) {
-        return false;
-      }
-
-      return get().applyScenes("修改传送目标", (draft) => {
-        const scene = draft.find((item) => item.name === sceneName);
-        if (scene !== undefined) {
-          setSceneTeleportTargets(scene, objectId, targets);
-        }
+      return applyActiveScene("修改传送目标", (scene) => {
+        setSceneTeleportTargets(scene, objectId, targets);
       });
     },
 
     setTeleportPicked(objectId, target) {
-      const sceneName = get().activeSceneName;
-      if (sceneName === null) {
-        return false;
-      }
-
-      return get().applyScenes("选择传送目标", (draft) => {
-        const scene = draft.find((item) => item.name === sceneName);
-        if (scene !== undefined) {
-          setSceneTeleportPicked(scene, objectId, target);
-        }
+      return applyActiveScene("选择传送目标", (scene) => {
+        setSceneTeleportPicked(scene, objectId, target);
       });
     },
 

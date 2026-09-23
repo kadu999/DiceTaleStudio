@@ -168,7 +168,6 @@ function sceneWithSprite(imageId: string, sprite: { column: number; row: number 
             id: `${object.id}__${SPRITE_COMPONENT}`,
             type: SPRITE_COMPONENT,
             data: { id: imageId, width: 64, height: 32, sprite },
-            actions: [],
           },
         ],
       },

@@ -64,6 +64,76 @@ export function assetMetaIdFor(id: string): string | undefined {
   return path === undefined ? undefined : `${parsed.kind}:${path}`;
 }
 
+/**
+ * 重命名前的四处校验（内存 / 文件系统两个 provider 逐字同一套，错误消息也一致）：
+ * 类别一致 → 源存在 → 目标不存在 → 双方的 meta 目标不撞车。
+ *
+ * 纯逻辑：调用方各自传入「存在与否」的判定结果（内存查表、文件系统 stat），这里不碰 IO。
+ * **绝不覆盖用户数据**：任何一项不满足都抛错，调用方在抛错前不做任何写动作。
+ */
+export function assertRenameAllowed(input: {
+  readonly fromId: string;
+  readonly toId: string;
+  readonly fromKind: ResourceKind;
+  readonly toKind: ResourceKind;
+  readonly fromExists: boolean;
+  readonly toExists: boolean;
+  readonly fromMetaId: string | undefined;
+  readonly toMetaId: string | undefined;
+  readonly fromMetaExists: boolean;
+  readonly toMetaExists: boolean;
+}): void {
+  if (input.fromKind !== input.toKind) {
+    throw new Error(`重命名两端类别必须一致: ${input.fromId} → ${input.toId}`);
+  }
+
+  if (!input.fromExists) {
+    throw new Error(`资源不存在: ${input.fromId}`);
+  }
+
+  if (input.toExists) {
+    throw new Error(`资源已存在: ${input.toId}`);
+  }
+
+  if (
+    input.fromMetaId !== undefined &&
+    input.toMetaId !== undefined &&
+    input.fromMetaExists &&
+    input.toMetaExists
+  ) {
+    throw new Error(`资源已存在: ${input.toMetaId}`);
+  }
+}
+
+/**
+ * 「确保有一份 asset meta」的公共判定（内存 / 文件系统两个 provider 同一套口径）：
+ * 该有 meta（`Assets/` 下的条目、不是 meta 自己）而还没有时，算出要写的那一份
+ * （meta 的 id 与内容）；不需要写返回 `undefined`。
+ *
+ * 纯逻辑：调用方传入「meta 是否已存在」的判定结果与「这条 id 现在是不是目录」
+ * （`folder` 为 true 时调用方已知是目录，`isDirectory` 不会被求值——文件系统那边
+ * 省去一次 stat）。
+ */
+export async function ensureAssetMetaCore(input: {
+  readonly id: string;
+  readonly metaId: string | undefined;
+  readonly metaExists: boolean;
+  readonly folder: boolean;
+  readonly isDirectory: () => boolean | Promise<boolean>;
+}): Promise<{ readonly metaId: string; readonly text: string } | undefined> {
+  if (input.metaId === undefined || input.metaExists) {
+    return undefined;
+  }
+
+  const parsed = parseResourceId(input.id);
+  if (assetMetaPathFor(parsed.kind, parsed.path) === undefined) {
+    return undefined;
+  }
+
+  const text = newAssetMetaText(parsed.path, input.folder || (await input.isDirectory()));
+  return text === undefined ? undefined : { metaId: input.metaId, text };
+}
+
 export function newAssetMetaText(path: string, folder = false): string | undefined {
   if (!folder && assetImporterForPath(path) === undefined) {
     return undefined;

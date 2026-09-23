@@ -6,6 +6,7 @@ import {
   defaultCellMaskColors,
   isHexColor,
 } from "@dts/grid";
+import { readPrefs, writePrefs } from "./local-prefs";
 
 /**
  * 网格标注的**编辑器偏好**（浏览器本地）。
@@ -52,25 +53,12 @@ export function defaultGridPaintPrefs(): GridPaintPrefs {
 
 /** 读偏好；没有记录、内容损坏或存储不可用时退回默认值（不抛错）。 */
 export function readGridPaintPrefs(): GridPaintPrefs {
-  try {
-    const raw = window.localStorage.getItem(GRID_PAINT_KEY);
-    if (raw === null || raw.length === 0) {
-      return defaultGridPaintPrefs();
-    }
-
-    return parseGridPaintPrefs(JSON.parse(raw) as unknown);
-  } catch {
-    return defaultGridPaintPrefs();
-  }
+  return readPrefs(GRID_PAINT_KEY, parseGridPaintPrefs, defaultGridPaintPrefs);
 }
 
 /** 记住这次的选择。 */
 export function writeGridPaintPrefs(prefs: GridPaintPrefs): void {
-  try {
-    window.localStorage.setItem(GRID_PAINT_KEY, JSON.stringify(prefs));
-  } catch {
-    // 存储不可用：本次会话照常工作，只是下次回到默认值
-  }
+  writePrefs(GRID_PAINT_KEY, prefs);
 }
 
 /**

@@ -1,7 +1,7 @@
-// 本文件从 `commands.ts` 拆出（纯搬运，行为不变）：命令模块共用的常量与查找工具。
+// 本文件从 `commands.ts` 拆出（纯搬运，行为不变）：命令模块共用的常量、查找工具与媒体列表骨架。
 import type { Draft } from "immer";
 import { DEFAULT_SLOT_COMPONENT, carriesComponent } from "../presets";
-import type { ComponentDoc, SceneDoc, GameObjectDoc } from "../types";
+import type { SceneDoc, GameObjectDoc } from "../types";
 
 let idCounter = 0;
 
@@ -21,16 +21,6 @@ export const MAP_DEFAULT_SORTING_ORDER = -10;
  */
 export { DEFAULT_OBJECT_SCALE, MAX_OBJECT_SCALE, MIN_OBJECT_SCALE } from "../scale";
 
-/**
- * 角度的归一化区间：`(-180, 180]`（**度**）。
- *
- * 文档里存的是**弧度**（`GameObjectDoc.rotation`），面板上按**度**编辑——
- * Unity 的 Inspector 也是度数，策划对着两边看才不会算错。
- * 转 370° 和转 10° 是同一个姿态，归一化后数字才不会失控。
- */
-export const MIN_OBJECT_ROTATION_DEGREES = -180;
-export const MAX_OBJECT_ROTATION_DEGREES = 180;
-
 /** 生成稳定前缀 + 递增 + 随机后缀的 id（避免同毫秒内碰撞）。 */
 export function createId(prefix: string): string {
   idCounter += 1;
@@ -43,14 +33,6 @@ export function findObject(scene: Draft<SceneDoc>, objectId: string): Draft<Game
   return scene.objects.find((object) => object.id === objectId);
 }
 
-export function findComponent(
-  scene: Draft<SceneDoc>,
-  objectId: string,
-  componentId: string,
-): Draft<ComponentDoc> | undefined {
-  return findObject(scene, objectId)?.components.find((component) => component.id === componentId);
-}
-
 /** 场景里的地图对象（可能没有，也可能有多个；取第一个用于渲染底图）。 */
 export function findMapObject(scene: SceneDoc): GameObjectDoc | undefined {
   return scene.objects.find((object) => carriesComponent(DEFAULT_SLOT_COMPONENT.map, object.kind));
@@ -61,18 +43,186 @@ export function listMapObjects(scene: SceneDoc): GameObjectDoc[] {
   return scene.objects.filter((object) => carriesComponent(DEFAULT_SLOT_COMPONENT.map, object.kind));
 }
 
-/** 收集某场景内全部动作 id（校验唯一性用）。 */
-export function collectActionIds(scene: SceneDoc): Map<string, string[]> {
-  const byId = new Map<string, string[]>();
-  for (const object of scene.objects) {
-    for (const component of object.components) {
-      for (const action of component.actions) {
-        const owners = byId.get(action.id) ?? [];
-        owners.push(`${object.id}/${component.id}`);
-        byId.set(action.id, owners);
-      }
+// ---------------------------------------------------------------- 媒体列表命令的公共骨架
+//
+// 声音 / 视频 / 传送阵是**同一套形状**（「加进来的列表 + 当前选中的那一个（+ 按项记的名字）」），
+// 命令的逐字段语义逐字一致，只有数据类型与列表字段名不同——那一部分归这里，唯一一份。
+
+/** 「列表 + 选中 + 按项记名字」那份数据的公共形状（声音 / 视频逐字一致的那部分）。 */
+export interface MediaListSideData {
+  readonly clips: readonly string[];
+  /** 取消选中是 `delete` 语义（optional 字段整个摘掉，不留空壳）。 */
+  picked?: string;
+  names?: Record<string, string>;
+}
+
+/**
+ * 找到对象就交给 `fn`；找不到对象返回 false（数据对不上：静默拒绝、不入撤销栈）。
+ *
+ * 文档命令的公共前奏：布尔约定是「无变更 → false」，由 `fn` 原样带出来。
+ */
+export function withObject(
+  scene: Draft<SceneDoc>,
+  objectId: string,
+  fn: (object: Draft<GameObjectDoc>) => boolean,
+): boolean {
+  const object = findObject(scene, objectId);
+  if (object === undefined) {
+    return false;
+  }
+
+  return fn(object);
+}
+
+/**
+ * `withObject` 的媒体版：对象的数据缺就先用 `ensure` 补一份可用的（与 schema 同一个兜底口径），
+ * 补不出（对象根本不带这个槽位）返回 false。`fn` 拿到数据 draft，需要动对象本身时
+ * （比如「组件整个摘掉」）第二个参数就是那份对象 draft。
+ */
+export function withMediaData<T>(
+  scene: Draft<SceneDoc>,
+  objectId: string,
+  ensure: (object: Draft<GameObjectDoc>) => T | undefined,
+  fn: (data: T, object: Draft<GameObjectDoc>) => boolean,
+): boolean {
+  return withObject(scene, objectId, (object) => {
+    const data = ensure(object);
+    if (data === undefined) {
+      return false;
+    }
+
+    return fn(data, object);
+  });
+}
+
+/** 去空、去重后的列表（保序：重复项留在第一次出现的位置，即用户加进来的顺序）。 */
+export function dedupeItems(items: readonly string[]): string[] {
+  const next: string[] = [];
+  for (const item of items) {
+    const trimmed = item.trim();
+    if (trimmed.length > 0 && !next.includes(trimmed)) {
+      next.push(trimmed);
     }
   }
 
-  return byId;
+  return next;
+}
+
+/** 两个列表逐项相等（长度相同、每个位置都一样）。 */
+export function sameItemList(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((item, index) => item === b[index]);
+}
+
+/**
+ * 列表变更后收拾「按项记」的副作用：移出去的名字不留（不然文件里攒下一堆看不见的孤儿
+ * 名字），选中的那条还在列表里就行。
+ *
+ * 兜底「没选就默认选第一条」是**故意的**：加进来一条却没被选上时，面板上看着有东西、
+ * 「播放 / 传送」却是灰的，很容易以为是坏的。
+ */
+export function syncMediaSideData(data: MediaListSideData): void {
+  if (data.names !== undefined) {
+    for (const clipId of Object.keys(data.names)) {
+      if (!data.clips.includes(clipId)) {
+        delete data.names[clipId];
+      }
+    }
+
+    if (Object.keys(data.names).length === 0) {
+      // 一条名字都不剩：字段整个删掉，不留空壳
+      delete data.names;
+    }
+  }
+
+  const fallback = data.clips[0];
+  if (data.picked === undefined) {
+    if (fallback !== undefined) {
+      data.picked = fallback;
+    }
+
+    return;
+  }
+
+  if (!data.clips.includes(data.picked)) {
+    // 移出去的正好是选中的那条：顺到剩下的第一条；一条不剩就不留这个字段
+    if (fallback === undefined) {
+      delete data.picked;
+    } else {
+      data.picked = fallback;
+    }
+  }
+}
+
+/**
+ * 选中 / 取消选中「加进来的里用哪一条」（`null` = 取消选中）。
+ *
+ * 只能选列表里的（不在列表里 = 数据对不上，直接拒掉，不悄悄把它加进去）；
+ * 值没变返回 false，于是连点同一条不会往撤销栈里塞空记录。
+ */
+export function setMediaPicked<T extends { picked?: string }>(
+  scene: Draft<SceneDoc>,
+  objectId: string,
+  ensure: (object: Draft<GameObjectDoc>) => T | undefined,
+  listOf: (data: T) => readonly string[],
+  value: string | null,
+): boolean {
+  return withMediaData(scene, objectId, ensure, (data) => {
+    if (value === null) {
+      if (data.picked === undefined) {
+        return false;
+      }
+
+      delete data.picked;
+      return true;
+    }
+
+    if (!listOf(data).includes(value) || data.picked === value) {
+      return false;
+    }
+
+    data.picked = value;
+    return true;
+  });
+}
+
+/**
+ * 给**加进来的某一条**起显示名（空 = 删掉这个名字，退回素材文件名）。
+ *
+ * 名字按条记（`names[id]`），只是编辑器里给人看的标签：不参与播放、不进协议；
+ * 数据缺字段时先由 `ensure` 补出来（与其它媒体命令同一个兜底）。
+ */
+export function setMediaClipName(
+  scene: Draft<SceneDoc>,
+  objectId: string,
+  ensure: (object: Draft<GameObjectDoc>) => MediaListSideData | undefined,
+  clipId: string,
+  name: string,
+): boolean {
+  return withMediaData(scene, objectId, ensure, (data) => {
+    const trimmed = name.trim();
+    if (!data.clips.includes(clipId)) {
+      // 名字挂在**加进来的**条目上：不在列表里就是数据对不上（列表变更时这类名字也会被清掉）
+      return false;
+    }
+
+    const current = data.names?.[clipId] ?? "";
+    if (trimmed === current) {
+      return false;
+    }
+
+    if (trimmed.length === 0) {
+      // 留空 = 不要这个自定义名（文件里不留空字符串）
+      if (data.names !== undefined) {
+        delete data.names[clipId];
+        if (Object.keys(data.names).length === 0) {
+          // 一条名字都没有了：字段整个删掉，不留空壳
+          delete data.names;
+        }
+      }
+    } else {
+      data.names = { ...(data.names ?? {}), [clipId]: trimmed };
+    }
+
+    return true;
+  });
 }

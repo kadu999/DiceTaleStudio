@@ -21,18 +21,6 @@ export async function preciseWorldPoint(
 }
 
 /**
- * 对象**当前**在屏幕哪儿：用对象中心的世界坐标做精确换算。
- *
- * 手柄贴在对象外框之外，所以「从对象出发按视口缩放量偏移」是唯一稳的算法。
- */
-export async function objectScreenPoint(
-  page: Page,
-  center: { x: number; y: number },
-): Promise<{ x: number; y: number }> {
-  return preciseWorldPoint(page, center);
-}
-
-/**
  * 画布上放**手柄**（或任何贴在对象上的 UI）时用的换算：把世界位移换成屏幕像素位移。
  *
  * 与 `worldSamplePoint` / `scenePoint` 的区别：那两个假设「世界原点在画布正中」，
@@ -371,22 +359,4 @@ export async function findEmptyCanvasPoint(page: Page): Promise<{ x: number; y: 
   }
 
   throw new Error("找不到可点击的空白处");
-}
-
-/**
- * 在画布上一笔划过（按下 → 若干次移动 → 抬手）。
- *
- * 用 `steps` 让中间产生多个 pointermove：涂抹的「补齐直线」逻辑靠它才生效，
- * 直接跳两点的话测不到「快拖也不断线」。
- */
-export async function dragOnCanvas(
-  page: Page,
-  from: { x: number; y: number },
-  to: { x: number; y: number },
-  steps = 8,
-): Promise<void> {
-  await page.mouse.move(from.x, from.y);
-  await page.mouse.down();
-  await page.mouse.move(to.x, to.y, { steps });
-  await page.mouse.up();
 }

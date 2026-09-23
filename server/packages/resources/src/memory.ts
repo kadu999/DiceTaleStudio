@@ -1,5 +1,10 @@
 import { isAssetMetaPath, parseResourceId, type ResourceKind } from "./ids";
-import { assetFolderPathsFor, assetMetaIdFor, newAssetMetaText } from "./meta";
+import {
+  assertRenameAllowed,
+  assetFolderPathsFor,
+  assetMetaIdFor,
+  ensureAssetMetaCore,
+} from "./meta";
 import type { ResourceEntry, ResourceProvider } from "./provider";
 
 /**
@@ -40,7 +45,7 @@ export class MemoryResourceProvider implements ResourceProvider {
         continue;
       }
 
-      this.ensureAssetMeta(id);
+      await this.ensureAssetMeta(id);
 
       entries.push({
         id,
@@ -88,20 +93,20 @@ export class MemoryResourceProvider implements ResourceProvider {
   async writeText(id: string, text: string): Promise<void> {
     parseResourceId(id);
     this.files.set(id, new TextEncoder().encode(text));
-    this.ensureAssetMeta(id);
+    await this.ensureAssetMeta(id);
   }
 
   async writeBinary(id: string, data: ArrayBuffer): Promise<void> {
     parseResourceId(id);
     this.files.set(id, new Uint8Array(data.slice(0)));
-    this.ensureAssetMeta(id);
+    await this.ensureAssetMeta(id);
   }
 
   async ensureFolder(id: string): Promise<void> {
     const parsed = parseResourceId(id);
     this.folders.add(id);
     for (const path of assetFolderPathsFor(parsed.kind, parsed.path)) {
-      this.ensureAssetMeta(`${parsed.kind}:${path}`, true);
+      await this.ensureAssetMeta(`${parsed.kind}:${path}`, true);
     }
   }
 
@@ -147,25 +152,22 @@ export class MemoryResourceProvider implements ResourceProvider {
   async rename(fromId: string, toId: string): Promise<void> {
     const from = parseResourceId(fromId);
     const to = parseResourceId(toId);
-    if (from.kind !== to.kind) {
-      throw new Error(`重命名两端类别必须一致: ${fromId} → ${toId}`);
-    }
-
-    if (!this.files.has(fromId) && !this.folders.has(fromId)) {
-      throw new Error(`资源不存在: ${fromId}`);
-    }
-
-    if (this.files.has(toId) || this.folders.has(toId)) {
-      throw new Error(`资源已存在: ${toId}`);
-    }
-
-    // 源自身与「源目录下的一切」统一按前缀替换：文件就是 id === fromId 的那一条
     const fromMeta = assetMetaIdFor(fromId);
     const toMeta = assetMetaIdFor(toId);
-    if (fromMeta !== undefined && toMeta !== undefined && this.files.has(fromMeta) && this.files.has(toMeta)) {
-      throw new Error(`资源已存在: ${toMeta}`);
-    }
+    assertRenameAllowed({
+      fromId,
+      toId,
+      fromKind: from.kind,
+      toKind: to.kind,
+      fromExists: this.files.has(fromId) || this.folders.has(fromId),
+      toExists: this.files.has(toId) || this.folders.has(toId),
+      fromMetaId: fromMeta,
+      toMetaId: toMeta,
+      fromMetaExists: fromMeta !== undefined && this.files.has(fromMeta),
+      toMetaExists: toMeta !== undefined && this.files.has(toMeta),
+    });
 
+    // 源自身与「源目录下的一切」统一按前缀替换：文件就是 id === fromId 的那一条
     const prefix = `${fromId}/`;
     const moved = (id: string): string => `${toId}${id.slice(fromId.length)}`;
 
@@ -190,20 +192,23 @@ export class MemoryResourceProvider implements ResourceProvider {
         this.files.set(toMeta, bytes);
       }
     }
-    this.ensureAssetMeta(toId);
+    await this.ensureAssetMeta(toId);
   }
 
-  private ensureAssetMeta(id: string, folder = false): void {
+  private async ensureAssetMeta(id: string, folder = false): Promise<void> {
     const metaId = assetMetaIdFor(id);
-    if (metaId === undefined || this.files.has(metaId)) {
+    const ensured = await ensureAssetMetaCore({
+      id,
+      metaId,
+      metaExists: metaId !== undefined && this.files.has(metaId),
+      folder,
+      isDirectory: () => this.folders.has(id),
+    });
+    if (ensured === undefined) {
       return;
     }
 
-    const { path } = parseResourceId(id);
-    const text = newAssetMetaText(path, folder || this.folders.has(id));
-    if (text !== undefined) {
-      this.files.set(metaId, new TextEncoder().encode(text));
-    }
+    this.files.set(ensured.metaId, new TextEncoder().encode(ensured.text));
   }
 
   private require(id: string): Uint8Array {

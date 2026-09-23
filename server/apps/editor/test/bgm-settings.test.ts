@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createEmptyProject } from "@dts/document";
 import { projectHistory, sceneHistory, useEditorStore } from "../src/state/editor-store";
 import type { ResourceTreeNode } from "../src/services/project-api";
+import { FakeSocket, connect, editorState, parsedSent, sentTypes } from "./helpers/fake-socket";
 
 /**
  * **背景音乐与项目设置解耦**（v16）在 store 这一层的完整链路。
@@ -17,105 +18,6 @@ import type { ResourceTreeNode } from "../src/services/project-api";
  */
 
 const PROJECT = "Demo";
-
-class FakeSocket {
-  static readonly CONNECTING = 0;
-  static readonly OPEN = 1;
-  static readonly CLOSING = 2;
-  static readonly CLOSED = 3;
-  static readonly instances: FakeSocket[] = [];
-
-  readyState = FakeSocket.CONNECTING;
-  readonly sent: string[] = [];
-  private readonly listeners = new Map<string, Array<(event: unknown) => void>>();
-
-  constructor(readonly url: string) {
-    FakeSocket.instances.push(this);
-  }
-
-  addEventListener(type: string, listener: (event: unknown) => void): void {
-    const list = this.listeners.get(type);
-    if (list === undefined) {
-      this.listeners.set(type, [listener]);
-      return;
-    }
-
-    list.push(listener);
-  }
-
-  send(data: string): void {
-    this.sent.push(data);
-  }
-
-  close(): void {
-    if (this.readyState === FakeSocket.CLOSED) {
-      return;
-    }
-
-    this.readyState = FakeSocket.CLOSED;
-    this.emit("close", { code: 1006, reason: "" });
-  }
-
-  open(): void {
-    this.readyState = FakeSocket.OPEN;
-    this.emit("open");
-  }
-
-  receive(message: unknown): void {
-    this.emit("message", { data: JSON.stringify(message) });
-  }
-
-  private emit(type: string, event: unknown = {}): void {
-    for (const listener of this.listeners.get(type) ?? []) {
-      listener(event);
-    }
-  }
-}
-
-const lastSocket = (): FakeSocket => {
-  const socket = FakeSocket.instances.at(-1);
-  if (socket === undefined) {
-    throw new Error("编辑器没有连服务端");
-  }
-
-  return socket;
-};
-
-function connect(): FakeSocket {
-  vi.stubGlobal("WebSocket", FakeSocket);
-  useEditorStore.getState().connectRuntime();
-  const socket = lastSocket();
-  socket.open();
-  return socket;
-}
-
-/** 服务端的运行态广播（`settings` 是摘要，`null` = 还没推过设置）。 */
-const editorState = (input: {
-  readonly runtimeActive: boolean;
-  readonly client?: { name: string; version: string; connectedAt: number } | null;
-  readonly resources?: {
-    project: string;
-    fingerprint: string;
-    fileCount: number;
-    bytes: number;
-    ok: boolean;
-    at: number;
-  } | null;
-  readonly settings?: { updatedAt: number } | null;
-}): unknown => ({
-  type: "editor_state",
-  runtimeActive: input.runtimeActive,
-  client: input.client ?? null,
-  scene: null,
-  resources: input.resources ?? null,
-  settings: input.settings ?? null,
-  serverTime: Date.now(),
-});
-
-const parsedSent = (socket: FakeSocket): Array<Record<string, unknown>> =>
-  socket.sent.map((raw) => JSON.parse(raw) as Record<string, unknown>);
-
-const sentTypes = (socket: FakeSocket): string[] => parsedSent(socket).map((message) => String(message.type));
 
 /** 发出去的命令（按顺序）：`editor_command` 里的 command 节点。 */
 const sentCommands = (socket: FakeSocket): Array<Record<string, unknown>> =>

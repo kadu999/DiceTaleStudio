@@ -160,36 +160,21 @@ export const videoDataSchema = z.object({
   audio: z.boolean().default(false),
 });
 
-export const conditionSchema = z.object({
-  valueType: z.enum(["Bool", "String", "Number", "Integer"]),
-  op: z.enum(["Equal", "NotEqual", "AtLeast", "AtMost"]),
-  target: z.union([z.boolean(), z.string(), z.number()]),
-});
-
-export const actionInstanceSchema = z.object({
-  id: z.string().min(1),
-  type: z.string().min(1),
-  enabled: z.boolean(),
-  condition: conditionSchema.optional(),
-  params: z.record(z.string(), z.unknown()),
-});
-
 export const componentSchema = z.object({
   id: z.string().min(1),
   type: z.string().min(1),
   displayName: z.string().optional(),
   data: z.record(z.string(), z.unknown()),
-  actions: z.array(actionInstanceSchema),
 });
 
 /**
  * 组件实例（v19）。
  *
- * 从对象特性提升上来的那 5 种**按各自的 schema 硬校验**（`GridMap` 的 RLE、`PlaySound` 的层级…），
- * 前端组件体系那 7 种与未知类型走宽松分支（`data` 是任意记录）——这样手写文件里的自定义组件
- * 照样读得回来，而**已知的 5 种写坏了会直接读不开**（与 v18 之前扁平字段的严格程度一致）。
+ * 从对象特性提升上来的那 6 种**按各自的 schema 硬校验**（`GridMap` 的 RLE、`PlaySound` 的层级…），
+ * 未知类型走宽松分支（`data` 是任意记录）——这样手写文件里的自定义组件
+ * 照样读得回来，而**已知的 6 种写坏了会直接读不开**（与 v18 之前扁平字段的严格程度一致）。
  *
- * 「未知类型」分支把已知的 12 个名字排除掉：否则一个 data 坏掉的 `GridMap` 会掉进宽松分支，
+ * 「未知类型」分支把已知的 6 个名字排除掉：否则一个 data 坏掉的 `GridMap` 会掉进宽松分支，
  * 严格校验就形同虚设。
  */
 const KNOWN_COMPONENT_TYPE_NAMES: readonly string[] = COMPONENT_TYPES.map((def) => def.type);
@@ -201,7 +186,6 @@ const permissiveComponentSchema = z.object({
   }),
   displayName: z.string().optional(),
   data: z.record(z.string(), z.unknown()),
-  actions: z.array(actionInstanceSchema),
 });
 
 function componentSchemaOf<T extends z.ZodTypeAny>(
@@ -212,14 +196,12 @@ function componentSchemaOf<T extends z.ZodTypeAny>(
   type: z.ZodLiteral<string>;
   displayName: z.ZodOptional<z.ZodString>;
   data: T;
-  actions: z.ZodArray<typeof actionInstanceSchema>;
 }> {
   return z.object({
     id: z.string().min(1),
     type: z.literal(type),
     displayName: z.string().optional(),
     data,
-    actions: z.array(actionInstanceSchema),
   });
 }
 
@@ -1104,7 +1086,6 @@ function migrateFeaturesToComponents(raw: Record<string, unknown>): {
           id: componentId(baseId, component),
           type: component,
           data: value,
-          actions: [],
         });
       }
     }

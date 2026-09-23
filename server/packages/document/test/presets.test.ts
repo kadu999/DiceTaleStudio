@@ -103,8 +103,6 @@ describe("对象预设表（presets.ts）", () => {
     expect(carriesComponent("ImageLayer", "Image")).toBe(true);
     expect(carriesComponent("GridMap", "Map")).toBe(true);
     expect(carriesComponent("PlaySound", "PlaySound")).toBe(true);
-    // 前端组件体系那 7 种不在任何槽位表里
-    expect(carriesComponent("BoolValue", "Sprite")).toBe(false);
     // 抽象基类与认不出的 kind 都是空槽位表 → false（与旧 `carriesKind` 一致）
     expect(carriesComponent("ImageLayer", "GameObject")).toBe(false);
     expect(carriesComponent("ImageLayer", "Portal" as ObjectKind)).toBe(false);

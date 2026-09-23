@@ -308,7 +308,7 @@ export const COMPONENT_TYPE = {
  * 一个组件实例（v9）。
  *
  * 从对象特性提升上来的 6 种按各自 schema 校验（`image` 那一份有 `ImageLayer` / `SpriteLayer`
- * 两个名字，形状一样）；其余类型（前端组件体系那 7 种、以及将来的自定义组件）走宽松分支：
+ * 两个名字，形状一样）；其余类型（将来的自定义组件）走宽松分支：
  * `data` 是任意记录。未知类型**不报错**是有意的——
  * 编辑器加一个新组件时，老前端应当照常镜像其余数据，而不是整条场景消息被判非法。
  *
@@ -324,7 +324,6 @@ export const componentSchema = z.object({
   }),
   displayName: z.string().optional(),
   data: z.record(z.string(), z.unknown()),
-  actions: z.array(z.unknown()).optional(),
 });
 
 function featureComponentSchema<T extends z.ZodTypeAny>(
@@ -335,14 +334,12 @@ function featureComponentSchema<T extends z.ZodTypeAny>(
   type: z.ZodLiteral<string>;
   displayName: z.ZodOptional<z.ZodString>;
   data: T;
-  actions: z.ZodOptional<z.ZodArray<z.ZodUnknown>>;
 }> {
   return z.object({
     id: z.string().min(1),
     type: z.literal(type),
     displayName: z.string().optional(),
     data,
-    actions: z.array(z.unknown()).optional(),
   });
 }
 
@@ -776,8 +773,6 @@ export const serverToClientSchema = z.discriminatedUnion("type", [
 ]);
 
 export type ServerToClientMessage = z.infer<typeof serverToClientSchema>;
-export type CommandResultMessage = z.infer<typeof commandResultSchema>;
-export type EditorStateMessage = z.infer<typeof serverToEditorSchema>;
 
 // ---------------------------------------------------------------- 解析助手
 

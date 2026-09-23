@@ -1,6 +1,6 @@
 import { PAINTABLE_MASKS, decodeRle } from "@dts/grid";
-import { findComponentType, isKnownComponentType } from "./components";
-import { collectActionIds, isMapFogEnabled } from "./commands";
+import { isKnownComponentType } from "./components";
+import { isMapFogEnabled } from "./commands";
 import { imageOf, mapDataOf, soundDataOf, teleportDataOf, videoDataOf } from "./access";
 import type { AssetMetaDoc, AssetMetas } from "./asset-meta";
 import { presetOf, supportsVideo } from "./presets";
@@ -13,10 +13,7 @@ import type {
   GameObjectDoc,
 } from "./types";
 
-/**
- * 结构性校验（**不依赖动作注册表**，因此放在 document 包内）。
- * 动作类型与参数引用相关校验在 `@dts/actions` 里（依赖方向：actions → document）。
- */
+/** 结构性校验（场景 / 对象 / 组件 / 项目级数据）。 */
 
 export type IssueLevel = "error" | "warning";
 
@@ -415,62 +412,6 @@ function validateObject(
       });
       continue;
     }
-
-    // OptionValue：当前选项必须在选项列表里
-    if (component.type === "OptionValue") {
-      const options = component.data.options;
-      const current = component.data.current;
-      if (Array.isArray(options) && typeof current === "string" && current.length > 0) {
-        if (!options.includes(current)) {
-          issues.push({
-            level: "error",
-            path: `${componentPath}/data/current`,
-            message: `当前选项 "${current}" 不在选项列表中`,
-          });
-        }
-      }
-    }
-
-    // 值组件的 value 类型
-    const valueType = findComponentType(component.type)?.fields.find((field) => field.key === "value")
-      ?.kind;
-    if (valueType !== undefined) {
-      const value = component.data.value;
-      if (valueType === "boolean" && typeof value !== "boolean") {
-        issues.push({ level: "error", path: `${componentPath}/data/value`, message: "应为布尔值" });
-      }
-
-      if (valueType === "integer" && !Number.isInteger(value)) {
-        issues.push({ level: "error", path: `${componentPath}/data/value`, message: "应为整数" });
-      }
-
-      if (valueType === "number" && typeof value !== "number") {
-        issues.push({ level: "error", path: `${componentPath}/data/value`, message: "应为数值" });
-      }
-    }
-
-    for (const action of component.actions) {
-      if (action.id.trim().length === 0) {
-        issues.push({ level: "error", path: `${componentPath}/actions`, message: "动作 id 不能为空" });
-      }
-
-      if (action.condition !== undefined) {
-        const target = action.condition.target;
-        const ok =
-          (action.condition.valueType === "Bool" && typeof target === "boolean") ||
-          (action.condition.valueType === "String" && typeof target === "string") ||
-          ((action.condition.valueType === "Number" || action.condition.valueType === "Integer") &&
-            typeof target === "number");
-
-        if (!ok) {
-          issues.push({
-            level: "error",
-            path: `${componentPath}/actions/${action.id}/condition`,
-            message: `${action.condition.valueType} 条件的比较目标类型不符`,
-          });
-        }
-      }
-    }
   }
 }
 
@@ -501,17 +442,6 @@ export function validateScene(
 
     validateObject(object, path, issues, scene.name);
     validateObjectSprite(object, path, options.metas, issues);
-  }
-
-  // 动作 id 全场景唯一（运行态靠 actionId 寻址，重名会触发到错误动作）
-  for (const [actionId, owners] of collectActionIds(scene)) {
-    if (owners.length > 1) {
-      issues.push({
-        level: "error",
-        path: `${base}/actions/${actionId}`,
-        message: `动作 id 重复: ${actionId}（出现在 ${owners.join(", ")}）`,
-      });
-    }
   }
 
   return issues;

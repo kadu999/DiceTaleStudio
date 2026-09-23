@@ -138,19 +138,13 @@ describe("契约：协议与文档的组件口径一致", () => {
     expect(componentSchema.safeParse(broken).success).toBe(false);
   });
 
-  it("前端组件体系那 7 种在协议侧仍然是宽松分支（data 任意，不因新组件判整条消息非法）", () => {
-    const legacy = COMPONENT_TYPES.filter((def) => def.legacyField === undefined);
-    expect(legacy).toHaveLength(7);
-
-    for (const def of legacy) {
-      const parsed = componentSchema.safeParse({
-        id: componentId("obj_1", def.type),
-        type: def.type,
-        data: { anything: 1 },
-        actions: [],
-      });
-      expect(parsed.success, `协议拒了已知组件 ${def.type}`).toBe(true);
-    }
+  it("未知组件类型在协议侧仍然是宽松分支（data 任意，不因新组件判整条消息非法）", () => {
+    const parsed = componentSchema.safeParse({
+      id: componentId("obj_1", "CustomThing"),
+      type: "CustomThing",
+      data: { anything: 1 },
+    });
+    expect(parsed.success, "协议拒了未知组件 CustomThing").toBe(true);
   });
 
   it("精灵：切分上限两边同值；文档 + 工程表解析出的载荷协议收得下", () => {

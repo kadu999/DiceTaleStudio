@@ -141,16 +141,6 @@ export function setObjectLocked(
   return true;
 }
 
-export function setObjectKind(scene: Draft<SceneDoc>, objectId: string, kind: ObjectKind): boolean {
-  const object = findObject(scene, objectId);
-  if (object === undefined || object.kind === kind) {
-    return false;
-  }
-
-  object.kind = kind;
-  return true;
-}
-
 /** 是否显示该对象（对齐 Unity 的激活勾选框）：不激活就不画，但对象仍在场景里。 */
 export function setObjectActive(
   scene: Draft<SceneDoc>,

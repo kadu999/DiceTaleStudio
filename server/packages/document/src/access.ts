@@ -76,13 +76,6 @@ export function componentDataOfSlot<T>(object: GameObjectDoc, slot: ComponentSlo
   return instance === undefined ? undefined : (instance.data as T);
 }
 
-/** 找一个**带某个特性**的对象（给「点了要有反馈」的调用方：找不到就 `undefined`）。 */
-export function hasFeature(object: GameObjectDoc, component: string): boolean {
-  return componentOf(object, component) !== undefined;
-}
-
-// ---------------------------------------------------------------- 读
-
 /** 对象的地图数据（不是地图对象 / 没有这个组件时 `undefined`）。 */
 export function mapDataOf(object: GameObjectDoc): MapDataDoc | undefined {
   return componentDataOfSlot<MapDataDoc>(object, "map");
@@ -168,7 +161,6 @@ export function writeFeature<T>(
     id: componentId(object.id, component),
     type: component,
     data: data as Draft<Record<string, unknown>>,
-    actions: [],
   };
   object.components.push(created);
   return created;
@@ -198,7 +190,6 @@ export function withFeature<T>(object: GameObjectDoc, component: string, data: T
     id: index < 0 ? componentId(object.id, component) : (components[index] as ComponentDoc).id,
     type: component,
     data: data as Record<string, unknown>,
-    actions: index < 0 ? [] : (components[index] as ComponentDoc).actions,
   };
 
   if (index < 0) {
@@ -208,11 +199,6 @@ export function withFeature<T>(object: GameObjectDoc, component: string, data: T
   }
 
   return { ...object, components };
-}
-
-/** **不可变地**摘掉某个特性组件（返回新对象）。 */
-export function withoutFeature(object: GameObjectDoc, component: string): GameObjectDoc {
-  return { ...object, components: object.components.filter((item) => item.type !== component) };
 }
 
 /**

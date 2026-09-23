@@ -2,12 +2,12 @@ import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/p
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import {
   RESOURCE_KINDS,
+  assertRenameAllowed,
   assetFolderPathsFor,
   assetMetaIdFor,
-  assetMetaPathFor,
+  ensureAssetMetaCore,
   formatResourceId,
   isAssetMetaPath,
-  newAssetMetaText,
   parseResourceId,
   type ResourceDirs,
   type ResourceEntry,
@@ -159,40 +159,33 @@ export class FsResourceProvider implements ResourceProvider {
   /**
    * 重命名资源（文件或目录）。
    *
-   * 校验顺序与错误消息跟内存实现一致：类别一致 → 源存在 → 目标不存在。
-   * **绝不覆盖用户数据**：目标已存在时直接抛错，磁盘上不做任何动作。
+   * 校验顺序与错误消息跟内存实现一致（`assertRenameAllowed` 唯一一份）：类别一致 →
+   * 源存在 → 目标不存在。**绝不覆盖用户数据**：目标已存在时直接抛错，磁盘上不做任何动作。
    * 重命名场景（`Assets/scenes/<场景名>.json`）就靠它——只搬文件，内容不重写。
    */
   async rename(fromId: string, toId: string): Promise<void> {
     const from = parseResourceId(fromId);
     const to = parseResourceId(toId);
-    if (from.kind !== to.kind) {
-      throw new Error(`重命名两端类别必须一致: ${fromId} → ${toId}`);
-    }
 
     // pathFor 顺带做越权校验；下面两个 stat 都按「路径是否存在」判断，目录同样算存在
     const fromPath = this.pathFor(fromId);
     const toPath = this.pathFor(toId);
-    if (!(await existsAt(fromPath))) {
-      throw new Error(`资源不存在: ${fromId}`);
-    }
-
-    if (await existsAt(toPath)) {
-      throw new Error(`资源已存在: ${toId}`);
-    }
-
     const fromMeta = assetMetaIdFor(fromId);
     const toMeta = assetMetaIdFor(toId);
     const fromMetaPath = fromMeta === undefined ? undefined : this.pathFor(fromMeta);
     const toMetaPath = toMeta === undefined ? undefined : this.pathFor(toMeta);
-    if (
-      fromMetaPath !== undefined &&
-      toMetaPath !== undefined &&
-      (await existsAt(fromMetaPath)) &&
-      (await existsAt(toMetaPath))
-    ) {
-      throw new Error(`资源已存在: ${toMeta}`);
-    }
+    assertRenameAllowed({
+      fromId,
+      toId,
+      fromKind: from.kind,
+      toKind: to.kind,
+      fromExists: await existsAt(fromPath),
+      toExists: await existsAt(toPath),
+      fromMetaId: fromMeta,
+      toMetaId: toMeta,
+      fromMetaExists: fromMetaPath !== undefined && (await existsAt(fromMetaPath)),
+      toMetaExists: toMetaPath !== undefined && (await existsAt(toMetaPath)),
+    });
 
     await mkdir(dirname(toPath), { recursive: true });
     await rename(fromPath, toPath);
@@ -204,21 +197,20 @@ export class FsResourceProvider implements ResourceProvider {
   }
 
   private async ensureAssetMeta(id: string, folder = false): Promise<void> {
-    const parsed = parseResourceId(id);
     const metaId = assetMetaIdFor(id);
-    if (metaId === undefined || isAssetMetaPath(parsed.path) || (await this.exists(metaId))) {
+    const ensured = await ensureAssetMetaCore({
+      id,
+      metaId,
+      metaExists: metaId !== undefined && (await this.exists(metaId)),
+      folder,
+      // folder 为 true 时调用方已知是目录，这里不会再 stat 一次
+      isDirectory: async () => (await stat(this.pathFor(id))).isDirectory() === true,
+    });
+    if (ensured === undefined) {
       return;
     }
 
-    if (assetMetaPathFor(parsed.kind, parsed.path) === undefined) {
-      return;
-    }
-
-    const info = folder ? undefined : await stat(this.pathFor(id));
-    const text = newAssetMetaText(parsed.path, folder || info?.isDirectory() === true);
-    if (text !== undefined) {
-      await writeAtomically(this.pathFor(metaId), text);
-    }
+    await writeAtomically(this.pathFor(ensured.metaId), ensured.text);
   }
 
   private baseFor(kind: ResourceKind): string {

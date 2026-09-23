@@ -6,7 +6,7 @@
 /**
  * 文档修改命令（纯函数，作用于 immer draft）。
  *
- * 层级：场景 → 对象 → 组件 → 动作。
+ * 层级：场景 → 对象 → 组件。
  * **对象一律挂在场景上**（`scene.objects`），地图也只是其中 kind = "Map" 的一个对象；
  * 场景本身不再是工程文件里的一项，增删改名是调用方的文件操作，这里只管「按名字找」。
  *
@@ -15,7 +15,6 @@
  */
 export * from "./shared";
 export * from "./object";
-export * from "./component";
 export * from "./scene";
 export * from "./grid-map";
 export * from "./play-sound";

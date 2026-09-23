@@ -47,7 +47,6 @@ function mapComponentData(
     resourceKeys.add("picked");
     resourceKeys.add("names");
   }
-  if (type === "MaskImage") resourceKeys.add("image");
   if (resourceKeys.size === 0) return data;
 
   let changed = false;

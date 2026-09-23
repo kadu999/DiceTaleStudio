@@ -2,7 +2,12 @@
 import type { Draft } from "immer";
 // 特性的读写一律走访问器（「数据存在哪个组件里」只有 access.ts 知道）
 import { ensureTeleportData } from "../access";
-import { findObject } from "./shared";
+import {
+  dedupeItems,
+  sameItemList,
+  setMediaPicked,
+  withMediaData,
+} from "./shared";
 import type { SceneDoc, TeleportDataDoc } from "../types";
 
 // ---------------------------------------------------------------- 传送阵（动作对象）
@@ -21,41 +26,23 @@ export function setTeleportTargets(
   objectId: string,
   targets: readonly string[],
 ): boolean {
-  const object = findObject(scene, objectId);
-  if (object === undefined) {
-    return false;
-  }
-
-  const teleport = ensureTeleportData(object);
-  if (teleport === undefined) {
-    return false;
-  }
-
-  const next: string[] = [];
-  for (const target of targets) {
-    const trimmed = target.trim();
-    if (trimmed.length > 0 && !next.includes(trimmed)) {
-      next.push(trimmed);
+  return withMediaData(scene, objectId, ensureTeleportData, (teleport) => {
+    const next = dedupeItems(targets);
+    if (sameItemList(next, teleport.targets)) {
+      return false;
     }
-  }
 
-  if (
-    next.length === teleport.targets.length &&
-    next.every((name, index) => name === teleport.targets[index])
-  ) {
-    return false;
-  }
-
-  teleport.targets = next;
-  syncTeleportSideData(teleport);
-  return true;
+    teleport.targets = next;
+    syncTeleportSideData(teleport);
+    return true;
+  });
 }
 
 /**
  * 列表变更后收拾「选中的那一个」：还在列表里就别动；被移出去了就顺到第一条；
  * 一条不剩就把 `picked` 删掉（不留空壳）。
  *
- * 兜底「没选就默认选第一条」是**故意的**（与 `syncSoundSideData` 同一条理由）：
+ * 兜底「没选就默认选第一条」是**故意的**（与 `syncMediaSideData` 同一条理由）：
  * 勾进来一个场景却没被选上时，面板上看着有东西、「传送」却是灰的，很容易以为是坏的。
  */
 function syncTeleportSideData(teleport: Draft<TeleportDataDoc>): void {
@@ -88,29 +75,5 @@ export function setTeleportPicked(
   objectId: string,
   target: string | null,
 ): boolean {
-  const object = findObject(scene, objectId);
-  if (object === undefined) {
-    return false;
-  }
-
-  const teleport = ensureTeleportData(object);
-  if (teleport === undefined) {
-    return false;
-  }
-
-  if (target === null) {
-    if (teleport.picked === undefined) {
-      return false;
-    }
-
-    delete teleport.picked;
-    return true;
-  }
-
-  if (!teleport.targets.includes(target) || teleport.picked === target) {
-    return false;
-  }
-
-  teleport.picked = target;
-  return true;
+  return setMediaPicked(scene, objectId, ensureTeleportData, (teleport) => teleport.targets, target);
 }

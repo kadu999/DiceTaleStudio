@@ -32,7 +32,7 @@ export function createTransformSlice(
   | "cancelObjectTransform"
 > {
   // 共享的闭包状态与局部工具都在 ctx 里：这里解构一次，方法体与拆分前逐字一致
-  const { currentObjectOf } = ctx;
+  const { currentObjectOf, applyActiveScene } = ctx;
 
   return {
     setTool(tool) {
@@ -113,21 +113,11 @@ export function createTransformSlice(
         ...(options?.uniform === undefined ? {} : { uniform: options.uniform }),
       });
 
-      const sceneName = get().activeSceneName;
-      if (sceneName === null) {
-        return;
-      }
-
       // 位置 / 角度 / 缩放**一次写完**：三次独立调用会产生三条撤销记录，
       // 而用户眼里这明明是一次拖拽（对比 `moveObject` 只改一个属性，所以它单独一条）
-      get().applyScenes(
+      applyActiveScene(
         TRANSFORM_LABELS[start.mode],
-        (draft) => {
-          const scene = draft.find((item) => item.name === sceneName);
-          if (scene === undefined) {
-            return;
-          }
-
+        (scene) => {
           setGameObjectPosition(scene, start.id, result.position);
           setGameObjectRotation(scene, start.id, result.rotation);
           setGameObjectScaleAxes(scene, start.id, { x: result.scaleX, y: result.scaleY });
@@ -154,14 +144,9 @@ export function createTransformSlice(
       // 用快照写回按下前的样子。快照里的 scaleX / scaleY 是**有效值**，
       // 而"按下前是不是等比的写法"已经无从考证——所以统一按当前工具的形状写回：
       // 等比就折叠回 `scale`（`collapseScale` 会做），非等比就写两轴。
-      get().applyScenes(
+      applyActiveScene(
         "取消变换",
-        (draft) => {
-          const scene = draft.find((item) => item.name === sceneName);
-          if (scene === undefined) {
-            return;
-          }
-
+        (scene) => {
           setGameObjectPosition(scene, start.id, start.base);
           setGameObjectRotation(scene, start.id, start.rotation);
           setGameObjectScaleAxes(scene, start.id, { x: start.scaleX, y: start.scaleY });

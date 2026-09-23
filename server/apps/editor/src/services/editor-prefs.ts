@@ -1,4 +1,5 @@
 import type { TransformTool } from "@dts/renderer";
+import { readPrefs, writePrefs } from "./local-prefs";
 
 /**
  * 编辑器的**界面偏好**（浏览器本地）。
@@ -39,25 +40,12 @@ export function defaultEditorPrefs(): EditorPrefs {
 
 /** 读偏好；没有记录、内容损坏或存储不可用时退回默认值（不抛错）。 */
 export function readEditorPrefs(): EditorPrefs {
-  try {
-    const raw = window.localStorage.getItem(EDITOR_PREFS_KEY);
-    if (raw === null || raw.length === 0) {
-      return defaultEditorPrefs();
-    }
-
-    return parseEditorPrefs(JSON.parse(raw) as unknown);
-  } catch {
-    return defaultEditorPrefs();
-  }
+  return readPrefs(EDITOR_PREFS_KEY, parseEditorPrefs, defaultEditorPrefs);
 }
 
 /** 记住这次的选择。 */
 export function writeEditorPrefs(prefs: EditorPrefs): void {
-  try {
-    window.localStorage.setItem(EDITOR_PREFS_KEY, JSON.stringify(prefs));
-  } catch {
-    // 存储不可用：本次会话照常工作，只是下次回到默认值
-  }
+  writePrefs(EDITOR_PREFS_KEY, prefs);
 }
 
 /**

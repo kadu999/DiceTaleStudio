@@ -20,11 +20,6 @@ export function gridBytesLength(size: GridSize): number {
   return BYTES_HEADER_SIZE + size.width * size.height * BYTES_CELL_SIZE;
 }
 
-/** 创建全空的网格数据。 */
-export function createGridData(size: GridSize): GridData {
-  return { size, cells: new Uint8Array(size.width * size.height) };
-}
-
 /**
  * 编码为 DiceTale `.bytes`：小端 `int32 width`、`int32 height`，随后 `width*height` 个小端 `int32 mask`。
  * 与 Unity `GridMap.SaveData` / `GridMapEditorState.SaveData` 的输出格式一致。
@@ -79,26 +74,4 @@ export function decodeGridBytes(buffer: ArrayBuffer): GridData {
   }
 
   return { size: { width, height }, cells };
-}
-
-/** 编码为 base64（便于放进 JSON 或经 HTTP 传输）。 */
-export function encodeGridBytesToBase64(data: GridData): string {
-  const bytes = new Uint8Array(encodeGridBytes(data));
-  let binary = "";
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
-  }
-
-  return btoa(binary);
-}
-
-/** 从 base64 解码。 */
-export function decodeGridBytesFromBase64(base64: string): GridData {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-
-  return decodeGridBytes(bytes.buffer);
 }

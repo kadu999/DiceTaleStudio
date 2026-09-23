@@ -315,7 +315,7 @@ describe("协议：场景（镜像的那份对象数据）", () => {
     expect(perAxis.objects[0]?.scaleY).toBe(0.25);
   });
 
-  it("前端组件体系那 7 种与未知类型都收下（data 宽松，不因新组件把整条消息判非法）", () => {
+  it("未知类型都收下（data 宽松，不因新组件把整条消息判非法）", () => {
     const parsed = sceneSchema.parse({
       name: "s",
       objects: [
@@ -329,15 +329,15 @@ describe("协议：场景（镜像的那份对象数据）", () => {
           rotation: 0,
           scale: 1,
           components: [
-            feature("OptionValue", { options: ["开", "关"], current: "关" }),
             feature("将来的新组件", { whatever: 1 }),
+            feature("AnotherCustom", { nested: { a: 1 } }),
           ],
         },
       ],
     });
 
     expect(parsed.objects[0]?.components).toHaveLength(2);
-    expect(featureData(parsed.objects[0], "OptionValue")?.current).toBe("关");
+    expect(featureData(parsed.objects[0], "将来的新组件")?.whatever).toBe(1);
   });
 
   it("网格尺寸必须是正整数、rowOrder 只认 bottom-up", () => {

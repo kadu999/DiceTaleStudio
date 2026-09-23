@@ -1056,12 +1056,6 @@ export async function useMoveTool(page: Page): Promise<void> {
   await expect(page.getByTestId("status-tool")).toHaveAttribute("data-tool", "move");
 }
 
-/** 切到「拖动」工具（默认）：只平移画布，拖对象只是选中它。 */
-export async function useDragTool(page: Page): Promise<void> {
-  await page.getByTestId("tool-none").click();
-  await expect(page.getByTestId("status-tool")).toHaveAttribute("data-tool", "none");
-}
-
 /**
  * 场景里的某个对象，并保证属性面板露出来（平板下它是右抽屉）。
  *

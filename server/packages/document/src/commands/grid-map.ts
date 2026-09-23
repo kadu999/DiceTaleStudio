@@ -12,9 +12,8 @@ import {
   type GridPoint,
   type RleRun,
 } from "@dts/grid";
-import { DEFAULT_SLOT_COMPONENT, carriesComponent } from "../presets";
 // 特性的读写一律走访问器（「数据存在哪个组件里」只有 access.ts 知道）
-import { mapDraftOf, writeFeature } from "../access";
+import { mapDraftOf } from "../access";
 import { findObject } from "./shared";
 import type { MapDataDoc, SceneDoc } from "../types";
 
@@ -337,20 +336,5 @@ export function setMapGrid(
     encoding: "rle",
     runs: encodeRle(next).map((run) => [run[0], run[1]] as [number, number]),
   };
-  return true;
-}
-
-/** 替换地图对象的地图数据（换贴图 / 改网格尺寸时用）。 */
-export function setMapData(
-  scene: Draft<SceneDoc>,
-  mapObjectId: string,
-  map: MapDataDoc,
-): boolean {
-  const object = findObject(scene, mapObjectId);
-  if (object === undefined || !carriesComponent(DEFAULT_SLOT_COMPONENT.map, object.kind)) {
-    return false;
-  }
-
-  writeFeature(object, DEFAULT_SLOT_COMPONENT.map, map);
   return true;
 }

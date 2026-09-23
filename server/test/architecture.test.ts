@@ -14,7 +14,7 @@ const SERVER_ROOT = fileURLToPath(new URL("..", import.meta.url));
 const PACKAGES_ROOT = join(SERVER_ROOT, "packages");
 
 /** 不允许依赖 UI / 宿主的"纯逻辑"包。 */
-const PURE_PACKAGES = ["grid", "document", "actions", "protocol", "resources"];
+const PURE_PACKAGES = ["grid", "document", "protocol", "resources"];
 
 /** 允许用 DOM/Canvas，但不允许依赖 React。 */
 const DOM_OK_PACKAGES = ["renderer"];
@@ -138,7 +138,6 @@ describe("架构边界：packages 不得互相越权依赖", () => {
     protocol: [],
     resources: [],
     document: ["grid"],
-    actions: ["document", "grid"],
     renderer: ["grid", "document"],
   };
 

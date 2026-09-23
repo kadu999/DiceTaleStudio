@@ -23,7 +23,6 @@ import {
   withMetaSpriteSettings,
   type ImageRef,
   type ImageSpriteRef,
-  type SceneListDraft,
   type SpriteImportSettingsDoc,
   type SpriteSheetDoc,
 } from "@dts/document";
@@ -34,7 +33,7 @@ import { type StoreContext } from "../store-context";
 export function createSpriteSlice(
   _set: StoreSet,
   get: StoreGet,
-  _ctx: StoreContext,
+  ctx: StoreContext,
 ): Pick<
   EditorStoreState,
   | "setObjectImageSprite"
@@ -43,11 +42,8 @@ export function createSpriteSlice(
   | "setSpriteImportSettings"
   | "ensureAssetMeta"
 > {
-  /** 当前场景的 draft（没打开场景 / 找不到就是 `undefined`）。 */
-  const sceneOf = (draft: SceneListDraft): SceneListDraft[number] | undefined => {
-    const name = get().activeSceneName;
-    return name === null ? undefined : draft.find((scene) => scene.name === name);
-  };
+  // 共享的闭包状态与局部工具都在 ctx 里：这里解构一次，方法体与拆分前逐字一致
+  const { applyActiveScene } = ctx;
 
   /** 这个素材在资源树里的相对路径（只用于日志与撤销标签；找不到就退回逻辑 ID）。 */
   const assetName = (imageId: string): string =>
@@ -69,12 +65,7 @@ export function createSpriteSlice(
     setObjectImageSprite(objectId, image: ImageRef, sprite: ImageSpriteRef | null) {
       const label =
         sprite === null ? "更换贴图" : `换图并取子图 第${sprite.row + 1}行第${sprite.column + 1}列`;
-      return get().applyScenes(label, (draft) => {
-        const scene = sceneOf(draft);
-        if (scene === undefined) {
-          return;
-        }
-
+      return applyActiveScene(label, (scene) => {
         const ref: ImageRef = {
           id: image.id,
           width: image.width,
@@ -96,11 +87,8 @@ export function createSpriteSlice(
     setObjectSprite(objectId, sprite: ImageSpriteRef | null) {
       const label =
         sprite === null ? "改回整图" : `设为子图 第${sprite.row + 1}行第${sprite.column + 1}列`;
-      const changed = get().applyScenes(label, (draft) => {
-        const scene = sceneOf(draft);
-        if (scene !== undefined) {
-          setGameObjectSprite(scene, objectId, sprite);
-        }
+      const changed = applyActiveScene(label, (scene) => {
+        setGameObjectSprite(scene, objectId, sprite);
       });
 
       return changed;

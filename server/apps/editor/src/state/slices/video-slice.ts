@@ -46,7 +46,7 @@ export function createVideoSlice(
   | "setVideoAutoPlay"
 > {
   // 共享的闭包状态与局部工具都在 ctx 里：这里解构一次，方法体与拆分前逐字一致
-  const { pushLog, runtimeClient, videoTargetOf, objectWithFeature, deliverVideo } = ctx;
+  const { pushLog, applyActiveScene, runtimeClient, videoTargetOf, objectWithFeature, deliverVideo } = ctx;
 
   return {
     // ---------------------------------------------------------------- 视频（地图 / 贴图）
@@ -168,16 +168,8 @@ export function createVideoSlice(
     },
 
     setVideoEnabled(objectId, enabled) {
-      const sceneName = get().activeSceneName;
-      if (sceneName === null) {
-        return false;
-      }
-
-      const changed = get().applyScenes(enabled ? "启用视频" : "关闭视频", (draft) => {
-        const scene = draft.find((item) => item.name === sceneName);
-        if (scene !== undefined) {
-          setSceneVideoEnabled(scene, objectId, enabled);
-        }
+      const changed = applyActiveScene(enabled ? "启用视频" : "关闭视频", (scene) => {
+        setSceneVideoEnabled(scene, objectId, enabled);
       });
 
       // 关掉了：正开着的「编辑视频」窗口跟着关（那一组已经收起来了）
@@ -189,11 +181,6 @@ export function createVideoSlice(
     },
 
     addVideoClip(objectId, clipId) {
-      const sceneName = get().activeSceneName;
-      if (sceneName === null) {
-        return false;
-      }
-
       const object = objectWithFeature(objectId, DEFAULT_SLOT_COMPONENT.video);
       if (object === undefined) {
         return false;
@@ -204,12 +191,7 @@ export function createVideoSlice(
       // 原来选中的那条要是还在，就不抢（正放着 A 加一条 B，选择不该被顶掉）
       const hadPicked = video?.picked;
 
-      return get().applyScenes("添加视频", (draft) => {
-        const scene = draft.find((item) => item.name === sceneName);
-        if (scene === undefined) {
-          return;
-        }
-
+      return applyActiveScene("添加视频", (scene) => {
         if (!already) {
           setSceneVideoClips(scene, objectId, [...(video?.clips ?? []), clipId]);
         }
@@ -239,89 +221,54 @@ export function createVideoSlice(
         return false;
       }
 
-      // 名字与「选中的那条」由 `setVideoClips` 一起收拾（见 `syncVideoSideData`）
-      return get().applyScenes("移除视频", (draft) => {
-        const scene = draft.find((item) => item.name === sceneName);
-        if (scene !== undefined) {
-          setSceneVideoClips(
-            scene,
-            objectId,
-            clips.filter((id) => id !== clipId),
-          );
-        }
+      // 名字与「选中的那条」由 `setVideoClips` 一起收拾（见 `shared.ts` 的 `syncMediaSideData`）
+      return applyActiveScene("移除视频", (scene) => {
+        setSceneVideoClips(
+          scene,
+          objectId,
+          clips.filter((id) => id !== clipId),
+        );
       });
     },
 
     selectVideoClip(objectId, clip) {
-      const sceneName = get().activeSceneName;
-      if (sceneName === null) {
-        return false;
-      }
-
       if (objectWithFeature(objectId, DEFAULT_SLOT_COMPONENT.video) === undefined) {
         return false;
       }
 
       // 单选：只能选**加进来的**那几条（`setVideoPicked` 会把不在列表里的拒掉）。
       // 名字按文件记，换选不动它。
-      return get().applyScenes("选择视频", (draft) => {
-        const scene = draft.find((item) => item.name === sceneName);
-        if (scene !== undefined) {
-          setSceneVideoPicked(scene, objectId, clip);
-        }
+      return applyActiveScene("选择视频", (scene) => {
+        setSceneVideoPicked(scene, objectId, clip);
       });
     },
 
     setVideoClipName(objectId, clipId, name) {
-      const sceneName = get().activeSceneName;
-      if (sceneName === null) {
-        return false;
-      }
-
-      return get().applyScenes("修改视频名字", (draft) => {
-        const scene = draft.find((item) => item.name === sceneName);
-        if (scene !== undefined) {
-          setSceneVideoClipName(scene, objectId, clipId, name);
-        }
+      return applyActiveScene("修改视频名字", (scene) => {
+        setSceneVideoClipName(scene, objectId, clipId, name);
       });
     },
 
     setVideoLoop(objectId, loop) {
-      const sceneName = get().activeSceneName;
-      if (sceneName === null) {
-        return false;
-      }
-
-      return get().applyScenes("修改视频循环", (draft) => {
-        const scene = draft.find((item) => item.name === sceneName);
-        if (scene !== undefined) {
-          setSceneVideoLoop(scene, objectId, loop);
-        }
+      return applyActiveScene("修改视频循环", (scene) => {
+        setSceneVideoLoop(scene, objectId, loop);
       });
     },
 
     setVideoAudio(objectId, audio) {
-      const sceneName = get().activeSceneName;
-      if (sceneName === null) {
-        return false;
-      }
-
-      return get().applyScenes("修改视频声音", (draft) => {
-        const scene = draft.find((item) => item.name === sceneName);
-        if (scene !== undefined) {
-          setSceneVideoAudio(scene, objectId, audio);
-        }
+      return applyActiveScene("修改视频声音", (scene) => {
+        setSceneVideoAudio(scene, objectId, audio);
       });
     },
 
     setVideoAutoPlay(objectId, autoPlay) {
-      const sceneName = get().activeSceneName;
-      if (sceneName === null) return false;
-
-      return get().applyScenes("修改视频自动播放", (draft) => {
-        const scene = draft.find((item) => item.name === sceneName);
-        if (scene !== undefined) setSceneVideoAutoPlay(scene, objectId, autoPlay);
-      }, { coalesceKey: `video-autoplay:${objectId}` });
+      return applyActiveScene(
+        "修改视频自动播放",
+        (scene) => {
+          setSceneVideoAutoPlay(scene, objectId, autoPlay);
+        },
+        { coalesceKey: `video-autoplay:${objectId}` },
+      );
     },
   };
 }

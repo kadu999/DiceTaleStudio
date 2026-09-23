@@ -31,7 +31,7 @@ export function createGridPaintSlice(
   | "clearGrid"
 > {
   // 共享的闭包状态与局部工具都在 ctx 里：这里解构一次，方法体与拆分前逐字一致
-  const { pushLog, persistGridPaint } = ctx;
+  const { pushLog, applyActiveScene, persistGridPaint } = ctx;
 
   return {
     // ------------------------------------------------------------ 网格标注
@@ -100,23 +100,15 @@ export function createGridPaintSlice(
     },
 
     paintGridStroke(mapObjectId, from, to) {
-      const sceneName = get().activeSceneName;
-      if (sceneName === null) {
-        return false;
-      }
-
       // 画笔与大小取调用瞬间的值：慢速拖动时用户可能刚换过画笔，落下一笔就该用新的
       const { mask, brushSize } = get().gridPaint;
       const start = from ?? to;
 
-      return get().applyScenes(
+      return applyActiveScene(
         mask === CellMask.Empty ? "擦除网格" : "标注网格",
-        (draft) => {
-          const scene = draft.find((item) => item.name === sceneName);
-          if (scene !== undefined) {
-            // 落笔在网格外 / 目标不是地图 / 数据坏了都会返回 false（不产生补丁）
-            paintMapCells(scene, mapObjectId, start, to, { mask, brushSize });
-          }
+        (scene) => {
+          // 落笔在网格外 / 目标不是地图 / 数据坏了都会返回 false（不产生补丁）
+          paintMapCells(scene, mapObjectId, start, to, { mask, brushSize });
         },
         // 一整笔（按下 → 抬手的若干次 pointermove）合并成一条撤销记录
         { coalesceKey: `paint:${mapObjectId}` },
@@ -128,16 +120,8 @@ export function createGridPaintSlice(
     },
 
     clearGrid(mapObjectId) {
-      const sceneName = get().activeSceneName;
-      if (sceneName === null) {
-        return false;
-      }
-
-      const changed = get().applyScenes("清空网格", (draft) => {
-        const scene = draft.find((item) => item.name === sceneName);
-        if (scene !== undefined) {
-          clearMapCells(scene, mapObjectId);
-        }
+      const changed = applyActiveScene("清空网格", (scene) => {
+        clearMapCells(scene, mapObjectId);
       });
 
       if (changed) {

@@ -34,7 +34,7 @@ export function createFogSlice(
   | "flushFogReveal"
 > {
   // 共享的闭包状态与局部工具都在 ctx 里：这里解构一次，方法体与拆分前逐字一致
-  const { pushLog, runtimeClient, fogTargetOf, canRevealFog, deliverFogErase, frontendReady } = ctx;
+  const { pushLog, applyActiveScene, runtimeClient, fogTargetOf, canRevealFog, deliverFogErase, frontendReady } = ctx;
 
   return {
     // ------------------------------------------------------------ 战争雾（Mask 窗口）
@@ -57,32 +57,16 @@ export function createFogSlice(
     },
 
     setFogRegions(mapObjectId, regions) {
-      const sceneName = get().activeSceneName;
-      if (sceneName === null) {
-        return false;
-      }
-
-      return get().applyScenes("指定雾区", (draft) => {
-        const scene = draft.find((item) => item.name === sceneName);
-        if (scene !== undefined) {
-          // 规范化与「没变更」的判断都在命令里，这里只负责找到场景
-          setSceneMapFogRegions(scene, mapObjectId, regions);
-        }
+      return applyActiveScene("指定雾区", (scene) => {
+        // 规范化与「没变更」的判断都在命令里，这里只负责找到场景
+        setSceneMapFogRegions(scene, mapObjectId, regions);
       });
     },
 
     setFogEnabled(mapObjectId, enabled) {
-      const sceneName = get().activeSceneName;
-      if (sceneName === null) {
-        return false;
-      }
-
-      const changed = get().applyScenes(enabled ? "打开战争雾" : "关闭战争雾", (draft) => {
-        const scene = draft.find((item) => item.name === sceneName);
-        if (scene !== undefined) {
-          // 开关写的是**文档数据**：只有它跟着场景下发，前端才知道该不该生成那一层雾
-          setSceneMapFogEnabled(scene, mapObjectId, enabled);
-        }
+      const changed = applyActiveScene(enabled ? "打开战争雾" : "关闭战争雾", (scene) => {
+        // 开关写的是**文档数据**：只有它跟着场景下发，前端才知道该不该生成那一层雾
+        setSceneMapFogEnabled(scene, mapObjectId, enabled);
       });
 
       // 关掉了：正开着的 Mask 窗口跟着关（它编辑的那张地图已经没有雾了，留着只会擦空气）
