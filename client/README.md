@@ -249,8 +249,8 @@ Assets/
 - **视频：地图 / 贴图上的视频层（2026-09-21，协议 v5 / 文档 v14；v21 起宿主从精灵换成贴图）**：对象上可能带
   `video`（`enabled` / `clips` / `picked` / `loop` / `audio`）。收到 `play_video` 时
   `SceneObjectView` 给这个对象加一个 **`VideoOverlay` 子物体**（`Presentation/VideoOverlay.cs`）：
-  一块与**对象自己矩形同尺寸**的面片，`sortingOrder = short.MaxValue - 1`（**在战争雾之下**——
-  未探索的地方连视频一起盖住），抬升比对象高 `0.0015`、比雾的 `0.002` 低。
+  一块与地图**同位置、同尺寸、同旋转、同 sortingOrder** 的面片，不额外移动或抬升。
+  首帧准备完成后关闭地图 Renderer，由视频替代地图画面；停止或解码失败时恢复地图 Renderer。
   - **按 URL 播，不用 `VideoClip`**：视频是资源逻辑 ID，字节在本地资源包（`file://`，见
     `ResourceBundleCache.LocalUrlOf`）或服务端 `/api/resources/raw`（边下边播），两条路都靠
     `VideoPlayer.url`；`renderMode = MaterialOverride` 写进材质的 `_MainTex`

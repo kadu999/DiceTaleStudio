@@ -17,8 +17,8 @@ namespace DiceTale
     /// （见 Unity 手册「Video file compatibility」）：能不能解码取决于**运行平台**的解码器——
     /// Windows 上稳的是 **H.264 的 .mp4**，`.webm` 多半解不了（编辑器在选素材时就提醒过）。
     ///
-    /// **显示顺序**：`short.MaxValue - 1`（所有对象之上、战争雾之下）——未探索的地方连视频
-    /// 一起盖住；抬升比对象高一点点、比雾低一点点，避免共面闪烁。
+    /// **显示顺序与地图相同**。首帧准备完成后隐藏地图 Renderer，由视频面片替代地图画面；
+    /// 视频停止或解码失败时恢复地图 Renderer。面片位置固定在宿主原点，不额外移动或抬升。
     ///
     /// **首帧之前不显示**：`ImageLayer` 没有纹理时会画一块纯色占位，如果一建出来就显示，
     /// 视频还没解码就先闪一块白底。所以先把 renderer 关掉，`prepareCompleted` 再打开。
@@ -29,9 +29,6 @@ namespace DiceTale
     [RequireComponent(typeof(ImageLayer))]
     public class VideoOverlay : MonoBehaviour
     {
-        /// <summary>视频层的显示顺序：**在战争雾之下**（雾是 `short.MaxValue`）。</summary>
-        public const int SortingOrder = short.MaxValue - 1;
-
         /// <summary>子物体名（层级里一眼看出多出来的这一块是什么）。</summary>
         public const string OverlayName = "VideoOverlay";
 
@@ -41,6 +38,8 @@ namespace DiceTale
         private VideoPlayer player;
         private ImageLayer quad;
         private Renderer quadRenderer;
+        private Renderer sourceRenderer;
+        private bool sourceRendererWasEnabled;
 
         /// <summary>等首帧的看门狗（见 <see cref="PrepareTimeoutSeconds"/>）。</summary>
         private Coroutine prepareWatchdog;
@@ -57,7 +56,7 @@ namespace DiceTale
         public string LogicalId { get; private set; } = "";
 
         /// <summary>
-        /// 建好那一块面片（尺寸 / 显示顺序 / 抬升都由调用方给，与对象自己那块一致）。
+        /// 建好那一块面片。位置留在宿主原点，显示顺序与地图一致。
         ///
         /// 一开始 renderer 是**关着**的：视频首帧到了才显示（见类注释）。
         /// </summary>
@@ -65,7 +64,8 @@ namespace DiceTale
             Transform parent,
             float worldWidth,
             float worldHeight,
-            float lift,
+            int sortingOrder,
+            Renderer sourceRenderer,
             string logicalId)
         {
             var go = new GameObject(OverlayName);
@@ -90,7 +90,9 @@ namespace DiceTale
             }
 
             overlay.quadRenderer = overlay.quad.GetComponent<Renderer>();
-            overlay.ApplyGeometry(worldWidth, worldHeight, lift);
+            overlay.sourceRenderer = sourceRenderer;
+            overlay.sourceRendererWasEnabled = sourceRenderer != null && sourceRenderer.enabled;
+            overlay.ApplyGeometry(worldWidth, worldHeight, sortingOrder);
 
             // 还没有纹理：先藏着，别让占位色盖住对象
             if (overlay.quadRenderer != null)
@@ -112,8 +114,8 @@ namespace DiceTale
             return overlay;
         }
 
-        /// <summary>对象尺寸 / 抬升变了（缩放、改位置、重推数据）时跟着变。</summary>
-        public void ApplyGeometry(float worldWidth, float worldHeight, float lift)
+        /// <summary>对象尺寸或排序变化时跟着更新，位置始终留在宿主原点。</summary>
+        public void ApplyGeometry(float worldWidth, float worldHeight, int sortingOrder)
         {
             if (quad == null)
             {
@@ -122,8 +124,7 @@ namespace DiceTale
                 return;
             }
 
-            // 有图时给白色 = 原样显示（视频由 VideoPlayer 写进材质的 _MainTex）
-            quad.Apply(null, worldWidth, worldHeight, Color.white, SortingOrder, lift);
+            quad.Apply(null, worldWidth, worldHeight, Color.white, sortingOrder, 0f);
         }
 
         /// <summary>放某一条视频（`url` 是本地包或服务端的地址，见 <see cref="ResourceBundleCache.LocalUrlOf"/>）。</summary>
@@ -139,9 +140,10 @@ namespace DiceTale
 
             // 换了 URL 一定要重新 Prepare：先 Stop 把上一份清掉，避免旧帧留在材质里
             player.Stop();
+            RestoreSourceRenderer();
             if (quadRenderer != null)
             {
-                quadRenderer.enabled = false; // 首帧之前不显示（见类注释）
+                quadRenderer.enabled = false;
             }
 
             player.Prepare();
@@ -242,16 +244,23 @@ namespace DiceTale
                 quadRenderer.enabled = false;
             }
 
+            RestoreSourceRenderer();
             player.Prepare();
         }
 
-        /// <summary>停掉播放（物体由调用方销毁；这里只把播放器与材质收干净）。</summary>
+        /// <summary>停掉播放并恢复地图 Renderer（视频物体由调用方销毁）。</summary>
         public void StopPlayback()
         {
             if (prepareWatchdog != null)
             {
                 StopCoroutine(prepareWatchdog);
                 prepareWatchdog = null;
+            }
+
+            RestoreSourceRenderer();
+            if (quadRenderer != null)
+            {
+                quadRenderer.enabled = false;
             }
 
             if (player == null)
@@ -281,10 +290,10 @@ namespace DiceTale
 
             if (quadRenderer != null)
             {
-                // 首帧就绪：现在显示出来（材质里已经有画面了）
                 quadRenderer.enabled = true;
             }
 
+            HideSourceRenderer();
             source.Play();
             IsPaused = false;
             Debug.Log($"[视频] 开始播放：{LogicalId}（循环={loop}）");
@@ -292,8 +301,33 @@ namespace DiceTale
 
         private void OnError(VideoPlayer source, string message)
         {
+            if (quadRenderer != null)
+            {
+                quadRenderer.enabled = false;
+            }
+
+            RestoreSourceRenderer();
             // 解码失败最常见的两种原因：编码平台不支持（Windows 上的 webm / VP9）、文件不在本地
             Debug.LogError($"[视频] 播放失败：{LogicalId}（{message}）");
+        }
+
+        private void HideSourceRenderer()
+        {
+            if (sourceRenderer == null || !sourceRenderer.enabled)
+            {
+                return;
+            }
+
+            sourceRendererWasEnabled = sourceRenderer.enabled;
+            sourceRenderer.enabled = false;
+        }
+
+        private void RestoreSourceRenderer()
+        {
+            if (sourceRenderer != null)
+            {
+                sourceRenderer.enabled = sourceRendererWasEnabled;
+            }
         }
 
         private void OnLoopPointReached(VideoPlayer source)

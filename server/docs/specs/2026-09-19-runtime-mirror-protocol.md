@@ -244,5 +244,5 @@ v12 起叫 `Image`）——**只显示整张图**，与精灵的差别只有「�
 | `Presentation/AudioClipLoader.cs` | 按逻辑 ID 取音频（本地资源包优先、回落服务端；带缓存 / 去重 / 失败记忆） |
 | `Presentation/SceneObjectView.cs` | 一个对象一块贴地面片（位置 / 缩放 / 激活 / 显示顺序 / 取图）；**开着战争雾且指定了雾区的地图**再多一个 `FogOverlay` 子物体（`map.fog.enabled` 关着就拆掉） |
 | `Presentation/FogOfWar.cs` | 战争雾层：按 `map.fog.regions` + `map.cells` 生成像素遮罩（与编辑器预览同一张尺寸），按 `erase_mask` / `reveal_fog_region` 揭示；揭示状态留在组件里，数据变了「重填 + 重放」 |
-| `Presentation/VideoOverlay.cs` | 视频层：按 URL 放（本地资源包优先、否则服务端原始字节），盖在**对象自己的矩形**上、显示顺序在战争雾之下；首帧就绪前不显示，`stop_video` 拆掉整个子物体 |
+| `Presentation/VideoOverlay.cs` | 视频层：按 URL 放（本地资源包优先、否则服务端原始字节），与地图共享位置 / 尺寸 / sortingOrder；首帧就绪后隐藏地图 Renderer，停止或解码失败时恢复 |
 | `Presentation/ResourceImageLoader.cs` | 按逻辑 ID 取图（带缓存 / 去重 / 失败记忆） |

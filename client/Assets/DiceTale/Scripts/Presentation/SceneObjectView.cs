@@ -33,9 +33,9 @@ namespace DiceTale
     /// 都不会有它（见 <see cref="ApplyFog"/>）。
     ///
     /// **收到 `play_video` 的对象多一个 `VideoOverlay` 子物体**（<see cref="VideoOverlay"/>）：
-    /// 它放的是地图 / 精灵上选中的那条视频，画面**正好盖住这个对象自己的矩形**，
-    /// `stop_video` 就拆掉（露出对象原来的贴图）。挂成子物体是为了跟着对象的位置 / 旋转走，
-    /// 并在对象隐藏时一起隐藏；显示顺序在**战争雾之下**（见 <see cref="VideoLift"/>）。
+    /// 它放的是地图上选中的那条视频，与地图共用位置、尺寸、旋转和显示顺序。
+    /// 首帧就绪时隐藏地图 Renderer，`stop_video` 拆掉视频层并恢复地图画面。
+    /// 挂成子物体是为了跟随地图变换，并在对象隐藏时一起隐藏。
     /// </summary>
     public class SceneObjectView : MonoBehaviour
     {
@@ -77,12 +77,6 @@ namespace DiceTale
         /// 所以这里给 `0.002` 就够——高了会在斜视角下看起来「浮起来」。
         /// </summary>
         private const float FogLift = 0.002f;
-
-        /// <summary>
-        /// 视频层比它盖着的那个对象高多少（**世界单位**）：在对象之上、**雾的 0.002 之下**，
-        /// 于是「未探索的雾」照样盖得住视频（与 <see cref="VideoOverlay.SortingOrder"/> 同一个次序）。
-        /// </summary>
-        private const float VideoLift = 0.0015f;
 
         private ImageLayer quad;
         private ResourceImageLoader imageLoader;
@@ -268,7 +262,7 @@ namespace DiceTale
                 currentUvRect);
 
             ApplyFog(lift);
-            ApplyVideoGeometry(lift);
+            ApplyVideoGeometry();
         }
 
         /// <summary>
@@ -326,14 +320,13 @@ namespace DiceTale
         }
 
         /// <summary>
-        /// 视频层：**收到 `play_video` 才建，`stop_video` 就拆**（这里是它这一帧的几何：
-        /// 尺寸 = 对象自己那块矩形，抬升比对象高一点、比雾低一点）。
+        /// 视频层：**收到 `play_video` 才建，`stop_video` 就拆**。尺寸和 sortingOrder 与地图一致，
+        /// localPosition 保持原点，因此视频面片与地图位于同一平面。
         ///
-        /// 独立于雾层：视频**只盖自己这个对象**（所以是子物体、`SortingOrder` 取
-        /// <see cref="VideoOverlay.SortingOrder"/> = 雾之下），而雾要盖住整个场景。
+        /// 雾层仍是独立对象并保留自己的最高显示顺序。
         /// 对象尺寸 / 缩放变了就跟着变——`ApplyVisual` 每次都会走这里。
         /// </summary>
-        private void ApplyVideoGeometry(float lift)
+        private void ApplyVideoGeometry()
         {
             if (video == null)
             {
@@ -341,7 +334,7 @@ namespace DiceTale
             }
 
             var scale = GlobalScale;
-            video.ApplyGeometry(currentWidth * scale, currentHeight * scale, lift + VideoLift);
+            video.ApplyGeometry(currentWidth * scale, currentHeight * scale, currentSortingOrder);
         }
 
         /// <summary>
@@ -358,7 +351,8 @@ namespace DiceTale
                     transform,
                     currentWidth * GlobalScale,
                     currentHeight * GlobalScale,
-                    LiftFor(currentSortingOrder) + VideoLift,
+                    currentSortingOrder,
+                    quad.GetComponent<Renderer>(),
                     logicalId);
             }
 
