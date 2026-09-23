@@ -29,6 +29,7 @@ import { createSaveSlice } from "./slices/save-slice";
 import { createProjectSlice } from "./slices/project-slice";
 import { createSceneSlice } from "./slices/scene-slice";
 import { createObjectSlice } from "./slices/object-slice";
+import { createComponentSlice } from "./slices/component-slice";
 import { createTransformSlice } from "./slices/transform-slice";
 import { createViewportSlice } from "./slices/viewport-slice";
 import { createRuntimeSlice } from "./slices/runtime-slice";
@@ -57,6 +58,7 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
     ...createProjectSlice(set, get, ctx),
     ...createSceneSlice(set, get, ctx),
     ...createObjectSlice(set, get, ctx),
+    ...createComponentSlice(set, get, ctx),
     ...createTransformSlice(set, get, ctx),
     ...createViewportSlice(set, get, ctx),
     ...createRuntimeSlice(set, get, ctx),

@@ -208,58 +208,6 @@ export function TextureField({ object }: { readonly object: GameObjectDoc }): Re
 }
 
 /**
- * 显示顺序：**大的画在前面**（盖住小的）。
- *
- * 和坐标输入框一样是「各自提交、失焦/回车生效」，区别在于这里是**整数**且会**夹**到
- * 允许范围内——顺序只是个层号，敲出小数或超大值没有意义。连续输入合并成一条撤销记录。
- */
-export function SortingOrderField({ object }: { readonly object: GameObjectDoc }): React.JSX.Element {
-  const setObjectSortingOrder = useEditorStore((state) => state.setObjectSortingOrder);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [draft, setDraft] = useState(String(object.sortingOrder));
-
-  useEffect(() => {
-    // 正在输入的框不被 store 回灌（否则提交后触发的同步会把刚敲的值冲掉）
-    if (document.activeElement !== inputRef.current) {
-      setDraft(String(object.sortingOrder));
-    }
-  }, [object.id, object.sortingOrder]);
-
-  const commit = (): void => {
-    const parsed = Number.parseInt(draft, 10);
-    // 非法值（留空 / 敲了字母）退回当前值，不要把 NaN 写进文档
-    const next = Number.isFinite(parsed) ? parsed : object.sortingOrder;
-    setObjectSortingOrder(object.id, next);
-    // 提交后回到 store 实际采用的值（会被取整 / 夹取），否则框里留着用户敲的原始文本
-    setDraft(String(next));
-  };
-
-  return (
-    <FieldRow label="显示顺序">
-      <input
-        ref={inputRef}
-        value={draft}
-        data-testid="inspector-object-sorting"
-        aria-label="显示顺序"
-        inputMode="numeric"
-        type="number"
-        step="1"
-        title="大的画在前面（盖住小的）；相同则按场景对象列表里的先后"
-        className="min-w-0 flex-1 rounded border border-[var(--color-editor-border)] bg-black/30 px-1 py-0.5 font-mono text-[11px] outline-none"
-        onChange={(event) => setDraft(event.target.value)}
-        onBlur={commit}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") {
-            commit();
-            event.currentTarget.blur();
-          }
-        }}
-      />
-    </FieldRow>
-  );
-}
-
-/**
  * 对象的**缩放**：`1` = 原始尺寸（每个对象都有，默认就是 1）。
  *
  * 与显示顺序同一套提交方式（各自提交、失焦 / 回车生效、连续输入合并成一条撤销记录），

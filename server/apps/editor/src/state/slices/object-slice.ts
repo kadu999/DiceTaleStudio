@@ -18,6 +18,8 @@ import {
   setObjectScaleAxes as setGameObjectScaleAxes,
   setObjectRotation as setGameObjectRotation,
   setObjectSortingOrder as setGameObjectSortingOrder,
+  setObjectField as setSceneObjectField,
+  objectFieldOf,
   type GameObjectDoc,
 } from "@dts/document";
 import { type StoreSet, type StoreGet, type EditorStoreState } from "../store-types";
@@ -47,6 +49,7 @@ export function createObjectSlice(
   | "setObjectLocked"
   | "toggleObjectLocked"
   | "setObjectSortingOrder"
+  | "setObjectField"
   | "setObjectScale"
   | "setObjectRotation"
   | "deleteObjects"
@@ -202,6 +205,25 @@ export function createObjectSlice(
         },
         // 连续敲数字 / 按住微调按钮合并成一条撤销记录
         { coalesceKey: `sorting:${id}` },
+      );
+    },
+
+    /**
+     * **泛型对象字段写入**（与 `component-slice` 的 `setComponentField` 对称，只是写对象自身）。
+     *
+     * 标签与撤销合并都从对象字段规格里读，所以「给对象加一个普通标量字段」在 store 这一层
+     * 是零改动——加行不用碰这里。
+     */
+    setObjectField(id, key, value) {
+      const field = objectFieldOf(key);
+
+      return applyActiveScene(
+        field === undefined ? "修改对象" : `修改${field.label}`,
+        (scene) => {
+          // 不要 return 命令的布尔值：immer 的 recipe 返回值非 undefined 会被当成「返回了新状态」
+          setSceneObjectField(scene, id, key, value);
+        },
+        field?.coalesce === true ? { coalesceKey: `object:${key}:${id}` } : undefined,
       );
     },
 

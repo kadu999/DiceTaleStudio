@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import {
   DEFAULT_SLOT_COMPONENT,
+  OBJECT_SPEC,
   carriesComponent,
   mapDataOf,
   supportsVideo,
@@ -23,9 +24,9 @@ import {
   PositionFields,
   RotationField,
   ScaleField,
-  SortingOrderField,
   TextureField,
 } from "./object-fields";
+import { descriptorRows, objectFields, sortInspectorRows } from "./DescriptorRows";
 
 /**
  * **对象属性面板的分组注册表**。
@@ -65,7 +66,14 @@ export const OBJECT_GROUPS: readonly ObjectGroupDef[] = [
         <Field label="类型" value={object.kind} />
         <ActiveField object={object} />
         <LockedField object={object} />
-        <SortingOrderField object={object} />
+        {/*
+          「显示顺序」由**对象字段规格**自动出行（`OBJECT_SPEC` + `DescriptorRows`）：
+          它是这一组里唯一「无专属语义」的标量，所以先搬一个进来当那条路的样板——
+          下一个普通标量字段（例如「翻转 X」）只需要在 `object-spec.ts` 里加一行。
+          其余五个字段各有专属语义（改名联动 / 运行日志 / 等比折叠 / 单位换算 / 未放置），
+          继续由上面这些手写控件负责，理由列在 `object-spec.ts` 的表里。
+        */}
+        {sortInspectorRows(descriptorRows(object, OBJECT_SPEC, objectFields)).map((row) => row.node)}
         <PositionFields object={object} />
         <ScaleField object={object} />
         <RotationField object={object} />

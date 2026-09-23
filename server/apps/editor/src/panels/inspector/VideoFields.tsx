@@ -2,7 +2,7 @@ import { assetDisplayName } from "../asset-info";
 import { assetDisplayPath, findAssetByReference } from "../asset-picker";
 import { useEditorStore, type EditorMode } from "../../state/editor-store";
 import type { RuntimeStatus } from "../../services/runtime-client";
-import { isVideoEnabled, videoDataOf, type GameObjectDoc } from "@dts/document";
+import { isVideoEnabled, videoDataOf, videoSpec, type GameObjectDoc } from "@dts/document";
 import {
   FieldRow,
   PLAYBACK_BUTTON_ACTIVE_CLASS,
@@ -11,12 +11,13 @@ import {
   PlaybackStatus,
   type PlaybackState,
 } from "./fields";
+import { componentFields, descriptorRows, sortInspectorRows } from "./DescriptorRows";
 
 /**
- * 地图 / 贴图的「视频」组：**启用 → 视频列表 → 编辑 → 播放 / 暂停 / 停止 → 循环 / 声音**。
+ * 地图 / 贴图的「视频」组：**启用 → 循环 / 声音 / 自动播放 → 视频列表 → 编辑 → 播放 / 暂停 / 停止**。
  *
  * 整组由第一行的**「启用」开关**管着（与战争雾那一组同一套）：关着时只留那一个开关，
- * 加视频 / 选哪条 / 循环 / 声音都收起来——没开视频的对象不该摆一排用不上的按钮。
+ * 加视频 / 选哪条 / 循环 / 声音 / 自动播放都收起来——没开视频的对象不该摆一排用不上的按钮。
  * 开关是**这个对象的文档数据**（`video.enabled`），关着时前端连视频层都不建。
  *
  * 两个地方分工，别混（与「播放声音」同一套）：
@@ -80,9 +81,6 @@ export function VideoFields({ object }: { readonly object: GameObjectDoc }): Rea
   const openVideoEditor = useEditorStore((state) => state.openVideoEditor);
   const setVideoEnabled = useEditorStore((state) => state.setVideoEnabled);
   const selectVideoClip = useEditorStore((state) => state.selectVideoClip);
-  const setVideoLoop = useEditorStore((state) => state.setVideoLoop);
-  const setVideoAudio = useEditorStore((state) => state.setVideoAudio);
-  const setVideoAutoPlay = useEditorStore((state) => state.setVideoAutoPlay);
   const playVideo = useEditorStore((state) => state.playVideo);
   const pauseVideo = useEditorStore((state) => state.pauseVideo);
   const resumeVideo = useEditorStore((state) => state.resumeVideo);
@@ -96,9 +94,6 @@ export function VideoFields({ object }: { readonly object: GameObjectDoc }): Rea
   const enabled = isVideoEnabled(object);
   const clips = video?.clips ?? [];
   const picked = video?.picked;
-  const loop = video?.loop ?? false;
-  const audio = video?.audio ?? false;
-  const autoPlay = video?.autoPlay ?? false;
 
   /** 面板上显示什么名字：自己起过就用它，否则用素材文件名（去掉扩展名）。 */
   const nameOf = (clip: string): string => {
@@ -135,46 +130,20 @@ export function VideoFields({ object }: { readonly object: GameObjectDoc }): Rea
       <VideoSwitch checked onChange={(next) => setVideoEnabled(object.id, next)} />
 
       {/*
-        三个开关都是**这张对象的文档数据**（进撤销栈、随场景存盘下发），排在列表**前面**——
-        与「播放声音」那一组同骨架（那边第一行是「层级」）：**设置在上、条目在中间、控件在下**。
-        开关行统一成「左边行名、右边只有勾选框」：行名已经说明功能，勾选框右边不再写一遍
-        （与「基础」组里的激活 / 锁定同一套）。说明收进 title，鼠标停上去才看。
+        三个开关（循环 / 声音 / 自动播放）由**组件规格**自动出行（`component-specs/video.ts`）：
+        它们是无条件简单行、写入没有副作用，正是那套机制要照顾的形状——加第四个这样的开关
+        只需要在规格里加一行，这个文件不用动。
+
+        它们在**列表前面**是有意的（与「播放声音」那一组同骨架：设置在上、条目在中间、控件在下）：
+        都是**这张对象的文档数据**（进撤销栈、随场景存盘下发），行名在左、右边只有勾选框
+        （与「基础」组的激活 / 锁定同一套），说明收进 title。
+
+        「启用」那一个**不在这里**：关掉它要连带把整个组件摘掉（见 `setVideoEnabled`），
+        有副作用，所以它继续由下面的 `VideoSwitch` 手写渲染（且关着时整组早返回）。
       */}
-      <FieldRow label="循环">
-        <input
-          type="checkbox"
-          data-testid="video-loop"
-          aria-label="循环"
-          checked={loop}
-          title="打开 = 一直循环放（背景视频）；关着 = 放到最后一帧就停住（过场视频）"
-          className="h-3.5 w-3.5 flex-none accent-[var(--color-editor-accent)]"
-          onChange={(event) => setVideoLoop(object.id, event.target.checked)}
-        />
-      </FieldRow>
-
-      <FieldRow label="声音">
-        <input
-          type="checkbox"
-          data-testid="video-audio"
-          aria-label="声音"
-          checked={audio}
-          title="视频自带音轨：默认静音，要出声才打开（现场别不小心轰一声）"
-          className="h-3.5 w-3.5 flex-none accent-[var(--color-editor-accent)]"
-          onChange={(event) => setVideoAudio(object.id, event.target.checked)}
-        />
-      </FieldRow>
-
-      <FieldRow label="自动播放">
-        <input
-          type="checkbox"
-          data-testid="video-auto-play"
-          aria-label="自动播放"
-          checked={autoPlay}
-          title="场景激活时自动播放当前选中的视频"
-          className="h-3.5 w-3.5 flex-none accent-[var(--color-editor-accent)]"
-          onChange={(event) => setVideoAutoPlay(object.id, event.target.checked)}
-        />
-      </FieldRow>
+      {sortInspectorRows(descriptorRows(object, videoSpec, componentFields(videoSpec.type))).map(
+        (row) => row.node,
+      )}
 
       {/*
         视频那一行：**加进来的全列出来**（单选，选中的那条就是前端会放的）。

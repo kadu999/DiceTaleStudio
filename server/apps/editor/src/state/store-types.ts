@@ -711,6 +711,27 @@ export interface EditorStoreState {
   teleport(objectId: string): boolean;
   /** 改地图网格的列数 / 行数（格子按新尺寸重建，重叠部分保留）。 */
   setMapGrid(mapObjectId: string, grid: GridSize): boolean;
+  /**
+   * **泛型组件字段写入**：按组件规格改一个简单字段（布尔 / 数字 / 枚举 / 字符串）。
+   *
+   * 加一个这类字段不再需要新写一条 action——键名、类型收窄、夹取范围都来自
+   * `@dts/document` 的组件规格（`component-specs/`）。返回 `false` 表示没有变更
+   * （未知组件 / 字段不归规格管 / 值非法 / 值没变）。
+   *
+   * `type` 是**组件类型 ID 字符串**（不是 `ComponentType` 联合）：规格注册表按字符串查，
+   * 于是加一个组件不必先改这个联合；代价是拼错只能在运行期表现为 `false`，
+   * 而所有调用点都从规格里取键，实际由 `FieldDef.key` 的编译期约束兜住。
+   */
+  setComponentField(objectId: string, type: string, key: string, value: unknown): boolean;
+  /**
+   * **泛型对象字段写入**：按对象字段规格（`@dts/document` 的 `OBJECT_SPEC`）改 `object` 自己的
+   * 一个简单字段——与 `setComponentField` 的分工只有「写在哪」。返回 `false` 表示没有变更。
+   *
+   * 目前规格里只有 `sortingOrder`（它另有一个说得出名字的入口 `setObjectSortingOrder`）；
+   * 其余基础字段各有一件专属语义（改名联动 / 运行日志 / 等比折叠 / 单位换算…），
+   * 继续走各自的专用 action，理由写在 `object-spec.ts` 的表里。
+   */
+  setObjectField(objectId: string, key: string, value: unknown): boolean;
 
   /** 换画笔：可绘制的类型位，或 `CellMask.Empty`（0）= 橡皮擦；其他值忽略。 */
   setGridBrush(mask: number): void;
