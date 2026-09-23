@@ -4,7 +4,7 @@ import { soundDataOf, type SceneObjectDoc } from "@dts/document";
 import { useEditorStore } from "../state/editor-store";
 import { audioNameOf } from "../panels/audio-catalog";
 import { assetDisplayName } from "../panels/asset-info";
-import { assetDisplayPath, listAudioAssets } from "../panels/asset-picker";
+import { assetDisplayPath, findAssetByReference, listAudioAssets } from "../panels/asset-picker";
 import { AudioPickerDialog } from "./AudioPickerDialog";
 
 /**
@@ -104,6 +104,7 @@ function SoundEditBody({
   const addSoundClip = useEditorStore((state) => state.addSoundClip);
   const removeSoundClip = useEditorStore((state) => state.removeSoundClip);
   const audioMetas = useEditorStore((state) => state.assetMetaTable);
+  const assetMetas = useEditorStore((state) => state.assetMetas);
 
   /** 「选择音频」弹框开着没有（换个对象就收起来）。 */
   const [picking, setPicking] = useState(false);
@@ -113,21 +114,21 @@ function SoundEditBody({
 
   const sound = soundDataOf(object);
   const clips = sound?.clips ?? [];
+  const assetIds = new Set(listAudioAssets(tree).map((asset) => asset.id));
 
   // 加进来的音频：能找到素材的用素材名，找不到的（素材被删 / 手写文件）也留一行，
   // 否则「加过的东西看不见、也移不掉」
-  const assets = listAudioAssets(tree);
-  const byId = new Map(assets.map((asset) => [asset.id, asset]));
   const rows: SoundRow[] = clips.map((id) => {
-    const asset = byId.get(id);
+    const asset = findAssetByReference(tree, id, assetMetas);
+    const currentId = asset?.id ?? id;
     return {
       id,
-      fileName: assetDisplayName(asset?.name ?? fileNameOf(id)),
+      fileName: assetDisplayName(asset?.name ?? fileNameOf(currentId)),
       // 输入框的占位 = **跟随的那一层**（音频文件自己的名字，没有才用文件名）：
       // 留空时这一条会显示成它，作者一眼看得出「不改就是这个名字」
-      fallbackName: audioNameOf(audioMetas, id) ?? assetDisplayName(asset?.name ?? fileNameOf(id)),
-      path: assetDisplayPath(id),
-      missing: asset === undefined,
+      fallbackName: audioNameOf(audioMetas, currentId) ?? assetDisplayName(asset?.name ?? fileNameOf(currentId)),
+      path: assetDisplayPath(currentId),
+      missing: asset === undefined || !assetIds.has(asset.id),
     };
   });
 

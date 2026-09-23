@@ -11,6 +11,7 @@ import {
   assetMetaIdOf,
   projectAssetId,
   projectFileId,
+  projectSceneFileId,
 } from "@dts/resources";
 import { metaHistory } from "../src/state/store-core";
 import { projectHistory, sceneHistory, useEditorStore } from "../src/state/editor-store";
@@ -100,6 +101,7 @@ interface FakeBackend {
   readonly writes: Map<string, string>;
   /** 换一棵资源树（模拟「在编辑器外面把文件加进来」）。 */
   setTree(tree: readonly ResourceTreeNode[]): void;
+  setText(id: string, text: string): void;
 }
 
 function stubBackend(input: {
@@ -163,6 +165,9 @@ function stubBackend(input: {
     writes,
     setTree(next) {
       tree = next;
+    },
+    setText(id, text) {
+      texts.set(id, text);
     },
   };
 }
@@ -286,7 +291,7 @@ describe("刷新资源树：新加的素材补一份，已有的不动", () => {
       project: { list: [], current: PROJECT, tree: [], busy: false, error: "" },
     });
 
-    await useEditorStore.getState().refreshTree();
+    await useEditorStore.getState().refreshTree(true);
 
     const firstGuid = useEditorStore.getState().assetMetaTable[AUDIO]?.guid;
     expect(firstGuid).toMatch(/^[0-9a-f]{32}$/);
@@ -294,12 +299,114 @@ describe("刷新资源树：新加的素材补一份，已有的不动", () => {
 
     // 在编辑器外面拷了一张图进来：再刷新一次，补的是它
     backend.setTree(treeOf(["Assets/audio/b.mp3", "Assets/images/a.png"]));
-    await useEditorStore.getState().refreshTree();
+    await useEditorStore.getState().refreshTree(true);
 
     expect([...backend.writes.keys()].slice(1)).toEqual([assetMetaIdOf(IMAGE)]);
     // 音频那份**一个字节都没重写**：guid 还是第一次那个
     // （重写一次 = 素材换了个身份，场景里所有引用一起断）
     expect(useEditorStore.getState().assetMetaTable[AUDIO]?.guid).toBe(firstGuid);
     expect(backend.metas[AUDIO]).toEqual(useEditorStore.getState().assetMetaTable[AUDIO]);
+  });
+
+  it("素材外部改名后按 GUID 迁移 meta 键、选择状态和场景引用到新路径", async () => {
+    const oldImage = IMAGE;
+    const newImage = projectAssetId(PROJECT, "Assets/images/renamed.png");
+    const guid = "ab".repeat(16);
+    const oldMeta = assetMetaDoc({
+      importer: "texture",
+      sequence: 17,
+      sprite: { mode: "Multiple", sheet: { columns: 4, rows: 2 } },
+    });
+    const projectWithOldImage = {
+      ...createEmptyProject(PROJECT),
+    };
+    const backend = stubBackend({
+      tree: treeOf(["Assets/images/a.png", "Assets/scenes/Map001.json"]),
+      metas: { [oldImage]: { ...oldMeta, guid } },
+    });
+    backend.setText(
+      SCENE,
+      `${JSON.stringify({
+        formatVersion: DOCUMENT_FORMAT_VERSION,
+        objects: [
+          {
+            id: "sprite-1",
+            name: "sprite",
+            kind: "Sprite",
+            active: true,
+            sortingOrder: 0,
+            locked: false,
+            position: null,
+            rotation: 0,
+            scale: 1,
+            components: [
+              {
+                id: "sprite-1__SpriteLayer",
+                type: "SpriteLayer",
+                data: { id: guid, width: 64, height: 32 },
+                actions: [],
+              },
+            ],
+          },
+        ],
+      }, null, 2)}\n`,
+    );
+    useEditorStore.setState({
+      doc: projectWithOldImage,
+      project: { list: [], current: PROJECT, tree: treeOf(["Assets/images/a.png", "Assets/scenes/Map001.json"]), busy: false, error: "" },
+      selectedAssetId: oldImage,
+    });
+
+    await useEditorStore.getState().refreshTree(true);
+    expect(useEditorStore.getState().scenes[0]?.objects[0]?.components[0]?.data).toMatchObject({
+      id: oldImage,
+    });
+
+    backend.setTree(treeOf(["Assets/images/renamed.png", "Assets/scenes/Map001.json"]));
+    delete backend.metas[oldImage];
+    backend.metas[newImage] = { ...oldMeta, guid };
+    backend.setText(
+      SCENE,
+      `${JSON.stringify({
+        formatVersion: DOCUMENT_FORMAT_VERSION,
+        objects: [
+          {
+            id: "sprite-1",
+            name: "sprite",
+            kind: "Sprite",
+            active: true,
+            sortingOrder: 0,
+            locked: false,
+            position: null,
+            rotation: 0,
+            scale: 1,
+            components: [
+              {
+                id: "sprite-1__SpriteLayer",
+                type: "SpriteLayer",
+                data: { id: guid, width: 64, height: 32 },
+                actions: [],
+              },
+            ],
+          },
+        ],
+      }, null, 2)}\n`,
+    );
+
+    expect(await useEditorStore.getState().refreshTree(true)).toBe(true);
+    const image = useEditorStore.getState().scenes[0]?.objects[0]?.components[0]?.data as {
+      id: string;
+      guid?: string;
+    };
+    expect(image).toMatchObject({ id: newImage, guid });
+    expect(useEditorStore.getState().assetMetaTable[newImage]?.sprite?.sheet).toEqual({
+      columns: 4,
+      rows: 2,
+    });
+    expect(useEditorStore.getState().assetMetaTable[oldImage]).toBeUndefined();
+    expect(useEditorStore.getState().selectedAssetId).toBe(newImage);
+    expect(useEditorStore.getState().project.tree.flatMap((node) => node.children ?? []).flatMap((node) => node.children ?? []).map((node) => node.id)).toContain(newImage);
+    expect(useEditorStore.getState().project.tree.flatMap((node) => node.children ?? []).flatMap((node) => node.children ?? []).map((node) => node.id)).not.toContain(oldImage);
+    expect(projectSceneFileId(PROJECT, "Map001")).toBe(SCENE);
   });
 });

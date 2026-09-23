@@ -4,6 +4,7 @@
  * 项目：建 / 开 / 关 / 删、资源树与文件操作，以及**素材 meta 的装配与迁移**。
  */
 import {
+  assetIdOfGuid,
   DOCUMENT_FORMAT_VERSION,
   createAssetMeta,
   createEmptyProject,
@@ -407,26 +408,94 @@ export function createProjectSlice(
       }
     },
 
-    async refreshTree() {
+    async refreshTree(resolveReferences = false) {
       const project = get().project.current;
       if (project === null) {
-        return;
+        return false;
       }
 
-      // 重新读盘之前先把手上未保存的 meta 写回：不然刚切的图集会被盘上的旧内容冲掉
-      // （与场景操作前那一串 `flushSceneSave` 同一条规矩）
-      await get().flushMetaSave();
+      // 先落盘文档与 meta，再刷新索引并重载场景，让被改名的 GUID 引用解析到新路径。
+      if (!(await get().flushSceneSave()) || !(await get().flushMetaSave())) {
+        return false;
+      }
 
       try {
+        const previousMetaTable = metaHistory.current;
+        const previousMetas = get().assetMetas;
         const tree = await projectApi.tree(project);
         set((state) => ({ project: { ...state.project, tree, error: "" } }));
         // 素材可能在编辑器外面被加进来 / 改名 / 删掉了：索引跟着资源树重建
         // （`.meta` 与素材成对改名时，键跟着换、guid 不变，引用照样指得对），
         // 新加进来的素材也在这里补上自己那一份 `.meta`
         await loadAssetMetas(project, tree);
+
+        const currentMetas = get().assetMetas;
+        const currentMetaTable = get().assetMetaTable;
+        const movedMetaTable: Record<string, AssetMetaDoc> = {};
+        for (const meta of Object.values(previousMetaTable)) {
+          const newId = assetIdOfGuid(currentMetas, meta.guid);
+          if (newId !== undefined) movedMetaTable[newId] = meta;
+        }
+        for (const [id, meta] of Object.entries(currentMetaTable)) {
+          movedMetaTable[id] ??= meta;
+        }
+        const metaPathsChanged =
+          Object.keys(previousMetaTable).length !== Object.keys(movedMetaTable).length ||
+          Object.keys(previousMetaTable).some((id) => movedMetaTable[id] === undefined) ||
+          Object.keys(previousMetaTable).some((id) => assetIdOfGuid(currentMetas, previousMetaTable[id]!.guid) !== id);
+        if (metaPathsChanged) {
+          savedMetas.clear();
+          for (const [id, meta] of Object.entries(movedMetaTable)) {
+            savedMetas.set(id, serializeAssetMetaFile(meta));
+          }
+          metaHistory.reset(movedMetaTable);
+        }
+
+        const currentId = (id: string): string => {
+          const meta = previousMetas.byId[id];
+          return meta === undefined ? id : assetIdOfGuid(currentMetas, meta.guid) ?? id;
+        };
+        const selectedAssetId = get().selectedAssetId;
+        const spriteSelection = selectedAssetId?.match(/^(.*)::sprite:(\d+)$/);
+        const soundPlayback = get().soundPlayback;
+        const videoPlayback = get().videoPlayback;
+        const bgmPlayback = get().bgmPlayback;
+        set({
+          selectedAssetId:
+            selectedAssetId === null
+              ? null
+              : spriteSelection == null
+                ? currentId(selectedAssetId)
+                : `${currentId(spriteSelection[1] as string)}::sprite:${spriteSelection[2]}`,
+          soundPlayback: {
+            layers: Object.fromEntries(
+              Object.entries(soundPlayback.layers).map(([layer, entry]) => [
+                layer,
+                { ...entry, clips: entry.clips.map(currentId) },
+              ]),
+            ),
+          },
+          videoPlayback: {
+            objects: Object.fromEntries(
+              Object.entries(videoPlayback.objects).map(([objectId, entry]) => [
+                objectId,
+                { ...entry, clip: currentId(entry.clip) },
+              ]),
+            ),
+          },
+          bgmPlayback:
+            bgmPlayback.clip === null
+              ? bgmPlayback
+              : { ...bgmPlayback, clip: currentId(bgmPlayback.clip) },
+        });
+        if (resolveReferences && !(await get().loadScenes())) {
+          return false;
+        }
+        return true;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         set((state) => ({ project: { ...state.project, error: message } }));
+        return false;
       }
     },
 
@@ -521,9 +590,19 @@ export function createProjectSlice(
       }
 
       try {
-        await get().flushMetaSave();
+        if (!(await get().flushSceneSave())) {
+          return get().sceneSaveError || "场景保存失败，资源未重命名";
+        }
+
+        if (!(await get().flushMetaSave())) {
+          return get().metaSaveError || "素材信息保存失败，资源未重命名";
+        }
+
         await projectApi.renameResource(fromId, toId);
-        await get().refreshTree();
+        if (!(await get().refreshTree(true))) {
+          return get().project.error || "资源树刷新失败，资源已改名；请刷新资源树";
+        }
+
         pushLog(makeLog("info", `已重命名：${label}`));
         return undefined;
       } catch (error) {

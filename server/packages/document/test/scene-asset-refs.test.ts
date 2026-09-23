@@ -35,6 +35,25 @@ describe("scene asset identity", () => {
     expect(assetIdOfGuid(metas, meta.guid)).toBe(IMAGE_ID);
   });
 
+  it("resolves a renamed image by GUID and keeps its stable identity in memory", () => {
+    const renamedId = "project:P/Assets/images/renamed.png";
+    const meta = createAssetMeta("texture");
+    const oldMetas = createAssetMetas([{ id: IMAGE_ID, meta }]);
+    const scene = {
+      ...createEmptyScene("Map001"),
+      objects: [createSceneObject({ id: "sprite-1", name: "sprite" })],
+    };
+    setObjectImage(scene, "sprite-1", { id: IMAGE_ID, width: 64, height: 64 });
+    const persisted = sceneAssetRefsToGuids(scene, oldMetas);
+
+    const currentMetas = createAssetMetas([{ id: renamedId, meta }]);
+    const loaded = sceneAssetRefsToIds(persisted, currentMetas);
+    const image = loaded.objects[0]!.components[0]!.data as { id: string; guid?: string };
+
+    expect(image.id).toBe(renamedId);
+    expect(image.guid).toBe(meta.guid);
+  });
+
   it("converts resource IDs nested in scene data without changing unrelated strings", () => {
     const audioId = "project:P/Assets/audio/hit.wav";
     const meta = createAssetMeta("audio");
@@ -62,6 +81,57 @@ describe("scene asset identity", () => {
     expect(storedData.label).toBe("Assets/audio/hit.wav");
     const loaded = sceneAssetRefsToIds(stored, metas);
     expect((loaded.objects[0]!.components[0]!.data.clips as string[])[0]).toBe(audioId);
+  });
+
+  it("resolves renamed audio and video IDs and name keys from their stable GUIDs", () => {
+    const oldAudio = "project:P/Assets/audio/old.wav";
+    const newAudio = "project:P/Assets/audio/new.wav";
+    const oldVideo = "project:P/Assets/video/old.mp4";
+    const newVideo = "project:P/Assets/video/new.mp4";
+    const audioMeta = createAssetMeta("audio");
+    const videoMeta = createAssetMeta("video");
+    const oldMetas = createAssetMetas([
+      { id: oldAudio, meta: audioMeta },
+      { id: oldVideo, meta: videoMeta },
+    ]);
+    const scene = {
+      ...createEmptyScene("Map001"),
+      objects: [
+        {
+          ...createSceneObject({ id: "sound-1", name: "sound" }),
+          components: [
+            {
+              id: "sound-1__PlaySound",
+              type: "PlaySound",
+              data: { clips: [oldAudio], picked: oldAudio, names: { [oldAudio]: "footstep" } },
+              actions: [],
+            },
+          ],
+        },
+        {
+          ...createSceneObject({ id: "image-1", name: "image", kind: "Image" }),
+          components: [
+            {
+              id: "image-1__VideoOverlay",
+              type: "VideoOverlay",
+              data: { clips: [oldVideo], picked: oldVideo, names: { [oldVideo]: "opening" } },
+              actions: [],
+            },
+          ],
+        },
+      ],
+    };
+    const persisted = sceneAssetRefsToGuids(scene, oldMetas);
+    const currentMetas = createAssetMetas([
+      { id: newAudio, meta: audioMeta },
+      { id: newVideo, meta: videoMeta },
+    ]);
+
+    const loaded = sceneAssetRefsToIds(persisted, currentMetas);
+    const sound = loaded.objects[0]!.components[0]!.data;
+    const video = loaded.objects[1]!.components[0]!.data;
+    expect(sound).toMatchObject({ clips: [newAudio], picked: newAudio, names: { [newAudio]: "footstep" } });
+    expect(video).toMatchObject({ clips: [newVideo], picked: newVideo, names: { [newVideo]: "opening" } });
   });
 
   it("leaves unresolved legacy references untouched", () => {

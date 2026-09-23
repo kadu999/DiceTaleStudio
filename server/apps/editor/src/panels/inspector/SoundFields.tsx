@@ -9,7 +9,7 @@ import {
 import { useEditorStore, type EditorMode } from "../../state/editor-store";
 import type { RuntimeStatus } from "../../services/runtime-client";
 import { audioDisplayName } from "../audio-catalog";
-import { assetDisplayPath } from "../asset-picker";
+import { assetDisplayPath, currentResourceId } from "../asset-picker";
 import {
   FieldRow,
   PLAYBACK_BUTTON_ACTIVE_CLASS,
@@ -74,6 +74,7 @@ export function soundDeliveryHint(input: {
 
 export function SoundFields({ object }: { readonly object: SceneObjectDoc }): React.JSX.Element {
   const audioMetas = useEditorStore((state) => state.assetMetaTable);
+  const assetMetas = useEditorStore((state) => state.assetMetas);
   const scenes = useEditorStore((state) => state.scenes);
   const activeSceneName = useEditorStore((state) => state.activeSceneName);
   const playback = useEditorStore((state) => state.soundPlayback);
@@ -102,6 +103,8 @@ export function SoundFields({ object }: { readonly object: SceneObjectDoc }): Re
    * 不必每个对象再起一遍。
    */
   const nameOf = (clip: string): string => audioDisplayName(audioMetas, clip, sound?.names?.[clip]);
+  const pathOf = (clip: string): string =>
+    assetDisplayPath(currentResourceId(clip, assetMetas) ?? clip);
 
   const pickedName = picked === undefined ? "" : nameOf(picked);
   const playBlocked = soundPlayBlockedReason({ clips: clips.length, picked });
@@ -208,8 +211,8 @@ export function SoundFields({ object }: { readonly object: SceneObjectDoc }): Re
                   aria-pressed={selected}
                   title={
                     selected
-                      ? `${assetDisplayPath(clip)}（就是它会被播；再点一下取消选中）`
-                      : `${assetDisplayPath(clip)}（点一下改成播它）`
+                      ? `${pathOf(clip)}（就是它会被播；再点一下取消选中）`
+                      : `${pathOf(clip)}（点一下改成播它）`
                   }
                   className={`max-w-[8rem] truncate rounded border px-1.5 py-0.5 text-[10px] ${
                     selected

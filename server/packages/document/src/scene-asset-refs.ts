@@ -40,7 +40,8 @@ function mapComponentData(
 ): Record<string, unknown> {
   const resourceKeys = new Set<string>();
   if (type === "GridMap") resourceKeys.add("image");
-  if (type === "ImageLayer" || type === "SpriteLayer") resourceKeys.add("id");
+  const imageLayer = type === "ImageLayer" || type === "SpriteLayer";
+  if (imageLayer) resourceKeys.add("id");
   if (type === "PlaySound" || type === "VideoOverlay") {
     resourceKeys.add("clips");
     resourceKeys.add("picked");
@@ -50,6 +51,11 @@ function mapComponentData(
   if (resourceKeys.size === 0) return data;
 
   let changed = false;
+  if (imageLayer) {
+    const next = mapImageReference(data, metas, mode);
+    return next === data ? data : (next as Record<string, unknown>);
+  }
+
   const mapped: Record<string, unknown> = { ...data };
   for (const key of resourceKeys) {
     const value = data[key];
@@ -72,6 +78,9 @@ function mapImageReference(value: unknown, metas: AssetMetas, mode: "guid" | "id
   const id = image.id;
   if (typeof id !== "string") return value;
   const next = mapResourceValue(id, metas, mode);
+  if (mode === "id" && next !== id && /^[0-9a-f]{32}$/.test(id)) {
+    return { ...image, id: next, guid: image.guid ?? id };
+  }
   return next === id ? value : { ...image, id: next };
 }
 

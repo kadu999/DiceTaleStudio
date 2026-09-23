@@ -87,10 +87,10 @@ export function createSaveSlice(
       clearSceneSaveTimer();
 
       if (get().project.current === null || dirtySceneNames().length === 0) {
-        return;
+        return true;
       }
 
-      await get().saveSceneNow();
+      return get().saveSceneNow();
     },
 
     // ---------------------------------------------------------------- 工程文件（音量 / 音频标注）
@@ -200,10 +200,10 @@ export function createSaveSlice(
       clearMetaSaveTimer();
 
       if (get().project.current === null || metaDirtyIds().length === 0) {
-        return;
+        return true;
       }
 
-      await get().saveMetasNow();
+      return get().saveMetasNow();
     },
   };
 }

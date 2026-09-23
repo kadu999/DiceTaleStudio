@@ -1,3 +1,4 @@
+import { assetIdOfGuid, type AssetMetaDoc, type AssetMetas } from "@dts/document";
 import type { ResourceTreeNode } from "../services/project-api";
 import { assetPreviewKind } from "./asset-info";
 
@@ -62,6 +63,47 @@ export function findAssetById(
   }
 
   return undefined;
+}
+
+/** Resolve a resource reference by stable GUID when available, then locate its current path. */
+export function findAssetByReference(
+  nodes: readonly ResourceTreeNode[],
+  reference: string,
+  metas: AssetMetas,
+): ResourceTreeNode | undefined {
+  const currentId = currentResourceId(reference, metas);
+  return currentId === undefined ? undefined : findAssetById(nodes, currentId);
+}
+
+/** Resolve a persisted resource identity to the current logical ID when it is a GUID. */
+export function currentResourceId(reference: string, metas: AssetMetas): string | undefined {
+  return /^[0-9a-f]{32}$/.test(reference) ? assetIdOfGuid(metas, reference) : reference;
+}
+
+export function currentResourceIdByMetas(reference: string, metas: Readonly<Record<string, AssetMetaDoc>>): string {
+  const direct = metas[reference];
+  if (direct !== undefined) return reference;
+  for (const [id, meta] of Object.entries(metas)) {
+    if (meta.guid === reference) return id;
+  }
+  return reference;
+}
+
+/** Current path identity for an image reference; GUID wins over its historical path. */
+export function currentImageAssetId(
+  image: { readonly id: string; readonly guid?: string },
+  metas: AssetMetas,
+): string {
+  return image.guid === undefined ? image.id : assetIdOfGuid(metas, image.guid) ?? image.id;
+}
+
+/** Resolve an image by stable identity first; legacy references fall back to their path ID. */
+export function findImageAsset(
+  nodes: readonly ResourceTreeNode[],
+  image: { readonly id: string; readonly guid?: string },
+  metas: AssetMetas,
+): ResourceTreeNode | undefined {
+  return findAssetById(nodes, currentImageAssetId(image, metas));
 }
 
 /** 资源面板里当前项目下的全部图片（按路径排序）。 */

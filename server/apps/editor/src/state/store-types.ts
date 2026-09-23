@@ -482,7 +482,7 @@ export interface EditorStoreState {
   openProject(name: string): Promise<boolean>;
   closeProject(): void;
   deleteProject(name: string): Promise<boolean>;
-  refreshTree(): Promise<void>;
+  refreshTree(resolveReferences?: boolean): Promise<boolean>;
   createFolder(path: string): Promise<boolean>;
   /**
    * 在**运行服务端的那台机器**上用文件管理器打开项目里的某一层。
@@ -500,7 +500,7 @@ export interface EditorStoreState {
   /** 立即把有改动的场景写回文件（手动保存 / 切场景前 flush）。 */
   saveSceneNow(): Promise<boolean>;
   /** 有待保存改动就立刻写回；场景级操作与关闭项目之前调用，避免丢失或写错场景。 */
-  flushSceneSave(): Promise<void>;
+  flushSceneSave(): Promise<boolean>;
 
   /**
    * 立即把**工程文件**（`project.json`，全局设置在这里）写回磁盘。
@@ -519,10 +519,10 @@ export interface EditorStoreState {
    */
   saveMetasNow(): Promise<boolean>;
   /** 素材 meta 有待保存改动就立刻写回；关项目 / 换项目 / 重新读盘之前调用，避免丢掉刚切的图集。 */
-  flushMetaSave(): Promise<void>;
+  flushMetaSave(): Promise<boolean>;
 
   /** 重新扫描 `Assets/scenes/` 并把场景读进内存（打开项目、增删改名后调用）。 */
-  loadScenes(): Promise<void>;
+  loadScenes(): Promise<boolean>;
   openSceneDialog(mode: SceneDialogMode): void;
   openObjectDialog(open: boolean): void;
   /**

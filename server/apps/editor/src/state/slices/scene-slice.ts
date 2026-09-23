@@ -90,7 +90,7 @@ export function createSceneSlice(
         set({ scenes: [], activeSceneName: null });
         // 文档整份被换掉（这里是被清空）：运行中的话，基线要跟着换
         refreshRunBaseline();
-        return;
+        return true;
       }
 
       try {
@@ -157,15 +157,20 @@ export function createSceneSlice(
         set({ sceneSaveState: "saved", sceneSaveError: "" });
 
         const previous = get().activeSceneName;
+        const previousSelection = get().selectedObjectIds;
         const keep = scenes.some((scene) => scene.name === previous);
+        const nextActiveName = keep ? previous : (scenes[0]?.name ?? null);
+        const nextActiveScene = scenes.find((scene) => scene.name === nextActiveName);
         // 把装载进来的场景交给历史容器：**对象编辑的 recipe 都在它上面改**，
         // 忘了这一步的话 `applyScenes` 会在空数组里找场景、永远「没产生变更」。
         // 场景级操作（增删改名 / 重新打开项目）不入撤销栈，所以这里直接 reset。
         sceneHistory.reset(scenes);
         set({
           scenes,
-          activeSceneName: keep ? previous : (scenes[0]?.name ?? null),
-          selectedObjectIds: [],
+          activeSceneName: nextActiveName,
+          selectedObjectIds: previousSelection.filter((id) =>
+            nextActiveScene?.objects.some((object) => object.id === id),
+          ),
           // 场景重新装载过：对象 id 可能全换了，两个格子编辑窗口盯着的对象 id 也未必还存在
           fogMask: false,
           fogMaskTarget: null,
@@ -175,10 +180,12 @@ export function createSceneSlice(
 
         // 文档整份换掉了（打开 / 重新装载项目、增删改名场景后重读）：运行中的话基线要跟着换
         refreshRunBaseline();
+        return true;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         set((state) => ({ project: { ...state.project, error: message } }));
         pushLog(makeLog("error", `读取场景失败：${message}`));
+        return false;
       }
     },
 
@@ -199,7 +206,9 @@ export function createSceneSlice(
       }
 
       // 先把手上的改动写回，免得紧接着的 loadScenes 把它们冲掉
-      await get().flushSceneSave();
+      if (!(await get().flushSceneSave())) {
+        return get().sceneSaveError || "场景保存失败，场景未新建";
+      }
 
       const trimmed = name.trim();
       const reason = validateSceneName(trimmed);
@@ -243,7 +252,9 @@ export function createSceneSlice(
       const wasActive = get().activeSceneName === current;
 
       // loadScenes 会重载整份场景列表；先落盘当前场景，避免改名其它场景时冲掉编辑中的改动
-      await get().flushSceneSave();
+      if (!(await get().flushSceneSave())) {
+        return get().sceneSaveError || "场景保存失败，场景未重命名";
+      }
 
       const trimmed = name.trim();
       const reason = validateSceneName(trimmed);
@@ -284,8 +295,10 @@ export function createSceneSlice(
 
         // 改文件名：场景名就是文件名，场景内容由上面的引用同步负责
         await projectApi.renameResource(sceneFileId, projectSceneFileId(project, trimmed));
-        await get().refreshTree();
-        await get().loadScenes();
+        if (!(await get().refreshTree(true))) {
+          return get().project.error || "资源树刷新失败，场景文件已改名";
+        }
+
         if (wasActive) {
           get().setActiveScene(trimmed);
         }

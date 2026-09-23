@@ -1,5 +1,5 @@
 import { assetDisplayName } from "../asset-info";
-import { assetDisplayPath, findAssetById } from "../asset-picker";
+import { assetDisplayPath, findAssetByReference } from "../asset-picker";
 import { useEditorStore, type EditorMode } from "../../state/editor-store";
 import type { RuntimeStatus } from "../../services/runtime-client";
 import { isVideoEnabled, videoDataOf, type SceneObjectDoc } from "@dts/document";
@@ -75,6 +75,7 @@ function formatHint(path: string): string | undefined {
 
 export function VideoFields({ object }: { readonly object: SceneObjectDoc }): React.JSX.Element {
   const tree = useEditorStore((state) => state.project.tree);
+  const assetMetas = useEditorStore((state) => state.assetMetas);
   const playback = useEditorStore((state) => state.videoPlayback);
   const openVideoEditor = useEditorStore((state) => state.openVideoEditor);
   const setVideoEnabled = useEditorStore((state) => state.setVideoEnabled);
@@ -101,7 +102,7 @@ export function VideoFields({ object }: { readonly object: SceneObjectDoc }): Re
 
   /** 面板上显示什么名字：自己起过就用它，否则用素材文件名（去掉扩展名）。 */
   const nameOf = (clip: string): string => {
-    const fileName = findAssetById(tree, clip)?.name ?? clip;
+    const fileName = findAssetByReference(tree, clip, assetMetas)?.name ?? clip;
     return video?.names?.[clip] ?? assetDisplayName(fileName);
   };
 
@@ -203,8 +204,8 @@ export function VideoFields({ object }: { readonly object: SceneObjectDoc }): Re
                   aria-pressed={selected}
                   title={[
                     selected
-                      ? `${assetDisplayPath(clip)}（就是它会被放；再点一下取消选中）`
-                      : `${assetDisplayPath(clip)}（点一下改成放它）`,
+                      ? `${assetDisplayPath(findAssetByReference(tree, clip, assetMetas)?.id ?? clip)}（就是它会被放；再点一下取消选中）`
+                      : `${assetDisplayPath(findAssetByReference(tree, clip, assetMetas)?.id ?? clip)}（点一下改成放它）`,
                     hint,
                   ]
                     .filter((line) => line !== undefined)

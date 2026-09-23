@@ -12,7 +12,7 @@ import {
 } from "@dts/document";
 import { cellPixelSize } from "@dts/grid";
 import { useEditorStore } from "../../state/editor-store";
-import { assetDisplayPath, findAssetById } from "../asset-picker";
+import { assetDisplayPath, currentImageAssetId, findImageAsset } from "../asset-picker";
 import { Field, FieldRow } from "./fields";
 
 /**
@@ -136,7 +136,8 @@ export function TextureField({ object }: { readonly object: SceneObjectDoc }): R
   const image = objectImage(object);
 
   // 引用的文件不在项目里（素材没提交 / 改名了）：直接把这件事写出来
-  const missing = image !== undefined && findAssetById(tree, image.id) === undefined;
+  const currentAsset = image === undefined ? undefined : findImageAsset(tree, image, assetMetas);
+  const missing = image !== undefined && currentAsset === undefined;
 
   // 子图：能不能切由**图片用的是哪个组件**说了算（`supportsSpriteSheet`：精灵能、贴图不能、
   // 地图的贴图在 GridMap 里根本不在这一套里）。
@@ -156,9 +157,11 @@ export function TextureField({ object }: { readonly object: SceneObjectDoc }): R
         className={`min-w-0 flex-1 truncate font-mono text-[11px] ${
           image === undefined ? "text-[var(--color-editor-text-dim)]" : ""
         }`}
-        title={image?.id}
+        title={currentAsset?.id ?? image?.id}
       >
-        {image === undefined ? "（无贴图）" : assetDisplayPath(image.id)}
+        {image === undefined
+          ? "（无贴图）"
+          : assetDisplayPath(currentAsset?.id ?? currentImageAssetId(image, assetMetas))}
       </span>
       {cell === undefined || sheet === undefined ? null : (
         <span

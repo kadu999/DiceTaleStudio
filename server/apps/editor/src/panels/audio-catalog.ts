@@ -54,6 +54,7 @@ export interface AudioCatalogRow {
   readonly path: string;
   /** 标签（已解析：跳过越界 / 已删 / 没名字的 ID；顺序按 ID 升序）。 */
   readonly tags: readonly AudioTagRef[];
+  readonly guid?: string;
 }
 
 /** 表里的标签（跳过洞）；名字已 trim。 */
@@ -112,7 +113,6 @@ export function audioCatalog(
   table: ProjectDoc["audioTags"],
 ): AudioCatalogRow[] {
   const rows: AudioCatalogRow[] = [];
-
   for (const asset of listAudioAssets(tree)) {
     const meta = metas[asset.id];
     const customName = audioNameOfMeta(meta)?.trim() ?? "";
@@ -123,6 +123,7 @@ export function audioCatalog(
       customName,
       path: assetDisplayPath(asset.id),
       tags: tagsOfClip(table, audioTagsOfMeta(meta)),
+      ...(meta === undefined ? {} : { guid: meta.guid }),
     });
   }
 
@@ -130,8 +131,8 @@ export function audioCatalog(
 }
 
 /** 素材 meta 里的显示名（没起名字 / 只有空白 → `undefined`）。给名字兜底链用。 */
-export function audioNameOf(metas: AssetMetaTable, id: string): string | undefined {
-  const name = audioNameOfMeta(metas[id])?.trim();
+export function audioNameOf(metas: AssetMetaTable, id: string, currentId = id): string | undefined {
+  const name = (audioNameOfMeta(metas[currentId]) ?? audioNameOfMeta(metas[id]))?.trim();
   return name === undefined || name.length === 0 ? undefined : name;
 }
 
@@ -145,13 +146,14 @@ export function audioDisplayName(
   metas: AssetMetaTable,
   id: string,
   objectName?: string,
+  currentId = id,
 ): string {
   const override = objectName?.trim();
   if (override !== undefined && override.length > 0) {
     return override;
   }
 
-  return audioNameOf(metas, id) ?? assetDisplayName(id.slice(id.lastIndexOf("/") + 1));
+  return audioNameOf(metas, id, currentId) ?? assetDisplayName(currentId.slice(currentId.lastIndexOf("/") + 1));
 }
 
 /**

@@ -43,6 +43,7 @@ export function BgmDialog(): React.JSX.Element {
   const tree = useEditorStore((state) => state.project.tree);
   // 显示名与标签住在**各音频文件自己的 `.meta`** 里（v24 起），标签的**名字**仍在工程文件的表里
   const metas = useEditorStore((state) => state.assetMetaTable);
+  const identities = useEditorStore((state) => state.assetMetas);
   const table = useEditorStore((state) => state.doc.audioTags);
   const playback = useEditorStore((state) => state.bgmPlayback);
   const playBgm = useEditorStore((state) => state.playBgm);
@@ -69,6 +70,16 @@ export function BgmDialog(): React.JSX.Element {
 
   /** 项目里的音频（清单就是资源树里那些文件；没有「标注指向已删文件」这类行了）。 */
   const rows = useMemo(() => audioCatalog(tree, metas, table), [tree, metas, table]);
+  const currentIdOf = (clip: string): string => {
+    const oldMeta = metas[clip];
+    if (oldMeta !== undefined) {
+      return Object.entries(identities.byId).find(([, meta]) => meta.guid === oldMeta.guid)?.[0] ?? clip;
+    }
+    return rows.find((row) => row.id === clip || row.guid === clip)?.id ?? clip;
+  };
+  const rowKey = (row: (typeof rows)[number]): string => row.guid ?? row.id;
+  const rowForReference = (reference: string): (typeof rows)[number] | undefined =>
+    rows.find((row) => row.id === currentIdOf(reference) || row.guid === reference);
   const visible = useMemo(
     () =>
       sortAudioRowsByName(
@@ -85,14 +96,18 @@ export function BgmDialog(): React.JSX.Element {
   const delivery = bgmDeliveryHint({ mode, status, clientConnected });
 
   /** 选中那一首（文件已经不在了 / 还没选 → `undefined`：播放键点不动）。 */
-  const selectedRow = rows.find((row) => row.id === selected);
+  const selectedRow =
+    selected === null ? undefined : rowForReference(selected);
   /** 选中的这一首正是**正在放**的那一首吗（播放键因此亮起来）。 */
-  const playingSelected = selected !== null && playback.clip === selected;
+  const playingSelected =
+    selected !== null && playback.clip !== null && rowForReference(playback.clip) === rowForReference(selected);
   /** 打开弹框时要把哪一行带到眼前：正在放的那一首；没在放就是选中的那一首。 */
-  const focusClip = playback.clip ?? selected;
+  const focusRow = playback.clip === null ? undefined : rowForReference(playback.clip);
+  const focusClip =
+    playback.clip === null ? selected : focusRow === undefined ? currentIdOf(playback.clip) : rowKey(focusRow);
 
   const currentNameOf = (clip: string): string =>
-    rows.find((row) => row.id === clip)?.displayName ??
+    rowForReference(clip)?.displayName ??
     assetDisplayName(clip.slice(clip.lastIndexOf("/") + 1));
 
   const toggleTag = (tag: string): void => {
@@ -109,9 +124,9 @@ export function BgmDialog(): React.JSX.Element {
    */
   useEffect(() => {
     if (playback.clip !== null) {
-      setSelected(playback.clip);
+      setSelected(rowForReference(playback.clip) === undefined ? currentIdOf(playback.clip) : rowKey(rowForReference(playback.clip)!));
     }
-  }, [playback.clip]);
+  }, [playback.clip, metas, identities]);
 
   /**
    * 打开弹框时**把当前那一首带到眼前**。
@@ -222,15 +237,15 @@ export function BgmDialog(): React.JSX.Element {
             ) : (
               <div className="flex flex-col gap-1">
                 {visible.map((row) => {
-                  const isPlaying = playback.clip === row.id;
-                  const isSelected = selected === row.id;
+                  const isPlaying = playback.clip !== null && rowForReference(playback.clip) === row;
+                  const isSelected = selected !== null && rowForReference(selected) === row;
                   return (
                     <button
                       key={row.id}
                       type="button"
                       // 正在放的那一行（没在放时是选中的那一行）把节点交出来：
                       // 挂上 / 成为它时滚到它上面去
-                      ref={row.id === focusClip ? scrollFocusRowIntoView : undefined}
+                      ref={rowKey(row) === focusClip ? scrollFocusRowIntoView : undefined}
                       data-testid="bgm-track"
                       data-clip={row.id}
                       data-selected={isSelected}
@@ -242,7 +257,7 @@ export function BgmDialog(): React.JSX.Element {
                           ? "border-[var(--color-editor-accent)] bg-[var(--color-editor-accent-dim)]"
                           : "border-[var(--color-editor-border)] hover:border-[var(--color-editor-accent)] hover:bg-[var(--color-editor-panel-alt)]"
                       }`}
-                      onClick={() => setSelected(row.id)}
+                      onClick={() => setSelected(rowKey(row))}
                     >
                       {/*
                         **点行只选中，不出声**：出声的键只有下面那一排的三个（播放 / 暂停 / 停止），

@@ -22,7 +22,8 @@
             "image": {
               "id": "b8f4bef4e8362b4aeb3d10322eaf9813",
               "width": 1920,
-              "height": 1080
+              "height": 1080,
+              "guid": "b8f4bef4e8362b4aeb3d10322eaf9813"
             },
             "grid": {
               "width": 64,
@@ -338,6 +339,7 @@
           "type": "VideoOverlay",
           "data": {
             "enabled": true,
+            "autoPlay": false,
             "clips": [
               "90460513527bd5ab8725851ec775ca36"
             ],
@@ -368,8 +370,13 @@
           "type": "SpriteLayer",
           "data": {
             "id": "2d0195e4ae656c6fc24fd5ba68e79b1b",
-            "width": 4096,
-            "height": 4096
+            "guid": "2d0195e4ae656c6fc24fd5ba68e79b1b",
+            "width": 2048,
+            "height": 2048,
+            "sprite": {
+              "column": 0,
+              "row": 0
+            }
           },
           "actions": []
         }
@@ -453,7 +460,8 @@
           "data": {
             "id": "2517ac5245edd0d02126f6307900717a",
             "width": 256,
-            "height": 256
+            "height": 256,
+            "guid": "2517ac5245edd0d02126f6307900717a"
           },
           "actions": []
         }

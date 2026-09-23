@@ -373,7 +373,7 @@ export function AssetsPanel(): React.JSX.Element {
           <button
             type="button"
             className="toolbar-button hover:toolbar-button-hover"
-            onClick={() => void refreshTree()}
+            onClick={() => void refreshTree(true)}
           >
             刷新
           </button>

@@ -18,6 +18,7 @@ import { BgmDialog } from "./BgmDialog";
 import { GlobalSettingsDialog } from "./GlobalSettingsDialog";
 import { MenuBar } from "./MenuBar";
 import { StatusBar } from "./StatusBar";
+import { currentImageAssetId } from "../panels/asset-picker";
 
 /**
  * 编辑器外壳：Unity3D 式四区布局。
@@ -40,6 +41,7 @@ export function EditorShell(): React.JSX.Element {
   const openObjectDialog = useEditorStore((state) => state.openObjectDialog);
   const imagePicker = useEditorStore((state) => state.imagePicker);
   const imagePickerTarget = useEditorStore((state) => state.imagePickerTarget);
+  const assetMetas = useEditorStore((state) => state.assetMetas);
   const openImagePicker = useEditorStore((state) => state.openImagePicker);
   const soundEditor = useEditorStore((state) => state.soundEditor);
   const soundEditorTarget = useEditorStore((state) => state.soundEditorTarget);
@@ -272,14 +274,19 @@ export function EditorShell(): React.JSX.Element {
           右侧切分面板只对**精灵**出现（`supportsSpriteSheet`）——贴图与地图都只显示整张图 */}
       <ImagePickerDialog
         open={imagePicker && pickerTarget !== undefined}
-        currentId={pickerTarget === undefined ? undefined : objectImage(pickerTarget)?.id}
+        currentId={
+          pickerTarget === undefined || objectImage(pickerTarget) === undefined
+            ? undefined
+            : currentImageAssetId(objectImage(pickerTarget)!, assetMetas)
+        }
         currentSprite={pickerTarget === undefined ? undefined : objectImage(pickerTarget)?.sprite}
         allowSprite={pickerTarget !== undefined && supportsSpriteSheet(pickerTarget.kind)}
         onClose={() => openImagePicker(null)}
         onPick={(image, sprite) => {
           if (imagePickerTarget !== null) {
             // 图 + 格子一次写进去（同一条撤销记录）
-            setObjectImageSprite(imagePickerTarget, image, sprite);
+            const meta = useEditorStore.getState().ensureAssetMeta(image.id);
+            setObjectImageSprite(imagePickerTarget, { ...image, guid: meta.guid }, sprite);
           }
 
           openImagePicker(null);

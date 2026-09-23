@@ -5,6 +5,7 @@ import {
   normalizeSpriteSheet,
   spriteCellAtFraction,
   spriteUvRectOf,
+  type AssetMetas,
   type ImageSpriteRef,
   type SceneDoc,
 } from "@dts/document";
@@ -54,12 +55,13 @@ export function SpriteSheetPanel({
 }: SpriteSheetPanelProps): React.JSX.Element {
   const setSpriteSheet = useEditorStore((state) => state.setSpriteSheet);
   const scenes = useEditorStore((state) => state.scenes);
+  const assetMetas = useEditorStore((state) => state.assetMetas);
 
   const stored = useEditorStore((state) => state.assetMetas.byId[imageId]?.sprite?.sheet);
   const sheet = normalizeSpriteSheet(stored ?? { columns: 1, rows: 1 });
   const trivial = sheet.columns <= 1 && sheet.rows <= 1;
   // 有多少个对象正在用这张图切出来的格子（清掉切分之前要说清楚会牵连谁）
-  const referrers = countSpriteReferrers(scenes, imageId);
+  const referrers = countSpriteReferrers(scenes, imageId, assetMetas);
 
   // 两个输入框各自持草稿：失焦 / 回车提交（与属性面板的缩放、显示顺序同一套写法），
   // 连续敲（4 → 4×… 那种）由 store 的 coalesceKey 合成一条撤销记录
@@ -324,12 +326,22 @@ function SpritePreview({
 }
 
 /** 有几个对象正在用「这张图切出来的格子」（清除切分前的提醒用；只数有子图引用的）。 */
-function countSpriteReferrers(scenes: readonly SceneDoc[], imageId: string): number {
+function countSpriteReferrers(
+  scenes: readonly SceneDoc[],
+  imageId: string,
+  metas: AssetMetas,
+): number {
+  const expectedGuid = metas.byId[imageId]?.guid;
   let count = 0;
   for (const scene of scenes) {
     for (const object of scene.objects) {
       const image = imageOf(object);
-      if (image?.id === imageId && image.sprite !== undefined) {
+      const sameImage =
+        image !== undefined &&
+        (expectedGuid !== undefined && image.guid !== undefined
+          ? image.guid === expectedGuid
+          : image.id === imageId);
+      if (sameImage && image.sprite !== undefined) {
         count += 1;
       }
     }

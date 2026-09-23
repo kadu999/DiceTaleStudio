@@ -3,7 +3,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { videoDataOf, type SceneObjectDoc } from "@dts/document";
 import { useEditorStore } from "../state/editor-store";
 import { assetDisplayName } from "../panels/asset-info";
-import { assetDisplayPath, listVideoAssets } from "../panels/asset-picker";
+import { assetDisplayPath, findAssetByReference, listVideoAssets } from "../panels/asset-picker";
 import { VideoPickerDialog } from "./VideoPickerDialog";
 
 /**
@@ -102,6 +102,7 @@ function VideoEditBody({
   const setVideoClipName = useEditorStore((state) => state.setVideoClipName);
   const addVideoClip = useEditorStore((state) => state.addVideoClip);
   const removeVideoClip = useEditorStore((state) => state.removeVideoClip);
+  const assetMetas = useEditorStore((state) => state.assetMetas);
 
   /** 「选择视频」弹框开着没有（换个对象就收起来）。 */
   const [picking, setPicking] = useState(false);
@@ -111,18 +112,18 @@ function VideoEditBody({
 
   const video = videoDataOf(object);
   const clips = video?.clips ?? [];
+  const assetIds = new Set(listVideoAssets(tree).map((asset) => asset.id));
 
   // 加进来的视频：能找到素材的用素材名，找不到的（素材被删 / 手写文件）也留一行，
   // 否则「加过的东西看不见、也移不掉」
-  const assets = listVideoAssets(tree);
-  const byId = new Map(assets.map((asset) => [asset.id, asset]));
   const rows: VideoRow[] = clips.map((id) => {
-    const asset = byId.get(id);
+    const asset = findAssetByReference(tree, id, assetMetas);
+    const currentId = asset?.id ?? id;
     return {
       id,
-      fileName: assetDisplayName(asset?.name ?? fileNameOf(id)),
-      path: assetDisplayPath(id),
-      missing: asset === undefined,
+      fileName: assetDisplayName(asset?.name ?? fileNameOf(currentId)),
+      path: assetDisplayPath(currentId),
+      missing: asset === undefined || !assetIds.has(asset.id),
       formatHint: id.toLowerCase().endsWith(".webm")
         ? "WebM：Windows 上多半解不了，建议改用 H.264 的 .mp4"
         : undefined,
