@@ -28,7 +28,7 @@ pnpm --filter @dts/backend mock   # 另开一个终端：启动 Mock 前端（�
   返回 404 而不是把 `index.html` 塞回去——否则浏览器会拿 HTML 当 JS 模块解析，页面直接白屏卡死）
 - 后端接口：`/api/projects`（列表 / 新建 / 删除）、`/api/projects/tree`、`/api/projects/folder`、
   `/api/projects/reveal`（在服务端那台机器上用文件管理器打开项目里选中的那一层）、
-  `/api/health`、`/api/config`、`/api/resources/index`、`/api/resources/raw?id=...`、`/api/resources/text?id=...`、
+  `/api/health`、`/api/config`、`/api/resources/index`、`/api/resources/raw?id=...`、`/api/resources/thumbnail?id=...`、`/api/resources/text?id=...`、
   `/api/resources/rename`（重命名资源：`{from,to}` 逻辑 ID）、
   `/api/state`（运行态摘要：开没开闸 / 前端是谁 / 镜像的是哪份场景）
 - WebSocket：`/client`（前端，**只有编辑器点了「运行」才接受连接**）、`/editor`（编辑器）

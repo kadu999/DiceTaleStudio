@@ -115,7 +115,7 @@ export function LockedField({ object }: { readonly object: SceneObjectDoc }): Re
 
 /**
  * 对象要显示的图片（**精灵**就靠它显示图片；地图的贴图也是这个字段，只是存在 `map.image` 里）：
- * 显示**项目内相对路径**（`images/Map001.png`），后面跟一个「选择」按钮。
+ * 普通贴图显示项目内相对路径，后面跟一个「选择」按钮；精灵只显示当前子精灵状态。
  *
  * 这是**「渲染」分组目前唯一的一行**：现阶段渲染只做到「换一张图片」与「取图集里的哪一格」，
  * 后面加进来的渲染选项（着色、混合、动画…）都归到这一组。
@@ -124,7 +124,7 @@ export function LockedField({ object }: { readonly object: SceneObjectDoc }): Re
  * `Assets/images/`，编辑器不导入，所以这里只负责从已有图片里挑。没有图片的对象
  * （刚建出来的精灵）只画一个标记点，这里给一行说明 + 同一个「选择」入口。
  *
- * **子图（v20）**：图片是图集时显示「子图 第2行第3列（4×4）」，并给一个「改回整图」的入口。
+ * **子图（v20）**：图片是图集时显示「子图 第2行第3列（4×4）」。整图 / 子精灵在选择窗口中选择。
  * 只有**自己拥有贴图特性**的对象（`carriesKind(image)`，即精灵 / 玩家 / 道具 / 事件）才有这套 UI；
  * 地图的贴图在 `GridMap` 里、且不允许取子图（取一块会让已有格子标注错位）。
  */
@@ -132,7 +132,6 @@ export function TextureField({ object }: { readonly object: SceneObjectDoc }): R
   const tree = useEditorStore((state) => state.project.tree);
   const assetMetas = useEditorStore((state) => state.assetMetas);
   const openImagePicker = useEditorStore((state) => state.openImagePicker);
-  const setObjectSprite = useEditorStore((state) => state.setObjectSprite);
   const image = objectImage(object);
 
   // 引用的文件不在项目里（素材没提交 / 改名了）：直接把这件事写出来
@@ -153,16 +152,22 @@ export function TextureField({ object }: { readonly object: SceneObjectDoc }): R
 
   return (
     <FieldRow label="贴图">
-      <span
-        className={`min-w-0 flex-1 truncate font-mono text-[11px] ${
-          image === undefined ? "text-[var(--color-editor-text-dim)]" : ""
-        }`}
-        title={currentAsset?.id ?? image?.id}
-      >
-        {image === undefined
-          ? "（无贴图）"
-          : assetDisplayPath(currentAsset?.id ?? currentImageAssetId(image, assetMetas))}
-      </span>
+      {spriteCapable ? (
+        image === undefined ? (
+          <span className="min-w-0 flex-1 text-[11px] text-[var(--color-editor-text-dim)]">（无贴图）</span>
+        ) : <span className="min-w-0 flex-1" />
+      ) : (
+        <span
+          className={`min-w-0 flex-1 truncate font-mono text-[11px] ${
+            image === undefined ? "text-[var(--color-editor-text-dim)]" : ""
+          }`}
+          title={currentAsset?.id ?? image?.id}
+        >
+          {image === undefined
+            ? "（无贴图）"
+            : assetDisplayPath(currentAsset?.id ?? currentImageAssetId(image, assetMetas))}
+        </span>
+      )}
       {cell === undefined || sheet === undefined ? null : (
         <span
           data-testid="texture-sprite"
@@ -190,17 +195,6 @@ export function TextureField({ object }: { readonly object: SceneObjectDoc }): R
           找不到
         </span>
       ) : null}
-      {cell === undefined ? null : (
-        <button
-          type="button"
-          data-testid="clear-sprite"
-          className="toolbar-button flex-none hover:toolbar-button-hover"
-          title="改回整张图（图集的切分留着，别的对象还在用）"
-          onClick={() => setObjectSprite(object.id, null)}
-        >
-          改回整图
-        </button>
-      )}
       <button
         type="button"
         data-testid="pick-texture"

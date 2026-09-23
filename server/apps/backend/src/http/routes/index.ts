@@ -17,6 +17,7 @@ import {
   getManifestRoute,
   listResourcesRoute,
   readResourceRoute,
+  readResourceThumbnailRoute,
   readResourceTextRoute,
   renameResourceRoute,
   writeResourceRoute,
@@ -52,6 +53,7 @@ export const ROUTES: readonly Route[] = [
   // ---------------------------------------------------------------- 通用资源
   { method: "GET", path: "/api/resources/index", handler: listResourcesRoute },
   { method: "GET", path: "/api/resources/raw", handler: readResourceRoute },
+  { method: "GET", path: "/api/resources/thumbnail", handler: readResourceThumbnailRoute },
   { method: "PUT", path: "/api/resources/raw", handler: writeResourceRoute },
   { method: "POST", path: "/api/resources/raw", handler: writeResourceRoute },
   { method: "DELETE", path: "/api/resources/raw", handler: deleteResourceRoute },

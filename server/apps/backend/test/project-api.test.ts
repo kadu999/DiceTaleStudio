@@ -9,6 +9,7 @@ import type { LoadedConfig } from "../src/config";
 import { RuntimeHub } from "../src/ws/hub";
 import { PROJECT_FILE_NAME, assetMetaIdOf, listProjects, projectAssetId, projectFileId, type ResourceTreeNode } from "@dts/resources";
 import { DOCUMENT_FORMAT_VERSION } from "@dts/document";
+import sharp from "sharp";
 
 /**
  * 项目（一个项目 = 一个文件夹 + 一个 `project.json`）的 HTTP 接口测试。
@@ -288,6 +289,39 @@ describe("项目 API", () => {
     const after = await tree(TEST_PROJECT);
     const imagesAfter = after[0]?.children?.find((node) => node.name === "images");
     expect(imagesAfter?.children ?? []).toEqual([]);
+  });
+
+  it("图片缩略图接口返回缩小后的 WebP 与原始尺寸", async () => {
+    await postJson("/api/projects", { name: TEST_PROJECT });
+    const id = projectAssetId(TEST_PROJECT, "Assets/images/large.png");
+    const source = await sharp({
+      create: { width: 640, height: 320, channels: 4, background: "#38a86b" },
+    }).png().toBuffer();
+    await provider.writeBinary(id, source.buffer.slice(source.byteOffset, source.byteOffset + source.byteLength) as ArrayBuffer);
+
+    const infoResponse = await fetch(`${baseUrl}/api/resources/thumbnail?id=${encodeURIComponent(id)}&info=1`);
+    expect(await infoResponse.json()).toEqual({ width: 640, height: 320 });
+
+    const thumbnailResponse = await fetch(`${baseUrl}/api/resources/thumbnail?id=${encodeURIComponent(id)}`);
+    expect(thumbnailResponse.status).toBe(200);
+    expect(thumbnailResponse.headers.get("content-type")).toBe("image/webp");
+    expect(thumbnailResponse.headers.get("x-image-width")).toBe("640");
+    expect(thumbnailResponse.headers.get("x-image-height")).toBe("320");
+    const thumbnail = Buffer.from(await thumbnailResponse.arrayBuffer());
+    const thumbnailInfo = await sharp(thumbnail).metadata();
+    expect(thumbnailInfo.width).toBeLessThanOrEqual(192);
+    expect(thumbnailInfo.height).toBeLessThanOrEqual(192);
+
+    const cachedResponse = await fetch(`${baseUrl}/api/resources/thumbnail?id=${encodeURIComponent(id)}`);
+    expect(Buffer.from(await cachedResponse.arrayBuffer())).toEqual(thumbnail);
+
+    const replacement = await sharp({
+      create: { width: 320, height: 640, channels: 4, background: "#cc503f" },
+    }).png().toBuffer();
+    await provider.writeBinary(id, replacement.buffer.slice(replacement.byteOffset, replacement.byteOffset + replacement.byteLength) as ArrayBuffer);
+    const updatedResponse = await fetch(`${baseUrl}/api/resources/thumbnail?id=${encodeURIComponent(id)}`);
+    expect(updatedResponse.headers.get("x-image-width")).toBe("320");
+    expect(updatedResponse.headers.get("x-image-height")).toBe("640");
   });
 
   it("删除项目会连项目文件与资源一起清掉", async () => {

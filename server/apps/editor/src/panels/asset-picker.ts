@@ -146,7 +146,17 @@ function collectByKind(
   }
 }
 
-/** 资源缩略图 / 预览地址（后端原始字节接口）。 */
+/** 原始资源地址，供需要原图像素的编辑与运行时预览使用。 */
 export function assetRawUrl(id: string): string {
   return `/api/resources/raw?id=${encodeURIComponent(id)}`;
+}
+
+/** 小尺寸图片预览，后端转换并按源内容缓存。 */
+export function assetThumbnailUrl(id: string): string {
+  return `/api/resources/thumbnail?id=${encodeURIComponent(id)}`;
+}
+
+/** 图片原始像素尺寸，不下载原始像素数据。 */
+export function assetImageInfoUrl(id: string): string {
+  return `/api/resources/thumbnail?id=${encodeURIComponent(id)}&info=1`;
 }

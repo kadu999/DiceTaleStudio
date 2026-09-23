@@ -1,4 +1,6 @@
 import { parseResourceId, type ResourceKind } from "@dts/resources";
+import sharp from "sharp";
+import { createHash } from "node:crypto";
 import {
   BundleTooLargeError,
   ProjectNotFoundError,
@@ -8,6 +10,18 @@ import { contentTypeFor } from "../mime";
 import { bodyTrimmed, queryRaw, queryTrimmed, readBody, readJsonBody } from "../requests";
 import { HttpError, badRequest, sendBytes, sendEmpty, sendJson, sendText } from "../responses";
 import type { RouteContext } from "../router";
+
+const THUMBNAIL_MAX_EDGE = 192;
+const THUMBNAIL_CACHE_MAX_ENTRIES = 96;
+interface CachedThumbnail {
+  readonly md5: string;
+  readonly data: Buffer;
+  readonly width: number;
+  readonly height: number;
+}
+
+const thumbnailCache = new Map<string, CachedThumbnail>();
+const thumbnailJobs = new Map<string, Promise<CachedThumbnail>>();
 
 /**
  * 通用资源接口：**一条协议一个函数**。
@@ -44,6 +58,78 @@ export async function readResourceRoute(ctx: RouteContext): Promise<void> {
 
   const data = await ctx.provider.readBinary(id);
   sendBytes(ctx.response, 200, contentTypeFor(parseResourceId(id).path), Buffer.from(data));
+}
+
+/** `GET /api/resources/thumbnail?id=`: 按需生成并缓存小型 WebP，避免资源选择器下载原图。 */
+export async function readResourceThumbnailRoute(ctx: RouteContext): Promise<void> {
+  const id = requireId(ctx);
+  if (!(await ctx.provider.exists(id))) {
+    throw new HttpError(404, `资源不存在: ${id}`);
+  }
+
+  const source = Buffer.from(await ctx.provider.readBinary(id));
+  if (ctx.url.searchParams.get("info") === "1") {
+    try {
+      const metadata = await sharp(source, { limitInputPixels: 100_000_000 }).metadata();
+      if (metadata.width === undefined || metadata.height === undefined) {
+        throw new Error("Image dimensions are missing");
+      }
+      const dimensions = metadata.autoOrient ?? { width: metadata.width, height: metadata.height };
+      sendJson(ctx.response, 200, { width: dimensions.width, height: dimensions.height });
+      return;
+    } catch {
+      throw badRequest("无法读取图片");
+    }
+  }
+
+  const md5 = createHash("md5").update(source).digest("hex");
+  let thumbnail = thumbnailCache.get(id);
+  if (thumbnail?.md5 === md5) {
+    thumbnailCache.delete(id);
+    thumbnailCache.set(id, thumbnail);
+  } else {
+    const jobKey = `${id}\n${md5}`;
+    let job = thumbnailJobs.get(jobKey);
+    if (job === undefined) {
+      job = createThumbnail(source, md5);
+      thumbnailJobs.set(jobKey, job);
+    }
+
+    try {
+      thumbnail = await job;
+      thumbnailCache.set(id, thumbnail);
+      if (thumbnailCache.size > THUMBNAIL_CACHE_MAX_ENTRIES) {
+        const oldest = thumbnailCache.keys().next().value;
+        if (oldest !== undefined) thumbnailCache.delete(oldest);
+      }
+    } catch {
+      throw badRequest("无法读取图片");
+    } finally {
+      if (thumbnailJobs.get(jobKey) === job) thumbnailJobs.delete(jobKey);
+    }
+  }
+
+  const headers = {
+    "x-image-width": String(thumbnail.width),
+    "x-image-height": String(thumbnail.height),
+    "cache-control": "private, max-age=86400",
+  };
+  sendBytes(ctx.response, 200, "image/webp", thumbnail.data, headers);
+}
+
+async function createThumbnail(source: Buffer, md5: string): Promise<CachedThumbnail> {
+  const pipeline = sharp(source, { limitInputPixels: 100_000_000 });
+  const metadata = await pipeline.metadata();
+  if (metadata.width === undefined || metadata.height === undefined) {
+    throw new Error("Image dimensions are missing");
+  }
+  const data = await pipeline
+    .rotate()
+    .resize({ width: THUMBNAIL_MAX_EDGE, height: THUMBNAIL_MAX_EDGE, fit: "inside", withoutEnlargement: true })
+    .webp({ quality: 76 })
+    .toBuffer();
+  const dimensions = metadata.autoOrient ?? { width: metadata.width, height: metadata.height };
+  return { md5, data, width: dimensions.width, height: dimensions.height };
 }
 
 /** `PUT|POST /api/resources/raw?id=`：写原始字节（请求体就是文件内容，不解析 JSON）。 */

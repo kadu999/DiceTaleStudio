@@ -270,8 +270,7 @@ export function EditorShell(): React.JSX.Element {
 
       <StatusBar />
 
-      {/* 选择贴图 / 精灵：从项目已有的图片里挑（编辑器不导入素材）。
-          右侧切分面板只对**精灵**出现（`supportsSpriteSheet`）——贴图与地图都只显示整张图 */}
+      {/* 从项目已有图片中选择整张贴图 */}
       <ImagePickerDialog
         open={imagePicker && pickerTarget !== undefined}
         currentId={
@@ -284,7 +283,6 @@ export function EditorShell(): React.JSX.Element {
         onClose={() => openImagePicker(null)}
         onPick={(image, sprite) => {
           if (imagePickerTarget !== null) {
-            // 图 + 格子一次写进去（同一条撤销记录）
             const meta = useEditorStore.getState().ensureAssetMeta(image.id);
             setObjectImageSprite(imagePickerTarget, { ...image, guid: meta.guid }, sprite);
           }

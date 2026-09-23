@@ -337,11 +337,7 @@ test.describe("创建与编辑场景对象", () => {
           const file = await readSceneFile(request, project, SCENE_A);
           return componentDataOf(file, { kind: "Map" }, COMPONENT.gridMap)?.["image"];
         })
-        .toEqual({
-          id: `project:${project}/Assets/images/floor.png`,
-          width: 4,
-          height: 4,
-        });
+        .toMatchObject({ width: 4, height: 4, guid: expect.stringMatching(/^[0-9a-f]{32}$/) });
 
       // 面板上的路径跟着变，而且**不是**一整串逻辑 ID
       await expect(fields).toContainText("images/floor.png");
@@ -800,8 +796,8 @@ test.describe("创建与编辑场景对象", () => {
                 gridMap: objectComponentData(sprite, COMPONENT.gridMap),
               };
         })
-        .toEqual({
-          texture: { id: imageId, width: 200, height: 150 },
+        .toMatchObject({
+          texture: { id: expect.stringMatching(/^[0-9a-f]{32}$/), width: 200, height: 150, guid: expect.stringMatching(/^[0-9a-f]{32}$/) },
           gridMap: undefined,
         });
     } finally {

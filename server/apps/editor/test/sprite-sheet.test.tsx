@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { vi } from "vitest";
 import {
   SPRITE_COMPONENT,
@@ -13,6 +13,7 @@ import {
   type SceneObjectDoc,
 } from "@dts/document";
 import { ImagePickerDialog } from "../src/app/ImagePickerDialog";
+import { SpriteEditorDialog } from "../src/app/SpriteEditorDialog";
 import { InspectorPanel } from "../src/panels/inspector/InspectorPanel";
 import { metaHistory } from "../src/state/store-core";
 import { projectHistory, sceneHistory, useEditorStore } from "../src/state/editor-store";
@@ -30,6 +31,7 @@ import type { ResourceTreeNode } from "../src/services/project-api";
  */
 
 const IMAGE_ID = "project:测试/Assets/images/sheet.png";
+const PLAIN_IMAGE_ID = "project:测试/Assets/images/plain.png";
 const IMAGE = { id: IMAGE_ID, width: 256, height: 128 };
 
 const TREE: ResourceTreeNode[] = [
@@ -40,6 +42,7 @@ const TREE: ResourceTreeNode[] = [
     type: "folder",
     children: [
       { name: "sheet.png", path: "Assets/images/sheet.png", id: IMAGE_ID, type: "file", size: 1 },
+      { name: "plain.png", path: "Assets/images/plain.png", id: PLAIN_IMAGE_ID, type: "file", size: 1 },
     ],
   },
 ];
@@ -93,6 +96,7 @@ const objectOf = (id: string): SceneObjectDoc | undefined =>
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
   sceneHistory.reset([]);
   projectHistory.reset(createEmptyProject("测试"));
   // 素材 meta 是**第三条轨道**：不重置它，上一个用例写下的切分 / 导入设置会漏到下一个用例
@@ -106,13 +110,13 @@ afterEach(() => {
   });
 });
 
-describe("属性面板：子图那一行", () => {
-  it("整图时不显示子图信息；有子图时写清第几行第几列与切分", () => {
+describe("属性面板：精灵图片行", () => {
+  it("精灵不显示贴图路径和改回整图按钮；子精灵信息仍可见", () => {
     seed([spriteWith(IMAGE)]);
     const first = render(<InspectorPanel />);
-    expect(screen.getByTestId("object-properties").textContent).toContain("images/sheet.png");
+    expect(screen.getByTestId("object-properties").textContent).not.toContain("images/sheet.png");
     expect(screen.queryByTestId("texture-sprite")).toBeNull();
-    expect(screen.queryByTestId("clear-sprite")).toBeNull();
+    expect(screen.getByTestId("pick-texture")).not.toBeNull();
     first.unmount();
 
     seed([spriteWith({ ...IMAGE, sprite: { column: 2, row: 1 } })], {
@@ -121,139 +125,64 @@ describe("属性面板：子图那一行", () => {
     render(<InspectorPanel />);
     expect(screen.getByTestId("texture-sprite").textContent).toContain("子图 第2行第3列（4×4）");
     expect(screen.queryByTestId("texture-sprite-out-of-range")).toBeNull();
+    expect(screen.getByTestId("object-properties").textContent).not.toContain("images/sheet.png");
+    expect(screen.queryByTestId("clear-sprite")).toBeNull();
   });
 
-  it("「改回整图」清掉引用（切分留着——别的对象还在用）", () => {
-    seed([spriteWith({ ...IMAGE, sprite: { column: 1, row: 1 } })], {
-      [IMAGE_ID]: { columns: 2, rows: 2 },
-    });
-    render(<InspectorPanel />);
-    fireEvent.click(screen.getByTestId("clear-sprite"));
-
-    const image = objectOf("sprite-1")?.components[0]?.data as Record<string, unknown>;
-    expect(image.sprite).toBeUndefined();
-    expect(useEditorStore.getState().assetMetas.byId[IMAGE_ID]?.sprite?.sheet).toEqual({ columns: 2, rows: 2 });
-
-    // 一条撤销记录就退回去（还是原来那一格）
-    useEditorStore.getState().undo();
-    expect(
-      (objectOf("sprite-1")?.components[0]?.data as { sprite?: unknown }).sprite,
-    ).toEqual({ column: 1, row: 1 });
-  });
-
-  it("切分被改小之后，越界的格子有提示（渲染按最后一格，但要说出来）", () => {
+  it("越界子精灵仍显示格子信息和提示，但不显示改回整图按钮", () => {
     seed([spriteWith({ ...IMAGE, sprite: { column: 3, row: 3 } })], {
       [IMAGE_ID]: { columns: 2, rows: 2 },
     });
     render(<InspectorPanel />);
     expect(screen.queryByTestId("texture-sprite-out-of-range")).not.toBeNull();
     expect(screen.getByTestId("texture-sprite").textContent).toContain("子图 第4行第4列（2×2）");
+    expect(screen.queryByTestId("clear-sprite")).toBeNull();
   });
 });
 
-describe("选择窗口：切分与选格", () => {
-  it("改行 / 列落进工程文件；点预览选一格；确定时图 + 格子一起写进对象", () => {
-    seed([spriteWith(IMAGE)]);
+describe("选择窗口：搜索图片与选择子精灵", () => {
+  it("可搜索、选已有格子，并通过缩略图接口读取原图尺寸", async () => {
+    seed([spriteWith(IMAGE)], { [IMAGE_ID]: { columns: 2, rows: 2 } });
+    const plainMeta: AssetMetaDoc = {
+      formatVersion: 1,
+      guid: "f".repeat(32),
+      importer: "texture",
+    };
+    const metaTable = { ...useEditorStore.getState().assetMetaTable, [PLAIN_IMAGE_ID]: plainMeta };
+    metaHistory.reset(metaTable);
+    useEditorStore.setState({ assetMetaTable: metaTable, assetMetas: createAssetMetas(Object.entries(metaTable).map(([id, meta]) => ({ id, meta }))) });
     const picked = vi.fn();
-    render(
-      <ImagePickerDialog
-        open
-        allowSprite
-        currentId={IMAGE_ID}
-        onClose={() => undefined}
-        onPick={picked}
-      />,
-    );
-
-    // 缩略图加载完成才知道真实像素（jsdom 不会真加载图片，这里手动触发一次）
-    fireEvent.load(thumbnailOf(IMAGE_ID));
-
-    // 切成 2×2：立刻落进工程文件（项目级数据，与取消窗口无关）
-    const columns = screen.getByTestId("sprite-sheet-columns");
-    const rows = screen.getByTestId("sprite-sheet-rows");
-    fireEvent.change(columns, { target: { value: "2" } });
-    fireEvent.blur(columns);
-    fireEvent.change(rows, { target: { value: "2" } });
-    fireEvent.blur(rows);
-    expect(useEditorStore.getState().assetMetas.byId[IMAGE_ID]?.sprite?.sheet).toEqual({ columns: 2, rows: 2 });
-
-    // 点预览的右下角那一格（比例 0.75 / 0.75 → 列 1、行 1）
-    const preview = screen.getByTestId("sprite-preview");
-    withBox(preview, 200, 100);
-    fireEvent.click(preview, { clientX: 150, clientY: 75 });
-
-    expect(preview.getAttribute("data-cell")).toBe("1,1");
-    expect(screen.getByTestId("sprite-current-cell").textContent).toContain("第2行第2列 · 2×2");
-    expect(screen.getByTestId("image-picker-confirm").textContent).toContain("使用第2行第2列");
-    // 确定：声明尺寸 = 那一格的大小（256×128 切 2×2 → 128×64）
-    fireEvent.click(screen.getByTestId("image-picker-confirm"));
-    expect(picked).toHaveBeenCalledWith({ id: IMAGE_ID, width: 128, height: 64 }, { column: 1, row: 1 });
-  });
-
-  it("刚切完就顺手选上第一格（否则按钮还是「使用这张贴图」，看着像没有转精灵的按钮）", () => {
-    seed([spriteWith(IMAGE)]);
-    const picked = vi.fn();
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ width: 256, height: 128 }) });
+    vi.stubGlobal("fetch", fetchMock);
     render(
       <ImagePickerDialog open allowSprite currentId={IMAGE_ID} onClose={() => undefined} onPick={picked} />,
     );
-    fireEvent.load(thumbnailOf(IMAGE_ID));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/api/resources/thumbnail?id="),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    ));
 
-    // 还没切：整图
-    const preview = screen.getByTestId("sprite-preview");
-    expect(preview.getAttribute("data-cell")).toBe("");
-    expect(screen.getByTestId("image-picker-confirm").textContent).toContain("使用这张贴图");
+    expect(screen.queryByTestId("sprite-sheet-panel")).toBeNull();
+    expect(screen.queryByTestId("sprite-sheet-columns")).toBeNull();
+    expect(screen.getAllByTestId("image-picker-item")).toHaveLength(1);
+    expect(screen.getByTestId("image-picker-item").getAttribute("data-asset-id")).toBe(IMAGE_ID);
+    expect(screen.getAllByTestId("image-picker-sprite")).toHaveLength(4);
+    expect(screen.getByTestId("image-picker-preview-sprite").getAttribute("style")).toContain("/api/resources/raw?");
+    expect(screen.getByTestId("image-picker-preview-sprite").getAttribute("data-sprite")).toBe("0,0");
+    expect(document.querySelector('[data-testid="image-picker-sprite"][data-sprite="0,0"]')?.getAttribute("aria-pressed")).toBe("true");
 
-    // 切成 2×2：自动选上第一格，按钮跟着变成「使用第1行第1列」
-    const columns = screen.getByTestId("sprite-sheet-columns");
-    const rows = screen.getByTestId("sprite-sheet-rows");
-    fireEvent.change(columns, { target: { value: "2" } });
-    fireEvent.blur(columns);
-    fireEvent.change(rows, { target: { value: "2" } });
-    fireEvent.blur(rows);
-    expect(preview.getAttribute("data-cell")).toBe("0,0");
-    expect(screen.getByTestId("image-picker-confirm").textContent).toContain("使用第1行第1列");
+    fireEvent.change(screen.getByTestId("image-picker-search"), { target: { value: "missing" } });
+    expect(screen.queryByTestId("image-picker-item")).toBeNull();
+    fireEvent.change(screen.getByTestId("image-picker-search"), { target: { value: "sheet" } });
+    expect(screen.getByTestId("image-picker-item")).not.toBeNull();
+    expect(screen.getAllByTestId("image-picker-sprite")).toHaveLength(4);
+    fireEvent.click(document.querySelector('[data-testid="image-picker-sprite"][data-sprite="1,0"]') as HTMLElement);
+    expect(screen.getByTestId("image-picker-confirm").textContent).toContain("使用精灵");
+    expect(screen.getByTestId("image-picker-preview-sprite").getAttribute("data-sprite")).toBe("1,0");
 
     fireEvent.click(screen.getByTestId("image-picker-confirm"));
-    expect(picked).toHaveBeenCalledWith({ id: IMAGE_ID, width: 128, height: 64 }, { column: 0, row: 0 });
-  });
-
-  it("「使用整图」把格子报成 null；地图对象没有切分面板", () => {
-    seed([spriteWith({ ...IMAGE, sprite: { column: 1, row: 0 } })], {
-      [IMAGE_ID]: { columns: 2, rows: 2 },
-    });
-    const picked = vi.fn();
-    const { unmount } = render(
-      <ImagePickerDialog
-        open
-        allowSprite
-        currentId={IMAGE_ID}
-        currentSprite={{ column: 1, row: 0 }}
-        onClose={() => undefined}
-        onPick={picked}
-      />,
-    );
-
-    fireEvent.load(thumbnailOf(IMAGE_ID));
-
-    // 打开时高亮当前那一格
-    expect(screen.getByTestId("sprite-preview").getAttribute("data-cell")).toBe("1,0");
-    fireEvent.click(screen.getByTestId("image-picker-whole"));
-    expect(picked).toHaveBeenCalledWith({ id: IMAGE_ID, width: 256, height: 128 }, null);
-    unmount();
-
-    // 地图：整块切分面板都不出现（地图的贴图住在 GridMap 里，不支持子图）
-    render(
-      <ImagePickerDialog
-        open
-        allowSprite={false}
-        currentId={IMAGE_ID}
-        onClose={() => undefined}
-        onPick={() => undefined}
-      />,
-    );
-    expect(screen.queryByTestId("sprite-preview")).toBeNull();
-    expect(screen.queryByTestId("image-picker-whole")).toBeNull();
-    expect(screen.getByTestId("image-picker-confirm").textContent).toContain("使用这张贴图");
+    expect(picked).toHaveBeenCalledWith({ id: IMAGE_ID, width: 128, height: 64 }, { column: 1, row: 0 });
+    expect(useEditorStore.getState().assetMetas.byId[IMAGE_ID]?.sprite?.sheet).toEqual({ columns: 2, rows: 2 });
   });
 });
 
@@ -344,6 +273,56 @@ describe("入口：图片资源上也能切（精灵是这张图自己的属性�
   });
 });
 
+describe("精灵编辑器缩放", () => {
+  it("打开时自动适配图片，且标题不显示资源路径", async () => {
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      if (this.getAttribute("data-testid") === "sprite-editor-viewport") {
+        return { x: 0, y: 0, left: 0, top: 0, right: 700, bottom: 500, width: 700, height: 500, toJSON: () => ({}) };
+      }
+      return { x: 0, y: 0, left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0, toJSON: () => ({}) };
+    });
+
+    render(
+      <SpriteEditorDialog
+        open
+        imageId={IMAGE_ID}
+        imageSize={{ width: 1000, height: 500 }}
+        onClose={() => undefined}
+      />,
+    );
+
+    await act(async () => {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    });
+    expect((screen.getByTestId("sprite-editor-zoom") as HTMLInputElement).value).toBe("62");
+    expect(screen.getByTestId("sprite-editor-dialog").textContent).not.toContain(IMAGE_ID);
+  });
+
+  it("缩放最小为 10%，自适应整图并保留边距", () => {
+    render(
+      <SpriteEditorDialog
+        open
+        imageId={IMAGE_ID}
+        imageSize={{ width: 1000, height: 500 }}
+        onClose={() => undefined}
+      />,
+    );
+
+    const zoom = screen.getByTestId("sprite-editor-zoom") as HTMLInputElement;
+    expect(zoom.min).toBe("10");
+    expect(zoom.max).toBe("400");
+    expect(screen.getByTestId("sprite-editor-fit").hasAttribute("disabled")).toBe(false);
+
+    withBox(screen.getByTestId("sprite-editor-viewport"), 700, 500);
+    fireEvent.click(screen.getByTestId("sprite-editor-fit"));
+    expect(zoom.value).toBe("62");
+    expect(screen.getByTestId("sprite-editor-stage").getAttribute("style")).toContain("width: 620px");
+
+    fireEvent.change(zoom, { target: { value: "10" } });
+    expect(screen.getByTestId("sprite-editor-stage").getAttribute("style")).toContain("width: 100px");
+  });
+});
+
 describe("两条轨道：图 + 格子是一条撤销记录，切分自己一条", () => {
   it("窗口确定那一下 = 一条撤销记录（整件事一起退回去）", () => {
     seed([spriteWith(IMAGE)]);
@@ -377,19 +356,6 @@ describe("两条轨道：图 + 格子是一条撤销记录，切分自己一条"
     ).toEqual({ column: 1, row: 1 });
   });
 });
-
-/** jsdom 不会真的加载图片：手动给 `naturalWidth/Height` 再触发 `load`。 */
-function thumbnailOf(assetId: string): HTMLImageElement {
-  const item = document.querySelector(`[data-testid="image-picker-item"][data-asset-id="${assetId}"]`);
-  const image = item?.querySelector("img") ?? null;
-  if (!(image instanceof HTMLImageElement)) {
-    throw new Error(`列表里没有这张图的缩略图：${assetId}`);
-  }
-
-  Object.defineProperty(image, "naturalWidth", { configurable: true, value: 256 });
-  Object.defineProperty(image, "naturalHeight", { configurable: true, value: 128 });
-  return image;
-}
 
 /** jsdom 的 `getBoundingClientRect` 全是 0：预览的点击比例要一块真的盒子才算得出来。 */
 function withBox(element: HTMLElement, width: number, height: number): void {

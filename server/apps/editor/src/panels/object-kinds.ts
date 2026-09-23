@@ -35,8 +35,8 @@ import { FEATURE_COMPONENT, carriesKind, type ObjectKind } from "@dts/document";
  * 整份 `scene_push` → 前端换镜像），所以它**不需要新协议命令**。
  *
  * 「贴图」是实体种类下的第三个：`kind: "Image"`，**只负责把一张图渲染出来**——和精灵一样挑一张图
- * 显示，唯一的区别是它**不引用图集里的格子**（选择图片弹框不给右侧切分面板，见 `ImagePickerDialog`
- * 的 `allowSprite`）。数据上两者用**不同的图片组件**（贴图 `ImageLayer`、精灵 `SpriteLayer`），
+ * 显示，唯一的区别是它**不引用图集里的格子**（选择时不显示子精灵）。数据上两者用**不同的图片组件**
+ * （贴图 `ImageLayer`、精灵 `SpriteLayer`），
  * 而「视频」那一组只对地图与贴图出现（`supportsVideo`）。
  */
 

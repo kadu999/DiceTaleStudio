@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { SPRITE_SHEET_MAX, normalizeSpriteSheet, spriteCellSizeOf } from "@dts/document";
 import { useEditorStore } from "../state/editor-store";
@@ -24,6 +24,7 @@ export function SpriteEditorDialog({
   const [rows, setRows] = useState("1");
   const [zoom, setZoom] = useState("100");
   const [selectedCell, setSelectedCell] = useState<{ column: number; row: number } | null>(null);
+  const viewportRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) {
@@ -42,7 +43,31 @@ export function SpriteEditorDialog({
   );
   const aspectRatio = imageSize === undefined ? "4 / 3" : `${imageSize.width} / ${imageSize.height}`;
   const cellSize = imageSize === undefined ? undefined : spriteCellSizeOf(parsed, imageSize);
-  const scale = Math.min(400, Math.max(25, Number(zoom) || 100)) / 100;
+  const scale = Math.min(400, Math.max(10, Number(zoom) || 100)) / 100;
+
+  const fitImage = (): void => {
+    const viewport = viewportRef.current;
+    if (viewport === null || imageSize === undefined) {
+      return;
+    }
+
+    const bounds = viewport.getBoundingClientRect();
+    const availableWidth = Math.max(0, bounds.width - 72);
+    const availableHeight = Math.max(0, bounds.height - 72);
+    const fitPercent = Math.floor(
+      Math.min(availableWidth / imageSize.width, availableHeight / imageSize.height) * 100,
+    );
+    setZoom(String(Math.min(400, Math.max(10, fitPercent))));
+  };
+
+  useEffect(() => {
+    if (!open || imageSize === undefined) {
+      return;
+    }
+
+    const frame = requestAnimationFrame(fitImage);
+    return () => cancelAnimationFrame(frame);
+  }, [open, imageId, imageSize?.width, imageSize?.height]);
 
   const apply = (): void => {
     setSpriteSheet(imageId, parsed.columns === 1 && parsed.rows === 1 ? null : parsed);
@@ -58,19 +83,14 @@ export function SpriteEditorDialog({
           className="fixed left-1/2 top-1/2 z-[80] flex h-[min(860px,94vh)] w-[min(1320px,96vw)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded border border-[var(--color-editor-border)] bg-[var(--color-editor-panel)] shadow-2xl"
         >
           <div className="flex flex-none items-center justify-between border-b border-[var(--color-editor-border)] px-3 py-2">
-            <div className="min-w-0">
-              <Dialog.Title className="text-[13px] font-semibold">精灵编辑器</Dialog.Title>
-              <div className="max-w-[70vw] truncate font-mono text-[10px] text-[var(--color-editor-text-dim)]">
-                {imageId}
-              </div>
-            </div>
+            <Dialog.Title className="text-[13px] font-semibold">精灵编辑器</Dialog.Title>
             <div className="text-[10px] text-[var(--color-editor-text-dim)]">
               {parsed.columns} × {parsed.rows}
             </div>
           </div>
 
           <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-            <div className="relative min-h-0 flex-1 overflow-auto bg-[#111318] p-5">
+            <div ref={viewportRef} data-testid="sprite-editor-viewport" className="relative min-h-0 flex-1 overflow-auto bg-[#111318] p-5">
               <div className="flex min-h-full min-w-full items-center justify-center">
                 <div
                   data-testid="sprite-editor-stage"
@@ -138,31 +158,46 @@ export function SpriteEditorDialog({
                   />
                 </label>
               </div>
-              <label className="mt-4 block text-[10px] text-[var(--color-editor-text-dim)]">
-                缩放 {Math.round(scale * 100)}%
-                <input
-                  data-testid="sprite-editor-zoom"
-                  type="range"
-                  min="25"
-                  max="400"
-                  step="25"
-                  value={zoom}
-                  onChange={(event) => setZoom(event.target.value)}
-                  className="mt-2 w-full accent-[var(--color-editor-accent)]"
-                />
-              </label>
-              <div className="mt-5 border-t border-[var(--color-editor-border)] pt-3 text-[10px] leading-4 text-[var(--color-editor-text-dim)]">
-                {imageSize === undefined ? "正在读取图片尺寸，预览会先按比例显示。" : `原图 ${imageSize.width} × ${imageSize.height}`}
-                {cellSize === undefined ? null : `；单格 ${cellSize.width} × ${cellSize.height}`}
+              <div className="mt-4 flex items-center justify-between gap-2">
+                <label className="min-w-0 flex-1 text-[10px] text-[var(--color-editor-text-dim)]">
+                  缩放 {Math.round(scale * 100)}%
+                  <input
+                    data-testid="sprite-editor-zoom"
+                    type="range"
+                    min="10"
+                    max="400"
+                    step="1"
+                    value={zoom}
+                    onChange={(event) => setZoom(event.target.value)}
+                    className="mt-2 w-full accent-[var(--color-editor-accent)]"
+                  />
+                </label>
+                <button
+                  type="button"
+                  data-testid="sprite-editor-fit"
+                  disabled={imageSize === undefined}
+                  title={imageSize === undefined ? "图片尺寸读取后可自适应显示" : "缩放至完整显示图片，并保留边缘空白"}
+                  className="toolbar-button mt-3 flex-none hover:toolbar-button-hover disabled:opacity-40"
+                  onClick={fitImage}
+                >
+                  自适应
+                </button>
               </div>
-              <div className="mt-3 text-[10px] text-[var(--color-editor-text-dim)]">
-                {selectedCell === null ? "点击画布选择一个切片" : `已选择第 ${selectedCell.row + 1} 行，第 ${selectedCell.column + 1} 列`}
-              </div>
+              {imageSize === undefined ? null : (
+                <div className="mt-5 border-t border-[var(--color-editor-border)] pt-3 text-[10px] leading-4 text-[var(--color-editor-text-dim)]">
+                  {imageSize.width} × {imageSize.height}
+                  {cellSize === undefined ? null : ` · ${cellSize.width} × ${cellSize.height}`}
+                </div>
+              )}
+              {selectedCell === null ? null : (
+                <div className="mt-3 text-[10px] text-[var(--color-editor-text-dim)]">
+                  第 {selectedCell.row + 1} 行，第 {selectedCell.column + 1} 列
+                </div>
+              )}
             </aside>
           </div>
 
-          <div className="flex flex-none items-center justify-between border-t border-[var(--color-editor-border)] px-3 py-2">
-            <span className="text-[10px] text-[var(--color-editor-text-dim)]">应用后会更新所有引用这张图片的精灵对象</span>
+          <div className="flex flex-none items-center justify-end border-t border-[var(--color-editor-border)] px-3 py-2">
             <div className="flex items-center gap-2">
               <button type="button" data-testid="sprite-editor-cancel" className="toolbar-button hover:toolbar-button-hover" onClick={onClose}>
                 取消

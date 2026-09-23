@@ -102,15 +102,8 @@ test.describe("精灵：把图集切成子图", () => {
       await page.getByTestId("pick-texture").click();
       const dialog = page.getByTestId("image-picker-dialog");
       await expect(dialog).toBeVisible();
-      await expect(page.getByTestId("sprite-sheet-columns")).toHaveValue("2");
-      await expect(page.getByTestId("sprite-sheet-rows")).toHaveValue("2");
-
-      const preview = page.getByTestId("sprite-preview");
-      const box = await preview.boundingBox();
-      expect(box).not.toBeNull();
-      // 点右上角（比例 0.75 / 0.25 → 列 1、行 0）
-      await page.mouse.click(box!.x + box!.width * 0.75, box!.y + box!.height * 0.25);
-      await expect(preview).toHaveAttribute("data-cell", "1,0");
+      await expect(page.getByTestId("image-picker-sprite")).toHaveCount(4);
+      await page.locator('[data-testid="image-picker-sprite"][data-sprite="1,0"]').click();
 
       await page.getByTestId("image-picker-confirm").click();
       await expect(dialog).toHaveCount(0);
@@ -193,13 +186,18 @@ test.describe("精灵：把图集切成子图", () => {
       await expectColorAt(page, { x: -8, y: 3 }, BLUE);
       await expectColorAt(page, { x: 8, y: -3 }, YELLOW);
 
-      // 把切分改成 4×1（工程级、只有一份）
-      await page.getByTestId("pick-texture").click();
-      const columns = page.getByTestId("sprite-sheet-columns");
-      await columns.fill("4");
-      await columns.blur();
-      await expect(page.getByTestId("sprite-preview")).toHaveAttribute("data-columns", "4");
-      await page.getByTestId("image-picker-cancel").click();
+      // 把切分改成 4×1（工程级、只有一份），从图片资源属性进入精灵编辑器
+      await openLeftTab(page, "assets");
+      await page.locator('[data-testid="folder-content-row"][data-path="Assets/images"] [data-testid="folder-content-label"]').click();
+      await page.locator('[data-testid="folder-content-row"][data-path="Assets/images/sheet.png"] [data-testid="folder-content-label"]').click();
+      const spriteToggle = page.getByTestId("sprite-type-toggle");
+      if (!(await spriteToggle.isChecked())) await spriteToggle.click();
+      await page.getByTestId("sprite-import-mode").selectOption("Multiple");
+      await page.getByTestId("sprite-edit").click();
+      await page.getByTestId("sprite-editor-columns").fill("4");
+      await page.getByTestId("sprite-editor-apply").click();
+      await openLeftTab(page, "hierarchy");
+      await selectObject(page);
 
       // 同一格、同一份引用，现在算出的是**纯绿**——「改切分，引用它的对象一起变」是解析出来的
       await expect(page.getByTestId("texture-sprite")).toContainText("子图 第1行第2列（4×1）");
@@ -242,9 +240,8 @@ test.describe("精灵：把图集切成子图", () => {
 
       await page.getByTestId("pick-texture").click();
       await expect(page.getByTestId("image-picker-dialog")).toBeVisible();
-      await expect(page.getByTestId("sprite-preview")).toHaveCount(0);
-      await expect(page.getByTestId("image-picker-whole")).toHaveCount(0);
-      await expect(page.getByTestId("image-picker-confirm")).toContainText("使用这张贴图");
+      await expect(page.getByTestId("image-picker-sprite")).toHaveCount(0);
+      await expect(page.getByTestId("image-picker-confirm")).toContainText("使用整图");
       await page.getByTestId("image-picker-cancel").click();
 
       // 场景文件里的地图贴图引用照旧只有 id / 宽高（没有子图字段）

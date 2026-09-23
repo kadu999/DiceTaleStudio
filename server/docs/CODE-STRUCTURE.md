@@ -897,6 +897,7 @@ startServer()
 | `/api/projects/reveal` | POST | `{name, path?, selectFile?}` | `{ok:true, path}` | `400`/`404`/`405`/`500` |
 | `/api/resources/index` | GET | `?kind=` | `{entries: ResourceEntry[]}` | — |
 | `/api/resources/raw` | GET | `?id=` | 二进制（Content-Type 按扩展名，`no-store`） | `400`（缺 id）/`404` |
+| `/api/resources/thumbnail` | GET | `?id=`；`info=1` 时只回原图尺寸 | 缩小的 WebP（含原图宽高头）或 JSON 尺寸 | `400`（无效图片）/`404` |
 | `/api/resources/raw` | PUT/POST | `?id=` + 原始字节 | `{ok:true, id, size}` | — |
 | `/api/resources/raw` | DELETE | `?id=` | `{ok:true, id}` | — |
 | `/api/resources/text` | GET | `?id=` | `text/plain`（`no-store`） | `400`/`404` |
