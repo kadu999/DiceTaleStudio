@@ -495,6 +495,7 @@ export interface EditorStoreState {
   openProjectFolder(target?: string, selectFile?: boolean): Promise<boolean>;
   uploadFiles(dirPath: string, files: readonly File[]): Promise<void>;
   deleteResource(id: string, label: string): Promise<boolean>;
+  renameResource(fromId: string, toId: string, label: string): Promise<string | undefined>;
 
   /** 立即把有改动的场景写回文件（手动保存 / 切场景前 flush）。 */
   saveSceneNow(): Promise<boolean>;
@@ -535,7 +536,7 @@ export interface EditorStoreState {
    */
   createScene(name: string): Promise<string | undefined>;
   /** 重命名当前场景：**只改文件名**，场景内容一个字节都不重写。 */
-  renameScene(name: string): Promise<string | undefined>;
+  renameScene(name: string, sceneName?: string): Promise<string | undefined>;
   /** 删除当前场景（至少要保留一个场景）。 */
   deleteScene(): Promise<string | undefined>;
 

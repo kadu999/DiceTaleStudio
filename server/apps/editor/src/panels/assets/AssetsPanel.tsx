@@ -8,26 +8,35 @@ import {
   useRef,
   useState,
 } from "react";
+import * as ContextMenu from "@radix-ui/react-context-menu";
 import { isSpriteMeta, metaOfImage, spriteSheetOfMeta, type AssetMetas } from "@dts/document";
 import { PROJECT_FOLDERS, PROJECT_SCENE_FILE_EXTENSION } from "@dts/resources";
 import type { ResourceTreeNode } from "../../services/project-api";
 import { useEditorStore } from "../../state/editor-store";
 import { assetDisplayName, assetIconKind, formatSize } from "../asset-info";
 import { parseSpriteAssetId, spriteAssetId } from "../asset-picker";
+import { AssetRenameDialog } from "../../app/AssetRenameDialog";
 import { AssetChevron, AssetFileIcon, FolderIcon, SpriteIcon } from "./AssetIcon";
+
+const PROTECTED_ASSET_FOLDERS: readonly string[] = [
+  PROJECT_FOLDERS.config,
+  PROJECT_FOLDERS.scenes,
+  PROJECT_FOLDERS.images,
+  PROJECT_FOLDERS.audio,
+  PROJECT_FOLDERS.video,
+];
 
 /**
  * 资源面板（对齐 Unity 的 Project 窗口：**左目录树 + 右内容**）。
  *
  * - **根就是 `Assets`**：项目名不出现在树里；`Assets/` 之外的东西也不显示
  *   （与 Unity 一致——Project 窗口只反映 `Assets/`，别的交给文件管理器）。
- * - **左列**：目录树，只列文件夹；点行名 = 进这一层并展开/收起它，点行首的小三角**只**开关它。
+ * - **左列**：文件夹与文件都可见；目录行展开/收起，点文件定位并选中它。
  * - **右列**：选中目录的**直属内容**（文件夹在前、文件在后），顶部用路径定位；
  *   点右列的文件夹可以逐级往下走。
  * - **打开目录**打开的是**当前所在的目录**（选中文件时是它所在的目录），不再是永远项目根。
  *
- * **只读**：素材由人 / 外部工具**提交到指定目录**（子目录约定见 `@dts/resources`
- * 的 `PROJECT_FOLDERS`），编辑器只负责查看与引用，不写入资源。
+ * 素材由外部工具提交；编辑器支持查看、引用与重命名资源。
  *
  * 行渲染的账要算清：左树拍成**一维数组**交给 React（增删就是一次 keyed list diff），
  * 行的回调按路径记忆、右列的行整体 `memo`。展开集合与它的派生结果都走 `useMemo` /
@@ -61,6 +70,7 @@ export function AssetsPanel(): React.JSX.Element {
   const [expanded, setExpanded] = useState<readonly string[]>([""]);
   const expandedRef = useRef<readonly string[]>(expanded);
   const [expandedSprites, setExpandedSprites] = useState<readonly string[]>([]);
+  const [renameTarget, setRenameTarget] = useState<ResourceTreeNode | null>(null);
 
   const commitExpanded = useCallback((next: readonly string[]) => {
     expandedRef.current = next;
@@ -156,6 +166,45 @@ export function AssetsPanel(): React.JSX.Element {
 
   /** 每个节点 → 它的直属父目录（空串 = 面板根）。自动定位要高亮、滚动到父目录时用。 */
   const parentOf = useMemo(() => buildParentMap(rootChildren, ""), [rootChildren]);
+
+  const selectTreeFile = useCallback(
+    (node: ResourceTreeNode) => {
+      setSelectedPath(parentOf.get(node.path) ?? "");
+      selectAsset(node.id);
+    },
+    [parentOf, selectAsset],
+  );
+
+  const renamedAsset = useCallback(
+    (node: ResourceTreeNode, id: string, path: string) => {
+      const isScene = node.type === "file" && path.startsWith(`${PROJECT_FOLDERS.scenes}/`) && path.endsWith(PROJECT_SCENE_FILE_EXTENSION);
+      const separator = path.lastIndexOf("/");
+      if (node.type === "folder") {
+        const oldPrefix = `${node.path}/`;
+        setSelectedPath((current) =>
+          current === node.path || current.startsWith(oldPrefix)
+            ? `${path}${current.slice(node.path.length)}`
+            : current,
+        );
+        commitExpanded(
+          expandedRef.current.map((item) =>
+            item === node.path || item.startsWith(oldPrefix)
+              ? `${path}${item.slice(node.path.length)}`
+              : item,
+          ),
+        );
+      } else {
+        setSelectedPath(separator < 0 ? "" : path.slice(0, separator));
+      }
+      if (isScene) {
+        selectAsset(null);
+        return;
+      }
+
+      selectAsset(node.type === "folder" ? null : id);
+    },
+    [commitExpanded, selectAsset],
+  );
 
   /**
    * 在右列选中的那个文件（「打开目录」的目标 / 左树的高亮都用它）。
@@ -338,24 +387,36 @@ export function AssetsPanel(): React.JSX.Element {
       ) : null}
 
       <div className="flex min-h-0 flex-1">
-        {/* 左列：目录树（只列文件夹） */}
+        {/* 左列：目录树（展开的目录同时列出文件） */}
         <div
           data-testid="folder-tree"
           className="flex w-2/5 min-w-[92px] flex-none flex-col border-r border-[var(--color-editor-border)]"
         >
           <div ref={treeScrollRef} className="min-h-0 flex-1 overflow-auto py-1 text-[12px]">
             {visibleRows.map(({ node, depth }, index) => (
-              <FolderRow
-                key={`${String(index)}:${node.path}`}
-                path={node.path}
-                name={node.path === "" ? rootName : node.name}
-                depth={depth}
-                expanded={expanded.includes(node.path)}
-                selected={highlightPath === node.path}
-                onSelect={folderCallbacks(node.path)}
-                onToggle={toggle}
-                registerRow={registerRow}
-              />
+              node.type === "folder" ? (
+                <FolderRow
+                  key={`${String(index)}:${node.path}`}
+                  node={node}
+                  name={node.path === "" ? rootName : node.name}
+                  depth={depth}
+                  expanded={expanded.includes(node.path)}
+                  selected={highlightPath === node.path}
+                  onSelect={folderCallbacks(node.path)}
+                  onToggle={toggle}
+                  registerRow={registerRow}
+                  onRename={setRenameTarget}
+                />
+              ) : (
+                <TreeFileRow
+                  key={`${String(index)}:${node.path}`}
+                  node={node}
+                  depth={depth}
+                  selected={selectedFile?.id === node.id}
+                  onSelect={() => selectTreeFile(node)}
+                  onRename={setRenameTarget}
+                />
+              )
             ))}
           </div>
         </div>
@@ -396,6 +457,7 @@ export function AssetsPanel(): React.JSX.Element {
                       onEnter={enterCallbacks(node.path)}
                       onSelect={selectAsset}
                       onOpenScene={openScene}
+                      onRename={setRenameTarget}
                     />
                   )}
                   {(spriteExpanded || duplicateSpriteFile) && spriteCount > 0
@@ -419,12 +481,18 @@ export function AssetsPanel(): React.JSX.Element {
       <div className="flex-none border-t border-[var(--color-editor-border)] px-2 py-0.5 text-[10px] text-[var(--color-editor-text-dim)]">
         {project.busy ? "处理中…" : `${contents.length} 项`}
       </div>
+
+      <AssetRenameDialog
+        asset={renameTarget}
+        onClose={() => setRenameTarget(null)}
+        onRenamed={renamedAsset}
+      />
     </div>
   );
 }
 
 interface FolderRowProps {
-  readonly path: string;
+  readonly node: ResourceTreeNode;
   readonly name: string;
   readonly depth: number;
   readonly expanded: boolean;
@@ -432,10 +500,11 @@ interface FolderRowProps {
   readonly onSelect: () => void;
   readonly onToggle: (path: string) => void;
   readonly registerRow: (path: string, element: HTMLDivElement | null) => void;
+  readonly onRename: (node: ResourceTreeNode) => void;
 }
 
 const FolderRow = function FolderRow({
-  path,
+  node,
   name,
   depth,
   expanded,
@@ -443,7 +512,9 @@ const FolderRow = function FolderRow({
   onSelect,
   onToggle,
   registerRow,
+  onRename,
 }: FolderRowProps): React.JSX.Element {
+  const path = node.path;
   const handleToggle = useCallback(() => onToggle(path), [onToggle, path]);
   const setRef = useCallback(
     (element: HTMLDivElement | null) => registerRow(path, element),
@@ -451,6 +522,7 @@ const FolderRow = function FolderRow({
   );
 
   return (
+    <AssetContextMenu node={node} onRename={onRename}>
     <div
       ref={setRef}
       data-testid="folder-tree-row"
@@ -484,9 +556,51 @@ const FolderRow = function FolderRow({
         <FolderIcon open={expanded} />
         <span className="truncate">{name}</span>
       </button>
+      <RenameButton node={node} onRename={onRename} />
     </div>
+    </AssetContextMenu>
   );
 };
+
+function TreeFileRow({
+  node,
+  depth,
+  selected,
+  onSelect,
+  onRename,
+}: {
+  readonly node: ResourceTreeNode;
+  readonly depth: number;
+  readonly selected: boolean;
+  readonly onSelect: () => void;
+  readonly onRename: (node: ResourceTreeNode) => void;
+}): React.JSX.Element {
+  return (
+    <AssetContextMenu node={node} onRename={onRename}>
+      <div
+        data-testid="folder-tree-row"
+        data-path={node.path}
+        data-type="file"
+        data-icon={assetIconKind(node.name)}
+        data-selected={selected}
+        className={`flex items-center rounded pr-1 ${selected ? "bg-[var(--color-editor-accent-dim)] text-white" : "hover:bg-[var(--color-editor-panel-alt)]"}`}
+        style={{ paddingLeft: `${2 + depth * 12}px` }}
+      >
+        <span aria-hidden className="h-[18px] w-[18px] flex-none" />
+        <button
+          type="button"
+          data-testid="folder-tree-file-label"
+          className="asset-row-button flex min-w-0 flex-1 items-center gap-1 py-0.5 text-left"
+          onClick={onSelect}
+        >
+          <AssetFileIcon kind={assetIconKind(node.name)} />
+          <span className="truncate">{assetDisplayName(node.name)}</span>
+        </button>
+        <RenameButton node={node} onRename={onRename} />
+      </div>
+    </AssetContextMenu>
+  );
+}
 
 interface ContentRowProps {
   readonly node: ResourceTreeNode;
@@ -497,6 +611,7 @@ interface ContentRowProps {
   readonly onEnter: () => void;
   readonly onSelect: (id: string) => void;
   readonly onOpenScene: (name: string) => void;
+  readonly onRename: (node: ResourceTreeNode) => void;
 }
 
 /** 右列的一行：文件夹点进去，**文件点选中**（属性面板会显示它的属性），场景文件点是打开场景。 */
@@ -509,6 +624,7 @@ const ContentRow = memo(function ContentRow({
   onEnter,
   onSelect,
   onOpenScene,
+  onRename,
 }: ContentRowProps): React.JSX.Element {
   const isFolder = node.type === "folder";
   const sceneName = sceneNameOf(node);
@@ -532,6 +648,7 @@ const ContentRow = memo(function ContentRow({
   }, [isFolder, node.id, sceneName, onEnter, onSelect, onOpenScene]);
 
   return (
+    <AssetContextMenu node={node} onRename={onRename}>
     <div
       data-testid="folder-content-row"
       data-path={node.path}
@@ -574,9 +691,85 @@ const ContentRow = memo(function ContentRow({
           </span>
         ) : null}
       </button>
+      <RenameButton node={node} onRename={onRename} />
     </div>
+    </AssetContextMenu>
   );
 });
+
+function AssetContextMenu({
+  node,
+  onRename,
+  children,
+}: {
+  readonly node: ResourceTreeNode;
+  readonly onRename: (node: ResourceTreeNode) => void;
+  readonly children: React.ReactNode;
+}): React.JSX.Element {
+  return (
+    <ContextMenu.Root>
+      <ContextMenu.Trigger asChild>{children}</ContextMenu.Trigger>
+      <ContextMenu.Portal>
+        <ContextMenu.Content className="z-[70] min-w-36 rounded border border-[var(--color-editor-border)] bg-[var(--color-editor-panel)] p-1 shadow-xl">
+          <ContextMenu.Item
+            data-testid="asset-rename-action"
+            disabled={
+              node.path.length === 0 ||
+              (node.type === "folder" && PROTECTED_ASSET_FOLDERS.includes(node.path))
+            }
+            className="cursor-default rounded px-2 py-1 text-[12px] outline-none data-[highlighted]:bg-[var(--color-editor-accent-dim)]"
+            onSelect={() => onRename(node)}
+          >
+            重命名
+          </ContextMenu.Item>
+        </ContextMenu.Content>
+      </ContextMenu.Portal>
+    </ContextMenu.Root>
+  );
+}
+
+function RenameButton({
+  node,
+  onRename,
+}: {
+  readonly node: ResourceTreeNode;
+  readonly onRename: (node: ResourceTreeNode) => void;
+}): React.JSX.Element | null {
+  const disabled =
+    node.path.length === 0 ||
+    (node.type === "folder" && PROTECTED_ASSET_FOLDERS.includes(node.path));
+  if (disabled) {
+    return null;
+  }
+
+  return (
+    <button
+      type="button"
+      data-testid="asset-rename-button"
+      title={`重命名「${node.name}」`}
+      aria-label={`重命名 ${node.name}`}
+      className="asset-row-button flex h-[18px] w-[20px] flex-none items-center justify-center rounded text-[var(--color-editor-text-dim)] hover:bg-[var(--color-editor-panel-alt)] hover:text-[var(--color-editor-text)]"
+      onClick={(event) => {
+        event.stopPropagation();
+        onRename(node);
+      }}
+    >
+      <svg
+        data-icon="rename"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+        className="h-3 w-3"
+      >
+        <path d="m15 5 4 4M4 20l4-.8L19 8a2.1 2.1 0 0 0-3-3L5 16z" />
+      </svg>
+    </button>
+  );
+}
 
 function SpriteContentRow({
   node,
@@ -649,7 +842,7 @@ function isSameNameAsFolder(node: ResourceTreeNode, folderPath: string): boolean
 }
 
 /**
- * 某个目录的**直属**文件夹行（不含面板根），并按「父目录是否展开」往下列；文件不进左树。
+ * 列出已展开目录的直属项；目录与文件都出现在左树中。
  *
  * **纯函数、每层返回新数组**：不借用外部累加器，所以任何一次调用都不会碰到上一次的结果
  * ——这个面板踩过一回共享可变累加器的坑（上一轮的行会跟着 `useMemo` 的缓存串到下一轮）。
@@ -663,12 +856,8 @@ function folderRows(
 ): { node: ResourceTreeNode; depth: number }[] {
   const rows: { node: ResourceTreeNode; depth: number }[] = [];
   for (const node of nodes) {
-    if (node.type !== "folder") {
-      continue;
-    }
-
     rows.push({ node, depth });
-    if (expanded.includes(node.path)) {
+    if (node.type === "folder" && expanded.includes(node.path)) {
       rows.push(...folderRows(node.children ?? [], expanded, depth + 1));
     }
   }

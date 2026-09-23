@@ -127,7 +127,7 @@ function stubFetch(): string[] {
     return Promise.resolve({
       ok: true,
       status: 200,
-      json: async () => ({ ok: true, path: "/绝对/路径" }),
+      json: async () => ({ ok: true, path: "/绝对/路径", tree: TREE, metas: {}, unreadable: [], entries: [] }),
     });
   });
   return calls;
@@ -151,12 +151,13 @@ describe("资源面板：图标", () => {
   it("目录树每一行都有文件夹图标，右列文件夹与文件各按类型给图标", () => {
     render(<AssetsPanel />);
 
-    // 树里只列文件夹：面板根（path 是空串）+ 两个子目录
+    // 树里列目录与文件：面板根 + 两个子目录 + 根目录文件
     const treeRows = screen.getAllByTestId("folder-tree-row");
     expect(treeRows.map((row) => row.getAttribute("data-icon"))).toEqual([
       "folder",
       "folder",
       "folder",
+      "text",
     ]);
     expect(treeRows.every((row) => row.querySelector("svg") !== null)).toBe(true);
 
@@ -179,13 +180,13 @@ describe("资源面板：展开三角", () => {
     render(<AssetsPanel />);
 
     // 根是展开的：Assets 的直属子目录都在，但嵌套的 bgm 还没出现
-    expect(treePaths()).toEqual(["", "Assets/images", "Assets/audio"]);
+    expect(treePaths()).toEqual(["", "Assets/images", "Assets/audio", "Assets/note.txt"]);
 
     fireEvent.click(rowButton("folder-tree-row", "Assets/audio", "folder-tree-toggle"));
-    expect(treePaths()).toEqual(["", "Assets/images", "Assets/audio", "Assets/audio/bgm"]);
+    expect(treePaths()).toEqual(["", "Assets/images", "Assets/audio", "Assets/audio/bgm", "Assets/note.txt"]);
 
     fireEvent.click(rowButton("folder-tree-row", "Assets/audio", "folder-tree-toggle"));
-    expect(treePaths()).toEqual(["", "Assets/images", "Assets/audio"]);
+    expect(treePaths()).toEqual(["", "Assets/images", "Assets/audio", "Assets/note.txt"]);
 
     // 全程没有「进目录」：右列还在项目根（如果点三角被当成进目录，这里会变成 audio 的内容）
     expect(screen.getByTestId("folder-breadcrumb").textContent).toBe("/");
@@ -199,6 +200,42 @@ describe("资源面板：展开三角", () => {
 
     expect(screen.getByTestId("folder-breadcrumb").textContent).toBe("/images");
     expect(contentRow("Assets/images/Map001.png")).toBeTruthy();
+  });
+
+  it("左树文件行可定位到所在目录并选中资源", () => {
+    render(<AssetsPanel />);
+
+    fireEvent.click(rowButton("folder-tree-row", "Assets/note.txt", "folder-tree-file-label"));
+
+    expect(screen.getByTestId("folder-breadcrumb").textContent).toBe("/");
+    expect(findRow("folder-content-row", "Assets/note.txt").getAttribute("data-selected")).toBe("true");
+  });
+
+  it("资源右键菜单可改名普通文件并保留扩展名", async () => {
+    const calls = stubFetch();
+    render(<AssetsPanel />);
+
+    fireEvent.click(contentRow("Assets/note.txt").querySelector('[data-testid="asset-rename-button"]') as HTMLElement);
+    expect((screen.getByTestId("asset-rename-input") as HTMLInputElement).value).toBe("note");
+
+    fireEvent.change(screen.getByTestId("asset-rename-input"), { target: { value: "readme" } });
+    fireEvent.click(screen.getByTestId("asset-rename-confirm"));
+
+    await waitFor(() => expect(calls.some((call) => call.includes('"to":"project:测试/Assets/readme.txt"'))).toBe(true));
+    expect(screen.queryByTestId("asset-rename-dialog")).toBeNull();
+  });
+
+  it("资源右键菜单可重命名文件夹", async () => {
+    const calls = stubFetch();
+    render(<AssetsPanel />);
+
+    fireEvent.click(contentButton("Assets/audio"));
+    fireEvent.click(contentRow("Assets/audio/bgm").querySelector('[data-testid="asset-rename-button"]') as HTMLElement);
+    fireEvent.change(screen.getByTestId("asset-rename-input"), { target: { value: "sounds" } });
+    fireEvent.click(screen.getByTestId("asset-rename-confirm"));
+
+    await waitFor(() => expect(calls.some((call) => call.includes('"to":"project:测试/Assets/audio/sounds"'))).toBe(true));
+    expect(screen.queryByTestId("asset-rename-dialog")).toBeNull();
   });
 });
 
@@ -217,13 +254,20 @@ describe("资源面板：定位选中的文件", () => {
     render(<AssetsPanel />);
 
     // audio/bgm 一开始不在树里（audio 还没展开）
-    expect(treePaths()).toEqual(["", "Assets/images", "Assets/audio"]);
+    expect(treePaths()).toEqual(["", "Assets/images", "Assets/audio", "Assets/note.txt"]);
 
     fireEvent.click(contentButton("Assets/audio"));
     fireEvent.click(contentButton("Assets/audio/bgm"));
 
     // 左树自己展开到 bgm，并把它标成「当前所在的目录」
-    expect(treePaths()).toEqual(["", "Assets/images", "Assets/audio", "Assets/audio/bgm"]);
+    expect(treePaths()).toEqual([
+      "",
+      "Assets/images",
+      "Assets/audio",
+      "Assets/audio/bgm",
+      "Assets/audio/bgm/theme.mp3",
+      "Assets/note.txt",
+    ]);
     expect(findRow("folder-tree-row", "Assets/audio/bgm").getAttribute("data-selected")).toBe(
       "true",
     );

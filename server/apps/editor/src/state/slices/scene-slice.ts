@@ -229,10 +229,10 @@ export function createSceneSlice(
       }
     },
 
-    async renameScene(name) {
+    async renameScene(name, sceneName = get().activeSceneName ?? undefined) {
       const project = get().project.current;
-      const current = get().activeSceneName;
-      if (project === null || current === null) {
+      const current = sceneName;
+      if (project === null || current === undefined || !get().scenes.some((scene) => scene.name === current)) {
         return "还没有可以重命名的场景";
       }
 
@@ -240,7 +240,9 @@ export function createSceneSlice(
         return "运行态下不能重命名场景，先点「编辑」退出运行";
       }
 
-      // 先写回：改名只搬文件，待保存的改动必须落进被搬的那个文件里
+      const wasActive = get().activeSceneName === current;
+
+      // loadScenes 会重载整份场景列表；先落盘当前场景，避免改名其它场景时冲掉编辑中的改动
       await get().flushSceneSave();
 
       const trimmed = name.trim();
@@ -253,7 +255,7 @@ export function createSceneSlice(
         return undefined;
       }
 
-      if (isSceneNameTaken(get().scenes, trimmed)) {
+      if (isSceneNameTaken(get().scenes, trimmed, current)) {
         return `场景「${trimmed}」已存在`;
       }
 
@@ -284,7 +286,9 @@ export function createSceneSlice(
         await projectApi.renameResource(sceneFileId, projectSceneFileId(project, trimmed));
         await get().refreshTree();
         await get().loadScenes();
-        get().setActiveScene(trimmed);
+        if (wasActive) {
+          get().setActiveScene(trimmed);
+        }
         pushLog(makeLog("info", `场景已重命名为：${trimmed}`));
         return undefined;
       } catch (error) {

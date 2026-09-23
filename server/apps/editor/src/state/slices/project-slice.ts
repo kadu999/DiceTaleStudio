@@ -73,6 +73,7 @@ export function createProjectSlice(
   | "openProjectFolder"
   | "uploadFiles"
   | "deleteResource"
+  | "renameResource"
 > {
   // 共享的闭包状态与局部工具都在 ctx 里：这里解构一次，方法体与拆分前逐字一致
   const { pushLog, savedMetas } = ctx;
@@ -507,6 +508,29 @@ export function createProjectSlice(
         set((state) => ({ project: { ...state.project, error: message } }));
         pushLog(makeLog("error", `删除失败：${message}`));
         return false;
+      }
+    },
+
+    async renameResource(fromId, toId, label) {
+      if (get().project.current === null) {
+        return "还没有打开项目";
+      }
+
+      if (get().runtime.runtimeActive) {
+        return "运行态下不能重命名资源，先点「编辑」退出运行";
+      }
+
+      try {
+        await get().flushMetaSave();
+        await projectApi.renameResource(fromId, toId);
+        await get().refreshTree();
+        pushLog(makeLog("info", `已重命名：${label}`));
+        return undefined;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        set((state) => ({ project: { ...state.project, error: message } }));
+        pushLog(makeLog("error", `重命名失败：${message}`));
+        return message;
       }
     },
   };
