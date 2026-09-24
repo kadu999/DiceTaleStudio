@@ -412,6 +412,14 @@ namespace DiceTale
                     continue;
                 }
 
+                if (viewTable.TryGetValue(obj.id, out var existingView)
+                    && existingView != null
+                    && !existingView.MatchesImageComponent(obj))
+                {
+                    Destroy(existingView.gameObject);
+                    viewTable.Remove(obj.id);
+                }
+
                 if (!viewTable.TryGetValue(obj.id, out var view) || view == null)
                 {
                     view = SceneObjectView.Create(obj, sceneRoot, imageLoader);

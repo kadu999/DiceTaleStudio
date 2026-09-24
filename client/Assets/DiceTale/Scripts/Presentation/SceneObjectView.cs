@@ -139,6 +139,13 @@ namespace DiceTale
                    !obj.HasComponent(Protocol.ComponentType.Teleport);
         }
 
+        /// <summary>判断当前视图的图片渲染组件是否与最新镜像一致。</summary>
+        public bool MatchesImageComponent(MirrorObject obj)
+        {
+            var needsSpriteLayer = obj.hasSpriteLayer || obj.image?.sprite != null;
+            return (quad is SpriteLayer) == needsSpriteLayer;
+        }
+
         /// <summary>最近一次对象数据里的染色与显示顺序（<see cref="ApplyVisual"/> 要用，含异步取图回来那次）。</summary>
         private Color currentKindColor = new Color(0.85f, 0.85f, 0.85f, 0.85f);
         private int currentSortingOrder;

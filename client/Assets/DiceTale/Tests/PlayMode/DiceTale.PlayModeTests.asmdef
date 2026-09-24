@@ -1,0 +1,19 @@
+{
+    "name": "DiceTale.PlayModeTests",
+    "rootNamespace": "DiceTale.Tests",
+    "references": [
+        "DiceTale"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false,
+    "optionalUnityReferences": [
+        "TestAssemblies"
+    ]
+}
