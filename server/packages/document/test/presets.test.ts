@@ -7,6 +7,8 @@ import {
   OBJECT_KINDS,
   OBJECT_PRESETS,
   SPRITE_COMPONENT,
+  canAddOptionalObjectComponent,
+  canDefaultObjectComponent,
   carriesComponent,
   componentForSlot,
   createGameObject,
@@ -51,13 +53,50 @@ describe("对象预设表（presets.ts）", () => {
     expect(OBJECT_PRESETS.Teleport.slots.teleport).toBe("Teleport");
   });
 
-  it("组件默认 kind 声明覆盖每个预设槽位，供缺组件旧文档兼容", () => {
+  it("组件模板 kind 声明覆盖每个预设槽位，旧组件 fallback 保持可用", () => {
     for (const preset of Object.values(OBJECT_PRESETS)) {
       for (const component of Object.values(preset.slots)) {
         const definition = COMPONENT_TYPES.find((item) => item.type === component);
-        expect(definition?.defaultKinds, `${preset.kind}.${component}`).toContain(preset.kind);
+        expect(definition?.templateKinds, `${preset.kind}.${component}`).toContain(preset.kind);
+        if (definition?.optionalKinds?.includes(preset.kind) !== true) {
+          expect(definition?.legacyFallbackKinds, `${preset.kind}.${component}`).toContain(preset.kind);
+        }
       }
     }
+
+    for (const definition of COMPONENT_TYPES) {
+      const presetKinds = Object.values(OBJECT_PRESETS)
+        .filter((preset) => Object.values(preset.slots).includes(definition.type))
+        .map((preset) => preset.kind);
+      expect([...(definition.templateKinds ?? [])].sort(), definition.type).toEqual(presetKinds.sort());
+    }
+  });
+
+  it("VideoOverlay 是可选组件：地图与贴图可添加，但不作为缺失必需组件 fallback", () => {
+    const video = COMPONENT_TYPES.find((item) => item.type === DEFAULT_SLOT_COMPONENT.video);
+    expect(video?.templateKinds).toEqual(["Map", "Image"]);
+    expect(video?.optionalKinds).toEqual(["Map", "Image"]);
+    expect(video?.legacyFallbackKinds).toBeUndefined();
+
+    const map = createGameObject({ id: "map", name: "地图", kind: "Map" });
+    const image = createGameObject({ id: "image", name: "贴图", kind: "Image" });
+    const sprite = createGameObject({ id: "sprite", name: "精灵", kind: "Sprite" });
+    expect(canAddOptionalObjectComponent(map, DEFAULT_SLOT_COMPONENT.video)).toBe(true);
+    expect(canAddOptionalObjectComponent(image, DEFAULT_SLOT_COMPONENT.video)).toBe(true);
+    expect(canAddOptionalObjectComponent(sprite, DEFAULT_SLOT_COMPONENT.video)).toBe(false);
+    expect(canDefaultObjectComponent(map, DEFAULT_SLOT_COMPONENT.video)).toBe(false);
+    expect(canDefaultObjectComponent(image, DEFAULT_SLOT_COMPONENT.video)).toBe(false);
+  });
+
+  it("组件 kind mismatch 时，不会以可选准入或必需 fallback 补建缺失组件", () => {
+    const map = createGameObject({ id: "map", name: "地图", kind: "Map" });
+    const mismatched = {
+      ...map,
+      components: [featureComponent(map.id, DEFAULT_SLOT_COMPONENT.teleport, { targets: [] })],
+    };
+
+    expect(canAddOptionalObjectComponent(mismatched, DEFAULT_SLOT_COMPONENT.video)).toBe(false);
+    expect(canDefaultObjectComponent(mismatched, DEFAULT_SLOT_COMPONENT.map)).toBe(false);
   });
 
   it("kind mismatch 不会再为缺失组件提供视频或子图 fallback", () => {

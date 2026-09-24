@@ -27,8 +27,8 @@ import type {
  * 于是「把特性从扁平字段搬进组件」这件事的改动面被压在这个文件里（迁移那一次）。
  *
  * v22 层级移除后，查找一律按**能力槽位**（`ComponentSlot`）走：组件定义自报 `slot`，
- * 这里按 slot 在对象的组件列表上找第一个自报该槽位的组件，**不看 kind**；只有实例缺失时，
- * 写路径才按组件定义中的 `defaultKinds` 兼容旧对象。
+ * 这里按 slot 在对象的组件列表上找第一个自报该槽位的组件，**不看 kind**；实例缺失时，
+ * 创建模板路由与旧组件 fallback 分别读取组件定义中的元数据。
  *
  * 两类函数分工明确：
  * - `xxxOf(object)` —— **纯读**，不改数据，没有这个组件就是 `undefined`；
@@ -65,7 +65,7 @@ export function componentTypeForObjectSlot(
   if (object.components.some((component) => findComponentType(component.type)?.slot === slot)) return undefined;
   if (hasComponentKindMismatch(object)) return undefined;
   return SLOT_COMPONENT_TYPES.find(
-    (definition) => definition.slot === slot && definition.defaultKinds?.includes(object.kind) === true,
+    (definition) => definition.slot === slot && definition.legacyFallbackKinds?.includes(object.kind) === true,
   )?.type;
 }
 
@@ -74,17 +74,28 @@ export function objectImageSlot(object: GameObjectDoc): "map" | "image" {
   if (componentOfSlot(object, "map") !== undefined) return "map";
   if (componentOfSlot(object, "image") !== undefined) return "image";
   if (hasComponentKindMismatch(object)) return "image";
-  return findComponentType(DEFAULT_SLOT_COMPONENT.map)?.defaultKinds?.includes(object.kind) === true
+  return findComponentType(DEFAULT_SLOT_COMPONENT.map)?.templateKinds?.includes(object.kind) === true
     ? "map"
     : "image";
 }
 
-/** A legacy default can supply this component when it is not attached. */
+/** Whether the legacy fallback may recreate this required component when it is missing. */
 export function canDefaultObjectComponent(object: GameObjectDoc, type: string): boolean {
   const definition = findComponentType(type);
-  if (definition?.slot === undefined || definition.defaultKinds?.includes(object.kind) !== true) return false;
+  if (definition?.slot === undefined || definition.legacyFallbackKinds?.includes(object.kind) !== true) return false;
   if (hasComponentKindMismatch(object)) return false;
   return !object.components.some((component) => findComponentType(component.type)?.slot === definition.slot);
+}
+
+/** Whether this kind may add an optional component that is not attached yet. */
+export function canAddOptionalObjectComponent(object: GameObjectDoc, type: string): boolean {
+  const definition = findComponentType(type);
+  return (
+    definition?.slot !== undefined &&
+    definition.optionalKinds?.includes(object.kind) === true &&
+    !hasComponentKindMismatch(object) &&
+    !object.components.some((component) => findComponentType(component.type)?.slot === definition.slot)
+  );
 }
 
 /** Whether attached known components agree with their legacy kind templates. */
@@ -93,7 +104,11 @@ export function hasComponentKindMismatch(object: GameObjectDoc): boolean {
 }
 
 export function supportsObjectComponent(object: GameObjectDoc, type: string): boolean {
-  return object.components.some((component) => component.type === type) || canDefaultObjectComponent(object, type);
+  return (
+    object.components.some((component) => component.type === type) ||
+    canDefaultObjectComponent(object, type) ||
+    canAddOptionalObjectComponent(object, type)
+  );
 }
 
 export function objectSupportsSpriteSheet(object: GameObjectDoc): boolean {
@@ -101,7 +116,7 @@ export function objectSupportsSpriteSheet(object: GameObjectDoc): boolean {
   const imageComponent = componentOfSlot(object, "image")?.type;
   if (imageComponent !== undefined) return imageComponent === "SpriteLayer";
   if (hasComponentKindMismatch(object)) return false;
-  return findComponentType("SpriteLayer")?.defaultKinds?.includes(object.kind) === true;
+  return findComponentType("SpriteLayer")?.templateKinds?.includes(object.kind) === true;
 }
 
 /**
@@ -248,9 +263,10 @@ export function withFeature<T>(object: GameObjectDoc, component: string, data: T
 }
 
 /**
- * 取某个能力槽位的组件数据 draft；**兼容默认允许、但没有实例就补一个默认的**。
+ * 取必需能力槽位的组件数据 draft；**兼容 fallback 允许、但没有实例就补一个默认的**。
  *
- * 准入判据集中在组件定义的 `defaultKinds`；已挂载实例不受 kind 影响。
+ * 准入判据集中在组件定义的 `legacyFallbackKinds`；可选组件使用单独的准入路径。
+ * 已挂载实例不受 kind 影响。
  *
  * 导出是为了让**泛型写入**（`commands/component.ts`）复用同一份准入判据——
  * 那条路必须遵守相同的组件准入规则，避免出现「面板给了入口、命令却拒了」的半套状态。
@@ -332,7 +348,7 @@ export function ensureTeleportData(object: Draft<GameObjectDoc>): Draft<Teleport
 export function ensureVideoData(object: Draft<GameObjectDoc>): Draft<VideoDataDoc> | undefined {
   const component = componentOfSlot(object, "video");
   if (component !== undefined) return component.data as Draft<VideoDataDoc>;
-  if (!canDefaultObjectComponent(object, DEFAULT_SLOT_COMPONENT.video)) return undefined;
+  if (!canAddOptionalObjectComponent(object, DEFAULT_SLOT_COMPONENT.video)) return undefined;
   return writeFeature(
     object,
     DEFAULT_SLOT_COMPONENT.video,

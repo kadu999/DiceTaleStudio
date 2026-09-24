@@ -7,7 +7,9 @@ import type { ComponentDoc } from "./types";
  * **v19 起，对象身上那些「可插拔特性」是组件**：地图 / 贴图 / 声音 / 传送 / 视频
  * （见 `presets.ts` 的 `OBJECT_PRESETS`）。这些组件多两项：
  * - `slot`：它承担对象哪种能力（**组件自报**；访问器按 slot 找对象上的组件，不看 kind）；
- * - `defaultKinds`：实例缺失时，哪些旧 kind 可按兼容模板补建该组件；
+ * - `templateKinds`：对象创建模板中会预置/路由到该组件的 kind；
+ * - `legacyFallbackKinds`：必需组件实例缺失时，哪些旧 kind 允许兼容补建；
+ * - `optionalKinds`：允许用户主动添加该可选组件的 kind；
  * - `legacyField`：v19 之前它住在对象的哪个扁平字段里——迁移函数靠它把老字段搬成组件实例。
  */
 
@@ -35,16 +37,20 @@ export interface ComponentTypeDef {
   readonly slot?: ComponentSlot;
   /** v19 之前这个特性住在对象的哪个扁平字段里（只有从对象特性提升上来的组件有）。 */
   readonly legacyField?: ComponentSlot;
-  /** Object kinds that may receive this component when legacy documents omit its instance. */
-  readonly defaultKinds?: readonly string[];
+  /** Kinds whose creation preset associates this capability slot with this component. */
+  readonly templateKinds?: readonly string[];
+  /** Kinds allowed to recreate a missing required component for legacy or damaged documents. */
+  readonly legacyFallbackKinds?: readonly string[];
+  /** Kinds allowed to add this optional component when it is not attached yet. */
+  readonly optionalKinds?: readonly string[];
   readonly tooltip?: string;
 }
 
 export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
   // ---------------------------------------------------------------- v19：对象特性提升上来的组件
   //
-  // 这 6 条自报 `slot`；`defaultKinds` 是缺组件旧对象的兼容模板声明。
-  // `presets.ts` 保留创建时的默认组件路由，两边由 presets.test.ts 保证一致。
+  // 这 6 条自报 `slot`。模板、必需组件兼容和可选组件准入分别声明，
+  // 并由 presets.test.ts 保证创建模板与 templateKinds 一致。
   // `legacyField` 记着 v19 之前它住在对象的哪个扁平字段里。
   {
     type: "GridMap",
@@ -52,7 +58,8 @@ export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
     gmEditable: true,
     slot: "map",
     legacyField: "map",
-    defaultKinds: ["Map"],
+    templateKinds: ["Map"],
+    legacyFallbackKinds: ["Map"],
     tooltip: "贴图 + 网格数据（列 / 行 / 行序 / 格子 RLE / 战争雾）；只有地图对象携带",
   },
   {
@@ -62,7 +69,8 @@ export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
     gmEditable: true,
     slot: "image",
     legacyField: "image",
-    defaultKinds: ["Map", "Image", "Player", "Item", "Event"],
+    templateKinds: ["Map", "Image", "Player", "Item", "Event"],
+    legacyFallbackKinds: ["Map", "Image", "Player", "Item", "Event"],
     tooltip: "对象自己要显示的图片，整张铺在对象矩形上（贴图对象用它；地图的贴图在 GridMap 里）",
   },
   {
@@ -74,7 +82,8 @@ export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
     gmEditable: true,
     slot: "image",
     legacyField: "image",
-    defaultKinds: ["Sprite"],
+    templateKinds: ["Sprite"],
+    legacyFallbackKinds: ["Sprite"],
     tooltip: "精灵要显示的图片：可以取图集里的一格（子图），由渲染那一组挑第几行第几列",
   },
   {
@@ -83,7 +92,8 @@ export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
     gmEditable: true,
     slot: "sound",
     legacyField: "sound",
-    defaultKinds: ["PlaySound"],
+    templateKinds: ["PlaySound"],
+    legacyFallbackKinds: ["PlaySound"],
     tooltip: "音频列表 + 选中的那条 + 层级：声明「告诉前端播什么」，编辑器自己不播放",
   },
   {
@@ -92,7 +102,8 @@ export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
     gmEditable: true,
     slot: "teleport",
     legacyField: "teleport",
-    defaultKinds: ["Teleport"],
+    templateKinds: ["Teleport"],
+    legacyFallbackKinds: ["Teleport"],
     tooltip: "候选目标场景 + 选中的那一个；触发 = 切换当前场景（不需要新协议命令）",
   },
   {
@@ -101,7 +112,8 @@ export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
     gmEditable: true,
     slot: "video",
     legacyField: "video",
-    defaultKinds: ["Map", "Image"],
+    templateKinds: ["Map", "Image"],
+    optionalKinds: ["Map", "Image"],
     tooltip: "视频列表 + 选中的那条 + 循环 / 声音两个开关；画面盖在对象自己的矩形上",
   },
 ];
@@ -171,6 +183,6 @@ export function isKnownComponentType(type: string): boolean {
 export function componentKindMismatchOf(components: readonly ComponentDoc[], kind: string): boolean {
   return components.some((component) => {
     const definition = findComponentType(component.type);
-    return definition?.slot !== undefined && definition.defaultKinds?.includes(kind) !== true;
+    return definition?.slot !== undefined && definition.templateKinds?.includes(kind) !== true;
   });
 }

@@ -680,7 +680,7 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
   /**
    * 找一个**实际挂有或按旧 kind 预设可补建某个特性组件**的对象；不写日志。
    *
-   * 已有组件实例优先；旧文档缺失组件时由组件注册表上的 `defaultKinds` 临时兜底。
+   * 已有组件实例优先；缺失必需组件兼容与可选组件准入由组件定义分别声明。
    */
   const objectWithFeature = (objectId: string, component: ComponentType): GameObjectDoc | undefined => {
     const object = findObjectById(objectId);

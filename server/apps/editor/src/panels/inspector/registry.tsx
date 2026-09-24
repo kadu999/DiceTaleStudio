@@ -116,7 +116,7 @@ export const COMPONENT_EDITORS: readonly ComponentEditorDef[] = [
   },
 ];
 
-/** Actual component instances drive editing; kind is only a temporary fallback for missing legacy data. */
+/** Actual component instances drive editing; template and legacy fallback metadata cover missing instances. */
 export function componentEditorsFor(object: GameObjectDoc): readonly ComponentEditorDef[] {
   const hasMap = componentOf(object, DEFAULT_SLOT_COMPONENT.map) !== undefined;
   const legacyFallbackAllowed = !hasComponentKindMismatch(object);

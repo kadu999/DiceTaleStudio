@@ -1,5 +1,4 @@
-import { findComponentType, type ComponentType } from "./components";
-import { componentKindMismatchOf } from "./components";
+import { componentKindMismatchOf, findComponentType, type ComponentType } from "./components";
 import type { GameObjectDoc } from "./types";
 import type { SoundLayer } from "./types";
 
@@ -8,8 +7,9 @@ import type { SoundLayer } from "./types";
  *
  * **组件是唯一功能载体**：组件定义自报 `slot`（「我承担对象哪种能力」，住在
  * `components.ts` 的 `ComponentTypeDef.slot`），对象访问器（`access.ts`）按 slot 在
- * 对象的组件列表上查找。这里保留创建对象时的默认组件路由；缺组件旧对象的兼容
- * `defaultKinds` 声明住在组件定义中，并由测试保证与这里的创建模板一致。
+ * 对象的组件列表上查找。组件定义分别声明创建模板 kind、缺失必需组件 fallback kind
+ * 与可选组件准入 kind；这些职责由 `templateKinds` / `legacyFallbackKinds` / `optionalKinds`
+ * 分别承载。
  *
  * `kind` 因此只是**预设 id**：它不再携带行为、也没有 parent 层级（v22 及更早的层级
  * 已移除，迁移见 `schema.ts` 的 `LEGACY_KINDS`）。查「这个对象显示了哪张图」一律走
@@ -167,16 +167,16 @@ export function carriesComponent(component: ComponentType, kind: ObjectKind): bo
 }
 
 /**
- * 哪些对象能带视频列表：已挂 `VideoOverlay` 的对象；缺组件旧对象按组件的 `defaultKinds` 兼容。
+ * 哪些对象能带视频列表：已挂 `VideoOverlay` 的对象；缺组件时按组件定义的可选准入 kind 添加。
  *
- * 面板、命令和校验的组件实例判据保持一致；kind 只为旧对象提供 fallback。
+ * 面板、命令和校验的组件实例判据保持一致；kind 只为缺失的旧组件提供兼容准入。
  */
 export function supportsVideo(target: ObjectKind | GameObjectDoc): boolean {
   if (typeof target !== "string") {
     if (target.components.some((component) => component.type === DEFAULT_SLOT_COMPONENT.video)) return true;
     if (target.components.some((component) => findComponentType(component.type)?.slot === "video")) return false;
     if (componentKindMismatchOf(target.components, target.kind)) return false;
-    return findComponentType(DEFAULT_SLOT_COMPONENT.video)?.defaultKinds?.includes(target.kind) === true;
+    return findComponentType(DEFAULT_SLOT_COMPONENT.video)?.optionalKinds?.includes(target.kind) === true;
   }
 
   return presetOf(target)?.slots.video !== undefined;
@@ -195,7 +195,7 @@ export function supportsSpriteSheet(target: ObjectKind | GameObjectDoc): boolean
     const image = target.components.find((component) => findComponentType(component.type)?.slot === "image");
     if (image !== undefined) return image.type === SPRITE_COMPONENT;
     if (componentKindMismatchOf(target.components, target.kind)) return false;
-    return presetOf(target.kind)?.slots.image === SPRITE_COMPONENT;
+    return findComponentType(SPRITE_COMPONENT)?.templateKinds?.includes(target.kind) === true;
   }
 
   return presetOf(target)?.slots.image === SPRITE_COMPONENT;

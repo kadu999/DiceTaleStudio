@@ -31,10 +31,10 @@
 - 有组件实例时只显示该组件编辑器。过渡期对组件缺失的旧对象使用明确的兼容 fallback；不在读取时自动重写文档。
 - 验收：现有面板、组件写入、撤销、缺组件旧对象与 kind 错位但显式挂组件的测试通过；协议和存档 golden/contract 无变化。
 
-### 阶段 2：组件优先读写与命令（实现与验证完成，待提交）
+### 阶段 2：组件优先读写与命令（完成）
 
 - 访问器、组件字段命令和功能专用命令统一按实际组件实例工作，不因 kind 不同而拒绝已有组件。
-- 组件缺失时的默认创建兼容集中在组件定义的 `defaultKinds`（或同等兼容声明）中，不再从多个 `kind -> slots` 分支重复推导。
+- 组件缺失时的默认创建兼容集中在组件定义的兼容元数据中，不再从多个 `kind -> slots` 分支重复推导。
 - 图片写入选取实际承载图片的组件；`GridMap` 图片继续保存在地图组件中。子图能力按实际 `SpriteLayer` / `ImageLayer` 组件判定。
 - 视频、声音、传送列表及开关继续走有副作用的专用命令；仅简单标量字段走组件规格的泛型写入。
 - 验收：现有 kind 模板行为不变；kind 错位但组件有效时读、写、运行行为正常；slot 冲突/重复组件仍由现有约束处理。
@@ -46,11 +46,26 @@
 - 对 `kind` 只剩显示、分类、对象创建模板和兼容迁移职责建立可搜索的架构测试约束。
 - 验收：组件组合夹具覆盖每个功能的可见、可编辑、可命令路径；Unity 镜像合同测试与组件协议文档合同测试通过。
 
-### 阶段 4：缩减 kind 兼容并评估退役
+### 阶段 4：缩减 kind 兼容并评估退役（盘点中）
 
 - 统计真实项目与历史文件中的 kind/组件组合；按组件逐项停止 kind fallback，提供明确升级或继续兼容策略。
 - 只有在旧文档迁移、编辑器创建流程、协议与 Unity 客户端均不再依赖 kind 功能语义后，才讨论删除 kind 字段或改文档格式版本。
 - 这一步是独立的破坏性决策；未完成真实数据盘点前不改格式版本、不移除字段。
+
+#### 阶段 4 首轮盘点
+
+| 组件 | 历史 kind / 组件证据 | 当前 kind fallback 的用途 | 首轮决策 |
+| --- | --- | --- | --- |
+| `GridMap` | 历史 `Map` 快照曾无组件；v19 迁移从扁平 `map` 搬入 | 缺组件诊断；地图能力/创建模板路由 | 不退役。历史迁移已覆盖，但需保留当前损坏文档的诊断与地图创建语义 |
+| `ImageLayer` | 历史 `Map` / `Image` / `Player` / `Item` / `Event` 图片字段或旧图片组件 | 新建空对象选图时选择承载组件；无图对象 Inspector 入口；旧格式迁移 | 不退役。先把创建模板路由与旧文档读取 fallback 拆开评估，不能让空白新对象失去选图入口 |
+| `SpriteLayer` | 历史 `SceneObject` 图片字段/旧组件，之后迁移为 `SpriteLayer` | 新建空精灵选择子图组件与编辑入口；旧格式迁移 | 不退役。创建模板职责仍依赖 `Sprite`，旧格式由 schema 迁移 |
+| `PlaySound` | 历史 `PlaySound` 快照曾无组件；v19 从扁平 `sound` 迁移 | 缺组件诊断与手写损坏对象的修复写入 | 暂留。需先决定错误对象是否继续可修复，或提供明确的重建/修复操作 |
+| `Teleport` | 历史 `Teleport` 快照曾无组件；v19 从扁平 `teleport` 迁移 | 缺组件诊断与手写损坏对象的修复写入 | 暂留。与 `PlaySound` 同理，停用会移除当前修复路径 |
+| `VideoOverlay` | 历史 `Map` / `Image` 视频字段在 v19 搬入组件 | 地图/贴图可以启用可选视频能力；开启开关或编辑列表时按 kind 补组件 | 暂不退役。当前没有通用“添加组件”UI，移除后地图/贴图无法从 Inspector 开始添加视频 |
+
+数据范围：仓库当前只有一份样例项目，3 个场景文件共 7 个对象；现行组合为 `Map/GridMap` 1、`Map/GridMap+VideoOverlay` 2、`Sprite/SpriteLayer` 1、`Image/ImageLayer` 1、`PlaySound/PlaySound` 1、`Teleport/Teleport` 1，均匹配。沿样例场景文件 Git 历史收集到 13 种对象快照组合（按每个提交的对象出现次数计）：`Map/<none>` 26、`Map/GridMap` 9、`Map/GridMap+VideoOverlay` 11、`PlaySound/<none>` 7、`PlaySound/PlaySound` 8、`Teleport/<none>` 3、`Teleport/Teleport` 8、`SceneObject/<none>` 15、`SceneObject/SpriteLayer` 1、`SceneObject/TextureRenderer` 1、`Sprite/SpriteLayer` 6、`Image/ImageLayer` 6、`Texture/ImageLayer` 1。该统计会重复计算跨提交未变对象；`<none>` 仅表示快照没有 `components[]` 实例，旧格式可能把能力存在扁平字段中，不代表对象没有该能力。外部真实项目/历史存档不可见，因此这份盘点不能作为停用兼容的用户数据依据。
+
+首轮结论：原 `defaultKinds` 同时承载旧格式兼容、创建模板路由、可选组件准入和损坏对象修复，不能整体删除。尤其 `PlaySound` / `Teleport` 当前 Inspector 没有显式修复入口，直接停用会使缺组件对象报错但无法原位修复。阶段 4 首个切片已将元数据拆为 `templateKinds`、`legacyFallbackKinds`、`optionalKinds`，并为可选组件准入与 mismatch 阻止补建增加测试；本切片不关闭任何 fallback，也不改变当前对象行为。后续再按用途逐项评估是否退役 fallback，并补足损坏对象修复入口或外部数据盘点。
 
 ## 兼容约束
 
@@ -62,18 +77,20 @@
 ## 当前进度与阻塞
 
 - 已提交阶段 1 的 Inspector 组件编辑器注册表：`af2ec3f refactor(editor): register inspector editors by component`。
-- 阶段 2 的实现与本轮自动化验证已完成，当前工作树未提交。访问器、通用组件字段命令、视频/声音/传送专用命令均优先使用实际组件；兼容默认集中在组件 `defaultKinds` 声明，并有测试约束它与创建预设的槽位路由一致。
+- 阶段 2 的实现与自动化验证已完成，提交为 `af5f7b4 refactor(document): drive object behavior from components`。访问器、通用组件字段命令、视频/声音/传送专用命令均优先使用实际组件；阶段 4 切片验证之前的兼容元数据按用途分别声明，并有测试约束模板与组件路由一致。
 - 本轮遇到并处理的问题：`validation.ts` 与 `commands/video.ts` 引用了不存在/错层的组件能力查询名，导致类型检查失败及多个测试级联失败；精灵图片默认组件查询使用了错误来源，导致一批图片/子图读写与协议解析测试失败；将 `ComponentType` 导入一并误删导致 presets 类型错误。更正后，`pnpm typecheck` 通过，9 个定向测试文件的 277 个测试通过。
 - 已补齐 kind 错位的 Inspector、动作徽标、视频运行命令和校验回归；校验只给 mismatch warning，不拒绝或删除显式组件。未知组件仍按原样保留。
 - 最终自动化验证：`pnpm typecheck` 通过；`pnpm test` 通过（79 个文件、1151 个测试）；`pnpm lint` 通过；`pnpm e2e:smoke` 通过（桌面 5 项通过，平板专用用例 1 项按项目配置跳过）。构建仅有依赖 `eruda` direct eval 与 Tailwind sourcemap 警告。
-- 已搜索 `kind` 功能判断残留：编辑器里的功能操作改按组件能力；剩余 `kind` 读取用于分类/筛选、标签展示、创建模板，或无 mismatch 时为缺失组件提供 defaultKinds fallback。`schema.ts` 中历史迁移属于预期职责。Unity 的对象视图创建与视频命令也按组件判断；`kind` 仍用于镜像字段及占位色。
+- 已搜索 `kind` 功能判断残留：编辑器里的功能操作改按组件能力；剩余 `kind` 读取用于分类/筛选、标签展示、创建模板，或按组件定义的 fallback/optional 准入为缺失组件提供兼容。`schema.ts` 中历史迁移属于预期职责。Unity 的对象视图创建与视频命令也按组件判断；`kind` 仍用于镜像字段及占位色。
 - `GridMap` 与 `ImageLayer` 并存时地图图片优先，Inspector 隐藏普通图片面板；已覆盖文档层优先级。kind mismatch 下显式组件的 Inspector 与校验已有回归。协议载荷、文档格式和 Unity 消费格式未改。
 - `apps/backend/test/protocol-document-contract.test.ts` 的 7 个协议-文档合同测试已通过。仓库未发现 Unity Test/Tests 测试程序集；本轮只静态审查 `SceneObjectView.NeedsView` 与视频命令的组件判定，Unity MCP 命名空间不可用，故未执行 Unity 运行时实测，阶段 3 保持进行中。
-- 下一步：在可运行 Unity 测试的环境补做镜像运行时验证，并在 Unity MCP 可连接时实测后评估阶段 3 收尾。阶段 4 暂不开始，不改格式版本、不移除 `kind`。
+- 阶段 4 已开始首轮审计：仓库样例当前 7 个对象无 mismatch；历史提交包含迁移前的无组件快照。逐组件决策与限制见上表；没有外部用户项目样本，且创建模板/可选能力/损坏文档修复仍依赖 kind fallback，故本轮未停用任何 fallback。
+- 阶段 4 首个代码切片已完成并通过本轮自动化验证：将 `defaultKinds` 职责拆为预设组件关联 `templateKinds`、必需组件旧文档补建 `legacyFallbackKinds`、可选组件准入 `optionalKinds`。`VideoOverlay` 仅保留地图/贴图的可选准入，不再走必需组件 fallback；测试覆盖准入范围、通用字段/专用命令补建及 mismatch 时拒绝补建。修改尚未提交。
+- 下一步：在可运行 Unity 测试的环境补做镜像运行时验证；阶段 4 先拆分 fallback 的迁移、创建、准入和修复用途，再补充真实项目盘点后逐组件评估。仍不改格式版本、不移除 `kind` 字段。
 
 ## 当前相关入口
 
-- `packages/document/src/components.ts`：组件定义与历史 kind 默认模板元数据。
+- `packages/document/src/components.ts`：组件定义、创建模板 kind 与兼容准入元数据。
 - `packages/document/src/presets.ts`：现存对象创建模板和兼容查询；后续逐阶段缩减其功能判定职责。
 - `packages/document/src/access.ts`、`packages/document/src/commands/`：组件访问与写入规则。
 - `apps/editor/src/panels/inspector/registry.tsx`：Object Editor 与组件编辑器注册表。
