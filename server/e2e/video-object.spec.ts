@@ -144,13 +144,10 @@ async function seed(
 }
 
 /**
- * 等这一笔改动**落盘**：自动存是防抖的——先变「未保存」，写完才回「已保存」。
- *
- * 直接轮询文件会说不好到底是「还没写完」还是「没写进去」；盯着底栏那个状态，
- * 失败信息才指向真正的原因（与 `object-edit.spec.ts` 的「改了就存」同一条思路）。
+ * 等自动保存完成。`pending` 是短暂状态，输入操作返回前可能已经过去；下方每处调用
+ * 都会继续读取场景文件并断言具体数据，保存状态只负责同步时机。
  */
 async function waitForSaved(page: Page): Promise<void> {
-  await expect(page.getByTestId("status-scene-save")).toHaveAttribute("data-state", "pending");
   await expect(page.getByTestId("status-scene-save")).toHaveAttribute("data-state", "saved");
 }
 
