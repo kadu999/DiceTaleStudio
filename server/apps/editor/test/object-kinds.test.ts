@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { CONCRETE_KINDS, OBJECT_KINDS, presetOf } from "@dts/document";
+import { CONCRETE_KINDS, OBJECT_KINDS, featureComponent, presetOf, type GameObjectDoc } from "@dts/document";
 import {
   KIND_LABELS,
   OBJECT_CATEGORIES,
   categoryOfKind,
   creatableObjects,
+  badgeIconOf,
 } from "../src/panels/object-kinds";
 
 /**
@@ -19,6 +20,25 @@ import {
  * 预设（哪个 kind 允许哪些能力槽位）在 `@dts/document` 的 `presets.ts`，不在这张表里。
  */
 describe("对象类型表（object-kinds.ts）", () => {
+  it("徽标优先按显式功能组件判定，组件不匹配时不沿用 kind 徽标", () => {
+    const base: GameObjectDoc = {
+      id: "custom",
+      name: "组合对象",
+      kind: "PlaySound",
+      active: true,
+      locked: false,
+      sortingOrder: 0,
+      position: { x: 0, y: 0 },
+      rotation: 0,
+      scale: 1,
+      components: [],
+    };
+
+    expect(badgeIconOf({ ...base, components: [featureComponent(base.id, "VideoOverlay", {})] })).toBeUndefined();
+    expect(badgeIconOf({ ...base, components: [featureComponent(base.id, "Teleport", {})] })).toBe("teleport");
+    expect(badgeIconOf(base)).toBe("audio");
+  });
+
   it("每个 ObjectKind 都有种类归属，且只归一个种类", () => {
     for (const kind of OBJECT_KINDS) {
       const owners = OBJECT_CATEGORIES.filter((category) =>

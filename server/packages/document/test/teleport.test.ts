@@ -161,18 +161,18 @@ describe("setTeleportTargets：加 / 移候选场景", () => {
     expect(teleportDataOf(objectOf(next, "t1")!)).toEqual({ targets: [A], picked: A });
   });
 
-  it("非传送阵对象：改不动（返回 false）", () => {
+  it("已挂 Teleport 组件时按组件写入，kind 不再否决", () => {
     const door: GameObjectDoc = {
       ...createTeleportObject({ name: "木门", id: "d1" }),
       kind: "Sprite",
     };
     const scene = sceneWith([door]);
 
-    mutate(scene, (draft) => {
-      expect(setTeleportTargets(draft, "d1", [A])).toBe(false);
+    const next = mutate(scene, (draft) => {
+      expect(setTeleportTargets(draft, "d1", [A])).toBe(true);
     });
 
-    expect(teleportDataOf(objectOf(scene, "d1")!)).toEqual({ targets: [] });
+    expect(teleportDataOf(objectOf(next, "d1")!)).toEqual({ targets: [A], picked: A });
   });
 });
 
@@ -342,7 +342,7 @@ describe("传送阵的校验", () => {
     expect(formatIssues(validateScene(sceneWith([other])))).not.toMatch(/目标就是它自己/);
   });
 
-  it("传送阵挂了贴图会被提醒（它画的是固定徽标）", () => {
+  it("kind 为 Sprite 的对象挂了 Teleport 组件时不因 kind 报错", () => {
     const withImage: GameObjectDoc = {
       ...createTeleportObject({ name: "传送阵", id: "t1", targets: [A], picked: A }),
       components: [
@@ -355,16 +355,16 @@ describe("传送阵的校验", () => {
       ],
     };
 
-    expect(formatIssues(validateScene(sceneWith([withImage])))).toMatch(/不允许改贴图/);
+    expect(formatIssues(validateScene(sceneWith([withImage])))).not.toMatch(/不应携带传送数据/);
   });
 
-  it("非传送阵对象带了传送数据会被提醒", () => {
+  it("kind 不再否决已挂载的 Teleport 组件", () => {
     const door: GameObjectDoc = {
       ...createTeleportObject({ name: "木门", id: "d1" }),
       kind: "Sprite",
       components: [featureComponent("d1", DEFAULT_SLOT_COMPONENT.teleport, { targets: [A] })],
     };
 
-    expect(formatIssues(validateScene(sceneWith([door])))).toMatch(/不应携带传送数据/);
+    expect(formatIssues(validateScene(sceneWith([door])))).not.toMatch(/不应携带传送数据/);
   });
 });

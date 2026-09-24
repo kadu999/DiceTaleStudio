@@ -1,8 +1,7 @@
 // 本文件从 `commands.ts` 拆出（纯搬运，行为不变）：对象级命令。
 import type { Draft } from "immer";
-import { DEFAULT_SLOT_COMPONENT, componentForSlot, displayImageField } from "../presets";
 // 特性的读写一律走访问器（「数据存在哪个组件里」只有 access.ts 知道）
-import { mapDataOf, objectImage, writeFeature } from "../access";
+import { componentTypeForObjectSlot, mapDataOf, objectImage, objectImageSlot, objectSupportsSpriteSheet, writeFeature } from "../access";
 import { DEFAULT_OBJECT_SCALE, clampObjectScale, collapseScale } from "../scale";
 import { DEFAULT_SORTING_ORDER, createId, findObject } from "./shared";
 import { setObjectField } from "./field";
@@ -331,17 +330,20 @@ export function setObjectImage(
     },
     sprite,
   );
-  if (displayImageField(object.kind) === "map") {
+  if (objectImageSlot(object) === "map") {
     const map = mapDataOf(object);
     if (map === undefined) {
       return false;
     }
 
     // 地图的贴图住在它自己的地图数据里：整份写回（组件实例不变，只换 data）
-    writeFeature(object, DEFAULT_SLOT_COMPONENT.map, { ...map, image: next });
+    const mapComponent = componentTypeForObjectSlot(object, "map");
+    if (mapComponent === undefined) return false;
+    writeFeature(object, mapComponent, { ...map, image: next });
   } else {
-    // 精灵写进 `SpriteLayer`、贴图写进 `ImageLayer`（按 kind 取组件名，见 `componentForSlot`）
-    writeFeature(object, componentForSlot("image", object.kind), next);
+    const imageComponent = componentTypeForObjectSlot(object, "image");
+    if (imageComponent === undefined) return false;
+    writeFeature(object, imageComponent, next);
   }
 
   return true;
@@ -365,7 +367,7 @@ export function setObjectSprite(
   sprite: ImageSpriteRef | null,
 ): boolean {
   const object = findObject(scene, objectId);
-  if (object === undefined || displayImageField(object.kind) === "map") {
+  if (object === undefined || !objectSupportsSpriteSheet(object)) {
     return false;
   }
 
@@ -379,7 +381,9 @@ export function setObjectSprite(
     return false;
   }
 
-  writeFeature(object, componentForSlot("image", object.kind), withSpriteRef(current, next));
+  const imageComponent = componentTypeForObjectSlot(object, "image");
+  if (imageComponent === undefined) return false;
+  writeFeature(object, imageComponent, withSpriteRef(current, next));
   return true;
 }
 

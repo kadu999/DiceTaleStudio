@@ -1,4 +1,10 @@
-import { presetOf, type ObjectKind } from "@dts/document";
+import {
+  DEFAULT_SLOT_COMPONENT,
+  presetOf,
+  SLOT_COMPONENT_TYPES,
+  type GameObjectDoc,
+  type ObjectKind,
+} from "@dts/document";
 
 /**
  * 对象类型表：**先分种类，种类下再放对象**。
@@ -111,12 +117,19 @@ export function categoryOfKind(kind: ObjectKind): ObjectCategoryDef | undefined 
  * 2. 属性面板要不要给「渲染」那一组（固定徽标就没有换贴图的入口）；
  * 3. 列表行尾显示什么提示（层级 / 目标场景）。
  */
-export function badgeIconOf(kind: ObjectKind): "audio" | "teleport" | undefined {
-  if (presetOf(kind)?.slots.sound !== undefined) {
+export function badgeIconOf(target: ObjectKind | GameObjectDoc): "audio" | "teleport" | undefined {
+  if (typeof target !== "string") {
+    if (target.components.some((component) => component.type === DEFAULT_SLOT_COMPONENT.sound)) return "audio";
+    if (target.components.some((component) => component.type === DEFAULT_SLOT_COMPONENT.teleport)) return "teleport";
+    if (target.components.some((component) => SLOT_COMPONENT_TYPES.some((definition) => definition.type === component.type))) return undefined;
+    return badgeIconOf(target.kind);
+  }
+
+  if (presetOf(target)?.slots.sound !== undefined) {
     return "audio";
   }
 
-  return presetOf(kind)?.slots.teleport !== undefined ? "teleport" : undefined;
+  return presetOf(target)?.slots.teleport !== undefined ? "teleport" : undefined;
 }
 
 /** 对象类型的展示名（弹框的瓦片、面板的提示共用）。**只有这里写中文**，代码一律用英文。 */

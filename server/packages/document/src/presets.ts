@@ -1,4 +1,6 @@
-import type { ComponentType } from "./components";
+import { findComponentType, type ComponentType } from "./components";
+import { componentKindMismatchOf } from "./components";
+import type { GameObjectDoc } from "./types";
 import type { SoundLayer } from "./types";
 
 /**
@@ -6,8 +8,8 @@ import type { SoundLayer } from "./types";
  *
  * **组件是唯一功能载体**：组件定义自报 `slot`（「我承担对象哪种能力」，住在
  * `components.ts` 的 `ComponentTypeDef.slot`），对象访问器（`access.ts`）按 slot 在
- * 对象的组件列表上查找，**不再看 kind**。这张表回答的只剩一个问题：某个 kind 的
- * 对象**允许**哪些槽位、缺省由哪个组件承载。
+ * 对象的组件列表上查找。这里保留创建对象时的默认组件路由；缺组件旧对象的兼容
+ * `defaultKinds` 声明住在组件定义中，并由测试保证与这里的创建模板一致。
  *
  * `kind` 因此只是**预设 id**：它不再携带行为、也没有 parent 层级（v22 及更早的层级
  * 已移除，迁移见 `schema.ts` 的 `LEGACY_KINDS`）。查「这个对象显示了哪张图」一律走
@@ -165,13 +167,19 @@ export function carriesComponent(component: ComponentType, kind: ObjectKind): bo
 }
 
 /**
- * 哪些对象能带视频列表：**地图与贴图**（精灵不能——见 `OBJECT_PRESETS` 里那两个预设）。
+ * 哪些对象能带视频列表：已挂 `VideoOverlay` 的对象；缺组件旧对象按组件的 `defaultKinds` 兼容。
  *
- * 只有这一处判据（面板显示哪一组、文档命令认不认、校验报不报都走它）——
- * 加新种类时只改 `OBJECT_PRESETS` 里那一行，不会出现「面板给了入口、命令却拒了」的半套状态。
+ * 面板、命令和校验的组件实例判据保持一致；kind 只为旧对象提供 fallback。
  */
-export function supportsVideo(kind: ObjectKind): boolean {
-  return presetOf(kind)?.slots.video !== undefined;
+export function supportsVideo(target: ObjectKind | GameObjectDoc): boolean {
+  if (typeof target !== "string") {
+    if (target.components.some((component) => component.type === DEFAULT_SLOT_COMPONENT.video)) return true;
+    if (target.components.some((component) => findComponentType(component.type)?.slot === "video")) return false;
+    if (componentKindMismatchOf(target.components, target.kind)) return false;
+    return findComponentType(DEFAULT_SLOT_COMPONENT.video)?.defaultKinds?.includes(target.kind) === true;
+  }
+
+  return presetOf(target)?.slots.video !== undefined;
 }
 
 /**
@@ -181,8 +189,16 @@ export function supportsVideo(kind: ObjectKind): boolean {
  * kind 名单：于是「选择图片弹框给不给右侧切分面板」「渲染那一组给不给选格子」两处永远一致。
  * 基类 `GameObject` 与地图返回 `false`（地图的贴图住在 `GridMap` 里，格子按整张贴图算）。
  */
-export function supportsSpriteSheet(kind: ObjectKind): boolean {
-  return presetOf(kind)?.slots.image === SPRITE_COMPONENT;
+export function supportsSpriteSheet(target: ObjectKind | GameObjectDoc): boolean {
+  if (typeof target !== "string") {
+    if (target.components.some((component) => component.type === DEFAULT_SLOT_COMPONENT.map)) return false;
+    const image = target.components.find((component) => findComponentType(component.type)?.slot === "image");
+    if (image !== undefined) return image.type === SPRITE_COMPONENT;
+    if (componentKindMismatchOf(target.components, target.kind)) return false;
+    return presetOf(target.kind)?.slots.image === SPRITE_COMPONENT;
+  }
+
+  return presetOf(target)?.slots.image === SPRITE_COMPONENT;
 }
 
 /**

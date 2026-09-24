@@ -9,7 +9,9 @@ import {
   SPRITE_COMPONENT,
   carriesComponent,
   componentForSlot,
+  createGameObject,
   displayImageField,
+  featureComponent,
   isAbstractKind,
   parseSceneFile,
   presetOf,
@@ -47,6 +49,26 @@ describe("对象预设表（presets.ts）", () => {
     expect(OBJECT_PRESETS.Map.slots.map).toBe("GridMap");
     expect(OBJECT_PRESETS.PlaySound.slots.sound).toBe("PlaySound");
     expect(OBJECT_PRESETS.Teleport.slots.teleport).toBe("Teleport");
+  });
+
+  it("组件默认 kind 声明覆盖每个预设槽位，供缺组件旧文档兼容", () => {
+    for (const preset of Object.values(OBJECT_PRESETS)) {
+      for (const component of Object.values(preset.slots)) {
+        const definition = COMPONENT_TYPES.find((item) => item.type === component);
+        expect(definition?.defaultKinds, `${preset.kind}.${component}`).toContain(preset.kind);
+      }
+    }
+  });
+
+  it("kind mismatch 不会再为缺失组件提供视频或子图 fallback", () => {
+    const base = createGameObject({ id: "sprite-teleport", name: "组合对象", kind: "Sprite" });
+    const object = {
+      ...base,
+      components: [featureComponent(base.id, DEFAULT_SLOT_COMPONENT.teleport, { targets: [] })],
+    };
+
+    expect(supportsVideo(object)).toBe(false);
+    expect(supportsSpriteSheet(object)).toBe(false);
   });
 
   it("video 槽位只给地图与贴图（精灵刻意不给）", () => {

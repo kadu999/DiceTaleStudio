@@ -1,8 +1,7 @@
 import type { ImageSize } from "@dts/grid";
-import { imageOf, mapDataOf } from "./access";
+import { imageOf, mapDataOf, objectImageSlot } from "./access";
 import type { AssetMetaDoc, AssetMetas } from "./asset-meta";
 import { findComponentType } from "./components";
-import { presetOf } from "./presets";
 import type {
   ImageRef,
   ImageSpriteRef,
@@ -141,7 +140,7 @@ export function displaySpriteOf(
   metas: AssetMetas,
 ): ResolvedSprite | undefined {
   // 地图的贴图住在 GridMap 里，格子按整张贴图算：取一块会让已有标注的含义静默改变
-  if (presetOf(object.kind)?.slots.map !== undefined) {
+  if (objectImageSlot(object) === "map") {
     return undefined;
   }
 

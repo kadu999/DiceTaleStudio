@@ -364,7 +364,7 @@ describe("声音对象的校验", () => {
 
     const issues = validateScene(sceneWith([door, soundWithImage]));
     expect(hasErrors(issues)).toBe(false);
-    expect(formatIssues(issues)).toMatch(/非声音对象（kind=Sprite）不应携带声音数据/);
+    expect(formatIssues(issues)).not.toMatch(/不应携带声音数据/);
     expect(formatIssues(issues)).toMatch(/声音对象用固定的内置图标（不允许改贴图）/);
   });
 

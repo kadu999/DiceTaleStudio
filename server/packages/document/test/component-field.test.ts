@@ -141,6 +141,14 @@ describe("setComponentField：不改的（都返回 false 且文档不动）", (
     });
   });
 
+  it("没有该组件且 kind 不提供回退时，仍不自动添加能力组件", () => {
+    const scene = sceneWith([createGameObject({ id: "sprite-plain", name: "精灵", kind: "Sprite" })]);
+    mutate(scene, (draft) => {
+      expect(setComponentField(draft, "sprite-plain", VIDEO, "loop", true)).toBe(false);
+    });
+    expect(videoDataOf(objectOf(scene, "sprite-plain")!)).toBeUndefined();
+  });
+
   it("这个 kind 不允许该槽位：拒掉（与 `ensureSlotData` 的准入判据同一口径）", () => {
     const scene = sceneWith([createSoundObject({ id: "sound-1", name: "脚步" })]);
     mutate(scene, (draft) => {
@@ -150,7 +158,7 @@ describe("setComponentField：不改的（都返回 false 且文档不动）", (
     expect(videoDataOf(objectOf(scene, "sound-1")!)).toBeUndefined();
   });
 
-  it("对象身上已经有这个组件、但它的 kind 不允许：也拒掉（不「顺手修好」手写脏数据）", () => {
+  it("对象身上已经有这个组件时，按组件编辑，不再由 kind 覆盖其能力", () => {
     const sprite = createGameObject({ id: "sprite-1", name: "精灵", kind: "Sprite" });
     const dirty: GameObjectDoc = {
       ...sprite,
@@ -158,12 +166,11 @@ describe("setComponentField：不改的（都返回 false 且文档不动）", (
     };
     const scene = sceneWith([dirty]);
 
-    mutate(scene, (draft) => {
-      expect(setComponentField(draft, "sprite-1", VIDEO, "loop", true)).toBe(false);
+    const changed = mutate(scene, (draft) => {
+      expect(setComponentField(draft, "sprite-1", VIDEO, "loop", true)).toBe(true);
     });
 
-    // 数据原样留着（`validateScene` 会把这种脏数据报出来，不由写入路径悄悄处理）
-    expect(videoDataOf(objectOf(scene, "sprite-1")!)?.loop).toBeUndefined();
+    expect(videoDataOf(objectOf(changed, "sprite-1")!)?.loop).toBe(true);
   });
 
   it("对象不存在：返回 false", () => {

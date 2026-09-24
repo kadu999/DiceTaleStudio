@@ -1,6 +1,6 @@
 // 本文件从 `commands.ts` 拆出（纯搬运，行为不变）：命令模块共用的常量、查找工具与媒体列表骨架。
 import type { Draft } from "immer";
-import { DEFAULT_SLOT_COMPONENT, carriesComponent } from "../presets";
+import { mapDataOf } from "../access";
 import type { SceneDoc, GameObjectDoc } from "../types";
 
 let idCounter = 0;
@@ -35,12 +35,12 @@ export function findObject(scene: Draft<SceneDoc>, objectId: string): Draft<Game
 
 /** 场景里的地图对象（可能没有，也可能有多个；取第一个用于渲染底图）。 */
 export function findMapObject(scene: SceneDoc): GameObjectDoc | undefined {
-  return scene.objects.find((object) => carriesComponent(DEFAULT_SLOT_COMPONENT.map, object.kind));
+  return scene.objects.find((object) => mapDataOf(object) !== undefined);
 }
 
 /** 场景里所有地图对象。 */
 export function listMapObjects(scene: SceneDoc): GameObjectDoc[] {
-  return scene.objects.filter((object) => carriesComponent(DEFAULT_SLOT_COMPONENT.map, object.kind));
+  return scene.objects.filter((object) => mapDataOf(object) !== undefined);
 }
 
 // ---------------------------------------------------------------- 媒体列表命令的公共骨架

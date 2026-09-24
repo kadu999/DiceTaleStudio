@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import {
+  DEFAULT_SLOT_COMPONENT,
   displaySpriteOf,
   mapDataOf,
   objectsInDrawOrder,
   spritePixelRectOf,
+  supportsObjectComponent,
   type SceneDoc,
   type GameObjectDoc,
   type WorldPosition,
@@ -181,7 +183,7 @@ function activeSceneImageIds(
  */
 export function checkerOriginOf(objects: readonly GameObjectDoc[]): WorldPosition {
   for (const object of objects) {
-    if (object.kind !== "Map") {
+    if (!supportsObjectComponent(object, DEFAULT_SLOT_COMPONENT.map)) {
       continue;
     }
 
@@ -791,7 +793,7 @@ export function ScenePanel(): React.JSX.Element {
       }
 
       const object = currentScene()?.objects.find((item) => item.id === id);
-      if (object?.kind !== "Teleport") {
+      if (object === undefined || !supportsObjectComponent(object, DEFAULT_SLOT_COMPONENT.teleport)) {
         return;
       }
 
@@ -950,7 +952,7 @@ export function ScenePanel(): React.JSX.Element {
             grid,
             // 动作对象画**内置徽标**（固定图形，不能换）：有它在，场景里才看得见、
             // 点得到、拖得动；播放声音正在播时徽标会动（一圈圈声波 + 喇叭呼吸）
-            icon: badgeIconOf(object.kind),
+            icon: badgeIconOf(object),
             playing: playingSounds.has(object.id),
             // 「网格线」总开关：关了就不画线（只是不画，格子数据不动）
             showGrid: grid !== undefined && gridPaint.showGridLines,

@@ -279,7 +279,7 @@ export function EditorShell(): React.JSX.Element {
             : currentImageAssetId(objectImage(pickerTarget)!, assetMetas)
         }
         currentSprite={pickerTarget === undefined ? undefined : objectImage(pickerTarget)?.sprite}
-        allowSprite={pickerTarget !== undefined && supportsSpriteSheet(pickerTarget.kind)}
+        allowSprite={pickerTarget !== undefined && supportsSpriteSheet(pickerTarget)}
         onClose={() => openImagePicker(null)}
         onPick={(image, sprite) => {
           if (imagePickerTarget !== null) {

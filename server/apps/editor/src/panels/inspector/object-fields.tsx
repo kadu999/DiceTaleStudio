@@ -142,7 +142,7 @@ export function TextureField({ object }: { readonly object: GameObjectDoc }): Re
   // 地图的贴图在 GridMap 里根本不在这一套里）。
   // 这里显示的是**文件里存的那一格**（不是夹取后的那一格）：越界时旁边挂一枚提示，
   // 「文件里写的」与「实际画的」都说清楚，人才知道要去重选一格
-  const spriteCapable = supportsSpriteSheet(object.kind);
+  const spriteCapable = supportsSpriteSheet(object);
   const cell = spriteCapable ? image?.sprite : undefined;
   const sheet = image === undefined ? undefined : spriteSheetOf(assetMetas, image);
   const outOfRange =

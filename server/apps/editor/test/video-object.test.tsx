@@ -478,10 +478,10 @@ describe("失败原因：都在运行日志里写明", () => {
     expect(logs().at(-1)).toMatch(/还没选要放哪一条视频/);
 
     act(() => useEditorStore.getState().playVideo("sound-1"));
-    expect(logs().at(-1)).toMatch(/不是地图或贴图/);
+    expect(logs().at(-1)).toMatch(/没有视频组件/);
 
     act(() => useEditorStore.getState().playVideo("sprite-1"));
-    expect(logs().at(-1)).toMatch(/不是地图或贴图/);
+    expect(logs().at(-1)).toMatch(/没有视频组件/);
 
     act(() => useEditorStore.getState().playVideo("不存在"));
     expect(logs().at(-1)).toMatch(/找不到这个对象/);

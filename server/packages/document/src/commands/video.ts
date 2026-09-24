@@ -1,12 +1,6 @@
 // 本文件从 `commands.ts` 拆出（纯搬运，行为不变）：视频（地图 / 精灵）命令。
 import type { Draft } from "immer";
-import {
-  DEFAULT_SLOT_COMPONENT,
-  DEFAULT_VIDEO_AUDIO,
-  DEFAULT_VIDEO_AUTO_PLAY,
-  DEFAULT_VIDEO_LOOP,
-  supportsVideo,
-} from "../presets";
+import { DEFAULT_SLOT_COMPONENT } from "../presets";
 // 特性的读写一律走访问器（「数据存在哪个组件里」只有 access.ts 知道）
 import { ensureVideoData, removeFeature, videoDataOf, writeFeature } from "../access";
 import {
@@ -32,7 +26,7 @@ import type { SceneDoc } from "../types";
  * - 一个视频都没加的时候关掉：`video` 整个删掉（与「从没开过」同义，文件里不留空壳）；
  * - 关着时前端不建视频层，`play_video` 这类命令会被明确拒掉（前端读 `video.enabled`）。
  *
- * 返回 `false` 表示没有变更（不是地图 / 精灵、或开关本来就是这个状态）。
+ * 返回 `false` 表示没有变更（对象不提供视频组件、或开关本来就是这个状态）。
  */
 export function setVideoEnabled(
   scene: Draft<SceneDoc>,
@@ -41,10 +35,6 @@ export function setVideoEnabled(
 ): boolean {
   return withObject(scene, objectId, (object) => {
     const video = videoDataOf(object);
-    if (video === undefined && !supportsVideo(object.kind)) {
-      return false;
-    }
-
     if (enabled) {
       if (video !== undefined && video.enabled !== false) {
         return false;
@@ -52,19 +42,13 @@ export function setVideoEnabled(
 
       // **整份留着、只把开关翻回来**：`clips` / `picked` / `names` / `loop` / `audio` 一个都不能丢
       // （`map.fog.enabled` 那边能重建是因为它只有 regions；视频字段多，重建会悄悄丢掉选中与名字）
-      writeFeature(
-        object,
-        DEFAULT_SLOT_COMPONENT.video,
-        video === undefined
-          ? {
-              enabled: true,
-              autoPlay: DEFAULT_VIDEO_AUTO_PLAY,
-              clips: [],
-              loop: DEFAULT_VIDEO_LOOP,
-              audio: DEFAULT_VIDEO_AUDIO,
-            }
-          : { ...video, enabled: true },
-      );
+      if (video === undefined) {
+        const created = ensureVideoData(object);
+        if (created === undefined) return false;
+        created.enabled = true;
+      } else {
+        writeFeature(object, DEFAULT_SLOT_COMPONENT.video, { ...video, enabled: true });
+      }
       return true;
     }
 

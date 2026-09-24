@@ -55,7 +55,7 @@ export function displaySizeOf(object: GameObjectDoc): ImageSize {
   // 手写文件里万一挂了 `image` 也不认（`validateScene` 会警告），
   // 免得出现「选中框按贴图算、画出来的却是徽标」这种对不上的情况
   const base =
-    badgeIconOf(object.kind) === undefined ? (objectImage(object) ?? COLLIDER_SIZE) : COLLIDER_SIZE;
+    badgeIconOf(object) === undefined ? (objectImage(object) ?? COLLIDER_SIZE) : COLLIDER_SIZE;
   return {
     width: base.width * effectiveScaleX(object),
     height: base.height * effectiveScaleY(object),
@@ -68,7 +68,7 @@ export function displaySizeOf(object: GameObjectDoc): ImageSize {
  * 与 `displayRectOf` 收在一起：「不认贴图」这条规矩只在一处。
  */
 export function displayImageOf(object: GameObjectDoc): ReturnType<typeof objectImage> {
-  return badgeIconOf(object.kind) === undefined ? objectImage(object) : undefined;
+  return badgeIconOf(object) === undefined ? objectImage(object) : undefined;
 }
 
 /**

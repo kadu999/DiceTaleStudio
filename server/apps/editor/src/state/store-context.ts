@@ -5,7 +5,7 @@
  */
 import {
   DEFAULT_SLOT_COMPONENT,
-  carriesComponent,
+  supportsObjectComponent,
   createAssetMetas,
   mapDataOf,
   serializeAssetMetaFile,
@@ -13,7 +13,6 @@ import {
   SOUND_LAYER_LABELS,
   isMapFogEnabled,
   isVideoEnabled,
-  supportsVideo,
   type AssetMetas,
   type ComponentType,
   type ProjectDoc,
@@ -593,7 +592,7 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
   };
 
   /**
-   * 找出「能揭示战争雾」的对象：当前场景里那张**开了战争雾、也指定了雾区**的地图。
+   * 找出「能揭示战争雾」的对象：当前场景里实际挂有地图组件且指定了雾区的对象。
    *
    * 找不到就写一条**说明原因**的运行日志并返回 null（不静默失败）：
    * 这类失败恰恰说明瞄准的目标不对（对象被删了 / 拿精灵去擦雾 / 开关关着 / 还没指定雾区）。
@@ -606,7 +605,7 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
       return null;
     }
 
-    if (!carriesComponent(DEFAULT_SLOT_COMPONENT.map, object.kind)) {
+    if (mapDataOf(object) === undefined) {
       pushLog(makeLog("warn", `${what}失败：「${object.name}」不是地图，没有雾层`));
       return null;
     }
@@ -629,7 +628,7 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
   const canRevealFog = (objectId: string): boolean => {
     const object = findObjectById(objectId);
 
-    if (object === undefined || !carriesComponent(DEFAULT_SLOT_COMPONENT.map, object.kind)) {
+    if (object === undefined || mapDataOf(object) === undefined) {
       return false;
     }
 
@@ -638,7 +637,7 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
   };
 
   /**
-   * 找出「能放视频」的对象：当前场景里的**地图或贴图**，且**加了视频也选了那一条**。
+   * 找出「能放视频」的对象：当前场景里实际挂有视频组件且选中了一条视频的对象。
    *
    * 与 `fogTargetOf` 同一个口径：找不到就写一条**说明原因**的运行日志并返回 null（不静默失败）。
    * 「能放视频」的判据只有 `supportsVideo` 一处（文档命令与校验走的是同一个函数）。
@@ -651,8 +650,8 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
       return null;
     }
 
-    if (!supportsVideo(object.kind)) {
-      pushLog(makeLog("warn", `${what}失败：「${object.name}」不是地图或贴图，放不了视频`));
+    if (!supportsObjectComponent(object, DEFAULT_SLOT_COMPONENT.video)) {
+      pushLog(makeLog("warn", `${what}失败：「${object.name}」没有视频组件`));
       return null;
     }
 
@@ -679,14 +678,14 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
   };
 
   /**
-   * 找一个**带某个特性**的对象（`component` 用 `DEFAULT_SLOT_COMPONENT.*`）；不写日志。
+   * 找一个**实际挂有或按旧 kind 预设可补建某个特性组件**的对象；不写日志。
    *
-   * 判据走**预设表**（`carriesComponent`）而不是字面量 `kind === "PlaySound"`：加新对象预设、
-   * 或把某个槽位换承载组件时，这里不用回来改。
+   * 已有组件实例优先；旧文档缺失组件时由组件注册表上的 `defaultKinds` 临时兜底。
    */
   const objectWithFeature = (objectId: string, component: ComponentType): GameObjectDoc | undefined => {
     const object = findObjectById(objectId);
-    return object !== undefined && carriesComponent(component, object.kind) ? object : undefined;
+    const attached = object?.components.some((item) => item.type === component) === true;
+    return object !== undefined && (attached || supportsObjectComponent(object, component)) ? object : undefined;
   };
 
   /**

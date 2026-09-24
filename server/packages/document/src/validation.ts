@@ -1,9 +1,9 @@
 import { PAINTABLE_MASKS, decodeRle } from "@dts/grid";
-import { isKnownComponentType } from "./components";
+import { componentKindMismatchOf, isKnownComponentType } from "./components";
 import { isMapFogEnabled } from "./commands";
-import { imageOf, mapDataOf, soundDataOf, teleportDataOf, videoDataOf } from "./access";
+import { canDefaultObjectComponent, imageOf, mapDataOf, soundDataOf, teleportDataOf, videoDataOf } from "./access";
 import type { AssetMetaDoc, AssetMetas } from "./asset-meta";
-import { presetOf, supportsVideo } from "./presets";
+import { DEFAULT_SLOT_COMPONENT } from "./presets";
 import { spriteSheetOf } from "./sprites";
 import type {
   AudioTagTableDoc,
@@ -130,94 +130,72 @@ function validateObject(
 
   // 地图对象：数据必须完整（没有数据的「地图对象」在场景里就是个空壳）
   const map = mapDataOf(object);
-  if (presetOf(object.kind)?.slots.map !== undefined) {
-    if (map === undefined) {
-      issues.push({ level: "error", path, message: "地图对象缺少地图数据（贴图 / 网格）" });
-    } else {
-      try {
-        decodeRle(map.cells.runs, map.grid.width * map.grid.height);
-      } catch (error) {
-        issues.push({
-          level: "error",
-          path: `${path}/map/cells`,
-          message: error instanceof Error ? error.message : String(error),
-        });
-      }
-
-      if (map.image.id.trim().length === 0) {
-        issues.push({ level: "warning", path: `${path}/map/image`, message: "地图贴图未指定" });
-      }
-
-      // 地图贴图不支持子图（v20）：网格的格子是按**整张**贴图算好的，取一块会让已经画好的
-      // 格子标注含义静默改变。编辑器与前端都按整图渲染（见 `sprites.ts` 的 `displaySpriteOf`），
-      // 所以这里要说出来——不然「明明切了却不生效」无从排查
-      if (map.image.sprite !== undefined) {
-        issues.push({
-          level: "warning",
-          path: `${path}/map/image/sprite`,
-          message: "地图贴图不支持子图（取一块会让已有格子错位），这一项会被忽略",
-        });
-      }
-
-      // 战争雾指定的雾区位必须是可绘制的区域位：手写文件里写了别的值（0、3、256…），
-      // 编辑器会把它丢掉，所以这里得说出来——不然「明明指定了却不生效」无从排查
-      const fogRegions = map.fog?.regions ?? [];
-      const unknownRegions = fogRegions.filter((bit) => !PAINTABLE_MASKS.some((value) => value === bit));
-      if (unknownRegions.length > 0) {
-        issues.push({
-          level: "warning",
-          path: `${path}/map/fog/regions`,
-          message: `战争雾指定的 ${unknownRegions.join(", ")} 不是可绘制的区域位（会被忽略）`,
-        });
-      }
-
-      // 「开关开着但一个雾区都没指定」= 前端不会建雾层，也不会有雾：这不是错，
-      // 但画面上什么都不会发生，得说一句（属性面板 → 战争雾 → 指定雾区）
-      if (isMapFogEnabled(map) && fogRegions.length === 0) {
-        issues.push({
-          level: "warning",
-          path: `${path}/map/fog/regions`,
-          message: "战争雾开着但没指定雾区（不会有雾）",
-        });
-      }
-
-      // 反过来同理：开关关着时绑定是留着的（再打开就回来），但「现在没有雾」这件事要说清
-      if (!isMapFogEnabled(map) && fogRegions.length > 0) {
-        issues.push({
-          level: "warning",
-          path: `${path}/map/fog/enabled`,
-          message: "战争雾关着：指定的雾区不会生成雾（打开开关才生效）",
-        });
-      }
-    }
-
-    // 地图的贴图在 map.image 里：再挂一份 object.image 就是同一件事写了两遍（显示到底听谁的？）
-    if (imageOf(object) !== undefined) {
-      issues.push({
-        level: "warning",
-        path: `${path}/image`,
-        message: "地图对象的贴图写在 map.image 里，多余的 image 字段会被忽略",
-      });
-    }
-  } else if (map !== undefined) {
-    issues.push({
-      level: "warning",
-      path: `${path}/map`,
-      message: `非地图对象（kind=${object.kind}）不应携带地图数据`,
-    });
+  if (map === undefined && canDefaultObjectComponent(object, DEFAULT_SLOT_COMPONENT.map)) {
+    issues.push({ level: "error", path, message: "地图对象缺少地图数据（贴图 / 网格）" });
   }
-
-  // 声音对象（动作对象）：基础属性与实体一样，另加声音数据——缺了就是个什么都不播的空壳
-  const sound = soundDataOf(object);
-  if (presetOf(object.kind)?.slots.sound !== undefined) {
-    if (sound === undefined) {
+  if (map !== undefined) {
+    try {
+      decodeRle(map.cells.runs, map.grid.width * map.grid.height);
+    } catch (error) {
       issues.push({
         level: "error",
-        path,
-        message: "声音对象缺少声音数据（音频列表 / 层级）",
+        path: `${path}/map/cells`,
+        message: error instanceof Error ? error.message : String(error),
       });
     }
 
+    if (map.image.id.trim().length === 0) {
+      issues.push({ level: "warning", path: `${path}/map/image`, message: "地图贴图未指定" });
+    }
+
+    // 地图贴图不支持子图（v20）：网格的格子是按**整张**贴图算好的，取一块会让已经画好的
+    // 格子标注含义静默改变。编辑器与前端都按整图渲染（见 `sprites.ts` 的 `displaySpriteOf`），
+    // 所以这里要说出来——不然「明明切了却不生效」无从排查
+    if (map.image.sprite !== undefined) {
+      issues.push({
+        level: "warning",
+        path: `${path}/map/image/sprite`,
+        message: "地图贴图不支持子图（取一块会让已有格子错位），这一项会被忽略",
+      });
+    }
+
+    // 战争雾指定的雾区位必须是可绘制的区域位：手写文件里写了别的值（0、3、256…），
+    // 编辑器会把它丢掉，所以这里得说出来——不然「明明指定了却不生效」无从排查
+    const fogRegions = map.fog?.regions ?? [];
+    const unknownRegions = fogRegions.filter((bit) => !PAINTABLE_MASKS.some((value) => value === bit));
+    if (unknownRegions.length > 0) {
+      issues.push({
+        level: "warning",
+        path: `${path}/map/fog/regions`,
+        message: `战争雾指定的 ${unknownRegions.join(", ")} 不是可绘制的区域位（会被忽略）`,
+      });
+    }
+
+    // 「开关开着但一个雾区都没指定」= 前端不会建雾层，也不会有雾：这不是错，
+    // 但画面上什么都不会发生，得说一句（属性面板 → 战争雾 → 指定雾区）
+    if (isMapFogEnabled(map) && fogRegions.length === 0) {
+      issues.push({
+        level: "warning",
+        path: `${path}/map/fog/regions`,
+        message: "战争雾开着但没指定雾区（不会有雾）",
+      });
+    }
+
+    // 反过来同理：开关关着时绑定是留着的（再打开就回来），但「现在没有雾」这件事要说清
+    if (!isMapFogEnabled(map) && fogRegions.length > 0) {
+      issues.push({
+        level: "warning",
+        path: `${path}/map/fog/enabled`,
+        message: "战争雾关着：指定的雾区不会生成雾（打开开关才生效）",
+      });
+    }
+  }
+  // 声音对象（动作对象）：基础属性与实体一样，另加声音数据——缺了就是个什么都不播的空壳
+  const sound = soundDataOf(object);
+  if (sound === undefined && canDefaultObjectComponent(object, DEFAULT_SLOT_COMPONENT.sound)) {
+    issues.push({ level: "error", path, message: "声音对象缺少声音数据（音频列表 / 层级）" });
+  }
+  if (sound !== undefined) {
     /*
       背景音乐不再属于对象（顶栏「音乐」弹框管：清单就是项目 `Assets/audio/` 下的音频）。
       schema 仍然认 `bgm`（老文件里对象可能写着它，协议里它也是声道名），
@@ -275,92 +253,60 @@ function validateObject(
         message: "声音对象用固定的内置图标（不允许改贴图），多余的 image 字段会被忽略",
       });
     }
-  } else if (sound !== undefined) {
-    issues.push({
-      level: "warning",
-      path: `${path}/sound`,
-      message: `非声音对象（kind=${object.kind}）不应携带声音数据`,
-    });
   }
 
   // 传送阵（动作对象）：基础属性与实体一样，另加「候选目标场景 + 选中的那一个」
   const teleport = teleportDataOf(object);
-  if (presetOf(object.kind)?.slots.teleport !== undefined) {
-    if (teleport === undefined) {
-      issues.push({
-        level: "error",
-        path,
-        message: "传送阵缺少传送数据（候选目标场景）",
-      });
-    } else {
-      // 还没勾任何目标是**合法状态**（刚建出来就是这样），但要提醒：那时传送按钮点不了
-      if (teleport.targets.length === 0) {
-        issues.push({
-          level: "warning",
-          path: `${path}/teleport/targets`,
-          message: "传送阵还没加目标场景（面板上点不了「传送」）",
-        });
-      }
-
-      if (teleport.picked === undefined) {
-        if (teleport.targets.length > 0) {
-          issues.push({
-            level: "warning",
-            path: `${path}/teleport/picked`,
-            message: "传送阵还没选要传送到哪一张场景（面板上点不了「传送」）",
-          });
-        }
-      } else if (!teleport.targets.includes(teleport.picked)) {
-        // 对不上就是数据坏了，按「还没选」处理（传送按钮点不了）
-        issues.push({
-          level: "warning",
-          path: `${path}/teleport/picked`,
-          message: "选中的目标场景不在候选里（按还没选处理）",
-        });
-      } else if (teleport.picked === sceneName) {
-        // 自己传自己 = 按下去什么都不发生，多半是选错了
-        issues.push({
-          level: "warning",
-          path: `${path}/teleport/picked`,
-          message: "传送阵的目标就是它自己所在的场景（按下去不会换图）",
-        });
-      }
-    }
-
-    // 它画的是**固定的内置徽标**（不给换贴图），所以 `image` 字段没有意义
-    if (imageOf(object) !== undefined) {
+  if (teleport === undefined && canDefaultObjectComponent(object, DEFAULT_SLOT_COMPONENT.teleport)) {
+    issues.push({ level: "error", path, message: "传送阵缺少传送数据（候选目标场景）" });
+  }
+  if (teleport !== undefined) {
+    // 还没勾任何目标是**合法状态**（刚建出来就是这样），但要提醒：那时传送按钮点不了
+    if (teleport.targets.length === 0) {
       issues.push({
         level: "warning",
-        path: `${path}/image`,
-        message: "传送阵用固定的内置徽标（不允许改贴图），多余的 image 字段会被忽略",
+        path: `${path}/teleport/targets`,
+        message: "传送阵还没加目标场景（面板上点不了「传送」）",
       });
     }
-  } else if (teleport !== undefined) {
-    issues.push({
-      level: "warning",
-      path: `${path}/teleport`,
-      message: `非传送阵（kind=${object.kind}）不应携带传送数据`,
-    });
+
+    if (teleport.picked === undefined) {
+      if (teleport.targets.length > 0) {
+        issues.push({
+          level: "warning",
+          path: `${path}/teleport/picked`,
+          message: "传送阵还没选要传送到哪一张场景（面板上点不了「传送」）",
+        });
+      }
+    } else if (!teleport.targets.includes(teleport.picked)) {
+      // 对不上就是数据坏了，按「还没选」处理（传送按钮点不了）
+      issues.push({
+        level: "warning",
+        path: `${path}/teleport/picked`,
+        message: "选中的目标场景不在候选里（按还没选处理）",
+      });
+    } else if (teleport.picked === sceneName) {
+      // 自己传自己 = 按下去什么都不发生，多半是选错了
+      issues.push({
+        level: "warning",
+        path: `${path}/teleport/picked`,
+        message: "传送阵的目标就是它自己所在的场景（按下去不会换图）",
+      });
+    }
   }
 
   /*
-    视频列表（v14 起）：**只有地图与贴图**能带（预设表 `OBJECT_PRESETS` 的 video 槽位）。
+    视频列表（v14 起）：**挂载 VideoOverlay 的对象**能带；kind 只用于缺组件旧对象的迁移期诊断。
     与声音那几条同一个口径——错了都是「按没加 / 按没选处理」，所以只报警告不拦运行。
-    **旧文件里精灵身上的视频就走这条**：v21 起「能放视频」的名单从精灵换成了贴图，
-    那份组件数据**照样留着不删**（不静默改用户数据），只是编辑器不再认它、这里报一条警告。
+    旧 kind 与显式组件不一致时保留组件，并在组件遍历处给迁移提示；不因 kind 忽略其数据。
     **扩展名不在这里校验**：webm 在 Windows 上多半解不了属于「这台机器的解码器」问题，
     提醒放在界面上（选择器 / 面板），免得每次打开场景都报一遍。
   */
   const video = videoDataOf(object);
   if (video !== undefined) {
-    if (!supportsVideo(object.kind)) {
-      issues.push({
-        level: "warning",
-        path: `${path}/video`,
-        message: `只有地图与贴图能放视频（kind=${object.kind} 的 video 字段会被忽略）`,
-      });
+    if (!object.components.some((component) => component.type === DEFAULT_SLOT_COMPONENT.video)) {
+      issues.push({ level: "warning", path: `${path}/video`, message: "视频数据未挂载 VideoOverlay 组件" });
     }
-
     if (video.clips.some((clip) => clip.trim().length === 0)) {
       issues.push({
         level: "warning",
@@ -411,6 +357,14 @@ function validateObject(
         message: `未知组件类型: ${component.type}（数据将原样保留）`,
       });
       continue;
+    }
+
+    if (componentKindMismatchOf([component], object.kind)) {
+      issues.push({
+        level: "warning",
+        path: componentPath,
+        message: `组件 ${component.type} 与 kind=${object.kind} 的旧模板不一致；组件数据仍保留并按组件生效`,
+      });
     }
   }
 }

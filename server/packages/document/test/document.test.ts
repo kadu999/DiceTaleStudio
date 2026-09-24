@@ -29,7 +29,18 @@ import {
   setObjectScale,
   setObjectSortingOrder,
 } from "../src/commands";
-import { componentOf, imageOf, mapDataOf, objectImage, writeFeature } from "../src/access";
+import {
+  componentOf,
+  imageOf,
+  mapDataOf,
+  objectImage,
+  objectImageSlot,
+  objectSupportsSpriteSheet,
+  supportsObjectComponent,
+  videoDataOf,
+  withFeature,
+  writeFeature,
+} from "../src/access";
 import { isKnownComponentType } from "../src/components";
 import { DEFAULT_SLOT_COMPONENT } from "../src/presets";
 import {
@@ -732,6 +743,43 @@ describe("对象命令（都在场景上操作）", () => {
     ).toBe(withSprite);
   });
 
+  it("setObjectImage：已有 GridMap 组件优先于 kind，贴图写回该组件", () => {
+    const next = { id: "project:C/Assets/images/custom.png", width: 320, height: 180 };
+    const sprite = createGameObject({ name: "组合对象", kind: "Sprite", id: "hybrid" });
+    const hybrid = withFeature(sprite, DEFAULT_SLOT_COMPONENT.map, {
+      image: IMAGE,
+      grid: GRID,
+      rowOrder: "bottom-up" as const,
+      cells: { encoding: "rle" as const, runs: [[0, GRID.width * GRID.height] as [number, number]] },
+    });
+    const scene = mutate(createEmptyScene("Map001"), (draft) => {
+      draft.objects.push(hybrid);
+      expect(setObjectImage(draft, "hybrid", next)).toBe(true);
+    });
+
+    expect(mapDataOf(scene.objects[0]!)?.image).toEqual(next);
+    expect(imageOf(scene.objects[0]!)).toBeUndefined();
+  });
+
+  it("已有组件的行为校验按组件数据，不按 kind 否决", () => {
+    const object = withFeature(
+      createGameObject({ id: "custom", name: "组合对象", kind: "Sprite" }),
+      DEFAULT_SLOT_COMPONENT.video,
+      {
+        enabled: true,
+        autoPlay: false,
+        clips: ["project:C/Assets/video/opening.mp4"],
+        picked: "project:C/Assets/video/opening.mp4",
+        loop: false,
+        audio: false,
+      },
+    );
+    const scene = { ...makeScene(), objects: [object] };
+
+    expect(videoDataOf(scene.objects[0]!)).toBeDefined();
+    expect(formatIssues(validateScene(scene))).toMatch(/VideoOverlay.*旧模板不一致.*仍保留并按组件生效/);
+  });
+
   it("新建地图对象带着世界坐标（默认原点）——它就是贴图中心", () => {
     const map = createMapObject({ name: "地图", image: IMAGE, grid: GRID, position: { x: 30, y: -40 } });
     expect(map.position).toEqual({ x: 30, y: -40 });
@@ -1033,8 +1081,7 @@ describe("文档校验", () => {
     expect(formatIssues(validateScene(scene))).toMatch(/缺少地图数据/);
   });
 
-  it("非地图对象带地图数据时给警告", () => {
-    // v19 起「带地图数据」= 挂着 GridMap 组件（`kind` 不是 Map 时校验会提醒）
+  it("非 Map kind 对象挂载 GridMap 时按组件校验地图数据", () => {
     const scene = mutate(makeScene(), (draft) => {
       addObject(draft, plainObject("odd", { name: "怪对象" }));
       const object = findObject(draft, "odd");
@@ -1050,21 +1097,41 @@ describe("文档校验", () => {
 
     const issues = validateScene(scene);
     expect(hasErrors(issues)).toBe(false);
-    expect(formatIssues(issues)).toMatch(/不应携带地图数据/);
+    expect(formatIssues(issues)).not.toMatch(/不应携带地图数据/);
   });
 
-  it("地图对象带多余的 object.image 时给警告（贴图只认 map.image）", () => {
-    const scene = mutate(withMapObject(makeScene()), (draft) => {
-      // 地图不该有 ImageLayer：贴图只认 GridMap 里的那一份（手写文件里可能挂着）
-      const object = findObject(draft, "map-1");
+  it("kind 与显式组件不一致时只提示迁移，不拒绝组件数据", () => {
+    const scene = mutate(withObject(makeScene(), "odd"), (draft) => {
+      const object = findObject(draft, "odd");
       if (object !== undefined) {
-        writeFeature(object, DEFAULT_SLOT_COMPONENT.image, {});
+        writeFeature(object, DEFAULT_SLOT_COMPONENT.teleport, { targets: [], picked: undefined });
       }
     });
 
     const issues = validateScene(scene);
     expect(hasErrors(issues)).toBe(false);
-    expect(formatIssues(issues)).toMatch(/写在 map.image/);
+    expect(formatIssues(issues)).toMatch(/Teleport.*旧模板不一致.*仍保留并按组件生效/);
+    expect(componentOf(scene.objects[0]!, DEFAULT_SLOT_COMPONENT.teleport)?.data).toEqual({
+      targets: [],
+      picked: undefined,
+    });
+    expect(supportsObjectComponent(scene.objects[0]!, DEFAULT_SLOT_COMPONENT.teleport)).toBe(true);
+    expect(supportsObjectComponent(scene.objects[0]!, DEFAULT_SLOT_COMPONENT.image)).toBe(false);
+    expect(objectImageSlot(scene.objects[0]!)).toBe("image");
+    expect(objectSupportsSpriteSheet(scene.objects[0]!)).toBe(false);
+  });
+
+  it("Map kind 上存在 GridMap 与 ImageLayer 时由实际组件共同决定能力", () => {
+    const scene = mutate(withMapObject(makeScene()), (draft) => {
+      const object = findObject(draft, "map-1");
+      if (object !== undefined) {
+        writeFeature(object, DEFAULT_SLOT_COMPONENT.image, IMAGE);
+      }
+    });
+
+    const issues = validateScene(scene);
+    expect(hasErrors(issues)).toBe(false);
+    expect(formatIssues(issues)).not.toMatch(/写在 map.image/);
   });
 
   it("地图网格格数与网格尺寸不符时报错", () => {

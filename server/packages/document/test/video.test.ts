@@ -415,9 +415,9 @@ describe("视频命令：总开关（启用）", () => {
 });
 
 describe("视频：文档校验", () => {
-  it("非地图 / 贴图带 video：只报警告（字段会被忽略）", () => {
+  it("非默认 kind 显式挂载 VideoOverlay：只提示迁移，不拒绝组件", () => {
     const scene = mutate(sceneWith([createSoundObject({ name: "脚步", id: "s1" })]), (draft) => {
-      // v19 起「带视频」= 挂着 VideoOverlay 组件（kind 不是地图 / 贴图时校验会提醒）
+      // VideoOverlay 能力由组件实例提供；kind mismatch 只提示，不影响数据读取。
       draft.objects[0]?.components.push(
         featureComponent("s1", DEFAULT_SLOT_COMPONENT.video, {
           enabled: true,
@@ -430,10 +430,10 @@ describe("视频：文档校验", () => {
     });
 
     expect(hasErrors(validateScene(scene))).toBe(false);
-    expect(formatIssues(validateScene(scene))).toMatch(/只有地图与贴图能放视频/);
+    expect(formatIssues(validateScene(scene))).toMatch(/VideoOverlay.*旧模板不一致.*仍保留并按组件生效/);
   });
 
-  it("精灵身上的旧 video 组件：只报警告，组件数据不删（不静默改用户数据）", () => {
+  it("精灵 kind 上的 VideoOverlay：提示模板错位但不删组件数据", () => {
     const scene = mutate(sceneWith([spriteObject()]), (draft) => {
       draft.objects[0]?.components.push(
         featureComponent("sprite-1", DEFAULT_SLOT_COMPONENT.video, {
@@ -447,7 +447,7 @@ describe("视频：文档校验", () => {
     });
 
     expect(hasErrors(validateScene(scene))).toBe(false);
-    expect(formatIssues(validateScene(scene))).toMatch(/只有地图与贴图能放视频/);
+    expect(formatIssues(validateScene(scene))).toMatch(/VideoOverlay.*旧模板不一致.*仍保留并按组件生效/);
     expect(scene.objects[0]?.components.some((item) => item.type === DEFAULT_SLOT_COMPONENT.video)).toBe(
       true,
     );

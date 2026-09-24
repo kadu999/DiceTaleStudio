@@ -1,11 +1,12 @@
 import type { Draft } from "immer";
-import { componentId, findComponentType } from "./components";
-import { defaultDataOf } from "./component-specs";
 import {
-  DEFAULT_SOUND_LAYER,
-  displayImageField,
-  presetOf,
-} from "./presets";
+  componentId,
+  componentKindMismatchOf,
+  findComponentType,
+  SLOT_COMPONENT_TYPES,
+} from "./components";
+import { defaultDataOf } from "./component-specs";
+import { DEFAULT_SLOT_COMPONENT, DEFAULT_SOUND_LAYER } from "./presets";
 import type { ComponentSlot } from "./presets";
 import type {
   ComponentDoc,
@@ -26,13 +27,12 @@ import type {
  * 于是「把特性从扁平字段搬进组件」这件事的改动面被压在这个文件里（迁移那一次）。
  *
  * v22 层级移除后，查找一律按**能力槽位**（`ComponentSlot`）走：组件定义自报 `slot`，
- * 这里按 slot 在对象的组件列表上找第一个自报该槽位的组件，**不看 kind**——
- * 「这个 kind 允许哪些槽位」只在写路径的准入判据（`presetOf(kind).slots`）里用。
+ * 这里按 slot 在对象的组件列表上找第一个自报该槽位的组件，**不看 kind**；只有实例缺失时，
+ * 写路径才按组件定义中的 `defaultKinds` 兼容旧对象。
  *
  * 两类函数分工明确：
  * - `xxxOf(object)` —— **纯读**，不改数据，没有这个组件就是 `undefined`；
- * - `ensureXxx(object)` —— **写路径**，接受 immer draft，没有实例就补一个（含默认数据），
- *   对象预设不允许这个槽位时返回 `undefined`（**不补、不抛**，调用方据此返回「无变更」）。
+ * - `ensureXxx(object)` —— **写路径**，接受 immer draft，没有实例时仅为兼容旧对象补默认值。
  *
  * 地图数据没有 `ensure`：格子与贴图尺寸没法凭空造，所以只有读与「整份替换」（`writeFeature`）。
  */
@@ -53,6 +53,55 @@ export function componentOf(object: GameObjectDoc, component: string): Component
  */
 export function componentOfSlot(object: GameObjectDoc, slot: ComponentSlot): ComponentDoc | undefined {
   return object.components.find((item) => findComponentType(item.type)?.slot === slot);
+}
+
+/** Get the attached component type, falling back to the legacy kind preset only when no instance exists. */
+export function componentTypeForObjectSlot(
+  object: GameObjectDoc,
+  slot: ComponentSlot,
+): string | undefined {
+  const attached = componentOfSlot(object, slot);
+  if (attached !== undefined) return attached.type;
+  if (object.components.some((component) => findComponentType(component.type)?.slot === slot)) return undefined;
+  if (hasComponentKindMismatch(object)) return undefined;
+  return SLOT_COMPONENT_TYPES.find(
+    (definition) => definition.slot === slot && definition.defaultKinds?.includes(object.kind) === true,
+  )?.type;
+}
+
+/** Component instances declare image behavior; kind is only a fallback for old objects without image components. */
+export function objectImageSlot(object: GameObjectDoc): "map" | "image" {
+  if (componentOfSlot(object, "map") !== undefined) return "map";
+  if (componentOfSlot(object, "image") !== undefined) return "image";
+  if (hasComponentKindMismatch(object)) return "image";
+  return findComponentType(DEFAULT_SLOT_COMPONENT.map)?.defaultKinds?.includes(object.kind) === true
+    ? "map"
+    : "image";
+}
+
+/** A legacy default can supply this component when it is not attached. */
+export function canDefaultObjectComponent(object: GameObjectDoc, type: string): boolean {
+  const definition = findComponentType(type);
+  if (definition?.slot === undefined || definition.defaultKinds?.includes(object.kind) !== true) return false;
+  if (hasComponentKindMismatch(object)) return false;
+  return !object.components.some((component) => findComponentType(component.type)?.slot === definition.slot);
+}
+
+/** Whether attached known components agree with their legacy kind templates. */
+export function hasComponentKindMismatch(object: GameObjectDoc): boolean {
+  return componentKindMismatchOf(object.components, object.kind);
+}
+
+export function supportsObjectComponent(object: GameObjectDoc, type: string): boolean {
+  return object.components.some((component) => component.type === type) || canDefaultObjectComponent(object, type);
+}
+
+export function objectSupportsSpriteSheet(object: GameObjectDoc): boolean {
+  if (componentOfSlot(object, "map") !== undefined) return false;
+  const imageComponent = componentOfSlot(object, "image")?.type;
+  if (imageComponent !== undefined) return imageComponent === "SpriteLayer";
+  if (hasComponentKindMismatch(object)) return false;
+  return findComponentType("SpriteLayer")?.defaultKinds?.includes(object.kind) === true;
 }
 
 /**
@@ -94,7 +143,7 @@ export function imageOf(object: GameObjectDoc): ImageRef | undefined {
  * 两处形状一致（都是 `ImageRef`），所以画布绘制、换图、场景改名同步贴图都走这一个入口。
  */
 export function objectImage(object: GameObjectDoc): ImageRef | undefined {
-  return displayImageField(object.kind) === "map" ? mapDataOf(object)?.image : imageOf(object);
+  return objectImageSlot(object) === "map" ? mapDataOf(object)?.image : imageOf(object);
 }
 
 /** 声音数据（音频列表 + 选中的那条 + 层级）。 */
@@ -199,20 +248,19 @@ export function withFeature<T>(object: GameObjectDoc, component: string, data: T
 }
 
 /**
- * 取某个能力槽位的组件数据 draft；**预设允许、但没有实例就补一个默认的**。
+ * 取某个能力槽位的组件数据 draft；**兼容默认允许、但没有实例就补一个默认的**。
  *
- * 准入判据是预设表（`presetOf(object.kind)?.slots[slot]`）：kind 没声明这个槽位就不补、
- * 返回 `undefined`（与旧「对象类型不允许这个特性」同一个口径）。
+ * 准入判据集中在组件定义的 `defaultKinds`；已挂载实例不受 kind 影响。
  *
  * 导出是为了让**泛型写入**（`commands/component.ts`）复用同一份准入判据——
- * 那条路必须先确认「这个 kind 允许这个槽位」，否则会出现「面板给了入口、命令却拒了」的半套状态。
+ * 那条路必须遵守相同的组件准入规则，避免出现「面板给了入口、命令却拒了」的半套状态。
  */
 export function ensureSlotData<T>(
   object: Draft<GameObjectDoc>,
   slot: ComponentSlot,
   defaultData: () => T,
 ): Draft<T> | undefined {
-  const component = presetOf(object.kind)?.slots[slot];
+  const component = componentTypeForObjectSlot(object, slot);
   if (component === undefined) {
     return undefined;
   }
@@ -242,11 +290,16 @@ export function ensureComponentData(
     return undefined;
   }
 
-  if (presetOf(object.kind)?.slots[slot] !== type) {
+  const attached = object.components.find((component) => component.type === type);
+  if (attached !== undefined) {
+    return attached.data as Draft<Record<string, unknown>>;
+  }
+
+  if (!supportsObjectComponent(object, type)) {
     return undefined;
   }
 
-  return ensureSlotData<Record<string, unknown>>(object, slot, () => defaultDataOf(type));
+  return writeFeature(object, type, defaultDataOf(type)).data as Draft<Record<string, unknown>>;
 }
 
 /**
@@ -277,8 +330,12 @@ export function ensureTeleportData(object: Draft<GameObjectDoc>): Draft<Teleport
  * 补壳用的那份形状住在 `component-specs/video.ts`（与属性面板、泛型写入同一份规格）。
  */
 export function ensureVideoData(object: Draft<GameObjectDoc>): Draft<VideoDataDoc> | undefined {
-  // 规格里的默认数据是 `Record<string, unknown>`（泛型写入要能操作任意组件），这里收窄回视频那一份
-  return ensureSlotData<VideoDataDoc>(object, "video", () =>
-    defaultDataOf("VideoOverlay") as unknown as VideoDataDoc,
-  );
+  const component = componentOfSlot(object, "video");
+  if (component !== undefined) return component.data as Draft<VideoDataDoc>;
+  if (!canDefaultObjectComponent(object, DEFAULT_SLOT_COMPONENT.video)) return undefined;
+  return writeFeature(
+    object,
+    DEFAULT_SLOT_COMPONENT.video,
+    defaultDataOf(DEFAULT_SLOT_COMPONENT.video) as unknown as VideoDataDoc,
+  ).data as Draft<VideoDataDoc>;
 }

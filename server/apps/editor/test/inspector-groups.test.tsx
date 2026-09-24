@@ -259,4 +259,18 @@ describe("属性分组：基础 / 渲染 / 区域 / 战争雾 / 视频", () => {
     expect(within(groupOf("video")).getByTestId("video-enable")).toBeDefined();
     expect(hasGroup("sound")).toBe(false);
   });
+
+  it("kind 与组件错位时显示实际挂载的组件编辑器", () => {
+    const object = createGameObject({ id: "custom", name: "组合对象", kind: "Sprite" });
+    object.components.push(
+      featureComponent(object.id, "Teleport", { targets: [], picked: undefined }),
+    );
+    seedScene([object], [object.id]);
+
+    render(<InspectorPanel />);
+
+    expect(groupSlugs()).toEqual(["basic", "teleport"]);
+    expect(hasGroup("render")).toBe(false);
+    expect(hasGroup("video")).toBe(false);
+  });
 });
