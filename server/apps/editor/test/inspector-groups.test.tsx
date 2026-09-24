@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { createMapObject, createGameObject, type GameObjectDoc } from "@dts/document";
+import { createMapObject, createGameObject, featureComponent, type GameObjectDoc } from "@dts/document";
 import { InspectorPanel } from "../src/panels/inspector/InspectorPanel";
 import { sceneHistory, useEditorStore } from "../src/state/editor-store";
 
@@ -238,5 +238,25 @@ describe("属性分组：基础 / 渲染 / 区域 / 战争雾 / 视频", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "场景" }));
     expect(isOpen("scene")).toBe(false);
+  });
+
+  it("显式组件决定组件编辑器，不再额外按旧 kind 补出预设组件编辑器", () => {
+    const object = createGameObject({ id: "custom", name: "组合对象", kind: "PlaySound" });
+    object.components.push(
+      featureComponent(object.id, "VideoOverlay", {
+        enabled: true,
+        autoPlay: false,
+        clips: [],
+        loop: false,
+        audio: false,
+      }),
+    );
+    seedScene([object], [object.id]);
+
+    render(<InspectorPanel />);
+
+    expect(groupSlugs()).toEqual(["basic", "video"]);
+    expect(within(groupOf("video")).getByTestId("video-enable")).toBeDefined();
+    expect(hasGroup("sound")).toBe(false);
   });
 });

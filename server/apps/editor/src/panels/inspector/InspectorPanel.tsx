@@ -20,7 +20,7 @@ import { EmptyState } from "../EmptyState";
 import { AudioTagDialog } from "../../app/AudioTagDialog";
 import { SpriteEditorDialog } from "../../app/SpriteEditorDialog";
 import { Field, FieldGroup, FieldRow } from "./fields";
-import { OBJECT_GROUPS } from "./registry";
+import { OBJECT_EDITOR, componentEditorsFor } from "./registry";
 
 /**
  * 右侧属性面板：当前选中对象 / 场景 / **资源文件**的属性。
@@ -78,11 +78,16 @@ export function InspectorPanel(): React.JSX.Element {
           // 显示哪几组、组里是什么，全在 `registry.tsx` 的 `OBJECT_GROUPS` 里——
           // 这里只负责「按顺序渲染适用的那些组」。
           <div key={selected.id} data-testid="object-properties">
-            {OBJECT_GROUPS.filter((def) => def.applies(selected)).map((def) => (
-              <FieldGroup key={def.group} title={def.title} group={def.group}>
-                {def.render(selected)}
-              </FieldGroup>
-            ))}
+            <FieldGroup title={OBJECT_EDITOR.title} group={OBJECT_EDITOR.group}>
+              {OBJECT_EDITOR.render(selected)}
+            </FieldGroup>
+            {componentEditorsFor(selected).flatMap((editor) =>
+              editor.panels.map((panel) => (
+                <FieldGroup key={`${editor.type}:${panel.group}`} title={panel.title} group={panel.group}>
+                  {panel.render(selected)}
+                </FieldGroup>
+              )),
+            )}
           </div>
         ) : activeScene !== undefined ? (
           <FieldGroup title="场景" group="scene">

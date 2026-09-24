@@ -206,11 +206,11 @@ describe("属性面板：候选小方块 + ＋ + 传送", () => {
     expect((screen.getByTestId("teleport-go") as HTMLButtonElement).textContent).toBe("⇢ 传送");
   });
 
-  it("普通对象没有「传送」那一组", () => {
+  it("组件实例决定编辑器：kind 改成精灵仍保留传送组件的编辑器", () => {
     seedScene([{ ...teleport([A], A), kind: "Sprite" }]);
     render(<InspectorPanel />);
 
-    expect(screen.queryByTestId("teleport-go")).toBeNull();
+    expect(screen.getByTestId("teleport-go")).toBeDefined();
   });
 });
 
