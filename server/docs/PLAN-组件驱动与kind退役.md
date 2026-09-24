@@ -65,7 +65,7 @@
 
 数据范围：仓库当前只有一份样例项目，3 个场景文件共 7 个对象；现行组合为 `Map/GridMap` 1、`Map/GridMap+VideoOverlay` 2、`Sprite/SpriteLayer` 1、`Image/ImageLayer` 1、`PlaySound/PlaySound` 1、`Teleport/Teleport` 1，均匹配。沿样例场景文件 Git 历史收集到 13 种对象快照组合（按每个提交的对象出现次数计）：`Map/<none>` 26、`Map/GridMap` 9、`Map/GridMap+VideoOverlay` 11、`PlaySound/<none>` 7、`PlaySound/PlaySound` 8、`Teleport/<none>` 3、`Teleport/Teleport` 8、`SceneObject/<none>` 15、`SceneObject/SpriteLayer` 1、`SceneObject/TextureRenderer` 1、`Sprite/SpriteLayer` 6、`Image/ImageLayer` 6、`Texture/ImageLayer` 1。该统计会重复计算跨提交未变对象；`<none>` 仅表示快照没有 `components[]` 实例，旧格式可能把能力存在扁平字段中，不代表对象没有该能力。外部真实项目/历史存档不可见，因此这份盘点不能作为停用兼容的用户数据依据。
 
-首轮结论：原 `defaultKinds` 同时承载旧格式兼容、创建模板路由、可选组件准入和损坏对象修复，不能整体删除。尤其 `PlaySound` / `Teleport` 当前 Inspector 没有显式修复入口，直接停用会使缺组件对象报错但无法原位修复。阶段 4 首个切片已将元数据拆为 `templateKinds`、`legacyFallbackKinds`、`optionalKinds`，并为可选组件准入与 mismatch 阻止补建增加测试；本切片不关闭任何 fallback，也不改变当前对象行为。后续再按用途逐项评估是否退役 fallback，并补足损坏对象修复入口或外部数据盘点。
+首轮结论：原 `defaultKinds` 同时承载创建模板路由、可选组件准入和缺组件修复，不能整体删除。v18 及更早扁平字段由 schema 迁移搬入组件；现行格式中组件缺失属于不完整/损坏文档，`PlaySound` / `Teleport` 当前 Inspector 没有独立修复入口，编辑时按 kind 补建是现有原位修复路径。阶段 4 已将元数据拆为 `templateKinds`、`repairFallbackKinds`、`optionalKinds`，明确区分模板、修复和可选准入；本轮不关闭修复路径，也不改变存档行为。后续需提供显式修复入口，再逐项评估是否退役隐式 fallback，并补足外部数据盘点。
 
 ## 兼容约束
 
@@ -85,8 +85,9 @@
 - `GridMap` 与 `ImageLayer` 并存时地图图片优先，Inspector 隐藏普通图片面板；已覆盖文档层优先级。kind mismatch 下显式组件的 Inspector 与校验已有回归。协议载荷、文档格式和 Unity 消费格式未改。
 - `apps/backend/test/protocol-document-contract.test.ts` 的 7 个协议-文档合同测试已通过。仓库未发现 Unity Test/Tests 测试程序集；本轮只静态审查 `SceneObjectView.NeedsView` 与视频命令的组件判定，Unity MCP 命名空间不可用，故未执行 Unity 运行时实测，阶段 3 保持进行中。
 - 阶段 4 已开始首轮审计：仓库样例当前 7 个对象无 mismatch；历史提交包含迁移前的无组件快照。逐组件决策与限制见上表；没有外部用户项目样本，且创建模板/可选能力/损坏文档修复仍依赖 kind fallback，故本轮未停用任何 fallback。
-- 阶段 4 首个代码切片已完成并通过本轮自动化验证：将 `defaultKinds` 职责拆为预设组件关联 `templateKinds`、必需组件旧文档补建 `legacyFallbackKinds`、可选组件准入 `optionalKinds`。`VideoOverlay` 仅保留地图/贴图的可选准入，不再走必需组件 fallback；测试覆盖准入范围、通用字段/专用命令补建及 mismatch 时拒绝补建。修改尚未提交。
-- 下一步：在可运行 Unity 测试的环境补做镜像运行时验证；阶段 4 先拆分 fallback 的迁移、创建、准入和修复用途，再补充真实项目盘点后逐组件评估。仍不改格式版本、不移除 `kind` 字段。
+- 阶段 4 首个代码切片已提交：将 `defaultKinds` 职责拆为预设组件关联 `templateKinds`、必需组件缺失修复 `repairFallbackKinds`、可选组件准入 `optionalKinds`。`VideoOverlay` 仅保留地图/贴图的可选准入，不再走必需组件 fallback。
+- 阶段 4 第二个代码切片：把运行时必需组件 fallback 明确命名为 `repairFallbackKinds`，避免与 schema 的旧格式迁移职责混淆；这次重命名不改变准入行为。仍待设计独立修复入口，之后才能评估是否移除 PlaySound/Teleport 的隐式 kind 修复 fallback。
+- 下一步：在可运行 Unity 测试的环境补做镜像运行时验证；阶段 4 增加显式缺组件修复操作并盘点真实项目后，再逐组件评估是否退役隐式 fallback。仍不改格式版本、不移除 `kind` 字段。
 
 ## 当前相关入口
 

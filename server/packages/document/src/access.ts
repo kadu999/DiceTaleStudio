@@ -28,7 +28,7 @@ import type {
  *
  * v22 层级移除后，查找一律按**能力槽位**（`ComponentSlot`）走：组件定义自报 `slot`，
  * 这里按 slot 在对象的组件列表上找第一个自报该槽位的组件，**不看 kind**；实例缺失时，
- * 创建模板路由与旧组件 fallback 分别读取组件定义中的元数据。
+ * 创建模板路由与缺组件修复 fallback 分别读取组件定义中的元数据。
  *
  * 两类函数分工明确：
  * - `xxxOf(object)` —— **纯读**，不改数据，没有这个组件就是 `undefined`；
@@ -65,7 +65,7 @@ export function componentTypeForObjectSlot(
   if (object.components.some((component) => findComponentType(component.type)?.slot === slot)) return undefined;
   if (hasComponentKindMismatch(object)) return undefined;
   return SLOT_COMPONENT_TYPES.find(
-    (definition) => definition.slot === slot && definition.legacyFallbackKinds?.includes(object.kind) === true,
+    (definition) => definition.slot === slot && definition.repairFallbackKinds?.includes(object.kind) === true,
   )?.type;
 }
 
@@ -79,10 +79,10 @@ export function objectImageSlot(object: GameObjectDoc): "map" | "image" {
     : "image";
 }
 
-/** Whether the legacy fallback may recreate this required component when it is missing. */
+/** Whether an edit may recreate this missing required component to repair the object. */
 export function canDefaultObjectComponent(object: GameObjectDoc, type: string): boolean {
   const definition = findComponentType(type);
-  if (definition?.slot === undefined || definition.legacyFallbackKinds?.includes(object.kind) !== true) return false;
+  if (definition?.slot === undefined || definition.repairFallbackKinds?.includes(object.kind) !== true) return false;
   if (hasComponentKindMismatch(object)) return false;
   return !object.components.some((component) => findComponentType(component.type)?.slot === definition.slot);
 }
@@ -265,7 +265,7 @@ export function withFeature<T>(object: GameObjectDoc, component: string, data: T
 /**
  * 取必需能力槽位的组件数据 draft；**兼容 fallback 允许、但没有实例就补一个默认的**。
  *
- * 准入判据集中在组件定义的 `legacyFallbackKinds`；可选组件使用单独的准入路径。
+ * 修复准入判据集中在组件定义的 `repairFallbackKinds`；可选组件使用单独的准入路径。
  * 已挂载实例不受 kind 影响。
  *
  * 导出是为了让**泛型写入**（`commands/component.ts`）复用同一份准入判据——

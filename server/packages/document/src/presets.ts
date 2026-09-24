@@ -7,8 +7,8 @@ import type { SoundLayer } from "./types";
  *
  * **组件是唯一功能载体**：组件定义自报 `slot`（「我承担对象哪种能力」，住在
  * `components.ts` 的 `ComponentTypeDef.slot`），对象访问器（`access.ts`）按 slot 在
- * 对象的组件列表上查找。组件定义分别声明创建模板 kind、缺失必需组件 fallback kind
- * 与可选组件准入 kind；这些职责由 `templateKinds` / `legacyFallbackKinds` / `optionalKinds`
+ * 对象的组件列表上查找。组件定义分别声明创建模板 kind、缺失必需组件修复 kind
+ * 与可选组件准入 kind；这些职责由 `templateKinds` / `repairFallbackKinds` / `optionalKinds`
  * 分别承载。
  *
  * `kind` 因此只是**预设 id**：它不再携带行为、也没有 parent 层级（v22 及更早的层级

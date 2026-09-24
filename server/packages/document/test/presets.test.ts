@@ -53,13 +53,13 @@ describe("对象预设表（presets.ts）", () => {
     expect(OBJECT_PRESETS.Teleport.slots.teleport).toBe("Teleport");
   });
 
-  it("组件模板 kind 声明覆盖每个预设槽位，旧组件 fallback 保持可用", () => {
+  it("组件模板 kind 声明覆盖每个预设槽位，缺组件修复 fallback 保持可用", () => {
     for (const preset of Object.values(OBJECT_PRESETS)) {
       for (const component of Object.values(preset.slots)) {
         const definition = COMPONENT_TYPES.find((item) => item.type === component);
         expect(definition?.templateKinds, `${preset.kind}.${component}`).toContain(preset.kind);
         if (definition?.optionalKinds?.includes(preset.kind) !== true) {
-          expect(definition?.legacyFallbackKinds, `${preset.kind}.${component}`).toContain(preset.kind);
+          expect(definition?.repairFallbackKinds, `${preset.kind}.${component}`).toContain(preset.kind);
         }
       }
     }
@@ -69,6 +69,14 @@ describe("对象预设表（presets.ts）", () => {
         .filter((preset) => Object.values(preset.slots).includes(definition.type))
         .map((preset) => preset.kind);
       expect([...(definition.templateKinds ?? [])].sort(), definition.type).toEqual(presetKinds.sort());
+
+      const optionalKinds = definition.optionalKinds ?? [];
+      const repairKinds = definition.repairFallbackKinds ?? [];
+      expect([...repairKinds].sort(), `${definition.type} repair`).toEqual(
+        presetKinds.filter((kind) => !optionalKinds.includes(kind)).sort(),
+      );
+      expect(optionalKinds.every((kind) => presetKinds.includes(kind)), `${definition.type} optional`).toBe(true);
+      expect(repairKinds.some((kind) => optionalKinds.includes(kind)), `${definition.type} overlap`).toBe(false);
     }
   });
 
@@ -76,7 +84,7 @@ describe("对象预设表（presets.ts）", () => {
     const video = COMPONENT_TYPES.find((item) => item.type === DEFAULT_SLOT_COMPONENT.video);
     expect(video?.templateKinds).toEqual(["Map", "Image"]);
     expect(video?.optionalKinds).toEqual(["Map", "Image"]);
-    expect(video?.legacyFallbackKinds).toBeUndefined();
+    expect(video?.repairFallbackKinds).toBeUndefined();
 
     const map = createGameObject({ id: "map", name: "地图", kind: "Map" });
     const image = createGameObject({ id: "image", name: "贴图", kind: "Image" });
