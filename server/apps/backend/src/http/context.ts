@@ -1,7 +1,7 @@
 import type { ResourceProvider } from "@dts/resources";
 import type { LoadedConfig } from "../config";
 import { openFolder as openFolderInFileManager, revealFile as revealFileInFileManager } from "../open-folder";
-import { BundleCache } from "../resources/bundle-cache";
+import { BundleCache } from "../resources/bundle";
 import type { LogLevel, RuntimeHub } from "../ws/hub";
 
 /**

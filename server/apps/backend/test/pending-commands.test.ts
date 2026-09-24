@@ -1,7 +1,7 @@
 import type { WebSocket } from "ws";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ServerToEditorMessage } from "@dts/protocol";
-import { PendingCommands } from "../src/ws/pending-commands";
+import { PendingCommands } from "../src/ws/hub";
 
 describe("PendingCommands", () => {
   afterEach(() => {

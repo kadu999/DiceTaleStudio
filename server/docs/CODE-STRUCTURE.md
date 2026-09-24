@@ -801,15 +801,11 @@ resources/
 | `src/http/mime.ts` | 35 | 扩展名 → Content-Type |
 | `src/http/static.ts` | 86 | 编辑器产物托管 + SPA 回退 + 目录穿越防护 |
 | `src/http/routes/*.ts` | 514 | **一条协议一个函数**：health(17) / config(20) / state(12) / projects(223, **7 个**：项目生命周期 + `/tree` + **`/meta`**（一次拿全项目的素材 meta，连读不出来的那几个也报出来）) / resources(180, 9 个) / index(62, 路由表) |
-| `src/resources/project-assets.ts` | — | 项目素材 meta 批量读取与 GUID 反查；HTTP 路由负责参数校验与状态码 |
 | `src/resources/fs-provider.ts` | 326 | `FsResourceProvider`（唯一碰磁盘的地方）+ 原子写 |
-| `src/resources/bundle.ts` | — | 资源清单 / 指纹 / 资源包组装；ZIP 编码委托给 `fflate`（STORED） |
-| `src/resources/bundle-cache.ts` | 55 | 资源包缓存（每个项目留最近一份，指纹变了才重打）——从 `http/server.ts` 搬出来的跨请求状态 |
-| `src/ws/hub.ts` | — | `RuntimeHub`：**只管传输**——升级分流、连接表、心跳与序列化发送 |
-| `src/ws/pending-commands.ts` | — | 命令回执等待、超时通知与关闭清理 |
-| `src/ws/hub-context.ts` | 61 | `HubContext`：处理器能用的全部能力（读运行态 / 发消息 / 记日志），`RuntimeHub implements` 它 |
-| `src/ws/types.ts` | 5 | `LogLevel` / `HubLogger`（从 `hub.ts` 拆出，避免处理器与中枢循环引用） |
-| `src/ws/handlers/*.ts` | 294 | **一条消息一个函数**：editor(137, 7 条) / client(95, 4 条) / types(58, 表类型与 `defineXxxHandlers`) / index(4) |
+| `src/resources/bundle.ts` | — | 资源清单 / 指纹 / ZIP 组装与缓存；编码委托给 `fflate`（STORED） |
+| `src/ws/hub.ts` | — | `RuntimeHub`：连接、心跳、命令回执、消息分发与序列化发送 |
+| `src/ws/hub-context.ts` | — | `HubContext` 与 WS logger 类型：handler 可用能力契约 |
+| `src/ws/handlers/{editor,client,types}.ts` | — | **一条消息一个函数**：按方向划分的消息处理器与类型安全注册表 |
 | `src/ws/runtime-session.ts` | 187 | `RuntimeSession`：运行态内存状态（开闸 / 前端 / 场景 / 设置 / 资源包） |
 | `src/mock-client/index.ts` | 192 | 假 Unity 前端（联调与手测） |
 
@@ -946,7 +942,7 @@ startServer()
 - `fflate` 写 UTF-8 条目名和文件修改时间；早于 ZIP 时间戳下限的条目按 1980-01-01 写入；
 - **响应头**：`x-dts-project`（URL 编码）、`x-dts-fingerprint`、`x-dts-file-count`、`x-dts-bytes`；
 - **包内还写一份 `dts-bundle.json`**（项目名 + 指纹 + 字节数 + 文件列表），前端解压后可自行核对，不必再问服务端；
-- **缓存**（在 `resources/bundle-cache.ts` 里）：`BundleCache` 按项目保存 `{fingerprint, zip, headers}`，**每个项目只留最近一份**；
+- **缓存**（在 `resources/bundle.ts` 里）：`BundleCache` 按项目保存 `{fingerprint, zip, headers}`，**每个项目只留最近一份**；
   每次请求先重算指纹（成本 = 一次 `list`），内容变了就重打——不需要文件监听，也不会发出发霉的包。
 
 ### 4.7 文件系统资源实现（`resources/fs-provider.ts`）

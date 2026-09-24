@@ -16,16 +16,17 @@ import {
   type ServerToEditorMessage,
 } from "@dts/protocol";
 import type { HubContext } from "./hub-context";
-import { CLIENT_HANDLERS, EDITOR_HANDLERS } from "./handlers";
-import { PendingCommands } from "./pending-commands";
+import { CLIENT_HANDLERS } from "./handlers/client";
+import { EDITOR_HANDLERS } from "./handlers/editor";
+import type { HubLogger, LogLevel } from "./hub-context";
 import { RuntimeSession } from "./runtime-session";
-import type { HubLogger, LogLevel } from "./types";
 
-export type { HubLogger, LogLevel } from "./types";
+export type { HubLogger, LogLevel } from "./hub-context";
 
 /** 前端心跳间隔与容忍的连续丢失次数（两拍没回 = 半开连接，断开清理）。 */
 const CLIENT_PING_INTERVAL_MS = 15000;
 const CLIENT_MAX_MISSED_PINGS = 2;
+const COMMAND_RESULT_TIMEOUT_MS = 15000;
 
 /**
  * 从一条**没通过校验**的入站消息里尽力取出 `requestId`。
@@ -51,6 +52,45 @@ interface ClientSession {
   missedPongs: number;
 }
 
+interface PendingCommand {
+  readonly timer: ReturnType<typeof setTimeout>;
+}
+
+/** Tracks command acknowledgements and reports commands that never receive a result. */
+export class PendingCommands {
+  private readonly entries = new Map<string, PendingCommand>();
+
+  constructor(
+    private readonly send: (editor: WebSocket, message: ServerToEditorMessage) => void,
+    private readonly timeoutMs = COMMAND_RESULT_TIMEOUT_MS,
+  ) {}
+
+  track(requestId: string, editor: WebSocket, label: string): void {
+    this.settle(requestId);
+    const timer = setTimeout(() => {
+      this.entries.delete(requestId);
+      this.send(editor, {
+        type: "editor_error",
+        requestId,
+        reason: `命令回执超时（${this.timeoutMs}ms）：前端可能未实现 ${label}`,
+      });
+    }, this.timeoutMs);
+    this.entries.set(requestId, { timer });
+  }
+
+  settle(requestId: string): void {
+    const pending = this.entries.get(requestId);
+    if (pending === undefined) return;
+    clearTimeout(pending.timer);
+    this.entries.delete(requestId);
+  }
+
+  clear(): void {
+    for (const pending of this.entries.values()) clearTimeout(pending.timer);
+    this.entries.clear();
+  }
+}
+
 /**
  * 运行态 WebSocket 中枢（**中继 + 缓存**，不拥有数据）。
  *
@@ -65,7 +105,7 @@ interface ClientSession {
  *
  * 数据方向是单向的：编辑器 / 服务端 → 前端。前端只回 `client_hello`、`command_result`、`pong`。
  *
- * **这个类只管传输**：升级分流、连接表、心跳与序列化发送。
+ * **这个类只管传输**：升级分流、连接表、心跳、命令回执与序列化发送。
  * 「每种消息来了做什么」在 `./handlers/`（一条消息一个函数），通过 `HubContext` 反向调用这里。
  */
 export class RuntimeHub implements HubContext {

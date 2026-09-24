@@ -60,6 +60,13 @@ export interface BuiltBundle {
   readonly headers: Readonly<Record<string, string>>;
 }
 
+/** Cached archive data for one project fingerprint. */
+export interface CachedBundle {
+  readonly fingerprint: string;
+  readonly zip: Buffer;
+  readonly headers: Readonly<Record<string, string>>;
+}
+
 /** 项目不存在时抛的错误（HTTP 层据此回 404，不靠字符串匹配）。 */
 export class ProjectNotFoundError extends Error {
   constructor(readonly project: string) {
@@ -185,6 +192,38 @@ export async function buildBundle(
       "x-dts-bytes": String(manifest.bytes),
     },
   };
+}
+
+/** Keeps only the latest archive per project; callers supply the fingerprint already read for the response. */
+export class BundleCache {
+  private readonly entries = new Map<string, CachedBundle>();
+
+  constructor(private readonly log: (message: string) => void) {}
+
+  async get(
+    provider: ResourceProvider,
+    project: string,
+    current: ProjectManifest,
+    maxTotalBytes: number,
+  ): Promise<CachedBundle> {
+    const cached = this.entries.get(project);
+    if (cached !== undefined && cached.fingerprint === current.fingerprint) {
+      return cached;
+    }
+
+    const built = await buildBundle(provider, project, { maxTotalBytes });
+    const next: CachedBundle = {
+      fingerprint: built.manifest.fingerprint,
+      zip: built.zip,
+      headers: { ...built.headers },
+    };
+    this.entries.set(project, next);
+    this.log(
+      `已打包资源「${project}」：${built.manifest.entries.length} 个文件 / ` +
+        `${built.manifest.bytes} 字节 / ${built.manifest.fingerprint}`,
+    );
+    return next;
+  }
 }
 
 /** 指纹：`path:size:mtimeMs` 按 path 排序后拼接的 sha1 前 16 位。 */

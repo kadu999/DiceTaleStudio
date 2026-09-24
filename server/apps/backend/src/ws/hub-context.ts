@@ -1,7 +1,10 @@
 import type { ServerToClientMessage, ServerToEditorMessage } from "@dts/protocol";
 import type { WebSocket } from "ws";
 import type { RuntimeSession } from "./runtime-session";
-import type { HubLogger, LogLevel } from "./types";
+
+/** Server log levels and the injected logger contract. */
+export type LogLevel = "info" | "warn" | "error";
+export type HubLogger = (level: LogLevel, message: string) => void;
 
 /**
  * 消息处理器能用的全部能力。
