@@ -27,12 +27,12 @@ import type {
  * 于是「把特性从扁平字段搬进组件」这件事的改动面被压在这个文件里（迁移那一次）。
  *
  * v22 层级移除后，查找一律按**能力槽位**（`ComponentSlot`）走：组件定义自报 `slot`，
- * 这里按 slot 在对象的组件列表上找第一个自报该槽位的组件，**不看 kind**；实例缺失时，
- * 创建模板路由与缺组件修复 fallback 分别读取组件定义中的元数据。
+ * 这里按 slot 在对象的组件列表上找第一个自报该槽位的组件，**不看 kind**；组件缺失时，
+ * 必需能力由显式修复恢复，可选能力才读取组件定义里的准入元数据。
  *
  * 两类函数分工明确：
  * - `xxxOf(object)` —— **纯读**，不改数据，没有这个组件就是 `undefined`；
- * - `ensureXxx(object)` —— **写路径**，接受 immer draft，没有实例时仅为兼容旧对象补默认值。
+ * - `ensureXxx(object)` —— **写路径**，接受 immer draft；仅可选组件可按准入规则创建。
  *
  * 地图数据没有 `ensure`：格子与贴图尺寸没法凭空造，所以只有读与「整份替换」（`writeFeature`）。
  */
@@ -55,7 +55,7 @@ export function componentOfSlot(object: GameObjectDoc, slot: ComponentSlot): Com
   return object.components.find((item) => findComponentType(item.type)?.slot === slot);
 }
 
-/** Get the attached component type, using a repair fallback only when no instance exists. */
+/** Get the attached component type, or an explicitly addable optional component. */
 export function componentTypeForObjectSlot(
   object: GameObjectDoc,
   slot: ComponentSlot,
@@ -65,11 +65,11 @@ export function componentTypeForObjectSlot(
   if (object.components.some((component) => findComponentType(component.type)?.slot === slot)) return undefined;
   if (hasComponentKindMismatch(object)) return undefined;
   return SLOT_COMPONENT_TYPES.find(
-    (definition) => definition.slot === slot && definition.repairFallbackKinds?.includes(object.kind) === true,
+    (definition) => definition.slot === slot && definition.optionalKinds?.includes(object.kind) === true,
   )?.type;
 }
 
-/** Component instances declare image behavior; kind is only a fallback for old objects without image components. */
+/** Component instances declare image behavior; kind selects map semantics only while its required component is missing. */
 export function objectImageSlot(object: GameObjectDoc): "map" | "image" {
   if (componentOfSlot(object, "map") !== undefined) return "map";
   if (canRepairObjectComponent(object, DEFAULT_SLOT_COMPONENT.map)) return "map";
@@ -78,14 +78,6 @@ export function objectImageSlot(object: GameObjectDoc): "map" | "image" {
   return findComponentType(DEFAULT_SLOT_COMPONENT.map)?.templateKinds?.includes(object.kind) === true
     ? "map"
     : "image";
-}
-
-/** Whether an edit may recreate this missing required component to repair the object. */
-export function canDefaultObjectComponent(object: GameObjectDoc, type: string): boolean {
-  const definition = findComponentType(type);
-  if (definition?.slot === undefined || definition.repairFallbackKinds?.includes(object.kind) !== true) return false;
-  if (hasComponentKindMismatch(object)) return false;
-  return !object.components.some((component) => findComponentType(component.type)?.slot === definition.slot);
 }
 
 /** Whether the editor can offer an explicit repair for a missing required component. */
@@ -118,7 +110,7 @@ export function hasComponentKindMismatch(object: GameObjectDoc): boolean {
 export function supportsObjectComponent(object: GameObjectDoc, type: string): boolean {
   return (
     object.components.some((component) => component.type === type) ||
-    canDefaultObjectComponent(object, type) ||
+    canRepairObjectComponent(object, type) ||
     canAddOptionalObjectComponent(object, type)
   );
 }
@@ -275,10 +267,9 @@ export function withFeature<T>(object: GameObjectDoc, component: string, data: T
 }
 
 /**
- * 取必需能力槽位的组件数据 draft；**兼容 fallback 允许、但没有实例就补一个默认的**。
+ * 取能力槽位的组件数据 draft；缺少实例时仅为明确可选的组件创建默认数据。
  *
- * 修复准入判据集中在组件定义的 `repairFallbackKinds`；可选组件使用单独的准入路径。
- * 已挂载实例不受 kind 影响。
+ * 必需组件通过显式修复入口恢复，普通字段编辑不得补建。
  *
  * 导出是为了让**泛型写入**（`commands/component.ts`）复用同一份准入判据——
  * 那条路必须遵守相同的组件准入规则，避免出现「面板给了入口、命令却拒了」的半套状态。
@@ -302,7 +293,7 @@ export function ensureSlotData<T>(
 }
 
 /**
- * 按**组件类型**（而不是槽位）取数据 draft；只有已挂载、必需修复 fallback 或可选准入时才创建实例。
+ * 按**组件类型**（而不是槽位）取数据 draft；只有已挂载或可选准入时才创建实例。
  *
  * 与 `ensureSlotData` 同一套判据，多一道「这个槽位确实由**这个**组件承载」的核对：
  * `image` 槽位在精灵上是 `SpriteLayer`、在贴图上是 `ImageLayer`，只按槽位找会拿错那一份。
@@ -323,7 +314,7 @@ export function ensureComponentData(
     return attached.data as Draft<Record<string, unknown>>;
   }
 
-  if (!supportsObjectComponent(object, type)) {
+  if (!canAddOptionalObjectComponent(object, type)) {
     return undefined;
   }
 
@@ -331,7 +322,7 @@ export function ensureComponentData(
 }
 
 /**
- * 声音数据的 draft；仅允许已挂载组件或注册的修复 fallback。
+ * 声音数据的 draft；缺少组件时由显式修复命令恢复。
  *
  * 缺失的 `PlaySound` 组件现在必须先通过显式修复操作恢复；普通字段命令不会按 kind 补建。
  */
@@ -350,10 +341,10 @@ export function ensureTeleportData(object: Draft<GameObjectDoc>): Draft<Teleport
 }
 
 /**
- * 视频数据的 draft；**缺实例就补一份默认的**。
+ * 视频数据的 draft；缺实例时，只有具备可选视频能力的对象才创建默认组件。
  *
  * 不是地图 / 贴图的对象返回 `undefined`（预设表 `OBJECT_PRESETS`：只有这两种预设声明了 video 槽位）。
- * 补壳用的那份形状住在 `component-specs/video.ts`（与属性面板、泛型写入同一份规格）。
+ * 默认数据住在 `component-specs/video.ts`（与属性面板、泛型写入同一份规格）。
  */
 export function ensureVideoData(object: Draft<GameObjectDoc>): Draft<VideoDataDoc> | undefined {
   const component = componentOfSlot(object, "video");

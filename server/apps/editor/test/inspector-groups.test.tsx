@@ -4,6 +4,7 @@ import {
   createMapObject,
   createGameObject,
   featureComponent,
+  imageOf,
   mapDataOf,
   type GameObjectDoc,
 } from "@dts/document";
@@ -87,6 +88,50 @@ afterEach(() => {
 });
 
 describe("属性分组：基础 / 渲染 / 区域 / 战争雾 / 视频", () => {
+  it("空白精灵和贴图通过选图显式添加正确的图片组件并可一次撤销", () => {
+    seedScene([
+      createGameObject({ id: "sprite", name: "精灵", kind: "Sprite" }),
+      createGameObject({ id: "image", name: "贴图", kind: "Image" }),
+    ], ["sprite"]);
+    render(<InspectorPanel />);
+
+    expect(screen.getByTestId("pick-texture").textContent).toBe("选择图片并添加");
+    expect(screen.getByText("图片组件缺失")).toBeDefined();
+    act(() => {
+      useEditorStore.getState().setObjectImageSprite(
+        "sprite",
+        { id: "project:测试/Assets/images/sheet.png", width: 128, height: 64 },
+        { column: 1, row: 0 },
+      );
+    });
+    expect(useEditorStore.getState().scenes[0]?.objects[0]?.components[0]).toMatchObject({
+      id: "sprite__SpriteLayer",
+      type: "SpriteLayer",
+      data: { sprite: { column: 1, row: 0 } },
+    });
+    expect(useEditorStore.getState().canUndo).toBe(true);
+    act(() => useEditorStore.getState().undo());
+    expect(useEditorStore.getState().scenes[0]?.objects[0]?.components).toEqual([]);
+    expect(useEditorStore.getState().canUndo).toBe(false);
+
+    act(() => useEditorStore.getState().setSelection(["image"]));
+    expect(screen.getByTestId("pick-texture").textContent).toBe("选择图片并添加");
+    act(() => {
+      useEditorStore.getState().setObjectImageSprite(
+        "image",
+        { id: "project:测试/Assets/images/picture.png", width: 96, height: 48 },
+        null,
+      );
+    });
+    const imageObject = useEditorStore.getState().scenes[0]?.objects[1];
+    expect(imageObject?.components[0]).toMatchObject({ id: "image__ImageLayer", type: "ImageLayer" });
+    expect(imageOf(imageObject!)).toEqual({
+      id: "project:测试/Assets/images/picture.png",
+      width: 96,
+      height: 48,
+    });
+  });
+
   it("损坏地图提供明确选图修复入口，修复一次撤销即可完整还原", () => {
     const broken = {
       ...createGameObject({ id: "broken-map", name: "坏地图", kind: "Map" }),

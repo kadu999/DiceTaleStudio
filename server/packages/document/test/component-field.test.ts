@@ -36,7 +36,7 @@ function objectOf(scene: SceneDoc, id: string): GameObjectDoc | undefined {
   return scene.objects.find((object) => object.id === id);
 }
 
-/** 地图：工厂建出来的只有 `GridMap`，**没有** `VideoOverlay`——正好用来验「缺实例时按规格补壳」。 */
+/** 地图：工厂建出来的只有 `GridMap`，**没有**可选的 `VideoOverlay`。 */
 function mapObject(id = "map-1"): GameObjectDoc {
   return createMapObject({ id, name: "网格地图", image: IMAGE, grid: GRID });
 }
@@ -65,7 +65,7 @@ describe("组件规格：VideoOverlay", () => {
   });
 
   it("默认数据只有一处归属地：规格（老注册表那条 `fields` / `defaultComponentData` 已并过来）", () => {
-    // 登记了规格的：用规格里的 `defaultData`（补壳补的是**完整**形状）
+    // 登记了规格的：用规格里的 `defaultData` 创建可选组件时作为完整形状
     expect(defaultDataOf(VIDEO)).toEqual({
       enabled: true,
       autoPlay: false,
@@ -90,7 +90,7 @@ describe("setComponentField：能改的", () => {
     expect(videoDataOf(objectOf(next, "map-1")!)?.loop).toBe(true);
   });
 
-  it("组件缺实例时按规格补壳，并把新值一起写进去", () => {
+  it("可选组件缺实例时按规格创建，并把新值一起写进去", () => {
     const scene = sceneWith([mapObject()]);
     expect(videoDataOf(objectOf(scene, "map-1")!)).toBeUndefined();
 
@@ -98,7 +98,7 @@ describe("setComponentField：能改的", () => {
       expect(setComponentField(draft, "map-1", VIDEO, "autoPlay", true)).toBe(true);
     });
 
-    // 补出来的壳是**完整**形状（与工厂 / 校验同一份口径），不是只有被改的那一个键
+    // 新组件是完整形状（与工厂 / 校验同一份口径），不是只有被改的那一个键
     expect(videoDataOf(objectOf(next, "map-1")!)).toEqual({
       enabled: true,
       autoPlay: true,
@@ -117,7 +117,7 @@ describe("setComponentField：不改的（都返回 false 且文档不动）", (
     });
 
     mutate(seeded, (draft) => {
-      // 补壳时的默认值就是 false，再写一次 false = 无变更
+      // 默认值就是 false，再写一次 false = 无变更
       expect(setComponentField(draft, "map-1", VIDEO, "loop", false)).toBe(false);
     });
   });

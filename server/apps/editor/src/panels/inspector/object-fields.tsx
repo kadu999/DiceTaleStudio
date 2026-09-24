@@ -4,9 +4,11 @@ import {
   effectiveScaleY,
   isUniformScale,
   canRepairObjectComponent,
+  componentForSlot,
   DEFAULT_SLOT_COMPONENT,
   mapDataOf,
   normalizeDegrees,
+  objectImageSlot,
   objectImage,
   spriteSheetOf,
   supportsSpriteSheet,
@@ -135,6 +137,10 @@ export function TextureField({ object }: { readonly object: GameObjectDoc }): Re
   const assetMetas = useEditorStore((state) => state.assetMetas);
   const openImagePicker = useEditorStore((state) => state.openImagePicker);
   const missingMapData = canRepairObjectComponent(object, DEFAULT_SLOT_COMPONENT.map);
+  const missingImageComponent = !missingMapData &&
+    objectImageSlot(object) !== "map" &&
+    canRepairObjectComponent(object, componentForSlot("image", object.kind));
+  const missingComponent = missingMapData || missingImageComponent;
   const image = missingMapData ? undefined : objectImage(object);
 
   // 引用的文件不在项目里（素材没提交 / 改名了）：直接把这件事写出来
@@ -157,7 +163,9 @@ export function TextureField({ object }: { readonly object: GameObjectDoc }): Re
     <FieldRow label="贴图">
       {spriteCapable ? (
         image === undefined ? (
-          <span className="min-w-0 flex-1 text-[11px] text-[var(--color-editor-text-dim)]">（无贴图）</span>
+          <span className={`min-w-0 flex-1 text-[11px] ${missingImageComponent ? "text-[var(--color-editor-warn)]" : "text-[var(--color-editor-text-dim)]"}`}>
+            {missingImageComponent ? "图片组件缺失" : "（无贴图）"}
+          </span>
         ) : <span className="min-w-0 flex-1" />
       ) : (
         <span
@@ -166,8 +174,8 @@ export function TextureField({ object }: { readonly object: GameObjectDoc }): Re
           }`}
           title={currentAsset?.id ?? image?.id}
         >
-          {missingMapData
-            ? "地图数据缺失"
+          {missingComponent
+            ? missingMapData ? "地图数据缺失" : "图片组件缺失"
             : image === undefined
               ? "（无贴图）"
               : assetDisplayPath(currentAsset?.id ?? currentImageAssetId(image, assetMetas))}
@@ -206,7 +214,7 @@ export function TextureField({ object }: { readonly object: GameObjectDoc }): Re
         className="toolbar-button flex-none hover:toolbar-button-hover"
         onClick={() => openImagePicker(object.id)}
       >
-        {missingMapData ? "选择贴图并修复" : "选择"}
+        {missingMapData ? "选择贴图并修复" : missingImageComponent ? "选择图片并添加" : "选择"}
       </button>
     </FieldRow>
   );

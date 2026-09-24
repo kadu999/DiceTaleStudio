@@ -3,7 +3,7 @@ import type { Draft } from "immer";
 import { gridSizeFromImage } from "@dts/grid";
 // 特性的读写一律走访问器（「数据存在哪个组件里」只有 access.ts 知道）
 import { canRepairObjectComponent, componentTypeForObjectSlot, mapDataOf, objectImage, objectImageSlot, objectSupportsSpriteSheet, writeFeature } from "../access";
-import { DEFAULT_SLOT_COMPONENT, DEFAULT_SOUND_LAYER } from "../presets";
+import { componentForSlot, DEFAULT_SLOT_COMPONENT, DEFAULT_SOUND_LAYER, SPRITE_COMPONENT } from "../presets";
 import { DEFAULT_OBJECT_SCALE, clampObjectScale, collapseScale } from "../scale";
 import { DEFAULT_SORTING_ORDER, createId, findObject } from "./shared";
 import { setObjectField } from "./field";
@@ -85,6 +85,32 @@ export function repairMapObjectComponent(
     rowOrder: "bottom-up",
     cells: { encoding: "rle", runs: [[0, grid.width * grid.height]] },
   });
+  return true;
+}
+
+/** Explicitly attach a missing image renderer to an empty object from its selected image. */
+export function repairImageObjectComponent(
+  scene: Draft<SceneDoc>,
+  objectId: string,
+  image: ImageRef,
+): boolean {
+  const object = findObject(scene, objectId);
+  if (object === undefined) return false;
+
+  if (objectImageSlot(object) === "map") return false;
+  const component = componentForSlot("image", object.kind);
+  if (!canRepairObjectComponent(object, component)) return false;
+
+  const next = withSpriteRef(
+    {
+      id: image.id,
+      ...(image.guid === undefined ? {} : { guid: image.guid }),
+      width: image.width,
+      height: image.height,
+    },
+    component === SPRITE_COMPONENT ? image.sprite : undefined,
+  );
+  writeFeature(object, component, next);
   return true;
 }
 

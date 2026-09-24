@@ -67,7 +67,8 @@ const hasComponent = (object: GameObjectDoc, type: ComponentType): boolean =>
   componentOf(object, type) !== undefined;
 
 function imageFallback(object: GameObjectDoc, type: ComponentType): boolean {
-  return objectImageSlot(object) !== "map" && mapDataOf(object) === undefined && supportsObjectComponent(object, type);
+  return objectImageSlot(object) !== "map" && mapDataOf(object) === undefined &&
+    canRepairObjectComponent(object, type);
 }
 
 function panel(group: string, title: string, render: EditorPanelDef["render"]): EditorPanelDef {

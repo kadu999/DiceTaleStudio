@@ -21,7 +21,7 @@ import {
   withMetaSpriteSheet,
   type AssetMetaDoc,
 } from "../src/asset-meta";
-import { setObjectImage, createGameObject } from "../src/commands";
+import { repairImageObjectComponent, createGameObject } from "../src/commands";
 import { createEmptyProject, createEmptyScene } from "../src/factory";
 import { parseProjectFile } from "../src/schema";
 import { resolveSceneSprites } from "../src/sprites";
@@ -541,7 +541,7 @@ describe("推送载荷：形状与 v22 及更早一模一样", () => {
       ...createEmptyScene("Map001"),
       objects: [createGameObject({ id: "sprite-1", name: "精灵" })],
     };
-    setObjectImage(scene, "sprite-1", {
+    repairImageObjectComponent(scene, "sprite-1", {
       id: IMAGE_ID,
       guid: GUID,
       width: 64,

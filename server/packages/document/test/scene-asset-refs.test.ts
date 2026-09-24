@@ -6,7 +6,7 @@ import {
   createAssetMetas,
   createEmptyScene,
   createGameObject,
-  setObjectImage,
+  repairImageObjectComponent,
   sceneAssetRefsToGuids,
   sceneAssetRefsToIds,
 } from "../src/index";
@@ -21,7 +21,7 @@ describe("scene asset identity", () => {
       ...createEmptyScene("Map001"),
       objects: [createGameObject({ id: "sprite-1", name: "sprite" })],
     };
-    setObjectImage(scene, "sprite-1", { id: IMAGE_ID, width: 64, height: 64 });
+    repairImageObjectComponent(scene, "sprite-1", { id: IMAGE_ID, width: 64, height: 64 });
 
     const stored = sceneAssetRefsToGuids(scene, metas);
     const storedImage = (stored.objects[0]!.components[0]!.data as { id: string }).id;
@@ -43,7 +43,7 @@ describe("scene asset identity", () => {
       ...createEmptyScene("Map001"),
       objects: [createGameObject({ id: "sprite-1", name: "sprite" })],
     };
-    setObjectImage(scene, "sprite-1", { id: IMAGE_ID, width: 64, height: 64 });
+    repairImageObjectComponent(scene, "sprite-1", { id: IMAGE_ID, width: 64, height: 64 });
     const persisted = sceneAssetRefsToGuids(scene, oldMetas);
 
     const currentMetas = createAssetMetas([{ id: renamedId, meta }]);
@@ -139,7 +139,7 @@ describe("scene asset identity", () => {
       ...createEmptyScene("Map001"),
       objects: [createGameObject({ id: "sprite-1", name: "sprite" })],
     };
-    setObjectImage(scene, "sprite-1", { id: IMAGE_ID, width: 64, height: 64 });
+    repairImageObjectComponent(scene, "sprite-1", { id: IMAGE_ID, width: 64, height: 64 });
 
     const stored = sceneAssetRefsToGuids(scene, createAssetMetas([]));
     expect((stored.objects[0]!.components[0]!.data as { id: string }).id).toBe(IMAGE_ID);

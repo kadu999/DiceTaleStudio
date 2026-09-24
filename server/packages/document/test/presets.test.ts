@@ -8,7 +8,6 @@ import {
   OBJECT_PRESETS,
   SPRITE_COMPONENT,
   canAddOptionalObjectComponent,
-  canDefaultObjectComponent,
   canRepairObjectComponent,
   carriesComponent,
   componentForSlot,
@@ -54,16 +53,16 @@ describe("对象预设表（presets.ts）", () => {
     expect(OBJECT_PRESETS.Teleport.slots.teleport).toBe("Teleport");
   });
 
-  it("组件模板 kind 声明覆盖每个预设槽位，缺组件修复 fallback 保持可用", () => {
+  it("组件模板 kind 声明覆盖预设槽位，必需组件使用显式修复", () => {
     for (const preset of Object.values(OBJECT_PRESETS)) {
       for (const component of Object.values(preset.slots)) {
         const definition = COMPONENT_TYPES.find((item) => item.type === component);
         expect(definition?.templateKinds, `${preset.kind}.${component}`).toContain(preset.kind);
         if (
           definition?.optionalKinds?.includes(preset.kind) !== true &&
-          definition?.repairKinds?.includes(preset.kind) !== true
+          !(component === DEFAULT_SLOT_COMPONENT.image && preset.kind === "Map")
         ) {
-          expect(definition?.repairFallbackKinds, `${preset.kind}.${component}`).toContain(preset.kind);
+          expect(definition?.repairKinds, `${preset.kind}.${component}`).toContain(preset.kind);
         }
       }
     }
@@ -75,23 +74,21 @@ describe("对象预设表（presets.ts）", () => {
       expect([...(definition.templateKinds ?? [])].sort(), definition.type).toEqual(presetKinds.sort());
 
       const optionalKinds = definition.optionalKinds ?? [];
-      const repairKinds = definition.repairFallbackKinds ?? [];
-      const explicitRepairKinds = definition.repairKinds ?? [];
-      expect([...repairKinds].sort(), `${definition.type} repair`).toEqual(
-        presetKinds.filter((kind) => !optionalKinds.includes(kind) && !explicitRepairKinds.includes(kind)).sort(),
+      const repairKinds = definition.repairKinds ?? [];
+      const repairableKinds = presetKinds.filter(
+        (kind) => !optionalKinds.includes(kind) && !(definition.type === DEFAULT_SLOT_COMPONENT.image && kind === "Map"),
       );
+      expect([...repairKinds].sort(), `${definition.type} repair`).toEqual(repairableKinds.sort());
       expect(optionalKinds.every((kind) => presetKinds.includes(kind)), `${definition.type} optional`).toBe(true);
-      expect(explicitRepairKinds.every((kind) => presetKinds.includes(kind)), `${definition.type} repairable`).toBe(true);
-      expect(repairKinds.some((kind) => optionalKinds.includes(kind)), `${definition.type} overlap`).toBe(false);
-      expect(repairKinds.some((kind) => explicitRepairKinds.includes(kind)), `${definition.type} repair overlap`).toBe(false);
+      expect(repairKinds.every((kind) => presetKinds.includes(kind)), `${definition.type} repairable`).toBe(true);
+      expect(repairKinds.some((kind) => optionalKinds.includes(kind)), `${definition.type} repair overlap`).toBe(false);
     }
   });
 
-  it("VideoOverlay 是可选组件：地图与贴图可添加，但不作为缺失必需组件 fallback", () => {
+  it("VideoOverlay 是地图与贴图可显式添加的可选组件", () => {
     const video = COMPONENT_TYPES.find((item) => item.type === DEFAULT_SLOT_COMPONENT.video);
     expect(video?.templateKinds).toEqual(["Map", "Image"]);
     expect(video?.optionalKinds).toEqual(["Map", "Image"]);
-    expect(video?.repairFallbackKinds).toBeUndefined();
 
     const map = createGameObject({ id: "map", name: "地图", kind: "Map" });
     const image = createGameObject({ id: "image", name: "贴图", kind: "Image" });
@@ -99,21 +96,29 @@ describe("对象预设表（presets.ts）", () => {
     expect(canAddOptionalObjectComponent(map, DEFAULT_SLOT_COMPONENT.video)).toBe(true);
     expect(canAddOptionalObjectComponent(image, DEFAULT_SLOT_COMPONENT.video)).toBe(true);
     expect(canAddOptionalObjectComponent(sprite, DEFAULT_SLOT_COMPONENT.video)).toBe(false);
-    expect(canDefaultObjectComponent(map, DEFAULT_SLOT_COMPONENT.video)).toBe(false);
-    expect(canDefaultObjectComponent(image, DEFAULT_SLOT_COMPONENT.video)).toBe(false);
   });
 
-  it("GridMap 缺失时只提供显式修复，不允许普通写入 fallback 补建", () => {
+  it("GridMap 缺失时只提供显式修复，不允许普通写入补建", () => {
     const definition = COMPONENT_TYPES.find((item) => item.type === DEFAULT_SLOT_COMPONENT.map);
     expect(definition?.repairKinds).toEqual(["Map"]);
-    expect(definition?.repairFallbackKinds).toBeUndefined();
 
     const object = createGameObject({ id: "map", name: "坏地图", kind: "Map" });
     expect(canRepairObjectComponent(object, DEFAULT_SLOT_COMPONENT.map)).toBe(true);
-    expect(canDefaultObjectComponent(object, DEFAULT_SLOT_COMPONENT.map)).toBe(false);
+    expect(canRepairObjectComponent(object, DEFAULT_SLOT_COMPONENT.image)).toBe(false);
   });
 
-  it("组件 kind mismatch 时，不会以可选准入或必需 fallback 补建缺失组件", () => {
+  it("ImageLayer 与 SpriteLayer 只允许按对象模板显式添加", () => {
+    const sprite = createGameObject({ id: "sprite", name: "精灵", kind: "Sprite" });
+    const image = createGameObject({ id: "image", name: "贴图", kind: "Image" });
+    const player = createGameObject({ id: "player", name: "玩家", kind: "Player" });
+
+    expect(canRepairObjectComponent(sprite, SPRITE_COMPONENT)).toBe(true);
+    expect(canRepairObjectComponent(image, DEFAULT_SLOT_COMPONENT.image)).toBe(true);
+    expect(canRepairObjectComponent(player, DEFAULT_SLOT_COMPONENT.image)).toBe(true);
+    expect(canRepairObjectComponent(sprite, DEFAULT_SLOT_COMPONENT.image)).toBe(false);
+  });
+
+  it("组件 kind mismatch 时，不会以可选准入或显式修复补建缺失组件", () => {
     const map = createGameObject({ id: "map", name: "地图", kind: "Map" });
     const mismatched = {
       ...map,
@@ -121,7 +126,6 @@ describe("对象预设表（presets.ts）", () => {
     };
 
     expect(canAddOptionalObjectComponent(mismatched, DEFAULT_SLOT_COMPONENT.video)).toBe(false);
-    expect(canDefaultObjectComponent(mismatched, DEFAULT_SLOT_COMPONENT.map)).toBe(false);
     expect(canRepairObjectComponent(mismatched, DEFAULT_SLOT_COMPONENT.map)).toBe(false);
   });
 

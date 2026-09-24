@@ -9,7 +9,6 @@ import type { ComponentDoc } from "./types";
  * - `slot`：它承担对象哪种能力（**组件自报**；访问器按 slot 找对象上的组件，不看 kind）；
  * - `templateKinds`：对象创建模板中会预置/路由到该组件的 kind；
  * - `repairKinds`：组件缺失时，编辑器提供显式修复入口的 kind；
- * - `repairFallbackKinds`：必需组件实例缺失时，哪些 kind 允许编辑操作补建以修复对象；
  * - `optionalKinds`：允许用户主动添加该可选组件的 kind；
  * - `legacyField`：v19 之前它住在对象的哪个扁平字段里——迁移函数靠它把老字段搬成组件实例。
  */
@@ -42,8 +41,6 @@ export interface ComponentTypeDef {
   readonly templateKinds?: readonly string[];
   /** Kinds whose missing required component can be explicitly repaired in the editor. */
   readonly repairKinds?: readonly string[];
-  /** Kinds allowed to recreate a missing required component during an edit-based repair. */
-  readonly repairFallbackKinds?: readonly string[];
   /** Kinds allowed to add this optional component when it is not attached yet. */
   readonly optionalKinds?: readonly string[];
   readonly tooltip?: string;
@@ -52,7 +49,7 @@ export interface ComponentTypeDef {
 export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
   // ---------------------------------------------------------------- v19：对象特性提升上来的组件
   //
-  // 这 6 条自报 `slot`。模板、显式修复、必需组件兼容和可选组件准入分别声明，
+  // 这 6 条自报 `slot`。模板、显式修复和可选组件准入分别声明，
   // 并由 presets.test.ts 保证创建模板与 templateKinds 一致。
   // `legacyField` 记着 v19 之前它住在对象的哪个扁平字段里。
   {
@@ -73,7 +70,7 @@ export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
     slot: "image",
     legacyField: "image",
     templateKinds: ["Map", "Image", "Player", "Item", "Event"],
-    repairFallbackKinds: ["Map", "Image", "Player", "Item", "Event"],
+    repairKinds: ["Image", "Player", "Item", "Event"],
     tooltip: "对象自己要显示的图片，整张铺在对象矩形上（贴图对象用它；地图的贴图在 GridMap 里）",
   },
   {
@@ -86,7 +83,7 @@ export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
     slot: "image",
     legacyField: "image",
     templateKinds: ["Sprite"],
-    repairFallbackKinds: ["Sprite"],
+    repairKinds: ["Sprite"],
     tooltip: "精灵要显示的图片：可以取图集里的一格（子图），由渲染那一组挑第几行第几列",
   },
   {

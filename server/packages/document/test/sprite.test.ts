@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { produce, type Draft } from "immer";
-import { createGameObject, setObjectImage, setObjectSprite } from "../src/commands";
+import { createGameObject, repairImageObjectComponent, setObjectImage, setObjectSprite } from "../src/commands";
 import { createEmptyScene, createMapObject } from "../src/factory";
 import { imageOf } from "../src/access";
 import {
@@ -92,7 +92,7 @@ function spriteObject(id = "sprite-1", image: ImageRef = IMAGE): GameObjectDoc {
 
 function setImage(object: GameObjectDoc, id: string, image: ImageRef = IMAGE): GameObjectDoc {
   const scene = sceneWith([object]);
-  setObjectImage(scene, id, image);
+  repairImageObjectComponent(scene, id, image);
   const next = scene.objects[0];
   if (next === undefined) {
     throw new Error("对象不见了");

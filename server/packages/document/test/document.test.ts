@@ -17,6 +17,7 @@ import {
   objectsInDrawOrder,
   paintMapCells,
   removeObject,
+  repairImageObjectComponent,
   repairMapObjectComponent,
   setMapCells,
   setMapFogEnabled,
@@ -720,7 +721,7 @@ describe("对象命令（都在场景上操作）", () => {
     expect(objectImage(createMapObject({ name: "地图", image: IMAGE, grid: GRID }))).toEqual(IMAGE);
   });
 
-  it("setObjectImage：地图写进 map.image，精灵写进 image", () => {
+  it("显式添加图片组件：地图写进 map.image，精灵写进 SpriteLayer", () => {
     const next = { id: "project:C/Assets/images/sprite.png", width: 200, height: 150 };
 
     const withMap = mutate(withMapObject(makeScene()), (draft) => {
@@ -731,7 +732,7 @@ describe("对象命令（都在场景上操作）", () => {
     expect(imageOf(withMap.objects[0]!)).toBeUndefined();
 
     const withSprite = mutate(withObject(makeScene(), "sprite"), (draft) => {
-      expect(setObjectImage(draft, "sprite", next)).toBe(true);
+      expect(repairImageObjectComponent(draft, "sprite", next)).toBe(true);
     });
     expect(imageOf(withSprite.objects[0]!)).toEqual(next);
     expect(mapDataOf(withSprite.objects[0]!)).toBeUndefined();
@@ -742,6 +743,63 @@ describe("对象命令（都在场景上操作）", () => {
         setObjectImage(draft, "sprite", next);
       }),
     ).toBe(withSprite);
+  });
+
+  it("普通 setObjectImage 不会为缺少图片组件的对象隐式添加 renderer", () => {
+    const scene = withObject(makeScene(), "sprite");
+    const unchanged = mutate(scene, (draft) => {
+      expect(setObjectImage(draft, "sprite", IMAGE)).toBe(false);
+    });
+
+    expect(unchanged).toBe(scene);
+    expect(imageOf(unchanged.objects[0]!)).toBeUndefined();
+  });
+
+  it("图片组件显式修复按 kind 选择承载类型并保留子图引用", () => {
+    const scene = mutate(makeScene(), (draft) => {
+      addObject(draft, plainObject("sprite", { kind: "Sprite" }));
+      addObject(draft, plainObject("image", { kind: "Image" }));
+      expect(repairImageObjectComponent(draft, "sprite", {
+        ...IMAGE,
+        sprite: { column: 2, row: 1 },
+      })).toBe(true);
+      expect(repairImageObjectComponent(draft, "image", IMAGE)).toBe(true);
+    });
+
+    expect(findObject(scene, "sprite")?.components).toEqual([{
+      id: "sprite__SpriteLayer",
+      type: "SpriteLayer",
+      data: { ...IMAGE, sprite: { column: 2, row: 1 } },
+    }]);
+    expect(findObject(scene, "image")?.components).toEqual([{
+      id: "image__ImageLayer",
+      type: "ImageLayer",
+      data: IMAGE,
+    }]);
+  });
+
+  it("图片组件显式修复拒绝 kind mismatch 且不影响未知组件", () => {
+    const scene = mutate(makeScene(), (draft) => {
+      addObject(draft, plainObject("sprite", {
+        kind: "Sprite",
+        components: [
+          { id: "conflict", type: "Teleport", data: { targets: [] } },
+          { id: "unknown", type: "FutureComponent", data: { keep: true } },
+        ],
+      }));
+      expect(repairImageObjectComponent(draft, "sprite", IMAGE)).toBe(false);
+    });
+    expect(findObject(scene, "sprite")?.components.map((component) => component.type)).toEqual([
+      "Teleport",
+      "FutureComponent",
+    ]);
+  });
+
+  it("地图图片由 GridMap 承载，不允许单独创建 ImageLayer", () => {
+    const scene = mutate(withMapObject(makeScene()), (draft) => {
+      expect(repairImageObjectComponent(draft, "map-1", IMAGE)).toBe(false);
+    });
+    expect(scene.objects[0]?.components.map((component) => component.type)).toEqual(["GridMap"]);
   });
 
   it("setObjectImage：已有 GridMap 组件优先于 kind，贴图写回该组件", () => {
