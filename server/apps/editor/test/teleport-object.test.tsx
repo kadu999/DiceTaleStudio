@@ -123,6 +123,19 @@ describe("创建传送阵", () => {
 });
 
 describe("属性面板：候选小方块 + ＋ + 传送", () => {
+  it("缺少传送组件时提供显式修复；修复后显示正常字段", () => {
+    const broken = { ...teleport(), components: [] };
+    seedScene([broken]);
+    render(<InspectorPanel />);
+
+    expect(screen.getByText("组件数据缺失")).toBeDefined();
+    expect(screen.queryByTestId("teleport-targets")).toBeNull();
+    fireEvent.click(screen.getByTestId("repair-component-Teleport"));
+
+    expect(targetsOf(broken.id)).toEqual({ targets: [] });
+    expect(screen.getByTestId("teleport-targets")).toBeDefined();
+  });
+
   it("没加目标：按钮写「先加目标」并点不动", () => {
     seedScene([teleport()]);
     render(<InspectorPanel />);

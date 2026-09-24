@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { produce, type Draft } from "immer";
-import { setTeleportPicked, setTeleportTargets } from "../src/commands";
+import { repairObjectComponent, setTeleportPicked, setTeleportTargets } from "../src/commands";
 import { imageOf, mapDataOf, soundDataOf, teleportDataOf } from "../src/access";
 import { featureComponent } from "../src/components";
 import { DEFAULT_SLOT_COMPONENT } from "../src/presets";
@@ -148,17 +148,25 @@ describe("setTeleportTargets：加 / 移候选场景", () => {
     expect(teleportDataOf(objectOf(next, "t1")!)).toEqual({ targets: [] });
   });
 
-  it("手写文件里整个传送组件都没有时兜底补一份，而不是静默失败", () => {
+  it("缺传送组件时目标写入不补建；显式修复后可编辑", () => {
     const broken: GameObjectDoc = {
       ...createTeleportObject({ name: "传送阵", id: "t1" }),
       components: [],
     };
 
     const next = mutate(sceneWith([broken]), (draft) => {
-      expect(setTeleportTargets(draft, "t1", [A])).toBe(true);
+      expect(setTeleportTargets(draft, "t1", [A])).toBe(false);
     });
 
-    expect(teleportDataOf(objectOf(next, "t1")!)).toEqual({ targets: [A], picked: A });
+    expect(teleportDataOf(objectOf(next, "t1")!)).toBeUndefined();
+    const repaired = mutate(next, (draft) => {
+      expect(repairObjectComponent(draft, "t1", "Teleport")).toBe(true);
+    });
+    expect(teleportDataOf(objectOf(repaired, "t1")!)).toEqual({ targets: [] });
+    const edited = mutate(repaired, (draft) => {
+      expect(setTeleportTargets(draft, "t1", [A])).toBe(true);
+    });
+    expect(teleportDataOf(objectOf(edited, "t1")!)).toEqual({ targets: [A], picked: A });
   });
 
   it("已挂 Teleport 组件时按组件写入，kind 不再否决", () => {

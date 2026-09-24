@@ -58,25 +58,31 @@ describe("对象预设表（presets.ts）", () => {
       for (const component of Object.values(preset.slots)) {
         const definition = COMPONENT_TYPES.find((item) => item.type === component);
         expect(definition?.templateKinds, `${preset.kind}.${component}`).toContain(preset.kind);
-        if (definition?.optionalKinds?.includes(preset.kind) !== true) {
+        if (
+          definition?.optionalKinds?.includes(preset.kind) !== true &&
+          definition?.repairKinds?.includes(preset.kind) !== true
+        ) {
           expect(definition?.repairFallbackKinds, `${preset.kind}.${component}`).toContain(preset.kind);
         }
       }
     }
 
     for (const definition of COMPONENT_TYPES) {
-      const presetKinds = Object.values(OBJECT_PRESETS)
+      const presetKinds: string[] = Object.values(OBJECT_PRESETS)
         .filter((preset) => Object.values(preset.slots).includes(definition.type))
         .map((preset) => preset.kind);
       expect([...(definition.templateKinds ?? [])].sort(), definition.type).toEqual(presetKinds.sort());
 
       const optionalKinds = definition.optionalKinds ?? [];
       const repairKinds = definition.repairFallbackKinds ?? [];
+      const explicitRepairKinds = definition.repairKinds ?? [];
       expect([...repairKinds].sort(), `${definition.type} repair`).toEqual(
-        presetKinds.filter((kind) => !optionalKinds.includes(kind)).sort(),
+        presetKinds.filter((kind) => !optionalKinds.includes(kind) && !explicitRepairKinds.includes(kind)).sort(),
       );
       expect(optionalKinds.every((kind) => presetKinds.includes(kind)), `${definition.type} optional`).toBe(true);
+      expect(explicitRepairKinds.every((kind) => presetKinds.includes(kind)), `${definition.type} repairable`).toBe(true);
       expect(repairKinds.some((kind) => optionalKinds.includes(kind)), `${definition.type} overlap`).toBe(false);
+      expect(repairKinds.some((kind) => explicitRepairKinds.includes(kind)), `${definition.type} repair overlap`).toBe(false);
     }
   });
 

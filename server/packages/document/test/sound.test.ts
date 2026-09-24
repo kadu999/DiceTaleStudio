@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { produce, type Draft } from "immer";
-import { setSoundClipName, setSoundClips, setSoundLayer, setSoundPicked } from "../src/commands";
+import { repairObjectComponent, setSoundClipName, setSoundClips, setSoundLayer, setSoundPicked } from "../src/commands";
 import { imageOf, mapDataOf, soundDataOf } from "../src/access";
 import { featureComponent } from "../src/components";
 import { DEFAULT_SLOT_COMPONENT } from "../src/presets";
@@ -260,15 +260,23 @@ describe("声音对象的命令", () => {
     expect(soundDataOf(objectOf(scene, "door")!)).toBeUndefined();
   });
 
-  it("手写文件里缺声音组件：第一次编辑把默认的补出来", () => {
+  it("缺声音组件时普通字段写入不补建；显式修复后可编辑", () => {
     // 只有 kind，没有 PlaySound 组件（schema 里组件是可选的，读得开——校验会报错提醒）
     const broken: GameObjectDoc = { ...createSoundObject({ name: "脚步", id: "s1" }), components: [] };
 
     const scene = mutate(sceneWith([broken]), (draft) => {
-      expect(setSoundLayer(draft, "s1", "voice")).toBe(true);
+      expect(setSoundLayer(draft, "s1", "voice")).toBe(false);
     });
 
-    expect(soundDataOf(objectOf(scene, "s1")!)).toEqual({ clips: [], layer: "voice" });
+    expect(soundDataOf(objectOf(scene, "s1")!)).toBeUndefined();
+    const repaired = mutate(scene, (draft) => {
+      expect(repairObjectComponent(draft, "s1", "PlaySound")).toBe(true);
+    });
+    expect(soundDataOf(objectOf(repaired, "s1")!)).toEqual({ clips: [], layer: "sfx" });
+    const edited = mutate(repaired, (draft) => {
+      expect(setSoundLayer(draft, "s1", "voice")).toBe(true);
+    });
+    expect(soundDataOf(objectOf(edited, "s1")!)).toEqual({ clips: [], layer: "voice" });
   });
 });
 

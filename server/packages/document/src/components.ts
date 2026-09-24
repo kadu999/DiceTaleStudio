@@ -8,6 +8,7 @@ import type { ComponentDoc } from "./types";
  * （见 `presets.ts` 的 `OBJECT_PRESETS`）。这些组件多两项：
  * - `slot`：它承担对象哪种能力（**组件自报**；访问器按 slot 找对象上的组件，不看 kind）；
  * - `templateKinds`：对象创建模板中会预置/路由到该组件的 kind；
+ * - `repairKinds`：组件缺失时，编辑器提供显式修复入口的 kind；
  * - `repairFallbackKinds`：必需组件实例缺失时，哪些 kind 允许编辑操作补建以修复对象；
  * - `optionalKinds`：允许用户主动添加该可选组件的 kind；
  * - `legacyField`：v19 之前它住在对象的哪个扁平字段里——迁移函数靠它把老字段搬成组件实例。
@@ -39,6 +40,8 @@ export interface ComponentTypeDef {
   readonly legacyField?: ComponentSlot;
   /** Kinds whose creation preset associates this capability slot with this component. */
   readonly templateKinds?: readonly string[];
+  /** Kinds whose missing required component can be explicitly repaired in the editor. */
+  readonly repairKinds?: readonly string[];
   /** Kinds allowed to recreate a missing required component during an edit-based repair. */
   readonly repairFallbackKinds?: readonly string[];
   /** Kinds allowed to add this optional component when it is not attached yet. */
@@ -93,7 +96,7 @@ export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
     slot: "sound",
     legacyField: "sound",
     templateKinds: ["PlaySound"],
-    repairFallbackKinds: ["PlaySound"],
+    repairKinds: ["PlaySound"],
     tooltip: "音频列表 + 选中的那条 + 层级：声明「告诉前端播什么」，编辑器自己不播放",
   },
   {
@@ -103,7 +106,7 @@ export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
     slot: "teleport",
     legacyField: "teleport",
     templateKinds: ["Teleport"],
-    repairFallbackKinds: ["Teleport"],
+    repairKinds: ["Teleport"],
     tooltip: "候选目标场景 + 选中的那一个；触发 = 切换当前场景（不需要新协议命令）",
   },
   {

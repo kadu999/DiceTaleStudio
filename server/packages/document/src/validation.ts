@@ -1,7 +1,7 @@
 import { PAINTABLE_MASKS, decodeRle } from "@dts/grid";
 import { componentKindMismatchOf, isKnownComponentType } from "./components";
 import { isMapFogEnabled } from "./commands";
-import { canDefaultObjectComponent, imageOf, mapDataOf, soundDataOf, teleportDataOf, videoDataOf } from "./access";
+import { canDefaultObjectComponent, canRepairObjectComponent, imageOf, mapDataOf, soundDataOf, teleportDataOf, videoDataOf } from "./access";
 import type { AssetMetaDoc, AssetMetas } from "./asset-meta";
 import { DEFAULT_SLOT_COMPONENT } from "./presets";
 import { spriteSheetOf } from "./sprites";
@@ -192,7 +192,7 @@ function validateObject(
   }
   // 声音对象（动作对象）：基础属性与实体一样，另加声音数据——缺了就是个什么都不播的空壳
   const sound = soundDataOf(object);
-  if (sound === undefined && canDefaultObjectComponent(object, DEFAULT_SLOT_COMPONENT.sound)) {
+  if (sound === undefined && canRepairObjectComponent(object, DEFAULT_SLOT_COMPONENT.sound)) {
     issues.push({ level: "error", path, message: "声音对象缺少声音数据（音频列表 / 层级）" });
   }
   if (sound !== undefined) {
@@ -257,7 +257,7 @@ function validateObject(
 
   // 传送阵（动作对象）：基础属性与实体一样，另加「候选目标场景 + 选中的那一个」
   const teleport = teleportDataOf(object);
-  if (teleport === undefined && canDefaultObjectComponent(object, DEFAULT_SLOT_COMPONENT.teleport)) {
+  if (teleport === undefined && canRepairObjectComponent(object, DEFAULT_SLOT_COMPONENT.teleport)) {
     issues.push({ level: "error", path, message: "传送阵缺少传送数据（候选目标场景）" });
   }
   if (teleport !== undefined) {

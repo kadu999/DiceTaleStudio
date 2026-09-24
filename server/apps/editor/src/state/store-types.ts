@@ -723,6 +723,8 @@ export interface EditorStoreState {
    * 而所有调用点都从规格里取键，实际由 `FieldDef.key` 的编译期约束兜住。
    */
   setComponentField(objectId: string, type: string, key: string, value: unknown): boolean;
+  /** Explicitly restore the default data for a missing required component. */
+  repairObjectComponent(objectId: string, type: "PlaySound" | "Teleport"): boolean;
   /**
    * **泛型对象字段写入**：按对象字段规格（`@dts/document` 的 `OBJECT_SPEC`）改 `object` 自己的
    * 一个简单字段——与 `setComponentField` 的分工只有「写在哪」。返回 `false` 表示没有变更。

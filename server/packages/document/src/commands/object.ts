@@ -1,7 +1,8 @@
 // 本文件从 `commands.ts` 拆出（纯搬运，行为不变）：对象级命令。
 import type { Draft } from "immer";
 // 特性的读写一律走访问器（「数据存在哪个组件里」只有 access.ts 知道）
-import { componentTypeForObjectSlot, mapDataOf, objectImage, objectImageSlot, objectSupportsSpriteSheet, writeFeature } from "../access";
+import { canRepairObjectComponent, componentTypeForObjectSlot, mapDataOf, objectImage, objectImageSlot, objectSupportsSpriteSheet, writeFeature } from "../access";
+import { DEFAULT_SOUND_LAYER } from "../presets";
 import { DEFAULT_OBJECT_SCALE, clampObjectScale, collapseScale } from "../scale";
 import { DEFAULT_SORTING_ORDER, createId, findObject } from "./shared";
 import { setObjectField } from "./field";
@@ -46,6 +47,20 @@ export function createGameObject(input: CreateObjectInput): GameObjectDoc {
 
 export function addObject(scene: Draft<SceneDoc>, object: GameObjectDoc): void {
   scene.objects.push(object as Draft<GameObjectDoc>);
+}
+
+/** Explicitly restore an empty required component on a damaged template object. */
+export function repairObjectComponent(
+  scene: Draft<SceneDoc>,
+  objectId: string,
+  type: "PlaySound" | "Teleport",
+): boolean {
+  const object = findObject(scene, objectId);
+  if (object === undefined || !canRepairObjectComponent(object, type)) return false;
+
+  const data = type === "PlaySound" ? { clips: [], layer: DEFAULT_SOUND_LAYER } : { targets: [] };
+  writeFeature(object, type, data);
+  return true;
 }
 
 /**

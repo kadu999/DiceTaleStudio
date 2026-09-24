@@ -59,13 +59,13 @@
 | `GridMap` | 历史 `Map` 快照曾无组件；v19 迁移从扁平 `map` 搬入 | 缺组件诊断；地图能力/创建模板路由 | 不退役。历史迁移已覆盖，但需保留当前损坏文档的诊断与地图创建语义 |
 | `ImageLayer` | 历史 `Map` / `Image` / `Player` / `Item` / `Event` 图片字段或旧图片组件 | 新建空对象选图时选择承载组件；无图对象 Inspector 入口；旧格式迁移 | 不退役。先把创建模板路由与旧文档读取 fallback 拆开评估，不能让空白新对象失去选图入口 |
 | `SpriteLayer` | 历史 `SceneObject` 图片字段/旧组件，之后迁移为 `SpriteLayer` | 新建空精灵选择子图组件与编辑入口；旧格式迁移 | 不退役。创建模板职责仍依赖 `Sprite`，旧格式由 schema 迁移 |
-| `PlaySound` | 历史 `PlaySound` 快照曾无组件；v19 从扁平 `sound` 迁移 | 缺组件诊断与手写损坏对象的修复写入 | 暂留。需先决定错误对象是否继续可修复，或提供明确的重建/修复操作 |
-| `Teleport` | 历史 `Teleport` 快照曾无组件；v19 从扁平 `teleport` 迁移 | 缺组件诊断与手写损坏对象的修复写入 | 暂留。与 `PlaySound` 同理，停用会移除当前修复路径 |
+| `PlaySound` | 历史 `PlaySound` 快照曾无组件；v19 从扁平 `sound` 迁移 | 旧字段由 schema 迁移；现行缺组件通过显式修复恢复默认数据 | 已停止字段编辑时按 kind 隐式补建；校验保留错误，Inspector 提供可撤销修复 |
+| `Teleport` | 历史 `Teleport` 快照曾无组件；v19 从扁平 `teleport` 迁移 | 旧字段由 schema 迁移；现行缺组件通过显式修复恢复默认数据 | 同 `PlaySound`，不再由目标编辑命令隐式补建 |
 | `VideoOverlay` | 历史 `Map` / `Image` 视频字段在 v19 搬入组件 | 地图/贴图可以启用可选视频能力；开启开关或编辑列表时按 kind 补组件 | 暂不退役。当前没有通用“添加组件”UI，移除后地图/贴图无法从 Inspector 开始添加视频 |
 
 数据范围：仓库当前只有一份样例项目，3 个场景文件共 7 个对象；现行组合为 `Map/GridMap` 1、`Map/GridMap+VideoOverlay` 2、`Sprite/SpriteLayer` 1、`Image/ImageLayer` 1、`PlaySound/PlaySound` 1、`Teleport/Teleport` 1，均匹配。沿样例场景文件 Git 历史收集到 13 种对象快照组合（按每个提交的对象出现次数计）：`Map/<none>` 26、`Map/GridMap` 9、`Map/GridMap+VideoOverlay` 11、`PlaySound/<none>` 7、`PlaySound/PlaySound` 8、`Teleport/<none>` 3、`Teleport/Teleport` 8、`SceneObject/<none>` 15、`SceneObject/SpriteLayer` 1、`SceneObject/TextureRenderer` 1、`Sprite/SpriteLayer` 6、`Image/ImageLayer` 6、`Texture/ImageLayer` 1。该统计会重复计算跨提交未变对象；`<none>` 仅表示快照没有 `components[]` 实例，旧格式可能把能力存在扁平字段中，不代表对象没有该能力。外部真实项目/历史存档不可见，因此这份盘点不能作为停用兼容的用户数据依据。
 
-首轮结论：原 `defaultKinds` 同时承载创建模板路由、可选组件准入和缺组件修复，不能整体删除。v18 及更早扁平字段由 schema 迁移搬入组件；现行格式中组件缺失属于不完整/损坏文档，`PlaySound` / `Teleport` 当前 Inspector 没有独立修复入口，编辑时按 kind 补建是现有原位修复路径。阶段 4 已将元数据拆为 `templateKinds`、`repairFallbackKinds`、`optionalKinds`，明确区分模板、修复和可选准入；本轮不关闭修复路径，也不改变存档行为。后续需提供显式修复入口，再逐项评估是否退役隐式 fallback，并补足外部数据盘点。
+首轮结论：原 `defaultKinds` 同时承载创建模板路由、可选组件准入和缺组件修复，不能整体删除。v18 及更早扁平字段由 schema 迁移搬入组件；现行格式中组件缺失属于不完整/损坏文档。`PlaySound` / `Teleport` 已提供显式、可撤销的默认组件修复，字段编辑不再按 kind 隐式补建；其它必需组件 fallback 与可选视频准入仍保留，因为它们分别支撑图片入口、地图能力和视频启用流程。外部真实项目/历史存档仍不可见，不能据仓库样例决定全面停用。
 
 ## 兼容约束
 
@@ -84,10 +84,11 @@
 - 已搜索 `kind` 功能判断残留：编辑器里的功能操作改按组件能力；剩余 `kind` 读取用于分类/筛选、标签展示、创建模板，或按组件定义的 fallback/optional 准入为缺失组件提供兼容。`schema.ts` 中历史迁移属于预期职责。Unity 的对象视图创建与视频命令也按组件判断；`kind` 仍用于镜像字段及占位色。
 - `GridMap` 与 `ImageLayer` 并存时地图图片优先，Inspector 隐藏普通图片面板；已覆盖文档层优先级。kind mismatch 下显式组件的 Inspector 与校验已有回归。协议载荷、文档格式和 Unity 消费格式未改。
 - `apps/backend/test/protocol-document-contract.test.ts` 的 7 个协议-文档合同测试已通过。仓库未发现 Unity Test/Tests 测试程序集；本轮只静态审查 `SceneObjectView.NeedsView` 与视频命令的组件判定，Unity MCP 命名空间不可用，故未执行 Unity 运行时实测，阶段 3 保持进行中。
-- 阶段 4 已开始首轮审计：仓库样例当前 7 个对象无 mismatch；历史提交包含迁移前的无组件快照。逐组件决策与限制见上表；没有外部用户项目样本，且创建模板/可选能力/损坏文档修复仍依赖 kind fallback，故本轮未停用任何 fallback。
+- 阶段 4 已开始首轮审计：仓库样例当前 7 个对象无 mismatch；历史提交包含迁移前的无组件快照。逐组件决策与限制见上表；没有外部用户项目样本，不能全面停用兼容路径。
 - 阶段 4 首个代码切片已提交：将 `defaultKinds` 职责拆为预设组件关联 `templateKinds`、必需组件缺失修复 `repairFallbackKinds`、可选组件准入 `optionalKinds`。`VideoOverlay` 仅保留地图/贴图的可选准入，不再走必需组件 fallback。
-- 阶段 4 第二个代码切片：把运行时必需组件 fallback 明确命名为 `repairFallbackKinds`，避免与 schema 的旧格式迁移职责混淆；这次重命名不改变准入行为。仍待设计独立修复入口，之后才能评估是否移除 PlaySound/Teleport 的隐式 kind 修复 fallback。
-- 下一步：在可运行 Unity 测试的环境补做镜像运行时验证；阶段 4 增加显式缺组件修复操作并盘点真实项目后，再逐组件评估是否退役隐式 fallback。仍不改格式版本、不移除 `kind` 字段。
+- 阶段 4 第二个代码切片已提交：把运行时必需组件 fallback 明确命名为 `repairFallbackKinds`，避免与 schema 的旧格式迁移职责混淆。
+- 阶段 4 第三个代码切片：新增 `PlaySound` / `Teleport` 显式修复命令与 Inspector 入口，修复进入撤销栈；两者从隐式 `repairFallbackKinds` 移至显式 `repairKinds`，普通字段命令在组件缺失时不再补建。校验仍报告缺组件错误。地图、图片与视频流程暂不改变。
+- 下一步：在 Unity 可运行环境补做镜像运行时验证；对 GridMap/ImageLayer/SpriteLayer 分别设计数据安全的显式修复或组件添加流程，再结合真实项目盘点评估是否缩减其 fallback。仍不改格式版本、不移除 `kind` 字段。
 
 ## 当前相关入口
 

@@ -1,4 +1,8 @@
-import { componentSpecOf, setComponentField as setSceneComponentField } from "@dts/document";
+import {
+  componentSpecOf,
+  repairObjectComponent as repairSceneObjectComponent,
+  setComponentField as setSceneComponentField,
+} from "@dts/document";
 import { type StoreSet, type StoreGet, type EditorStoreState } from "../store-types";
 import { type StoreContext } from "../store-context";
 
@@ -15,10 +19,16 @@ export function createComponentSlice(
   _set: StoreSet,
   _get: StoreGet,
   ctx: StoreContext,
-): Pick<EditorStoreState, "setComponentField"> {
+): Pick<EditorStoreState, "setComponentField" | "repairObjectComponent"> {
   const { applyActiveScene } = ctx;
 
   return {
+    repairObjectComponent(objectId, type) {
+      return applyActiveScene("修复对象组件", (scene) => {
+        repairSceneObjectComponent(scene, objectId, type);
+      });
+    },
+
     setComponentField(objectId, type, key, value) {
       const field = componentSpecOf(type)?.fields.find((item) => item.key === key);
 

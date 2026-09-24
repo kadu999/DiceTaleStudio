@@ -55,7 +55,7 @@ export function componentOfSlot(object: GameObjectDoc, slot: ComponentSlot): Com
   return object.components.find((item) => findComponentType(item.type)?.slot === slot);
 }
 
-/** Get the attached component type, falling back to the legacy kind preset only when no instance exists. */
+/** Get the attached component type, using a repair fallback only when no instance exists. */
 export function componentTypeForObjectSlot(
   object: GameObjectDoc,
   slot: ComponentSlot,
@@ -85,6 +85,17 @@ export function canDefaultObjectComponent(object: GameObjectDoc, type: string): 
   if (definition?.slot === undefined || definition.repairFallbackKinds?.includes(object.kind) !== true) return false;
   if (hasComponentKindMismatch(object)) return false;
   return !object.components.some((component) => findComponentType(component.type)?.slot === definition.slot);
+}
+
+/** Whether the editor can offer an explicit repair for a missing required component. */
+export function canRepairObjectComponent(object: GameObjectDoc, type: string): boolean {
+  const definition = findComponentType(type);
+  return (
+    definition?.slot !== undefined &&
+    definition.repairKinds?.includes(object.kind) === true &&
+    !hasComponentKindMismatch(object) &&
+    !object.components.some((component) => findComponentType(component.type)?.slot === definition.slot)
+  );
 }
 
 /** Whether this kind may add an optional component that is not attached yet. */
@@ -290,7 +301,7 @@ export function ensureSlotData<T>(
 }
 
 /**
- * 按**组件类型**（而不是槽位）取数据 draft，缺实例就按规格补一份。
+ * 按**组件类型**（而不是槽位）取数据 draft；只有已挂载、必需修复 fallback 或可选准入时才创建实例。
  *
  * 与 `ensureSlotData` 同一套判据，多一道「这个槽位确实由**这个**组件承载」的核对：
  * `image` 槽位在精灵上是 `SpriteLayer`、在贴图上是 `ImageLayer`，只按槽位找会拿错那一份。
@@ -319,11 +330,9 @@ export function ensureComponentData(
 }
 
 /**
- * 声音数据的 draft；**缺实例就补一份默认的**。
+ * 声音数据的 draft；仅允许已挂载组件或注册的修复 fallback。
  *
- * 手写文件里可能整个声音组件都没有（schema 里组件是可选的）：那种对象语义上就是
- * 「还没挑音频、音效层」，所以在第一次编辑时把组件补出来，而不是让编辑静默失败
- * （`validateScene` 会先把「声音对象缺声音数据」报出来，这里只是兜底修复）。
+ * 缺失的 `PlaySound` 组件现在必须先通过显式修复操作恢复；普通字段命令不会按 kind 补建。
  */
 export function ensureSoundData(object: Draft<GameObjectDoc>): Draft<SoundDataDoc> | undefined {
   return ensureSlotData<SoundDataDoc>(object, "sound", () => ({
@@ -332,7 +341,7 @@ export function ensureSoundData(object: Draft<GameObjectDoc>): Draft<SoundDataDo
   }));
 }
 
-/** 传送数据的 draft；**缺实例就补一份默认的**（与 `ensureSoundData` 同一个口径）。 */
+/** 传送数据的 draft；缺失组件须先通过显式修复操作恢复。 */
 export function ensureTeleportData(object: Draft<GameObjectDoc>): Draft<TeleportDataDoc> | undefined {
   return ensureSlotData<TeleportDataDoc>(object, "teleport", () => ({
     targets: [],

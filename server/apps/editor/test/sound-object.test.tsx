@@ -184,6 +184,21 @@ describe("创建声音对象", () => {
 });
 
 describe("属性面板：声音组", () => {
+  it("缺少声音组件时提供显式修复；修复可撤销", () => {
+    const broken = { ...sound([]), components: [] };
+    seedScene([broken], [broken.id]);
+    render(<InspectorPanel />);
+
+    expect(screen.getByText("组件数据缺失")).toBeDefined();
+    expect(screen.queryByTestId("sound-layer")).toBeNull();
+    fireEvent.click(screen.getByTestId("repair-component-PlaySound"));
+
+    expect(soundOf(broken.id)).toEqual({ clips: [], layer: "sfx" });
+    expect(useEditorStore.getState().canUndo).toBe(true);
+    act(() => useEditorStore.getState().undo());
+    expect(soundOf(broken.id)).toBeUndefined();
+  });
+
   it("分组是「基础 / 声音」：没有渲染（图标固定、不给换贴图），没有区域 / 战争雾", () => {
     seedScene([sound([CLIP])], ["sound-1"]);
     render(<InspectorPanel />);
