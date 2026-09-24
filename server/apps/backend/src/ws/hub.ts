@@ -17,13 +17,12 @@ import {
 } from "@dts/protocol";
 import type { HubContext } from "./hub-context";
 import { CLIENT_HANDLERS, EDITOR_HANDLERS } from "./handlers";
+import { PendingCommands } from "./pending-commands";
 import { RuntimeSession } from "./runtime-session";
 import type { HubLogger, LogLevel } from "./types";
 
 export type { HubLogger, LogLevel } from "./types";
 
-/** 命令下发后等回执的超时（超时向编辑器报错，避免界面一直转圈）。 */
-const COMMAND_RESULT_TIMEOUT_MS = 15000;
 /** 前端心跳间隔与容忍的连续丢失次数（两拍没回 = 半开连接，断开清理）。 */
 const CLIENT_PING_INTERVAL_MS = 15000;
 const CLIENT_MAX_MISSED_PINGS = 2;
@@ -52,10 +51,6 @@ interface ClientSession {
   missedPongs: number;
 }
 
-interface PendingCommand {
-  readonly timer: ReturnType<typeof setTimeout>;
-}
-
 /**
  * 运行态 WebSocket 中枢（**中继 + 缓存**，不拥有数据）。
  *
@@ -70,14 +65,14 @@ interface PendingCommand {
  *
  * 数据方向是单向的：编辑器 / 服务端 → 前端。前端只回 `client_hello`、`command_result`、`pong`。
  *
- * **这个类只管传输**：升级分流、连接表、心跳、命令等待表、序列化发送。
+ * **这个类只管传输**：升级分流、连接表、心跳与序列化发送。
  * 「每种消息来了做什么」在 `./handlers/`（一条消息一个函数），通过 `HubContext` 反向调用这里。
  */
 export class RuntimeHub implements HubContext {
   private readonly wss = new WebSocketServer({ noServer: true });
   private readonly editors = new Set<WebSocket>();
   private client: ClientSession | undefined;
-  private readonly pending = new Map<string, PendingCommand>();
+  private readonly pendingCommands = new PendingCommands((editor, message) => this.sendTo(editor, message));
   /** 「未开闸时被前端敲过门」只记一次日志，免得前端每 3 秒重试就刷屏。 */
   private rejectedWhileInactive = false;
 
@@ -143,11 +138,7 @@ export class RuntimeHub implements HubContext {
   }
 
   close(): void {
-    for (const pending of this.pending.values()) {
-      clearTimeout(pending.timer);
-    }
-
-    this.pending.clear();
+    this.pendingCommands.clear();
 
     if (this.client !== undefined) {
       this.stopClientPing(this.client);
@@ -362,32 +353,12 @@ export class RuntimeHub implements HubContext {
    * 前端没实现这条命令时，界面上要看得见原因（而不是点了没反应）。
    */
   trackCommand(requestId: string, editor: WebSocket, label: string): void {
-    const existing = this.pending.get(requestId);
-    if (existing !== undefined) {
-      clearTimeout(existing.timer);
-    }
-
-    const timer = setTimeout(() => {
-      this.pending.delete(requestId);
-      this.sendTo(editor, {
-        type: "editor_error",
-        requestId,
-        reason: `命令回执超时（${COMMAND_RESULT_TIMEOUT_MS}ms）：前端可能未实现 ${label}`,
-      });
-    }, COMMAND_RESULT_TIMEOUT_MS);
-
-    this.pending.set(requestId, { timer });
+    this.pendingCommands.track(requestId, editor, label);
   }
 
   /** 清掉某条命令的等待记录（收到回执时）。没记过就当没发生。 */
   settleCommand(requestId: string): void {
-    const pending = this.pending.get(requestId);
-    if (pending === undefined) {
-      return;
-    }
-
-    clearTimeout(pending.timer);
-    this.pending.delete(requestId);
+    this.pendingCommands.settle(requestId);
   }
 
   /**

@@ -13,8 +13,7 @@ import {
 /**
  * 资源包（`/api/resources/bundle` 背后那套）：清单、指纹、zip 结构。
  *
- * **刻意不复用被测代码里的 zip writer 来解包**：这里自己按 zip 规范从字节里读中央目录、
- * 定位每条数据的偏移与 CRC——writer 的字段写错了（偏移、大小、CRC），这里立刻就炸。
+ * 独立按 ZIP 结构解析产物，避免用生成器自身的逻辑验证头部、偏移与数据。
  */
 
 const PROJECT = "测试项目";
@@ -35,7 +34,6 @@ interface ZipEntry {
   readonly data: Buffer;
 }
 
-/** 最小 zip reader：走中央目录（EOCD → central → local header → data）。 */
 function readZipStored(zip: Buffer): ZipEntry[] {
   const endOffset = zip.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
   if (endOffset < 0) {
@@ -197,16 +195,30 @@ describe("资源包：zip 结构", () => {
     const built = await buildBundle(makeProvider(), PROJECT);
     const entries = readZipStored(built.zip);
 
-    // 中央目录里那一位必须置上，否则 Windows 资源管理器之类会按 CP437 解出乱码
+    // 本地头与中央目录中的标记都必须置位，否则部分解压器会按 CP437 解中文路径
     const endOffset = built.zip.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
     let cursor = built.zip.readUInt32LE(endOffset + 16);
-    const flags: number[] = [];
+    const flags: Array<{ central: number; local: number; name: string; year: number }> = [];
     for (let index = 0; index < built.zip.readUInt16LE(endOffset + 10); index += 1) {
-      flags.push(built.zip.readUInt16LE(cursor + 8));
-      cursor += 46 + built.zip.readUInt16LE(cursor + 28) + built.zip.readUInt16LE(cursor + 30) + built.zip.readUInt16LE(cursor + 32);
+      const nameLength = built.zip.readUInt16LE(cursor + 28);
+      const localOffset = built.zip.readUInt32LE(cursor + 42);
+      const name = built.zip.subarray(cursor + 46, cursor + 46 + nameLength).toString("utf8");
+      const dosDate = built.zip.readUInt16LE(cursor + 14);
+      flags.push({
+        central: built.zip.readUInt16LE(cursor + 8),
+        local: built.zip.readUInt16LE(localOffset + 6),
+        name,
+        year: 1980 + (dosDate >> 9),
+      });
+      cursor +=
+        46 +
+        nameLength +
+        built.zip.readUInt16LE(cursor + 30) +
+        built.zip.readUInt16LE(cursor + 32);
     }
 
-    expect(flags.every((flag) => (flag & 0x0800) !== 0)).toBe(true);
+    expect(flags.every((flag) => (flag.central & 0x0800) !== 0 && (flag.local & 0x0800) !== 0)).toBe(true);
+    expect(flags.find((flag) => flag.name === "Assets/images/Map001.png")?.year).toBe(1980);
     expect(entries.some((entry) => entry.name.includes("场景1"))).toBe(true);
   });
 

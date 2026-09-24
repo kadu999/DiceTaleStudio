@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { zipSync, type Zippable } from "fflate";
 import {
   PROJECT_FOLDERS,
   PROJECT_SPECIAL_FILES,
@@ -16,7 +17,7 @@ import {
  * （`Assets/images/Map001.png`），前端按逻辑 ID 就能直接映射到本地文件。
  *
  * **压缩方式刻意选 STORED（不压缩）**：
- * - 后端没有 zip 依赖，自研 writer 用 STORED 才不必实现 deflate，能用真实解压器验证；
+ * - 使用成熟 ZIP 实现并设置 level 0，保持 STORED，不对已压缩素材重复压缩；
  * - 素材本身（png / mp4 / mp3 / wav）已经是压缩格式，deflate 基本省不下体积；
  * - 代价是传输量 = 文件字节总和，`app.json` 的 `bundle.maxTotalBytes` 兜住上限。
  *
@@ -149,10 +150,10 @@ export async function buildBundle(
     throw new BundleTooLargeError(project, manifest.bytes, maxTotalBytes);
   }
 
-  const files: ZipInput[] = [];
+  const files = Object.create(null) as Zippable;
   for (const entry of manifest.entries) {
     const data = Buffer.from(await provider.readBinary(entry.id));
-    files.push({ name: entry.path, data, mtime: new Date(entry.mtimeMs) });
+    files[entry.path] = [data, { level: 0, mtime: zipMtimeOf(entry.mtimeMs) }];
   }
 
   // 清单本身也进包：前端据此校验，不必依赖响应头
@@ -169,11 +170,14 @@ export async function buildBundle(
     )}\n`,
     "utf8",
   );
-  files.push({ name: BUNDLE_MANIFEST_NAME, data: manifestFile, mtime: new Date() });
+  files[BUNDLE_MANIFEST_NAME] = [manifestFile, { level: 0, mtime: new Date() }];
+
+  const zip = Buffer.from(zipSync(files));
+  markZipNamesAsUtf8(zip);
 
   return {
     manifest,
-    zip: writeZipStored(files),
+    zip,
     headers: {
       "x-dts-project": encodeURIComponent(manifest.project),
       "x-dts-fingerprint": manifest.fingerprint,
@@ -203,122 +207,25 @@ function safeParseTime(value: string): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-// ---------------------------------------------------------------- 最小 zip writer（STORED）
-
-interface ZipInput {
-  readonly name: string;
-  readonly data: Buffer;
-  readonly mtime: Date;
+function zipMtimeOf(mtimeMs: number): Date {
+  const date = new Date(mtimeMs);
+  return date.getFullYear() < 1980 ? new Date(1980, 0, 1) : date;
 }
 
-const LOCAL_HEADER_SIGNATURE = 0x04034b50;
-const CENTRAL_HEADER_SIGNATURE = 0x02014b50;
-const END_OF_CENTRAL_SIGNATURE = 0x06054b50;
-/** 版本 2.0：只声明「支持 deflate 之外的 STORED」也够了，用 20 最通用。 */
-const VERSION_NEEDED = 20;
-/** 通用位标记 0x0800：文件名是 UTF-8（条目名含中文，必须声明）。 */
-const FLAG_UTF8 = 0x0800;
-/** 压缩方式 0 = STORED。 */
-const METHOD_STORED = 0;
+/** fflate encodes names as UTF-8 but leaves the ZIP language-encoding flag unset. */
+function markZipNamesAsUtf8(zip: Buffer): void {
+  const endOffset = zip.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
+  let centralOffset = zip.readUInt32LE(endOffset + 16);
+  const entryCount = zip.readUInt16LE(endOffset + 10);
 
-/**
- * 写一个 STORED（不压缩）zip。
- *
- * 布局是最朴素的「本地文件头 + 数据（连续若干条）+ 中央目录 + EOCD」——
- * 不使用数据描述符（CRC 与大小在写头之前已知），所以不需要流式回填，逻辑最简单。
- */
-function writeZipStored(inputs: readonly ZipInput[]): Buffer {
-  const locals: Buffer[] = [];
-  const centrals: Buffer[] = [];
-  let offset = 0;
+  for (let index = 0; index < entryCount; index += 1) {
+    const localOffset = zip.readUInt32LE(centralOffset + 42);
+    zip.writeUInt16LE(zip.readUInt16LE(localOffset + 6) | 0x0800, localOffset + 6);
 
-  for (const input of inputs) {
-    const nameBytes = Buffer.from(input.name, "utf8");
-    const crc = crc32(input.data);
-    const { dosTime, dosDate } = toDosDateTime(input.mtime);
-
-    const local = Buffer.alloc(30);
-    local.writeUInt32LE(LOCAL_HEADER_SIGNATURE, 0);
-    local.writeUInt16LE(VERSION_NEEDED, 4);
-    local.writeUInt16LE(FLAG_UTF8, 6);
-    local.writeUInt16LE(METHOD_STORED, 8);
-    local.writeUInt16LE(dosTime, 10);
-    local.writeUInt16LE(dosDate, 12);
-    local.writeUInt32LE(crc, 14);
-    local.writeUInt32LE(input.data.length, 18);
-    local.writeUInt32LE(input.data.length, 22);
-    local.writeUInt16LE(nameBytes.length, 26);
-    local.writeUInt16LE(0, 28); // 无 extra field
-
-    locals.push(local, nameBytes, input.data);
-
-    const central = Buffer.alloc(46);
-    central.writeUInt32LE(CENTRAL_HEADER_SIGNATURE, 0);
-    central.writeUInt16LE(VERSION_NEEDED, 4); // 创建者版本
-    central.writeUInt16LE(VERSION_NEEDED, 6);
-    central.writeUInt16LE(FLAG_UTF8, 8);
-    central.writeUInt16LE(METHOD_STORED, 10);
-    central.writeUInt16LE(dosTime, 12);
-    central.writeUInt16LE(dosDate, 14);
-    central.writeUInt32LE(crc, 16);
-    central.writeUInt32LE(input.data.length, 20);
-    central.writeUInt32LE(input.data.length, 24);
-    central.writeUInt16LE(nameBytes.length, 28);
-    central.writeUInt16LE(0, 30); // extra
-    central.writeUInt16LE(0, 32); // comment
-    central.writeUInt16LE(0, 34); // 起始磁盘
-    central.writeUInt16LE(0, 36); // 内部属性
-    central.writeUInt32LE(0, 38); // 外部属性
-    central.writeUInt32LE(offset, 42); // 本地头偏移
-
-    centrals.push(central, nameBytes);
-    offset += local.length + nameBytes.length + input.data.length;
+    const nameLength = zip.readUInt16LE(centralOffset + 28);
+    const extraLength = zip.readUInt16LE(centralOffset + 30);
+    const commentLength = zip.readUInt16LE(centralOffset + 32);
+    zip.writeUInt16LE(zip.readUInt16LE(centralOffset + 8) | 0x0800, centralOffset + 8);
+    centralOffset += 46 + nameLength + extraLength + commentLength;
   }
-
-  const centralBuffer = Buffer.concat(centrals);
-  const end = Buffer.alloc(22);
-  end.writeUInt32LE(END_OF_CENTRAL_SIGNATURE, 0);
-  end.writeUInt16LE(0, 4); // 本磁盘号
-  end.writeUInt16LE(0, 6); // 中央目录起始磁盘
-  end.writeUInt16LE(inputs.length, 8);
-  end.writeUInt16LE(inputs.length, 10);
-  end.writeUInt32LE(centralBuffer.length, 12);
-  end.writeUInt32LE(offset, 16);
-  end.writeUInt16LE(0, 20); // 无注释
-
-  return Buffer.concat([...locals, centralBuffer, end]);
-}
-
-/** 把时间转成 MS-DOS 的 (date, time)（zip 头里只有这个精度，秒按 2 秒粒度）。 */
-function toDosDateTime(date: Date): { dosTime: number; dosDate: number } {
-  // 1980 年之前无法表示：zip 的时间戳下限就是 1980-01-01
-  const year = Math.max(1980, date.getFullYear());
-  const dosTime =
-    (date.getHours() << 11) | (date.getMinutes() << 5) | Math.floor(date.getSeconds() / 2);
-  const dosDate = ((year - 1980) << 9) | ((date.getMonth() + 1) << 5) | date.getDate();
-  return { dosTime, dosDate };
-}
-
-/** CRC32（zip 用的那个多项式）。自己算，不依赖 Node 版本是否带 zlib.crc32。 */
-const CRC_TABLE = (() => {
-  const table = new Uint32Array(256);
-  for (let index = 0; index < 256; index += 1) {
-    let value = index;
-    for (let bit = 0; bit < 8; bit += 1) {
-      value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
-    }
-
-    table[index] = value >>> 0;
-  }
-
-  return table;
-})();
-
-function crc32(data: Buffer): number {
-  let crc = 0xffffffff;
-  for (const byte of data) {
-    crc = CRC_TABLE[(crc ^ byte) & 0xff]! ^ (crc >>> 8);
-  }
-
-  return (crc ^ 0xffffffff) >>> 0;
 }

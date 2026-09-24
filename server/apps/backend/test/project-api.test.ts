@@ -183,6 +183,22 @@ describe("项目 API", () => {
     });
   });
 
+  it("重复 GUID 返回 409，避免把引用映射到不确定的素材", async () => {
+    await postJson("/api/projects", { name: TEST_PROJECT });
+    const guid = "e".repeat(32);
+    for (const name of ["First.png", "Second.png"]) {
+      const id = projectAssetId(TEST_PROJECT, `Assets/images/${name}`);
+      await provider.writeText(id, "image");
+      await provider.writeText(assetMetaIdOf(id), JSON.stringify({ guid }));
+    }
+
+    const response = await fetch(
+      `${baseUrl}/api/projects/asset?name=${encodeURIComponent(TEST_PROJECT)}&guid=${guid}`,
+    );
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ error: expect.stringMatching(/GUID 重复/) });
+  });
+
   it("GUID 形状不合法时返回 400，不存在时返回 404", async () => {
     await postJson("/api/projects", { name: TEST_PROJECT });
     const malformed = await fetch(

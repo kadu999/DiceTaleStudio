@@ -5,7 +5,7 @@ import { defineEditorHandlers } from "./types";
 /**
  * 编辑器 → 服务端：**一条消息一个函数**。
  *
- * 这里只做「状态怎么变 + 该发给谁」；传输（升级、心跳、连接表、命令等待表）全在 `RuntimeHub`。
+ * 这里只做「状态怎么变 + 该发给谁」；传输与命令回执等待由 `RuntimeHub` 及其传输组件管理。
  */
 export const EDITOR_HANDLERS = defineEditorHandlers({
   /** `editor_hello`：版本握手；一致就回一份当前运行态。 */

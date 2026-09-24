@@ -798,10 +798,12 @@ resources/
 | `src/http/mime.ts` | 35 | 扩展名 → Content-Type |
 | `src/http/static.ts` | 86 | 编辑器产物托管 + SPA 回退 + 目录穿越防护 |
 | `src/http/routes/*.ts` | 514 | **一条协议一个函数**：health(17) / config(20) / state(12) / projects(223, **7 个**：项目生命周期 + `/tree` + **`/meta`**（一次拿全项目的素材 meta，连读不出来的那几个也报出来）) / resources(180, 9 个) / index(62, 路由表) |
+| `src/resources/project-assets.ts` | — | 项目素材 meta 批量读取与 GUID 反查；HTTP 路由负责参数校验与状态码 |
 | `src/resources/fs-provider.ts` | 326 | `FsResourceProvider`（唯一碰磁盘的地方）+ 原子写 |
-| `src/resources/bundle.ts` | 324 | 资源清单 / 指纹 / 自研 STORED zip writer |
+| `src/resources/bundle.ts` | — | 资源清单 / 指纹 / 资源包组装；ZIP 编码委托给 `fflate`（STORED） |
 | `src/resources/bundle-cache.ts` | 55 | 资源包缓存（每个项目留最近一份，指纹变了才重打）——从 `http/server.ts` 搬出来的跨请求状态 |
-| `src/ws/hub.ts` | 465 | `RuntimeHub`：**只管传输**——升级分流、连接表、心跳、命令等待表、序列化发送 |
+| `src/ws/hub.ts` | — | `RuntimeHub`：**只管传输**——升级分流、连接表、心跳与序列化发送 |
+| `src/ws/pending-commands.ts` | — | 命令回执等待、超时通知与关闭清理 |
 | `src/ws/hub-context.ts` | 61 | `HubContext`：处理器能用的全部能力（读运行态 / 发消息 / 记日志），`RuntimeHub implements` 它 |
 | `src/ws/types.ts` | 5 | `LogLevel` / `HubLogger`（从 `hub.ts` 拆出，避免处理器与中枢循环引用） |
 | `src/ws/handlers/*.ts` | 294 | **一条消息一个函数**：editor(137, 7 条) / client(95, 4 条) / types(58, 表类型与 `defineXxxHandlers`) / index(4) |
@@ -936,14 +938,12 @@ startServer()
 | `fingerprintOf(entries)` | `path:size:mtimeMs` 排序拼接后的 **sha1 前 16 位** |
 
 - **入包范围**：只收 `Assets/` 下的文件；排除 `project.json`（元数据）、`.gitkeep`；条目按 `path` 排序保证指纹稳定；
-- **压缩方式刻意选 STORED（不压缩）**：后端不引 zip 依赖，自研 writer 用 STORED 才不必实现 deflate；
+- **压缩方式刻意选 STORED（不压缩）**：通过 `fflate` 的 `level: 0` 使用标准 ZIP 编码；
   且素材（png/mp4/mp3/wav）本身已压缩，deflate 省不下体积；代价是传输量 = 字节总和，由 `maxTotalBytes` 兜住；
-- **自研 zip writer**（`writeZipStored`）：本地文件头 + 数据 + 中央目录 + EOCD，**不使用数据描述符**
-  （CRC 与大小写头之前已知，无需流式回填）；通用位标记 `0x0800` 声明文件名 UTF-8（条目名含中文）；
-  自带 CRC32 查表实现（不依赖 Node 版本是否带 `zlib.crc32`）；时间转 MS-DOS 格式（1980 年下限）；
+- `fflate` 写 UTF-8 条目名和文件修改时间；早于 ZIP 时间戳下限的条目按 1980-01-01 写入；
 - **响应头**：`x-dts-project`（URL 编码）、`x-dts-fingerprint`、`x-dts-file-count`、`x-dts-bytes`；
 - **包内还写一份 `dts-bundle.json`**（项目名 + 指纹 + 字节数 + 文件列表），前端解压后可自行核对，不必再问服务端；
-- **缓存**（在 `http/server.ts` 里）：`bundleCache: Map<项目名, {fingerprint, zip, headers}>`，**每个项目只留最近一份**；
+- **缓存**（在 `resources/bundle-cache.ts` 里）：`BundleCache` 按项目保存 `{fingerprint, zip, headers}`，**每个项目只留最近一份**；
   每次请求先重算指纹（成本 = 一次 `list`），内容变了就重打——不需要文件监听，也不会发出发霉的包。
 
 ### 4.7 文件系统资源实现（`resources/fs-provider.ts`）
@@ -2056,7 +2056,7 @@ v23 / v24 之后，**素材级数据（切分 / 导入设置 / 音频标注）�
 | **给场景对象加一个字段** | `@dts/document`：`types.ts`（类型）+ `schema.ts`（schema、默认值取舍、必要时迁移函数）+ `validation.ts`（校验）+ `commands/`（setter）+ `factory.ts`（新建默认值）；若前端要用：`@dts/protocol` 的 `messages.ts`（**同步复刻字段**，并判断是否要升 `PROTOCOL_VERSION`）；`apps/editor`：`panels/inspector/` 的注册表 + 字段组件 + store action；`apps/backend/src/mock-client`（打印出来便于联调）；三处测试；`server/README.md` |
 | **加一种素材级数据**（跟着文件走：切分 / 导入设置 / 音频标注） | `@dts/document` 的 `asset-meta.ts`（形状 + schema + **纯函数写入，唯一口径**）+ `schema.ts`（若要从工程文件搬过来：加一个 `migrateXxxMetas` 并并进 `migratedMetas`）+ `validation.ts`（`validateAssetMetas` 那一类检查）；`@dts/resources` 的 `assetMetaIdOf` 已有 `<素材>.meta` 的 ID 换算；`apps/editor`：切片里走 `applyMetas`（第三条轨道）、`store-types.ts` 补状态字段、`panels/asset-info.ts` 的导入器判定、`project-slice.ts` 的 `loadAssetMetas` 补建缺的那几份；单测 + E2E（`readAssetMeta` 之类的助手） |
 | **加一条协议命令** | `@dts/protocol`：`commandRequestSchema` 加变体 + `PROTOCOL_VERSION + 1`；`hub.ts`（**无需改动**，转发是通用的）；`mock-client`（回执文案）；`apps/editor`：`services/runtime-client` 发送 + 对应记账服务 + store action；`client/`（Unity `CommandRouter`）；E2E 加一个 `@runtime` 用例；两份 spec / README |
-| **加一个 HTTP 接口** | `apps/backend/src/http/server.ts` 的 `handleApi` switch；`apps/editor/src/services/project-api.ts`；`apps/backend/test` 加用例；`README` 的接口清单 |
+| **加一个 HTTP 接口** | `apps/backend/src/http/routes/<domain>.ts` 加 handler 并在 `routes/index.ts` 注册；`apps/editor/src/services/project-api.ts`；`apps/backend/test` 加用例；`README` 的接口清单 |
 | **加一个项目子目录 / 资源类别** | `@dts/resources/src/ids.ts` 的 `PROJECT_FOLDERS` / `DEFAULT_PROJECT_FOLDERS`（**唯一约定来源**）+ `resources/config/app.json` 的 `projectFolders`；若新增的是**资源类别**（`ResourceKind`），还要改 `provider.ts` 的 `DEFAULT_RESOURCE_DIRS` 与 `config.ts` 的 `dirsSchema`（`satisfies` 会强制你补全） |
 | **加一个内部包** | `pnpm-workspace.yaml`（已是 `packages/*`，无需改）+ 新包 `package.json`/`tsconfig.json`；`test/architecture.test.ts` 的 `PURE_PACKAGES` 或 `DOM_OK_PACKAGES` 与 `ALLOWED` 表；`tsconfig` 继承 |
 | **加一个变换工具** | `@dts/renderer`：`gizmo.ts` 的 `TransformTool` + `toolHasGizmo` + `gizmoScreenGeometry` + `hitTestGizmoHandles` + `scene-renderer` 的 `drawGizmo`；`apps/editor`：`panels/scene/transform.ts` 的 `resolveTransform` + `ScenePanel` + `store.setTool` + `services/editor-prefs` + `MenuBar` 的「视图」菜单；`gizmo.test.ts` |

@@ -2,8 +2,6 @@ import { stat } from "node:fs/promises";
 import { dirname, resolve, sep } from "node:path";
 import { createEmptyProject } from "@dts/document";
 import {
-  assetMetaIdOf,
-  guidFromAssetMetaText,
   buildResourceTree,
   createProject,
   deleteProject,
@@ -16,6 +14,7 @@ import {
   validateProjectName,
   validateProjectRelativePath,
 } from "@dts/resources";
+import { findProjectAssetsByGuid, readProjectMetas } from "../../resources/project-assets";
 import { bodyString, bodyTrimmed, queryRaw, queryTrimmed, readJsonBody } from "../requests";
 import { HttpError, badRequest, sendJson } from "../responses";
 import type { RouteContext } from "../router";
@@ -110,31 +109,16 @@ export async function getProjectMetasRoute(ctx: RouteContext): Promise<void> {
     throw badRequest("缺少 name 参数");
   }
 
-  const entries = await readProjectEntries(ctx.provider, name);
-  const metas: Record<string, unknown> = {};
-  const unreadable: string[] = [];
-  for (const entry of entries) {
-    if (entry.type !== "file") {
-      continue;
-    }
-
-    const metaId = assetMetaIdOf(entry.id);
-    if (!(await ctx.provider.exists(metaId))) {
-      continue;
-    }
-
-    try {
-      metas[entry.id] = JSON.parse(await ctx.provider.readText(metaId)) as unknown;
-    } catch (error) {
-      unreadable.push(entry.id);
-      ctx.log(
-        "warn",
-        `素材 meta 读不出来，已跳过：${entry.path}（${error instanceof Error ? error.message : String(error)}）`,
-      );
-    }
+  const result = await readProjectMetas(ctx.provider, name);
+  for (const item of result.unreadable) {
+    ctx.log("warn", `素材 meta 读不出来，已跳过：${item.path}（${item.reason}）`);
   }
 
-  sendJson(ctx.response, 200, { name, metas, unreadable });
+  sendJson(ctx.response, 200, {
+    name,
+    metas: result.metas,
+    unreadable: result.unreadable.map((item) => item.id),
+  });
 }
 
 /** `GET /api/projects/asset?name=&guid=`：按素材 GUID 取得当前逻辑资源 ID。 */
@@ -148,22 +132,7 @@ export async function getProjectAssetByGuidRoute(ctx: RouteContext): Promise<voi
     throw badRequest("guid 必须是 32 位小写十六进制字符串");
   }
 
-  const entries = await readProjectEntries(ctx.provider, name);
-  const matches: Array<{ id: string; path: string }> = [];
-  for (const entry of entries) {
-    if (entry.type !== "file") {
-      continue;
-    }
-
-    const metaId = assetMetaIdOf(entry.id);
-    if (metaId === undefined || !(await ctx.provider.exists(metaId))) {
-      continue;
-    }
-
-    if (guidFromAssetMetaText(await ctx.provider.readText(metaId)) === guid) {
-      matches.push({ id: entry.id, path: entry.path.slice(name.length + 1) });
-    }
-  }
+  const matches = await findProjectAssetsByGuid(ctx.provider, name, guid);
 
   if (matches.length === 0) {
     throw new HttpError(404, `找不到素材 GUID: ${guid}`);
