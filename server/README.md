@@ -43,12 +43,16 @@ pnpm --filter @dts/backend mock   # 另开一个终端：启动 Mock 前端（�
 | `pnpm test` | 单元测试 + 架构边界测试（约 1.5s） |
 | `pnpm check` | 类型检查 + 单测 + Lint（提交前一把过） |
 | `pnpm lint` | ESLint |
-| `pnpm e2e:fast` | Playwright **只跑桌面档位**（约 10s）：改完先拿它验，别一上来就跑全量 |
-| `pnpm e2e` | Playwright 全量（桌面 + 两个平板档位，约 40s）；跑在**临时资源根**上，不碰仓库 `resources/` |
+| `pnpm e2e:smoke` | 先构建，再跑桌面启动 / 外壳 / 画布冒烟（约十几秒） |
+| `pnpm e2e:tablet-smoke` | 先构建，再跑两种平板视口的布局 / 画布冒烟 |
+| `pnpm e2e` | 快速回归别名：先构建，再跑桌面全套 + 串行运行态用例 |
+| `pnpm e2e:full` | 先构建，再跑桌面 + 两个平板档位的完整矩阵；耗时较长，适合合并前验证 |
 
-E2E 是**完全并行**的（`fullyParallel`，worker 数默认按核数一半、封顶 8；`E2E_WORKERS=1` 可
-回到串行复现时序问题）。这要求用例**自建自删项目**、各用各的 page——写新用例时别破坏这两条，
-否则会变成「偶发失败」，那比跑得慢更难受。跑 E2E 前记得 `pnpm build`：它托管的是**已构建**产物。
+Playwright 会在每项开始时打印用例名，结束时打印耗时；运行超过 10 秒会继续报告进行时长，便于定位卡住的用例。
+
+E2E 跑在**临时资源根**上，不碰仓库 `resources/`。快速迭代先跑 `pnpm check` 或 `pnpm e2e:smoke`，
+涉及前端交互再跑 `pnpm e2e`；完整矩阵留给合并前。所有 E2E 命令会先 `pnpm build`，确保测试服务
+托管的是当前源码构建的产物。worker 默认 4，`E2E_WORKERS=1` 可串行复现时序问题。
 
 唯一的例外是带 **`@runtime`** 标记的那组用例（编辑态 / 运行态，见 `e2e/smoke.spec.ts`）：
 它们开关的是**服务端全局单例**，开着的时候别的用例一打开编辑器也会跟着进运行态（落盘断言会超时），

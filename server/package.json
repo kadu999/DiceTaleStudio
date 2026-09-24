@@ -13,8 +13,11 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint .",
-    "e2e": "playwright test --grep-invert @runtime && playwright test --grep @runtime --workers=1",
-    "e2e:fast": "playwright test --project=desktop-chrome --grep-invert @runtime && playwright test --project=desktop-chrome --grep @runtime --workers=1",
+    "e2e": "pnpm e2e:fast",
+    "e2e:smoke": "pnpm build && playwright test e2e/smoke.spec.ts --project=desktop-chrome --grep-invert @runtime",
+    "e2e:tablet-smoke": "pnpm build && playwright test e2e/smoke.spec.ts --project=tablet-touch-portrait --project=tablet-touch-landscape --grep-invert @runtime",
+    "e2e:fast": "pnpm build && playwright test --project=desktop-chrome --grep-invert @runtime && playwright test --project=desktop-chrome --grep @runtime --workers=1",
+    "e2e:full": "pnpm build && playwright test --grep-invert @runtime && playwright test --grep @runtime --workers=1",
     "check": "pnpm typecheck && pnpm test && pnpm lint"
   },
   "devDependencies": {

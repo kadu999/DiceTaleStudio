@@ -59,7 +59,7 @@ export default defineConfig({
   expect: { timeout: 7_000 },
   fullyParallel: true,
   workers: WORKERS,
-  reporter: [["list"]],
+  reporter: [["./e2e/progress-reporter.cjs"]],
   globalTeardown: "./e2e/global-teardown.ts",
   use: {
     baseURL: `http://127.0.0.1:${PORT}`,

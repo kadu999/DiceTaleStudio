@@ -293,8 +293,11 @@ v23 起切分搬出了工程文件（v22 及更早才是 `ProjectDoc.spriteSheet
 | `typecheck` | `pnpm -r typecheck` | 8 个包逐个 `tsc --noEmit` |
 | `test` / `test:watch` | `vitest run` / `vitest` | 单测 + 架构测试 |
 | `lint` | `eslint .` | ESLint flat config |
-| `e2e` | `playwright test --grep-invert @runtime && playwright test --grep @runtime --workers=1` | 两趟：并行 + 运行态串行 |
-| `e2e:fast` | 同上但 `--project=desktop-chrome` | 只跑桌面档位 |
+| `e2e:smoke` | 先 build，再跑桌面 `smoke.spec.ts`（排除 `@runtime`） | 快速冒烟 |
+| `e2e:tablet-smoke` | 先 build，再跑两个平板档的 `smoke.spec.ts`（排除 `@runtime`） | 平板布局冒烟 |
+| `e2e` / `e2e:fast` | 先 build，再跑桌面全套 + 运行态串行 | 快速回归 |
+| `e2e:full` | 先 build，再跑三档完整矩阵 + 运行态串行 | 合并前完整验证 |
+| `progress-reporter.cjs` | 每项开始即打印名称，完成打印耗时；超过 10 秒每 10 秒报告仍在运行 | 卡顿定位 |
 | `check` | `typecheck && test && lint` | 提交前一把过 |
 
 **各包**
@@ -1927,7 +1930,7 @@ upgradeRawDocument
   既不往仓库 `resources/` 留垃圾，也不受仓库里现成项目影响；临时根里没有 `config/app.json`，
   所以后端用内置默认值（目录名与生产一致）；teardown 负责清掉；
   配置里**刻意不建目录**——worker 进程也会重新求值配置文件，任何副作用都会按 worker 数量翻倍；
-- `E2E_WORKERS` 默认 **4**（实测 4 → 约 46s 稳定；8 → 约 40s 但偶尔因抢资源超时；14 以上开始真实失败）；
+- `E2E_WORKERS` 默认 **4**；完整三档矩阵约数分钟，桌面回归与冒烟命令用于更快的本地反馈；
   `E2E_WORKERS=1` 用来复现「串行才出现的时序问题」；
 - 端口 `E2E_PORT` 默认 1421（**不是**后端默认的 1420）；`reuseExistingServer: true`；失败保留 trace；
 - `globalTeardown` 只能是**文件路径**，所以临时根经环境变量 `DTS_E2E_RESOURCES` 传给 teardown。
