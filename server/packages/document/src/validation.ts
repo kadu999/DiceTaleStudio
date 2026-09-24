@@ -1,7 +1,7 @@
 import { PAINTABLE_MASKS, decodeRle } from "@dts/grid";
 import { componentKindMismatchOf, isKnownComponentType } from "./components";
 import { isMapFogEnabled } from "./commands";
-import { canDefaultObjectComponent, canRepairObjectComponent, imageOf, mapDataOf, soundDataOf, teleportDataOf, videoDataOf } from "./access";
+import { canRepairObjectComponent, imageOf, mapDataOf, soundDataOf, teleportDataOf, videoDataOf } from "./access";
 import type { AssetMetaDoc, AssetMetas } from "./asset-meta";
 import { DEFAULT_SLOT_COMPONENT } from "./presets";
 import { spriteSheetOf } from "./sprites";
@@ -130,7 +130,7 @@ function validateObject(
 
   // 地图对象：数据必须完整（没有数据的「地图对象」在场景里就是个空壳）
   const map = mapDataOf(object);
-  if (map === undefined && canDefaultObjectComponent(object, DEFAULT_SLOT_COMPONENT.map)) {
+  if (map === undefined && canRepairObjectComponent(object, DEFAULT_SLOT_COMPONENT.map)) {
     issues.push({ level: "error", path, message: "地图对象缺少地图数据（贴图 / 网格）" });
   }
   if (map !== undefined) {

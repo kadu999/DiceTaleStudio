@@ -72,6 +72,7 @@ export function componentTypeForObjectSlot(
 /** Component instances declare image behavior; kind is only a fallback for old objects without image components. */
 export function objectImageSlot(object: GameObjectDoc): "map" | "image" {
   if (componentOfSlot(object, "map") !== undefined) return "map";
+  if (canRepairObjectComponent(object, DEFAULT_SLOT_COMPONENT.map)) return "map";
   if (componentOfSlot(object, "image") !== undefined) return "image";
   if (hasComponentKindMismatch(object)) return "image";
   return findComponentType(DEFAULT_SLOT_COMPONENT.map)?.templateKinds?.includes(object.kind) === true

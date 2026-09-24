@@ -1,8 +1,9 @@
 // 本文件从 `commands.ts` 拆出（纯搬运，行为不变）：对象级命令。
 import type { Draft } from "immer";
+import { gridSizeFromImage } from "@dts/grid";
 // 特性的读写一律走访问器（「数据存在哪个组件里」只有 access.ts 知道）
 import { canRepairObjectComponent, componentTypeForObjectSlot, mapDataOf, objectImage, objectImageSlot, objectSupportsSpriteSheet, writeFeature } from "../access";
-import { DEFAULT_SOUND_LAYER } from "../presets";
+import { DEFAULT_SLOT_COMPONENT, DEFAULT_SOUND_LAYER } from "../presets";
 import { DEFAULT_OBJECT_SCALE, clampObjectScale, collapseScale } from "../scale";
 import { DEFAULT_SORTING_ORDER, createId, findObject } from "./shared";
 import { setObjectField } from "./field";
@@ -60,6 +61,30 @@ export function repairObjectComponent(
 
   const data = type === "PlaySound" ? { clips: [], layer: DEFAULT_SOUND_LAYER } : { targets: [] };
   writeFeature(object, type, data);
+  return true;
+}
+
+/** Explicitly restore a missing map component from the image selected by the user. */
+export function repairMapObjectComponent(
+  scene: Draft<SceneDoc>,
+  objectId: string,
+  image: ImageRef,
+): boolean {
+  const object = findObject(scene, objectId);
+  if (object === undefined || !canRepairObjectComponent(object, DEFAULT_SLOT_COMPONENT.map)) return false;
+
+  const grid = gridSizeFromImage(image);
+  writeFeature(object, DEFAULT_SLOT_COMPONENT.map, {
+    image: {
+      id: image.id,
+      width: image.width,
+      height: image.height,
+      ...(image.guid === undefined ? {} : { guid: image.guid }),
+    },
+    grid,
+    rowOrder: "bottom-up",
+    cells: { encoding: "rle", runs: [[0, grid.width * grid.height]] },
+  });
   return true;
 }
 

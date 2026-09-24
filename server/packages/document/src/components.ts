@@ -52,7 +52,7 @@ export interface ComponentTypeDef {
 export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
   // ---------------------------------------------------------------- v19：对象特性提升上来的组件
   //
-  // 这 6 条自报 `slot`。模板、必需组件兼容和可选组件准入分别声明，
+  // 这 6 条自报 `slot`。模板、显式修复、必需组件兼容和可选组件准入分别声明，
   // 并由 presets.test.ts 保证创建模板与 templateKinds 一致。
   // `legacyField` 记着 v19 之前它住在对象的哪个扁平字段里。
   {
@@ -62,7 +62,7 @@ export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
     slot: "map",
     legacyField: "map",
     templateKinds: ["Map"],
-    repairFallbackKinds: ["Map"],
+    repairKinds: ["Map"],
     tooltip: "贴图 + 网格数据（列 / 行 / 行序 / 格子 RLE / 战争雾）；只有地图对象携带",
   },
   {

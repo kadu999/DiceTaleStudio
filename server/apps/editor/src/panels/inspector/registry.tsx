@@ -7,6 +7,7 @@ import {
   canRepairObjectComponent,
   hasComponentKindMismatch,
   mapDataOf,
+  objectImageSlot,
   supportsObjectComponent,
   supportsVideo,
   type ComponentType,
@@ -66,7 +67,7 @@ const hasComponent = (object: GameObjectDoc, type: ComponentType): boolean =>
   componentOf(object, type) !== undefined;
 
 function imageFallback(object: GameObjectDoc, type: ComponentType): boolean {
-  return mapDataOf(object) === undefined && supportsObjectComponent(object, type);
+  return objectImageSlot(object) !== "map" && mapDataOf(object) === undefined && supportsObjectComponent(object, type);
 }
 
 function panel(group: string, title: string, render: EditorPanelDef["render"]): EditorPanelDef {
@@ -110,7 +111,8 @@ export const COMPONENT_EDITORS: readonly ComponentEditorDef[] = [
   },
   {
     type: COMPONENT_TYPE.map,
-    availableWithoutComponent: (object) => mapDataOf(object) !== undefined || supportsObjectComponent(object, COMPONENT_TYPE.map),
+    availableWithoutComponent: (object) =>
+      mapDataOf(object) !== undefined || canRepairObjectComponent(object, COMPONENT_TYPE.map),
     panels: [
       panel("render", "渲染", (object) => <TextureField object={object} />),
       panel("edit", "区域", (object) => (
@@ -165,9 +167,13 @@ export const COMPONENT_EDITORS: readonly ComponentEditorDef[] = [
 /** Attached components drive editing; explicit repair and optional capability paths expose missing-instance entry points. */
 export function componentEditorsFor(object: GameObjectDoc): readonly ComponentEditorDef[] {
   const hasMap = componentOf(object, DEFAULT_SLOT_COMPONENT.map) !== undefined;
+  const canRepairMap = canRepairObjectComponent(object, DEFAULT_SLOT_COMPONENT.map);
   const missingComponentEntryAllowed = !hasComponentKindMismatch(object);
   return COMPONENT_EDITORS.filter((editor) => {
-    if (hasMap && (editor.type === COMPONENT_TYPE.image || editor.type === COMPONENT_TYPE.sprite)) return false;
+    if ((hasMap || canRepairMap) && (editor.type === COMPONENT_TYPE.image || editor.type === COMPONENT_TYPE.sprite)) return false;
     return hasComponent(object, editor.type) || (missingComponentEntryAllowed && editor.availableWithoutComponent(object));
+  }).map((editor) => {
+    if (editor.type !== COMPONENT_TYPE.map || !canRepairMap || mapDataOf(object) !== undefined) return editor;
+    return { ...editor, panels: editor.panels.filter((item) => item.group === "render") };
   });
 }

@@ -9,6 +9,7 @@ import {
   SPRITE_COMPONENT,
   canAddOptionalObjectComponent,
   canDefaultObjectComponent,
+  canRepairObjectComponent,
   carriesComponent,
   componentForSlot,
   createGameObject,
@@ -102,6 +103,16 @@ describe("对象预设表（presets.ts）", () => {
     expect(canDefaultObjectComponent(image, DEFAULT_SLOT_COMPONENT.video)).toBe(false);
   });
 
+  it("GridMap 缺失时只提供显式修复，不允许普通写入 fallback 补建", () => {
+    const definition = COMPONENT_TYPES.find((item) => item.type === DEFAULT_SLOT_COMPONENT.map);
+    expect(definition?.repairKinds).toEqual(["Map"]);
+    expect(definition?.repairFallbackKinds).toBeUndefined();
+
+    const object = createGameObject({ id: "map", name: "坏地图", kind: "Map" });
+    expect(canRepairObjectComponent(object, DEFAULT_SLOT_COMPONENT.map)).toBe(true);
+    expect(canDefaultObjectComponent(object, DEFAULT_SLOT_COMPONENT.map)).toBe(false);
+  });
+
   it("组件 kind mismatch 时，不会以可选准入或必需 fallback 补建缺失组件", () => {
     const map = createGameObject({ id: "map", name: "地图", kind: "Map" });
     const mismatched = {
@@ -111,6 +122,7 @@ describe("对象预设表（presets.ts）", () => {
 
     expect(canAddOptionalObjectComponent(mismatched, DEFAULT_SLOT_COMPONENT.video)).toBe(false);
     expect(canDefaultObjectComponent(mismatched, DEFAULT_SLOT_COMPONENT.map)).toBe(false);
+    expect(canRepairObjectComponent(mismatched, DEFAULT_SLOT_COMPONENT.map)).toBe(false);
   });
 
   it("kind mismatch 不会再为缺失组件提供视频或子图 fallback", () => {

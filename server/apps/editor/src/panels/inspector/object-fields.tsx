@@ -3,6 +3,8 @@ import {
   effectiveScaleX,
   effectiveScaleY,
   isUniformScale,
+  canRepairObjectComponent,
+  DEFAULT_SLOT_COMPONENT,
   mapDataOf,
   normalizeDegrees,
   objectImage,
@@ -132,7 +134,8 @@ export function TextureField({ object }: { readonly object: GameObjectDoc }): Re
   const tree = useEditorStore((state) => state.project.tree);
   const assetMetas = useEditorStore((state) => state.assetMetas);
   const openImagePicker = useEditorStore((state) => state.openImagePicker);
-  const image = objectImage(object);
+  const missingMapData = canRepairObjectComponent(object, DEFAULT_SLOT_COMPONENT.map);
+  const image = missingMapData ? undefined : objectImage(object);
 
   // 引用的文件不在项目里（素材没提交 / 改名了）：直接把这件事写出来
   const currentAsset = image === undefined ? undefined : findImageAsset(tree, image, assetMetas);
@@ -163,9 +166,11 @@ export function TextureField({ object }: { readonly object: GameObjectDoc }): Re
           }`}
           title={currentAsset?.id ?? image?.id}
         >
-          {image === undefined
-            ? "（无贴图）"
-            : assetDisplayPath(currentAsset?.id ?? currentImageAssetId(image, assetMetas))}
+          {missingMapData
+            ? "地图数据缺失"
+            : image === undefined
+              ? "（无贴图）"
+              : assetDisplayPath(currentAsset?.id ?? currentImageAssetId(image, assetMetas))}
         </span>
       )}
       {cell === undefined || sheet === undefined ? null : (
@@ -201,7 +206,7 @@ export function TextureField({ object }: { readonly object: GameObjectDoc }): Re
         className="toolbar-button flex-none hover:toolbar-button-hover"
         onClick={() => openImagePicker(object.id)}
       >
-        选择
+        {missingMapData ? "选择贴图并修复" : "选择"}
       </button>
     </FieldRow>
   );

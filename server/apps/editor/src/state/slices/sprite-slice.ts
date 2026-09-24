@@ -17,6 +17,9 @@
  */
 import {
   createAssetMeta,
+  canRepairObjectComponent,
+  DEFAULT_SLOT_COMPONENT,
+  repairMapObjectComponent as repairSceneMapObjectComponent,
   setObjectImage as setGameObjectImage,
   setObjectSprite as setGameObjectSprite,
   withMetaSpriteSheet,
@@ -63,8 +66,16 @@ export function createSpriteSlice(
      * 补身份是挑图那一刻的事，见 `ensureAssetMeta` 与 `ImagePickerDialog`。
      */
     setObjectImageSprite(objectId, image: ImageRef, sprite: ImageSpriteRef | null) {
+      const state = get();
+      const object = state.scenes
+        .find((scene) => scene.name === state.activeSceneName)
+        ?.objects.find((item) => item.id === objectId);
+      const repairingMap = object !== undefined &&
+        canRepairObjectComponent(object, DEFAULT_SLOT_COMPONENT.map);
       const label =
-        sprite === null ? "更换贴图" : `换图并取子图 第${sprite.row + 1}行第${sprite.column + 1}列`;
+        repairingMap
+          ? "修复地图贴图"
+          : sprite === null ? "更换贴图" : `换图并取子图 第${sprite.row + 1}行第${sprite.column + 1}列`;
       return applyActiveScene(label, (scene) => {
         const ref: ImageRef = {
           id: image.id,
@@ -73,9 +84,12 @@ export function createSpriteSlice(
           ...(image.guid === undefined ? {} : { guid: image.guid }),
         };
 
-        // 整图时**显式不带 `sprite`**（换回整图就是这一条）；带格子时由 `setObjectImage`
-        // 原样写进去（它「给什么用什么」，见文档命令）
-        setGameObjectImage(scene, objectId, sprite === null ? ref : { ...ref, sprite });
+        if (repairingMap) {
+          repairSceneMapObjectComponent(scene, objectId, ref);
+        } else {
+          // 整图时显式不带 sprite；带格子时由 setObjectImage 原样写入。
+          setGameObjectImage(scene, objectId, sprite === null ? ref : { ...ref, sprite });
+        }
       });
     },
 

@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { createMapObject, createGameObject, featureComponent, type GameObjectDoc } from "@dts/document";
+import {
+  createMapObject,
+  createGameObject,
+  featureComponent,
+  mapDataOf,
+  type GameObjectDoc,
+} from "@dts/document";
 import { InspectorPanel } from "../src/panels/inspector/InspectorPanel";
 import { sceneHistory, useEditorStore } from "../src/state/editor-store";
 
@@ -81,6 +87,52 @@ afterEach(() => {
 });
 
 describe("属性分组：基础 / 渲染 / 区域 / 战争雾 / 视频", () => {
+  it("损坏地图提供明确选图修复入口，修复一次撤销即可完整还原", () => {
+    const broken = {
+      ...createGameObject({ id: "broken-map", name: "坏地图", kind: "Map" }),
+      components: [
+        featureComponent("broken-map", "ImageLayer", {
+          id: "stale-image.png",
+          width: 128,
+          height: 64,
+        }),
+        { id: "unknown", type: "FutureComponent", data: { keep: true } },
+      ],
+    } satisfies GameObjectDoc;
+    seedScene([broken], ["broken-map"]);
+    render(<InspectorPanel />);
+
+    const renderGroup = groupOf("render");
+    expect(within(renderGroup).getByTestId("pick-texture").textContent).toBe("选择贴图并修复");
+    expect(within(renderGroup).getByText("地图数据缺失")).toBeDefined();
+    expect(screen.getAllByTestId("pick-texture")).toHaveLength(1);
+    expect(groupSlugs()).not.toContain("edit");
+    expect(groupSlugs()).not.toContain("fog");
+
+    fireEvent.click(within(renderGroup).getByTestId("pick-texture"));
+    expect(useEditorStore.getState().imagePickerTarget).toBe("broken-map");
+    act(() => {
+      useEditorStore.getState().setObjectImageSprite(
+        "broken-map",
+        { id: "project:测试/Assets/images/repaired.png", width: 420, height: 300 },
+        null,
+      );
+    });
+
+    const repaired = useEditorStore.getState().scenes[0]?.objects[0];
+    expect(mapDataOf(repaired!)).toMatchObject({
+      image: { id: "project:测试/Assets/images/repaired.png", width: 420, height: 300 },
+      grid: { width: 14, height: 10 },
+      cells: { encoding: "rle", runs: [[0, 140]] },
+    });
+    expect(repaired?.components.find((component) => component.type === "FutureComponent")?.data).toEqual({ keep: true });
+    expect(useEditorStore.getState().canUndo).toBe(true);
+
+    act(() => useEditorStore.getState().undo());
+    expect(mapDataOf(useEditorStore.getState().scenes[0]!.objects[0]!)).toBeUndefined();
+    expect(useEditorStore.getState().canUndo).toBe(false);
+  });
+
   it("地图对象分五组；精灵只有基础 / 渲染；贴图有基础 / 渲染 / 视频", () => {
     seedScene([mapObject(), createGameObject({ id: "sprite", name: "精灵" })], ["map-1"]);
     const { unmount } = render(<InspectorPanel />);

@@ -17,6 +17,7 @@ import {
   objectsInDrawOrder,
   paintMapCells,
   removeObject,
+  repairMapObjectComponent,
   setMapCells,
   setMapFogEnabled,
   setMapFogRegions,
@@ -1079,6 +1080,60 @@ describe("文档校验", () => {
     });
 
     expect(formatIssues(validateScene(scene))).toMatch(/缺少地图数据/);
+  });
+
+  it("显式修复缺失的 GridMap：按图片尺寸建空网格并保留未知组件", () => {
+    const scene = mutate(makeScene(), (draft) => {
+      addObject(draft, plainObject("broken-map", {
+        name: "坏地图",
+        kind: "Map",
+        components: [{ id: "legacy-unknown", type: "FutureComponent", data: { keep: true } }],
+      }));
+    });
+    const repaired = mutate(scene, (draft) => {
+      expect(repairMapObjectComponent(draft, "broken-map", {
+        id: "project:C/Assets/images/repaired.png",
+        guid: "a".repeat(32),
+        width: 420,
+        height: 300,
+      })).toBe(true);
+    });
+
+    const object = findObject(repaired, "broken-map");
+    expect(mapDataOf(object!)).toEqual({
+      image: {
+        id: "project:C/Assets/images/repaired.png",
+        guid: "a".repeat(32),
+        width: 420,
+        height: 300,
+      },
+      grid: { width: 14, height: 10 },
+      rowOrder: "bottom-up",
+      cells: { encoding: "rle", runs: [[0, 140]] },
+    });
+    expect(object?.components.find((item) => item.type === "FutureComponent")).toEqual({
+      id: "legacy-unknown",
+      type: "FutureComponent",
+      data: { keep: true },
+    });
+  });
+
+  it("普通 setObjectImage 不会隐式修复缺失地图数据，kind mismatch 也禁止显式修复", () => {
+    const scene = mutate(makeScene(), (draft) => {
+      addObject(draft, plainObject("broken-map", { name: "坏地图", kind: "Map" }));
+      addObject(draft, plainObject("mismatched-map", {
+        name: "组件冲突地图",
+        kind: "Map",
+        components: [{ id: "mismatched-map__Teleport", type: "Teleport", data: { targets: [] } }],
+      }));
+    });
+    const unchanged = mutate(scene, (draft) => {
+      expect(setObjectImage(draft, "broken-map", IMAGE)).toBe(false);
+      expect(repairMapObjectComponent(draft, "mismatched-map", IMAGE)).toBe(false);
+    });
+
+    expect(mapDataOf(findObject(unchanged, "broken-map")!)).toBeUndefined();
+    expect(mapDataOf(findObject(unchanged, "mismatched-map")!)).toBeUndefined();
   });
 
   it("非 Map kind 对象挂载 GridMap 时按组件校验地图数据", () => {
