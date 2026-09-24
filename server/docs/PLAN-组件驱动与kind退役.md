@@ -80,15 +80,15 @@
 - 阶段 2 的实现与自动化验证已完成，提交为 `af5f7b4 refactor(document): drive object behavior from components`。访问器、通用组件字段命令、视频/声音/传送专用命令均优先使用实际组件；阶段 4 切片验证之前的兼容元数据按用途分别声明，并有测试约束模板与组件路由一致。
 - 本轮遇到并处理的问题：`validation.ts` 与 `commands/video.ts` 引用了不存在/错层的组件能力查询名，导致类型检查失败及多个测试级联失败；精灵图片默认组件查询使用了错误来源，导致一批图片/子图读写与协议解析测试失败；将 `ComponentType` 导入一并误删导致 presets 类型错误。更正后，`pnpm typecheck` 通过，9 个定向测试文件的 277 个测试通过。
 - 已补齐 kind 错位的 Inspector、动作徽标、视频运行命令和校验回归；校验只给 mismatch warning，不拒绝或删除显式组件。未知组件仍按原样保留。
-- 最终自动化验证：`pnpm typecheck` 通过；`pnpm test` 通过（79 个文件、1151 个测试）；`pnpm lint` 通过；`pnpm e2e:smoke` 通过（桌面 5 项通过，平板专用用例 1 项按项目配置跳过）。构建仅有依赖 `eruda` direct eval 与 Tailwind sourcemap 警告。
+- 最终自动化验证：`pnpm typecheck` 通过；`pnpm test` 通过（79 个文件、1155 个测试）；`pnpm lint` 通过；`pnpm e2e:smoke` 通过（桌面 5 项通过，平板专用用例 1 项按项目配置跳过）。构建仅有依赖 `eruda` direct eval 与 Tailwind sourcemap 警告。
 - 已搜索 `kind` 功能判断残留：编辑器里的功能操作改按组件能力；剩余 `kind` 读取用于分类/筛选、标签展示、创建模板，或按组件定义的 fallback/optional 准入为缺失组件提供兼容。`schema.ts` 中历史迁移属于预期职责。Unity 的对象视图创建与视频命令也按组件判断；`kind` 仍用于镜像字段及占位色。
 - `GridMap` 与 `ImageLayer` 并存时地图图片优先，Inspector 隐藏普通图片面板；已覆盖文档层优先级。kind mismatch 下显式组件的 Inspector 与校验已有回归。协议载荷、文档格式和 Unity 消费格式未改。
-- `apps/backend/test/protocol-document-contract.test.ts` 的 7 个协议-文档合同测试已通过。仓库未发现 Unity Test/Tests 测试程序集；本轮只静态审查 `SceneObjectView.NeedsView` 与视频命令的组件判定，Unity MCP 命名空间不可用，故未执行 Unity 运行时实测，阶段 3 保持进行中。
+- `apps/backend/test/protocol-document-contract.test.ts` 的 7 个协议-文档合同测试已通过。本轮通过 Unity MCP `http://127.0.0.1:8080/mcp` 连接当前 `client` 工程（Unity `6000.3.19f1`）：强制脚本刷新/编译后控制台 0 error / 0 warning；Editor 内 4 条运行时断言通过，覆盖 kind 错位时 PlaySound / Teleport 视图判定、ImageLayer 视图判定、VideoOverlay 字段解析及未知组件保留；EditMode 与 PlayMode 测试入口均成功结束，但项目只注册了通用占位测试 `Client`，实际用例数均为 0。Unity MCP 已可用，阶段 3 仍待补项目级 Unity 测试程序集/可重复业务测试。
 - 阶段 4 已开始首轮审计：仓库样例当前 7 个对象无 mismatch；历史提交包含迁移前的无组件快照。逐组件决策与限制见上表；没有外部用户项目样本，不能全面停用兼容路径。
 - 阶段 4 首个代码切片已提交：将 `defaultKinds` 职责拆为预设组件关联 `templateKinds`、必需组件缺失修复 `repairFallbackKinds`、可选组件准入 `optionalKinds`。`VideoOverlay` 仅保留地图/贴图的可选准入，不再走必需组件 fallback。
 - 阶段 4 第二个代码切片已提交：把运行时必需组件 fallback 明确命名为 `repairFallbackKinds`，避免与 schema 的旧格式迁移职责混淆。
 - 阶段 4 第三个代码切片：新增 `PlaySound` / `Teleport` 显式修复命令与 Inspector 入口，修复进入撤销栈；两者从隐式 `repairFallbackKinds` 移至显式 `repairKinds`，普通字段命令在组件缺失时不再补建。校验仍报告缺组件错误。地图、图片与视频流程暂不改变。
-- 下一步：在 Unity 可运行环境补做镜像运行时验证；对 GridMap/ImageLayer/SpriteLayer 分别设计数据安全的显式修复或组件添加流程，再结合真实项目盘点评估是否缩减其 fallback。仍不改格式版本、不移除 `kind` 字段。
+- 下一步：为 Unity 镜像组件行为补项目级、可重复的 EditMode/PlayMode 测试；对 GridMap/ImageLayer/SpriteLayer 分别设计数据安全的显式修复或组件添加流程，再结合真实项目盘点评估是否缩减其 fallback。仍不改格式版本、不移除 `kind` 字段。
 
 ## 当前相关入口
 
