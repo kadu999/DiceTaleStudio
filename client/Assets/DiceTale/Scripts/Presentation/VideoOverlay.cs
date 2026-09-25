@@ -44,6 +44,9 @@ namespace DiceTale
         /// <summary>等首帧的看门狗（见 <see cref="PrepareTimeoutSeconds"/>）。</summary>
         private Coroutine prepareWatchdog;
 
+        /// <summary>续播寻位（开播瞬间设 <see cref="VideoPlayer.time"/> 会被内部时钟盖掉，要等转起来再跳）。</summary>
+        private Coroutine resumeSeekRoutine;
+
         private bool loop;
         private bool audioEnabled;
 
@@ -198,6 +201,28 @@ namespace DiceTale
             }
         }
 
+        /// <summary>
+        /// 续播寻位：等播放器真正转起来（isPlaying）再设 <see cref="VideoPlayer.time"/>，
+        /// 开播瞬间的赋值会被内部准备流程重置。只在仍明显偏离目标时跳，避免无谓的 seek 抖动。
+        /// </summary>
+        private IEnumerator SeekAfterPlay(double target)
+        {
+            yield return null;
+
+            var guard = Time.realtimeSinceStartup + 1.5f;
+            while (player != null && !player.isPlaying && Time.realtimeSinceStartup < guard)
+            {
+                yield return null;
+            }
+
+            if (player != null && player.isPlaying && System.Math.Abs(player.time - target) > 0.05)
+            {
+                player.time = target;
+            }
+
+            resumeSeekRoutine = null;
+        }
+
         /// <summary>循环 / 声音开关变了（文档数据变了，运行中即时生效）。</summary>
         public void SetLoop(bool shouldLoop)
         {
@@ -235,7 +260,21 @@ namespace DiceTale
             IsPaused = false;
             if (player.isPrepared)
             {
+                // `Play()` 在 url 播放下实测会从头放（暂停在 time=3.33，继续后回到 <1s）——
+                // 协议承诺「从暂停处续播」，所以先把位置存下来、开播转起来后再跳回去；
+                // 开播瞬间直接设 time 会被内部时钟盖掉（第一版修法实测无效）。
+                var resumeAt = player.time;
                 player.Play();
+                if (resumeAt > 0 && isActiveAndEnabled)
+                {
+                    if (resumeSeekRoutine != null)
+                    {
+                        StopCoroutine(resumeSeekRoutine);
+                    }
+
+                    resumeSeekRoutine = StartCoroutine(SeekAfterPlay(resumeAt));
+                }
+
                 return;
             }
 
@@ -255,6 +294,12 @@ namespace DiceTale
             {
                 StopCoroutine(prepareWatchdog);
                 prepareWatchdog = null;
+            }
+
+            if (resumeSeekRoutine != null)
+            {
+                StopCoroutine(resumeSeekRoutine);
+                resumeSeekRoutine = null;
             }
 
             RestoreSourceRenderer();
