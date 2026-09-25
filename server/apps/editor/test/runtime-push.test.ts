@@ -21,7 +21,6 @@ function scene(name: string, x: number): SceneDoc {
         kind: "Sprite",
         active: true,
         locked: false,
-        sortingOrder: 0,
         position: { x, y: 0 },
         rotation: 0,
         scale: 1,

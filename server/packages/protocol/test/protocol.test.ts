@@ -47,7 +47,6 @@ function sampleScene(): ScenePayload {
         kind: "Map",
         active: true,
         locked: false,
-        sortingOrder: -10,
         position: { x: 0, y: 0 },
         rotation: 0,
         scale: 1,
@@ -57,6 +56,7 @@ function sampleScene(): ScenePayload {
             grid: { width: 64, height: 36 },
             rowOrder: "bottom-up",
             cells: { encoding: "rle", runs: [[0, 2304]] },
+            sortingOrder: -10,
           }),
         ],
       },
@@ -66,7 +66,6 @@ function sampleScene(): ScenePayload {
         kind: "Sprite",
         active: false,
         locked: false,
-        sortingOrder: 0,
         position: { x: -345, y: 118 },
         rotation: 0,
         scale: 1.5,
@@ -75,6 +74,7 @@ function sampleScene(): ScenePayload {
             id: "project:测试项目/Assets/images/door.png",
             width: 128,
             height: 256,
+            sortingOrder: 0,
           }),
         ],
       },
@@ -84,7 +84,6 @@ function sampleScene(): ScenePayload {
         kind: "PlaySound",
         active: true,
         locked: false,
-        sortingOrder: 0,
         position: { x: 0, y: 0 },
         rotation: 0,
         scale: 1,
@@ -256,7 +255,6 @@ describe("协议：场景（镜像的那份对象数据）", () => {
           name: "a",
           kind: "Sprite",
           active: true,
-          sortingOrder: 0,
           position: null,
           rotation: 0,
           scale: 1,
@@ -280,7 +278,6 @@ describe("协议：场景（镜像的那份对象数据）", () => {
           name: "a",
           kind: "Sprite",
           active: true,
-          sortingOrder: 0,
           position: { x: 0, y: 0 },
           rotation: 0,
           scale: 2,
@@ -299,7 +296,6 @@ describe("协议：场景（镜像的那份对象数据）", () => {
           name: "a",
           kind: "Sprite",
           active: true,
-          sortingOrder: 0,
           position: { x: 0, y: 0 },
           rotation: 0,
           scale: 1,
@@ -321,7 +317,6 @@ describe("协议：场景（镜像的那份对象数据）", () => {
           name: "a",
           kind: "Sprite",
           active: true,
-          sortingOrder: 0,
           position: { x: 0, y: 0 },
           rotation: 0,
           scale: 1,
@@ -363,9 +358,10 @@ describe("协议：场景（镜像的那份对象数据）", () => {
       height: 64,
       sprite: { column: 1, row: 0 },
       spriteGrid: { columns: 4, rows: 2 },
+      sortingOrder: 0,
     });
 
-    // v9 那样的整图引用：解析出来一个字节都没多（前端照旧铺满整张）
+    // v9 那样的整图引用：解析出来只多 v14 的 sortingOrder（前端照旧铺满整张）
     const plain = sceneSchema.parse({
       name: "s",
       objects: [spriteObjectWith({ id: "project:P/Assets/images/sheet.png", width: 64, height: 64 })],
@@ -374,6 +370,7 @@ describe("协议：场景（镜像的那份对象数据）", () => {
       id: "project:P/Assets/images/sheet.png",
       width: 64,
       height: 64,
+      sortingOrder: 0,
     });
   });
 

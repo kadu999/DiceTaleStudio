@@ -237,7 +237,6 @@ describe("合成盘点 D：现行版本（v24）无组件对象 = 不完整文�
       name: id,
       kind,
       active: true,
-      sortingOrder: 0,
       locked: false,
       position: { x: 0, y: 0 },
       rotation: 0,

@@ -140,8 +140,14 @@ class MockClient {
       const position = object.position === null ? "(未落位)" : `(${object.position.x}, ${object.position.y})`;
       // 组件名（v9 起对象特性住在组件里）：先列出来，再补几个重点组件的关键字段
       const components = object.components.map((item) => item.type).join("+") || "(无组件)";
-      const image = componentDataOf<{ id: string }>(object, COMPONENT_TYPE.image);
-      const map = componentDataOf<{ grid?: { width: number; height: number } }>(object, COMPONENT_TYPE.map);
+      const image = componentDataOf<{ id: string; sortingOrder?: number }>(object, COMPONENT_TYPE.image);
+      const sprite = componentDataOf<{ id: string; sortingOrder?: number }>(object, COMPONENT_TYPE.sprite);
+      const map = componentDataOf<{ grid?: { width: number; height: number }; sortingOrder?: number }>(
+        object,
+        COMPONENT_TYPE.map,
+      );
+      // 显示顺序（v14 起）住在渲染组件里：地图 → 图片层 → 精灵层 → 缺省 0
+      const order = map?.sortingOrder ?? image?.sortingOrder ?? sprite?.sortingOrder ?? 0;
       const sound = componentDataOf<{ picked?: string; layer: string }>(object, COMPONENT_TYPE.sound);
       const video = componentDataOf<{
         picked?: string;
@@ -152,7 +158,7 @@ class MockClient {
 
       console.log(
         `[mock]   ${object.id}  kind=${object.kind}  active=${object.active}  pos=${position}  ` +
-          `scale=${object.scale}  order=${object.sortingOrder}  components=${components}` +
+          `scale=${object.scale}  order=${order}  components=${components}` +
           (image === undefined ? "" : `  image=${image.id}`) +
           (map?.grid === undefined ? "" : `  grid=${map.grid.width}×${map.grid.height}`) +
           (sound === undefined ? "" : `  sound=${sound.picked ?? "(未选)"}@${sound.layer}`) +

@@ -117,10 +117,12 @@
 `SceneDoc = { name, objects: SceneObjectDoc[] }`，字段口径取自 `@dts/document`（协议包内复刻只读 schema，
 不反向依赖文档包）。
 
-**v9 起对象是「实体 + 组件」**：`id` / `name` / `kind` / `active` / `locked` / `sortingOrder` /
+**v9 起对象是「实体 + 组件」**：`id` / `name` / `kind` / `active` / `locked` /
 `position` / `rotation` / `scale`（+ 可选 `scaleX` / `scaleY`）留在对象上，**其余全在 `components[]` 里**
 （`{ id, type, data }`）。`kind` 只是**创建原型**标签，**行为看组件**：
 前端按 `type` 分派，不认识的类型安静忽略即可（数据留在镜像里）。
+**显示顺序 `sortingOrder`（v14 起）住在渲染组件的 data 里**（`GridMap` / 图片层），
+对象上不再有这一项；客户端解析时取出来填进 `MirrorObject.sortingOrder` 供表现层使用。
 
 | 组件 `type` | 前端行为 |
 |---|---|
@@ -182,7 +184,7 @@ v12 起叫 `Image`）——**只显示整张图**，与精灵的差别只有「�
 | `active` | 是否显示（编辑器那个勾选框一改，前端就出现 / 消失） |
 | `scale` | 面片尺寸 = 声明尺寸（`image` / `map.image`）× `scale` |
 | `rotation` | 绕 +Y（按 `-rotation`） |
-| `sortingOrder` | `MeshRenderer.sortingOrder` + 按序微小离地（避免共面闪烁） |
+| `sortingOrder` | v14 起在渲染组件的 data 里（`GridMap` / 图片层）；客户端解析时填进 `MirrorObject.sortingOrder`，再映射到 `MeshRenderer.sortingOrder` + 按序微小离地（避免共面闪烁） |
 | `GridMap.data.image` | 资源逻辑 ID → `GET /api/resources/raw?id=…` 取纹理；没图时按 `kind` 上色占位 |
 | `GridMap.data.cells` | RLE（`[[掩码, 格数], …]`）——掩码值与 `@dts/grid` 的 `CellMask` / Unity 的 `GridCellType` 完全一致 |
 | `GridMap.data.fog` | **战争雾**：`enabled` = **总开关**（缺省算开），`regions` = 哪几个「区域位」算雾区。**只有 `enabled && regions.length > 0` 前端才建那一层雾**；**哪里被揭示了不在数据里**——那是运行态，由 `erase_mask` / `reveal_fog_region` 驱动，不写文档、也不随 `scene_sync` 回来 |

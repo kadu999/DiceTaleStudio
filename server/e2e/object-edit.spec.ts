@@ -476,14 +476,14 @@ test.describe("创建与编辑场景对象", () => {
       await seedProjectDoc(request, project, [
         sceneDoc(SCENE_A, [
           withComponent(
-            gameObjectDoc("大红", "Sprite", { x: 0, y: 0 }, { sortingOrder: 5 }),
+            gameObjectDoc("大红", "Sprite", { x: 0, y: 0 }),
             COMPONENT.spriteLayer,
-            { id: bigId, width: 120, height: 120 },
+            { id: bigId, width: 120, height: 120, sortingOrder: 5 },
           ),
           withComponent(
-            gameObjectDoc("小蓝", "Sprite", { x: 0, y: 0 }, { sortingOrder: 1 }),
+            gameObjectDoc("小蓝", "Sprite", { x: 0, y: 0 }),
             COMPONENT.spriteLayer,
-            { id: smallId, width: 120, height: 120 },
+            { id: smallId, width: 120, height: 120, sortingOrder: 1 },
           ),
         ]),
       ]);
@@ -1009,14 +1009,14 @@ test.describe("创建与编辑场景对象", () => {
       await seedProjectDoc(request, project, [
         sceneDoc(SCENE_A, [
           withComponent(
-            gameObjectDoc("绿块", "Sprite", { x: 0, y: 0 }, { sortingOrder: 5 }),
+            gameObjectDoc("绿块", "Sprite", { x: 0, y: 0 }),
             COMPONENT.spriteLayer,
-            { id: greenId, width: 120, height: 120 },
+            { id: greenId, width: 120, height: 120, sortingOrder: 5 },
           ),
           withComponent(
-            gameObjectDoc("蓝块", "Sprite", { x: 0, y: 0 }, { sortingOrder: 1 }),
+            gameObjectDoc("蓝块", "Sprite", { x: 0, y: 0 }),
             COMPONENT.spriteLayer,
-            { id: blueId, width: 120, height: 120 },
+            { id: blueId, width: 120, height: 120, sortingOrder: 1 },
           ),
         ]),
       ]);

@@ -33,7 +33,14 @@ namespace DiceTale
         /// <summary>是否激活：不激活的对象前端也不显示（与编辑器那个勾选框同一件事）。</summary>
         public bool active = true;
 
-        /// <summary>显示顺序：大的画在前面（映射到 MeshRenderer.sortingOrder）。</summary>
+        /// <summary>
+        /// 显示顺序：大的画在前面（映射到 MeshRenderer.sortingOrder）。
+        ///
+        /// v14 起它不再挂在对象上，而是住在**渲染组件**的数据里（`GridMap` / 图片层），
+        /// 由 <see cref="SceneParser"/> 解析时取出来填在这里——对表现层（
+        /// <see cref="SceneObjectView"/> / <see cref="FogOfWar"/> / <see cref="VideoOverlay"/>）
+        /// 是同一个便利字段，一行都不用改；没有渲染层的对象是 0。
+        /// </summary>
         public int sortingOrder;
 
         /// <summary>世界里没落位的对象（`position: null`）不建视图。</summary>

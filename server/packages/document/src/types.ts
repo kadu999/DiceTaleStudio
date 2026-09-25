@@ -30,8 +30,9 @@ import type { ObjectKind } from "./presets";
  * - 网格格子以 RLE 存储，`rowOrder: 'bottom-up'` 显式声明「第 0 行 = 图片最下面一行」，
  *   也就是世界 y 最小的一行——与世界坐标同向，不需要翻转；
  * - 图片/音频/视频用**资源逻辑 ID**引用，不存路径；
- * - 每个对象都带 `active`（是否显示，对齐 Unity 的激活勾选框）与 `sortingOrder`
- *   （谁画在前面；大的盖住小的，相同则按场景里的先后顺序）。
+ * - 每个对象都带 `active`（是否显示，对齐 Unity 的激活勾选框）；`sortingOrder`
+ *   （谁画在前面；大的盖住小的，相同则按场景里的先后顺序）自 v26 起住在**渲染组件**里
+ *   （`GridMap` 的 data / 图片层的 data），**没有渲染层的对象没有这个参数**。
  */
 
 /**
@@ -101,8 +102,14 @@ import type { ObjectKind } from "./presets";
  * `{ enabled, regions }`），由 `migrateMapFogToComponent` 搬一次。属性面板从此
  * 「一组 = 一个组件」；`FogOfWar` 从属 `GridMap`（雾区引用它的格子区域位），只挂在
  * 地图对象上。协议侧新增组件名 `FogOfWar`（v13 起），老前端不认会忽略雾层。
+ *
+ * v26（2026-09-26）：**显示顺序搬进渲染组件**。对象级 `sortingOrder` 删除——
+ * 网格地图进 `MapDataDoc`（`GridMap` 组件的 data）、图片层（`ImageLayer` / `SpriteLayer`）
+ * 进各自的 data（形状 = `ImageRef & { sortingOrder }`）；动作对象（`PlaySound` / `Teleport`）
+ * 与没有渲染层的实体**不再有这个参数**。由 `migrateSortingOrderToRenderComponents` 搬一次。
+ * 协议侧同步升到 v14。
  */
-export const DOCUMENT_FORMAT_VERSION = 25;
+export const DOCUMENT_FORMAT_VERSION = 26;
 
 /** 网格行序：`bottom-up` 表示 cells 第 0 行是图片最下面一行（与 Unity GridMap 一致）。 */
 export type RowOrder = "bottom-up";
@@ -226,7 +233,20 @@ export interface MapDataDoc {
   readonly grid: GridSpec;
   readonly rowOrder: RowOrder;
   readonly cells: CellRuns;
+  /**
+   * 显示顺序（v26 起从对象级搬进渲染组件）：**大的画在前面**，相同则按场景里的先后顺序。
+   * 地图通常给一个很小的值（甚至负数）当底图。
+   */
+  readonly sortingOrder: number;
 }
+
+/**
+ * 图片层组件的数据（`ImageLayer` / `SpriteLayer` 共用，v26 起）：一份图片引用 + 显示顺序。
+ *
+ * 显示顺序**不塞进 `ImageRef`**：那个形状是「只存引用」的共享形状，`GridMap.image`
+ * 也是它，污染不得。这里用交叉类型多挂一项，两类图片组件的 data 都长这样。
+ */
+export type ImageLayerDataDoc = ImageRef & { readonly sortingOrder: number };
 
 /**
  * 战争雾组件的数据（v25 前是 `MapDataDoc.fog`，形状原样搬来）：**总开关** +
@@ -412,12 +432,6 @@ export interface GameObjectDoc {
    * 它也不阻止**选中**与**删除**——锁是为了摆场景时别误拖底图，不是为了禁用它。
    */
   readonly locked: boolean;
-  /**
-   * 显示顺序：**大的画在前面**（后画 = 盖在上面），相同则按场景文件里的先后顺序。
-   *
-   * 与世界坐标无关，纯控制「谁挡住谁」；地图通常给一个很小的值（甚至负数）当底图。
-   */
-  readonly sortingOrder: number;
   /** 世界坐标位置（场景中心为原点，y 向上）；未放置时为 null。 */
   readonly position: WorldPosition | null;
   readonly rotation: number;

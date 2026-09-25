@@ -1,6 +1,5 @@
 import {
   DEFAULT_OBJECT_SCALE,
-  DEFAULT_SORTING_ORDER,
   MAP_DEFAULT_SORTING_ORDER,
   createId,
 } from "./commands";
@@ -62,15 +61,15 @@ export function createMapObject(input: {
     // 显式写出「整张图都是空格子」，而不是留空数组：
     // 校验时 runs 的展开格数必须等于 width*height，留空会被判为数据不完整。
     cells: { encoding: "rle", runs: [[0, input.grid.width * input.grid.height]] },
+    // 地图默认是「垫在所有东西下面」的那一层：显示顺序 v26 起住在渲染组件（GridMap）里
+    sortingOrder: MAP_DEFAULT_SORTING_ORDER,
   };
 
   return {
     id,
     name: input.name,
     kind: "Map",
-    // 地图默认是「垫在所有东西下面」的那一层，所以给一个负的显示顺序
     active: true,
-    sortingOrder: MAP_DEFAULT_SORTING_ORDER,
     position: input.position ?? { x: 0, y: 0 },
     rotation: 0,
     scale: DEFAULT_OBJECT_SCALE,
@@ -107,7 +106,6 @@ export function createSoundObject(input: {
     name: input.name,
     kind: "PlaySound",
     active: true,
-    sortingOrder: DEFAULT_SORTING_ORDER,
     position: input.position ?? null,
     rotation: 0,
     scale: DEFAULT_OBJECT_SCALE,
@@ -149,7 +147,6 @@ export function createTeleportObject(input: {
     name: input.name,
     kind: "Teleport",
     active: true,
-    sortingOrder: DEFAULT_SORTING_ORDER,
     position: input.position ?? null,
     rotation: 0,
     scale: DEFAULT_OBJECT_SCALE,

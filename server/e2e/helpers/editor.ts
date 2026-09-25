@@ -23,7 +23,7 @@ export type LeftTab = "assets" | "hierarchy";
  * 要有意制造「旧版本文件」时别用它：自己写那个版本号（`formatVersion: 4` 之类），
  * 并预期编辑器会把它升上来回写一次。
  */
-export const CURRENT_SCENE_FORMAT_VERSION = 25;
+export const CURRENT_SCENE_FORMAT_VERSION = 26;
 
 /**
  * **承载对象特性的组件类型名**（v19 起特性住在 `object.components[]` 里）。
@@ -337,9 +337,12 @@ export function sceneDoc(
  * `kind` 缺省是**精灵** `Sprite`（`GameObject` 是抽象基类，不落进文档）。
  *
  * `position` 是**世界坐标**（场景中心为原点，x 向右、y 向上，单位像素）；不传即未放置。
- * `active` / `sortingOrder` 是 v7 起、`scale` 是 v8 起、`locked` 是 v9 起的显式字段；
+ * `active` 是 v7 起、`scale` 是 v8 起、`locked` 是 v9 起的显式字段；
  * 地图的战争雾（v25 起是独立的 `FogOfWar` 组件；v19–v24 在 `GridMap` 组件的 `fog` 里、
- * v10–v18 是 `map.fog`；v13 起里面还有总开关 `enabled`）默认「显示、顺序 0、缩放 1、不锁、没开战争雾」。
+ * v10–v18 是 `map.fog`；v13 起里面还有总开关 `enabled`）默认「显示、缩放 1、不锁、没开战争雾」。
+ *
+ * **显示顺序（`sortingOrder`）v26 起不在这里**：它住在渲染组件（`GridMap` / 图片层）的 data 里，
+ * 要设就写进 `withComponent` 的那份数据（`mapObjectDoc` 已带默认 `-10`）。
  *
  * 对象特性（地图 / 贴图 / 声音 / 传送 / 视频）**不在这里给参数**：v19 起它们是
  * `components[]` 里的实例，要带就自己用 `withComponent` 挂上去（见 `mapObjectDoc`）。
@@ -355,7 +358,6 @@ export function gameObjectDoc(
     name,
     kind,
     active: true,
-    sortingOrder: 0,
     position,
     rotation: 0,
     scale: 1,
@@ -382,7 +384,7 @@ export function mapObjectDoc(
   grid: { width: number; height: number } = { width: 64, height: 36 },
 ): Record<string, unknown> {
   return withComponent(
-    gameObjectDoc(name, "Map", { x: 0, y: 0 }, { sortingOrder: -10 }),
+    gameObjectDoc(name, "Map", { x: 0, y: 0 }),
     COMPONENT.gridMap,
     {
       image: {
@@ -393,6 +395,8 @@ export function mapObjectDoc(
       grid,
       rowOrder: "bottom-up",
       cells: { encoding: "rle", runs: [[0, grid.width * grid.height]] },
+      // 地图垫在最下面：显示顺序 v26 起住在 GridMap 的 data 里
+      sortingOrder: -10,
     },
   );
 }
@@ -587,9 +591,41 @@ export interface PersistedGameObject {
   readonly position: { x: number; y: number } | null;
   readonly active?: boolean;
   readonly locked?: boolean;
+  /**
+   * 显示顺序（**派生读口**，v26 起它住在渲染组件的 data 里，不在对象自己身上）。
+   * 由 `readGameObjects` 从 `components` 里算出来填上，调用方照旧读这一个字段。
+   */
   readonly sortingOrder?: number;
   readonly rotation?: number;
   readonly scale?: number;
+  readonly components?: ReadonlyArray<{
+    readonly type: string;
+    readonly data?: Record<string, unknown>;
+  }>;
+}
+
+/**
+ * 从原始组件里取显示顺序（与编辑器 `sortingOrderOf` 同一条路由）：地图 → 图片层 → 缺省 0。
+ *
+ * e2e 不引用内部包，所以这里复述一遍；路由口径变了这条也要跟着变（`readGameObjects` 是
+ * 唯一的落点，spec 只读派生出来的 `sortingOrder`）。
+ */
+export function persistedSortingOrder(object: PersistedGameObject): number {
+  const components = object.components ?? [];
+  const map = components.find((component) => component.type === COMPONENT.gridMap);
+  if (map !== undefined) {
+    return numberField(map.data, "sortingOrder");
+  }
+
+  const image = components.find(
+    (component) => component.type === COMPONENT.imageLayer || component.type === COMPONENT.spriteLayer,
+  );
+  return image === undefined ? 0 : numberField(image.data, "sortingOrder");
+}
+
+function numberField(data: Record<string, unknown> | undefined, key: string): number {
+  const value = data?.[key];
+  return typeof value === "number" ? value : 0;
 }
 
 /** 直接读一个场景文件里的对象（e2e 断言用）。 */
@@ -605,7 +641,11 @@ export async function readGameObjects(
   }
 
   const file = JSON.parse(await response.text()) as { objects?: PersistedGameObject[] };
-  return file.objects ?? [];
+  // 显示顺序从渲染组件里派生出来，spec 照旧读 `object.sortingOrder`
+  return (file.objects ?? []).map((object) => ({
+    ...object,
+    sortingOrder: persistedSortingOrder(object),
+  }));
 }
 
 /** 场景文件里地图对象的**网格数据**（标注用例断言落盘用）。 */

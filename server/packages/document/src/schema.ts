@@ -103,6 +103,18 @@ export const mapDataSchema = z.object({
   grid: gridSpecSchema,
   rowOrder: z.literal("bottom-up"),
   cells: cellRunsSchema,
+  // v26 起显示顺序住在这里（从对象级搬来）：老文件没有时按 0 补，与 v7 的 `sortingOrder` 同一个口径
+  sortingOrder: z.number().int().default(0),
+});
+
+/**
+ * 图片层组件（`ImageLayer` / `SpriteLayer`）的数据：一份图片引用 + v26 起的显示顺序。
+ *
+ * 刻意**不**把 `sortingOrder` 加进 `imageRefSchema`：那个形状是「只存引用」的共享形状，
+ * `GridMap.image` 也是它——多一项会污染地图贴图。这里扩一份只给图片层用。
+ */
+export const imageLayerDataSchema = imageRefSchema.extend({
+  sortingOrder: z.number().int().default(0),
 });
 
 /**
@@ -208,9 +220,10 @@ export const sceneComponentSchema = z.union([
   componentSchemaOf(DEFAULT_SLOT_COMPONENT.map, mapDataSchema),
   // 战争雾（v25 起）从 GridMap 拆出来：形状不变，还是 `mapFogSchema`
   componentSchemaOf(DEFAULT_SLOT_COMPONENT.fog, mapFogSchema),
-  // 对象自己显示的图有**两种承载**：贴图 `ImageLayer`、精灵 `SpriteLayer`（同一份 `imageRefSchema`）
-  componentSchemaOf(DEFAULT_SLOT_COMPONENT.image, imageRefSchema),
-  componentSchemaOf(SPRITE_COMPONENT, imageRefSchema),
+  // 对象自己显示的图有**两种承载**：贴图 `ImageLayer`、精灵 `SpriteLayer`（同一份数据；
+  // v26 起比 `imageRefSchema` 多一项显示顺序）
+  componentSchemaOf(DEFAULT_SLOT_COMPONENT.image, imageLayerDataSchema),
+  componentSchemaOf(SPRITE_COMPONENT, imageLayerDataSchema),
   componentSchemaOf(DEFAULT_SLOT_COMPONENT.sound, soundDataSchema),
   componentSchemaOf(DEFAULT_SLOT_COMPONENT.teleport, teleportDataSchema),
   componentSchemaOf(DEFAULT_SLOT_COMPONENT.video, videoDataSchema),
@@ -223,10 +236,11 @@ export const gameObjectSchema = z.object({
   // 取值就是 `OBJECT_KINDS`（**单一来源**：加/改一个对象类型只动 `presets.ts`）。
   // `GameObject` 是抽象基类，schema 照收（它是合法类型），但编辑器不会写它、老文件由迁移换掉
   kind: z.enum(OBJECT_KINDS),
-  // v7 起：是否显示 + 显示顺序。**给默认值**是有意的——v6 及更早的文件没有这两个字段，
-  // 「没写」只能是「显示、顺序 0」；写成必填会让所有旧文件直接读不开。
+  // v7 起：是否显示。**给默认值**是有意的——v6 及更早的文件没有这个字段，
+  // 「没写」只能是「显示」；写成必填会让所有旧文件直接读不开。
+  // （`sortingOrder` 也是 v7 加的，但 v26 起搬进了渲染组件，见 `mapDataSchema` /
+  // `imageLayerDataSchema` 与 `migrateSortingOrderToRenderComponents`。）
   active: z.boolean().default(true),
-  sortingOrder: z.number().int().default(0),
   // v9 起：是否锁定（不能被移动）。同样是「老文件里没有 = 默认值」，默认不锁
   locked: z.boolean().default(false),
   position: worldPositionSchema.nullable(),
@@ -430,15 +444,18 @@ export interface SceneSizeHint {
 }
 
 /**
- * 给对象补上 v7 的 `active` / `sortingOrder`、v8 的 `scale`、v9 的 `locked`，
+ * 给对象补上 v7 的 `active`、v8 的 `scale`、v9 的 `locked`，
  * 并给**没有位置的地图**补上世界原点。
  *
  * - 地图是摆在世界里的对象，必须有位置才能渲染（`position: null` 的地图没有地方可画）。
  *   旧文件里确实可能是 `null`（v1→v2 升级时造的地图对象、或手写文件），补成 `(0, 0)`
  *   正好是它以前被隐式绘制的那个位置（世界原点为中心），画面不变。
- * - `active` / `sortingOrder` / `scale` / `locked` 是后来新增的**显式**字段：老文件里没有，
- *   语义只能是「显示、顺序 0、缩放 1、不锁」。补进内存后要求调用方回写一次，
+ * - `active` / `scale` / `locked` 是后来新增的**显式**字段：老文件里没有，
+ *   语义只能是「显示、缩放 1、不锁」。补进内存后要求调用方回写一次，
  *   否则会出现「内存里已补全、磁盘上还是缺字段」的长期不一致。
+ * - `sortingOrder` 自 v26 起**不在这里补**：它搬进了渲染组件（缺渲染层的对象本就不该有），
+ *   由 `migrateSortingOrderToRenderComponents` 从对象级搬到组件、组件里缺项由 schema 的
+ *   默认值补 0。
  * - v11 的 `scaleX` / `scaleY` **刻意不在这里补**：它们是**可选**的，「没写」本身就是合法
  *   且有意义的（= 用等比 `scale`）。补成 1 会把等比对象悄悄变成非等比，那才是改坏数据。
  *
@@ -459,11 +476,6 @@ function withFilledObjectFields(raw: Record<string, unknown>): {
     let filled = object;
     if (typeof filled.active !== "boolean") {
       filled = { ...filled, active: true };
-      changed = true;
-    }
-
-    if (typeof filled.sortingOrder !== "number") {
-      filled = { ...filled, sortingOrder: 0 };
       changed = true;
     }
 
@@ -1168,6 +1180,69 @@ function migrateMapFogToComponent(raw: Record<string, unknown>): {
 }
 
 /**
+ * v25 → v26：把**对象级** `sortingOrder` 搬进渲染组件。
+ *
+ * 「显示顺序」只对**会渲染**的对象有意义，所以 v26 起它住在渲染组件的 data 里：
+ * - 有 `GridMap` 对象 → 进地图数据；否则有图片层（`ImageLayer` / `SpriteLayer`）→ 进那一份；
+ * - 都没有（动作对象 `PlaySound` / `Teleport`、还没挑图的空实体）→ **丢弃**：
+ *   它们不渲染，旧值留下也没有任何消费者。
+ *
+ * 路由**先地图、后图片层**（对齐「地图的贴图住在 GridMap 里」那条口径）；组件实例的
+ * `data` 原样展开再补一项，不动其余字段。
+ *
+ * 幂等：搬过的对象不再有对象级 `sortingOrder`，这一趟什么都不做；组件里缺 `sortingOrder`
+ * 由 schema 的默认值补 0（老文件 `withFilledObjectFields` 也不再补对象级的那一项）。
+ */
+function migrateSortingOrderToRenderComponents(raw: Record<string, unknown>): {
+  readonly raw: Record<string, unknown>;
+  readonly changed: boolean;
+} {
+  const objects = Array.isArray(raw.objects) ? raw.objects : [];
+  let changed = false;
+
+  const next = objects.map((object) => {
+    if (!isRecord(object) || typeof object.sortingOrder !== "number") {
+      return object;
+    }
+
+    changed = true;
+    const { sortingOrder, ...rest } = object;
+    const components = Array.isArray(rest.components) ? rest.components : [];
+
+    // 先找地图组件，再退回图片层组件（两种图片组件共用一个槽位，形状相同）
+    const mapIndex = components.findIndex(
+      (component) => isRecord(component) && component.type === DEFAULT_SLOT_COMPONENT.map,
+    );
+    const targetIndex =
+      mapIndex >= 0
+        ? mapIndex
+        : components.findIndex(
+            (component) =>
+              isRecord(component) &&
+              (component.type === DEFAULT_SLOT_COMPONENT.image ||
+                component.type === SPRITE_COMPONENT),
+          );
+
+    if (targetIndex < 0) {
+      // 没有渲染组件：这个参数没有意义，随对象级字段一起丢弃
+      return { ...rest, components };
+    }
+
+    const target = components[targetIndex];
+    if (!isRecord(target)) {
+      return { ...rest, components };
+    }
+
+    const data = isRecord(target.data) ? target.data : {};
+    const nextComponents = [...components];
+    nextComponents[targetIndex] = { ...target, data: { ...data, sortingOrder } };
+    return { ...rest, components: nextComponents };
+  });
+
+  return changed ? { raw: { ...raw, objects: next }, changed } : { raw, changed };
+}
+
+/**
  * 读一个（还没过 schema 的）对象的 `kind`；认不出来时按**精灵** `Sprite` 算
  * （`MirrorObject` 同一个兜底）。
  *
@@ -1371,6 +1446,9 @@ export function parseSceneFile(raw: unknown, size?: SceneSizeHint): SceneFileLoa
     // 必须排在 `features` 后面：只有 v19 迁移把地图数据搬进 `GridMap` 组件之后，
     // `fog` 才住在组件 data 里，这一趟才找得到它
     const fogSplit = migrateMapFogToComponent(features.raw);
+    // v26：显示顺序从对象级搬进渲染组件（GridMap / 图片层）。必须排在 `features` 之后：
+    // 只有对象特性搬进组件之后，才找得到承载显示顺序的那个渲染组件
+    const sorting = migrateSortingOrderToRenderComponents(fogSplit.raw);
     // v13：战争雾的总开关（`fog.enabled`）**不用单独迁移**——schema 给它默认值 `true`
     // （v10–v12 的文件里「有 fog」就等于「开着」），而版本号一升就会回写一次，
     // 于是磁盘上的文件重新变得自描述。
@@ -1381,8 +1459,10 @@ export function parseSceneFile(raw: unknown, size?: SceneSizeHint): SceneFileLoa
     // v22：kind 改名（`Texture` → `Image`、`SceneObject` → `Sprite`）已在上面的 `kinds` 那一趟做完。
     // v25：战争雾从 `GridMap` 拆成独立的 `FogOfWar` 组件，已在上面的 `fogSplit` 那一趟做完
     // （排在 `features` 后面：先 v19 搬组件、再拆雾）。
+    // v26：显示顺序从对象级搬进渲染组件，已在上面的 `sorting` 那一趟做完
+    // （同样排在 `features` 后面：先搬组件，才找得到承载它的渲染组件）。
     // 读出来的文档一律是当前版本（v6 起网格里不再存 `cellSize`，顺手被 schema 丢掉）
-    normalized = { ...fogSplit.raw, formatVersion: DOCUMENT_FORMAT_VERSION };
+    normalized = { ...sorting.raw, formatVersion: DOCUMENT_FORMAT_VERSION };
     needsRewrite =
       version < DOCUMENT_FORMAT_VERSION ||
       filled.changed ||
@@ -1391,7 +1471,8 @@ export function parseSceneFile(raw: unknown, size?: SceneSizeHint): SceneFileLoa
       kinds.changed ||
       renamed.changed ||
       features.changed ||
-      fogSplit.changed;
+      fogSplit.changed ||
+      sorting.changed;
   }
 
   const result = sceneFileSchema.safeParse(normalized);

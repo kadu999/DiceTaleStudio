@@ -348,6 +348,10 @@ Unity MCP（`MCP for Unity` v10.1.0，`http://127.0.0.1:8080/mcp`）接上了 Un
 所以刻意留在手写路径上，理由逐条列在 `object-spec.ts` 的表里。**#8 的价值因此是「下一个普通标量
 字段只改一处」，而不是「把 7 个字段都搬过来」**——这一点我在动手前低估了。
 
+> 注（2026-09-26）：v26 起显示顺序搬进了渲染组件（`GridMap` / 图片层的 data），
+> `OBJECT_SPEC` 随之清空、`setObjectSortingOrder` 换成 `setRenderSortingOrder`；
+> 本节其余结论（「只有排序曾是无专属语义的标量」）仍然成立。
+
 ## #5 死机制：已清
 
 `ComponentTypeDef.fields`（6 个组件全是 `[]`）与 `defaultComponentData` **删掉**，字段的归属地

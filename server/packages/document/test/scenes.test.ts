@@ -69,7 +69,6 @@ describe("场景内容命令", () => {
         name: "木门",
         kind: "Sprite",
         active: true,
-        sortingOrder: 0,
         position: { x: -288, y: 108 },
         rotation: 0,
         scale: 1,

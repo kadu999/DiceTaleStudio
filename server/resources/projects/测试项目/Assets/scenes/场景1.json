@@ -1,12 +1,11 @@
 {
-  "formatVersion": 25,
+  "formatVersion": 26,
   "objects": [
     {
       "id": "map_mu6uln3x1l7fg",
       "name": "地图",
       "kind": "Map",
       "active": true,
-      "sortingOrder": -1,
       "locked": true,
       "position": {
         "x": 0,
@@ -322,7 +321,8 @@
                   20
                 ]
               ]
-            }
+            },
+            "sortingOrder": -1
           }
         },
         {
@@ -358,7 +358,6 @@
       "name": "精灵",
       "kind": "Sprite",
       "active": true,
-      "sortingOrder": 1,
       "locked": false,
       "position": {
         "x": -596.029508686826,
@@ -378,7 +377,8 @@
             "sprite": {
               "column": 0,
               "row": 0
-            }
+            },
+            "sortingOrder": 1
           }
         }
       ]
@@ -388,7 +388,6 @@
       "name": "播放声音",
       "kind": "PlaySound",
       "active": true,
-      "sortingOrder": 0,
       "locked": false,
       "position": {
         "x": -460.44229870411004,
@@ -415,7 +414,6 @@
       "name": "传送阵",
       "kind": "Teleport",
       "active": true,
-      "sortingOrder": 0,
       "locked": false,
       "position": {
         "x": 530.2365709136379,
@@ -442,7 +440,6 @@
       "name": "贴图",
       "kind": "Image",
       "active": true,
-      "sortingOrder": 1,
       "locked": true,
       "position": {
         "x": -108.74,
@@ -458,7 +455,8 @@
             "id": "2517ac5245edd0d02126f6307900717a",
             "guid": "2517ac5245edd0d02126f6307900717a",
             "width": 256,
-            "height": 256
+            "height": 256,
+            "sortingOrder": 1
           }
         }
       ]

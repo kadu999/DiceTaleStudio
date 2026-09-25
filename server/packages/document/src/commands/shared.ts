@@ -6,13 +6,21 @@ import type { SceneDoc, GameObjectDoc } from "../types";
 let idCounter = 0;
 
 /**
- * 新建对象的默认显示顺序。
+ * 新建对象的默认显示顺序（v26 起它住在渲染组件里，这里只剩缺省语义）。
  *
  * 普通对象（精灵 / 玩家 / 道具 / 事件）是 `0`；地图当底图，默认排在下面（`-10`）。
  * 谁盖住谁是**画布上的事**，这两个默认值只是让「新场景一建出来就是对的」。
+ * **没有渲染层的对象不写它**（动作对象 / 还没挑图的实体本就不该有这个参数）。
  */
 export const DEFAULT_SORTING_ORDER = 0;
 export const MAP_DEFAULT_SORTING_ORDER = -10;
+
+/**
+ * 显示顺序的取值范围：足够表达「垫底 / 顶层」，又不至于让界面上的数字失控。
+ *
+ * 写入一律取整 + 夹在 `±SORTING_ORDER_LIMIT`（`setRenderSortingOrder` 唯一的写入口径）。
+ */
+export const SORTING_ORDER_LIMIT = 9999;
 
 /**
  * 缩放的取值范围与默认值**住在 `scale.ts`**（那里还管着等比与单轴的换算关系），

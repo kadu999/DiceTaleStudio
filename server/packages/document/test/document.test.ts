@@ -28,7 +28,7 @@ import {
   setObjectPosition,
   setObjectRotation,
   setObjectScale,
-  setObjectSortingOrder,
+  setRenderSortingOrder,
 } from "../src/commands";
 import {
   componentOf,
@@ -39,6 +39,7 @@ import {
   objectImage,
   objectImageSlot,
   objectSupportsSpriteSheet,
+  sortingOrderOf,
   supportsObjectComponent,
   videoDataOf,
   withFeature,
@@ -94,7 +95,8 @@ function mutate<T>(value: T, recipe: (draft: Draft<T>) => void): T {
 }
 
 /**
- * 场景里一个普通对象的完整形状（`active` / `sortingOrder` 是 v7 起的显式字段）。
+ * 场景里一个普通对象的完整形状（`active` 是 v7 起的显式字段；`sortingOrder` v26 起
+ * 住在渲染组件里，这里没有渲染组件的对象也就没有它）。
  *
  * 用例里只关心其中一两个字段，缺的字段用这里的默认值补上——手写整个对象会在
  * 每次加字段时把所有用例都拖下水。
@@ -105,7 +107,6 @@ function plainObject(id: string, patch: Partial<GameObjectDoc> = {}): GameObject
     name: id,
     kind: "Sprite",
     active: true,
-    sortingOrder: 0,
     position: null,
     rotation: 0,
     scale: 1,
@@ -244,33 +245,50 @@ describe("对象命令（都在场景上操作）", () => {
     });
   });
 
-  it("显示顺序：大的画在前面，取整并夹在范围内", () => {
-    const scene = withObject(makeScene(), "door");
+  it("显示顺序：大的画在前面，取整并夹在范围内（v26 起住在渲染组件里）", () => {
+    const scene = withMapObject(makeScene(), "Map001");
+    const start = mapDataOf(scene.objects[0]!)?.sortingOrder ?? 0;
 
     const sorted = mutate(scene, (draft) => {
-      expect(setObjectSortingOrder(draft, "door", 12.6)).toBe(true);
+      expect(setRenderSortingOrder(draft, "map-1", 12.6)).toBe(true);
     });
-    expect(sorted.objects[0]?.sortingOrder).toBe(13);
+    expect(mapDataOf(sorted.objects[0]!)?.sortingOrder).toBe(13);
 
     // 夹取：顺序只是个层号，不接受失控的大数
     const clamped = mutate(scene, (draft) => {
-      setObjectSortingOrder(draft, "door", 1e9);
+      setRenderSortingOrder(draft, "map-1", 1e9);
     });
-    expect(clamped.objects[0]?.sortingOrder).toBe(9999);
+    expect(mapDataOf(clamped.objects[0]!)?.sortingOrder).toBe(9999);
 
     // NaN / Infinity 直接拒绝，绝不写进文档
     mutate(scene, (draft) => {
-      expect(setObjectSortingOrder(draft, "door", Number.NaN)).toBe(false);
-      expect(setObjectSortingOrder(draft, "door", Number.POSITIVE_INFINITY)).toBe(false);
+      expect(setRenderSortingOrder(draft, "map-1", Number.NaN)).toBe(false);
+      expect(setRenderSortingOrder(draft, "map-1", Number.POSITIVE_INFINITY)).toBe(false);
     });
-    expect(scene.objects[0]?.sortingOrder).toBe(0);
+    expect(mapDataOf(scene.objects[0]!)?.sortingOrder).toBe(start);
   });
 
-  it("绘制顺序：按 sortingOrder 排，相同的保持文件里的先后，且不改动原数组", () => {
+  it("显示顺序：没有渲染层的对象没有这个参数（写入返回 false）", () => {
+    const scene = withObject(makeScene(), "door");
+    const next = mutate(scene, (draft) => {
+      expect(setRenderSortingOrder(draft, "door", 5)).toBe(false);
+    });
+    expect(sortingOrderOf(next.objects[0]!)).toBe(0);
+  });
+
+  it("绘制顺序：按显示顺序排（渲染组件里的 sortingOrder），相同的保持文件里的先后，且不改动原数组", () => {
+    const imageObject = (id: string, sortingOrder: number): GameObjectDoc =>
+      withFeature(plainObject(id), "SpriteLayer", {
+        id: `project:C/Assets/images/${id}.png`,
+        width: 10,
+        height: 10,
+        sortingOrder,
+      });
+
     const scene = mutate(makeScene(), (draft) => {
-      addObject(draft, plainObject("a", { sortingOrder: 5 }));
-      addObject(draft, plainObject("b", { sortingOrder: -1 }));
-      addObject(draft, plainObject("c", { sortingOrder: 5 }));
+      addObject(draft, imageObject("a", 5));
+      addObject(draft, imageObject("b", -1));
+      addObject(draft, imageObject("c", 5));
     });
 
     expect(objectsInDrawOrder(scene).map((object) => object.id)).toEqual(["b", "a", "c"]);
@@ -770,12 +788,12 @@ describe("对象命令（都在场景上操作）", () => {
     expect(findObject(scene, "sprite")?.components).toEqual([{
       id: "sprite__SpriteLayer",
       type: "SpriteLayer",
-      data: { ...IMAGE, sprite: { column: 2, row: 1 } },
+      data: { ...IMAGE, sprite: { column: 2, row: 1 }, sortingOrder: 0 },
     }]);
     expect(findObject(scene, "image")?.components).toEqual([{
       id: "image__ImageLayer",
       type: "ImageLayer",
-      data: IMAGE,
+      data: { ...IMAGE, sortingOrder: 0 },
     }]);
   });
 
@@ -1152,6 +1170,7 @@ describe("文档校验", () => {
       grid: { width: 14, height: 10 },
       rowOrder: "bottom-up",
       cells: { encoding: "rle", runs: [[0, 140]] },
+      sortingOrder: -10,
     });
     expect(object?.components.find((item) => item.type === "FutureComponent")).toEqual({
       id: "legacy-unknown",
@@ -1508,8 +1527,10 @@ describe("场景文件 schema", () => {
     expect(parsed.file.objects[0]?.position).toEqual({ x: 0, y: 0 });
   });
 
-  it("v6 场景文件：补上 active / sortingOrder 的默认值，并要求回写一次", () => {
-    // v6 的文件里没有这两个字段（它们是 v7 新增的），语义只能是「显示、顺序 0」
+  it("v6 场景文件：补上 active 的默认值，并要求回写一次（sortingOrder 已搬进渲染组件）", () => {
+    // v6 的文件里没有 `active`（它是 v7 新增的），语义只能是「显示」；
+    // `sortingOrder` 也是 v7 加的，但 v26 起它住在渲染组件里——这个对象没有渲染组件，
+    // 所以对象上不再有这一项
     const raw = {
       formatVersion: 6,
       objects: [
@@ -1527,7 +1548,7 @@ describe("场景文件 schema", () => {
     const parsed = parseSceneFile(raw);
     expect(parsed.needsRewrite).toBe(true);
     expect(parsed.file.objects[0]?.active).toBe(true);
-    expect(parsed.file.objects[0]?.sortingOrder).toBe(0);
+    expect(parsed.file.objects[0]).not.toHaveProperty("sortingOrder");
     // 缩放也是后来才有的字段，同样补成 1
     expect(parsed.file.objects[0]?.scale).toBe(1);
     // 别的字段一个都不能动
@@ -1672,9 +1693,9 @@ describe("场景文件 schema", () => {
     ).toHaveLength(1);
   });
 
-  it("当前版本：显式的 FogOfWar 组件原样读出来，不要求回写", () => {
+  it("v26：对象级 sortingOrder 搬进渲染组件（地图进 GridMap、精灵进图片层、无渲染层丢弃）", () => {
     const parsed = parseSceneFile({
-      formatVersion: DOCUMENT_FORMAT_VERSION,
+      formatVersion: 25,
       objects: [
         {
           id: "map-1",
@@ -1695,6 +1716,82 @@ describe("场景文件 schema", () => {
                 grid: GRID,
                 rowOrder: "bottom-up",
                 cells: { encoding: "rle", runs: [[0, GRID.width * GRID.height]] },
+              },
+            },
+          ],
+        },
+        {
+          id: "sprite-1",
+          name: "精灵",
+          kind: "Sprite",
+          active: true,
+          sortingOrder: 7,
+          locked: false,
+          position: { x: 0, y: 0 },
+          rotation: 0,
+          scale: 1,
+          components: [
+            {
+              id: "sprite-1__SpriteLayer",
+              type: "SpriteLayer",
+              data: { id: "project:C/Assets/images/a.png", width: 32, height: 32 },
+            },
+          ],
+        },
+        {
+          id: "sound-1",
+          name: "脚步",
+          kind: "PlaySound",
+          active: true,
+          sortingOrder: 99,
+          locked: false,
+          position: { x: 0, y: 0 },
+          rotation: 0,
+          scale: 1,
+          components: [
+            {
+              id: "sound-1__PlaySound",
+              type: "PlaySound",
+              data: { clips: [], layer: "sfx" },
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(parsed.needsRewrite).toBe(true);
+    expect(sortingOrderOf(parsed.file.objects[0]!)).toBe(-10);
+    expect(sortingOrderOf(parsed.file.objects[1]!)).toBe(7);
+    // 动作对象没有渲染层：参数被丢弃
+    expect(sortingOrderOf(parsed.file.objects[2]!)).toBe(0);
+    for (const object of parsed.file.objects) {
+      expect(object).not.toHaveProperty("sortingOrder");
+    }
+  });
+
+  it("当前版本：显式的 FogOfWar 组件原样读出来，不要求回写", () => {
+    const parsed = parseSceneFile({
+      formatVersion: DOCUMENT_FORMAT_VERSION,
+      objects: [
+        {
+          id: "map-1",
+          name: "地图",
+          kind: "Map",
+          active: true,
+          locked: false,
+          position: { x: 0, y: 0 },
+          rotation: 0,
+          scale: 1,
+          components: [
+            {
+              id: "map-1__GridMap",
+              type: "GridMap",
+              data: {
+                image: IMAGE,
+                grid: GRID,
+                rowOrder: "bottom-up",
+                cells: { encoding: "rle", runs: [[0, GRID.width * GRID.height]] },
+                sortingOrder: -10,
               },
               actions: [],
             },
@@ -1726,17 +1823,29 @@ describe("场景文件 schema", () => {
     expect(parsed.file.objects[0]?.locked).toBe(true);
   });
 
-  it("当前版本：显式的 active / sortingOrder 原样读出来，不要求回写", () => {
+  it("当前版本：显式的 active 与渲染组件里的 sortingOrder 原样读出来，不要求回写", () => {
     const scene = withMapObject(createEmptyScene("Map001"));
+    const object = scene.objects[0]!;
     const raw = {
       formatVersion: DOCUMENT_FORMAT_VERSION,
-      objects: [{ ...scene.objects[0], active: false, sortingOrder: 42, position: { x: 0, y: 0 } }],
+      objects: [
+        {
+          ...object,
+          active: false,
+          // v26 起显示顺序住在渲染组件里：改那个组件数据，而不是对象自己
+          components: object.components.map((component) =>
+            component.type === "GridMap"
+              ? { ...component, data: { ...component.data, sortingOrder: 42 } }
+              : component,
+          ),
+        },
+      ],
     };
 
     const parsed = parseSceneFile(raw);
     expect(parsed.needsRewrite).toBe(false);
     expect(parsed.file.objects[0]?.active).toBe(false);
-    expect(parsed.file.objects[0]?.sortingOrder).toBe(42);
+    expect(mapDataOf(parsed.file.objects[0]!)?.sortingOrder).toBe(42);
   });
 
   it("当前版本：没有位置的地图补成世界原点，并要求回写一次", () => {

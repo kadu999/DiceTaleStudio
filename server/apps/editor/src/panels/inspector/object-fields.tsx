@@ -10,6 +10,8 @@ import {
   normalizeDegrees,
   objectImageSlot,
   objectImage,
+  sortingOrderOf,
+  SORTING_ORDER_LIMIT,
   spriteSheetOf,
   supportsSpriteSheet,
   type GameObjectDoc,
@@ -216,6 +218,65 @@ export function TextureField({ object }: { readonly object: GameObjectDoc }): Re
       >
         {missingMapData ? "选择贴图并修复" : missingImageComponent ? "选择图片并添加" : "选择"}
       </button>
+    </FieldRow>
+  );
+}
+
+/**
+ * **显示顺序**（渲染层属性，v26 起住在渲染组件里）：大的画在前面（盖住小的）。
+ *
+ * 从 `sortingOrderOf` 读（地图取 `GridMap` 的 data、其余取图片层的 data），经 store 的
+ * `setRenderSortingOrder` 写回——那条命令按「先地图、后图片层」路由。这一行只出现在
+ * 三个渲染组（网格地图 / 图片层 / 精灵层）里：**没有渲染层的对象没有这个参数**。
+ *
+ * 提交规则与缩放 / 角度同一套：失焦 / 回车生效、Esc 还原、连续输入合并成一条撤销记录。
+ */
+export function SortingOrderField({ object }: { readonly object: GameObjectDoc }): React.JSX.Element {
+  const setRenderSortingOrder = useEditorStore((state) => state.setRenderSortingOrder);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const current = sortingOrderOf(object);
+  const [draft, setDraft] = useState(String(current));
+
+  useEffect(() => {
+    // 正在输入的框不被 store 回灌（否则提交后触发的同步会把刚敲的值冲掉）
+    if (document.activeElement !== inputRef.current) {
+      setDraft(String(current));
+    }
+  }, [object.id, current]);
+
+  const commit = (): void => {
+    const parsed = Number.parseInt(draft, 10);
+    const next = Number.isFinite(parsed) ? parsed : current;
+    setRenderSortingOrder(object.id, next);
+    // 提交后回到**文档里实际采用的值**（会被取整 / 夹取），否则框里留着用户敲的原始文本
+    setDraft(String(Math.min(SORTING_ORDER_LIMIT, Math.max(-SORTING_ORDER_LIMIT, Math.round(next)))));
+  };
+
+  return (
+    <FieldRow label="显示顺序">
+      <input
+        ref={inputRef}
+        value={draft}
+        data-testid="inspector-object-sorting"
+        aria-label="显示顺序"
+        inputMode="numeric"
+        type="number"
+        step="1"
+        min={-SORTING_ORDER_LIMIT}
+        max={SORTING_ORDER_LIMIT}
+        title="大的画在前面（盖住小的）；相同则按场景对象列表里的先后"
+        className="min-w-0 flex-1 rounded border border-[var(--color-editor-border)] bg-black/30 px-1 py-0.5 font-mono text-[11px] outline-none"
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            commit();
+            event.currentTarget.blur();
+          } else if (event.key === "Escape") {
+            setDraft(String(current));
+          }
+        }}
+      />
     </FieldRow>
   );
 }

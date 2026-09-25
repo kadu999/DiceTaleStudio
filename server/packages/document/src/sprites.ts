@@ -302,6 +302,9 @@ export function resolveSceneSprites(scene: SceneDoc, metas: AssetMetas): SceneDo
           return component;
         }
 
+        // 显示顺序住在图片层数据里（v26）：这里整份重写 data，必须带上它，否则推送一份
+        // 就把它抹成缺省 0（与 `setObjectImage` 的写洞同一类）。guid 不下发（载荷只有路径 ID）。
+        const sortingOrder = (component.data as { sortingOrder?: number }).sortingOrder;
         return {
           ...component,
           // 格子按解析结果写回（越界的已夹），切分一并带上；路径按索引里的当前值写、
@@ -312,6 +315,7 @@ export function resolveSceneSprites(scene: SceneDoc, metas: AssetMetas): SceneDo
             height: image.height,
             sprite: { column: sprite.column, row: sprite.row },
             spriteGrid: { columns: sprite.columns, rows: sprite.rows },
+            ...(sortingOrder === undefined ? {} : { sortingOrder }),
           },
         };
       }

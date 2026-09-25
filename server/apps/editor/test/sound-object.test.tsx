@@ -219,14 +219,14 @@ describe("属性面板：声音组", () => {
     expect(screen.queryByTestId("pick-texture")).toBeNull();
   });
 
-  it("基础组和实体一样：名称 / 类型 / 激活 / 锁定 / 显示顺序 / 世界坐标 / 缩放", () => {
+  it("基础组和实体一样：名称 / 类型 / 激活 / 锁定 / 世界坐标 / 缩放（没有渲染层就没有显示顺序）", () => {
     seedScene([sound([CLIP])], ["sound-1"]);
     render(<InspectorPanel />);
 
     expect(screen.getByTestId("inspector-object-name")).toBeDefined();
     expect(screen.getByTestId("inspector-object-active")).toBeDefined();
     expect(screen.getByTestId("inspector-object-locked")).toBeDefined();
-    expect(screen.getByTestId("inspector-object-sorting")).toBeDefined();
+    expect(screen.queryByTestId("inspector-object-sorting")).toBeNull();
     expect(screen.getByTestId("inspector-object-x")).toBeDefined();
     expect(screen.getByTestId("inspector-object-y")).toBeDefined();
     expect(screen.getByTestId("inspector-object-scale")).toBeDefined();

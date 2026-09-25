@@ -87,8 +87,15 @@ import { z } from "zod";
  * 服务端与 Unity 客户端必须同批更新。**命令那一组仍然一个字节都没动**
  * （`erase_mask` / `reveal_fog_region` 照旧，只是 `reveal_fog_region` 的「区域是雾区」
  * 这一判据改从 `FogOfWar` 组件读）。
+ *
+ * v14（2026-09-26）：**显示顺序搬进渲染组件**（与文档格式 v26 同一批）。`gameObjectSchema`
+ * 上的 `sortingOrder` 删除，改挂在渲染组件的数据里——`GridMap` 的 data、以及图片层
+ * （`ImageLayer` / `SpriteLayer`）的 data 各多一项 `sortingOrder`（int，缺省 0）。
+ * 动作对象与没有渲染层的实体不再有这个字段。老前端（v13）按对象级读，拿到 undefined
+ * 会把它当 0、所有渲染层挤在同一层（不是崩，是遮挡顺序错乱），按同一条纪律 +1：
+ * 服务端与 Unity 客户端必须同批更新。**命令那一组仍然一个字节都没动。**
  */
-export const PROTOCOL_VERSION = 13;
+export const PROTOCOL_VERSION = 14;
 
 /** 未进入运行态时拒绝 `/client` 升级的 HTTP 状态与原因头。 */
 export const RUNTIME_INACTIVE_STATUS = 503;
@@ -158,13 +165,37 @@ export const imageRefSchema = z
   })
   // 格子必须落在切分范围内：编辑器推送前统一夹过（`clampSpriteCell`），所以越界只可能是
   // 坏载荷——这里明确拒掉，别让前端算出画到图外的 UV
-  .refine(
-    (image) =>
-      image.sprite === undefined ||
-      image.spriteGrid === undefined ||
-      (image.sprite.column < image.spriteGrid.columns && image.sprite.row < image.spriteGrid.rows),
-    { message: "子图超出切分范围" },
+  .refine(spriteFitsSheet, { message: "子图超出切分范围" });
+
+/**
+ * 图片层组件（`ImageLayer` / `SpriteLayer`）的数据（v14 起）：`imageRefSchema` + 显示顺序。
+ *
+ * 与文档格式 v26 镜像：显示顺序搬进渲染组件，**不塞进 `imageRefSchema`**（那个形状
+ * `GridMap.image` 也在用，多一项会污染地图贴图）。`default(0)` 让老编辑器少发这一项时
+ * 前端照常读到 0，与文档侧同一个口径。
+ */
+export const imageLayerDataSchema = z
+  .object({
+    id: z.string().min(1),
+    width: z.number().int().positive(),
+    height: z.number().int().positive(),
+    sprite: spriteRefSchema.optional(),
+    spriteGrid: spriteGridSchema.optional(),
+    sortingOrder: z.number().int().default(0),
+  })
+  .refine(spriteFitsSheet, { message: "子图超出切分范围" });
+
+/** 子图必须落在切分范围内（缺任一项都不判错，见 `imageRefSchema`）。 */
+function spriteFitsSheet(image: {
+  readonly sprite?: { readonly column: number; readonly row: number };
+  readonly spriteGrid?: { readonly columns: number; readonly rows: number };
+}): boolean {
+  return (
+    image.sprite === undefined ||
+    image.spriteGrid === undefined ||
+    (image.sprite.column < image.spriteGrid.columns && image.sprite.row < image.spriteGrid.rows)
   );
+}
 
 /** RLE 一段：`[掩码, 连续格数]`（掩码值与 `@dts/grid` 的 `CellMask` 一致）。 */
 export const rleRunSchema = z.tuple([z.number().int(), z.number().int()]);
@@ -200,6 +231,8 @@ export const mapDataSchema = z.object({
   grid: gridSpecSchema,
   rowOrder: z.literal("bottom-up"),
   cells: cellRunsSchema,
+  // v14 起显示顺序住在这里（从对象级搬来）：老编辑器少发时按 0 补
+  sortingOrder: z.number().int().default(0),
 });
 
 /**
@@ -358,9 +391,10 @@ export const sceneComponentSchema = z.union([
   featureComponentSchema(COMPONENT_TYPE.map, mapDataSchema),
   // 战争雾（v13 起）从 GridMap 拆出来：形状不变，还是 `mapFogSchema`
   featureComponentSchema(COMPONENT_TYPE.fog, mapFogSchema),
-  // 对象自己显示的图有两种承载（贴图 `ImageLayer` / 精灵 `SpriteLayer`），形状都是 `imageRefSchema`
-  featureComponentSchema(COMPONENT_TYPE.image, imageRefSchema),
-  featureComponentSchema(COMPONENT_TYPE.sprite, imageRefSchema),
+  // 对象自己显示的图有两种承载（贴图 `ImageLayer` / 精灵 `SpriteLayer`），数据都是
+  // `imageLayerDataSchema`（v14 起比 `imageRefSchema` 多一项显示顺序）
+  featureComponentSchema(COMPONENT_TYPE.image, imageLayerDataSchema),
+  featureComponentSchema(COMPONENT_TYPE.sprite, imageLayerDataSchema),
   featureComponentSchema(COMPONENT_TYPE.sound, soundDataSchema),
   featureComponentSchema(COMPONENT_TYPE.teleport, teleportDataSchema),
   featureComponentSchema(COMPONENT_TYPE.video, videoDataSchema),
@@ -383,7 +417,7 @@ export const gameObjectSchema = z.object({
   kind: z.string().min(1),
   active: z.boolean(),
   locked: z.boolean().optional(),
-  sortingOrder: z.number().int(),
+  // 显示顺序自 v14 起搬进渲染组件（`GridMap` / 图片层的 data），对象上不再有这一项
   position: worldPositionSchema.nullable(),
   rotation: z.number(),
   scale: z.number(),

@@ -12,6 +12,7 @@ import type {
   ComponentDoc,
   FogOfWarDataDoc,
   ImageRef,
+  ImageLayerDataDoc,
   MapDataDoc,
   GameObjectDoc,
   SoundDataDoc,
@@ -174,9 +175,49 @@ export function isFogEnabled(object: GameObjectDoc): boolean {
  *
  * 按 `image` 槽位直接找：精灵的图在 `SpriteLayer`、贴图的图在 `ImageLayer`，
  * 两种组件自报同一个 slot，这里一次查到——v22 层级移除前这要靠遍历两种组件名。
+ *
+ * v26 起图片层组件的数据多一项 `sortingOrder`（渲染属性）；这里是**图片引用**的读口，
+ * 只挑回 `ImageRef` 的那几个字段，**不把排序项漏给调用方**——要显示顺序请走
+ * `sortingOrderOf` / `imageLayerDataOf`。
  */
 export function imageOf(object: GameObjectDoc): ImageRef | undefined {
-  return componentDataOfSlot<ImageRef>(object, "image");
+  const data = componentDataOfSlot<ImageLayerDataDoc>(object, "image");
+  if (data === undefined) {
+    return undefined;
+  }
+
+  return {
+    id: data.id,
+    ...(data.guid === undefined ? {} : { guid: data.guid }),
+    width: data.width,
+    height: data.height,
+    ...(data.sprite === undefined ? {} : { sprite: data.sprite }),
+  };
+}
+
+/**
+ * 图片层组件的数据（`ImageLayer` / `SpriteLayer`，v26 起比 `imageOf` 多一项显示顺序）。
+ *
+ * 写路径要用它：`setObjectImage` / `setObjectSprite` 是**整份替换**组件 data，
+ * 只 `imageOf` 拿不到 `sortingOrder`，换图/换格子时会把显示顺序抹掉。
+ */
+export function imageLayerDataOf(object: GameObjectDoc): ImageLayerDataDoc | undefined {
+  return componentDataOfSlot<ImageLayerDataDoc>(object, "image");
+}
+
+/**
+ * 这个对象的**显示顺序**（渲染层属性，v26 起）。
+ *
+ * 全仓唯一读口：地图 → `GridMap.data.sortingOrder`；有图片层 → 它的 `sortingOrder`；
+ * 都没有（动作对象 / 还没挑图的实体）→ `0`。画布排序、mock 客户端与测试读回都走它。
+ */
+export function sortingOrderOf(object: GameObjectDoc): number {
+  const map = mapDataOf(object);
+  if (map !== undefined) {
+    return map.sortingOrder;
+  }
+
+  return imageLayerDataOf(object)?.sortingOrder ?? 0;
 }
 
 /**

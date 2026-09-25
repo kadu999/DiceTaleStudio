@@ -387,6 +387,8 @@ test.describe("场景数据", () => {
               grid: { width: 8, height: 6 },
               rowOrder: "bottom-up",
               cells: { encoding: "rle", runs: [[0, 8 * 6]] },
+              // v26：对象级 `sortingOrder: -10` 搬进 GridMap 的 data
+              sortingOrder: -10,
             },
           },
           playSound: {

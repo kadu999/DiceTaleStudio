@@ -4,6 +4,7 @@ import {
   DEFAULT_SLOT_COMPONENT,
   MAP_DEFAULT_SORTING_ORDER,
   createMapObject,
+  mapDataOf,
   videoDataOf,
   withFeature,
   type GameObjectDoc,
@@ -169,40 +170,34 @@ describe("描述符行：与手写版逐字等价", () => {
   });
 });
 
-/** 「基础」那一组上，`inspector-*` 的 testid 按 DOM 顺序。 */
-function basicRowTestIds(): string[] {
+/** 某一组里 `inspector-*` 的 testid，按 DOM 顺序。 */
+function groupRowTestIds(group: string): string[] {
   return Array.from(
-    document.querySelectorAll('[data-testid="object-properties"] [data-group="basic"] [data-testid]'),
+    document.querySelectorAll(
+      `[data-testid="object-properties"] [data-group="${group}"] [data-testid]`,
+    ),
   )
     .map((element) => element.getAttribute("data-testid"))
     .filter((id): id is string => id !== null && id.startsWith("inspector-"));
 }
 
 /**
- * **对象自身字段**那一路（`OBJECT_SPEC` + `objectFields`）。
+ * **显示顺序移入渲染组**（v26）。
  *
- * 与上面组件那一组是同一个渲染器、同一套约定；这里钉两件事：
- * 1. **迁移前后面板逐字一致**——testid、行名、以及它在「基础」组里的**位置**都没变
- *    （位置用 `inspector-*` 的顺序断言，因为 `sortingOrder` 是夹在激活 / 锁定与坐标之间的）；
- * 2. 改动走泛型入口 `setObjectField`，仍然是一次可撤销的文档编辑，说明取规格里的 `label`。
+ * 过去 `sortingOrder` 是「基础」组里按描述符自动出的行；现在它住在渲染组件里，出现在
+ * **网格地图 / 图片层 / 精灵层**那一组，由手写的 `SortingOrderField` 渲染、经 store 的
+ * `setRenderSortingOrder` 写回。这里钉三件事：
+ * 1. 「基础」组里不再有它，网格地图组里有；
+ * 2. 写回落进渲染组件数据（`mapDataOf`），并且是一次可撤销的文档编辑；
+ * 3. 越界仍按 `±9999` 夹取。
  */
-describe("描述符行：对象自身字段（显示顺序）", () => {
-  it("testid / 行名 / 在「基础」组里的位置与手写版逐字一致", () => {
+describe("显示顺序：渲染组里的手写行（v26）", () => {
+  it("「基础」组里没有它；网格地图组里有，读的是 GridMap 的 sortingOrder", () => {
     seedScene([mapWithVideo()], ["map-1"]);
     render(<InspectorPanel />);
 
-    // 顺序就是界面顺序：名称 → 激活 → 锁定 → 显示顺序 → 坐标 X/Y → 等比锁 → 缩放 → 角度
-    expect(basicRowTestIds()).toEqual([
-      "inspector-object-name",
-      "inspector-object-active",
-      "inspector-object-locked",
-      "inspector-object-sorting",
-      "inspector-object-x",
-      "inspector-object-y",
-      "inspector-object-scale-uniform",
-      "inspector-object-scale",
-      "inspector-object-rotation",
-    ]);
+    expect(groupRowTestIds("basic")).not.toContain("inspector-object-sorting");
+    expect(groupRowTestIds("map")).toContain("inspector-object-sorting");
 
     const sorting = screen.getByTestId("inspector-object-sorting") as HTMLInputElement;
     expect(sorting.value).toBe(String(MAP_DEFAULT_SORTING_ORDER));
@@ -211,7 +206,7 @@ describe("描述符行：对象自身字段（显示顺序）", () => {
     expect(screen.getByText("显示顺序")).toBeDefined();
   });
 
-  it("改动写进文档（走泛型入口）并可撤销，撤销说明取规格里的 label", () => {
+  it("改动写进地图数据（走 setRenderSortingOrder）并可撤销", () => {
     seedScene([mapWithVideo()], ["map-1"]);
     render(<InspectorPanel />);
 
@@ -219,17 +214,17 @@ describe("描述符行：对象自身字段（显示顺序）", () => {
     fireEvent.change(sorting, { target: { value: "9" } });
     fireEvent.blur(sorting);
 
-    expect(useEditorStore.getState().scenes[0]!.objects[0]!.sortingOrder).toBe(9);
-    // 与迁移前那条手写控件写的说明逐字一致（`修改` + 描述符的 label）
+    expect(mapDataOf(useEditorStore.getState().scenes[0]!.objects[0]!)?.sortingOrder).toBe(9);
+    // 与迁移前那条手写控件写的说明逐字一致
     expect(useEditorStore.getState().undoLabel).toBe("修改显示顺序");
 
     act(() => useEditorStore.getState().undo());
-    expect(useEditorStore.getState().scenes[0]!.objects[0]!.sortingOrder).toBe(
+    expect(mapDataOf(useEditorStore.getState().scenes[0]!.objects[0]!)?.sortingOrder).toBe(
       MAP_DEFAULT_SORTING_ORDER,
     );
   });
 
-  it("越界值被文档命令夹取（规格里的 min / max 说了算）", () => {
+  it("越界值被文档命令夹取（±9999）", () => {
     seedScene([mapWithVideo()], ["map-1"]);
     render(<InspectorPanel />);
 
@@ -237,6 +232,6 @@ describe("描述符行：对象自身字段（显示顺序）", () => {
     fireEvent.change(sorting, { target: { value: "99999" } });
     fireEvent.blur(sorting);
 
-    expect(useEditorStore.getState().scenes[0]!.objects[0]!.sortingOrder).toBe(9999);
+    expect(mapDataOf(useEditorStore.getState().scenes[0]!.objects[0]!)?.sortingOrder).toBe(9999);
   });
 });

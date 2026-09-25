@@ -535,7 +535,7 @@ describe("索引：guid 与路径两个方向", () => {
   });
 });
 
-describe("推送载荷：形状与 v22 及更早一模一样", () => {
+describe("推送载荷：形状与 v22 及更早只差 v14 的 sortingOrder", () => {
   it("只多 spriteGrid、只少 guid（路径换算由 sprites.ts 负责）", () => {
     const scene: SceneDoc = {
       ...createEmptyScene("Map001"),
@@ -556,7 +556,15 @@ describe("推送载荷：形状与 v22 及更早一模一样", () => {
     const payload = resolveSceneSprites(scene, createAssetMetas([{ id: IMAGE_ID, meta }]));
     const data = payload.objects[0]!.components[0]!.data as Record<string, unknown>;
 
-    expect(Object.keys(data).sort()).toEqual(["height", "id", "sprite", "spriteGrid", "width"]);
+    // v14 起图片层数据多一项 `sortingOrder`（渲染属性），推送时原样带上
+    expect(Object.keys(data).sort()).toEqual([
+      "height",
+      "id",
+      "sortingOrder",
+      "sprite",
+      "spriteGrid",
+      "width",
+    ]);
     expect(data.spriteGrid).toEqual(sheetOf(4, 2));
     expect(data).not.toHaveProperty("guid");
   });

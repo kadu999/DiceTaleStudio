@@ -71,8 +71,14 @@ namespace DiceTale
         /// 没有组件 = 没开雾；组件在且 `enabled` 缺省 / true = 开；`regions` 仍是那 8 个可绘制位。
         /// 老前端（v12）只认 `map.fog`，拆出去后它眼里「雾设置」整个消失（没开雾），
         /// 不是画面错是行为丢，所以照旧 +1。**命令那一组仍然一个字节都没动。**
+        ///
+        /// v14（2026-09-26）：**显示顺序搬进渲染组件**。对象级 `sortingOrder` 没了，改成
+        /// `GridMap` / 图片层（`ImageLayer` / `SpriteLayer`）的 data 各带一项 `sortingOrder`
+        /// （int，缺省 0）；动作对象与没有渲染层的实体不再有这个字段。
+        /// 老前端（v13）按对象级读，拿到 0 会让所有渲染层挤在同一层（不是崩，是遮挡顺序错乱），
+        /// 所以照旧 +1。**命令那一组仍然一个字节都没动。**
         /// </summary>
-        public const int Version = 13;
+        public const int Version = 14;
 
         /// <summary>对象特性组件的类型名（v9 起）。与服务端 `@dts/protocol` 的 `COMPONENT_TYPE` 逐字一致。</summary>
         public static class ComponentType

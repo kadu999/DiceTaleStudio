@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
-import { createEmptyScene, createMapObject, createGameObject, type GameObjectDoc } from "@dts/document";
+import { createEmptyScene, createMapObject, createGameObject, sortingOrderOf, type GameObjectDoc } from "@dts/document";
 import { HierarchyPanel } from "../src/panels/hierarchy/HierarchyPanel";
 import { checkerOriginOf } from "../src/panels/scene/ScenePanel";
 import { sceneHistory, useEditorStore } from "../src/state/editor-store";
@@ -82,7 +82,7 @@ describe("场景对象列表：激活按钮", () => {
     const object = useEditorStore.getState().scenes[0]?.objects[0];
     expect(object?.active).toBe(false);
     expect(object?.position).toEqual({ x: 12, y: -34 });
-    expect(object?.sortingOrder).toBe(0);
+    expect(sortingOrderOf(object!)).toBe(0);
   });
 });
 

@@ -385,7 +385,7 @@ describe("推送用的解析：切分随载荷走", () => {
       {
         id: "sprite-1__SpriteLayer",
         type: "SpriteLayer",
-        data: { ...IMAGE, sprite: { column: 1, row: 2 }, spriteGrid: sheetOf(4, 4) },
+        data: { ...IMAGE, sprite: { column: 1, row: 2 }, spriteGrid: sheetOf(4, 4), sortingOrder: 0 },
       },
     ]);
 
@@ -411,6 +411,7 @@ describe("推送用的解析：切分随载荷走", () => {
       height: 300,
       sprite: { column: 1, row: 0 },
       spriteGrid: sheetOf(2, 1),
+      sortingOrder: 0,
     });
     // 载荷只有路径 ID 这一种身份（协议与前端都不认 guid）
     expect(JSON.stringify(resolved)).not.toMatch(/guid/);

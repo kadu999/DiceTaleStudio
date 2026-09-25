@@ -544,8 +544,12 @@ export interface EditorStoreState {
   setObjectLocked(id: string, locked: boolean): boolean;
   /** 翻转锁定状态（列表里那把锁）。**目标值由 store 现算**。 */
   toggleObjectLocked(id: string): boolean;
-  /** 改对象的显示顺序（大的画在前面）；连续输入合并成一条撤销记录。 */
-  setObjectSortingOrder(id: string, sortingOrder: number): boolean;
+  /**
+   * 改对象的**显示顺序**（渲染层属性，v26 起住在渲染组件里）：大的画在前面，
+   * 按「先地图、后图片层」写入；**没有渲染层就返回 `false`**（没渲染层 = 没这个参数）。
+   * 连续输入合并成一条撤销记录。
+   */
+  setRenderSortingOrder(id: string, sortingOrder: number): boolean;
   /** 改对象的**缩放**（1 = 原始尺寸；夹在 0.01 ~ 100）；连续输入合并成一条撤销记录。 */
   setObjectScale(id: string, scale: number): boolean;
   /**
@@ -686,9 +690,10 @@ export interface EditorStoreState {
    * **泛型对象字段写入**：按对象字段规格（`@dts/document` 的 `OBJECT_SPEC`）改 `object` 自己的
    * 一个简单字段——与 `setComponentField` 的分工只有「写在哪」。返回 `false` 表示没有变更。
    *
-   * 目前规格里只有 `sortingOrder`（它另有一个说得出名字的入口 `setObjectSortingOrder`）；
-   * 其余基础字段各有一件专属语义（改名联动 / 运行日志 / 等比折叠 / 单位换算…），
-   * 继续走各自的专用 action，理由写在 `object-spec.ts` 的表里。
+   * v26 起 `OBJECT_SPEC` 是空的（显示顺序搬进了渲染组件，走 `setRenderSortingOrder`），
+   * 这条通道保留给**下一个**无专属语义的对象标量字段；其余基础字段各有一件专属语义
+   * （改名联动 / 运行日志 / 等比折叠 / 单位换算…），继续走各自的专用 action，
+   * 理由写在 `object-spec.ts` 的表里。
    */
   setObjectField(objectId: string, key: string, value: unknown): boolean;
 

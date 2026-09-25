@@ -225,7 +225,6 @@ describe("对象预设表（presets.ts）", () => {
       name: kind,
       kind,
       active: true,
-      sortingOrder: 0,
       locked: false,
       // 地图没有位置时迁移会补上世界原点（另一条既有规矩），这里给它一个位置，
       // 于是「要不要回写」这一个断言只反映 kind 改名这一件事

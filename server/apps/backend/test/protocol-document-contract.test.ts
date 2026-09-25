@@ -121,7 +121,6 @@ describe("契约：协议与文档的组件口径一致", () => {
         name: object.name,
         kind: object.kind,
         active: object.active,
-        sortingOrder: object.sortingOrder,
         position: object.position,
         rotation: object.rotation,
         scale: object.scale,
@@ -198,6 +197,7 @@ describe("契约：协议与文档的组件口径一致", () => {
       height: 64,
       sprite: { column: 1, row: 0 },
       spriteGrid: { columns: 4, rows: 2 },
+      sortingOrder: 0,
     });
   });
 

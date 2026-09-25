@@ -27,7 +27,6 @@ describe("对象类型表（object-kinds.ts）", () => {
       kind: "PlaySound",
       active: true,
       locked: false,
-      sortingOrder: 0,
       position: { x: 0, y: 0 },
       rotation: 0,
       scale: 1,

@@ -123,6 +123,32 @@ namespace DiceTale.Tests
         }
 
         [Test]
+        public void SortingOrderComesFromRenderComponents()
+        {
+            // v14 起显示顺序住在渲染组件的数据里（对象级那一项没了）：地图 → 图片层 → 精灵层，
+            // 没有渲染层的对象兜底 0
+            var map = ParseObject(
+                "{\"id\":\"map\",\"kind\":\"Map\",\"components\":[" +
+                "{\"type\":\"GridMap\",\"data\":{\"image\":{\"id\":\"map.png\",\"width\":64,\"height\":32}," +
+                "\"sortingOrder\":-10}}]}");
+            var image = ParseObject(
+                "{\"id\":\"image\",\"kind\":\"Image\",\"components\":[" +
+                "{\"type\":\"ImageLayer\",\"data\":{\"id\":\"a.png\",\"width\":32,\"height\":16,\"sortingOrder\":7}}]}");
+            var sprite = ParseObject(
+                "{\"id\":\"sprite\",\"kind\":\"Sprite\",\"components\":[" +
+                "{\"type\":\"SpriteLayer\",\"data\":{\"id\":\"atlas.png\",\"width\":64,\"height\":64," +
+                "\"sortingOrder\":3}}]}");
+            var action = ParseObject(
+                "{\"id\":\"sound\",\"kind\":\"PlaySound\",\"components\":[" +
+                "{\"type\":\"PlaySound\",\"data\":{\"clips\":[],\"layer\":\"sfx\"}}]}");
+
+            Assert.That(map.sortingOrder, Is.EqualTo(-10));
+            Assert.That(image.sortingOrder, Is.EqualTo(7));
+            Assert.That(sprite.sortingOrder, Is.EqualTo(3));
+            Assert.That(action.sortingOrder, Is.EqualTo(0));
+        }
+
+        [Test]
         public void GridMapViewAdoptsMapData()
         {
             // 组件袋：`GridMap` 协议组件的数据座位是 GridMapView，Adopt 收下的就是当前生效那份

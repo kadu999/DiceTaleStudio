@@ -61,7 +61,6 @@ namespace DiceTale
                 // 按精灵算（后台那边 `SceneObject` 是抽象基类、不落进数据，最接近的具体类型就是它）
                 kind = JsonParser.GetString(node, "kind") ?? "Sprite",
                 active = JsonParser.GetBool(node, "active", true),
-                sortingOrder = (int)JsonParser.GetNumber(node, "sortingOrder"),
                 rotation = (float)JsonParser.GetNumber(node, "rotation"),
                 scale = (float)JsonParser.GetNumber(node, "scale", 1),
             };
@@ -84,7 +83,35 @@ namespace DiceTale
             // 握手是版本化的（不一致直接 close 4002），所以这里收到的场景一定是 v9 形状，
             // 留一条「老字段也认」的旁路只会让「数据到底存在哪」又多一种答案。
             ParseComponents(obj, JsonParser.GetArray(node, "components"));
+            // 显示顺序（v14 起）住在渲染组件里，组件解析完再取
+            obj.sortingOrder = ResolveSortingOrder(obj);
             return obj;
+        }
+
+        /// <summary>
+        /// 取对象的**显示顺序**（v14 起它住在渲染组件的数据里，不再挂在对象上）。
+        ///
+        /// 路由与后端 `sortingOrderOf` 一致：**先地图、后图片层**（`ImageLayer` / `SpriteLayer`），
+        /// 都没有（动作对象 / 还没挑图的实体）→ 0。缺这一项时也按 0 兜底。
+        /// </summary>
+        private static int ResolveSortingOrder(MirrorObject obj)
+        {
+            if (obj.HasComponent(Protocol.ComponentType.Map))
+            {
+                return (int)obj.ComponentNumber(Protocol.ComponentType.Map, "sortingOrder");
+            }
+
+            if (obj.HasComponent(Protocol.ComponentType.Image))
+            {
+                return (int)obj.ComponentNumber(Protocol.ComponentType.Image, "sortingOrder");
+            }
+
+            if (obj.HasComponent(Protocol.ComponentType.Sprite))
+            {
+                return (int)obj.ComponentNumber(Protocol.ComponentType.Sprite, "sortingOrder");
+            }
+
+            return 0;
         }
 
         /// <summary>

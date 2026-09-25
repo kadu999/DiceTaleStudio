@@ -30,6 +30,7 @@ import {
   PositionFields,
   RotationField,
   ScaleField,
+  SortingOrderField,
   TextureField,
 } from "./object-fields";
 import { descriptorRows, objectFields, sortInspectorRows } from "./DescriptorRows";
@@ -112,12 +113,26 @@ export const COMPONENT_EDITORS: readonly ComponentEditorDef[] = [
   {
     type: COMPONENT_TYPE.image,
     availableWithoutComponent: (object) => imageFallback(object, COMPONENT_TYPE.image),
-    panels: [panel("image", "图片层", (object) => <TextureField object={object} />)],
+    panels: [
+      panel("image", "图片层", (object) => (
+        <>
+          <TextureField object={object} />
+          <SortingOrderField object={object} />
+        </>
+      )),
+    ],
   },
   {
     type: COMPONENT_TYPE.sprite,
     availableWithoutComponent: (object) => imageFallback(object, COMPONENT_TYPE.sprite),
-    panels: [panel("sprite", "精灵层", (object) => <TextureField object={object} />)],
+    panels: [
+      panel("sprite", "精灵层", (object) => (
+        <>
+          <TextureField object={object} />
+          <SortingOrderField object={object} />
+        </>
+      )),
+    ],
   },
   {
     type: COMPONENT_TYPE.map,
@@ -134,6 +149,7 @@ export const COMPONENT_EDITORS: readonly ComponentEditorDef[] = [
             <TextureField object={object} />
             <GridFields object={object} />
             <CellSizeField object={object} />
+            <SortingOrderField object={object} />
             <Field label="行序" value={mapDataOf(object)?.rowOrder ?? ""} mono />
             <GridDisplayField />
             <GridAnnotationFields object={object} />

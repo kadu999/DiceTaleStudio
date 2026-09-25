@@ -1,12 +1,11 @@
 {
-  "formatVersion": 25,
+  "formatVersion": 26,
   "objects": [
     {
       "id": "map_mu7t4t731b222",
       "name": "网格地图",
       "kind": "Map",
       "active": true,
-      "sortingOrder": -10,
       "locked": true,
       "position": {
         "x": 0,
@@ -38,7 +37,8 @@
                   2304
                 ]
               ]
-            }
+            },
+            "sortingOrder": -10
           }
         }
       ]

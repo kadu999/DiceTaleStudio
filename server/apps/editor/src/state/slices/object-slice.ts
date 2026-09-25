@@ -16,7 +16,7 @@ import {
   setObjectScale as setGameObjectScale,
   setObjectScaleAxes as setGameObjectScaleAxes,
   setObjectRotation as setGameObjectRotation,
-  setObjectSortingOrder as setGameObjectSortingOrder,
+  setRenderSortingOrder as setGameObjectRenderSortingOrder,
   setObjectField as setSceneObjectField,
   objectFieldOf,
   type GameObjectDoc,
@@ -46,7 +46,7 @@ export function createObjectSlice(
   | "toggleObjectActive"
   | "setObjectLocked"
   | "toggleObjectLocked"
-  | "setObjectSortingOrder"
+  | "setRenderSortingOrder"
   | "setObjectField"
   | "setObjectScale"
   | "setObjectRotation"
@@ -193,11 +193,11 @@ export function createObjectSlice(
       return get().setObjectLocked(id, !object.locked);
     },
 
-    setObjectSortingOrder(id, sortingOrder) {
+    setRenderSortingOrder(id, sortingOrder) {
       return applyActiveScene(
         "修改显示顺序",
         (scene) => {
-          setGameObjectSortingOrder(scene, id, sortingOrder);
+          setGameObjectRenderSortingOrder(scene, id, sortingOrder);
         },
         // 连续敲数字 / 按住微调按钮合并成一条撤销记录
         { coalesceKey: `sorting:${id}` },

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { produce, type Draft } from "immer";
-import { setComponentField, setObjectField, createGameObject } from "../src/commands";
+import { setComponentField, createGameObject } from "../src/commands";
 import { REJECT, coerceFieldValue } from "../src/component-spec";
 import { componentSpecOf, defaultDataOf } from "../src/component-specs";
 import { OBJECT_SPEC, objectFieldOf } from "../src/object-spec";
@@ -241,68 +241,17 @@ describe("coerceFieldValue：按 kind 收窄", () => {
 /**
  * **对象自身字段**那一路（`OBJECT_SPEC` + `setObjectField`）。
  *
- * 与组件那一路共用同一份收窄（`coerceFieldValue`），差别只有「写在哪」：一个写
- * `object.components[].data`，一个写 `object` 自己。这里钉的是「迁移之后语义没变」——
- * `sortingOrder` 过去有一条专门的命令，现在那条命令**转发**到这里。
+ * v26 起这张表是空的：显示顺序搬进了渲染组件（走 `setRenderSortingOrder`），对象身上
+ * 不再有「无专属语义的标量字段」。机制保留给下一个这样的字段——这条用例钉住「空表」
+ * 这个当前事实，避免有人以为规格坏了。
  */
-describe("对象字段规格：OBJECT_SPEC", () => {
-  it("只接管 `sortingOrder`；其余基础字段各有专属语义，刻意留在外面", () => {
-    expect(OBJECT_SPEC.fields.map((field) => field.key)).toEqual(["sortingOrder"]);
+describe("对象字段规格：OBJECT_SPEC（v26 起为空）", () => {
+  it("空表：显示顺序已搬进渲染组件，其余基础字段各有专属语义", () => {
+    expect(OBJECT_SPEC.fields).toEqual([]);
 
-    // 「有专属语义」的字段一个都不该进来（进了就会绕过它的副作用）
-    for (const key of ["name", "active", "locked", "position", "scale", "rotation"]) {
+    // 显示顺序与其余有专属语义的字段都不该进规格（进了就会绕过它的副作用 / 路由）
+    for (const key of ["sortingOrder", "name", "active", "locked", "position", "scale", "rotation"]) {
       expect(objectFieldOf(key)).toBeUndefined();
     }
-
-    // 面板契约：testid 与行名与迁移前那条手写控件逐字一致
-    expect(objectFieldOf("sortingOrder")).toMatchObject({
-      label: "显示顺序",
-      kind: "integer",
-      testId: "inspector-object-sorting",
-      step: 1,
-      coalesce: true,
-    });
-  });
-
-  it("整数写入：取整并夹到 ±9999（与旧的 `setObjectSortingOrder` 逐字一致）", () => {
-    const scene = sceneWith([mapObject()]);
-
-    const rounded = mutate(scene, (draft) => {
-      expect(setObjectField(draft, "map-1", "sortingOrder", 12.6)).toBe(true);
-    });
-    expect(objectOf(rounded, "map-1")?.sortingOrder).toBe(13);
-
-    const clampedHigh = mutate(rounded, (draft) => {
-      expect(setObjectField(draft, "map-1", "sortingOrder", 1e9)).toBe(true);
-    });
-    expect(objectOf(clampedHigh, "map-1")?.sortingOrder).toBe(9999);
-
-    const clampedLow = mutate(clampedHigh, (draft) => {
-      expect(setObjectField(draft, "map-1", "sortingOrder", -1e9)).toBe(true);
-    });
-    expect(objectOf(clampedLow, "map-1")?.sortingOrder).toBe(-9999);
-  });
-
-  it("不改的：非有限值 / 不归规格管的键 / 值没变 / 对象不存在", () => {
-    const scene = sceneWith([mapObject()]);
-    const start = objectOf(scene, "map-1")?.sortingOrder;
-
-    mutate(scene, (draft) => {
-      expect(setObjectField(draft, "map-1", "sortingOrder", Number.NaN)).toBe(false);
-      expect(setObjectField(draft, "map-1", "sortingOrder", Number.POSITIVE_INFINITY)).toBe(false);
-      // `name` / `scale` 不在规格里：留给各自的专用命令（改名还要同步贴图引用、缩放要折叠等比）
-      expect(setObjectField(draft, "map-1", "name", "改个名")).toBe(false);
-      expect(setObjectField(draft, "map-1", "scale", 2)).toBe(false);
-      expect(setObjectField(draft, "不存在", "sortingOrder", 1)).toBe(false);
-    });
-
-    // 一个都没写进去
-    expect(objectOf(scene, "map-1")?.sortingOrder).toBe(start);
-    expect(objectOf(scene, "map-1")?.name).toBe("网格地图");
-
-    const same = mutate(scene, (draft) => {
-      expect(setObjectField(draft, "map-1", "sortingOrder", start ?? 0)).toBe(false);
-    });
-    expect(objectOf(same, "map-1")?.sortingOrder).toBe(start);
   });
 });

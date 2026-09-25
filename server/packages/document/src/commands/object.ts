@@ -2,11 +2,16 @@
 import type { Draft } from "immer";
 import { gridSizeFromImage } from "@dts/grid";
 // 特性的读写一律走访问器（「数据存在哪个组件里」只有 access.ts 知道）
-import { canRepairObjectComponent, componentTypeForObjectSlot, mapDataOf, objectImage, objectImageSlot, objectSupportsSpriteSheet, writeFeature } from "../access";
+import { canRepairObjectComponent, componentTypeForObjectSlot, imageLayerDataOf, mapDataOf, objectImage, objectImageSlot, objectSupportsSpriteSheet, sortingOrderOf, writeFeature } from "../access";
 import { componentForSlot, DEFAULT_SLOT_COMPONENT, DEFAULT_SOUND_LAYER, SPRITE_COMPONENT } from "../presets";
 import { DEFAULT_OBJECT_SCALE, clampObjectScale, collapseScale } from "../scale";
-import { DEFAULT_SORTING_ORDER, createId, findObject } from "./shared";
-import { setObjectField } from "./field";
+import {
+  DEFAULT_SORTING_ORDER,
+  MAP_DEFAULT_SORTING_ORDER,
+  SORTING_ORDER_LIMIT,
+  createId,
+  findObject,
+} from "./shared";
 import type { ObjectKind } from "../presets";
 import type {
   ImageRef,
@@ -37,7 +42,6 @@ export function createGameObject(input: CreateObjectInput): GameObjectDoc {
     name: input.name,
     kind: input.kind ?? "Sprite",
     active: true,
-    sortingOrder: DEFAULT_SORTING_ORDER,
     position: input.position ?? null,
     rotation: 0,
     scale: DEFAULT_OBJECT_SCALE,
@@ -84,6 +88,8 @@ export function repairMapObjectComponent(
     grid,
     rowOrder: "bottom-up",
     cells: { encoding: "rle", runs: [[0, grid.width * grid.height]] },
+    // 修复出来的地图组件补上默认显示顺序（v26 起它住在渲染组件里，地图垫底）
+    sortingOrder: MAP_DEFAULT_SORTING_ORDER,
   });
   return true;
 }
@@ -110,7 +116,11 @@ export function repairImageObjectComponent(
     },
     component === SPRITE_COMPONENT ? image.sprite : undefined,
   );
-  writeFeature(object, component, next);
+  // 修复出来的图片层补上显示顺序（v26 起它住在渲染组件里；对象原本没有就按缺省 0）
+  writeFeature(object, component, {
+    ...next,
+    sortingOrder: imageLayerDataOf(object)?.sortingOrder ?? DEFAULT_SORTING_ORDER,
+  });
   return true;
 }
 
@@ -215,21 +225,68 @@ export function setObjectActive(
 }
 
 /**
- * 对象的显示顺序：**大的画在前面**。
+ * 渲染层的**显示顺序**（v26 起它住在渲染组件里，不再挂在对象上）：**大的画在前面**。
  *
- * 取整并夹在 `±9999` 内：顺序只是个层号，允许输入框里敲出小数 / 极大值，但落到文档里必须是
- * 规规矩矩的整数，否则外部工具与画布对「谁在前」的理解会不一致。
+ * 取整并夹在 `±SORTING_ORDER_LIMIT` 内：顺序只是个层号，允许输入框里敲出小数 / 极大值，
+ * 但落到文档里必须是规规矩矩的整数。
  *
- * 实现**转发给泛型写入**（`setObjectField`）：范围与取整现在写在字段描述符上
- * （`object-spec.ts` 的 `OBJECT_SPEC`），这里只保留这个公开名字——仓库里有很多调用方，
- * 而且「显示顺序」这条语义值得有一个说得出名字的入口。
+ * 按「先地图、后图片层」路由到承载它的那个渲染组件（`GridMap` 的 data / 图片层的 data）；
+ * **没有渲染层就返回 `false`**——没渲染层 = 没这个参数（动作对象、还没挑图的实体）。
+ * `NaN` / `Infinity` 同样拒绝、不写文档。
+ *
+ * 刻意**不走** `setComponentField` 泛型路：GridMap / 图片层还没搬进组件规格注册表，
+ * 且一条命令要按槽位路由到两个不同组件，泛型写入表达不了。
  */
-export function setObjectSortingOrder(
+export function setRenderSortingOrder(
   scene: Draft<SceneDoc>,
   objectId: string,
   sortingOrder: number,
 ): boolean {
-  return setObjectField(scene, objectId, "sortingOrder", sortingOrder);
+  if (!Number.isFinite(sortingOrder)) {
+    return false;
+  }
+
+  const object = findObject(scene, objectId);
+  if (object === undefined) {
+    return false;
+  }
+
+  const value = Math.min(
+    SORTING_ORDER_LIMIT,
+    Math.max(-SORTING_ORDER_LIMIT, Math.round(sortingOrder)),
+  );
+
+  const map = mapDataOf(object);
+  if (map !== undefined) {
+    if (map.sortingOrder === value) {
+      return false;
+    }
+
+    const component = componentTypeForObjectSlot(object, "map");
+    if (component === undefined) {
+      return false;
+    }
+
+    writeFeature(object, component, { ...map, sortingOrder: value });
+    return true;
+  }
+
+  const image = imageLayerDataOf(object);
+  if (image === undefined) {
+    return false;
+  }
+
+  if (image.sortingOrder === value) {
+    return false;
+  }
+
+  const component = componentTypeForObjectSlot(object, "image");
+  if (component === undefined) {
+    return false;
+  }
+
+  writeFeature(object, component, { ...image, sortingOrder: value });
+  return true;
 }
 
 /**
@@ -339,11 +396,12 @@ export function normalizeDegrees(degrees: number): number {
  * 按**显示顺序**排好序的对象（先画的在前，后画的盖在上面）。
  *
  * 画布与命中测试共用它：命中测试反过来从后往前找，于是「点到的」永远是**看得见的最上面那个**。
- * 只比较 `sortingOrder`，相同的保持场景文件里的先后（`Array.prototype.sort` 自 ES2019 起稳定）；
+ * 只比较显示顺序（`sortingOrderOf`：地图取 `GridMap`、其余取图片层；没渲染层按 0），
+ * 相同的保持场景文件里的先后（`Array.prototype.sort` 自 ES2019 起稳定）；
  * **不改动 `scene.objects` 本身**——文件里的顺序是数据，不是渲染排序的结果。
  */
 export function objectsInDrawOrder(scene: SceneDoc): GameObjectDoc[] {
-  return [...scene.objects].sort((a, b) => a.sortingOrder - b.sortingOrder);
+  return [...scene.objects].sort((a, b) => sortingOrderOf(a) - sortingOrderOf(b));
 }
 
 /**
@@ -409,7 +467,11 @@ export function setObjectImage(
   } else {
     const imageComponent = componentTypeForObjectSlot(object, "image");
     if (imageComponent === undefined) return false;
-    writeFeature(object, imageComponent, next);
+    // 显示顺序属于渲染组件数据（v26），换图是整份替换——必须展开带上，否则会被抹掉
+    writeFeature(object, imageComponent, {
+      ...next,
+      sortingOrder: imageLayerDataOf(object)?.sortingOrder ?? DEFAULT_SORTING_ORDER,
+    });
   }
 
   return true;
@@ -449,7 +511,11 @@ export function setObjectSprite(
 
   const imageComponent = componentTypeForObjectSlot(object, "image");
   if (imageComponent === undefined) return false;
-  writeFeature(object, imageComponent, withSpriteRef(current, next));
+  // 显示顺序属于渲染组件数据（v26），换格子是整份替换——必须展开带上，否则会被抹掉
+  writeFeature(object, imageComponent, {
+    ...withSpriteRef(current, next),
+    sortingOrder: imageLayerDataOf(object)?.sortingOrder ?? DEFAULT_SORTING_ORDER,
+  });
   return true;
 }
 

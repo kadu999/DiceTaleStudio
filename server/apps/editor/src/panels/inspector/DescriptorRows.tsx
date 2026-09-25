@@ -62,9 +62,10 @@ export function componentFields(type: string): FieldTarget {
 }
 
 /**
- * 对象自身字段的落点（「基础」那一组里归规格管的那些，目前只有 `sortingOrder`）。
+ * 对象自身字段的落点（「基础」那一组里归规格管的那些，v26 起规格为空）。
  *
- * 读的是 `object` 自己的键；缺项时同样落到描述符的默认值。
+ * 读的是 `object` 自己的键；缺项时同样落到描述符的默认值。保留这条通道给**下一个**
+ * 无专属语义的对象标量字段（显示顺序已搬进渲染组件，走 `SortingOrderField`）。
  */
 export const objectFields: FieldTarget = {
   read: (object, field) => {
