@@ -32,11 +32,11 @@ export function createVideoSlice(
   | "resumeVideo"
   | "stopVideo"
   | "flushVideoPlayback"
-  | "openMediaEditor"
   | "setVideoEnabled"
   | "addVideoClip"
   | "removeVideoClip"
   | "selectVideoClip"
+  | "clearVideoClips"
   | "setVideoLoop"
 > {
   // 共享的闭包状态与局部工具都在 ctx 里：这里解构一次，方法体与拆分前逐字一致
@@ -153,26 +153,10 @@ export function createVideoSlice(
 
     // ------------------------------------------------------------ 视频（地图 / 贴图）
 
-    openMediaEditor(kind, objectId) {
-      set({ mediaEditor: objectId === null ? null : { kind, objectId } });
-      if (objectId !== null) {
-        // 与「选择贴图」同一条规矩：素材由外部提交进 Assets/video|audio/，打开时刷一次目录
-        void get().refreshTree();
-      }
-    },
-
     setVideoEnabled(objectId, enabled) {
-      const changed = applyActiveScene(enabled ? "启用视频" : "关闭视频", (scene) => {
+      return applyActiveScene(enabled ? "启用视频" : "关闭视频", (scene) => {
         setSceneVideoEnabled(scene, objectId, enabled);
       });
-
-      // 关掉了：正开着的「编辑视频」窗口跟着关（那一组已经收起来了）
-      const editor = get().mediaEditor;
-      if (!enabled && editor !== null && editor.kind === "video" && editor.objectId === objectId) {
-        set({ mediaEditor: null });
-      }
-
-      return changed;
     },
 
     addVideoClip(objectId, clipId) {
@@ -216,7 +200,7 @@ export function createVideoSlice(
         return false;
       }
 
-      // 名字与「选中的那条」由 `setVideoClips` 一起收拾（见 `shared.ts` 的 `syncMediaSideData`）
+      // 「选中的那条」由 `setVideoClips` 一起收拾（见 `shared.ts` 的 `syncMediaSideData`）
       return applyActiveScene("移除视频", (scene) => {
         setSceneVideoClips(
           scene,
@@ -234,6 +218,12 @@ export function createVideoSlice(
       // 单选：只能选**加进来的**那几条（`setVideoPicked` 会把不在列表里的拒掉）。
       return applyActiveScene("选择视频", (scene) => {
         setSceneVideoPicked(scene, objectId, clip);
+      });
+    },
+
+    clearVideoClips(objectId) {
+      return applyActiveScene("清空视频列表", (scene) => {
+        setSceneVideoClips(scene, objectId, []);
       });
     },
 

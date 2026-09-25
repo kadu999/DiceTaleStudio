@@ -37,7 +37,6 @@ export function createInitialState(storedGridPaint: GridPaintPrefs): EditorStore
     objectDialog: false,
     imagePicker: false,
     imagePickerTarget: null,
-    mediaEditor: null,
     teleportEditor: false,
     teleportEditorTarget: null,
     globalSettings: false,

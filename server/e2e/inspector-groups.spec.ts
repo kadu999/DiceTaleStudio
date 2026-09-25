@@ -70,7 +70,7 @@ test.describe("属性分组", () => {
       // 视频那一组还没开时只剩「启用」那一个开关（打开之后的样子见 video-object.spec.ts）
       await expect(video).toContainText("视频");
       await expect(video.getByTestId("video-enable")).toBeVisible();
-      await expect(video.getByTestId("video-edit")).toHaveCount(0);
+      await expect(video.getByTestId("video-clips")).toHaveCount(0);
 
       const renderHeader = render.getByTestId("field-group-header");
       await expect(renderHeader).toHaveAttribute("aria-expanded", "true");

@@ -125,9 +125,8 @@ export function createHistorySlice(
         gridEditorTarget: null,
         // 换了文档：记着的「哪一层该播什么」盯的是上一个项目的对象，清掉
         soundPlayback: emptySoundPlayback(),
-        // 视频的记账同理（它是按对象记的），窗口也跟着关
+        // 视频的记账同理（它是按对象记的）
         videoPlayback: emptyVideoPlayback(),
-        mediaEditor: null,
         // 背景音乐也是一段记账（清单本身来自项目资源，不随项目变）：回到「什么都没放」，
         // 两个窗口都关掉
         bgmPlayback: emptyBgmPlayback(),

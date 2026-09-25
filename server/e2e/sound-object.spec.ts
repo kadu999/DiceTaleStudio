@@ -27,9 +27,9 @@ import { canvasAverageColor, offsetFrom, preciseWorldPoint, worldSamplePoint } f
  * 那条**（面板上单选，前端播的就是它）与**层级**（同层同时只响一条）。
  * 编辑器**不播放**——这里既钉住「画布上看得见、点得到、拖得动」，也钉住「页面上没有播放器」。
  *
- * 两个入口的分工也在这一份里钉住：**属性面板**把加进来的音频列出来单选（播哪条）；
- * **「编辑声音」窗口**负责加 / 删 / 预览（看得见每条音频的路径），加音频走「选择音频」弹框；
- * 显示名在**文件属性**上改，窗口里只读显示。
+ * 清单的**全部管理都在属性面板的「声音」组里**：小方块单选（播哪条）、`×` 移出一条、
+ * 「清空」全部移出、`＋` 从项目素材里**添加**（弹「选择音频」）。没有别的窗口；
+ * 显示名在**文件属性**上改。
  */
 
 const SCENE = "Map001";
@@ -100,7 +100,8 @@ test.describe("动作对象：播放声音", () => {
       await expect(page.locator("audio")).toHaveCount(0);
 
       /*
-        面板行序是 层级 → 音频 → 编辑音频… → 播放（层级在上面）；
+        面板行序是 层级 → 音频 → 播放（层级在上面）；「音频」那一行自己就是清单管理：
+        小方块（单选播哪条）+ ＋ 添加 + 清空。
         控件行与「视频」那一组**完全一致**：播放 / 暂停 / 停止 + 一行状态。
         一条都没加时写明「还没加音频」。
       */
@@ -109,11 +110,10 @@ test.describe("动作对象：播放声音", () => {
         .evaluateAll((elements) => elements.map((element) => element.getAttribute("data-testid")));
       expect(panelOrder).toEqual([
         "sound-layer",
-        // 「音频」那一行的容器（现在里面只有「还没加音频」）
+        // 「音频」那一行的容器（现在里面只有「还没加音频」＋ ＋ 添加）
         "sound-clips",
         "sound-empty",
-        // 开窗口的按钮自己一行（挨着小方块容易点错）
-        "sound-edit",
+        "sound-add",
         "sound-play",
         "sound-pause",
         "sound-stop",
@@ -121,20 +121,10 @@ test.describe("动作对象：播放声音", () => {
         "sound-status",
       ]);
       await expect(page.getByTestId("sound-empty")).toHaveText("还没加音频");
-      await expect(page.getByTestId("sound-edit")).toHaveText("编辑音频…");
       await expect(page.locator('[data-group="sound"]')).not.toContainText("audio/");
 
-      // 「编辑声音」窗口：这里是**这条声音对象的音频清单**（加 / 删 / 预览），
-      // 「播哪条」在属性面板上点小方块选，所以窗口里没有选中这一套；显示名在文件属性上改
-      await page.getByTestId("sound-edit").click();
-      const dialog = page.getByTestId("sound-edit-dialog");
-      await expect(dialog).toBeVisible();
-      await expect(dialog.getByTestId("sound-edit-row")).toHaveCount(0);
-      await expect(dialog.getByTestId("sound-edit-list")).toContainText("还没加音频");
-      await expect(dialog.getByTestId("sound-edit-pick")).toHaveCount(0);
-
-      // 「＋ 添加音频」弹「选择音频」：列出项目里的音频（带路径），点一条就加进来
-      await dialog.getByTestId("sound-add").click();
+      // 「＋ 添加」弹「选择音频」：列出项目里的音频（带路径），点一条就加进来
+      await page.getByTestId("sound-add").click();
       const picker = page.getByTestId("audio-picker-dialog");
       await expect(picker).toBeVisible();
       const pickItem = (id: string) =>
@@ -145,29 +135,19 @@ test.describe("动作对象：播放声音", () => {
       await pickItem(step3).click();
       // 加过的标「已加入」（不会再重复加）
       await expect(pickItem(step1)).toHaveAttribute("data-added", "true");
-      // 关掉素材弹框，回到「编辑声音」（两层模态：关上面那层，下面那层还在）
       await picker.getByTestId("audio-picker-close").click();
       await expect(picker).toHaveCount(0);
-      await expect(dialog).toBeVisible();
-
-      const rowOf = (clip: string) => dialog.locator(`[data-testid="sound-edit-row"][data-clip="${clip}"]`);
-      await expect(dialog.getByTestId("sound-edit-row")).toHaveCount(3);
-      await expect(rowOf(step3)).toContainText("audio/step3.mp3");
-
-      // 加错了可以移出（素材文件不会被删）
-      await dialog.locator(`[data-testid="sound-remove"][data-clip="${step3}"]`).click();
-      await expect(dialog.getByTestId("sound-edit-row")).toHaveCount(2);
-      await expect(dialog.getByTestId("sound-edit-list")).not.toContainText("audio/step3.mp3");
-
-      // 行上只读显示显示名（没起过 = 文件名）；起名在**文件属性**上改，不在这个窗口
-      await expect(rowOf(step1)).toContainText("step1");
-
-      await dialog.getByTestId("sound-edit-close").click();
-      await expect(dialog).toHaveCount(0);
 
       // 面板：**加进来的音频全列出来**（小方块）；加进来的第一条自动是「播的那条」
       const chips = page.getByTestId("sound-clip");
+      await expect(chips).toHaveCount(3);
+
+      // 加错了可以移出：点小方块上的 ×（素材文件不会被删）
+      await page.locator(`[data-testid="sound-clip-remove"][data-clip="${step3}"]`).click();
       await expect(chips).toHaveCount(2);
+      await expect(page.getByTestId("sound-clips")).not.toContainText("step3");
+
+      // 小方块只读显示显示名（没起过 = 文件名）；起名在**文件属性**上改
       await expect(chips.nth(0)).toHaveText("step1");
       await expect(chips.nth(1)).toHaveText("step2");
       await expect(chips.nth(0)).toHaveAttribute("data-selected", "true");
@@ -179,12 +159,19 @@ test.describe("动作对象：播放声音", () => {
       await expect(chips.nth(0)).toHaveAttribute("data-selected", "false");
       await expect(chips.nth(1)).toHaveAttribute("title", /audio\/step2\.mp3/);
 
-      // 「编辑音频…」在小方块**下面**自己一行：挨着放太容易点错
-      const editBox = await page.getByTestId("sound-edit").boundingBox();
-      const chipsBox = await page.getByTestId("sound-clips").boundingBox();
-      expect((editBox?.y ?? 0)).toBeGreaterThanOrEqual(
-        (chipsBox?.y ?? 0) + (chipsBox?.height ?? 0) - 1,
-      );
+      // 「清空」一次全部移出（素材文件不会被删）
+      await page.getByTestId("sound-clear").click();
+      await expect(page.getByTestId("sound-empty")).toHaveText("还没加音频");
+
+      // 重新加两条（下面落盘断言要数）
+      await page.getByTestId("sound-add").click();
+      const repick = page.getByTestId("audio-picker-dialog");
+      await repick.locator(`[data-testid="audio-picker-item"][data-asset-id="${step1}"]`).click();
+      await repick.locator(`[data-testid="audio-picker-item"][data-asset-id="${step2}"]`).click();
+      await repick.getByTestId("audio-picker-close").click();
+      await expect(page.getByTestId("sound-clip")).toHaveCount(2);
+      // 加进来的第一条自动是「播的那条」；再点第二条 → 播的就换成它
+      await page.getByTestId("sound-clip").nth(1).click();
 
       // 换层级：音效 → 旁白（**背景音乐不在对象上**了：v15 起它是项目级全局设置，
       // 见 `global-bgm.spec.ts`；这里只留音效 / 旁白两档）
@@ -376,17 +363,13 @@ test.describe("动作对象：播放声音", () => {
       await expect(stop).toBeEnabled();
       await expect(stop).toHaveAttribute("title", /已记录：编辑器还没连上服务端/);
 
-      // 在「编辑声音」窗口里加一条 → 它自动成为「播的那条」，「播放」可以点了
-      await page.getByTestId("sound-edit").click();
-      const dialog = page.getByTestId("sound-edit-dialog");
-      await expect(dialog).toBeVisible();
-      await dialog.getByTestId("sound-add").click();
+      // 点「＋ 添加」加一条 → 它自动成为「播的那条」，「播放」可以点了
+      await page.getByTestId("sound-add").click();
       const picker = page.getByTestId("audio-picker-dialog");
       await expect(picker).toBeVisible();
       await picker.locator(`[data-testid="audio-picker-item"][data-asset-id="${step1}"]`).click();
       await picker.getByTestId("audio-picker-close").click();
-      await dialog.getByTestId("sound-edit-close").click();
-      await expect(dialog).toHaveCount(0);
+      await expect(picker).toHaveCount(0);
 
       await expect(page.getByTestId("sound-clip")).toHaveCount(1);
       await expect(page.getByTestId("sound-clip")).toHaveAttribute("data-selected", "true");

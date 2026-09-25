@@ -37,6 +37,7 @@ export function createSoundSlice(
   | "addSoundClip"
   | "removeSoundClip"
   | "setSoundLayer"
+  | "clearSoundClips"
 > {
   // 共享的闭包状态与局部工具都在 ctx 里：这里解构一次，方法体与拆分前逐字一致
   const {
@@ -240,7 +241,7 @@ export function createSoundSlice(
         return false;
       }
 
-      // 名字与「选中的那条」由 `setSoundClips` 一起收拾（见 `shared.ts` 的 `syncMediaSideData`）
+      // 「选中的那条」由 `setSoundClips` 一起收拾（见 `shared.ts` 的 `syncMediaSideData`）
       return applyActiveScene("移除声音", (scene) => {
         setSceneSoundClips(
           scene,
@@ -253,6 +254,12 @@ export function createSoundSlice(
     setSoundLayer(objectId, layer) {
       return applyActiveScene("修改声音层级", (scene) => {
         setSceneSoundLayer(scene, objectId, layer);
+      });
+    },
+
+    clearSoundClips(objectId) {
+      return applyActiveScene("清空音频列表", (scene) => {
+        setSceneSoundClips(scene, objectId, []);
       });
     },
   };

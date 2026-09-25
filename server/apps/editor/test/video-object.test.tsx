@@ -125,6 +125,10 @@ const logs = (): string[] => useEditorStore.getState().runtime.logs.map((entry) 
 /** 面板上的视频小方块（顺序 = 加进来的先后）。 */
 const chips = (): HTMLElement[] => screen.queryAllByTestId("video-clip");
 
+/** 小方块里「选它」的那枚按钮（第一个是选择区，第二个是 × 移出）。 */
+const chipSelect = (index: number): HTMLElement =>
+  chips()[index]!.querySelector("button") as HTMLElement;
+
 const hasGroup = (slug: string): boolean =>
   document.querySelector(`[data-group="${slug}"]`) !== null;
 
@@ -136,7 +140,6 @@ afterEach(() => {
     activeSceneName: null,
     selectedObjectIds: [],
     mode: "edit",
-    mediaEditor: null,
     videoPlayback: { objects: {} },
   });
 });
@@ -159,7 +162,7 @@ describe("属性面板：视频组", () => {
     expect(hasGroup("video")).toBe(true);
     expect(screen.getByTestId("video-enable")).toBeDefined();
     expect(screen.queryByTestId("video-empty")).toBeNull();
-    expect(screen.queryByTestId("video-edit")).toBeNull();
+    expect(screen.queryByTestId("video-clips")).toBeNull();
 
     // 贴图也有这一组（v21 起取代精灵）
     unmount();
@@ -196,7 +199,7 @@ describe("属性面板：视频组", () => {
     fireEvent.click(enable);
     expect(videoOf("map-1")).toEqual({ enabled: true, autoPlay: false, clips: [], loop: false, audio: false });
     expect(screen.getByTestId("video-empty").textContent).toBe("还没加视频");
-    expect(screen.getByTestId("video-edit")).toBeDefined();
+    expect(screen.getByTestId("video-add")).toBeDefined();
     expect(screen.getByTestId("video-play")).toBeDefined();
     expect(screen.getByTestId("video-loop")).toBeDefined();
     expect(screen.getByTestId("video-audio")).toBeDefined();
@@ -206,7 +209,7 @@ describe("属性面板：视频组", () => {
     act(() => useEditorStore.getState().setVideoLoop("map-1", true));
     fireEvent.click(screen.getByTestId("video-enable"));
     expect(videoOf("map-1")).toEqual({ enabled: false, autoPlay: false, clips: [CLIP], picked: CLIP, loop: true, audio: false });
-    expect(screen.queryByTestId("video-edit")).toBeNull();
+    expect(screen.queryByTestId("video-clips")).toBeNull();
     expect(screen.queryByTestId("video-play")).toBeNull();
     expect((screen.getByTestId("video-enable") as HTMLInputElement).checked).toBe(false);
 
@@ -238,7 +241,7 @@ describe("属性面板：视频组", () => {
     seedScene([mapWith(video([CLIP, CLIP2], { picked: CLIP }))], ["map-1"]);
     render(<InspectorPanel />);
 
-    fireEvent.click(chips()[1]!);
+    fireEvent.click(chipSelect(1));
     expect(videoOf("map-1")?.picked).toBe(CLIP2);
     // 一次文档编辑：撤销回到上一条（撤销要包在 act 里，DOM 才会跟着刷新）
     act(() => useEditorStore.getState().undo());
@@ -246,7 +249,7 @@ describe("属性面板：视频组", () => {
 
     // 现在 chips[0] 又是选中的那条：再点它 = 取消选中
     expect(chips()[0]?.getAttribute("data-selected")).toBe("true");
-    fireEvent.click(chips()[0]!);
+    fireEvent.click(chipSelect(0));
     expect(videoOf("map-1")?.picked).toBeUndefined();
   });
 
@@ -299,15 +302,28 @@ describe("属性面板：视频组", () => {
     expect(videoOf("map-1")?.autoPlay).toBe(false);
   });
 
-  it("「编辑」把目标写进 store（窗口由 EditorShell 挂）", () => {
-    seedScene([mapWith(video([CLIP]))], ["map-1"]);
+  it("点「＋」打开「选择视频」弹框；小方块上的 × 移出、「清空」一次全部移出", () => {
+    seedScene([mapWith(video([CLIP, CLIP2], { picked: CLIP }))], ["map-1"]);
     render(<InspectorPanel />);
 
-    fireEvent.click(screen.getByTestId("video-edit"));
-    expect(useEditorStore.getState().mediaEditor).toEqual({ kind: "video", objectId: "map-1" });
+    fireEvent.click(screen.getByTestId("video-add"));
+    expect(screen.getByTestId("video-picker-dialog")).toBeDefined();
+    // 加过的标「已加入」
+    expect(
+      screen
+        .getAllByTestId("video-picker-item")
+        .find((item) => item.getAttribute("data-asset-id") === CLIP)
+        ?.getAttribute("data-added"),
+    ).toBe("true");
 
-    act(() => useEditorStore.getState().openMediaEditor("video", null));
-    expect(useEditorStore.getState().mediaEditor).toBeNull();
+    fireEvent.click(screen.getAllByTestId("video-clip-remove")[0]!);
+    expect(videoOf("map-1")?.clips).toEqual([CLIP2]);
+    // 移走的正好是选中的那条 → 选中顺到下一条
+    expect(videoOf("map-1")?.picked).toBe(CLIP2);
+
+    fireEvent.click(screen.getByTestId("video-clear"));
+    expect(videoOf("map-1")?.clips).toEqual([]);
+    expect(videoOf("map-1")?.picked).toBeUndefined();
   });
 });
 

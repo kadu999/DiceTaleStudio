@@ -9,7 +9,6 @@ import { RuntimePanel } from "../panels/runtime/RuntimePanel";
 import { ScenePanel } from "../panels/scene/ScenePanel";
 import { FogMaskDialog } from "./FogMaskDialog";
 import { GridEditDialog } from "./GridEditDialog";
-import { MediaEditDialog } from "./MediaEditDialog";
 import { ResourcePickerDialog } from "./ResourcePickerDialog";
 import { TeleportEditDialog } from "./TeleportEditDialog";
 import { AudioTagEditorDialog } from "./AudioTagEditorDialog";
@@ -42,8 +41,6 @@ export function EditorShell(): React.JSX.Element {
   const imagePickerTarget = useEditorStore((state) => state.imagePickerTarget);
   const assetMetas = useEditorStore((state) => state.assetMetas);
   const openImagePicker = useEditorStore((state) => state.openImagePicker);
-  const mediaEditor = useEditorStore((state) => state.mediaEditor);
-  const openMediaEditor = useEditorStore((state) => state.openMediaEditor);
   const teleportEditor = useEditorStore((state) => state.teleportEditor);
   const teleportEditorTarget = useEditorStore((state) => state.teleportEditorTarget);
   const openTeleportEditor = useEditorStore((state) => state.openTeleportEditor);
@@ -285,14 +282,6 @@ export function EditorShell(): React.JSX.Element {
 
           openImagePicker(null);
         }}
-      />
-
-      {/* 编辑媒体清单：「编辑声音」/「编辑视频」合并后的通用窗口（左清单 + 右播放预览） */}
-      <MediaEditDialog
-        open={mediaEditor !== null}
-        kind={mediaEditor?.kind ?? "audio"}
-        objectId={mediaEditor?.objectId ?? null}
-        onClose={() => openMediaEditor(mediaEditor === null ? "audio" : mediaEditor.kind, null)}
       />
 
       {/* 传送目标：把项目里的场景勾成这个传送阵的候选（选哪个在属性面板上点小方块） */}

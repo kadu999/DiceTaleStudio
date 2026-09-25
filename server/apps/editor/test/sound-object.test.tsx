@@ -99,6 +99,10 @@ const soundOf = (id: string) => {
 /** 面板上的音频小方块（顺序 = 加进来的先后）。 */
 const chips = (): HTMLElement[] => screen.queryAllByTestId("sound-clip");
 
+/** 小方块里「选它」的那枚按钮（第一个是选择区，第二个是 × 移出）。 */
+const chipSelect = (index: number): HTMLElement =>
+  chips()[index]!.querySelector("button") as HTMLElement;
+
 const hasGroup = (slug: string): boolean =>
   document.querySelector(`[data-group="${slug}"]`) !== null;
 
@@ -271,31 +275,28 @@ describe("属性面板：声音组", () => {
     expect(messages.some((line) => line.includes("背景音乐已改成顶栏「音乐」弹框"))).toBe(true);
   });
 
-  it("行序是 层级 → 音频 → 编辑音频… → 播放；小方块全列在「音频」那行，开窗口的按钮**单独一行**", () => {
+  it("行序是 层级 → 音频（小方块 + ＋添加 / 清空） → 播放", () => {
     seedScene([sound([CLIP, CLIP2])], ["sound-1"]);
     render(<InspectorPanel />);
 
     const layer = screen.getByTestId("sound-layer");
     const list = screen.getByTestId("sound-clips");
-    const edit = screen.getByTestId("sound-edit");
     const play = screen.getByTestId("sound-play");
     // 层级在音频上面（用户要求），播放排在最后
     expect(layer.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
     expect(list.compareDocumentPosition(play) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
 
-    // 开窗口的按钮**不在那排小方块里**（挨着放容易点错：一个点错是换声音、一个点错是弹窗口），
-    // 它在小方块下面自己一行
-    expect(list.contains(edit)).toBe(false);
-    expect(list.compareDocumentPosition(edit) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
-    expect(edit.compareDocumentPosition(play) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
-    expect(edit.textContent).toBe("编辑音频…");
+    // ＋ 添加与「清空」都在那排小方块**里面**（清单管理全在这一行，没有别的窗口）
+    expect(list.contains(screen.getByTestId("sound-add"))).toBe(true);
+    expect(list.contains(screen.getByTestId("sound-clear"))).toBe(true);
 
-    // 两条都在面板上，能选；名字输入框不在这里（在「编辑声音」窗口里）
+    // 两条都在面板上，能选；没有改名输入框（显示名在文件属性上改）
     expect(chips().map((chip) => chip.getAttribute("data-clip"))).toEqual([CLIP, CLIP2]);
     expect(screen.queryByTestId("sound-edit-row")).toBeNull();
     expect(screen.queryByTestId("sound-name")).toBeNull();
 
-    // 没起名字 → 显示素材文件名（去掉扩展名）；路径只进 tooltip
+    // 没起名字 → 显示素材文件名（去掉扩展名）；路径只进 tooltip；
+    // × 用 CSS 画、不进 textContent，所以小方块的文本就是名字
     expect(chips()[0]?.textContent).toBe("step1");
     expect(chips()[0]?.getAttribute("title")).toMatch(/^audio\/step1\.mp3/);
     // 第一条默认是选中的那条（新建时把第一条当选中）
@@ -317,7 +318,7 @@ describe("属性面板：声音组", () => {
     seedScene([sound([CLIP, CLIP2])], ["sound-1"]);
     render(<InspectorPanel />);
 
-    fireEvent.click(chips()[1]!);
+    fireEvent.click(chipSelect(1));
     expect(soundOf("sound-1")?.picked).toBe(CLIP2);
     // 单选：另一条自动变回未选
     expect(chips()[0]?.getAttribute("data-selected")).toBe("false");
@@ -329,7 +330,7 @@ describe("属性面板：声音组", () => {
     act(() => useEditorStore.getState().undo());
     expect(soundOf("sound-1")?.picked).toBe(CLIP);
 
-    fireEvent.click(chips()[0]!);
+    fireEvent.click(chipSelect(0));
     expect(soundOf("sound-1")?.picked).toBeUndefined();
     expect(chips()[0]?.getAttribute("data-selected")).toBe("false");
     // 都没选 → 播放点不了
@@ -344,12 +345,35 @@ describe("属性面板：声音组", () => {
     expect(screen.getByTestId("sound-play").hasAttribute("disabled")).toBe(true);
   });
 
-  it("点「编辑」把目标交给「编辑声音」窗口", () => {
+  it("点「＋」打开「选择音频」弹框；点一条就加进来", () => {
     seedScene([sound([CLIP])], ["sound-1"]);
     render(<InspectorPanel />);
 
-    fireEvent.click(screen.getByTestId("sound-edit"));
-    expect(useEditorStore.getState().mediaEditor).toEqual({ kind: "audio", objectId: "sound-1" });
+    fireEvent.click(screen.getByTestId("sound-add"));
+    expect(screen.getByTestId("audio-picker-dialog")).toBeDefined();
+
+    // 加过的标「已加入」
+    expect(
+      screen
+        .getAllByTestId("audio-picker-item")
+        .find((item) => item.getAttribute("data-asset-id") === CLIP)
+        ?.getAttribute("data-added"),
+    ).toBe("true");
+  });
+
+  it("小方块上的 × 移出那一条；「清空」一次全部移出", () => {
+    seedScene([sound([CLIP, CLIP2])], ["sound-1"]);
+    const { unmount } = render(<InspectorPanel />);
+
+    // 第一个小方块（CLIP）上的 ×：只移出它
+    fireEvent.click(screen.getAllByTestId("sound-clip-remove")[0]!);
+    expect(soundOf("sound-1")?.clips).toEqual([CLIP2]);
+    unmount();
+
+    seedScene([sound([CLIP, CLIP2])], ["sound-1"]);
+    render(<InspectorPanel />);
+    fireEvent.click(screen.getByTestId("sound-clear"));
+    expect(soundOf("sound-1")).toEqual({ clips: [], layer: "sfx" });
   });
 });
 

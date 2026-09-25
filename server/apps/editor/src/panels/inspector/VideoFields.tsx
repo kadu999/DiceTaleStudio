@@ -1,6 +1,8 @@
+import { useState } from "react";
 import { assetNameOfMeta, isVideoEnabled, videoDataOf, videoSpec, type GameObjectDoc } from "@dts/document";
 import { assetDisplayName } from "../asset-info";
 import { assetDisplayPath, findAssetByReference } from "../asset-picker";
+import { ResourcePickerDialog } from "../../app/ResourcePickerDialog";
 import { useEditorStore, type EditorMode } from "../../state/editor-store";
 import type { RuntimeStatus } from "../../services/runtime-client";
 import {
@@ -14,16 +16,16 @@ import {
 import { componentFields, descriptorRows, sortInspectorRows } from "./DescriptorRows";
 
 /**
- * 地图 / 贴图的「视频」组：**启用 → 循环 / 声音 / 自动播放 → 视频列表 → 编辑 → 播放 / 暂停 / 停止**。
+ * 地图 / 贴图的「视频」组：**启用 → 循环 / 声音 / 自动播放 → 视频列表（小方块 + 添加 / 移出）→ 播放 / 暂停 / 停止**。
  *
  * 整组由第一行的**「启用」开关**管着（与战争雾那一组同一套）：关着时只留那一个开关，
  * 加视频 / 选哪条 / 循环 / 声音 / 自动播放都收起来——没开视频的对象不该摆一排用不上的按钮。
  * 开关是**这个对象的文档数据**（`video.enabled`），关着时前端连视频层都不建。
  *
- * 两个地方分工，别混（与「播放声音」同一套）：
- * - **这里（面板）**：把**加进来的视频全列出来**（小方块），点一下决定「放哪一条」；
- * - **「编辑视频」窗口**（下面那行「编辑」唤出）：加视频 / 移出 / 预览——那里看得见
- *   每个文件的路径，面板太窄放不下。**显示名在文件属性上改**，这里只管选哪条。
+ * 清单的**全部管理都在这一组里**（没有别的窗口，与「播放声音」同一套）：
+ * 小方块 = 加进来的视频，点一下决定「放哪一条」；每个小方块上的 `×` = 移出那一条；
+ * 「清空」= 一次全部移出；`＋` = 从项目素材里**添加**（弹 `ResourcePickerDialog`）。
+ * **显示名在文件属性上改**（素材 `.meta` 顶层 `name`），这里只读显示。
  *
  * 编辑器**不播放**：没有预览、不接视频解码。点「播放」只是**记账**（哪个对象该放什么）+
  * 尽力把命令发给前端；所以按钮**不要求前端在场**，没连上时状态记着、等连上补发。
@@ -34,7 +36,7 @@ import { componentFields, descriptorRows, sortInspectorRows } from "./Descriptor
  * - **「循环」「声音」是这张地图 / 贴图自己的设置**（进文档、可撤销），不是界面偏好。
  */
 
-/** 「播放」现在能不能点：一条视频都没加 → 先去窗口里加；加了但没选 → 先选一条。 */
+/** 「播放」现在能不能点：一条视频都没加 → 先添加；加了但没选 → 先选一条。 */
 export function videoPlayBlockedReason(input: {
   readonly clips: number;
   readonly picked: string | undefined;
@@ -79,7 +81,9 @@ export function VideoFields({ object }: { readonly object: GameObjectDoc }): Rea
   const assetMetas = useEditorStore((state) => state.assetMetas);
   const metaTable = useEditorStore((state) => state.assetMetaTable);
   const playback = useEditorStore((state) => state.videoPlayback);
-  const openMediaEditor = useEditorStore((state) => state.openMediaEditor);
+  const addVideoClip = useEditorStore((state) => state.addVideoClip);
+  const removeVideoClip = useEditorStore((state) => state.removeVideoClip);
+  const clearVideoClips = useEditorStore((state) => state.clearVideoClips);
   const setVideoEnabled = useEditorStore((state) => state.setVideoEnabled);
   const selectVideoClip = useEditorStore((state) => state.selectVideoClip);
   const playVideo = useEditorStore((state) => state.playVideo);
@@ -89,6 +93,9 @@ export function VideoFields({ object }: { readonly object: GameObjectDoc }): Rea
   const mode = useEditorStore((state) => state.mode);
   const status = useEditorStore((state) => state.runtime.status);
   const clientConnected = useEditorStore((state) => state.runtime.client !== null);
+
+  /** 「选择视频」弹框开着没有（换个对象就收起来）。 */
+  const [picking, setPicking] = useState(false);
 
   const video = videoDataOf(object);
   // 手写文件里可能整个 video 都没有：这里按「没开、还没加视频、不循环、静音」显示
@@ -151,7 +158,8 @@ export function VideoFields({ object }: { readonly object: GameObjectDoc }): Rea
       )}
 
       {/*
-        视频那一行：**加进来的全列出来**（单选，选中的那条就是前端会放的）。
+        视频那一行：**加进来的全列出来**（单选，选中的那条就是前端会放的），
+        管理也全在这一行：小方块上的 `×` 移出一条、「清空」全部移出、`＋` 添加。
         小方块会折行，所以这里自己是一个 `flex-wrap` 容器（`FieldRow` 只管标签那一列）。
       */}
       <FieldRow label="视频">
@@ -160,7 +168,7 @@ export function VideoFields({ object }: { readonly object: GameObjectDoc }): Rea
             <span
               data-testid="video-empty"
               className="text-[11px] text-[var(--color-editor-text-dim)]"
-              title="点下面的「编辑」从项目里的视频素材里挑"
+              title="点「＋」从项目里的视频素材里挑"
             >
               还没加视频
             </span>
@@ -168,14 +176,13 @@ export function VideoFields({ object }: { readonly object: GameObjectDoc }): Rea
             clips.map((clip) => {
               const selected = clip === picked;
               const hint = formatHint(clip);
+              const name = nameOf(clip);
               return (
-                <button
+                <span
                   key={clip}
-                  type="button"
                   data-testid="video-clip"
                   data-clip={clip}
                   data-selected={selected}
-                  aria-pressed={selected}
                   title={[
                     selected
                       ? `${assetDisplayPath(findAssetByReference(tree, clip, assetMetas)?.id ?? clip)}（就是它会被放；再点一下取消选中）`
@@ -184,36 +191,70 @@ export function VideoFields({ object }: { readonly object: GameObjectDoc }): Rea
                   ]
                     .filter((line) => line !== undefined)
                     .join("\n")}
-                  className={`max-w-[8rem] truncate rounded border px-1.5 py-0.5 text-[10px] ${
+                  className={`flex max-w-[9rem] items-center overflow-hidden rounded border text-[10px] ${
                     selected
                       ? "border-[var(--color-editor-accent)] bg-[var(--color-editor-accent-dim)] text-white"
                       : "border-[var(--color-editor-border)] hover:bg-[var(--color-editor-panel-alt)]"
                   }`}
-                  onClick={() => selectVideoClip(object.id, selected ? null : clip)}
                 >
-                  {nameOf(clip)}
-                </button>
+                  <button
+                    type="button"
+                    aria-pressed={selected}
+                    className="min-w-0 flex-1 truncate px-1.5 py-0.5 text-left"
+                    onClick={() => selectVideoClip(object.id, selected ? null : clip)}
+                  >
+                    {name}
+                  </button>
+                  {/*
+                    × 用 CSS 画（::after content）：不进 textContent，e2e 对小方块
+                    `toHaveText(name)` 的断言才不会被这个符号弄脏。
+                  */}
+                  <button
+                    type="button"
+                    data-testid="video-clip-remove"
+                    data-clip={clip}
+                    aria-label={`移出 ${name}`}
+                    title="移出这一条（素材文件不会被删）"
+                    className="flex-none self-stretch px-1 text-[var(--color-editor-text-dim)] after:content-['×'] hover:text-[var(--color-editor-danger)]"
+                    onClick={() => removeVideoClip(object.id, clip)}
+                  />
+                </span>
               );
             })
+          )}
+
+          <button
+            type="button"
+            data-testid="video-add"
+            title="从项目里的视频素材里挑（可以连着加几条）"
+            aria-label="添加视频"
+            className="flex h-6 w-6 flex-none items-center justify-center rounded border border-dashed border-[var(--color-editor-border)] text-[13px] leading-none text-[var(--color-editor-text-dim)] hover:border-[var(--color-editor-accent)] hover:text-[var(--color-editor-text)]"
+            onClick={() => setPicking(true)}
+          >
+            ＋
+          </button>
+          {clips.length === 0 ? null : (
+            <button
+              type="button"
+              data-testid="video-clear"
+              title="全部移出（素材文件不会被删）"
+              className="flex-none rounded border border-[var(--color-editor-border)] px-1.5 py-0.5 text-[10px] text-[var(--color-editor-text-dim)] hover:border-[var(--color-editor-accent)] hover:text-[var(--color-editor-text)]"
+              onClick={() => clearVideoClips(object.id)}
+            >
+              清空
+            </button>
           )}
         </div>
       </FieldRow>
 
-      {/*
-        开窗口的按钮**单独占一行**：它和小方块挤在一行时，想换「放哪条」很容易点到它
-        （一个点错是换视频、一个点错是弹窗口）。标签留空 = 让按钮与上面那排小方块左对齐。
-      */}
-      <FieldRow label="">
-        <button
-          type="button"
-          data-testid="video-edit"
-          title="打开「编辑视频」窗口：加 / 删视频、看路径、给每个视频起名字"
-          className="flex-none rounded bg-[var(--color-editor-accent)] px-2 py-0.5 text-[11px] text-black hover:opacity-90"
-          onClick={() => openMediaEditor("video", object.id)}
-        >
-          编辑
-        </button>
-      </FieldRow>
+      {/* 选择视频：点一条就加进来（已加的标「已加入」），关掉回到面板 */}
+      <ResourcePickerDialog
+        kind="video"
+        open={picking}
+        added={clips}
+        onPick={(id) => addVideoClip(object.id, id)}
+        onClose={() => setPicking(false)}
+      />
 
       {/*
         播放 / 暂停 · 继续 / 停止：与「播放声音」那一组**完全同一套**（同一个 `PlaybackRow`、

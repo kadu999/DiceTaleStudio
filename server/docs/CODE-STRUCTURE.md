@@ -16,8 +16,8 @@
 | 后端默认地址 | `0.0.0.0:1420`（`resources/config/app.json`，可被 `HOST` / `PORT` 覆盖） |
 | 编辑器开发地址 | `http://localhost:5173`（Vite，`/api`、`/editor`、`/client` 反代到 1420） |
 | 编辑器生产地址 | `http://localhost:1420`（后端同源托管 `apps/editor/dist`） |
-| 源码规模（不含测试） | 158 个文件 / 34,994 行（packages 11,516 · backend 3,283 · editor 20,195） |
-| 测试规模 | 31,818 行（单测 22,592 · E2E 8,943 · 架构测试 283） |
+| 源码规模（不含测试） | 157 个文件 / 34,627 行（packages 11,516 · backend 3,283 · editor 19,828） |
+| 测试规模 | 31,843 行（单测 22,632 · E2E 8,928 · 架构测试 283） |
 
 > 上表两行与 §0.1 表格里加粗的文件行数、§3.x 节标题里的包规模由
 > `scripts/check-code-structure-stats.mjs` **机器校验**（`pnpm check` 的一环）：
@@ -1084,7 +1084,7 @@ Radmin / Hamachi / Bluetooth）；真实网卡（Wi-Fi / WLAN / Wireless / Ether
 | 层 | 目录 | 规则 |
 |---|---|---|
 | 入口 | `main.tsx`、`App.tsx` | `main.tsx` 是唯一 import 全局样式的地方；`App.tsx` 只有 5 行，只包一层 `EditorShell` |
-| 外壳 | `app/` | `EditorShell.tsx` 是唯一的布局与总装点，也是**全局快捷键的唯一注册处**；把 12 个对话框按 store 开关挂在末尾 |
+| 外壳 | `app/` | `EditorShell.tsx` 是唯一的布局与总装点，也是**全局快捷键的唯一注册处**；把 11 个对话框按 store 开关挂在末尾 |
 | 面板 | `panels/` | 只做「读 store 窄选择器 + 画 UI + 调 store action」，本身不持有文档数据 |
 | 状态 | `state/editor-store.ts` | zustand 单 store；**唯一的真源** |
 | 服务 | `services/` | 只依赖 `@dts/*` 与同层服务，**不 import store、不 import React**，因此全部可单测 |
@@ -1134,7 +1134,7 @@ store 用 **zustand 切片**模式拆开了：原来是一个 4,493 行的 `edit
 | 文件 | 行数 | 职责 | 对外导出 |
 |---|---|---|---|
 | `editor-store.ts` | **94** | **只剩组装与再导出**：`create<EditorStoreState>()` 里展开初始状态与 17 个切片，再导出只保留真正从这里取的名字（逐名核对过消费方） | `useEditorStore`、`sceneHistory`、`projectHistory`、`fitSceneViewport`、`serializeSceneFile`、`compareSceneNames`、`findResourceNode`、`withRenamedSceneImage`；类型 `EditorMode`、`ProjectDialogMode`、`SceneDialogMode`、`SceneSaveState` |
-| `store-types.ts` | 782 | 全部状态类型 + `EditorStoreState`（**128 个 action + 45 个状态字段**）+ `StoreSet` / `StoreGet` / `EditorStoreData`（由「全部 action 名」算出来的状态部分）；素材 meta 的 `AssetMetaTable`（真源表）、`AssetMetaDraft`（`applyMetas` 拿到的那份可写草稿）与 `assetMetas`（派生索引）也在这里 | 上表那些类型 |
+| `store-types.ts` | 776 | 全部状态类型 + `EditorStoreState`（**130 个 action + 44 个状态字段**）+ `StoreSet` / `StoreGet` / `EditorStoreData`（由「全部 action 名」算出来的状态部分）；素材 meta 的 `AssetMetaTable`（真源表）、`AssetMetaDraft`（`applyMetas` 拿到的那份可写草稿）与 `assetMetas`（派生索引）也在这里 | 上表那些类型 |
 | `store-core.ts` | 394 | **模块级**工具与状态：**三份** `DocumentHistory`（`sceneHistory` / `projectHistory` / `metaHistory`）、撤销轨（`lastEditTrack` / `activeTrack` / `historyOf` / `EDIT_TRACKS` = `scenes` / `project` / `metas`）、常量、`fitSceneViewport`、`serializeSceneFile` / `serializeProjectFile`、`withRenamedSceneImage`、`compareSceneNames`、`findResourceNode`、`makeLog` | 同 `editor-store` 的值导出 |
 | `store-context.ts` | 1,299 | **闭包状态与局部工具**（原 `create()` 里那段）：`StoreContext` 53 个成员——40 个函数（`pushLog` / `switchScene` / `deliverSoundPlay` / `applyActiveScene` / `scheduleSceneSave` / `scheduleMetaSave` / `metaDirtyIds` / `fogTargetOf` / `currentSceneDoc` / `findObjectById` …）、8 个稳定引用（`runtimeClient` / 两个 `ScenePushScheduler` / `savedScenes` / **`savedMetas`** / `sceneViewports` / `quietCommandIds` / `storedGridPaint`）、5 个可变标量走 get/set（`lastPushedSceneText` / `pendingRunRequest` / `viewportAdjusted` / `bootstrapping` / `savedProjectText`）；**`metaHistory.subscribe` 在这里重建 `assetMetas` 索引并安排 meta 落盘** | `StoreContext`、`createStoreContext` |
 | `initialState.ts` | 84 | 初始状态（返回类型是 `EditorStoreData`，所以**少一个状态字段就编译报错**；素材 meta 两份初始为空） | `createInitialState` |
@@ -1198,7 +1198,7 @@ export function createSoundSlice(
 
 | 文件 | 行数 | 职责 | 对外导出 |
 |---|---|---|---|
-| `EditorShell.tsx` | 369 | 四区外壳（桌面三栏 / 紧凑抽屉）、启动引导 `bootstrapEditor`、**全局快捷键注册**、跨断点重置面板开合、按 store 开关渲染 12 个对话框；内部 `Drawer`。 | `EditorShell` |
+| `EditorShell.tsx` | 358 | 四区外壳（桌面三栏 / 紧凑抽屉）、启动引导 `bootstrapEditor`、**全局快捷键注册**、跨断点重置面板开合、按 store 开关渲染 11 个对话框；内部 `Drawer`。 | `EditorShell` |
 | `MenuBar.tsx` | 385 | 顶部菜单（工程/场景/编辑/视图/运行）+ 顶栏右侧（紧凑开关、`BgmControl`、`ModeSwitch`、`ClientBadge`）。原则：**所有命令都必须能从菜单触发**。 | `MenuBar` |
 | `StatusBar.tsx` | 98 | 底栏八个状态格：工程名、场景数、场景保存状态、工程保存状态、当前场景、已选数、当前工具、运行态与连接状态点；内部 `SAVE_STATE_LABELS`（含 `runtime: "运行中（不保存）"`）、`TOOL_LABELS`。 | `StatusBar` |
 | `dialog-size.ts` | 96 | 弹窗尺寸计算（比例 0.8×0.86，夹 720×520 ~ 1680×1200，且不超过窗口 92%）与「按长宽比等比装进可用区域」；`useViewportSize` 订阅 resize。 | `dialogSizeFor`、`fitBox`、`useViewportSize`、`useDialogSize` |
@@ -1209,7 +1209,6 @@ export function createSoundSlice(
 | `SpriteEditorDialog.tsx` | 179 | 独立的**精灵编辑器**（v23 新增）：列 / 行（1..64）、缩放、预览图上点格，草稿只在弹窗内变化，点「应用」才落到**素材 meta** 那条轨道（`setSpriteSheet`，1×1 按「恢复整图」处理）。 | `SpriteEditorDialog` |
 | `AudioTagDialog.tsx` | 157 | 「选择标签」：给**任何素材文件**勾/去标签（`taggableAssets` + `allTagsOf` + `setAssetTags`，「N 个文件在用」跨图 / 声 / 视频全部计数），只勾选不新建；目标已经不在资源树里时什么都不做（不凭空造 orphan meta）。 | `AudioTagDialog` |
 | `AudioTagEditorDialog.tsx` | 197 | 「标签」窗口：整数序号 `#0…#N` 预铺（`SLOTS_PER_PAGE` 16、`MAX_SLOTS` 32），只填名字，洞不画。 | `AudioTagEditorDialog` |
-| `MediaEditDialog.tsx` | 427 | 「编辑媒体清单」**通用窗口**（原「编辑声音」/「编辑视频」+ `MediaClipListDialog` 三合一，按 `kind` 调整文案 / 文档读取 / store 动作）：左文件清单（**视频首帧当缩略图** `<video preload="metadata">`、音频公用 `AssetFileIcon`；显示名**只读** + 路径 + webm 徽标 + 移出）+ 右**播放预览**（点一条试听 / 预览，`<audio controls>` / `<video controls>`）；内嵌 `ResourcePickerDialog kind={kind}`。**显示名在文件属性上改**（`.meta` 顶层 `name`），这里不管改名。testid 由 `prefix`（`sound` / `video`）派生，e2e 钉住的 `${prefix}-edit-*` 一枚不改 | `MediaEditDialog` |
 | `TeleportEditDialog.tsx` | 117 | 「传送目标」窗口：把项目场景勾成候选（整份新清单交 `setTeleportTargets`）；已失效的目标照列并标「已失效」。 | `TeleportEditDialog` |
 | `GlobalSettingsDialog.tsx` | 110 | 「全局设置」：三档音量滑杆（`doc.settings.audio.*`，0..1 step 0.05）。 | `GlobalSettingsDialog` |
 | `BgmControl.tsx` | 79 | 顶栏「音乐」按钮：显示当前在放什么/暂停标记/播放中高亮；导出 `bgmDeliveryHint`（与声音/视频**同一套措辞**的「已记录，等连上补发」提示）。 | `BgmControl`、`bgmDeliveryHint` |
@@ -1249,8 +1248,8 @@ export function createSoundSlice(
 | `registry.tsx` | 145 | **对象分组的注册表**：7 组（基础 / 渲染 / 声音 / 传送 / 区域 / 战争雾 / 视频）各自的 `applies`（判据走预设表与访问器，不看 `kind` 字面量）与 `render`；**数组顺序就是界面顺序**（e2e 断言它）。「基础」组里 **`sortingOrder` 由对象字段规格自动出行**，其余六个字段仍是手写控件（各有专属语义，见 `object-spec.ts`） | `ObjectGroupDef`、`OBJECT_GROUPS` |
 | `object-fields.tsx` | 789 | 对象字段的控件本体（从 `InspectorPanel.tsx` 拆出，纯搬运）：名称 / 激活 / 锁定 / **位置** / 缩放 / 单轴缩放 / 旋转 / 贴图（含**子图那一行**：`子图 第2行第3列（4×4）` + 「改回整图」，越界时挂「格子越界」提示；testid `texture-sprite` / `texture-sprite-out-of-range` / `clear-sprite`）/ 网格规格 / 每格像素 / 网格显示开关 + 它们的格式化与解析助手。**「显示顺序」已搬去描述符**（`object-spec.ts`），所以这里没有它 | `NameField`、`ActiveField`、`LockedField`、`PositionFields`、`ScaleField`、`ScaleAxisField`、`RotationField`、`TextureField`、`GridFields`、`CellSizeField`、`GridDisplayField`、`WORLD_ORIGIN_FALLBACK` 等 |
 | `fields.tsx` | 204 | 属性面板的行/分组外壳与**播放类控件**：可折叠 `FieldGroup`（`data-group` 英文 slug）、只读 `Field`、`FieldRow`（标签定宽 `w-20`，必须是行内第一个子元素）、`PlaybackRow`、`PlaybackStatus`、`PLAYBACK_BUTTON_CLASS` / `PLAYBACK_BUTTON_ACTIVE_CLASS`（高 34px、13px 字）。 | `FieldGroup`、`Field`、`FieldRow`、`PlaybackRow`、`PlaybackStatus`、`PLAYBACK_BUTTON_CLASS`、`PLAYBACK_BUTTON_ACTIVE_CLASS`；类型 `PlaybackState` |
-| `SoundFields.tsx` | 320 | 声音对象的「声音」组：层级下拉（对象只给 `OBJECT_SOUND_LAYERS`，老文件的 `bgm` 照显并提示改）、音频小方块单选、`编辑音频…` 入口、播放三键 + 状态行（多一档 `busy` = 本层被别的对象占着）；每条音频的显示名经 `audioDisplayName` 读（素材 `.meta` 顶层 `name`，唯一入口在文件属性）。 | `SoundFields`、`soundPlayBlockedReason`、`soundDeliveryHint` |
-| `VideoFields.tsx` | 302 | 地图/贴图/精灵的「视频」组：启用闸门（关着只留开关，**保留自定义渲染**——关掉它要连带摘掉整个组件）、**循环 / 声音 / 自动播放三行由组件规格自动出行**（`descriptorRows(object, videoSpec, componentFields(...))`，见 `DescriptorRows.tsx`）、视频小方块单选、「编辑」入口、播放三键 + 状态行；小方块的显示名同样读素材 `.meta` 顶层 `name`。 | `VideoFields`、`videoPlayBlockedReason`、`videoDeliveryHint` |
+| `SoundFields.tsx` | 361 | 声音对象的「声音」组：层级下拉（对象只给 `OBJECT_SOUND_LAYERS`，老文件的 `bgm` 照显并提示改）、音频小方块单选（每个带 `×` 移出）+ `＋` 添加（弹 `ResourcePickerDialog kind="audio"`）+ 「清空」、播放三键 + 状态行（多一档 `busy` = 本层被别的对象占着）；每条音频的显示名经 `audioDisplayName` 读（素材 `.meta` 顶层 `name`，唯一入口在文件属性）。 | `SoundFields`、`soundPlayBlockedReason`、`soundDeliveryHint` |
+| `VideoFields.tsx` | 343 | 地图/贴图/精灵的「视频」组：启用闸门（关着只留开关，**保留自定义渲染**——关掉它要连带摘掉整个组件）、**循环 / 声音 / 自动播放三行由组件规格自动出行**（`descriptorRows(object, videoSpec, componentFields(...))`，见 `DescriptorRows.tsx`）、视频小方块单选（每个带 `×` 移出）+ `＋` 添加 + 「清空」、播放三键 + 状态行；小方块的显示名同样读素材 `.meta` 顶层 `name`。 | `VideoFields`、`videoPlayBlockedReason`、`videoDeliveryHint` |
 | `registry.tsx` | 145 | **对象分组的注册表**：7 组（基础 / 渲染 / 声音 / 传送 / 区域 / 战争雾 / 视频）各自的 `applies`（判据走预设表与访问器，不看 `kind` 字面量）与 `render`；**数组顺序就是界面顺序**（e2e 断言它）。「基础」组里 **`sortingOrder` 由对象字段规格自动出行**，其余六个字段仍是手写控件（各有专属语义，见 `object-spec.ts`） | `ObjectGroupDef`、`OBJECT_GROUPS` |
 | `DescriptorRows.tsx` | 316 | **规格驱动的行渲染器**：按 `FieldDef.kind` 出行（布尔 / 数字 / 整数 / 字符串 / 多行文本 / 枚举），`FieldTarget` 抽象把「写哪份数据」与「这一行长什么样」分开——`componentFields(type)` 写组件 `data`、`objectFields` 写对象自身，**两种规格共用同一个渲染器**。`order` 排序、`testId` 直取描述符、`FieldRow` 外壳与「不被 store 回灌 / 非法值退回 / Esc 还原」三条约定与手写控件逐字一致。加一个简单字段 = 规格里加一行，这里不用动。 | `InspectorRow`、`FieldTarget`、`componentFields`、`objectFields`、`descriptorRows`、`sortInspectorRows` |
 | `TeleportFields.tsx` | 105 | 传送阵的「传送」组：候选目标小方块 + `＋` 开「传送目标」窗口 + 「传送」按钮（不能传时按钮上写原因）。 | `TeleportFields` |
@@ -1337,11 +1336,11 @@ export function createSoundSlice(
 edit：取消去抖、`lastPushedSceneText=null`、发 `runtime_stop`）、`pushRuntimeScene`、`clearRuntimeLogs`。
 
 **声音**：`playSound`、`stopSound`、`pauseSound`、`resumeSound`、`flushSoundPlayback`、
-`addSoundClip`（已在列表就不抢选中）、`removeSoundClip`、`selectSoundClip`、
+`addSoundClip`（已在列表就不抢选中）、`removeSoundClip`、`selectSoundClip`、`clearSoundClips`、
 `setSoundLayer`。
 
 **视频**：`playVideo`、`pauseVideo`、`resumeVideo`、`stopVideo`（停止**不要求**仍选中）、`flushVideoPlayback`、
-`openMediaEditor`（声音 / 视频共用的编辑窗口开关）、`setVideoEnabled`、`addVideoClip`、`removeVideoClip`、`selectVideoClip`、
+`setVideoEnabled`、`addVideoClip`、`removeVideoClip`、`selectVideoClip`、`clearVideoClips`、
 `setVideoLoop`。
 
 **背景音乐**：`playBgm`（再点同一首 = 让前端从头重播）、`pauseBgm`、`resumeBgm`、`stopBgm`、
@@ -1498,7 +1497,8 @@ edit：取消去抖、`lastPushedSceneText=null`、发 `runtime_stop`）、`push
 对话框绑定：`ProjectDialog` → `project`/`projectDialog`；`SceneDialog` → `activeSceneName`/`sceneDialog`；
 `ObjectDialog` → `objectDialog`；`ResourcePickerDialog`（kind=image 挑图 + 取一格）/ `SpriteEditorDialog`（精灵切分）→
 `imagePickerTarget`/**`assetMetas`（读切分与导入设置）**/`setSpriteSheet`；
-`MediaEditDialog`（内嵌 `ResourcePickerDialog`，kind = `mediaEditor.kind`）→ `mediaEditor`/`assetMetaTable`（每条音频的显示名与全部素材的标签）；
+声音 / 视频的 `ResourcePickerDialog`（kind=audio / video，添加素材）由**属性面板**各自挂本地开关（`SoundFields` / `VideoFields`），
+清单管理（单选 / `×` 移出 / `clearSoundClips` / `clearVideoClips`）也在面板里，没有编辑窗口；
 `TeleportEditDialog` → `teleportEditor(Target)`；`GlobalSettingsDialog` → `doc.settings.audio`；
 `BgmControl`+`BgmDialog` → `bgmDialog`/`bgmPlayback`/`ui.bgmPaths`/`assetMetaTable`（清单的显示名与标签）；
 `AudioTagEditorDialog`+`AudioTagDialog` → `audioTags`/`doc.audioTags`（标签表）+ **各素材的 `assetMetaTable`**（勾了哪些标签，任何素材都能打）；
@@ -1846,8 +1846,8 @@ upgradeRawDocument
 
 | 文件 | 行数 | 覆盖的行为 |
 |---|---|---|
-| `sound-object.test.tsx` | 668 | 种类表里动作下的「播放声音」；创建声音对象；属性面板声音组；编辑声音窗口（store 侧加/删，显示名读素材 meta）；播放/停止能不能点；面板上看得见的状态；store 的记账与日志 |
-| `video-object.test.tsx` | 592 | 属性面板视频组；播放/暂停/停止的可用性与状态显示；失败原因都在运行日志里写明；store 的加/删/改名 |
+| `sound-object.test.tsx` | 692 | 种类表里动作下的「播放声音」；创建声音对象；属性面板声音组（小方块单选/× 移出/清空/＋ 添加）；播放/停止能不能点；面板上看得见的状态；store 的记账与日志 |
+| `video-object.test.tsx` | 613 | 属性面板视频组（闸门/小方块单选/× 移出/清空/＋ 添加）；播放/暂停/停止的可用性与状态显示；失败原因都在运行日志里写明；store 的加/删 |
 | `descriptor-rows.test.tsx` | 169 | **描述符行的等价性契约**（v25）：三个开关的 testid 与行序与手写版逐字一致、tooltip 仍在、勾选走泛型入口且是一次可撤销编辑（撤销说明取规格标签）、三个开关互不干扰、组件缺失时按规格补壳再写。**这一份红 = 重构改了行为；这一份绿 + 既有测试零改动 = 只是换了实现** |
 | `bgm-dialog.test.tsx` | 544 | 顶栏「音乐」按钮；「背景音乐」弹框（清单、搜索、标签勾选、路径开关、选中跟随播放、自动滚到当前曲、底部三键；显示名与标签来自各音频的 `.meta`）；**与项目设置分离** |
 | `run-mode.test.ts` | 440 | **运行中的改动不保存、退出即还原**；切场景 = 换台（运行态下立刻推）；运行基线跟着文档走；运行中的文件操作与断线 |

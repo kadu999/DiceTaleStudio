@@ -181,11 +181,6 @@ export interface EditorStoreState {
   readonly imagePicker: boolean;
   /** 正在换贴图的地图对象 id；null 表示弹框没打开 */
   readonly imagePickerTarget: string | null;
-  /**
-   * 「编辑媒体清单」窗口（`MediaEditDialog`：声音 / 视频同一个窗口按 kind 调整）：
-   * 非 null = 打开，`kind` 是哪一种、`objectId` 是正在编辑哪个对象。
-   */
-  readonly mediaEditor: { readonly kind: "audio" | "video"; readonly objectId: string } | null;
   /** 「传送目标」窗口是否打开（属性面板「传送」组里的 `＋` 唤出） */
   readonly teleportEditor: boolean;
   /** 正在编辑哪个传送阵的候选目标；null 表示窗口没打开 */
@@ -383,11 +378,6 @@ export interface EditorStoreState {
    */
   flushVideoPlayback(): number;
   /**
-   * 打开 / 关闭「编辑媒体清单」窗口（`MediaEditDialog`：`audio` = 声音、`video` = 视频；
-   * 传 `null` 关闭）。两扇窗口合并后只有一个开关。
-   */
-  openMediaEditor(kind: "audio" | "video", objectId: string | null): void;
-  /**
    * 视频：**启用 / 关掉**这个对象的视频（文档数据）。
    *
    * 关掉 = 前端不建视频层（播放类命令会被拒），但**已经加的视频留着**（再打开就回来）；
@@ -400,6 +390,8 @@ export interface EditorStoreState {
   removeVideoClip(objectId: string, clipId: string): boolean;
   /** 视频：选中 / 取消选中「放哪一条」（`null` = 取消选中）。 */
   selectVideoClip(objectId: string, clip: string | null): boolean;
+  /** 视频：一次移出全部（列表与选中一起清空；素材文件不会被删）。 */
+  clearVideoClips(objectId: string): boolean;
   /** 视频：循环播放开关（文档数据）。 */
   setVideoLoop(objectId: string, loop: boolean): boolean;
   /**
@@ -645,6 +637,8 @@ export interface EditorStoreState {
   selectSoundClip(objectId: string, clip: string | null): boolean;
   /** 改声音层级（同层同时只响一条的那一层）；非声音对象 / 值没变返回 false。 */
   setSoundLayer(objectId: string, layer: SoundLayer): boolean;
+  /** 声音：一次移出全部音频（列表与选中一起清空；素材文件不会被删）。 */
+  clearSoundClips(objectId: string): boolean;
   /**
    * 改**传送阵的候选目标场景**（「传送目标」窗口里勾 / 取消勾就是这件事）。
    *

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   DEFAULT_SOUND_LAYER,
   OBJECT_SOUND_LAYERS,
@@ -10,6 +11,7 @@ import { useEditorStore, type EditorMode } from "../../state/editor-store";
 import type { RuntimeStatus } from "../../services/runtime-client";
 import { audioDisplayName } from "../audio-catalog";
 import { assetDisplayPath, currentResourceId } from "../asset-picker";
+import { ResourcePickerDialog } from "../../app/ResourcePickerDialog";
 import {
   FieldRow,
   PLAYBACK_BUTTON_ACTIVE_CLASS,
@@ -20,12 +22,12 @@ import {
 } from "./fields";
 
 /**
- * 声音对象（动作对象）的「声音」组：**层级 → 音频 → 编辑音频… → 播放**。
+ * 声音对象（动作对象）的「声音」组：**层级 → 音频（小方块 + 添加 / 移出）→ 播放**。
  *
- * 两个地方分工，别混：
- * - **这里（面板）**：把**加进来的音频全列出来**（小方块），点一下就把「播哪一条」切过去；
- * - **「编辑声音」窗口**（`app/SoundEditDialog.tsx`，下面那行「编辑音频…」唤出）：加音频 /
- *   删音频 / 起名字——那里看得见每个文件的路径，面板太窄放不下。
+ * 清单的**全部管理都在这一组里**（没有别的窗口）：
+ * - 小方块 = 加进来的音频，点一下就把「播哪一条」切过去；
+ * - 每个小方块上的 `×` = 移出那一条；「清空」= 一次全部移出；
+ * - `＋` = 从项目素材里**添加**（弹 `ResourcePickerDialog`，点一条加一条）。
  *
  * 编辑器**不播放**：没有试听、不接音频解码。点「播放」只是**记账**（哪一层该播什么）+
  * 尽力把命令发给前端；所以按钮**不要求前端在场**，没连上时状态记着、等连上补发。
@@ -39,13 +41,13 @@ import {
  * + 一行状态；两组的措辞也一样（正在播放 / 已暂停 / 没在播放）。
  */
 
-/** 「播放」现在能不能点：一条音频都没加 → 先去窗口里加；加了但没选 → 先选一条。 */
+/** 「播放」现在能不能点：一条音频都没加 → 先添加；加了但没选 → 先选一条。 */
 export function soundPlayBlockedReason(input: {
   readonly clips: number;
   readonly picked: string | undefined;
 }): string | undefined {
   if (input.clips === 0) {
-    return "先加一条音频（点「编辑」从项目里挑）";
+    return "先加一条音频（点「＋」从项目里挑）";
   }
 
   return input.picked === undefined ? "先选一条声音" : undefined;
@@ -78,7 +80,9 @@ export function SoundFields({ object }: { readonly object: GameObjectDoc }): Rea
   const scenes = useEditorStore((state) => state.scenes);
   const activeSceneName = useEditorStore((state) => state.activeSceneName);
   const playback = useEditorStore((state) => state.soundPlayback);
-  const openMediaEditor = useEditorStore((state) => state.openMediaEditor);
+  const addSoundClip = useEditorStore((state) => state.addSoundClip);
+  const removeSoundClip = useEditorStore((state) => state.removeSoundClip);
+  const clearSoundClips = useEditorStore((state) => state.clearSoundClips);
   const selectSoundClip = useEditorStore((state) => state.selectSoundClip);
   const setSoundLayer = useEditorStore((state) => state.setSoundLayer);
   const playSound = useEditorStore((state) => state.playSound);
@@ -88,6 +92,9 @@ export function SoundFields({ object }: { readonly object: GameObjectDoc }): Rea
   const mode = useEditorStore((state) => state.mode);
   const status = useEditorStore((state) => state.runtime.status);
   const clientConnected = useEditorStore((state) => state.runtime.client !== null);
+
+  /** 「选择音频」弹框开着没有（换个对象就收起来）。 */
+  const [picking, setPicking] = useState(false);
 
   const sound = soundDataOf(object);
   // 手写文件里可能整个 sound 都没有（`validateScene` 会报错）：这里按「还没加音频、音效层」显示
@@ -185,7 +192,8 @@ export function SoundFields({ object }: { readonly object: GameObjectDoc }): Rea
       ) : null}
 
       {/*
-        音频那一行：**加进来的全列出来**（单选，选中的那条就是前端会播的）。
+        音频那一行：**加进来的全列出来**（单选，选中的那条就是前端会播的），
+        管理也全在这一行：小方块上的 `×` 移出一条、「清空」全部移出、`＋` 添加。
         小方块会折行，所以这里自己是一个 `flex-wrap` 容器（`FieldRow` 只管标签那一列）。
       */}
       <FieldRow label="音频">
@@ -194,56 +202,89 @@ export function SoundFields({ object }: { readonly object: GameObjectDoc }): Rea
             <span
               data-testid="sound-empty"
               className="text-[11px] text-[var(--color-editor-text-dim)]"
-              title="点下面的「编辑音频…」从项目里的音频素材里挑"
+              title="点「＋」从项目里的音频素材里挑"
             >
               还没加音频
             </span>
           ) : (
             clips.map((clip) => {
               const selected = clip === picked;
+              const name = nameOf(clip);
               return (
-                <button
+                <span
                   key={clip}
-                  type="button"
                   data-testid="sound-clip"
                   data-clip={clip}
                   data-selected={selected}
-                  aria-pressed={selected}
                   title={
                     selected
                       ? `${pathOf(clip)}（就是它会被播；再点一下取消选中）`
                       : `${pathOf(clip)}（点一下改成播它）`
                   }
-                  className={`max-w-[8rem] truncate rounded border px-1.5 py-0.5 text-[10px] ${
+                  className={`flex max-w-[9rem] items-center overflow-hidden rounded border text-[10px] ${
                     selected
                       ? "border-[var(--color-editor-accent)] bg-[var(--color-editor-accent-dim)] text-white"
                       : "border-[var(--color-editor-border)] hover:bg-[var(--color-editor-panel-alt)]"
                   }`}
-                  onClick={() => selectSoundClip(object.id, selected ? null : clip)}
                 >
-                  {nameOf(clip)}
-                </button>
+                  <button
+                    type="button"
+                    aria-pressed={selected}
+                    className="min-w-0 flex-1 truncate px-1.5 py-0.5 text-left"
+                    onClick={() => selectSoundClip(object.id, selected ? null : clip)}
+                  >
+                    {name}
+                  </button>
+                  {/*
+                    × 用 CSS 画（::after content）：不进 textContent，e2e 对小方块
+                    `toHaveText(name)` 的断言才不会被这个符号弄脏。
+                  */}
+                  <button
+                    type="button"
+                    data-testid="sound-clip-remove"
+                    data-clip={clip}
+                    aria-label={`移出 ${name}`}
+                    title="移出这一条（素材文件不会被删）"
+                    className="flex-none self-stretch px-1 text-[var(--color-editor-text-dim)] after:content-['×'] hover:text-[var(--color-editor-danger)]"
+                    onClick={() => removeSoundClip(object.id, clip)}
+                  />
+                </span>
               );
             })
+          )}
+
+          <button
+            type="button"
+            data-testid="sound-add"
+            title="从项目里的音频素材里挑（可以连着加几条）"
+            aria-label="添加音频"
+            className="flex h-6 w-6 flex-none items-center justify-center rounded border border-dashed border-[var(--color-editor-border)] text-[13px] leading-none text-[var(--color-editor-text-dim)] hover:border-[var(--color-editor-accent)] hover:text-[var(--color-editor-text)]"
+            onClick={() => setPicking(true)}
+          >
+            ＋
+          </button>
+          {clips.length === 0 ? null : (
+            <button
+              type="button"
+              data-testid="sound-clear"
+              title="全部移出（素材文件不会被删）"
+              className="flex-none rounded border border-[var(--color-editor-border)] px-1.5 py-0.5 text-[10px] text-[var(--color-editor-text-dim)] hover:border-[var(--color-editor-accent)] hover:text-[var(--color-editor-text)]"
+              onClick={() => clearSoundClips(object.id)}
+            >
+              清空
+            </button>
           )}
         </div>
       </FieldRow>
 
-      {/*
-        开窗口的按钮**单独占一行**：它和小方块挤在一行时，想换「播哪条」很容易点到它
-        （一个点错是换声音、一个点错是弹窗口）。标签留空 = 让按钮与上面那排小方块左对齐。
-      */}
-      <FieldRow label="">
-        <button
-          type="button"
-          data-testid="sound-edit"
-          title="打开「编辑声音」窗口：加 / 删音频、看路径、给每个音频起名字"
-          className="toolbar-button flex-none hover:toolbar-button-hover"
-          onClick={() => openMediaEditor("audio", object.id)}
-        >
-          编辑音频…
-        </button>
-      </FieldRow>
+      {/* 选择音频：点一条就加进来（已加的标「已加入」），关掉回到面板 */}
+      <ResourcePickerDialog
+        kind="audio"
+        open={picking}
+        added={clips}
+        onPick={(id) => addSoundClip(object.id, id)}
+        onClose={() => setPicking(false)}
+      />
 
       {/*
         播放 / 暂停 · 继续 / 停止：与「视频」那一组**完全同一套**（同一个 `PlaybackRow`、
