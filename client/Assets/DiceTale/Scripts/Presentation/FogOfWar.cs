@@ -6,19 +6,24 @@ namespace DiceTale
     /// <summary>
     /// 战争雾（镜像驱动）：**把地图数据里那些雾格画成一层雾，再按后台发来的鼠标轨迹把它擦掉**。
     ///
-    /// 这一层与地图**同级**（`SceneObjectView` 建的 `FogOverlay`，和地图一起挂在场景根节点下，
-    /// 不是地图的子物体）：位置与角度由那边按**地图同一份数值**摆一遍，尺寸交给
-    /// <see cref="ImageLayer"/> 烘进网格（与地图面片同一套口径）；
-    /// 显示顺序的调用方会给**最前面**——未探索的地方连地图上的对象一起盖住。
+    /// 组件袋的一员：它**直接挂在地图对象自己的 GameObject 上**（对象带 `FogOfWar` 协议组件就有它，
+    /// 由 <see cref="SceneObjectView.Create"/> 挂上），不再由别人在场景根节点下另建一个同级物体。
+    /// 渲染用的面片是它自己管的一个**子物体** `FogOverlay`（见 <see cref="OverlayName"/>）：
+    /// 挂在**本组件所在 GameObject 下**，位置 / 旋转 / 缩放自动跟着地图走，不用谁替它摆一遍；
+    /// 尺寸交给子物体上的 <see cref="ImageLayer"/> 烘进网格（与地图面片同一套口径），
+    /// 离地 = 父级抬升 + <see cref="OverlayLift"/>（世界高度与以前「同级、按同一份数值摆」逐字一致）；
+    /// 显示顺序取 <see cref="SortingOrder"/>（最前面）——未探索的地方连地图上的对象一起盖住
+    /// （`sortingOrder` 是全局的，挂成子物体不改变这一点）。
     ///
-    /// **雾是哪几格**：`FogOfWar` 组件的 `regions` 指定了哪些「区域位」算雾区（区域位就是 `map.cells`
-    /// 里那些位，与 `@dts/grid` 的 `CellMask` / <see cref="GridCellType"/> 同一套值）。一格只要含其中任意一位
-    /// 就是雾格——**不写死 `Fog1..Fog5`**：编辑器里可以指定任意可绘制区域位
-    /// （例如区域1/2/3 = 位 `1|2|4`，旧实现一格都不会盖）。
+    /// **子物体只在三个条件都满足时才存在**，每次收到场景推送都重新判断（<see cref="Apply"/>）：
+    /// 本对象有地图数据（<see cref="GridMapView"/> 在、且 <see cref="GridMapView.Map"/> 非 null）、
+    /// `FogOfWar.enabled`（编辑器那个总开关）开着、`regions` 非空。任一不满足就把子物体拆掉，
+    /// 别留一块盖着旧遮罩的面片。
     ///
-    /// **这一层只在开关开着时才存在**：`FogOfWar.enabled` 是编辑器里那个总开关，
-    /// <see cref="SceneObjectView"/> 按它决定建不建本组件（关掉 = 这张地图现在没有战争雾）。
-    /// 所以这里不必再判开关——能拿到这个组件，就说明那时它是开着的；关掉时整个物体被拆掉。
+    /// **语义变化（组件袋化，有意为之）**：组件现在**常驻**——开关关掉 / 没绑雾区时只是没有
+    /// 渲染子物体，组件自己的遮罩与操作记录都还留着（以前整个组件随开关销毁，重开等于重新探索；
+    /// 现在再打开开关，已揭示的部分原样恢复）。地图对象被隐藏（`active=false` / 未落位）时
+    /// 子物体跟着隐藏；视图销毁时子物体作为子物体自动带走，不需要谁替它收尸。
     ///
     /// **怎么揭示**：后台只发**轨迹**（`erase_mask`：归一化点 + 归一化半径 + 软边比例），前端照轨迹擦；
     /// 「整区开关」发 `reveal_fog_region`。擦除公式与编辑器 Mask 窗口**逐字对齐**
@@ -41,10 +46,9 @@ namespace DiceTale
     /// **揭示状态只在前端**（不写文档、也不随场景推送回来）：组件里留一份 CPU 遮罩 + 一份**有序的
     /// 操作记录**，地图数据一变（换了雾区 / 涂了格子 / 网格尺寸变了）就「重填初始态 + 按顺序重放」——
     /// 于是「整区盖回」能按顺序盖掉它之前的笔画（与编辑器预览一致），已揭示的部分也不会因为后台推了
-    /// 一份新场景就丢。切场景 / 重连（视图不销毁）都保留，Unity 重启才回到未探索。
+    /// 一份新场景就丢。切场景 / 重连 / 开关重开（视图与组件都不销毁）都保留，Unity 重启才回到未探索。
     /// </summary>
     [DisallowMultipleComponent]
-    [RequireComponent(typeof(ImageLayer))]
     public class FogOfWar : MonoBehaviour
     {
         /// <summary>雾色（默认黑不透明：未探索 = 完全看不见底图）。编辑器预览按区域配色，前端是统一的雾色。</summary>
@@ -81,7 +85,28 @@ namespace DiceTale
         /// <summary>贴图缺失时的兜底遮罩比例（16:9，与参考实现 `MaskImage` 的默认 960×540 同一张）。</summary>
         private const int FallbackMaskHeight = 540;
 
-        // ---------------------------------------------------------------- 地图数据（Apply 传进来）
+        /// <summary>渲染子物体的名字（一眼看出层级里多出来的这一块是什么）。</summary>
+        private const string OverlayName = "FogOverlay";
+
+        /// <summary>
+        /// 雾层的显示顺序：**盖在所有东西前面**（未探索 = 连上面的令牌一起看不见）。
+        ///
+        /// 文档里的 `sortingOrder` 是给对象自己排前后用的（默认范围很小），雾不该跟它们比大小；
+        /// 取 `short.MaxValue`（Unity 的 `sortingOrder` 是 16 位有符号），实际就是「最前面」。
+        /// 已经揭示的地方雾是透明的，所以不会挡住该看见的东西。
+        /// </summary>
+        private const int SortingOrder = short.MaxValue;
+
+        /// <summary>
+        /// 雾层比自己那张地图高多少（**世界单位**）：只求比地图抬升高一档、别跟地图共面。
+        ///
+        /// 地图自己的抬升按 `sortingOrder` 每档差 `0.0005`（`SceneObjectView` 的 `LiftFor`），
+        /// 所以这里给 `0.002` 就够——高了会在斜视角下看起来「浮起来」。
+        /// 子物体的局部 y = 父级抬升 + 这个值（世界高度口径与以前同级摆放逐字一致）。
+        /// </summary>
+        private const float OverlayLift = 0.002f;
+
+        // ---------------------------------------------------------------- 地图数据（从 GridMapView 取）
 
         /// <summary>这张地图的格子掩码（`rowOrder: bottom-up`，`gridWidth * gridHeight` 个）。</summary>
         private int[] cells = new int[0];
@@ -121,14 +146,13 @@ namespace DiceTale
         private int blurWidth;
         private int blurHeight;
 
+        /// <summary>
+        /// 渲染子物体（`FogOverlay`）上的 <see cref="ImageLayer"/>；**null = 渲染子物体没建**
+        /// （overlay 建了才取——lazy，不再有 `Awake` 预热）。
+        /// </summary>
         private ImageLayer overlayRenderer;
 
         private static readonly Color32 Transparent = new Color32(0, 0, 0, 0);
-
-        private void Awake()
-        {
-            overlayRenderer = GetComponent<ImageLayer>();
-        }
 
         private void OnDestroy()
         {
@@ -145,35 +169,96 @@ namespace DiceTale
                 Release(texture);
                 texture = null;
             }
+
+            // 渲染子物体（`FogOverlay`）是**本 GameObject 的子物体**：视图销毁时它自动跟着走，
+            // 这里不需要收；要收的是不挂在层级上的模糊链 / 材质 / 遮罩纹理。
         }
 
         // ---------------------------------------------------------------- 每份场景推送
 
         /// <summary>
-        /// 按一份地图数据刷新雾层（每次收到场景推送都会调）。
+        /// 按这份战争雾组件数据刷新自己（每次收到场景推送都会调；**建不建渲染子物体由它自己拿主意**）。
         ///
-        /// `regions` 是那个对象的 `FogOfWar` 组件指定的雾区位（调用方已经判过「组件在、开关开着、
-        /// 数组非空」）；`worldWidth` / `worldHeight` 是**地图面片的世界尺寸**（调用方已经乘过
-        /// <see cref="SceneObjectView.GlobalScale"/>），雾层与它同大小、同位置、略高一点；
-        /// `sortingOrder` / `lift` 也由调用方算好（盖在自己那张地图之上）。
+        /// 三个条件缺一不可——本对象有地图数据（<see cref="GridMapView"/> 在、且
+        /// <see cref="GridMapView.Map"/> 非 null）、<paramref name="fogData"/> 的总开关开着、
+        /// `regions` 非空（空数组 = 不生成雾层，与旧版对「开着但没指定雾区」的处理一致）。
+        /// 任一不满足就把渲染子物体拆掉，别留一块盖着旧遮罩的面片。
+        ///
+        /// <paramref name="worldWidth"/> / <paramref name="worldHeight"/> 是**地图面片的世界尺寸**
+        /// （调用方已经乘过 <see cref="SceneObjectView.GlobalScale"/>），雾面片与它同大小；
+        /// <paramref name="mapLift"/> 是地图面片自己的离地抬升，雾层在它的基础上再加
+        /// <see cref="OverlayLift"/>；<paramref name="sortingOrder"/> 是对象自己的显示顺序——
+        /// 雾层**刻意不跟着它走**（未探索要连排得比地图还高的对象一起盖住），恒定取最前面
+        /// （<see cref="SortingOrder"/>），参数留在签名里只是让调用方把「地图自己排哪儿」交代清楚。
         /// </summary>
-        public void Apply(MirrorMap mapData, int[] regions, float worldWidth, float worldHeight, int sortingOrder, float lift)
+        public void Apply(MirrorFog fogData, float worldWidth, float worldHeight, int sortingOrder, float mapLift)
         {
-            if (!Adopt(mapData, regions))
+            var gridMap = GetComponent<GridMapView>();
+            var wantsOverlay =
+                gridMap != null
+                && gridMap.Map != null
+                && fogData != null
+                && fogData.enabled
+                && fogData.regions != null
+                && fogData.regions.Length > 0;
+
+            if (!wantsOverlay)
+            {
+                TearDownOverlay();
+                return;
+            }
+
+            if (!Adopt(gridMap.Map, fogData.regions))
+            {
+                // 没绑有效雾区（掩码算出来是 0）/ 格子数据不全：同样不画
+                TearDownOverlay();
+                return;
+            }
+
+            EnsureOverlay();
+
+            if (overlayRenderer != null)
+            {
+                // 白色染色 = 原样显示（雾色已经在遮罩里了）；离地 = 父级抬升 + OverlayLift，
+                // 世界高度与以前「同级、按同一份数值摆」逐字一致（x/z 留在局部原点，跟随父级）
+                overlayRenderer.Apply(DisplayTexture, worldWidth, worldHeight, Color.white, SortingOrder, mapLift + OverlayLift);
+            }
+        }
+
+        // ---------------------------------------------------------------- 渲染子物体（自建自拆）
+
+        /// <summary>
+        /// 建渲染子物体（幂等）：**本组件所在 GameObject 下**挂一个 `FogOverlay` 子物体，
+        /// 上面挂 <see cref="ImageLayer"/> 当渲染器（`ImageLayer` 的 RequireComponent 链会把
+        /// MeshFilter / MeshRenderer 一起带上）。挂成子物体：位置 / 旋转 / 缩放自动跟随地图，
+        /// 对象被隐藏时一起隐藏，视图销毁时自动带走。
+        /// </summary>
+        private void EnsureOverlay()
+        {
+            if (overlayRenderer != null)
             {
                 return;
             }
 
+            var go = new GameObject(OverlayName);
+            go.transform.SetParent(transform, false);
+            overlayRenderer = go.AddComponent<ImageLayer>();
+        }
+
+        /// <summary>
+        /// 拆渲染子物体（幂等）：把 `FogOverlay` 子物体整个销毁，它上面那块面片由
+        /// <see cref="ImageLayer"/> 自己的 `OnDestroy` 释放。运行时 `Destroy`、
+        /// 编辑器 `DestroyImmediate`（见 <see cref="Release"/>）。
+        /// </summary>
+        private void TearDownOverlay()
+        {
             if (overlayRenderer == null)
             {
-                overlayRenderer = GetComponent<ImageLayer>();
+                return;
             }
 
-            if (overlayRenderer != null)
-            {
-                // 白色染色 = 原样显示（雾色已经在遮罩里了）
-                overlayRenderer.Apply(DisplayTexture, worldWidth, worldHeight, Color.white, sortingOrder, lift);
-            }
+            Release(overlayRenderer.gameObject);
+            overlayRenderer = null;
         }
 
         // ---------------------------------------------------------------- 后台命令
@@ -737,8 +822,12 @@ namespace DiceTale
             Debug.LogWarning($"[战争雾] {message}");
         }
 
-        /// <summary>释放自建的 Unity 对象：运行时用 `Destroy`，编辑器（退出播放的收尾）用 `DestroyImmediate`。</summary>
-        private static void Release(UnityEngine.Object owned)
+        /// <summary>
+        /// 释放自建的 Unity 对象：运行时用 `Destroy`，编辑器（退出播放的收尾 / EditMode 测试）
+        /// 用 `DestroyImmediate`。本组件自己与 <see cref="SceneObjectView"/>（拆视频层）共用这一份
+        /// ——同样的切换逻辑别留两份。
+        /// </summary>
+        internal static void Release(UnityEngine.Object owned)
         {
             if (Application.isPlaying)
             {

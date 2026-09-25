@@ -122,6 +122,80 @@ namespace DiceTale.Tests
             Assert.That(obj.HasComponent("FogOfWar"), Is.False);
         }
 
+        [Test]
+        public void GridMapViewAdoptsMapData()
+        {
+            // 组件袋：`GridMap` 协议组件的数据座位是 GridMapView，Adopt 收下的就是当前生效那份
+            var go = new GameObject("grid-map-view-test");
+            try
+            {
+                var gridMap = go.AddComponent<GridMapView>();
+                var map = new MirrorMap { gridWidth = 2, gridHeight = 2, cells = new int[4] };
+
+                gridMap.Adopt(map);
+
+                Assert.That(gridMap.Map, Is.SameAs(map));
+            }
+            finally
+            {
+                Object.DestroyImmediate(go);
+            }
+        }
+
+        [Test]
+        public void FogOfWarBuildsAndTearsDownItsOwnOverlay()
+        {
+            // 组件自治：FogOfWar 直接挂在对象 GameObject 上（组件袋一员），渲染子物体
+            // `FogOverlay` 由它自己建（开关开着 + 绑了雾区 + 对象有地图数据）、自己拆。
+            var go = new GameObject("fog-owner-test");
+            try
+            {
+                // 对象那袋组件：GridMapView 收地图数据（FogOfWar 从它取格子），ImageLayer 是
+                // 对象自己那张图（GroundLayer 的 RequireComponent 链会把 MeshFilter / MeshRenderer
+                // 一起带上）；FogOfWar 自己**不** RequireComponent(ImageLayer)——子物体才挂它
+                var gridMap = go.AddComponent<GridMapView>();
+                gridMap.Adopt(new MirrorMap { gridWidth = 2, gridHeight = 2, cells = new int[4] });
+                go.AddComponent<ImageLayer>();
+                var fog = go.AddComponent<FogOfWar>();
+
+                fog.Apply(new MirrorFog { enabled = true, regions = new[] { 1 } }, 1f, 1f, 0, 0.01f);
+
+                var overlay = go.transform.Find("FogOverlay");
+                Assert.That(overlay, Is.Not.Null);
+                Assert.That(overlay.GetComponent<ImageLayer>(), Is.Not.Null);
+
+                // 总开关关掉：渲染子物体被拆掉（EditMode 下走 DestroyImmediate，立即生效）
+                fog.Apply(new MirrorFog { enabled = false, regions = new[] { 1 } }, 1f, 1f, 0, 0.01f);
+
+                Assert.That(go.transform.Find("FogOverlay"), Is.Null);
+            }
+            finally
+            {
+                Object.DestroyImmediate(go);
+            }
+        }
+
+        [Test]
+        public void FogOfWarSkipsOverlayWhenRegionsEmpty()
+        {
+            // 开着开关但一个雾区都没绑：不生成雾层（与旧版同一口径）
+            var go = new GameObject("fog-empty-regions-test");
+            try
+            {
+                var gridMap = go.AddComponent<GridMapView>();
+                gridMap.Adopt(new MirrorMap { gridWidth = 2, gridHeight = 2, cells = new int[4] });
+                var fog = go.AddComponent<FogOfWar>();
+
+                fog.Apply(new MirrorFog { enabled = true, regions = new int[0] }, 1f, 1f, 0, 0.01f);
+
+                Assert.That(go.transform.Find("FogOverlay"), Is.Null);
+            }
+            finally
+            {
+                Object.DestroyImmediate(go);
+            }
+        }
+
         private static MirrorObject ParseObject(string json)
         {
             var node = JsonParser.ParseObject(json);

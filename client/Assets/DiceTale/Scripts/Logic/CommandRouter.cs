@@ -12,9 +12,10 @@ namespace DiceTale
     /// 这类失败恰恰说明镜像没同步上，不该被掩盖。
     ///
     /// 战争雾的两条命令同理：`erase_mask` 只给**鼠标轨迹**，`reveal_fog_region` 只给区域位，
-    /// 雾层本身在前端镜像里由那个对象的 `FogOfWar` 组件（`enabled` + `regions`）与地图的 `map.cells`
-    /// 决定，由 <see cref="SceneObjectView.Fog"/> 执行——没开雾（没有组件 / 开关关着）时那一层
-    /// 根本不存在，命令会如实回失败原因。
+    /// 雾层本身在前端镜像里由**挂在地图对象上的** <see cref="FogOfWar"/> 组件自治
+    /// （`enabled` + `regions` + 地图的 `map.cells` 决定它建不建自己的渲染子物体），
+    /// 命令经 <see cref="SceneObjectView.Fog"/> 找到那个组件执行——遮罩还没建起来时
+    /// （数据不全 / 开关关着 / 没绑雾区）两条命令由组件自己返回 false，如实回失败原因。
     ///
     /// 声音（v7 起**真的出声**）：`play_sound` / `stop_sound` / `pause_sound` / `resume_sound`
     /// 按**层级**作用在 <see cref="AudioPlayerManager"/> 的三条通道上（音效 / 旁白）。
@@ -548,7 +549,12 @@ namespace DiceTale
             session.SendCommandResult(command, true, effects: new[] { effect });
         }
 
-        /// <summary>取某个地图对象上的雾层（对象不在镜像里 / 不是地图 / 开关关着 / 没绑雾区时都是 null）。</summary>
+        /// <summary>
+        /// 取某个地图对象上的战争雾组件（对象不在镜像里 / 没有视图 / 对象没带 `FogOfWar`
+        /// 协议组件时都是 null）。组件在**不代表雾层在**：开关关着 / 没绑雾区时它手下没有
+        /// 渲染子物体，擦除 / 整区命令由组件自己返回 false（见 <see cref="FogOfWar.EraseStroke"/> /
+        /// <see cref="FogOfWar.RevealRegion"/>）。
+        /// </summary>
         private FogOfWar FogOf(string objectId)
         {
             var view = mirror != null ? mirror.FindView(objectId) : null;

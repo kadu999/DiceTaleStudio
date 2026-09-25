@@ -3,7 +3,23 @@ using UnityEngine;
 namespace DiceTale
 {
     /// <summary>
-    /// 一个镜像对象的视图：**一块贴在地面上的面片**（地图与精灵都走它）。
+    /// 一个镜像对象的视图：**协调器**——对象的 GameObject 是「组件袋」，每个实体协议组件
+    /// 在表现层**有且只有一个**对应 C# 组件；这里负责按组件清单建它们、把最新数据递给它们，
+    /// 具体怎么画 / 怎么摆 / 怎么拆由组件自己管：
+    ///
+    /// <list type="bullet">
+    /// <item>`GridMap` 组件 → <see cref="GridMapView"/>：收下 <see cref="MirrorMap"/> 数据
+    /// （战争雾从这里取格子，以后的网格线也落这里）；</item>
+    /// <item>`FogOfWar` 组件 → <see cref="FogOfWar"/>：自治，自己的渲染子物体自己建 / 拆
+    /// （见那边类注释），这里只递数据；</item>
+    /// <item>`ImageLayer` / `SpriteLayer` 组件 → 同名的 <see cref="ImageLayer"/> /
+    /// <see cref="SpriteLayer"/>：对象自己那张图的面片（二选一，见 <see cref="Create"/> 的分派）；</item>
+    /// <item>`VideoOverlay` 组件 → <see cref="VideoOverlay"/>：收到 `play_video` 才建的
+    /// 子物体，命令驱动，不在 <see cref="Create"/> 里。</item>
+    /// </list>
+    ///
+    /// `PlaySound` / `Teleport` 只是「一条给前端的指令」，**没有**表现层组件
+    /// （<see cref="NeedsView"/> 连 GameObject 都不为它们建）。
     ///
     /// 属性怎么来（全部来自后台推下来的对象数据）：
     /// - 位置 = `position`（文档世界坐标 x/y 向上 → 客户端 x/z + 离地抬升）；
@@ -26,16 +42,11 @@ namespace DiceTale
     /// 它们的数据留在镜像里就够了，所以 <see cref="SceneMirror"/> 根本不会为它们调
     /// <see cref="Create"/>（见 <see cref="NeedsView"/>）——这里的每一行都假定「自己是个实体」。
     ///
-    /// **开着战争雾、也指定了雾区的地图**多一个同级的 `FogOverlay`（<see cref="FogOfWar"/>）：
-    /// 它挂在**场景根节点**下（与地图并列，不是地图的子物体）、尺寸与地图面片同大、
-    /// 位置与角度按地图同一份数值各摆一遍，显示顺序取<a cref="FogSortingOrder">最前面</a>——
-    /// 未探索的地方连对象一起盖住。开关关着（`FogOfWar.enabled = false`）或没指定雾区的地图
-    /// 都不会有它（见 <see cref="ApplyFog"/>）。
-    ///
     /// **收到 `play_video` 的对象多一个 `VideoOverlay` 子物体**（<see cref="VideoOverlay"/>）：
     /// 它放的是地图上选中的那条视频，与地图共用位置、尺寸、旋转和显示顺序。
     /// 首帧就绪时隐藏地图 Renderer，`stop_video` 拆掉视频层并恢复地图画面。
-    /// 挂成子物体是为了跟随地图变换，并在对象隐藏时一起隐藏。
+    /// 挂成子物体是为了跟随地图变换，并在对象隐藏时一起隐藏——战争雾的 `FogOverlay`
+    /// 子物体（<see cref="FogOfWar"/>）同一套挂法。
     /// </summary>
     public class SceneObjectView : MonoBehaviour
     {
@@ -58,47 +69,31 @@ namespace DiceTale
         /// <summary>没声明尺寸时的兜底边长（**文档像素**，与编辑器画布上那块兜底矩形同口径）。</summary>
         private const float FallbackSize = 64f;
 
-        /// <summary>雾层子物体的名字（一眼看出层级里多出来的这一块是什么）。</summary>
-        private const string FogOverlayName = "FogOverlay";
-
-        /// <summary>
-        /// 雾层的显示顺序：**盖在所有东西前面**（未探索 = 连上面的令牌一起看不见）。
-        ///
-        /// 文档里的 `sortingOrder` 是给对象自己排前后用的（默认范围很小），雾不该跟它们比大小；
-        /// 取 `short.MaxValue`（Unity 的 `sortingOrder` 是 16 位有符号），实际就是「最前面」。
-        /// 已经揭示的地方雾是透明的，所以不会挡住该看见的东西。
-        /// </summary>
-        private const int FogSortingOrder = short.MaxValue;
-
-        /// <summary>
-        /// 雾层比自己那张地图高多少（**世界单位**）：只求比地图抬升高一档、别跟地图共面。
-        ///
-        /// 地图自己的抬升按 `sortingOrder` 每档差 `0.0005`（见 <see cref="LiftFor"/>），
-        /// 所以这里给 `0.002` 就够——高了会在斜视角下看起来「浮起来」。
-        /// </summary>
-        private const float FogLift = 0.002f;
-
         private ImageLayer quad;
         private ResourceImageLoader imageLoader;
 
-        /// <summary>这张对象的地图数据（仅 `Map`）；雾层另看 <see cref="currentFog"/>。</summary>
-        private MirrorMap currentMap;
+        /// <summary>
+        /// 地图数据的座位（对象带 `GridMap` 协议组件时建，<see cref="Create"/> 时缓存；
+        /// 雾从它这里取格子）。数据本身在每次 <see cref="Apply"/> 时递过去。
+        /// </summary>
+        private GridMapView gridMap;
 
-        /// <summary>这张对象的战争雾组件数据（v13 起，仅 `FogOfWar`；`null` = 没开战争雾）。</summary>
-        private MirrorFog currentFog;
-
-        /// <summary>雾层（仅绑了雾区的地图有；**与地图同级**，命令路由经 <see cref="Fog"/> 找到它）。</summary>
+        /// <summary>
+        /// 战争雾组件（对象带 `FogOfWar` 协议组件时建，<see cref="Create"/> 时缓存的**组件引用**）。
+        /// 渲染子物体由它自治（开关关着 / 没绑雾区时它只是没有子物体）；命令路由经
+        /// <see cref="Fog"/> 找到它。
+        /// </summary>
         private FogOfWar fog;
 
         /// <summary>
         /// 视频层（只有正在放视频时有；**是本视图的子物体**，命令路由经 <see cref="Video"/> 找到它）。
         ///
-        /// 与雾层不同，它不盖整个场景、只盖**这个对象自己的矩形**，所以挂成子物体最贴切：
-        /// 位置 / 旋转自动跟着对象走，对象被隐藏（`active=false` / 未落位）时一起隐藏。
+        /// 与战争雾的 `FogOverlay` 同一套挂法：位置 / 旋转自动跟着对象走，对象被隐藏
+        /// （`active=false` / 未落位）时一起隐藏。
         /// </summary>
         private VideoOverlay video;
 
-        /// <summary>对象在文档里的位置 / 角度（雾层与地图同级，要各自摆一遍，所以留一份）。</summary>
+        /// <summary>对象在文档里的位置 / 角度（<see cref="Place"/> 摆位用）。</summary>
         private float currentX;
         private float currentY;
         private float currentRotation;
@@ -167,6 +162,26 @@ namespace DiceTale
             view.quad = obj.hasSpriteLayer || obj.image?.sprite != null
                 ? go.AddComponent<SpriteLayer>()
                 : go.AddComponent<ImageLayer>();
+
+            /*
+              组件袋（表现层与协议组件 1:1）：GridMap 的数据座位是 GridMapView，FogOfWar 自治
+              （自己的渲染子物体自己建 / 拆，见那边类注释）。这里只按「对象有没有这个协议组件」
+              把对应组件挂上并缓存引用，数据在每次 Apply 时递过去。
+              换图片组件类型时 SceneMirror 会销毁重建整个 GameObject（见 MatchesImageComponent），
+              组件袋自然跟着重建，不用另做迁移。
+            */
+            if (obj.map != null)
+            {
+                go.AddComponent<GridMapView>();
+            }
+
+            if (obj.fog != null)
+            {
+                go.AddComponent<FogOfWar>();
+            }
+
+            view.gridMap = go.GetComponent<GridMapView>();
+            view.fog = go.GetComponent<FogOfWar>();
             return view;
         }
 
@@ -194,7 +209,7 @@ namespace DiceTale
             currentX = obj.x;
             currentY = obj.y;
             currentRotation = obj.rotation;
-            Place(transform);
+            Place();
 
             var image = obj.DisplayImage;
             currentWidth = (image != null && image.width > 0 ? image.width : FallbackSize) * obj.scale;
@@ -205,8 +220,6 @@ namespace DiceTale
             currentUvRect = SpriteLayer.UvRectOf(image != null ? image.sprite : null);
             currentKindColor = KindColor(obj.kind);
             currentSortingOrder = obj.sortingOrder;
-            currentMap = obj.map;
-            currentFog = obj.fog;
 
             /*
               视频：开关关掉 / 列表清空时，**正在放的那一层也要拆掉**——与战争雾「关掉开关就把
@@ -224,6 +237,28 @@ namespace DiceTale
             }
 
             ApplyVisual();
+
+            /*
+              组件袋各收各的数据：地图数据交给 GridMapView（FogOfWar 从它那里取格子），
+              雾组件按自己的开关与雾区决定建不建渲染子物体。协调器只负责把最新数据递过去，
+              建 / 拆由组件自己拿主意（FogOfWar.Apply 内部判三个条件，不满足会自拆）。
+              顺序有讲究：先 Adopt 地图，雾这才能从 GridMapView 拿到格子。
+            */
+            if (gridMap != null)
+            {
+                gridMap.Adopt(obj.map);
+            }
+
+            if (fog != null)
+            {
+                var scale = GlobalScale;
+                fog.Apply(
+                    obj.fog,
+                    currentWidth * scale,
+                    currentHeight * scale,
+                    currentSortingOrder,
+                    LiftFor(currentSortingOrder));
+            }
 
             if (image != null && imageLoader != null && currentTextureId != currentImageId)
             {
@@ -272,74 +307,14 @@ namespace DiceTale
                 lift,
                 currentUvRect);
 
-            ApplyFog(lift);
             ApplyVideoGeometry();
-        }
-
-        /// <summary>
-        /// 雾层：**这张地图开着战争雾、也指定了雾区才建 / 刷，否则把旧的拆掉**（每次重画都会走这里）。
-        ///
-        /// 三个条件缺一不可——对象挂了 `FogOfWar` 组件（没挂 = 没开战争雾，与老场景同一件事）、
-        /// `FogOfWar.enabled` 是编辑器里那个总开关（关掉 = 这张地图现在没有战争雾，
-        /// 哪怕雾区绑定还留着）、`FogOfWar.regions` 是「哪些区域算雾区」（空数组 = 不生成雾层，
-        /// 与旧版对「开着但没指定雾区」的处理一致）。
-        ///
-        /// 雾层与地图**同级**（都挂在场景根节点下，见 <see cref="FogOverlayName"/>）：
-        /// 它不是地图的一部分，而是盖在整个场景之上的一层——所以位置 / 角度要**自己摆一遍**
-        /// （<see cref="Place"/> 与地图同一份算法），显示顺序取最前面（<see cref="FogSortingOrder"/>），
-        /// 未探索的地方连对象一起盖住。
-        ///
-        /// **谁算雾、怎么揭示**由 <see cref="FogOfWar"/> 自己管（后台命令驱动），这里只负责摆放。
-        /// </summary>
-        private void ApplyFog(float mapLift)
-        {
-            var map = currentMap;
-            var fogData = currentFog;
-            var hasFog =
-                map != null
-                && fogData != null
-                && fogData.enabled
-                && fogData.regions != null
-                && fogData.regions.Length > 0;
-
-            if (!hasFog)
-            {
-                if (fog != null)
-                {
-                    // 开关被关掉 / 组件被摘掉 / 绑定被解开（或本来就不是地图）：把雾层拆掉，
-                    // 别留一块盖着旧遮罩的面片
-                    Destroy(fog.gameObject);
-                    fog = null;
-                }
-
-                return;
-            }
-
-            if (fog == null)
-            {
-                var go = new GameObject(FogOverlayName);
-                // **与地图同级**：挂在场景根节点下（视图的父节点），不是地图的子物体
-                go.transform.SetParent(transform.parent != null ? transform.parent : transform, false);
-                fog = go.AddComponent<FogOfWar>();
-            }
-
-            Place(fog.transform);
-
-            var scale = GlobalScale;
-            fog.Apply(
-                map,
-                fogData.regions,
-                currentWidth * scale,
-                currentHeight * scale,
-                FogSortingOrder,
-                mapLift + FogLift);
         }
 
         /// <summary>
         /// 视频层：**收到 `play_video` 才建，`stop_video` 就拆**。尺寸和 sortingOrder 与地图一致，
         /// localPosition 保持原点，因此视频面片与地图位于同一平面。
         ///
-        /// 雾层仍是独立对象并保留自己的最高显示顺序。
+        /// 战争雾的 `FogOverlay` 是 FogOfWar 自治的子物体，与这里互不相干。
         /// 对象尺寸 / 缩放变了就跟着变——`ApplyVisual` 每次都会走这里。
         /// </summary>
         private void ApplyVideoGeometry()
@@ -408,67 +383,46 @@ namespace DiceTale
             }
 
             video.StopPlayback();
-            DestroyOwned(video.gameObject);
+            FogOfWar.Release(video.gameObject);
             video = null;
-        }
-
-        /// <summary>
-        /// 销毁这一层自己建的物体：运行时 `Destroy`，**编辑器里 `DestroyImmediate`**
-        /// （编辑器里调 `Destroy` 会报「Destroy may not be called from edit mode」——
-        /// `PlayVideo` / `StopVideo` 也会被编辑器侧的工具调用，不该留一条假错误）。
-        /// </summary>
-        private static void DestroyOwned(UnityEngine.Object target)
-        {
-            if (Application.isPlaying)
-            {
-                Destroy(target);
-            }
-            else
-            {
-                DestroyImmediate(target);
-            }
         }
 
         /// <summary>这一层的视频（没在放时返回 null）；命令路由用它执行 `pause_video` / `resume_video`。</summary>
         public VideoOverlay Video => video;
 
         /// <summary>
-        /// 把一个面片摆到「这个对象在世界里的位置与角度」（**局部坐标**：相对所在场景的根节点）。
+        /// 把这个对象摆到「它在世界里的位置与角度」（**局部坐标**：相对所在场景的根节点）。
         ///
-        /// 地图视图与它的雾层是**两个同级物体**，位置 / 角度必须各自摆——摆的是同一份数值
-        /// （<see cref="currentX"/> / <see cref="currentY"/> / <see cref="currentRotation"/>），
-        /// 所以两者永远重合。y（离地抬升）不在这里设：它由渲染器按自己的显示顺序给。
+        /// y（离地抬升）不在这里设：它由渲染器按自己的显示顺序给（见 <see cref="LiftFor"/>）。
         /// </summary>
-        private void Place(Transform target)
+        private void Place()
         {
             var scale = GlobalScale;
-            target.localPosition = new Vector3(currentX * scale, target.localPosition.y, currentY * scale);
+            transform.localPosition = new Vector3(currentX * scale, transform.localPosition.y, currentY * scale);
 
             // 角度：文档里存的是**弧度**（编辑器的 `SceneObject.rotation` 与参考实现同一套），
             // 而 `Quaternion.Euler` 收的是**度**——必须 `Rad2Deg` 换算，
             // 否则 30° 会被当成 0.52°（弧度值直接当度用）。
             // 符号与 Unity 一致（文档正角 = Unity 里正的 Y 轴旋转），所以不取反。
-            target.localRotation = Quaternion.Euler(0f, currentRotation * Mathf.Rad2Deg, 0f);
+            transform.localRotation = Quaternion.Euler(0f, currentRotation * Mathf.Rad2Deg, 0f);
         }
 
-        /// <summary>这一层的雾（开关关着 / 没指定雾区的地图返回 null）；命令路由用它执行 `erase_mask` / `reveal_fog_region`。</summary>
+        /// <summary>
+        /// 这一层的战争雾组件（对象没带 `FogOfWar` 协议组件时返回 null）；命令路由用它执行
+        /// `erase_mask` / `reveal_fog_region`。组件在**不代表雾层在**——开关关着 / 没绑雾区时
+        /// 它手下没有渲染子物体，两条命令由组件自己返回 false。
+        /// </summary>
         public FogOfWar Fog => fog;
 
         /// <summary>
-        /// 视图被销毁（对象被删 / 换场景）时，把雾层与视频层一起带走。
+        /// 视图被销毁（对象被删 / 换场景）时，把视频层主动收掉。
         ///
-        /// 雾层是**同级**物体、不是子物体，Unity 不会跟着销毁——不在这里收，它会留在地图上
-        /// 盖着一块谁也点不到、也擦不掉的旧雾。视频层虽然是子物体（会跟着走），但它自己
-        /// 占着一个 `VideoPlayer` 与一块面片，主动收掉更干净（也顺手停掉解码）。
+        /// 视频层虽然是子物体（会跟着走），但它自己占着一个 `VideoPlayer` 与一块面片，
+        /// 主动收掉更干净（也顺手停掉解码）。战争雾的 `FogOverlay` 也是子物体，
+        /// 随视图销毁自动带走，不需要这里收。
         /// </summary>
         private void OnDestroy()
         {
-            if (fog != null)
-            {
-                Destroy(fog.gameObject);
-                fog = null;
-            }
-
             StopVideo();
         }
 

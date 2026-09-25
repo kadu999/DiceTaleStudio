@@ -1745,6 +1745,13 @@ upgradeRawDocument
 | `sound_…` | `PlaySound` | **一个 GameObject 都不建**（数据留在镜像里） |
 | `teleport_…` | `Teleport` | **一个 GameObject 都不建** |
 
+> **2026-09-26 组件袋重构后**（表现层组件一对一，见 `docs/TASKS-表现层组件一对一.md`）：
+> 运行时层级变成「**组件袋**」——实体对象的 GameObject 上每个实体协议组件对应一个表现组件
+> （`GridMap` → `GridMapView`、`ImageLayer` / `SpriteLayer` → 同名渲染层、`FogOfWar` → 同名组件），
+> `SceneObjectView` 退化为只管对象本体（transform / 激活 / 顺序 / 占位色 / 取图分派）的协调器。
+> `FogOverlay` 从「场景根节点同级」改为**地图对象的子物体**，由 `FogOfWar` 组件按
+> 「开关开 + 雾区非空 + 有 GridMapView」自己建/拆；上表是 2026-09-22 联调时的历史形态。
+
 **这次联调抓到一个真 bug（已修）**：`SceneMirror.ResourceIdOf` 里
 `foreach (var clip in obj.sound != null ? obj.sound.clips : null)`——`obj.sound == null` 时那句三元
 返回 `null`，`foreach (null)` 抛 `NullReferenceException`。它在 `ProjectOf`（推项目名的兜底路径）里
