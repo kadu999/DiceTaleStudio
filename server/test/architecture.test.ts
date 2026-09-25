@@ -228,4 +228,56 @@ describe("架构边界：代码里不得硬编码资源路径", () => {
 
     expect(offenders).toEqual([]);
   });
+
+/**
+ * kind 退役的**可搜索约束**（见 docs/PLAN-组件驱动与kind退役.md 阶段 3）：
+ * 功能由组件承载后，`kind === "Map"` 这类**按字面量判行为**的分支只允许出现在
+ * 历史 schema 迁移里；分类 / 标签 / 创建模板路由 / mismatch 提示等「读 kind 但不按它
+ * 否决组件行为」的用法是退役后保留的职责，不受此约束（也不在本测试的命中模式里）。
+ *
+ * 命中即失败；确需新增例外时把它加进 ALLOWLIST 并写清理由。
+ */
+describe("架构边界：kind 只剩显示 / 分类 / 创建模板 / 兼容迁移职责（可搜索约束）", () => {
+  /** 按 kind 字面量判行为的唯一允许点 → 存在的理由。 */
+  const ALLOWLIST = new Map<string, string>([
+    ["packages/document/src/schema.ts", "历史 schema 迁移（v18 及更早扁平字段搬入组件）"],
+  ]);
+
+  /**
+   * 对象 kind 的字面量都是 PascalCase（OBJECT_KINDS）；命令 / 操作 / 历史条目等
+   * 其它 `xxx.kind` 判别值是小写（`command.kind === "play_sound"`、`action.kind === "play"`），
+   * 要求首字母大写即只命中对象 kind 的行为分支，不误伤它们。
+   */
+  const BEHAVIOR_BRANCH = /\.kind\s*={2,3}\s*["'][A-Z]/;
+
+  it("源码不得按 kind 字面量判定行为（例外见 ALLOWLIST）", () => {
+    const offenders: string[] = [];
+    const roots = [
+      ...[...PURE_PACKAGES, ...DOM_OK_PACKAGES].map((pkg) => join(PACKAGES_ROOT, pkg, "src")),
+      join(SERVER_ROOT, "apps", "backend", "src"),
+      join(SERVER_ROOT, "apps", "editor", "src"),
+    ];
+
+    for (const root of roots) {
+      for (const file of listSourceFiles(root)) {
+        const rel = relative(SERVER_ROOT, file).replace(/\\/g, "/");
+        const source = stripComments(readFileSync(file, "utf8"));
+        if (ALLOWLIST.has(rel)) {
+          continue;
+        }
+
+        if (BEHAVIOR_BRANCH.test(source)) {
+          offenders.push(`${rel} 按 kind 字面量判定行为（应改按组件；迁移见 ALLOWLIST）`);
+        }
+      }
+    }
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("例外清单是真实职责：schema 迁移里确实还有按 kind 的迁移分支", () => {
+    const schemaSource = readFileSync(join(PACKAGES_ROOT, "document", "src", "schema.ts"), "utf8");
+    expect(schemaSource).toMatch(BEHAVIOR_BRANCH);
+  });
+});
 });
