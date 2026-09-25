@@ -308,13 +308,6 @@ describe("属性面板：视频组", () => {
 
     fireEvent.click(screen.getByTestId("video-add"));
     expect(screen.getByTestId("video-picker-dialog")).toBeDefined();
-    // 加过的标「已加入」
-    expect(
-      screen
-        .getAllByTestId("video-picker-item")
-        .find((item) => item.getAttribute("data-asset-id") === CLIP)
-        ?.getAttribute("data-added"),
-    ).toBe("true");
 
     // 行首是后端抽的首帧缩略图，缩略图挂了兜底成公用图标
     const firstItem = screen
@@ -324,7 +317,7 @@ describe("属性面板：视频组", () => {
     fireEvent(firstItem.querySelector("img")!, new Event("error"));
     expect(firstItem.querySelector("svg")).not.toBeNull();
 
-    // 点一条 = 右侧出原生视频播放器（webm 那条的预览里带解码提醒）
+    // 点 webm 那条 = 选中 + 右侧出原生视频播放器（预览里带解码提醒）；点行**不加**，清单不动
     fireEvent.click(
       screen
         .getAllByTestId("video-picker-item")
@@ -335,6 +328,7 @@ describe("属性面板：视频组", () => {
     expect(player.hasAttribute("controls")).toBe(true);
     expect(player.getAttribute("src")).toContain("rain.webm");
     expect(screen.getByTestId("video-picker-preview").textContent).toContain("WebM");
+    expect(videoOf("map-1")?.clips).toEqual([CLIP, CLIP2]);
 
     fireEvent.click(screen.getAllByTestId("video-clip-remove")[0]!);
     expect(videoOf("map-1")?.clips).toEqual([CLIP2]);

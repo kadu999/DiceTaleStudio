@@ -34,8 +34,9 @@ import {
  *
  * - `image`：选贴图 / 精灵（选中 + 确认，预览里带精灵格网，见 `ImagePickerBody`）；
  *   确认是因为写回要带宽高，尺寸是选中后异步读的。
- * - `audio` / `video`：点一条就加进宿主对象（可连点），已加入的标「已加入」、
- *   再点只换预览不重复加；右边预览可直接**播放**（原生 controls，见 `MediaPickerBody`）。
+ * - `audio` / `video`：选中一条 → 点「添加」加入并关闭（一次一条，重复添加由 store 去重），
+ *   选中即进右边预览、可直接**播放**（原生 controls，见 `MediaPickerBody`）；
+ *   行上不加徽标、不显示标签（标签只留在搜索 / 过滤里用）。
  *
  * 行首图标：音频 = 公用音符图标（`AudioIcon`）；视频 = 后端抽的首帧缩略图
  * （`/api/resources/thumbnail` 对 mp4/webm 走 ffmpeg，失败降级成 `VideoFallbackIcon`）。
@@ -67,11 +68,9 @@ export interface ImageResourcePickerProps extends ResourcePickerBaseProps {
   readonly allowSprite: boolean;
 }
 
-/** 选音频 / 视频：点击即加入模式，点过的进预览可播放。 */
+/** 选音频 / 视频：选中 + 「添加」模式，一次加一条。 */
 export interface MediaResourcePickerProps extends ResourcePickerBaseProps {
   readonly kind: "audio" | "video";
-  /** 已经加进来的素材（这些行标「已加入」，点击不再重复加、只换预览）。 */
-  readonly added: readonly string[];
   readonly onPick: (id: string) => void;
 }
 
@@ -416,7 +415,7 @@ interface MediaPickerRow {
   readonly displayName: string;
   /** 项目内相对路径（副信息）。 */
   readonly path: string;
-  /** 标签 chip（音频 / 视频都从 `.meta` 顶层 `tags` 读）。 */
+  /** 标签（不进搜索 haystack 之外的地方：行上**不显示**，只留标签过滤用）。 */
   readonly tags: readonly AudioTagRef[];
   /** 行尾提醒徽标（视频 = `.webm` 解不了；音频没有）。 */
   readonly warning: string | undefined;
@@ -445,7 +444,7 @@ const MEDIA_TEXTS: Record<
     emptyHint: "把音频放到 Assets/audio/ 下即可在这里选到",
     emptyFilter: "没有匹配的音频",
     previewEmpty: "点左边一条音频，在这里试听",
-    footer: "点一条就加进来（可以连着加几条），右边能试听；名字 / 标签在文件属性上改",
+    footer: "选中一条，点「添加」加入（一次一条）；右边能试听；名字 / 标签在文件属性上改",
   },
   video: {
     searchPlaceholder: "搜名字 / 路径…",
@@ -454,7 +453,7 @@ const MEDIA_TEXTS: Record<
     emptyHint: "把 mp4 放到 Assets/video/ 下即可在这里选到",
     emptyFilter: "没有匹配的视频",
     previewEmpty: "点左边一条视频，在这里预览",
-    footer: "点一条就加进来（可以连着加几条），右边能预览；视频素材本身不会被改动",
+    footer: "选中一条，点「添加」加入（一次一条）；右边能预览；视频素材本身不会被改动",
   },
 };
 
@@ -497,13 +496,13 @@ function mediaPickerRows(
 
 /**
  * 音频 / 视频挑选（同一习惯，布局与贴图那边对齐：左列表 + 右预览 + 底部状态栏）：
- * 列出**当前项目里的全部此类素材**，**点一条就加进宿主对象**（可以连着点几条），
- * 点过的同时进右边预览；已经加过的标「已加入」，再点只换预览、不再重复加。
+ * 列出**当前项目里的全部此类素材**，**选中一条 → 点「添加」加入并关闭**（一次一条，
+ * 重复添加由 store 去重兜底）；选中即进右边预览。
  *
  * 右边预览直接**播放**（原生 `<audio>` / `<video>` controls）——选择器里的试听 / 试看，
- * 不出声到运行端、不碰场景数据。
+ * 不出声到运行端、不碰场景数据。行上**不加徽标、不显示标签**（标签只留在搜索 / 过滤里用）。
  */
-function MediaPickerBody({ kind, open, added, onPick }: MediaResourcePickerProps): React.JSX.Element {
+function MediaPickerBody({ kind, open, onPick, onClose }: MediaResourcePickerProps): React.JSX.Element {
   const tree = useEditorStore((state) => state.project.tree);
   const metas = useEditorStore((state) => state.assetMetaTable);
   const table = useEditorStore((state) => state.doc.audioTags);
@@ -535,7 +534,6 @@ function MediaPickerBody({ kind, open, added, onPick }: MediaResourcePickerProps
   }, [rows, query, activeTags]);
 
   const selected = rows.find((row) => row.id === selectedId);
-
   return (
     <>
       <div className="flex min-h-0 flex-1 gap-3 overflow-hidden">
@@ -574,7 +572,6 @@ function MediaPickerBody({ kind, open, added, onPick }: MediaResourcePickerProps
             ) : (
               <div className="flex flex-col gap-1">
                 {visible.map((row) => {
-                  const isAdded = added.includes(row.id);
                   const isSelected = row.id === selectedId;
                   return (
                     <button
@@ -582,40 +579,16 @@ function MediaPickerBody({ kind, open, added, onPick }: MediaResourcePickerProps
                       type="button"
                       data-testid={`${kind}-picker-item`}
                       data-asset-id={row.id}
-                      data-added={isAdded}
                       data-selected={isSelected}
                       aria-pressed={isSelected}
-                      data-tags={row.tags.map((tag) => tag.name).join(",")}
                       data-warning={row.warning === undefined ? undefined : "webm"}
-                      title={[isAdded ? "已经加进来了（点一下只看预览）" : `加进来：${row.path}`, row.warning]
-                        .filter((line) => line !== undefined)
-                        .join("\n")}
+                      title={[row.path, row.warning].filter((line) => line !== undefined).join("\n")}
                       className={`flex min-w-0 items-center gap-2 rounded border p-1 text-left ${isSelected ? "border-[var(--color-editor-accent)] bg-[var(--color-editor-accent-dim)] text-white" : "border-transparent hover:border-[var(--color-editor-border)] hover:bg-[var(--color-editor-panel-alt)]"}`}
-                      onClick={() => {
-                        setSelectedId(row.id);
-                        if (!isAdded) onPick(row.id);
-                      }}
+                      onClick={() => setSelectedId(row.id)}
                     >
                       {kind === "audio" ? <AudioIcon /> : <VideoThumb id={row.id} />}
 
-                      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                        <span className="min-w-0 truncate text-[11px]">{row.displayName}</span>
-                        {row.tags.length === 0 ? null : (
-                          <span className="flex flex-wrap items-center gap-1">
-                            {row.tags.map((tag) => (
-                              <span
-                                key={tag.id}
-                                data-testid={`${kind}-picker-tag`}
-                                data-id={tag.id}
-                                data-tag={tag.name}
-                                className="flex-none rounded-full border border-[var(--color-editor-border)] px-1 text-[9px] text-[var(--color-editor-text-dim)]"
-                              >
-                                {tag.name}
-                              </span>
-                            ))}
-                          </span>
-                        )}
-                      </span>
+                      <span className="min-w-0 flex-1 truncate text-[11px]">{row.displayName}</span>
 
                       {row.warning === undefined ? null : (
                         <span
@@ -625,16 +598,6 @@ function MediaPickerBody({ kind, open, added, onPick }: MediaResourcePickerProps
                           webm?
                         </span>
                       )}
-
-                      <span
-                        className={`flex-none text-[10px] ${
-                          isAdded
-                            ? "text-[var(--color-editor-text-dim)]"
-                            : "text-[var(--color-editor-accent)]"
-                        }`}
-                      >
-                        {isAdded ? "已加入" : "＋"}
-                      </span>
                     </button>
                   );
                 })}
@@ -691,15 +654,30 @@ function MediaPickerBody({ kind, open, added, onPick }: MediaResourcePickerProps
         <span className="min-w-0 truncate">
           {selected === undefined ? texts.footer : `已选：${selected.displayName}（${selected.path}）`}
         </span>
-        <Dialog.Close asChild>
+        <div className="flex flex-none items-center gap-2">
+          <Dialog.Close asChild>
+            <button
+              type="button"
+              data-testid={`${kind}-picker-cancel`}
+              className="toolbar-button hover:toolbar-button-hover"
+            >
+              取消
+            </button>
+          </Dialog.Close>
           <button
             type="button"
-            data-testid={`${kind}-picker-close`}
-            className="toolbar-button hover:toolbar-button-hover"
+            data-testid={`${kind}-picker-add`}
+            disabled={selected === undefined}
+            className="rounded bg-[var(--color-editor-accent)] px-3 py-1 text-[12px] text-black disabled:opacity-40"
+            onClick={() => {
+              if (selected === undefined) return;
+              onPick(selected.id);
+              onClose();
+            }}
           >
-            关闭
+            添加
           </button>
-        </Dialog.Close>
+        </div>
       </div>
     </>
   );

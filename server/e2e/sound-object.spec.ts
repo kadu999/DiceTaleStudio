@@ -123,7 +123,8 @@ test.describe("动作对象：播放声音", () => {
       await expect(page.getByTestId("sound-empty")).toHaveText("还没加音频");
       await expect(page.locator('[data-group="sound"]')).not.toContainText("audio/");
 
-      // 「＋ 添加」弹「选择音频」：列出项目里的音频（路径在 tooltip / 右侧预览头里），点一条就加进来
+      // 「＋ 添加」弹「选择音频」：列出项目里的音频（路径在 tooltip / 右侧预览头里），
+      // 选中一条 → 点「添加」加入（一次一条，弹框随即关闭）
       await page.getByTestId("sound-add").click();
       const picker = page.getByTestId("audio-picker-dialog");
       await expect(picker).toBeVisible();
@@ -131,12 +132,16 @@ test.describe("动作对象：播放声音", () => {
         picker.locator(`[data-testid="audio-picker-item"][data-asset-id="${id}"]`);
       await expect(pickItem(step1)).toHaveAttribute("title", /audio\/step1\.mp3/);
       await pickItem(step1).click();
-      await pickItem(step2).click();
-      await pickItem(step3).click();
-      // 加过的标「已加入」（不会再重复加）
-      await expect(pickItem(step1)).toHaveAttribute("data-added", "true");
-      await picker.getByTestId("audio-picker-close").click();
+      await picker.getByTestId("audio-picker-add").click();
       await expect(picker).toHaveCount(0);
+      // 再加两条：一次一条，加完弹框就关
+      for (const id of [step2, step3]) {
+        await page.getByTestId("sound-add").click();
+        const again = page.getByTestId("audio-picker-dialog");
+        await again.locator(`[data-testid="audio-picker-item"][data-asset-id="${id}"]`).click();
+        await again.getByTestId("audio-picker-add").click();
+        await expect(again).toHaveCount(0);
+      }
 
       // 面板：**加进来的音频全列出来**（小方块）；加进来的第一条自动是「播的那条」
       const chips = page.getByTestId("sound-clip");
@@ -163,12 +168,14 @@ test.describe("动作对象：播放声音", () => {
       await page.getByTestId("sound-clear").click();
       await expect(page.getByTestId("sound-empty")).toHaveText("还没加音频");
 
-      // 重新加两条（下面落盘断言要数）
-      await page.getByTestId("sound-add").click();
-      const repick = page.getByTestId("audio-picker-dialog");
-      await repick.locator(`[data-testid="audio-picker-item"][data-asset-id="${step1}"]`).click();
-      await repick.locator(`[data-testid="audio-picker-item"][data-asset-id="${step2}"]`).click();
-      await repick.getByTestId("audio-picker-close").click();
+      // 重新加两条（下面落盘断言要数）：一次一条
+      for (const id of [step1, step2]) {
+        await page.getByTestId("sound-add").click();
+        const repick = page.getByTestId("audio-picker-dialog");
+        await repick.locator(`[data-testid="audio-picker-item"][data-asset-id="${id}"]`).click();
+        await repick.getByTestId("audio-picker-add").click();
+        await expect(repick).toHaveCount(0);
+      }
       await expect(page.getByTestId("sound-clip")).toHaveCount(2);
       // 加进来的第一条自动是「播的那条」；再点第二条 → 播的就换成它
       await page.getByTestId("sound-clip").nth(1).click();
@@ -368,7 +375,7 @@ test.describe("动作对象：播放声音", () => {
       const picker = page.getByTestId("audio-picker-dialog");
       await expect(picker).toBeVisible();
       await picker.locator(`[data-testid="audio-picker-item"][data-asset-id="${step1}"]`).click();
-      await picker.getByTestId("audio-picker-close").click();
+      await picker.getByTestId("audio-picker-add").click();
       await expect(picker).toHaveCount(0);
 
       await expect(page.getByTestId("sound-clip")).toHaveCount(1);

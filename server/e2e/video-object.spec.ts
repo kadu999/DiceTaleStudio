@@ -181,19 +181,22 @@ test.describe("地图 / 贴图：视频列表", () => {
       await waitForSaved(page);
       expect(await readSceneVideo(request, project, SCENE)).toMatchObject({ enabled: true, clips: [] });
 
-      // 「＋ 添加视频」直接弹「选择视频」：点两条（可连着点；已加的标「已加入」）
+      // 「＋ 添加视频」直接弹「选择视频」：选中一条 → 点「添加」加入（一次一条，弹框随即关闭）
       await video.getByTestId("video-add").click();
       const picker = page.getByTestId("video-picker-dialog");
       await expect(picker).toBeVisible();
       const item = (id: string) => picker.locator(`[data-testid="video-picker-item"][data-asset-id="${id}"]`);
       await expect(item(a)).toHaveAttribute("title", /video\/opening\.mp4/);
       await item(a).click();
-      await item(b).click();
-      await expect(item(a)).toHaveAttribute("data-added", "true");
-      // webm 那条带提醒（Unity 在 Windows 上多半解不了）
-      await expect(item(b)).toHaveAttribute("data-warning", "webm");
-      await picker.getByTestId("video-picker-close").click();
+      await picker.getByTestId("video-picker-add").click();
       await expect(picker).toHaveCount(0);
+      // 加第二条：重新打开，再一次一条；webm 那条带提醒（Unity 在 Windows 上多半解不了）
+      await video.getByTestId("video-add").click();
+      const picker2 = page.getByTestId("video-picker-dialog");
+      await picker2.locator(`[data-testid="video-picker-item"][data-asset-id="${b}"]`).click();
+      await expect(picker2.locator(`[data-testid="video-picker-item"][data-asset-id="${b}"]`)).toHaveAttribute("data-warning", "webm");
+      await picker2.getByTestId("video-picker-add").click();
+      await expect(picker2).toHaveCount(0);
 
       // 面板上两条小方块：只读显示名（起名在文件属性上改），webm 那条的 tooltip 里带着提醒
       await expect(video.getByTestId("video-clip")).toHaveCount(2);
@@ -232,11 +235,12 @@ test.describe("地图 / 贴图：视频列表", () => {
       await waitForSaved(page);
       expect(await readSceneVideo(request, project, SCENE)).toMatchObject({ picked: saved?.clips?.[0] });
 
-      // 重新加回第二条（循环 / 声音断言要数）
+      // 重新加回第二条（循环 / 声音断言要数）：一次一条
       await video.getByTestId("video-add").click();
       const repick = page.getByTestId("video-picker-dialog");
       await repick.locator(`[data-testid="video-picker-item"][data-asset-id="${b}"]`).click();
-      await repick.getByTestId("video-picker-close").click();
+      await repick.getByTestId("video-picker-add").click();
+      await expect(repick).toHaveCount(0);
       await expect(video.getByTestId("video-clip")).toHaveCount(2);
       await video.getByTestId("video-clip").nth(1).click();
 
@@ -320,7 +324,7 @@ test.describe("视频：命令下发给前端", { tag: "@runtime" }, () => {
       await video.getByTestId("video-add").click();
       const picker = page.getByTestId("video-picker-dialog");
       await picker.locator(`[data-testid="video-picker-item"][data-asset-id="${a}"]`).click();
-      await picker.getByTestId("video-picker-close").click();
+      await picker.getByTestId("video-picker-add").click();
       await waitForSaved(page);
       // 落盘是 **GUID**（见上一条用例的说明）；这里只关心「有一条被选中」，具体是哪条由面板单选钉住
       const runtimeSaved = await readSceneVideo(request, project, SCENE);

@@ -226,7 +226,7 @@ export function VideoFields({ object }: { readonly object: GameObjectDoc }): Rea
           <button
             type="button"
             data-testid="video-add"
-            title="从项目里的视频素材里挑（可以连着加几条）"
+            title="从项目里的视频素材里挑（选中一条，点「添加」加入）"
             aria-label="添加视频"
             className="flex h-6 w-6 flex-none items-center justify-center rounded border border-dashed border-[var(--color-editor-border)] text-[13px] leading-none text-[var(--color-editor-text-dim)] hover:border-[var(--color-editor-accent)] hover:text-[var(--color-editor-text)]"
             onClick={() => setPicking(true)}
@@ -247,11 +247,10 @@ export function VideoFields({ object }: { readonly object: GameObjectDoc }): Rea
         </div>
       </FieldRow>
 
-      {/* 选择视频：点一条就加进来（已加的标「已加入」），关掉回到面板 */}
+      {/* 选择视频：选中一条 → 点「添加」加入（一次一条），取消 / 关窗回到面板 */}
       <ResourcePickerDialog
         kind="video"
         open={picking}
-        added={clips}
         onPick={(id) => addVideoClip(object.id, id)}
         onClose={() => setPicking(false)}
       />

@@ -27,7 +27,7 @@ import {
  * 清单的**全部管理都在这一组里**（没有别的窗口）：
  * - 小方块 = 加进来的音频，点一下就把「播哪一条」切过去；
  * - 每个小方块上的 `×` = 移出那一条；「清空」= 一次全部移出；
- * - `＋` = 从项目素材里**添加**（弹 `ResourcePickerDialog`，点一条加一条）。
+ * - `＋` = 从项目素材里**添加**（弹 `ResourcePickerDialog`：选中一条 → 点「添加」加入，一次一条）。
  *
  * 编辑器**不播放**：没有试听、不接音频解码。点「播放」只是**记账**（哪一层该播什么）+
  * 尽力把命令发给前端；所以按钮**不要求前端在场**，没连上时状态记着、等连上补发。
@@ -256,7 +256,7 @@ export function SoundFields({ object }: { readonly object: GameObjectDoc }): Rea
           <button
             type="button"
             data-testid="sound-add"
-            title="从项目里的音频素材里挑（可以连着加几条）"
+            title="从项目里的音频素材里挑（选中一条，点「添加」加入）"
             aria-label="添加音频"
             className="flex h-6 w-6 flex-none items-center justify-center rounded border border-dashed border-[var(--color-editor-border)] text-[13px] leading-none text-[var(--color-editor-text-dim)] hover:border-[var(--color-editor-accent)] hover:text-[var(--color-editor-text)]"
             onClick={() => setPicking(true)}
@@ -277,11 +277,10 @@ export function SoundFields({ object }: { readonly object: GameObjectDoc }): Rea
         </div>
       </FieldRow>
 
-      {/* 选择音频：点一条就加进来（已加的标「已加入」），关掉回到面板 */}
+      {/* 选择音频：选中一条 → 点「添加」加入（一次一条），取消 / 关窗回到面板 */}
       <ResourcePickerDialog
         kind="audio"
         open={picking}
-        added={clips}
         onPick={(id) => addSoundClip(object.id, id)}
         onClose={() => setPicking(false)}
       />

@@ -16,8 +16,8 @@
 | 后端默认地址 | `0.0.0.0:1420`（`resources/config/app.json`，可被 `HOST` / `PORT` 覆盖） |
 | 编辑器开发地址 | `http://localhost:5173`（Vite，`/api`、`/editor`、`/client` 反代到 1420） |
 | 编辑器生产地址 | `http://localhost:1420`（后端同源托管 `apps/editor/dist`） |
-| 源码规模（不含测试） | 157 个文件 / 34,811 行（packages 11,516 · backend 3,319 · editor 19,976） |
-| 测试规模 | 31,922 行（单测 22,711 · E2E 8,928 · 架构测试 283） |
+| 源码规模（不含测试） | 157 个文件 / 34,787 行（packages 11,516 · backend 3,319 · editor 19,952） |
+| 测试规模 | 31,924 行（单测 22,702 · E2E 8,939 · 架构测试 283） |
 
 > 上表两行与 §0.1 表格里加粗的文件行数、§3.x 节标题里的包规模由
 > `scripts/check-code-structure-stats.mjs` **机器校验**（`pnpm check` 的一环）：
@@ -1205,7 +1205,7 @@ export function createSoundSlice(
 | `ProjectDialog.tsx` | 177 | 新建/打开项目：列表带「N 个文件」与删除（`confirm`），创建成功即关闭，失败把 `project.error` 摆在框里。 | `ProjectDialog` |
 | `SceneDialog.tsx` | 104 | 新建/重命名场景：场景名 = 文件名，失败原因就地显示。 | `SceneDialog` |
 | `ObjectDialog.tsx` | 206 | 「新建对象」弹框：先选种类（实体/动作/事件）再选类型（正方形瓦片 + `kindMarkerColor` 色点），名字用 `nextObjectName` 预填去重。 | `ObjectDialog` |
-| `ResourcePickerDialog.tsx` | 832 | 「从项目已有素材里挑一个」的**通用选择弹框**：三种 `kind` **同一套布局**（左 38% 文件列表 + 搜索 + 标签过滤行、右预览、底部状态栏 + 按钮），内容按 kind 换——`image` = 选贴图 / 精灵（选中 + 确认，预览里带精灵格网，`allowSprite` 控制切分面板，`onPick(image, sprite)` 图 + 格子一次交出；确认是因为写回要带宽高，尺寸是选中后异步读的）；`audio` / `video` = 点一条就加入（可连点），已加入的标「已加入」再点只换预览，**右侧预览原生 controls 可直接播放**（`<audio>` / `<video>`，选择器内试听 / 试看）。行首图标：音频 = 公用音符 `AudioIcon`，视频 = 后端首帧缩略图 `VideoThumb`（挂了兜底 `VideoFallbackIcon`）。统一从资源树取清单（音频多一层 `audioCatalog`），**搜索栏下都有标签过滤行**（AND，三种 kind 共用 `TagFilterRow`，任何素材都能打标签所以行上也带 tag chips）；testid 全部由 `kind` 派生；内部 `ImagePickerBody` / `MediaPickerBody` / `mediaPickerRows` / `MEDIA_TEXTS` / `TagFilterRow` / `AudioIcon` / `VideoThumb` / `VideoFallbackIcon`。 | `ResourcePickerDialog`、`ResourcePickerKind` |
+| `ResourcePickerDialog.tsx` | 810 | 「从项目已有素材里挑一个」的**通用选择弹框**：三种 `kind` **同一套布局**（左 38% 文件列表 + 搜索 + 标签过滤行、右预览、底部状态栏 + 按钮），内容按 kind 换——`image` = 选贴图 / 精灵（选中 + 确认，预览里带精灵格网，`allowSprite` 控制切分面板，`onPick(image, sprite)` 图 + 格子一次交出；确认是因为写回要带宽高，尺寸是选中后异步读的）；`audio` / `video` = **选中一条 → 点「添加」加入并关闭（一次一条，重复添加由 store 去重兜底）**，选中即进右边预览、原生 controls 可直接**播放**（`<audio>` / `<video>`，选择器内试听 / 试看）。行上**不加徽标、不显示标签**（标签只留在搜索 / 过滤里用）；行首图标：音频 = 公用音符 `AudioIcon`，视频 = 后端首帧缩略图 `VideoThumb`（挂了兜底 `VideoFallbackIcon`）。统一从资源树取清单（音频多一层 `audioCatalog`），**搜索栏下都有标签过滤行**（AND，三种 kind 共用 `TagFilterRow`）；testid 全部由 `kind` 派生；内部 `ImagePickerBody` / `MediaPickerBody` / `mediaPickerRows` / `MEDIA_TEXTS` / `TagFilterRow` / `AudioIcon` / `VideoThumb` / `VideoFallbackIcon`。 | `ResourcePickerDialog`、`ResourcePickerKind` |
 | `SpriteEditorDialog.tsx` | 179 | 独立的**精灵编辑器**（v23 新增）：列 / 行（1..64）、缩放、预览图上点格，草稿只在弹窗内变化，点「应用」才落到**素材 meta** 那条轨道（`setSpriteSheet`，1×1 按「恢复整图」处理）。 | `SpriteEditorDialog` |
 | `AudioTagDialog.tsx` | 157 | 「选择标签」：给**任何素材文件**勾/去标签（`taggableAssets` + `allTagsOf` + `setAssetTags`，「N 个文件在用」跨图 / 声 / 视频全部计数），只勾选不新建；目标已经不在资源树里时什么都不做（不凭空造 orphan meta）。 | `AudioTagDialog` |
 | `AudioTagEditorDialog.tsx` | 197 | 「标签」窗口：整数序号 `#0…#N` 预铺（`SLOTS_PER_PAGE` 16、`MAX_SLOTS` 32），只填名字，洞不画。 | `AudioTagEditorDialog` |
@@ -1248,8 +1248,8 @@ export function createSoundSlice(
 | `registry.tsx` | 145 | **对象分组的注册表**：7 组（基础 / 渲染 / 声音 / 传送 / 区域 / 战争雾 / 视频）各自的 `applies`（判据走预设表与访问器，不看 `kind` 字面量）与 `render`；**数组顺序就是界面顺序**（e2e 断言它）。「基础」组里 **`sortingOrder` 由对象字段规格自动出行**，其余六个字段仍是手写控件（各有专属语义，见 `object-spec.ts`） | `ObjectGroupDef`、`OBJECT_GROUPS` |
 | `object-fields.tsx` | 789 | 对象字段的控件本体（从 `InspectorPanel.tsx` 拆出，纯搬运）：名称 / 激活 / 锁定 / **位置** / 缩放 / 单轴缩放 / 旋转 / 贴图（含**子图那一行**：`子图 第2行第3列（4×4）` + 「改回整图」，越界时挂「格子越界」提示；testid `texture-sprite` / `texture-sprite-out-of-range` / `clear-sprite`）/ 网格规格 / 每格像素 / 网格显示开关 + 它们的格式化与解析助手。**「显示顺序」已搬去描述符**（`object-spec.ts`），所以这里没有它 | `NameField`、`ActiveField`、`LockedField`、`PositionFields`、`ScaleField`、`ScaleAxisField`、`RotationField`、`TextureField`、`GridFields`、`CellSizeField`、`GridDisplayField`、`WORLD_ORIGIN_FALLBACK` 等 |
 | `fields.tsx` | 204 | 属性面板的行/分组外壳与**播放类控件**：可折叠 `FieldGroup`（`data-group` 英文 slug）、只读 `Field`、`FieldRow`（标签定宽 `w-20`，必须是行内第一个子元素）、`PlaybackRow`、`PlaybackStatus`、`PLAYBACK_BUTTON_CLASS` / `PLAYBACK_BUTTON_ACTIVE_CLASS`（高 34px、13px 字）。 | `FieldGroup`、`Field`、`FieldRow`、`PlaybackRow`、`PlaybackStatus`、`PLAYBACK_BUTTON_CLASS`、`PLAYBACK_BUTTON_ACTIVE_CLASS`；类型 `PlaybackState` |
-| `SoundFields.tsx` | 361 | 声音对象的「声音」组：层级下拉（对象只给 `OBJECT_SOUND_LAYERS`，老文件的 `bgm` 照显并提示改）、音频小方块单选（每个带 `×` 移出）+ `＋` 添加（弹 `ResourcePickerDialog kind="audio"`）+ 「清空」、播放三键 + 状态行（多一档 `busy` = 本层被别的对象占着）；每条音频的显示名经 `audioDisplayName` 读（素材 `.meta` 顶层 `name`，唯一入口在文件属性）。 | `SoundFields`、`soundPlayBlockedReason`、`soundDeliveryHint` |
-| `VideoFields.tsx` | 343 | 地图/贴图/精灵的「视频」组：启用闸门（关着只留开关，**保留自定义渲染**——关掉它要连带摘掉整个组件）、**循环 / 声音 / 自动播放三行由组件规格自动出行**（`descriptorRows(object, videoSpec, componentFields(...))`，见 `DescriptorRows.tsx`）、视频小方块单选（每个带 `×` 移出）+ `＋` 添加 + 「清空」、播放三键 + 状态行；小方块的显示名同样读素材 `.meta` 顶层 `name`。 | `VideoFields`、`videoPlayBlockedReason`、`videoDeliveryHint` |
+| `SoundFields.tsx` | 360 | 声音对象的「声音」组：层级下拉（对象只给 `OBJECT_SOUND_LAYERS`，老文件的 `bgm` 照显并提示改）、音频小方块单选（每个带 `×` 移出）+ `＋` 添加（弹 `ResourcePickerDialog kind="audio"`：选中一条 → 点「添加」加入，一次一条）+ 「清空」、播放三键 + 状态行（多一档 `busy` = 本层被别的对象占着）；每条音频的显示名经 `audioDisplayName` 读（素材 `.meta` 顶层 `name`，唯一入口在文件属性）。 | `SoundFields`、`soundPlayBlockedReason`、`soundDeliveryHint` |
+| `VideoFields.tsx` | 342 | 地图/贴图/精灵的「视频」组：启用闸门（关着只留开关，**保留自定义渲染**——关掉它要连带摘掉整个组件）、**循环 / 声音 / 自动播放三行由组件规格自动出行**（`descriptorRows(object, videoSpec, componentFields(...))`，见 `DescriptorRows.tsx`）、视频小方块单选（每个带 `×` 移出）+ `＋` 添加（弹 `ResourcePickerDialog kind="video"`：选中 → 「添加」，一次一条）+ 「清空」、播放三键 + 状态行；小方块的显示名同样读素材 `.meta` 顶层 `name`。 | `VideoFields`、`videoPlayBlockedReason`、`videoDeliveryHint` |
 | `registry.tsx` | 145 | **对象分组的注册表**：7 组（基础 / 渲染 / 声音 / 传送 / 区域 / 战争雾 / 视频）各自的 `applies`（判据走预设表与访问器，不看 `kind` 字面量）与 `render`；**数组顺序就是界面顺序**（e2e 断言它）。「基础」组里 **`sortingOrder` 由对象字段规格自动出行**，其余六个字段仍是手写控件（各有专属语义，见 `object-spec.ts`） | `ObjectGroupDef`、`OBJECT_GROUPS` |
 | `DescriptorRows.tsx` | 316 | **规格驱动的行渲染器**：按 `FieldDef.kind` 出行（布尔 / 数字 / 整数 / 字符串 / 多行文本 / 枚举），`FieldTarget` 抽象把「写哪份数据」与「这一行长什么样」分开——`componentFields(type)` 写组件 `data`、`objectFields` 写对象自身，**两种规格共用同一个渲染器**。`order` 排序、`testId` 直取描述符、`FieldRow` 外壳与「不被 store 回灌 / 非法值退回 / Esc 还原」三条约定与手写控件逐字一致。加一个简单字段 = 规格里加一行，这里不用动。 | `InspectorRow`、`FieldTarget`、`componentFields`、`objectFields`、`descriptorRows`、`sortInspectorRows` |
 | `TeleportFields.tsx` | 105 | 传送阵的「传送」组：候选目标小方块 + `＋` 开「传送目标」窗口 + 「传送」按钮（不能传时按钮上写原因）。 | `TeleportFields` |
@@ -1846,8 +1846,8 @@ upgradeRawDocument
 
 | 文件 | 行数 | 覆盖的行为 |
 |---|---|---|
-| `sound-object.test.tsx` | 723 | 种类表里动作下的「播放声音」；创建声音对象；属性面板声音组（小方块单选/× 移出/清空/＋ 添加）；**选择器：点一条 = 加入 + 右侧原生 `<audio>` 试听，行首公用音符图标，点「已加入」只换预览不重复加**；播放/停止能不能点；面板上看得见的状态；store 的记账与日志 |
-| `video-object.test.tsx` | 633 | 属性面板视频组（闸门/小方块单选/× 移出/清空/＋ 添加）；**选择器：行首首帧缩略图（挂了兜底公用图标）、右侧原生 `<video>` 预览、webm 那条的预览里带解码提醒**；播放/暂停/停止的可用性与状态显示；失败原因都在运行日志里写明；store 的加/删 |
+| `sound-object.test.tsx` | 720 | 种类表里动作下的「播放声音」；创建声音对象；属性面板声音组（小方块单选/× 移出/清空/＋ 添加）；**选择器：点行只是选中（右侧原生 `<audio>` 试听），点「添加」才加入并关闭（一次一条），重复添加由 store 去重、行上无徽标**；播放/停止能不能点；面板上看得见的状态；store 的记账与日志 |
+| `video-object.test.tsx` | 627 | 属性面板视频组（闸门/小方块单选/× 移出/清空/＋ 添加）；**选择器：行首首帧缩略图（挂了兜底公用图标）、点行选中右侧原生 `<video>` 预览（webm 带解码提醒）、「添加」一次一条**；播放/暂停/停止的可用性与状态显示；失败原因都在运行日志里写明；store 的加/删 |
 | `descriptor-rows.test.tsx` | 169 | **描述符行的等价性契约**（v25）：三个开关的 testid 与行序与手写版逐字一致、tooltip 仍在、勾选走泛型入口且是一次可撤销编辑（撤销说明取规格标签）、三个开关互不干扰、组件缺失时按规格补壳再写。**这一份红 = 重构改了行为；这一份绿 + 既有测试零改动 = 只是换了实现** |
 | `bgm-dialog.test.tsx` | 544 | 顶栏「音乐」按钮；「背景音乐」弹框（清单、搜索、标签勾选、路径开关、选中跟随播放、自动滚到当前曲、底部三键；显示名与标签来自各音频的 `.meta`）；**与项目设置分离** |
 | `run-mode.test.ts` | 440 | **运行中的改动不保存、退出即还原**；切场景 = 换台（运行态下立刻推）；运行基线跟着文档走；运行中的文件操作与断线 |
