@@ -29,10 +29,16 @@ import {
 } from "../panels/audio-catalog";
 
 /**
- * 「从项目已有素材里挑一个」的**通用**选择弹框：按 `kind` 调整——
+ * 「从项目已有素材里挑一个」的**通用**选择弹框：三种 `kind` **同一套布局**——
+ * 左边文件列表（搜索 + 标签过滤 + 图标行）、右边预览、底部状态栏 + 按钮，只是内容按 kind 换：
  *
- * - `image`：选贴图 / 精灵（选中 + 确认，带预览与精灵格网，见 `ImagePickerBody`）；
- * - `audio` / `video`：点一条就加进宿主对象（可连点），已加入的置灰（见 `MediaPickerBody`）。
+ * - `image`：选贴图 / 精灵（选中 + 确认，预览里带精灵格网，见 `ImagePickerBody`）；
+ *   确认是因为写回要带宽高，尺寸是选中后异步读的。
+ * - `audio` / `video`：点一条就加进宿主对象（可连点），已加入的标「已加入」、
+ *   再点只换预览不重复加；右边预览可直接**播放**（原生 controls，见 `MediaPickerBody`）。
+ *
+ * 行首图标：音频 = 公用音符图标（`AudioIcon`）；视频 = 后端抽的首帧缩略图
+ * （`/api/resources/thumbnail` 对 mp4/webm 走 ffmpeg，失败降级成 `VideoFallbackIcon`）。
  *
  * 编辑器**不导入**素材（素材由外部提交到 `Assets/images|audio|video/`），所以这里都是
  * 「从已有素材里挑」，空态文案指向这个约定。testid 全部由 `kind` 派生（`${kind}-picker-*`），
@@ -61,10 +67,10 @@ export interface ImageResourcePickerProps extends ResourcePickerBaseProps {
   readonly allowSprite: boolean;
 }
 
-/** 选音频 / 视频：点击即加入模式。 */
+/** 选音频 / 视频：点击即加入模式，点过的进预览可播放。 */
 export interface MediaResourcePickerProps extends ResourcePickerBaseProps {
   readonly kind: "audio" | "video";
-  /** 已经加进来的素材（这些行标「已加入」、点不动）。 */
+  /** 已经加进来的素材（这些行标「已加入」，点击不再重复加、只换预览）。 */
   readonly added: readonly string[];
   readonly onPick: (id: string) => void;
 }
@@ -74,8 +80,8 @@ export type ResourcePickerDialogProps = ImageResourcePickerProps | MediaResource
 /** 三种 kind 的窗口尺寸（贴图要放预览 + 格网，最宽）。 */
 const DIALOG_SIZES: Record<ResourcePickerKind, string> = {
   image: "h-[560px] w-[1020px]",
-  audio: "h-[460px] w-[620px]",
-  video: "h-[460px] w-[560px]",
+  audio: "h-[520px] w-[880px]",
+  video: "h-[520px] w-[880px]",
 };
 
 const MEDIA_TITLES: Record<"audio" | "video", string> = {
@@ -410,7 +416,7 @@ interface MediaPickerRow {
   readonly displayName: string;
   /** 项目内相对路径（副信息）。 */
   readonly path: string;
-  /** 标签 chip（只有音频有；视频恒为空数组）。 */
+  /** 标签 chip（音频 / 视频都从 `.meta` 顶层 `tags` 读）。 */
   readonly tags: readonly AudioTagRef[];
   /** 行尾提醒徽标（视频 = `.webm` 解不了；音频没有）。 */
   readonly warning: string | undefined;
@@ -427,6 +433,8 @@ const MEDIA_TEXTS: Record<
     readonly emptyTitle: string;
     readonly emptyHint: string;
     readonly emptyFilter: string;
+    /** 右边预览空态提示。 */
+    readonly previewEmpty: string;
     readonly footer: string;
   }
 > = {
@@ -436,7 +444,8 @@ const MEDIA_TEXTS: Record<
     emptyTitle: "项目里还没有音频素材",
     emptyHint: "把音频放到 Assets/audio/ 下即可在这里选到",
     emptyFilter: "没有匹配的音频",
-    footer: "点一条就加进来（可以连着加几条）；名字 / 标签在「音频文件」窗口里改",
+    previewEmpty: "点左边一条音频，在这里试听",
+    footer: "点一条就加进来（可以连着加几条），右边能试听；名字 / 标签在文件属性上改",
   },
   video: {
     searchPlaceholder: "搜名字 / 路径…",
@@ -444,7 +453,8 @@ const MEDIA_TEXTS: Record<
     emptyTitle: "项目里还没有视频素材",
     emptyHint: "把 mp4 放到 Assets/video/ 下即可在这里选到",
     emptyFilter: "没有匹配的视频",
-    footer: "点一条就加进来（可以连着加几条）；视频素材本身不会被改动",
+    previewEmpty: "点左边一条视频，在这里预览",
+    footer: "点一条就加进来（可以连着加几条），右边能预览；视频素材本身不会被改动",
   },
 };
 
@@ -486,19 +496,31 @@ function mediaPickerRows(
 }
 
 /**
- * 音频 / 视频挑选（同一习惯）：列出**当前项目里的全部此类素材**，
- * **点一条就加进宿主对象**，可以连着点几条；已经加过的标出来、不再重复加。
+ * 音频 / 视频挑选（同一习惯，布局与贴图那边对齐：左列表 + 右预览 + 底部状态栏）：
+ * 列出**当前项目里的全部此类素材**，**点一条就加进宿主对象**（可以连着点几条），
+ * 点过的同时进右边预览；已经加过的标「已加入」，再点只换预览、不再重复加。
  *
- * 它只负责「从已有素材里挑」，**不播放**：没有试听 / 预览播放器，不碰解码。
+ * 右边预览直接**播放**（原生 `<audio>` / `<video>` controls）——选择器里的试听 / 试看，
+ * 不出声到运行端、不碰场景数据。
  */
-function MediaPickerBody({ kind, added, onPick }: MediaResourcePickerProps): React.JSX.Element {
+function MediaPickerBody({ kind, open, added, onPick }: MediaResourcePickerProps): React.JSX.Element {
   const tree = useEditorStore((state) => state.project.tree);
   const metas = useEditorStore((state) => state.assetMetaTable);
   const table = useEditorStore((state) => state.doc.audioTags);
   const [query, setQuery] = useState("");
   const [activeTags, setActiveTags] = useState<string[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const texts = MEDIA_TEXTS[kind];
   const tagOptions = useMemo(() => tagOptionsOf(table), [table]);
+
+  // 每次打开都回到干净状态（不记住上一次的搜索 / 选中）
+  useEffect(() => {
+    if (open) {
+      setQuery("");
+      setActiveTags([]);
+      setSelectedId(null);
+    }
+  }, [open]);
 
   const rows = useMemo(() => mediaPickerRows(kind, tree, metas, table), [kind, tree, metas, table]);
   const visible = useMemo(() => {
@@ -512,107 +534,163 @@ function MediaPickerBody({ kind, added, onPick }: MediaResourcePickerProps): Rea
       : tagged.filter((row) => row.searchText.toLocaleLowerCase().includes(needle));
   }, [rows, query, activeTags]);
 
+  const selected = rows.find((row) => row.id === selectedId);
+
   return (
     <>
-      <input
-        data-testid={`${kind}-picker-search`}
-        value={query}
-        placeholder={texts.searchPlaceholder}
-        aria-label={texts.searchAria}
-        className="mb-2 flex-none rounded border border-[var(--color-editor-border)] bg-black/30 px-2 py-1 text-[11px] outline-none placeholder:text-[var(--color-editor-text-dim)]"
-        onChange={(event) => setQuery(event.target.value)}
-      />
-      <TagFilterRow
-        prefix={`${kind}-picker`}
-        tagOptions={tagOptions}
-        activeTags={activeTags}
-        onToggle={(name) =>
-          setActiveTags((previous) =>
-            previous.includes(name) ? previous.filter((item) => item !== name) : [...previous, name],
-          )
-        }
-      />
-
-      <div className="min-h-0 flex-1 overflow-auto" data-testid={`${kind}-picker-list`}>
-        {visible.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center gap-1 rounded border border-dashed border-[var(--color-editor-border)] text-[11px] text-[var(--color-editor-text-dim)]">
-            {rows.length === 0 ? (
-              <>
-                <span>{texts.emptyTitle}</span>
-                <span className="font-mono">{texts.emptyHint}</span>
-              </>
+      <div className="flex min-h-0 flex-1 gap-3 overflow-hidden">
+        <div className="flex w-[38%] min-w-0 flex-none flex-col border-r border-[var(--color-editor-border)] pr-3">
+          <input
+            type="search"
+            data-testid={`${kind}-picker-search`}
+            aria-label={texts.searchAria}
+            placeholder={texts.searchPlaceholder}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            className="mb-2 h-8 flex-none rounded border border-[var(--color-editor-border)] bg-black/30 px-2 text-[12px] outline-none focus:border-[var(--color-editor-accent)]"
+          />
+          <TagFilterRow
+            prefix={`${kind}-picker`}
+            tagOptions={tagOptions}
+            activeTags={activeTags}
+            onToggle={(name) =>
+              setActiveTags((previous) =>
+                previous.includes(name) ? previous.filter((item) => item !== name) : [...previous, name],
+              )
+            }
+          />
+          <div className="min-h-0 flex-1 overflow-auto" data-testid={`${kind}-picker-list`}>
+            {visible.length === 0 ? (
+              <div className="flex h-full flex-col items-center justify-center gap-1 rounded border border-dashed border-[var(--color-editor-border)] text-[11px] text-[var(--color-editor-text-dim)]">
+                {rows.length === 0 ? (
+                  <>
+                    <span>{texts.emptyTitle}</span>
+                    <span className="font-mono">{texts.emptyHint}</span>
+                  </>
+                ) : (
+                  <span>{texts.emptyFilter}</span>
+                )}
+              </div>
             ) : (
-              <span>{texts.emptyFilter}</span>
+              <div className="flex flex-col gap-1">
+                {visible.map((row) => {
+                  const isAdded = added.includes(row.id);
+                  const isSelected = row.id === selectedId;
+                  return (
+                    <button
+                      key={row.id}
+                      type="button"
+                      data-testid={`${kind}-picker-item`}
+                      data-asset-id={row.id}
+                      data-added={isAdded}
+                      data-selected={isSelected}
+                      aria-pressed={isSelected}
+                      data-tags={row.tags.map((tag) => tag.name).join(",")}
+                      data-warning={row.warning === undefined ? undefined : "webm"}
+                      title={[isAdded ? "已经加进来了（点一下只看预览）" : `加进来：${row.path}`, row.warning]
+                        .filter((line) => line !== undefined)
+                        .join("\n")}
+                      className={`flex min-w-0 items-center gap-2 rounded border p-1 text-left ${isSelected ? "border-[var(--color-editor-accent)] bg-[var(--color-editor-accent-dim)] text-white" : "border-transparent hover:border-[var(--color-editor-border)] hover:bg-[var(--color-editor-panel-alt)]"}`}
+                      onClick={() => {
+                        setSelectedId(row.id);
+                        if (!isAdded) onPick(row.id);
+                      }}
+                    >
+                      {kind === "audio" ? <AudioIcon /> : <VideoThumb id={row.id} />}
+
+                      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                        <span className="min-w-0 truncate text-[11px]">{row.displayName}</span>
+                        {row.tags.length === 0 ? null : (
+                          <span className="flex flex-wrap items-center gap-1">
+                            {row.tags.map((tag) => (
+                              <span
+                                key={tag.id}
+                                data-testid={`${kind}-picker-tag`}
+                                data-id={tag.id}
+                                data-tag={tag.name}
+                                className="flex-none rounded-full border border-[var(--color-editor-border)] px-1 text-[9px] text-[var(--color-editor-text-dim)]"
+                              >
+                                {tag.name}
+                              </span>
+                            ))}
+                          </span>
+                        )}
+                      </span>
+
+                      {row.warning === undefined ? null : (
+                        <span
+                          data-testid={`${kind}-picker-warning`}
+                          className="flex-none text-[10px] text-[var(--color-editor-warn)]"
+                        >
+                          webm?
+                        </span>
+                      )}
+
+                      <span
+                        className={`flex-none text-[10px] ${
+                          isAdded
+                            ? "text-[var(--color-editor-text-dim)]"
+                            : "text-[var(--color-editor-accent)]"
+                        }`}
+                      >
+                        {isAdded ? "已加入" : "＋"}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             )}
           </div>
-        ) : (
-          <div className="flex flex-col gap-1">
-            {visible.map((row) => {
-              const isAdded = added.includes(row.id);
-              return (
-                <button
-                  key={row.id}
-                  type="button"
-                  data-testid={`${kind}-picker-item`}
-                  data-asset-id={row.id}
-                  data-added={isAdded}
-                  data-tags={row.tags.map((tag) => tag.name).join(",")}
-                  data-warning={row.warning === undefined ? undefined : "webm"}
-                  disabled={isAdded}
-                  title={[isAdded ? "已经加进来了" : `加进来：${row.path}`, row.warning]
-                    .filter((line) => line !== undefined)
-                    .join("\n")}
-                  className={`flex items-center gap-2 rounded border px-1.5 py-1 text-left ${
-                    isAdded
-                      ? "border-[var(--color-editor-border)] opacity-50"
-                      : "border-[var(--color-editor-border)] hover:border-[var(--color-editor-accent)] hover:bg-[var(--color-editor-panel-alt)]"
-                  }`}
-                  onClick={() => onPick(row.id)}
-                >
-                  <span className="w-44 flex-none truncate text-[11px]">{row.displayName}</span>
+        </div>
 
-                  <span className="flex min-w-0 flex-1 flex-wrap items-center gap-1 text-[10px] text-[var(--color-editor-text-dim)]">
-                    {row.tags.map((tag) => (
-                      <span
-                        key={tag.id}
-                        data-testid={`${kind}-picker-tag`}
-                        data-id={tag.id}
-                        data-tag={tag.name}
-                        className="flex-none rounded-full border border-[var(--color-editor-border)] px-1.5"
-                      >
-                        {tag.name}
-                      </span>
-                    ))}
-                    <span className="min-w-0 flex-1 truncate font-mono">{row.path}</span>
-                  </span>
-
-                  {row.warning === undefined ? null : (
-                    <span
-                      data-testid={`${kind}-picker-warning`}
-                      className="flex-none text-[10px] text-[var(--color-editor-warn)]"
-                    >
-                      webm?
-                    </span>
-                  )}
-
-                  <span
-                    className={`flex-none text-[10px] ${
-                      isAdded
-                        ? "text-[var(--color-editor-text-dim)]"
-                        : "text-[var(--color-editor-accent)]"
-                    }`}
-                  >
-                    {isAdded ? "已加入" : "＋"}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        )}
+        <div className="flex min-w-0 flex-1 flex-col overflow-auto" data-testid={`${kind}-picker-preview`}>
+          {selected === undefined ? (
+            <div className="flex min-h-full items-center justify-center text-[11px] text-[var(--color-editor-text-dim)]">
+              {texts.previewEmpty}
+            </div>
+          ) : (
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded border border-[var(--color-editor-border)] bg-black/30">
+              <div className="flex flex-none items-center gap-2 border-b border-[var(--color-editor-border)] px-2 py-1">
+                <span className="min-w-0 truncate text-[11px]">{selected.displayName}</span>
+                <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-[var(--color-editor-text-dim)]">
+                  {selected.path}
+                </span>
+              </div>
+              <div className="flex min-h-0 flex-1 items-center justify-center p-3">
+                {kind === "audio" ? (
+                  <audio
+                    key={selected.id}
+                    data-testid={`${kind}-picker-player`}
+                    controls
+                    preload="metadata"
+                    src={assetRawUrl(selected.id)}
+                    className="w-full max-w-md"
+                  />
+                ) : (
+                  <video
+                    key={selected.id}
+                    data-testid={`${kind}-picker-player`}
+                    controls
+                    preload="metadata"
+                    src={assetRawUrl(selected.id)}
+                    className="max-h-full max-w-full"
+                  />
+                )}
+              </div>
+              {selected.warning === undefined ? null : (
+                <div role="alert" className="flex-none px-2 py-1 text-[10px] text-[var(--color-editor-warn)]">
+                  {selected.warning}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="mt-2 flex flex-none items-center justify-between gap-2 text-[11px] text-[var(--color-editor-text-dim)]">
-        <span>{texts.footer}</span>
+        <span className="min-w-0 truncate">
+          {selected === undefined ? texts.footer : `已选：${selected.displayName}（${selected.path}）`}
+        </span>
         <Dialog.Close asChild>
           <button
             type="button"
@@ -624,6 +702,76 @@ function MediaPickerBody({ kind, added, onPick }: MediaResourcePickerProps): Rea
         </Dialog.Close>
       </div>
     </>
+  );
+}
+
+// ─── 行首图标（音频公用图标 / 视频首帧缩略图） ─────────────────────────────────
+
+/**
+ * 音频行首的公用音符图标：音频没有「封面」可言，所有音频文件共用这一枚。
+ */
+function AudioIcon(): React.JSX.Element {
+  return (
+    <span className="flex h-10 w-10 flex-none items-center justify-center rounded bg-black/30">
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+        className="h-5 w-5 text-[var(--color-editor-text-dim)]"
+      >
+        <path d="M9 18V6l10-2v11" />
+        <circle cx="6.5" cy="18" r="2.5" />
+        <circle cx="16.5" cy="15" r="2.5" />
+      </svg>
+    </span>
+  );
+}
+
+/**
+ * 视频行首图标：优先用后端抽的首帧缩略图（`/api/resources/thumbnail` 对视频走 ffmpeg）；
+ * ffmpeg 不在 / 解码失败 → img onError 降级成公用胶片图标，行不至于空着。
+ */
+function VideoThumb({ id }: { readonly id: string }): React.JSX.Element {
+  const [failed, setFailed] = useState(false);
+  return (
+    <span className="flex h-10 w-10 flex-none items-center justify-center overflow-hidden rounded bg-black/30">
+      {failed ? (
+        <VideoFallbackIcon />
+      ) : (
+        <img
+          src={assetThumbnailUrl(id)}
+          alt=""
+          loading="lazy"
+          onError={() => setFailed(true)}
+          className="h-full w-full object-cover"
+        />
+      )}
+    </span>
+  );
+}
+
+/** 视频缩略图不可用时的兜底图标。 */
+function VideoFallbackIcon(): React.JSX.Element {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className="h-5 w-5 text-[var(--color-editor-text-dim)]"
+    >
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <path d="M3 9h18" />
+      <path d="M8 5l2.5 4" />
+      <path d="M13 5l2.5 4" />
+    </svg>
   );
 }
 

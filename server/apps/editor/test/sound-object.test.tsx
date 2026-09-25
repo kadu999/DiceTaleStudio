@@ -361,6 +361,37 @@ describe("属性面板：声音组", () => {
     ).toBe("true");
   });
 
+  it("选择器：点一条 = 加入 + 右侧试听（原生播放器指向那条）；点「已加入」只换预览不重复加", () => {
+    seedScene([sound([CLIP])], ["sound-1"]);
+    render(<InspectorPanel />);
+
+    fireEvent.click(screen.getByTestId("sound-add"));
+    const item = (id: string): HTMLElement =>
+      screen
+        .getAllByTestId("audio-picker-item")
+        .find((element) => element.getAttribute("data-asset-id") === id)!;
+
+    // 音频没有封面：行首是公用音符图标（svg），右侧预览先是空态提示
+    expect(item(CLIP2).querySelector("svg")).not.toBeNull();
+    expect(screen.getByTestId("audio-picker-preview").textContent).toContain("试听");
+
+    // 点未加入的 → 加进清单 + 行选中 + 播放器指向它（原生 controls，不进 textContent）
+    fireEvent.click(item(CLIP2));
+    expect(soundOf("sound-1")?.clips).toEqual([CLIP, CLIP2]);
+    expect(item(CLIP2).getAttribute("data-selected")).toBe("true");
+    const player = screen.getByTestId("audio-picker-player");
+    expect(player.tagName).toBe("AUDIO");
+    expect(player.hasAttribute("controls")).toBe(true);
+    expect(player.getAttribute("src")).toContain("step2.mp3");
+
+    // 点已加入的 → 不重复加，只把预览切过去
+    fireEvent.click(item(CLIP));
+    expect(soundOf("sound-1")?.clips).toEqual([CLIP, CLIP2]);
+    expect(screen.getByTestId("audio-picker-player").getAttribute("src")).toContain("step1.mp3");
+    expect(item(CLIP).getAttribute("data-selected")).toBe("true");
+    expect(item(CLIP2).getAttribute("data-selected")).toBe("false");
+  });
+
   it("小方块上的 × 移出那一条；「清空」一次全部移出", () => {
     seedScene([sound([CLIP, CLIP2])], ["sound-1"]);
     const { unmount } = render(<InspectorPanel />);

@@ -316,6 +316,26 @@ describe("属性面板：视频组", () => {
         ?.getAttribute("data-added"),
     ).toBe("true");
 
+    // 行首是后端抽的首帧缩略图，缩略图挂了兜底成公用图标
+    const firstItem = screen
+      .getAllByTestId("video-picker-item")
+      .find((item) => item.getAttribute("data-asset-id") === CLIP)!;
+    expect(firstItem.querySelector('img[src*="/api/resources/thumbnail"]')).not.toBeNull();
+    fireEvent(firstItem.querySelector("img")!, new Event("error"));
+    expect(firstItem.querySelector("svg")).not.toBeNull();
+
+    // 点一条 = 右侧出原生视频播放器（webm 那条的预览里带解码提醒）
+    fireEvent.click(
+      screen
+        .getAllByTestId("video-picker-item")
+        .find((item) => item.getAttribute("data-asset-id") === CLIP2)!,
+    );
+    const player = screen.getByTestId("video-picker-player");
+    expect(player.tagName).toBe("VIDEO");
+    expect(player.hasAttribute("controls")).toBe(true);
+    expect(player.getAttribute("src")).toContain("rain.webm");
+    expect(screen.getByTestId("video-picker-preview").textContent).toContain("WebM");
+
     fireEvent.click(screen.getAllByTestId("video-clip-remove")[0]!);
     expect(videoOf("map-1")?.clips).toEqual([CLIP2]);
     // 移走的正好是选中的那条 → 选中顺到下一条

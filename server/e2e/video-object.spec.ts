@@ -186,7 +186,7 @@ test.describe("地图 / 贴图：视频列表", () => {
       const picker = page.getByTestId("video-picker-dialog");
       await expect(picker).toBeVisible();
       const item = (id: string) => picker.locator(`[data-testid="video-picker-item"][data-asset-id="${id}"]`);
-      await expect(item(a)).toContainText("video/opening.mp4");
+      await expect(item(a)).toHaveAttribute("title", /video\/opening\.mp4/);
       await item(a).click();
       await item(b).click();
       await expect(item(a)).toHaveAttribute("data-added", "true");

@@ -1,6 +1,8 @@
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
+import { readFileSync } from "node:fs";
 import * as pathApi from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createHttpServer } from "../src/http/server";
 import { createTempResourceRoot } from "./helpers/temp-root";
@@ -338,6 +340,32 @@ describe("项目 API", () => {
     const updatedResponse = await fetch(`${baseUrl}/api/resources/thumbnail?id=${encodeURIComponent(id)}`);
     expect(updatedResponse.headers.get("x-image-width")).toBe("320");
     expect(updatedResponse.headers.get("x-image-height")).toBe("640");
+  });
+
+  it("视频缩略图接口用 ffmpeg 抽首帧，返回同样的小型 WebP", async () => {
+    await postJson("/api/projects", { name: TEST_PROJECT });
+    const id = projectAssetId(TEST_PROJECT, "Assets/video/clip.mp4");
+    const fixture = readFileSync(fileURLToPath(new URL("./fixtures/clip.mp4", import.meta.url)));
+    await provider.writeBinary(id, fixture.buffer.slice(fixture.byteOffset, fixture.byteOffset + fixture.byteLength) as ArrayBuffer);
+
+    // info=1 对视频明确拒绝（尺寸头只在抽帧后才有，前端不需要）
+    const infoResponse = await fetch(`${baseUrl}/api/resources/thumbnail?id=${encodeURIComponent(id)}&info=1`);
+    expect(infoResponse.status).toBe(400);
+
+    const thumbnailResponse = await fetch(`${baseUrl}/api/resources/thumbnail?id=${encodeURIComponent(id)}`);
+    expect(thumbnailResponse.status).toBe(200);
+    expect(thumbnailResponse.headers.get("content-type")).toBe("image/webp");
+    // 尺寸头 = 视频本身的宽高（夹具是 64×48）
+    expect(thumbnailResponse.headers.get("x-image-width")).toBe("64");
+    expect(thumbnailResponse.headers.get("x-image-height")).toBe("48");
+    const thumbnail = Buffer.from(await thumbnailResponse.arrayBuffer());
+    const thumbnailInfo = await sharp(thumbnail).metadata();
+    expect(thumbnailInfo.width).toBeLessThanOrEqual(192);
+    expect(thumbnailInfo.height).toBeLessThanOrEqual(192);
+
+    // 与图片同一份缓存语义：再请求一次字节一致
+    const cachedResponse = await fetch(`${baseUrl}/api/resources/thumbnail?id=${encodeURIComponent(id)}`);
+    expect(Buffer.from(await cachedResponse.arrayBuffer())).toEqual(thumbnail);
   });
 
   it("删除项目会连项目文件与资源一起清掉", async () => {

@@ -16,8 +16,8 @@
 | 后端默认地址 | `0.0.0.0:1420`（`resources/config/app.json`，可被 `HOST` / `PORT` 覆盖） |
 | 编辑器开发地址 | `http://localhost:5173`（Vite，`/api`、`/editor`、`/client` 反代到 1420） |
 | 编辑器生产地址 | `http://localhost:1420`（后端同源托管 `apps/editor/dist`） |
-| 源码规模（不含测试） | 157 个文件 / 34,627 行（packages 11,516 · backend 3,283 · editor 19,828） |
-| 测试规模 | 31,843 行（单测 22,632 · E2E 8,928 · 架构测试 283） |
+| 源码规模（不含测试） | 157 个文件 / 34,811 行（packages 11,516 · backend 3,319 · editor 19,976） |
+| 测试规模 | 31,922 行（单测 22,711 · E2E 8,928 · 架构测试 283） |
 
 > 上表两行与 §0.1 表格里加粗的文件行数、§3.x 节标题里的包规模由
 > `scripts/check-code-structure-stats.mjs` **机器校验**（`pnpm check` 的一环）：
@@ -804,7 +804,7 @@ resources/
 | `src/http/requests.ts` | 58 | 请求体 / 查询参数读取助手（`readBody`/`readJsonBody`/`queryRaw`/`queryTrimmed`/`bodyString`/`bodyTrimmed`） |
 | `src/http/mime.ts` | 35 | 扩展名 → Content-Type |
 | `src/http/static.ts` | 86 | 编辑器产物托管 + SPA 回退 + 目录穿越防护 |
-| `src/http/routes/*.ts` | 514 | **一条协议一个函数**：health(17) / config(20) / state(12) / projects(223, **7 个**：项目生命周期 + `/tree` + **`/meta`**（一次拿全项目的素材 meta，连读不出来的那几个也报出来）) / resources(180, 9 个) / index(62, 路由表) |
+| `src/http/routes/*.ts` | 707 | **一条协议一个函数**：health(17) / config(20) / state(12) / projects(290, **7 个**：项目生命周期 + `/tree` + **`/meta`**（一次拿全项目的素材 meta，连读不出来的那几个也报出来）) / resources(302, 9 个；缩略图对视频走 ffmpeg 抽首帧) / index(66, 路由表) |
 | `src/resources/fs-provider.ts` | 326 | `FsResourceProvider`（唯一碰磁盘的地方）+ 原子写 |
 | `src/resources/bundle.ts` | — | 资源清单 / 指纹 / ZIP 组装与缓存；编码委托给 `fflate`（STORED） |
 | `src/ws/hub.ts` | — | `RuntimeHub`：连接、心跳、命令回执、消息分发与序列化发送 |
@@ -882,7 +882,7 @@ startServer()
 | `/api/projects/reveal` | POST | `{name, path?, selectFile?}` | `{ok:true, path}` | `400`/`404`/`405`/`500` |
 | `/api/resources/index` | GET | `?kind=` | `{entries: ResourceEntry[]}` | — |
 | `/api/resources/raw` | GET | `?id=` | 二进制（Content-Type 按扩展名，`no-store`） | `400`（缺 id）/`404` |
-| `/api/resources/thumbnail` | GET | `?id=`；`info=1` 时只回原图尺寸 | 缩小的 WebP（含原图宽高头）或 JSON 尺寸 | `400`（无效图片）/`404` |
+| `/api/resources/thumbnail` | GET | `?id=`；`info=1` 时只回原图尺寸（**视频不支持**） | 缩小的 WebP（含原图宽高头）或 JSON 尺寸；视频（mp4/webm）= ffmpeg 抽首帧再走同一条 sharp 管线，缓存 / 失效语义与图片一致 | `400`（无效图片 / 视频抽帧失败——需 ffmpeg 在 PATH）/`404` |
 | `/api/resources/raw` | PUT/POST | `?id=` + 原始字节 | `{ok:true, id, size}` | — |
 | `/api/resources/raw` | DELETE | `?id=` | `{ok:true, id}` | — |
 | `/api/resources/text` | GET | `?id=` | `text/plain`（`no-store`） | `400`/`404` |
@@ -1205,7 +1205,7 @@ export function createSoundSlice(
 | `ProjectDialog.tsx` | 177 | 新建/打开项目：列表带「N 个文件」与删除（`confirm`），创建成功即关闭，失败把 `project.error` 摆在框里。 | `ProjectDialog` |
 | `SceneDialog.tsx` | 104 | 新建/重命名场景：场景名 = 文件名，失败原因就地显示。 | `SceneDialog` |
 | `ObjectDialog.tsx` | 206 | 「新建对象」弹框：先选种类（实体/动作/事件）再选类型（正方形瓦片 + `kindMarkerColor` 色点），名字用 `nextObjectName` 预填去重。 | `ObjectDialog` |
-| `ResourcePickerDialog.tsx` | 684 | 「从项目已有素材里挑一个」的**通用选择弹框**：按 `kind`（`image` / `audio` / `video`）调整——`image` = 选贴图 / 精灵（选中 + 确认，缩略图列表 + 预览 + 精灵格网，`allowSprite` 控制切分面板，`onPick(image, sprite)` 图 + 格子一次交出）；`audio` / `video` = 点击即加入（可连点，`added` 置灰）。统一从资源树取清单（音频多一层 `audioCatalog`），**搜索栏下都有标签过滤行**（AND，三种 kind 共用 `TagFilterRow`，任何素材都能打标签所以行上也带 tag chips）；testid 全部由 `kind` 派生；内部 `ImagePickerBody` / `MediaPickerBody` / `mediaPickerRows` / `MEDIA_TEXTS` / `TagFilterRow`。 | `ResourcePickerDialog`、`ResourcePickerKind` |
+| `ResourcePickerDialog.tsx` | 832 | 「从项目已有素材里挑一个」的**通用选择弹框**：三种 `kind` **同一套布局**（左 38% 文件列表 + 搜索 + 标签过滤行、右预览、底部状态栏 + 按钮），内容按 kind 换——`image` = 选贴图 / 精灵（选中 + 确认，预览里带精灵格网，`allowSprite` 控制切分面板，`onPick(image, sprite)` 图 + 格子一次交出；确认是因为写回要带宽高，尺寸是选中后异步读的）；`audio` / `video` = 点一条就加入（可连点），已加入的标「已加入」再点只换预览，**右侧预览原生 controls 可直接播放**（`<audio>` / `<video>`，选择器内试听 / 试看）。行首图标：音频 = 公用音符 `AudioIcon`，视频 = 后端首帧缩略图 `VideoThumb`（挂了兜底 `VideoFallbackIcon`）。统一从资源树取清单（音频多一层 `audioCatalog`），**搜索栏下都有标签过滤行**（AND，三种 kind 共用 `TagFilterRow`，任何素材都能打标签所以行上也带 tag chips）；testid 全部由 `kind` 派生；内部 `ImagePickerBody` / `MediaPickerBody` / `mediaPickerRows` / `MEDIA_TEXTS` / `TagFilterRow` / `AudioIcon` / `VideoThumb` / `VideoFallbackIcon`。 | `ResourcePickerDialog`、`ResourcePickerKind` |
 | `SpriteEditorDialog.tsx` | 179 | 独立的**精灵编辑器**（v23 新增）：列 / 行（1..64）、缩放、预览图上点格，草稿只在弹窗内变化，点「应用」才落到**素材 meta** 那条轨道（`setSpriteSheet`，1×1 按「恢复整图」处理）。 | `SpriteEditorDialog` |
 | `AudioTagDialog.tsx` | 157 | 「选择标签」：给**任何素材文件**勾/去标签（`taggableAssets` + `allTagsOf` + `setAssetTags`，「N 个文件在用」跨图 / 声 / 视频全部计数），只勾选不新建；目标已经不在资源树里时什么都不做（不凭空造 orphan meta）。 | `AudioTagDialog` |
 | `AudioTagEditorDialog.tsx` | 197 | 「标签」窗口：整数序号 `#0…#N` 预铺（`SLOTS_PER_PAGE` 16、`MAX_SLOTS` 32），只填名字，洞不画。 | `AudioTagEditorDialog` |
@@ -1789,7 +1789,7 @@ upgradeRawDocument
 | 文件 | 行数 | 覆盖的行为 |
 |---|---|---|
 | `runtime-hub.test.ts` | 919 | **最大的一份**。门控（没点运行 → 握手 503 / 点运行后能连 / 退出运行 4003 踢下线）；先推场景后开前端拿到全量；运行中改场景整份转发；命令转发 + 回执 + 日志；不认识的命令回带 `requestId` 的 `editor_error`（不静默丢弃）；战争雾轨迹转发；前端不在 / 未进运行态的明确报错；编辑器刷新/断开不影响运行态；协议版本不一致 4002；**顺序断言**（`resources_prepare` → `project_settings` → `scene_sync`）；换项目重发 `resources_prepare`；前端上报资源包结果并在关闸后清掉；一组 HTTP 接口用例（`/api/health`、`/api/config`、`/api/resources/index`、`/api/resources/raw`、`/api/state`、未构建时的根路径提示） |
-| `project-api.test.ts` | 413 | 项目 CRUD（创建 `project.json` + 标准子目录、没有 `project.json` 的目录不算项目、项目文件可被编辑器直接打开、重名 400、非法名 400 且不落盘）；资源树与建目录（含目录穿越 400）；上传 → 出现 → 删除；删项目连资源一起清；**`/api/projects/reveal` 的 10 条用例**（路径由服务端拼、项目不存在 404、非法名 400、非 POST 405、系统打不开时如实报错、带 `path` 打开项目内那一层、`selectFile` 指向存在文件 / 指向目录 / 指向不存在文件、`path` 越界 400） |
+| `project-api.test.ts` | 525 | 项目 CRUD（创建 `project.json` + 标准子目录、没有 `project.json` 的目录不算项目、项目文件可被编辑器直接打开、重名 400、非法名 400 且不落盘）；资源树与建目录（含目录穿越 400）；上传 → 出现 → 删除；删项目连资源一起清；**缩略图两条**（图片 = 缩小 WebP + 尺寸头 + md5 缓存失效；**视频 = ffmpeg 抽首帧**走同一管线，夹具 `fixtures/clip.mp4` 64×48，`info=1` 对视频 400）；**`/api/projects/reveal` 的 10 条用例**（路径由服务端拼、项目不存在 404、非法名 400、非 POST 405、系统打不开时如实报错、带 `path` 打开项目内那一层、`selectFile` 指向存在文件 / 指向目录 / 指向不存在文件、`path` 越界 400） |
 | `runtime-session.test.ts` | 263 | 会话初始态；开闸幂等不清场景；快照是摘要（名字 + 对象数 + 时间）；关闸清空全部字段；推 `null`；`sessionId` 稳定可读；资源包状态；设置摘要只报时间；`projectNameOfScene`（含推不出项目名的情形、换项目跟着变） |
 | `resources-bundle.test.ts` | 229 | 清单范围（只收 `Assets/`、排除 `project.json` 与 `.gitkeep`）；`bytes` 与排序稳定；指纹随内容变、内容不变则稳定、**把 mtime 算进去**；`ProjectNotFoundError` / `BundleTooLargeError`；zip 结构（条目名 = 项目根相对路径、另有清单文件、字节与源文件逐字节一致、中文名 UTF-8 位标记、响应头、空项目也能打包） |
 | `resources-bundle-api.test.ts` | 157 | 清单 API（只列 `Assets/`、给指纹与字节数）；整包下载（zip + 响应头 + 包内条目一致）；**指纹没变 → 304**；素材改了 → 缓存失效重下拿到新内容；超上限 413；项目不存在 404 / 缺参数 400 |
@@ -1846,8 +1846,8 @@ upgradeRawDocument
 
 | 文件 | 行数 | 覆盖的行为 |
 |---|---|---|
-| `sound-object.test.tsx` | 692 | 种类表里动作下的「播放声音」；创建声音对象；属性面板声音组（小方块单选/× 移出/清空/＋ 添加）；播放/停止能不能点；面板上看得见的状态；store 的记账与日志 |
-| `video-object.test.tsx` | 613 | 属性面板视频组（闸门/小方块单选/× 移出/清空/＋ 添加）；播放/暂停/停止的可用性与状态显示；失败原因都在运行日志里写明；store 的加/删 |
+| `sound-object.test.tsx` | 723 | 种类表里动作下的「播放声音」；创建声音对象；属性面板声音组（小方块单选/× 移出/清空/＋ 添加）；**选择器：点一条 = 加入 + 右侧原生 `<audio>` 试听，行首公用音符图标，点「已加入」只换预览不重复加**；播放/停止能不能点；面板上看得见的状态；store 的记账与日志 |
+| `video-object.test.tsx` | 633 | 属性面板视频组（闸门/小方块单选/× 移出/清空/＋ 添加）；**选择器：行首首帧缩略图（挂了兜底公用图标）、右侧原生 `<video>` 预览、webm 那条的预览里带解码提醒**；播放/暂停/停止的可用性与状态显示；失败原因都在运行日志里写明；store 的加/删 |
 | `descriptor-rows.test.tsx` | 169 | **描述符行的等价性契约**（v25）：三个开关的 testid 与行序与手写版逐字一致、tooltip 仍在、勾选走泛型入口且是一次可撤销编辑（撤销说明取规格标签）、三个开关互不干扰、组件缺失时按规格补壳再写。**这一份红 = 重构改了行为；这一份绿 + 既有测试零改动 = 只是换了实现** |
 | `bgm-dialog.test.tsx` | 544 | 顶栏「音乐」按钮；「背景音乐」弹框（清单、搜索、标签勾选、路径开关、选中跟随播放、自动滚到当前曲、底部三键；显示名与标签来自各音频的 `.meta`）；**与项目设置分离** |
 | `run-mode.test.ts` | 440 | **运行中的改动不保存、退出即还原**；切场景 = 换台（运行态下立刻推）；运行基线跟着文档走；运行中的文件操作与断线 |

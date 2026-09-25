@@ -1,5 +1,6 @@
 import { parseResourceId, type ResourceKind } from "@dts/resources";
 import sharp from "sharp";
+import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   BundleTooLargeError,
@@ -67,8 +68,13 @@ export async function readResourceThumbnailRoute(ctx: RouteContext): Promise<voi
     throw new HttpError(404, `资源不存在: ${id}`);
   }
 
+  const isVideo = contentTypeFor(parseResourceId(id).path).startsWith("video/");
   const source = Buffer.from(await ctx.provider.readBinary(id));
   if (ctx.url.searchParams.get("info") === "1") {
+    if (isVideo) {
+      throw badRequest("视频不支持 info=1");
+    }
+
     try {
       const metadata = await sharp(source, { limitInputPixels: 100_000_000 }).metadata();
       if (metadata.width === undefined || metadata.height === undefined) {
@@ -91,7 +97,7 @@ export async function readResourceThumbnailRoute(ctx: RouteContext): Promise<voi
     const jobKey = `${id}\n${md5}`;
     let job = thumbnailJobs.get(jobKey);
     if (job === undefined) {
-      job = createThumbnail(source, md5);
+      job = createThumbnail(source, md5, isVideo);
       thumbnailJobs.set(jobKey, job);
     }
 
@@ -103,7 +109,7 @@ export async function readResourceThumbnailRoute(ctx: RouteContext): Promise<voi
         if (oldest !== undefined) thumbnailCache.delete(oldest);
       }
     } catch {
-      throw badRequest("无法读取图片");
+      throw badRequest(isVideo ? "无法生成视频缩略图（需要 ffmpeg 在 PATH 里）" : "无法读取图片");
     } finally {
       if (thumbnailJobs.get(jobKey) === job) thumbnailJobs.delete(jobKey);
     }
@@ -117,8 +123,10 @@ export async function readResourceThumbnailRoute(ctx: RouteContext): Promise<voi
   sendBytes(ctx.response, 200, "image/webp", thumbnail.data, headers);
 }
 
-async function createThumbnail(source: Buffer, md5: string): Promise<CachedThumbnail> {
-  const pipeline = sharp(source, { limitInputPixels: 100_000_000 });
+async function createThumbnail(source: Buffer, md5: string, isVideo: boolean): Promise<CachedThumbnail> {
+  // 视频（mp4/webm）：先用 ffmpeg 抽首帧再走同一条 sharp 管线；缓存 / 尺寸头 / 失效逻辑与图片一致
+  const frame = isVideo ? await extractVideoFrame(source) : source;
+  const pipeline = sharp(frame, { limitInputPixels: 100_000_000 });
   const metadata = await pipeline.metadata();
   if (metadata.width === undefined || metadata.height === undefined) {
     throw new Error("Image dimensions are missing");
@@ -130,6 +138,34 @@ async function createThumbnail(source: Buffer, md5: string): Promise<CachedThumb
     .toBuffer();
   const dimensions = metadata.autoOrient ?? { width: metadata.width, height: metadata.height };
   return { md5, data, width: dimensions.width, height: dimensions.height };
+}
+
+/**
+ * 用 ffmpeg 从视频字节里抽首帧（PNG）：源从 stdin 喂、帧从 stdout 收，不落临时文件。
+ * ffmpeg 不在 PATH / 解码失败都抛错——上层转成 400，前端行内图标降级成公用图标。
+ */
+function extractVideoFrame(source: Buffer): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      "ffmpeg",
+      ["-hide_banner", "-loglevel", "error", "-i", "pipe:0", "-frames:v", "1", "-f", "image2pipe", "-c:v", "png", "pipe:1"],
+      { stdio: ["pipe", "pipe", "pipe"] },
+    );
+    const chunks: Buffer[] = [];
+    const errors: Buffer[] = [];
+    child.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
+    child.stderr.on("data", (chunk: Buffer) => errors.push(chunk));
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0 && chunks.length > 0) {
+        resolve(Buffer.concat(chunks));
+      } else {
+        reject(new Error(Buffer.concat(errors).toString("utf8").trim() || `ffmpeg 退出码 ${code}`));
+      }
+    });
+    child.stdin.write(source);
+    child.stdin.end();
+  });
 }
 
 /** `PUT|POST /api/resources/raw?id=`：写原始字节（请求体就是文件内容，不解析 JSON）。 */

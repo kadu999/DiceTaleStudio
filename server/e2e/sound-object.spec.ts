@@ -123,13 +123,13 @@ test.describe("动作对象：播放声音", () => {
       await expect(page.getByTestId("sound-empty")).toHaveText("还没加音频");
       await expect(page.locator('[data-group="sound"]')).not.toContainText("audio/");
 
-      // 「＋ 添加」弹「选择音频」：列出项目里的音频（带路径），点一条就加进来
+      // 「＋ 添加」弹「选择音频」：列出项目里的音频（路径在 tooltip / 右侧预览头里），点一条就加进来
       await page.getByTestId("sound-add").click();
       const picker = page.getByTestId("audio-picker-dialog");
       await expect(picker).toBeVisible();
       const pickItem = (id: string) =>
         picker.locator(`[data-testid="audio-picker-item"][data-asset-id="${id}"]`);
-      await expect(pickItem(step1)).toContainText("audio/step1.mp3");
+      await expect(pickItem(step1)).toHaveAttribute("title", /audio\/step1\.mp3/);
       await pickItem(step1).click();
       await pickItem(step2).click();
       await pickItem(step3).click();
