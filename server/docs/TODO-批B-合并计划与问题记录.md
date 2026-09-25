@@ -38,15 +38,11 @@
 - **现象**：`packages/resources/src/meta.ts` 新增 `assertRenameAllowed`/`ensureAssetMetaCore`（+67 行），消除 memory/fs 两份拷贝的漂移风险，但按本仓中文 doc 风格代码量略增。
 - **处置建议**：要么接受（买的是不再漂移），要么削 doc 换净减——批 B 不动它。
 
-### 4. `docs/CODE-STRUCTURE.md` 统计漂移（系统性问题）
+### 4. `docs/CODE-STRUCTURE.md` 统计漂移（系统性问题）（**已处置**，2026-01，处置②）
 
-- **现象**：文档含大量手工维护的逐文件行数/导出清单（如 §0 速查表、§3.2 文件表、§5.2、§7 测试清单），**没有生成脚本**，每次重构都漂移。批 A 已按 `wc` 实测修正触及处，但仍有 5 处在基线（`128714a` 之前）就已过时：
-  - `provider.ts` 文档写 60 行，实测 49
-  - `store-types.ts` 文档写 793，实测 796
-  - `store-core.ts` 文档写 379，实测 400
-  - §3.1 grid 节标题写 734，实测 707
-  - §3.3 protocol 节标题写 824，实测 820
-- **处置建议**：三选一——① 修这 5 处数字（10 分钟）；② 给 §0 速查表写个 `wc` 校验脚本挂到 `pnpm check`；③ 把易漂移的数字从文档撤掉，只留稳定描述。推荐 ②。
+- **处置**：`scripts/check-code-structure-stats.mjs` 已落地并挂进 `pnpm check`（`check:docs`）——重算 §0 速查两行（源码/测试规模含分桶）、§0.1 加粗锚点（`server.ts` / `hub.ts` / `InspectorPanel.tsx`）与 §3.x 节标题包规模，逐字比对、漂移即失败。§0 表尾加了指向脚本的说明。
+- **数字已按实测修正**：§0 两行（163 文件 / 35,469 行；测试 31,967 行）、§3.1 grid 734→**707**、§3.2 document 6,506→**7,105**、§3.3 protocol 824→**820**、§0.1 `hub.ts` 465→**476** / `InspectorPanel.tsx` 343→**498**、§3.4 表 `provider.ts` 60→**49**、§5.2 表 `store-types.ts` 817→**819** / `store-core.ts` 379→**400**。
+- **未覆盖**（仍靠手工）：§1.2 目录树注释、§4/§5/§7 节标题、§3.x 内部逐文件表（provider 等三处是顺手修的）。语义不唯一的（§4 的 3,181 vs §0 backend 桶 3,283）没强拧一致，留给后续若觉得吵再统一口径。
 
 ### 5. 协议 schema 复刻 + 契约测试（分析报告遗留项，架构决策）
 
@@ -68,14 +64,15 @@
 - **现象**：对象同时挂 `ImageLayer` + `SpriteLayer` 且数据不同时，旧实现固定返回 ImageLayer（遍历序在前），现实现按组件数组顺序取第一个。schema 允许两者并存、校验不拦——属手写脏数据。
 - **处置建议**：可接受；若在意，给 validateScene 加一条"同槽位多组件"的 warning（顺手还能覆盖 map/sound 等其它槽位）。
 
-### 9. e2e 不在 `pnpm typecheck` 覆盖内
+### 9. e2e 不在 `pnpm typecheck` 覆盖内（**已处置**，2026-01）
 
-- **现象**：workspace 9 个项目只有 8 个跑 typecheck（`pnpm -r typecheck` 输出 "8 of 9"），e2e 目录没有 typecheck script；e2e 的类型错误只能等 playwright 运行或 IDE 发现。
-- **处置建议**：给 e2e 加一条 `tsc --noEmit` script（挂进根 typecheck 或独立），10 分钟活。
+- **处置**：`e2e/tsconfig.json` 落地（extends `tsconfig.base`），根 `typecheck` 串上 `typecheck:e2e`（`tsc --noEmit -p e2e/tsconfig.json`），随 `pnpm check` 每次跑。首跑零错误。`.cjs` reporter 不算在内（`include: **/*.ts`）。
 
-### 10. 提交时大量 CRLF 警告（git 配置层面）
+### 10. 提交时大量 CRLF 警告（git 配置层面）（**已处置 / 实为已自愈**，2026-01 核验）
 
-- **现象**：每次 `git add` 都有十几条 `CRLF will be replaced by LF` warning（Windows 工作区 + 混合行尾文件）。
-- **处置建议**：在 `server/.gitattributes` 加 `* text=auto`（或统一现有 `.gitattributes` 规则），一次性归一化；纯卫生项。
+- **核验**：顶层 `.gitattributes`（2025-09 落地）已有 `* text=auto eol=lf`，`git add` 不再刷 CRLF 警告。全仓 `git ls-files --eol` 只剩 4 个工作区 CRLF 文件，全是 `command-*.bat`——那是 `.gitattributes` 里**故意**的 `*.bat text eol=crlf`（cmd.exe 对 LF 的 .bat 支持不可靠），属正确状态、无警告。无需再动。
 
 ### 执行批 B 时新发现（待填）
+
+- **Playwright 浏览器二进制要装**：仓库升级后首次 `pnpm e2e` 会报 `Executable doesn't exist at …\chromium_headless_shell-NNNN`（用例 0.1s 全灭、看起来像系统性故障）。一次性 `npx playwright install chromium` 即可；Playwright 版本一升就要重装。与代码无关。
+- **全量 e2e 在单机高负载下偶发超时**：本机同时开着 Unity / 常驻后端 / 4 workers 时，零星用例 26~105s 超时（单跑秒过）。已知现象（playwright.config 注释里写过 8 workers 的同类问题），重跑即可，不是代码回归。
