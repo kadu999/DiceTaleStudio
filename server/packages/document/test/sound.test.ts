@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { produce, type Draft } from "immer";
-import { repairObjectComponent, setSoundClipName, setSoundClips, setSoundLayer, setSoundPicked } from "../src/commands";
+import { repairObjectComponent, setSoundClips, setSoundLayer, setSoundPicked } from "../src/commands";
 import { imageOf, mapDataOf, soundDataOf } from "../src/access";
 import { featureComponent } from "../src/components";
 import { DEFAULT_SLOT_COMPONENT } from "../src/presets";
@@ -22,8 +22,9 @@ import {
  * **固定的内置音频图标**（不给换贴图）；它自己那份数据只有「加进来的音频列表 + 选中的那条 +
  * 层级」。编辑器**不播放**、不碰音频解码，出声是前端的事。
  *
- * 一条贯穿全篇的规矩：**名字（`names`）与选中的那条（`picked`）都挂在「加进来的音频」上**，
- * 所以列表一变，这两样跟着走（移出去的音频不留名字、选中的那条没了就顺到下一条）。
+ * 一条贯穿全篇的规矩：**选中的那条（`picked`）挂在「加进来的音频」上**，
+ * 所以列表一变它跟着走（选中的那条没了就顺到下一条）。
+ * 显示名**不住在这里**：它跟着文件走（素材 `.meta` 顶层 `name`），场景里没有按对象记的名字。
  */
 
 const CLIP_A = "project:C/Assets/audio/step1.mp3";
@@ -111,34 +112,22 @@ describe("声音对象的命令", () => {
     expect(soundDataOf(objectOf(scene, "s1")!)?.picked).toBe(CLIP_A);
   });
 
-  it("setSoundClips 把移出去的音频一起收拾掉：名字不留，选中的那条顺到下一条", () => {
+  it("setSoundClips 移出选中的那条：选中的顺到下一条", () => {
     const start = sceneWith([
       createSoundObject({ name: "雷雨", id: "s1", clips: [CLIP_A, CLIP_B] }),
     ]);
 
-    const named = mutate(start, (draft) => {
-      setSoundClipName(draft, "s1", CLIP_A, "雷雨·高");
-      setSoundClipName(draft, "s1", CLIP_B, "雷雨·低");
-    });
-    expect(soundDataOf(objectOf(named, "s1")!)).toEqual({
-      clips: [CLIP_A, CLIP_B],
-      picked: CLIP_A,
-      names: { [CLIP_A]: "雷雨·高", [CLIP_B]: "雷雨·低" },
-      layer: "sfx",
-    });
-
-    // 移走选中的 A：它的名字跟着走，选中顺到 B（还剩几条时不该「没得播」）
-    const removed = mutate(named, (draft) => {
+    // 移走选中的 A：选中顺到 B（还剩几条时不该「没得播」）
+    const removed = mutate(start, (draft) => {
       expect(setSoundClips(draft, "s1", [CLIP_B])).toBe(true);
     });
     expect(soundDataOf(objectOf(removed, "s1")!)).toEqual({
       clips: [CLIP_B],
       picked: CLIP_B,
-      names: { [CLIP_B]: "雷雨·低" },
       layer: "sfx",
     });
 
-    // 一条不剩：选中的那条与名字表都删掉（不留空壳）
+    // 一条不剩：选中的那条删掉（不留空壳）
     const empty = mutate(removed, (draft) => {
       expect(setSoundClips(draft, "s1", [])).toBe(true);
     });
@@ -194,48 +183,6 @@ describe("声音对象的命令", () => {
     expect(soundDataOf(objectOf(changed, "s1")!)?.layer).toBe("bgm");
   });
 
-  it("setSoundClipName：按文件起名写进文档；留空删掉这个名字（退回素材文件名）", () => {
-    const start = sceneWith([
-      createSoundObject({ name: "雷雨", id: "s1", clips: [CLIP_A, CLIP_B] }),
-    ]);
-
-    const named = mutate(start, (draft) => {
-      expect(setSoundClipName(draft, "s1", CLIP_A, "  雷雨·高  ")).toBe(true);
-    });
-    expect(soundDataOf(objectOf(named, "s1")!)?.names).toEqual({ [CLIP_A]: "雷雨·高" });
-    // 名字只是标签：加进来的列表、选中的那条与层级一动不动
-    expect(soundDataOf(objectOf(named, "s1")!)?.clips).toEqual([CLIP_A, CLIP_B]);
-    expect(soundDataOf(objectOf(named, "s1")!)?.picked).toBe(CLIP_A);
-    expect(soundDataOf(objectOf(named, "s1")!)?.layer).toBe("sfx");
-
-    // 同一个名字（含首尾空白）不算变更
-    mutate(named, (draft) => {
-      expect(setSoundClipName(draft, "s1", CLIP_A, "雷雨·高")).toBe(false);
-    });
-
-    // 没选中的那条也能起名（名字按文件记，不是按「选中」记）
-    const two = mutate(named, (draft) => {
-      expect(setSoundClipName(draft, "s1", CLIP_B, "雷雨·低")).toBe(true);
-    });
-    expect(soundDataOf(objectOf(two, "s1")!)?.names).toEqual({ [CLIP_A]: "雷雨·高", [CLIP_B]: "雷雨·低" });
-
-    // 没加进来的音频没有名字可起（名字挂在加进来的音频上）
-    mutate(two, (draft) => {
-      expect(setSoundClipName(draft, "s1", "project:C/Assets/audio/别的.mp3", "别的")).toBe(false);
-    });
-
-    // 留空 = 不要这个名字：整张表删空时字段也一起删掉（不留空壳）
-    const one = mutate(two, (draft) => {
-      expect(setSoundClipName(draft, "s1", CLIP_B, "  ")).toBe(true);
-    });
-    expect(soundDataOf(objectOf(one, "s1")!)?.names).toEqual({ [CLIP_A]: "雷雨·高" });
-
-    const cleared = mutate(one, (draft) => {
-      expect(setSoundClipName(draft, "s1", CLIP_A, "")).toBe(true);
-    });
-    expect(soundDataOf(objectOf(cleared, "s1")!)?.names).toBeUndefined();
-  });
-
   it("普通对象挂不上声音数据（命令返回 false，不动文档）", () => {
     const door: GameObjectDoc = {
       id: "door",
@@ -254,7 +201,6 @@ describe("声音对象的命令", () => {
       expect(setSoundClips(draft, "door", [CLIP_A])).toBe(false);
       expect(setSoundLayer(draft, "door", "bgm")).toBe(false);
       expect(setSoundPicked(draft, "door", CLIP_A)).toBe(false);
-      expect(setSoundClipName(draft, "door", CLIP_A, "雷雨")).toBe(false);
     });
 
     expect(soundDataOf(objectOf(scene, "door")!)).toBeUndefined();
@@ -300,14 +246,14 @@ describe("声音对象的场景文件 schema", () => {
     expect(soundDataOf(none.file.objects[0]!)?.picked).toBeUndefined();
   });
 
-  it("显示名表（可选）读得回来；没写就没有这个字段", () => {
-    const named = parseSceneFile(
+  it("旧版按对象记的显示名表（names）随读随丢：不再进文档数据", () => {
+    const legacy = parseSceneFile(
       rawFile({ clips: [CLIP_A], names: { [CLIP_A]: "雷雨·高" }, layer: "sfx" }),
     );
-    expect(soundDataOf(named.file.objects[0]!)?.names).toEqual({ [CLIP_A]: "雷雨·高" });
+    expect(soundDataOf(legacy.file.objects[0]!)).toEqual({ clips: [CLIP_A], layer: "sfx" });
 
     const unnamed = parseSceneFile(rawFile({ clips: [CLIP_A] }));
-    expect(soundDataOf(unnamed.file.objects[0]!)?.names).toBeUndefined();
+    expect(soundDataOf(unnamed.file.objects[0]!)).toEqual({ clips: [CLIP_A], layer: "sfx" });
   });
 
   it("少写一项时按默认值读（列表空、层级音效）", () => {
@@ -376,31 +322,13 @@ describe("声音对象的校验", () => {
     expect(formatIssues(issues)).toMatch(/声音对象用固定的内置图标（不允许改贴图）/);
   });
 
-  it("空白的声音名字 → 警告（会被当成没起名字，退回素材文件名）", () => {
-    const blank: GameObjectDoc = {
-      ...createSoundObject({ name: "雷雨", id: "s1", clips: [CLIP_A] }),
-      components: [
-        featureComponent("s1", DEFAULT_SLOT_COMPONENT.sound, {
-          clips: [CLIP_A],
-          names: { [CLIP_A]: "   " },
-          layer: "sfx",
-        }),
-      ],
-    };
-
-    const issues = validateScene(sceneWith([blank]));
-    expect(hasErrors(issues)).toBe(false);
-    expect(formatIssues(issues)).toMatch(/声音名字是空的/);
-  });
-
-  it("选中的那条不在列表里 / 名字挂在没加进来的音频上 → 各给一条警告（手写文件才会这样）", () => {
+  it("选中的那条不在列表里 → 警告（手写文件才会这样）", () => {
     const stale: GameObjectDoc = {
       ...createSoundObject({ name: "脚步", id: "s1", clips: [CLIP_A] }),
       components: [
         featureComponent("s1", DEFAULT_SLOT_COMPONENT.sound, {
           clips: [CLIP_A],
           picked: CLIP_B,
-          names: { [CLIP_B]: "雷雨·低" },
           layer: "sfx",
         }),
       ],
@@ -409,6 +337,5 @@ describe("声音对象的校验", () => {
     const issues = validateScene(sceneWith([stale]));
     expect(hasErrors(issues)).toBe(false);
     expect(formatIssues(issues)).toMatch(/选中的那条音频不在音频列表里/);
-    expect(formatIssues(issues)).toMatch(/这条名字对应的音频不在音频列表里/);
   });
 });

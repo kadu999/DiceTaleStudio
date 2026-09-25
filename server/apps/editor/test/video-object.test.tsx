@@ -514,7 +514,7 @@ describe("失败原因：都在运行日志里写明", () => {
   });
 });
 
-describe("store：加 / 删 / 改名（「编辑视频」窗口走的那几个入口）", () => {
+describe("store：加 / 删（「编辑视频」窗口走的那几个入口）", () => {
   it("addVideoClip：去重；原来没选过就把它选上，已经在列表里就不再加", () => {
     seedScene([mapWith()], ["map-1"]);
 
@@ -538,10 +538,9 @@ describe("store：加 / 删 / 改名（「编辑视频」窗口走的那几个�
     expect(videoOf("map-1")?.clips).toEqual([CLIP, CLIP2]);
   });
 
-  it("removeVideoClip：移出选中的那条会顺到下一条；名字跟着清", () => {
+  it("removeVideoClip：移出选中的那条会顺到下一条", () => {
     seedScene([mapWith(video([CLIP, CLIP2], { picked: CLIP }))], ["map-1"]);
 
-    act(() => useEditorStore.getState().setVideoClipName("map-1", CLIP, "开场"));
     act(() => useEditorStore.getState().removeVideoClip("map-1", CLIP));
 
     expect(videoOf("map-1")).toEqual({
@@ -549,22 +548,9 @@ describe("store：加 / 删 / 改名（「编辑视频」窗口走的那几个�
       autoPlay: false,
       clips: [CLIP2],
       picked: CLIP2,
-      names: undefined,
       loop: false,
       audio: false,
     });
-  });
-
-  it("setVideoClipName：留空退回素材文件名；不在列表里的拒掉", () => {
-    seedScene([mapWith(video([CLIP], { picked: CLIP }))], ["map-1"]);
-
-    act(() => useEditorStore.getState().setVideoClipName("map-1", CLIP, "  开场  "));
-    expect(videoOf("map-1")?.names).toEqual({ [CLIP]: "开场" });
-
-    act(() => useEditorStore.getState().setVideoClipName("map-1", CLIP, "  "));
-    expect(videoOf("map-1")?.names).toBeUndefined();
-
-    expect(useEditorStore.getState().setVideoClipName("map-1", CLIP2, "别的")).toBe(false);
   });
 
   it("贴图与地图走同一套命令（两个宿主不分家）", () => {

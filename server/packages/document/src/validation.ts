@@ -226,25 +226,6 @@ function validateObject(
       });
     }
 
-    // 名字是给人看的标签：空白名字会被当成「没起名字」，退回素材文件名
-    const namedClips = sound?.names === undefined ? [] : Object.entries(sound.names);
-    for (const [clipId, name] of namedClips) {
-      if (name.trim().length === 0) {
-        issues.push({
-          level: "warning",
-          path: `${path}/sound/names/${clipId}`,
-          message: "声音名字是空的（会退回素材文件名）",
-        });
-      } else if (sound !== undefined && !sound.clips.includes(clipId)) {
-        // 名字挂在文件上：对应的音频已经不在列表里了，这条名字就是看不见的死数据
-        issues.push({
-          level: "warning",
-          path: `${path}/sound/names/${clipId}`,
-          message: "这条名字对应的音频不在音频列表里（会被忽略）",
-        });
-      }
-    }
-
     // 它画的是**固定的内置图标**（不给换贴图），所以 `image` 字段没有意义
     if (imageOf(object) !== undefined) {
       issues.push({
@@ -321,23 +302,6 @@ function validateObject(
         path: `${path}/video/picked`,
         message: "选中的那条视频不在视频列表里（按还没选处理）",
       });
-    }
-
-    const namedClips = video.names === undefined ? [] : Object.entries(video.names);
-    for (const [clipId, name] of namedClips) {
-      if (name.trim().length === 0) {
-        issues.push({
-          level: "warning",
-          path: `${path}/video/names/${clipId}`,
-          message: "视频名字是空的（会退回素材文件名）",
-        });
-      } else if (!video.clips.includes(clipId)) {
-        issues.push({
-          level: "warning",
-          path: `${path}/video/names/${clipId}`,
-          message: "这条名字对应的视频不在视频列表里（会被忽略）",
-        });
-      }
     }
   }
 

@@ -96,13 +96,13 @@ export function SoundFields({ object }: { readonly object: GameObjectDoc }): Rea
   const picked = sound?.picked;
 
   /**
-   * 面板上显示什么名字：**这个对象自己起的 → 音频文件自己的显示名 → 素材文件名**。
+   * 面板上显示什么名字：**音频文件自己的显示名 → 素材文件名**。
    *
-   * 中间那一层是那个音频文件**自己的 `.meta`** 里的显示名（v17 起是项目级标注、v24 起跟着文件走）：
-   * 同一个文件在别处（BGM 弹框、选择音频）也叫这个名字，所以对象这边留空就自动跟随，
-   * 不必每个对象再起一遍。
+   * 显示名住在那个音频文件**自己的 `.meta`** 里（顶层 `name`）：同一个文件在别处
+   * （BGM 弹框、选择音频）也叫这个名字，改一处全体跟随——**显示名只在文件属性上改**，
+   * 对象这边没有任何自己的覆盖层。
    */
-  const nameOf = (clip: string): string => audioDisplayName(audioMetas, clip, sound?.names?.[clip]);
+  const nameOf = (clip: string): string => audioDisplayName(audioMetas, clip);
   const pathOf = (clip: string): string =>
     assetDisplayPath(currentResourceId(clip, assetMetas) ?? clip);
 

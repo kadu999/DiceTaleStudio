@@ -303,20 +303,14 @@ describe("属性面板：声音组", () => {
     expect(chips()[1]?.getAttribute("data-selected")).toBe("false");
   });
 
-  it("对象自己没起名字时：小方块显示**音频文件自己的显示名**（属性面板里配的）", () => {
+  it("小方块显示**音频文件自己的显示名**（属性面板里配的，改一处全体跟随）", () => {
     seedScene([sound([CLIP, CLIP2])], ["sound-1"]);
-    // 文件自己的显示名住在**那个文件自己的 `.meta`** 里（v24）：只给第一条起名，第二条不动
+    // 文件自己的显示名住在**那个文件自己的 `.meta`** 里：只给第一条起名，第二条不动
     metaHistory.reset(audioMetaTable({ [CLIP]: { name: "开场曲" } }));
     render(<InspectorPanel />);
 
     expect(chips()[0]?.textContent).toBe("开场曲");
     expect(chips()[1]?.textContent).toBe("step2");
-
-    // 对象自己那份名字是**覆盖**：两边都写时以对象为准
-    act(() => {
-      useEditorStore.getState().setSoundClipName("sound-1", CLIP, "这一幕的脚步");
-    });
-    expect(chips()[0]?.textContent).toBe("这一幕的脚步");
   });
 
   it("点小方块 = 换选（单选，写进文档、可撤销）；再点选中的那条 = 取消选中", () => {
@@ -342,14 +336,7 @@ describe("属性面板：声音组", () => {
     expect(screen.getByTestId("sound-play").hasAttribute("disabled")).toBe(true);
   });
 
-  it("起过名字的小方块显示名字；一条都没加时写明「还没加音频」", () => {
-    seedScene([sound([CLIP, CLIP2])], ["sound-1"]);
-    act(() => useEditorStore.getState().setSoundClipName("sound-1", CLIP, "雷雨·高"));
-    const { unmount } = render(<InspectorPanel />);
-    expect(chips()[0]?.textContent).toBe("雷雨·高");
-    expect(chips()[1]?.textContent).toBe("step2");
-    unmount();
-
+  it("一条都没加时写明「还没加音频」", () => {
     seedScene([sound([])], ["sound-1"]);
     render(<InspectorPanel />);
     expect(screen.getByTestId("sound-empty").textContent).toBe("还没加音频");
@@ -366,9 +353,7 @@ describe("属性面板：声音组", () => {
   });
 });
 
-describe("编辑声音窗口（store 侧）：加 / 删 / 起名字", () => {
-  const names = (): Record<string, string> | undefined => soundOf("sound-1")?.names;
-
+describe("编辑声音窗口（store 侧）：加 / 删", () => {
   it("addSoundClip：加进来写进列表；一条都没选过就顺手把它选上", () => {
     seedScene([sound([])], ["sound-1"]);
 
@@ -397,17 +382,14 @@ describe("编辑声音窗口（store 侧）：加 / 删 / 起名字", () => {
     expect(soundOf("sound-1")?.picked).toBe(CLIP2);
   });
 
-  it("removeSoundClip：移出去连名字一起清掉；移走选中的那条就顺到下一条", () => {
+  it("removeSoundClip：移走选中的那条就顺到下一条", () => {
     seedScene([sound([CLIP, CLIP2])], ["sound-1"]);
-    act(() => useEditorStore.getState().setSoundClipName("sound-1", CLIP, "雷雨·高"));
-    act(() => useEditorStore.getState().setSoundClipName("sound-1", CLIP2, "雷雨·低"));
 
     act(() => useEditorStore.getState().removeSoundClip("sound-1", CLIP));
     expect(soundOf("sound-1")?.clips).toEqual([CLIP2]);
     expect(soundOf("sound-1")?.picked).toBe(CLIP2);
-    expect(names()).toEqual({ [CLIP2]: "雷雨·低" });
 
-    // 移走最后一条：列表、选中的那条、名字表都不留空壳
+    // 移走最后一条：列表与选中都不留空壳
     act(() => useEditorStore.getState().removeSoundClip("sound-1", CLIP2));
     expect(soundOf("sound-1")).toEqual({ clips: [], layer: "sfx" });
 
@@ -415,40 +397,11 @@ describe("编辑声音窗口（store 侧）：加 / 删 / 起名字", () => {
     act(() => expect(useEditorStore.getState().removeSoundClip("sound-1", CLIP)).toBe(false));
   });
 
-  it("按文件起名字：写进 names，可撤销；留空把名字删掉", () => {
-    seedScene([sound([CLIP])], ["sound-1"]);
-
-    act(() => useEditorStore.getState().setSoundClipName("sound-1", CLIP, "雷雨·高"));
-    expect(names()).toEqual({ [CLIP]: "雷雨·高" });
-    expect(useEditorStore.getState().canUndo).toBe(true);
-
-    act(() => useEditorStore.getState().undo());
-    expect(names()).toBeUndefined();
-
-    act(() => useEditorStore.getState().setSoundClipName("sound-1", CLIP, "雷雨·高"));
-    act(() => useEditorStore.getState().setSoundClipName("sound-1", CLIP, "  "));
-    expect(names()).toBeUndefined();
-  });
-
-  it("没加进来的音频没有名字可起（名字挂在加进来的音频上）", () => {
-    seedScene([sound([])], ["sound-1"]);
-
-    act(() =>
-      expect(
-        useEditorStore.getState().setSoundClipName("sound-1", "project:测试/Assets/audio/别的.mp3", "雷雨·低"),
-      ).toBe(false),
-    );
-    expect(names()).toBeUndefined();
-  });
-
-  it("换选另一条声音**不会**动名字（名字按文件记）", () => {
+  it("换选另一条声音**不会**动列表（选择是 `picked`）", () => {
     seedScene([sound([CLIP, CLIP2])], ["sound-1"]);
-    act(() => useEditorStore.getState().setSoundClipName("sound-1", CLIP, "雷雨·高"));
 
     act(() => useEditorStore.getState().selectSoundClip("sound-1", CLIP2));
-    expect(names()).toEqual({ [CLIP]: "雷雨·高" });
     expect(soundOf("sound-1")?.picked).toBe(CLIP2);
-    // 列表也一动不动
     expect(soundOf("sound-1")?.clips).toEqual([CLIP, CLIP2]);
   });
 });

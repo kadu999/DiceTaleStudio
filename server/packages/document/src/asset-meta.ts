@@ -80,6 +80,13 @@ export interface AssetMetaDoc {
   /** 音频的显示名与标签（`importer: "audio"`）；缺省 = 还没整理过这个文件。 */
   readonly audio?: AssetMetaAudioDoc;
   /**
+   * 这份素材的**显示名**（**任何素材都能起**：图 / 音频 / 视频）；缺省 = 用素材文件名去掉扩展名。
+   * 音频的旧显示名住在 `audio.name`（更早版本），读一律走 `assetNameOfMeta`（顶层优先、退回
+   * `audio.name`），写一律走 `withMetaAssetName`（只写顶层）。只是编辑器里给人看的标签：
+   * **不参与播放、不进协议**。
+   */
+  readonly name?: string;
+  /**
    * 这份素材的**标签 ID 列表**（**任何素材都能打标签**：图 / 音频 / 视频）：ID 是工程文件
    * `audioTags` 表的下标。音频的旧标签住在 `audio.tags`（v24 及更早），读一律走
    * `assetTagsOfMeta`（顶层优先、退回 `audio.tags`），写一律走 `withMetaAssetTags`（只写顶层）。
@@ -165,6 +172,7 @@ export const assetMetaSchema = z.object({
   importer: z.enum(ASSET_IMPORTERS),
   sprite: assetMetaSpriteSchema.optional(),
   audio: assetMetaAudioSchema.optional(),
+  name: z.string().optional(),
   tags: z.array(z.number().int()).optional(),
 });
 
@@ -364,6 +372,33 @@ export function audioNameOfMeta(meta: AssetMetaDoc | undefined): string | undefi
  */
 export function audioTagsOfMeta(meta: AssetMetaDoc | undefined): readonly number[] {
   return meta?.audio?.tags ?? [];
+}
+
+/**
+ * 这份素材的**显示名**（任何素材：图 / 音频 / 视频）——读路径**只有这一条**。
+ *
+ * 顶层 `name` 优先；音频的旧数据（更早版本写在 `audio.name`）退回读——不需要迁移。
+ * 没起过名字 → `undefined`（调用方退回素材文件名）。写一律走 `withMetaAssetName`。
+ */
+export function assetNameOfMeta(meta: AssetMetaDoc | undefined): string | undefined {
+  return meta?.name ?? meta?.audio?.name;
+}
+
+/**
+ * 给一份素材起**显示名**（`""` = 删掉、退回素材文件名；任何 importer 都写顶层 `name`）。
+ *
+ * 老音频文件可能还带着 `audio.name`：写入时一并摘掉，否则「读优先顶层、摘了顶层退回旧段」
+ * 会让清空 / 改名在老文件上不生效。值没变时返回原对象。
+ */
+export function withMetaAssetName(meta: AssetMetaDoc, name: string): AssetMetaDoc {
+  const trimmed = name.trim();
+  if (trimmed === (assetNameOfMeta(meta) ?? "")) {
+    return meta;
+  }
+
+  const base =
+    meta.audio?.name === undefined ? meta : withAudioNode(meta, audioNode(undefined, meta.audio?.tags));
+  return trimmed.length === 0 ? withoutKey(base, "name") : { ...base, name: trimmed };
 }
 
 /**

@@ -10,7 +10,6 @@ import {
   SOUND_LAYER_LABELS,
   setSoundClips as setSceneSoundClips,
   setSoundLayer as setSceneSoundLayer,
-  setSoundClipName as setSceneSoundClipName,
   setSoundPicked as setSceneSoundPicked,
 } from "@dts/document";
 import {
@@ -37,7 +36,6 @@ export function createSoundSlice(
   | "selectSoundClip"
   | "addSoundClip"
   | "removeSoundClip"
-  | "setSoundClipName"
   | "setSoundLayer"
 > {
   // 共享的闭包状态与局部工具都在 ctx 里：这里解构一次，方法体与拆分前逐字一致
@@ -249,12 +247,6 @@ export function createSoundSlice(
           objectId,
           clips.filter((id) => id !== clipId),
         );
-      });
-    },
-
-    setSoundClipName(objectId, clipId, name) {
-      return applyActiveScene("修改声音名字", (scene) => {
-        setSceneSoundClipName(scene, objectId, clipId, name);
       });
     },
 

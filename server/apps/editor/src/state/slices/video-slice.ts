@@ -6,7 +6,6 @@
 import {
   DEFAULT_SLOT_COMPONENT,
   videoDataOf,
-  setVideoClipName as setSceneVideoClipName,
   setVideoClips as setSceneVideoClips,
   setVideoEnabled as setSceneVideoEnabled,
   setVideoLoop as setSceneVideoLoop,
@@ -38,7 +37,6 @@ export function createVideoSlice(
   | "addVideoClip"
   | "removeVideoClip"
   | "selectVideoClip"
-  | "setVideoClipName"
   | "setVideoLoop"
 > {
   // 共享的闭包状态与局部工具都在 ctx 里：这里解构一次，方法体与拆分前逐字一致
@@ -234,15 +232,8 @@ export function createVideoSlice(
       }
 
       // 单选：只能选**加进来的**那几条（`setVideoPicked` 会把不在列表里的拒掉）。
-      // 名字按文件记，换选不动它。
       return applyActiveScene("选择视频", (scene) => {
         setSceneVideoPicked(scene, objectId, clip);
-      });
-    },
-
-    setVideoClipName(objectId, clipId, name) {
-      return applyActiveScene("修改视频名字", (scene) => {
-        setSceneVideoClipName(scene, objectId, clipId, name);
       });
     },
 

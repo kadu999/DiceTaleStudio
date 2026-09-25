@@ -114,13 +114,12 @@ export const mapDataSchema = z.object({
  * （背景音乐是项目级全局设置，见 `OBJECT_SOUND_LAYERS` 与 `validateScene` 的警告）。
  * `picked` 缺省 = 还没选（播放按钮点不了）：它必须落在 `clips` 里，越界不算解析错误
  * （`validateScene` 会把「选中的那条不在列表里」提醒出来并按没选处理）。
- * `names` 是「文件 → 显示名」的可选标签（缺省 = 素材文件名）：空白名字不在这里硬拒，
- * 由 `validateScene` 提醒。
+ * 显示名**不在场景里**：「文件 → 显示名」住在素材自己的 `.meta`（顶层 `name`），
+ * 任何地方都只在文件属性上改（旧版本按对象记的 `names` 已退役，读到时随回写清掉）。
  */
 export const soundDataSchema = z.object({
   clips: z.array(z.string().min(1)).default([]),
   picked: z.string().min(1).optional(),
-  names: z.record(z.string(), z.string()).optional(),
   layer: z.enum(SOUND_LAYERS).default("sfx"),
 });
 
@@ -142,7 +141,7 @@ export const teleportDataSchema = z.object({
  *
  * 与 `soundDataSchema` 同一套口径：`clips` / `loop` / `audio` **给默认值**（手写文件里少写一项时，
  * 语义只能是「还没加视频、不循环、静音」），`picked` **不给**——「没写」本身有意义（还没选，
- * 播放按钮点不了）；`names` 只是给人看的标签，缺省 = 用素材文件名。
+ * 播放按钮点不了）。显示名住在素材 `.meta`（与 `sound` 同一套，见那里）。
  * `enabled`（总开关）同样给默认值 `true`，理由见下面那一行。
  *
  * **不需要补壳迁移**：整个 `video` 字段是可选的，「没有它」就等于「这个对象不放视频」，
@@ -155,7 +154,6 @@ export const videoDataSchema = z.object({
   autoPlay: z.boolean().default(false),
   clips: z.array(z.string().min(1)).default([]),
   picked: z.string().min(1).optional(),
-  names: z.record(z.string(), z.string()).optional(),
   loop: z.boolean().default(false),
   audio: z.boolean().default(false),
 });

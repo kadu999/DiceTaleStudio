@@ -312,14 +312,6 @@ export interface SoundDataDoc {
    * 缺省 = 还没选（这时「播放」按钮点不了）。
    */
   readonly picked?: string;
-  /**
-   * 音频文件（资源逻辑 ID）→ **显示用的名字**（例如把 `thunderstorm-30s-high` 叫成「雷雨·高」）。
-   *
-   * 缺省（或这一条没起名）= 用素材文件名去掉扩展名。它只是编辑器里给人看的标签：
-   * **不参与播放、也不进协议**。按文件记（不是按「选中」记），所以在窗口里给哪条起名都行，
-   * 换选 / 换层级都不会动它。
-   */
-  readonly names?: Record<string, string>;
   readonly layer: SoundLayer;
 }
 
@@ -388,12 +380,6 @@ export interface VideoDataDoc {
   readonly clips: string[];
   /** 加进来的视频里**当前选中的那一条**（必须是 `clips` 里的一个）；缺省 = 还没选。 */
   readonly picked?: string;
-  /**
-   * 视频文件（资源逻辑 ID）→ **显示用的名字**；缺省 = 用素材文件名去掉扩展名。
-   *
-   * 与声音的 `names` 一样只是编辑器里给人看的标签：**不参与播放、也不进协议**，按文件记。
-   */
-  readonly names?: Record<string, string>;
   /**
    * 循环播放（v14 起）：`false`（缺省）= 播完停在最后一帧，`true` = 一直循环到按「停止」。
    *

@@ -102,8 +102,8 @@ test.describe("音频标注：在属性面板里改", () => {
       await expect(page.getByTestId("asset-audio-tags")).toContainText("没有标签");
 
       // 1) 显示名就地改
-      await page.getByTestId("asset-audio-name").fill("战斗曲");
-      await page.getByTestId("asset-audio-name").press("Enter");
+      await page.getByTestId("asset-display-name").fill("战斗曲");
+      await page.getByTestId("asset-display-name").press("Enter");
 
       await expect
         .poll(async () => (await readAudioMeta(request, battle))?.name, {

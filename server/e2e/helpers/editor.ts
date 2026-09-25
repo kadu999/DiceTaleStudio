@@ -708,7 +708,6 @@ export async function readSceneVideo(
   | {
       clips?: readonly string[];
       picked?: string;
-      names?: Record<string, string>;
       loop?: boolean;
       audio?: boolean;
       enabled?: boolean;
@@ -732,18 +731,18 @@ export async function readSceneVideo(
     enabled: data["enabled"] as boolean | undefined,
     clips: data["clips"] as readonly string[] | undefined,
     picked: data["picked"] as string | undefined,
-    names: data["names"] as Record<string, string> | undefined,
     loop: data["loop"] as boolean | undefined,
     audio: data["audio"] as boolean | undefined,
   };
 }
 
 /**
- * 读场景文件里**声音对象**的数据（音频列表 + 选中的那条 + 名字 + 层级）。
+ * 读场景文件里**声音对象**的数据（音频列表 + 选中的那条 + 层级）。
  *
  * 连对象自己的 `position` 一起带出来：声音对象的用例既断言「配置落盘」也断言「落位」。
  * 场景里没有 `kind: "PlaySound"` 的对象时 `undefined`；对象在、但**没有 `PlaySound` 组件**
  * 时（手写文件）也 `undefined`——两种都是「这份数据不存在」。
+ * （显示名跟着**文件**走：素材 `.meta` 顶层 `name`，不进场景文件。）
  */
 export async function readSceneSound(
   request: APIRequestContext,
@@ -753,7 +752,6 @@ export async function readSceneSound(
   | {
       clips?: readonly string[];
       picked?: string;
-      names?: Record<string, string>;
       layer?: string;
       position?: { x: number; y: number } | null;
     }
@@ -769,7 +767,6 @@ export async function readSceneSound(
   return {
     clips: data?.["clips"] as readonly string[] | undefined,
     picked: data?.["picked"] as string | undefined,
-    names: data?.["names"] as Record<string, string> | undefined,
     layer: data?.["layer"] as string | undefined,
     position: object["position"] as { x: number; y: number } | null | undefined,
   };
@@ -865,8 +862,8 @@ export async function readAssetMeta(
  * 读某个**音频素材** meta 里的显示名 + 标签 ID 列表；都没有 → `undefined`。
  *
  * 「没有这一段」才是「这个文件还没整理过」（**不补空壳**）：每个素材都有 meta，
- * 但只有起了名字 / 勾了标签才会有内容。标签**任何素材**都能打、写一律落 meta 顶层
- * `tags`（音频旧数据在 `audio.tags`，这里兼容读）；显示名仍只在 `audio.name`。
+ * 但只有起了名字 / 勾了标签才会有内容。显示名与标签**任何素材**都有：写一律落 meta
+ * 顶层 `name` / `tags`（音频旧数据在 `audio.name` / `audio.tags`，这里兼容读）。
  */
 export async function readAudioMeta(
   request: APIRequestContext,
@@ -878,13 +875,11 @@ export async function readAudioMeta(
   }
 
   const audio = meta["audio"];
-  const name = (typeof audio === "object" && audio !== null ? audio["name"] : undefined) as
-    | string
-    | undefined;
-  const rawTags = (meta["tags"] ??
-    (typeof audio === "object" && audio !== null ? audio["tags"] : undefined)) as
-    | number[]
-    | undefined;
+  // 显示名任何素材都写顶层 `name`（音频旧数据在 `audio.name`，兼容读）；标签同理（顶层 `tags`）
+  const audioRecord =
+    typeof audio === "object" && audio !== null ? (audio as Record<string, unknown>) : undefined;
+  const name = (meta["name"] ?? audioRecord?.["name"]) as string | undefined;
+  const rawTags = (meta["tags"] ?? audioRecord?.["tags"]) as number[] | undefined;
   if (name === undefined && rawTags === undefined) {
     return undefined;
   }

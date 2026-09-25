@@ -48,12 +48,11 @@ export function listMapObjects(scene: SceneDoc): GameObjectDoc[] {
 // 声音 / 视频 / 传送阵是**同一套形状**（「加进来的列表 + 当前选中的那一个（+ 按项记的名字）」），
 // 命令的逐字段语义逐字一致，只有数据类型与列表字段名不同——那一部分归这里，唯一一份。
 
-/** 「列表 + 选中 + 按项记名字」那份数据的公共形状（声音 / 视频逐字一致的那部分）。 */
+/** 「列表 + 选中」那份数据的公共形状（声音 / 视频逐字一致的那部分）。 */
 export interface MediaListSideData {
   readonly clips: readonly string[];
   /** 取消选中是 `delete` 语义（optional 字段整个摘掉，不留空壳）。 */
   picked?: string;
-  names?: Record<string, string>;
 }
 
 /**
@@ -114,26 +113,12 @@ export function sameItemList(a: readonly string[], b: readonly string[]): boolea
 }
 
 /**
- * 列表变更后收拾「按项记」的副作用：移出去的名字不留（不然文件里攒下一堆看不见的孤儿
- * 名字），选中的那条还在列表里就行。
+ * 列表变更后收拾副作用：选中的那条还在列表里就行。
  *
  * 兜底「没选就默认选第一条」是**故意的**：加进来一条却没被选上时，面板上看着有东西、
  * 「播放 / 传送」却是灰的，很容易以为是坏的。
  */
 export function syncMediaSideData(data: MediaListSideData): void {
-  if (data.names !== undefined) {
-    for (const clipId of Object.keys(data.names)) {
-      if (!data.clips.includes(clipId)) {
-        delete data.names[clipId];
-      }
-    }
-
-    if (Object.keys(data.names).length === 0) {
-      // 一条名字都不剩：字段整个删掉，不留空壳
-      delete data.names;
-    }
-  }
-
   const fallback = data.clips[0];
   if (data.picked === undefined) {
     if (fallback !== undefined) {
@@ -181,48 +166,6 @@ export function setMediaPicked<T extends { picked?: string }>(
     }
 
     data.picked = value;
-    return true;
-  });
-}
-
-/**
- * 给**加进来的某一条**起显示名（空 = 删掉这个名字，退回素材文件名）。
- *
- * 名字按条记（`names[id]`），只是编辑器里给人看的标签：不参与播放、不进协议；
- * 数据缺字段时先由 `ensure` 补出来（与其它媒体命令同一个兜底）。
- */
-export function setMediaClipName(
-  scene: Draft<SceneDoc>,
-  objectId: string,
-  ensure: (object: Draft<GameObjectDoc>) => MediaListSideData | undefined,
-  clipId: string,
-  name: string,
-): boolean {
-  return withMediaData(scene, objectId, ensure, (data) => {
-    const trimmed = name.trim();
-    if (!data.clips.includes(clipId)) {
-      // 名字挂在**加进来的**条目上：不在列表里就是数据对不上（列表变更时这类名字也会被清掉）
-      return false;
-    }
-
-    const current = data.names?.[clipId] ?? "";
-    if (trimmed === current) {
-      return false;
-    }
-
-    if (trimmed.length === 0) {
-      // 留空 = 不要这个自定义名（文件里不留空字符串）
-      if (data.names !== undefined) {
-        delete data.names[clipId];
-        if (Object.keys(data.names).length === 0) {
-          // 一条名字都没有了：字段整个删掉，不留空壳
-          delete data.names;
-        }
-      }
-    } else {
-      data.names = { ...(data.names ?? {}), [clipId]: trimmed };
-    }
-
     return true;
   });
 }

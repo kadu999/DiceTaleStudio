@@ -4,7 +4,6 @@ import {
   createGameObject,
   setVideoAudio,
   setVideoAutoPlay,
-  setVideoClipName,
   setVideoClips,
   setVideoEnabled,
   setVideoLoop,
@@ -33,9 +32,9 @@ import { DOCUMENT_FORMAT_VERSION, type SceneDoc, type GameObjectDoc } from "../s
  * - 视频挂在**对象自己身上**（v21 起只有地图与**贴图**能带，精灵不行），画面盖在那个对象的
  *   矩形上，每个对象各自一条、互不影响。
  *
- * 一条贯穿全篇的规矩（照抄声音那套）：**名字（`names`）与选中的那条（`picked`）都挂在
- * 「加进来的视频」上**，所以列表一变，这两样跟着走；而 `loop` / `audio` 是**对象自己的设置**，
- * 列表清空也不该被抹掉。
+ * 一条贯穿全篇的规矩（照抄声音那套）：**选中的那条（`picked`）挂在「加进来的视频」上**，
+ * 所以列表一变它跟着走；而 `loop` / `audio` 是**对象自己的设置**，列表清空也不该被抹掉。
+ * 显示名**不住在这里**：它跟着文件走（素材 `.meta` 顶层 `name`），场景里没有按对象记的名字。
  */
 
 const CLIP_A = "project:C/Assets/video/opening.mp4";
@@ -130,7 +129,6 @@ describe("视频：哪些对象能带", () => {
         expect(setVideoLoop(draft, "s1", true)).toBe(false);
         expect(setVideoAudio(draft, "s1", true)).toBe(false);
         expect(setVideoPicked(draft, "s1", CLIP_A)).toBe(false);
-        expect(setVideoClipName(draft, "s1", CLIP_A, "开场")).toBe(false);
       }),
     ).toBe(scene);
   });
@@ -174,14 +172,12 @@ describe("视频命令：列表", () => {
     expect(videoDataOf(objectOf(cleared, "map-1")!)?.picked).toBeUndefined();
   });
 
-  it("setVideoClips 把移出去的视频一起收拾掉：名字不留，选中的那条顺到下一条", () => {
+  it("setVideoClips 移出选中的那条：选中的顺到下一条", () => {
     const start = mutate(sceneWith([mapObject()]), (draft) => {
       setVideoClips(draft, "map-1", [CLIP_A, CLIP_B]);
-      setVideoClipName(draft, "map-1", CLIP_A, "开场");
-      setVideoClipName(draft, "map-1", CLIP_B, "下雨");
     });
 
-    // 移出**选中的第一条**（CLIP_A）：顺到剩下的 CLIP_B，名字只清 A 那条
+    // 移出**选中的第一条**（CLIP_A）：顺到剩下的 CLIP_B
     const withoutA = mutate(start, (draft) => {
       setVideoClips(draft, "map-1", [CLIP_B]);
     });
@@ -190,12 +186,11 @@ describe("视频命令：列表", () => {
       autoPlay: false,
       clips: [CLIP_B],
       picked: CLIP_B,
-      names: { [CLIP_B]: "下雨" },
       loop: false,
       audio: false,
     });
 
-    // 再移出最后一条：`names` 字段整个消失（不留空壳）
+    // 再移出最后一条：列表与选中一起清空（不留空壳）
     const empty = mutate(withoutA, (draft) => {
       setVideoClips(draft, "map-1", []);
     });
@@ -221,7 +216,7 @@ describe("视频命令：列表", () => {
   });
 });
 
-describe("视频命令：选中与名字", () => {
+describe("视频命令：选中", () => {
   it("只能选加进来的那条；`null` 取消选中", () => {
     const scene = mutate(sceneWith([mapObject()]), (draft) => {
       setVideoClips(draft, "map-1", [CLIP_A, CLIP_B]);
@@ -254,30 +249,6 @@ describe("视频命令：选中与名字", () => {
         setVideoPicked(draft, "map-1", null);
       }),
     ).toBe(cleared);
-  });
-
-  it("名字按文件记；留空退回素材文件名，不在列表里的拒掉", () => {
-    let scene = mutate(sceneWith([mapObject()]), (draft) => {
-      setVideoClips(draft, "map-1", [CLIP_A]);
-    });
-
-    scene = mutate(scene, (draft) => {
-      expect(setVideoClipName(draft, "map-1", CLIP_A, "  开场动画  ")).toBe(true);
-    });
-    expect(videoDataOf(objectOf(scene, "map-1")!)?.names).toEqual({ [CLIP_A]: "开场动画" });
-
-    // 不在列表里的文件：名字挂不上去
-    expect(
-      mutate(scene, (draft) => {
-        setVideoClipName(draft, "map-1", CLIP_B, "别的");
-      }),
-    ).toBe(scene);
-
-    // 留空 = 删掉这个名字（文件里不留空字符串，字段也不留空壳）
-    const cleared = mutate(scene, (draft) => {
-      expect(setVideoClipName(draft, "map-1", CLIP_A, "   ")).toBe(true);
-    });
-    expect(videoDataOf(objectOf(cleared, "map-1")!)?.names).toBeUndefined();
   });
 });
 
@@ -453,14 +424,13 @@ describe("视频：文档校验", () => {
     );
   });
 
-  it("空条目 / 选中的不在列表 / 空名字 / 孤儿名字：各一条警告", () => {
+  it("空条目 / 选中的不在列表：各一条警告", () => {
     const scene = mutate(sceneWith([mapObject()]), (draft) => {
       draft.objects[0]?.components.push(
         featureComponent("map-1", DEFAULT_SLOT_COMPONENT.video, {
           enabled: true,
           clips: [CLIP_A, "  "],
           picked: "project:C/Assets/video/ghost.mp4",
-          names: { [CLIP_A]: "  ", "project:C/Assets/video/ghost.mp4": "幽灵" },
           loop: false,
           audio: false,
         }),
@@ -471,14 +441,11 @@ describe("视频：文档校验", () => {
     expect(hasErrors(validateScene(scene))).toBe(false);
     expect(issues).toMatch(/视频列表里有空条目/);
     expect(issues).toMatch(/选中的那条视频不在视频列表里/);
-    expect(issues).toMatch(/视频名字是空的/);
-    expect(issues).toMatch(/这条名字对应的视频不在视频列表里/);
   });
 
   it("干净的视频配置没有一句警告", () => {
     const scene = mutate(sceneWith([mapObject(), textureObject()]), (draft) => {
       setVideoClips(draft, "map-1", [CLIP_A]);
-      setVideoClipName(draft, "map-1", CLIP_A, "开场");
       setVideoClips(draft, "tex-1", [CLIP_B]);
       setVideoLoop(draft, "tex-1", true);
       setVideoAudio(draft, "tex-1", true);

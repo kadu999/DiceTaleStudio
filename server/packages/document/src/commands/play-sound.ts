@@ -5,7 +5,6 @@ import { ensureSoundData } from "../access";
 import {
   dedupeItems,
   sameItemList,
-  setMediaClipName,
   setMediaPicked,
   syncMediaSideData,
   withMediaData,
@@ -67,19 +66,4 @@ export function setSoundLayer(
     sound.layer = layer;
     return true;
   });
-}
-
-/**
- * 给**某一个音频文件**起显示名（空 = 删掉这个名字，退回素材文件名）。
- *
- * 名字按文件记（`names[clipId]`），所以加进来的哪条都能起名、选不选中都一样；它只是编辑器里
- * 给人看的标签：不参与播放、不进协议。
- */
-export function setSoundClipName(
-  scene: Draft<SceneDoc>,
-  objectId: string,
-  clipId: string,
-  name: string,
-): boolean {
-  return setMediaClipName(scene, objectId, ensureSoundData, clipId, name);
 }

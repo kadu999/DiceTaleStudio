@@ -19,8 +19,9 @@ import {
  * 地图 / 精灵上的**视频**（v14 起）：加一组视频，运行时选一条放。
  *
  * 两半：
- * 1. **编辑器怎么配**（不需要运行态）：面板「视频」组 → 「编辑」窗口加 / 删 / 起名字 →
+ * 1. **编辑器怎么配**（不需要运行态）：面板「视频」组 → 「编辑」窗口加 / 删 / 预览 →
  *    面板上点小方块选放哪条 → 循环 / 声音两个开关 → 都落进场景文件的 `video` 字段；
+ *    （显示名在**文件属性**上改，窗口里只读显示。）
  * 2. **命令怎么下发**（`@runtime`）：浏览器里再开一条**假前端** WebSocket（`/client`），
  *    点播放 / 暂停 / 继续 / 停止 → 前端依次收到
  *    `play_video` / `pause_video` / `resume_video` / `stop_video`，**且只带 `objectId`**
@@ -152,7 +153,7 @@ async function waitForSaved(page: Page): Promise<void> {
 }
 
 test.describe("地图 / 贴图：视频列表", () => {
-  test("面板空态 → 窗口加两条 → 起名字 → 选一条 → 循环 / 声音 → 全部落进场景文件", async ({
+  test("面板空态 → 窗口加两条 → 选一条 → 循环 / 声音 → 全部落进场景文件", async ({
     page,
     request,
   }) => {
@@ -199,13 +200,13 @@ test.describe("地图 / 贴图：视频列表", () => {
       await picker.getByTestId("video-picker-close").click();
       await expect(picker).toHaveCount(0);
 
-      // 窗口里两行：路径看得见，名字就地改（留空 = 用文件名）
+      // 窗口里两行：路径看得见，名字是**只读**的显示名（起名在文件属性上改，不在这个窗口）
       await expect(dialog.getByTestId("video-edit-row")).toHaveCount(2);
       await expect(dialog.getByTestId("video-edit-path").first()).toHaveText("video/opening.mp4");
       await expect(dialog.getByTestId("video-edit-warning")).toHaveCount(1);
-      const nameInput = dialog.locator(`[data-testid="video-edit-name"][data-clip="${a}"]`);
-      await nameInput.fill("开场动画");
-      await nameInput.press("Enter");
+      await expect(
+        dialog.locator(`[data-testid="video-edit-row"][data-clip="${a}"]`),
+      ).toContainText("opening");
       await dialog.getByTestId("video-edit-close").click();
       await expect(dialog).toHaveCount(0);
 
@@ -213,8 +214,8 @@ test.describe("地图 / 贴图：视频列表", () => {
       //
       // **这里比的是结构，不是具体 id**：场景文件按设计存的是**素材 GUID**、不是逻辑路径
       // （`sceneAssetRefsToGuids`：内存里是逻辑 ID，落盘换成 GUID，这样改文件名不会断引用）。
-      // 所以断言「两条、顺序保持、第一条被选中、名字挂在第一条上」，id 用 32 位十六进制匹配；
-      // 「顺序 = [a, b]」由上面 UI 那条断言（小方块依次是「开场动画」「rain」）兜住。
+      // 所以断言「两条、顺序保持、第一条被选中」，id 用 32 位十六进制匹配；
+      // 「顺序 = [a, b]」由下面 UI 那条断言（小方块依次是「opening」「rain」）兜住。
       await waitForSaved(page);
       const saved = await readSceneVideo(request, project, SCENE);
       const guid = /^[0-9a-f]{32}$/;
@@ -224,12 +225,10 @@ test.describe("地图 / 贴图：视频列表", () => {
       expect(saved?.clips?.[1]).toMatch(guid);
       expect(saved?.clips?.[0]).not.toBe(saved?.clips?.[1]);
       expect(saved?.picked).toBe(saved?.clips?.[0]);
-      expect(Object.keys(saved?.names ?? {})).toEqual([saved?.clips?.[0]]);
-      expect(Object.values(saved?.names ?? {})).toEqual(["开场动画"]);
 
-      // 面板上：两条小方块，名字用自定义名 / 素材名；点第二条 = 改成放它
+      // 面板上：两条小方块按素材名显示；点第二条 = 改成放它
       await expect(video.getByTestId("video-clip")).toHaveCount(2);
-      await expect(video.getByTestId("video-clip").first()).toHaveText("开场动画");
+      await expect(video.getByTestId("video-clip").first()).toHaveText("opening");
       await expect(video.getByTestId("video-clip").nth(1)).toHaveText("rain");
       await video.getByTestId("video-clip").nth(1).click();
       await expect(video.getByTestId("video-clip").nth(1)).toHaveAttribute("data-selected", "true");

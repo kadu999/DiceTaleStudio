@@ -1,5 +1,5 @@
 import {
-  audioNameOfMeta,
+  assetNameOfMeta,
   assetTagsOfMeta,
   type ProjectDoc,
 } from "@dts/document";
@@ -115,7 +115,7 @@ export function audioCatalog(
   const rows: AudioCatalogRow[] = [];
   for (const asset of listAudioAssets(tree)) {
     const meta = metas[asset.id];
-    const customName = audioNameOfMeta(meta)?.trim() ?? "";
+    const customName = assetNameOfMeta(meta)?.trim() ?? "";
     rows.push({
       id: asset.id,
       fileName: assetDisplayName(asset.name),
@@ -154,10 +154,12 @@ export function taggableAssets(
     tags: row.tags,
   }));
   for (const asset of [...listImageAssets(tree), ...listVideoAssets(tree)]) {
+    const meta = metas[asset.id];
+    const customName = assetNameOfMeta(meta)?.trim() ?? "";
     rows.push({
       id: asset.id,
-      displayName: assetDisplayName(asset.name),
-      tags: tagsOfClip(table, assetTagsOfMeta(metas[asset.id])),
+      displayName: customName.length > 0 ? customName : assetDisplayName(asset.name),
+      tags: tagsOfClip(table, assetTagsOfMeta(meta)),
     });
   }
 
@@ -166,27 +168,19 @@ export function taggableAssets(
 
 /** 素材 meta 里的显示名（没起名字 / 只有空白 → `undefined`）。给名字兜底链用。 */
 export function audioNameOf(metas: AssetMetaTable, id: string, currentId = id): string | undefined {
-  const name = (audioNameOfMeta(metas[currentId]) ?? audioNameOfMeta(metas[id]))?.trim();
+  const name = (assetNameOfMeta(metas[currentId]) ?? assetNameOfMeta(metas[id]))?.trim();
   return name === undefined || name.length === 0 ? undefined : name;
 }
 
 /**
- * 名字兜底链：**对象自己的名字 → 素材 meta 里的显示名 → 素材文件名**。
- *
- * 「对象自己的名字」是 `sound.names`（「编辑声音」窗口里按对象起的），它是**覆盖**；
- * 留空就跟随音频文件自己的名字（属性面板里选中那个音频文件时改）——三处口径只有这一处实现。
+ * 名字兜底链：**素材 meta 里的显示名 → 素材文件名**（显示名只有一个去处：文件属性上改，
+ * 三处口径只有这一处实现）。
  */
 export function audioDisplayName(
   metas: AssetMetaTable,
   id: string,
-  objectName?: string,
   currentId = id,
 ): string {
-  const override = objectName?.trim();
-  if (override !== undefined && override.length > 0) {
-    return override;
-  }
-
   return audioNameOf(metas, id, currentId) ?? assetDisplayName(currentId.slice(currentId.lastIndexOf("/") + 1));
 }
 

@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import {
   DEFAULT_SLOT_COMPONENT,
+  assetNameOfMeta,
   assetTagsOfMeta,
-  audioNameOfMeta,
   supportsObjectComponent,
   isSpriteMeta,
   metaOfImage,
@@ -120,10 +120,10 @@ export function InspectorPanel(): React.JSX.Element {
  * 图片 / 视频 / 音频额外给预览（图片还会读出真实像素尺寸——那是贴图最有用的属性）。
  * 预览直接用后端的原始字节接口，所以「提交到目录里的素材」能立刻看到，不需要先导入。
  *
- * **音频在这里**就地改**显示名**（v17 起）与**标签**（v18 起：tag 是整数、名字住在标签表里）——
- * 曾经另有一个「音频文件」列表窗口做这件事，但「选中哪个就改哪个」本来就是这个面板的用法，
- * 多一个窗口只是让人多跳一次（v18 删掉）。「名称」那一行始终是**真实文件名**：
- * 这个面板同时也在回答「这到底是盘上的哪个文件」。
+ * **文件在这里**就地改**显示名**与**标签**（图 / 音频 / 视频都有；显示名住在 `.meta` 顶层
+ * `name`、标签在顶层 `tags`）——这是显示名的**唯一**入口：「选中哪个就改哪个」本来就是这个
+ * 面板的用法，声音 / 视频编辑窗口里只读显示、全体跟随。tag 是整数、名字住在标签表里。
+ * 「名称」那一行始终是**真实文件名**：这个面板同时也在回答「这到底是盘上的哪个文件」。
  */
 function AssetProperties({
   asset,
@@ -177,10 +177,10 @@ function AssetProperties({
           <Field label="尺寸" value={`${imageSize.width} × ${imageSize.height}`} mono />
         )}
         {preview === null ? null : (
-          <AudioTagsField assetId={asset.id} tags={tags} />
+          <AssetDisplayNameField assetId={asset.id} fileName={asset.name} storedName={assetNameOfMeta(fileMeta) ?? ""} />
         )}
-        {preview !== "audio" ? null : (
-          <AudioDisplayNameField assetId={asset.id} fileName={asset.name} storedName={audioNameOfMeta(fileMeta) ?? ""} />
+        {preview === null ? null : (
+          <AudioTagsField assetId={asset.id} tags={tags} />
         )}
         {preview === "image" ? (
           <>
@@ -316,7 +316,6 @@ function AssetProperties({
   );
 }
 
-/** 音频的**显示名**：就地改（Enter / 失焦提交、Esc 还原）；留空 = 退回素材文件名。 */
 function spriteBackgroundPosition(index: number, columns: number, rows: number): string {
   const column = index % columns;
   const row = Math.floor(index / columns);
@@ -325,7 +324,12 @@ function spriteBackgroundPosition(index: number, columns: number, rows: number):
   return `${x}% ${y}%`;
 }
 
-function AudioDisplayNameField({
+/**
+ * 素材的**显示名**（图 / 音频 / 视频都有）：就地改（Enter / 失焦提交、Esc 还原）；
+ * 留空 = 退回素材文件名。住在那份 `.meta` 的顶层 `name`——这是**唯一**的起名入口
+ * （声音 / 视频编辑窗口里只读显示，这里改一处、清单 / 小方块全体跟随）。
+ */
+function AssetDisplayNameField({
   assetId,
   fileName,
   storedName,
@@ -334,7 +338,7 @@ function AudioDisplayNameField({
   readonly fileName: string;
   readonly storedName: string;
 }): React.JSX.Element {
-  const setAudioName = useEditorStore((state) => state.setAudioName);
+  const setAssetName = useEditorStore((state) => state.setAssetName);
   const [draft, setDraft] = useState(storedName);
 
   useEffect(() => {
@@ -347,17 +351,17 @@ function AudioDisplayNameField({
       return;
     }
 
-    setAudioName(assetId, draft);
+    setAssetName(assetId, draft);
   };
 
   return (
     <FieldRow label="显示名">
       <input
-        data-testid="asset-audio-name"
+        data-testid="asset-display-name"
         value={draft}
         placeholder={fileName}
-        aria-label="音频显示名"
-        title="给这个音频文件起个好认的名字（留空 = 用素材文件名）；只是编辑器里给人看 / 找的"
+        aria-label="素材显示名"
+        title="给这个文件起个好认的名字（留空 = 用素材文件名）；只是编辑器里给人看 / 找的"
         className="min-w-0 flex-1 rounded border border-[var(--color-editor-border)] bg-black/30 px-1 py-0.5 text-[11px] outline-none placeholder:text-[var(--color-editor-text-dim)]"
         onChange={(event) => setDraft(event.target.value)}
         onBlur={commit}

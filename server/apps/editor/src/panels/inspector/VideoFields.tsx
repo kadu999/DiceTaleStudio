@@ -1,8 +1,8 @@
+import { assetNameOfMeta, isVideoEnabled, videoDataOf, videoSpec, type GameObjectDoc } from "@dts/document";
 import { assetDisplayName } from "../asset-info";
 import { assetDisplayPath, findAssetByReference } from "../asset-picker";
 import { useEditorStore, type EditorMode } from "../../state/editor-store";
 import type { RuntimeStatus } from "../../services/runtime-client";
-import { isVideoEnabled, videoDataOf, videoSpec, type GameObjectDoc } from "@dts/document";
 import {
   FieldRow,
   PLAYBACK_BUTTON_ACTIVE_CLASS,
@@ -22,8 +22,8 @@ import { componentFields, descriptorRows, sortInspectorRows } from "./Descriptor
  *
  * 两个地方分工，别混（与「播放声音」同一套）：
  * - **这里（面板）**：把**加进来的视频全列出来**（小方块），点一下决定「放哪一条」；
- * - **「编辑视频」窗口**（`app/VideoEditDialog.tsx`，下面那行「编辑」唤出）：加视频 /
- *   移出 / 起名字——那里看得见每个文件的路径，面板太窄放不下。
+ * - **「编辑视频」窗口**（下面那行「编辑」唤出）：加视频 / 移出 / 预览——那里看得见
+ *   每个文件的路径，面板太窄放不下。**显示名在文件属性上改**，这里只管选哪条。
  *
  * 编辑器**不播放**：没有预览、不接视频解码。点「播放」只是**记账**（哪个对象该放什么）+
  * 尽力把命令发给前端；所以按钮**不要求前端在场**，没连上时状态记着、等连上补发。
@@ -77,6 +77,7 @@ function formatHint(path: string): string | undefined {
 export function VideoFields({ object }: { readonly object: GameObjectDoc }): React.JSX.Element {
   const tree = useEditorStore((state) => state.project.tree);
   const assetMetas = useEditorStore((state) => state.assetMetas);
+  const metaTable = useEditorStore((state) => state.assetMetaTable);
   const playback = useEditorStore((state) => state.videoPlayback);
   const openMediaEditor = useEditorStore((state) => state.openMediaEditor);
   const setVideoEnabled = useEditorStore((state) => state.setVideoEnabled);
@@ -95,10 +96,14 @@ export function VideoFields({ object }: { readonly object: GameObjectDoc }): Rea
   const clips = video?.clips ?? [];
   const picked = video?.picked;
 
-  /** 面板上显示什么名字：自己起过就用它，否则用素材文件名（去掉扩展名）。 */
+  /** 面板上显示什么名字：素材 meta 里的**显示名**（在文件属性上改），没有 = 素材文件名。 */
   const nameOf = (clip: string): string => {
-    const fileName = findAssetByReference(tree, clip, assetMetas)?.name ?? clip;
-    return video?.names?.[clip] ?? assetDisplayName(fileName);
+    const asset = findAssetByReference(tree, clip, assetMetas);
+    const currentId = asset?.id ?? clip;
+    const customName = assetNameOfMeta(metaTable[currentId])?.trim() ?? "";
+    return customName.length > 0
+      ? customName
+      : assetDisplayName(asset?.name ?? currentId.slice(currentId.lastIndexOf("/") + 1));
   };
 
   const pickedName = picked === undefined ? "" : nameOf(picked);

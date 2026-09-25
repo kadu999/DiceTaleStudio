@@ -1,10 +1,10 @@
 /**
  * 本文件从 `editor-store.ts` 拆出（纯搬运，行为不变）。
  *
- * 项目级音频**标签表**与三档音量；素材文件的**显示名与标签**（v24 起）落在
- * **那个文件自己的 `.meta`** 那条轨道上，见下面 `setAudioName` / `setAssetTags` 的说明。
- * 标签**任何素材**（图 / 音频 / 视频）都能打：写一律落在顶层 `tags`，
- * 音频旧数据（`audio.tags`）由 `assetTagsOfMeta` 兼容读。
+ * 项目级音频**标签表**与三档音量；素材文件的**显示名与标签**落在**那个文件自己的
+ * `.meta`** 那条轨道上，见下面 `setAssetName` / `setAssetTags` 的说明。
+ * 显示名与标签**任何素材**（图 / 音频 / 视频）都有：写一律落在顶层（`name` / `tags`），
+ * 音频旧数据（`audio.name` / `audio.tags`）由 `assetNameOfMeta` / `assetTagsOfMeta` 兼容读。
  */
 import {
   createAssetMeta,
@@ -12,7 +12,7 @@ import {
   setSfxVolume as setProjectSfxVolume,
   setVoiceVolume as setProjectVoiceVolume,
   setAudioTagName as setProjectAudioTagName,
-  withMetaAudioName,
+  withMetaAssetName,
   withMetaAssetTags,
   type AssetMetaDoc,
 } from "@dts/document";
@@ -26,7 +26,7 @@ export function createAudioMetaSlice(
   _ctx: StoreContext,
 ): Pick<
   EditorStoreState,
-  | "setAudioName"
+  | "setAssetName"
   | "setAssetTags"
   | "setAudioTagName"
   | "openAudioTags"
@@ -35,25 +35,26 @@ export function createAudioMetaSlice(
   | "setVoiceVolume"
 > {
   return {
-    // ------------------------------------------- 素材级数据：音频文件的显示名 + 标签（素材 meta 那条轨道）
+    // ------------------------------------------- 素材级数据：素材文件的显示名 + 标签（素材 meta 那条轨道）
 
     /**
-     * 给一个音频文件起**显示名**（`""` = 退回素材文件名）。
+     * 给一个素材文件起**显示名**（`""` = 退回素材文件名）。
      *
-     * v24 起写的是**那个音频文件自己的 `.meta`**（`audio.name`），不再是工程文件的 `audioMeta`——
-     * 于是它和图片的切分 / 导入设置同一条轨道（`applyMetas`）：撤销、去抖落盘、按内容差异只写
-     * 变过的那一份，全都与切分共用一套（切分那边的理由见 `sprite-slice.ts`）。
+     * **任何素材**都能起（图 / 音频 / 视频）：写一律落在 meta 顶层的 `name`，
+     * 音频的旧数据（更早版本写在 `audio.name`）由 `withMetaAssetName` 在读路径兼容、
+     * 写入时一并摘掉——不需要数据迁移。和切分同一条轨道（`applyMetas`）：撤销、去抖落盘、
+     * 按内容差异只写变过的那一份（切分那边的理由见 `sprite-slice.ts`）。
      *
      * 名字只是编辑器里给人看的（找不到素材时也靠它认），**不进协议、不参与播放**。
      */
-    setAudioName(clipId, name) {
+    setAssetName(assetId, name) {
       // 连续敲名字合成一条撤销记录（与音量滑杆同一套写法）
       return get().applyMetas(
-        name.trim().length === 0 ? "清除音频文件名字" : "修改音频文件名字",
+        name.trim().length === 0 ? "清除素材显示名" : "修改素材显示名",
         (draft) => {
-          writeAssetMeta(draft, clipId, (meta) => withMetaAudioName(meta, name));
+          writeAssetMeta(draft, assetId, (meta) => withMetaAssetName(meta, name));
         },
-        { coalesceKey: `audio-name:${clipId}` },
+        { coalesceKey: `asset-name:${assetId}` },
       );
     },
 

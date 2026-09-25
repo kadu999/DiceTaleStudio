@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { soundDataOf, videoDataOf, type GameObjectDoc } from "@dts/document";
+import { assetNameOfMeta, soundDataOf, videoDataOf, type GameObjectDoc } from "@dts/document";
 import { useEditorStore } from "../state/editor-store";
-import { audioNameOf } from "../panels/audio-catalog";
 import { assetDisplayName } from "../panels/asset-info";
 import {
   assetDisplayPath,
@@ -20,19 +19,20 @@ import { ResourcePickerDialog } from "./ResourcePickerDialog";
  * 按 `kind` 调整）。布局对齐「选择贴图」：左边文件清单、右边播放预览。
  *
  * 为什么要有窗口：属性面板上只放得下「一排小方块」（选哪条要播 / 放），而加素材、
- * 改名这些事**必须挨着路径做**——面板太窄，看不到路径就不知道源文件是哪个。
+ * 看路径这些事**必须挨着路径做**——面板太窄，看不到路径就不知道源文件是哪个。
  * 所以两边的分工是：
  *
  * - **这里**：`＋ 添加`（弹 `ResourcePickerDialog`）把素材加进来、`移出` 拿掉、
- *   名字就地改、点一条在右边**试听 / 预览**；
+ *   点一条在右边**试听 / 预览**；
  * - **属性面板**：把加进来的全列成小方块，点一下决定**播 / 放哪一条**。
  *
- * 两条约定：名字按文件存（`names[文件]`，留空 = 跟随占位名），名字只是编辑器里
- * 给人看的标签，不参与播放、不进协议；加进来才播 / 放得出来（面板只在清单里选）。
+ * **显示名不在这里改**：显示名是**文件自己的属性**（住在那份 `.meta` 的顶层 `name`），
+ * 统一在资源面板的文件属性上改（「选中谁就改谁」）；这里的行只显示解析后的名字
+ * （显示名 → 素材文件名）。
  *
  * **testid 由 `prefix` 派生**（`sound` / `video`），测试钉住的
- * `${prefix}-edit-dialog` / `-edit-body` / `-edit-list` / `-edit-row` / `-edit-name` /
- * `-edit-path` / `-edit-close` / `${prefix}-add` / `${prefix}-remove` 一枚不改。
+ * `${prefix}-edit-dialog` / `-edit-body` / `-edit-list` / `-edit-row` / `-edit-path` /
+ * `-edit-close` / `${prefix}-add` / `${prefix}-remove` 一枚不改。
  */
 
 export interface MediaEditDialogProps {
@@ -51,10 +51,10 @@ interface MediaEditBadge {
 
 interface MediaEditRow {
   readonly id: string;
-  /** 素材文件名（去掉扩展名）：aria / 移出按钮的称呼。 */
+  /** 行里显示的名字：素材 meta 里的**显示名**（任何素材都能起），没有 = 素材文件名。 */
+  readonly displayName: string;
+  /** 移出按钮 aria 的称呼（= displayName）。 */
   readonly fileName: string;
-  /** 名字输入框的占位：留空时这一条显示成什么。 */
-  readonly placeholder: string;
   readonly path: string;
   readonly pathTitle: string;
   readonly missing: boolean;
@@ -78,8 +78,6 @@ const MEDIA_EDIT_TEXTS: Record<
     /** 移出按钮 title 里的宿主称呼：这条声音对象 / 这个对象。 */
     readonly scope: string;
     readonly footerHint: string;
-    /** 名字输入框的 title。 */
-    readonly nameTitle: string;
   }
 > = {
   audio: {
@@ -88,8 +86,7 @@ const MEDIA_EDIT_TEXTS: Record<
     gone: "这个声音对象已经不在了",
     media: "音频",
     scope: "这条声音对象",
-    footerHint: "播哪条在属性面板上点小方块选；这里管加 / 删 / 起名字 / 试听。",
-    nameTitle: "只给这一条声音对象改名（覆盖）；留空 = 跟随音频文件自己的名字（在「音频文件」窗口里改）",
+    footerHint: "播哪条在属性面板上点小方块选；这里管加 / 删 / 试听。显示名在文件属性上改。",
   },
   video: {
     prefix: "video",
@@ -97,8 +94,7 @@ const MEDIA_EDIT_TEXTS: Record<
     gone: "这个对象已经不在了",
     media: "视频",
     scope: "这个对象",
-    footerHint: "放哪条在属性面板上点小方块选；这里管加 / 删 / 起名字 / 预览。",
-    nameTitle: "给这个视频文件起个好认的名字（留空 = 用文件名）",
+    footerHint: "放哪条在属性面板上点小方块选；这里管加 / 删 / 预览。显示名在文件属性上改。",
   },
 };
 
@@ -110,8 +106,9 @@ function fileNameOf(id: string): string {
 function dataOf(
   kind: "audio" | "video",
   object: GameObjectDoc,
-): { readonly clips?: readonly string[]; readonly names?: Readonly<Record<string, string>> } | undefined {
-  return kind === "audio" ? soundDataOf(object) : videoDataOf(object);
+): { readonly clips?: readonly string[] } | undefined {
+  const data = kind === "audio" ? soundDataOf(object) : videoDataOf(object);
+  return data === undefined ? undefined : { clips: data.clips };
 }
 
 export function MediaEditDialog({ open, kind, objectId, onClose }: MediaEditDialogProps): React.JSX.Element {
@@ -120,10 +117,8 @@ export function MediaEditDialog({ open, kind, objectId, onClose }: MediaEditDial
   const metaTable = useEditorStore((state) => state.assetMetaTable);
   const addSoundClip = useEditorStore((state) => state.addSoundClip);
   const removeSoundClip = useEditorStore((state) => state.removeSoundClip);
-  const setSoundClipName = useEditorStore((state) => state.setSoundClipName);
   const addVideoClip = useEditorStore((state) => state.addVideoClip);
   const removeVideoClip = useEditorStore((state) => state.removeVideoClip);
-  const setVideoClipName = useEditorStore((state) => state.setVideoClipName);
   const object = useSceneObject(objectId);
   const texts = MEDIA_EDIT_TEXTS[kind];
 
@@ -142,19 +137,21 @@ export function MediaEditDialog({ open, kind, objectId, onClose }: MediaEditDial
     (kind === "audio" ? listAudioAssets(tree) : listVideoAssets(tree)).map((asset) => asset.id),
   );
 
-  // 加进来的素材：能找到的用素材名，找不到的（素材被删 / 手写文件）也留一行，
-  // 否则「加过的东西看不见、也移不掉」
+  // 加进来的素材：能找到的用素材名（显示名 → 文件名，显示名在文件属性上改），
+  // 找不到的（素材被删 / 手写文件）也留一行，否则「加过的东西看不见、也移不掉」
   const rows: MediaEditRow[] = clips.map((id) => {
     const asset = findAssetByReference(tree, id, assetMetas);
     const currentId = asset?.id ?? id;
-    const displayName = assetDisplayName(asset?.name ?? fileNameOf(currentId));
+    // 显示名 = 素材 meta 顶层 `name`（任何素材都能起；音频旧数据在 `audio.name`），
+    // 没有 = 素材文件名去掉扩展名——这里只读，改在资源面板的文件属性上
+    const customName = assetNameOfMeta(metaTable[currentId])?.trim() ?? "";
+    const displayName =
+      customName.length > 0 ? customName : assetDisplayName(asset?.name ?? fileNameOf(currentId));
     if (kind === "audio") {
       return {
         id,
+        displayName,
         fileName: displayName,
-        // 输入框的占位 = **跟随的那一层**（音频文件自己的名字，没有才用文件名）：
-        // 留空时这一条会显示成它，作者一眼看得出「不改就是这个名字」
-        placeholder: audioNameOf(metaTable, currentId) ?? displayName,
         path: assetDisplayPath(currentId),
         pathTitle: id,
         missing: asset === undefined || !assetIds.has(asset.id),
@@ -168,8 +165,8 @@ export function MediaEditDialog({ open, kind, objectId, onClose }: MediaEditDial
       : undefined;
     return {
       id,
+      displayName,
       fileName: displayName,
-      placeholder: displayName,
       path: assetDisplayPath(currentId),
       pathTitle: [id, formatHint].filter((line) => line !== undefined).join("\n"),
       missing: asset === undefined || !assetIds.has(asset.id),
@@ -201,7 +198,7 @@ export function MediaEditDialog({ open, kind, objectId, onClose }: MediaEditDial
             </div>
           ) : (
             <div className="flex min-h-0 flex-1 gap-3 overflow-hidden" data-testid={`${texts.prefix}-edit-body`}>
-              {/* 左：文件清单（缩略图 / 图标 + 名字就地改 + 路径 + 移出） */}
+              {/* 左：文件清单（缩略图 / 图标 + 显示名 + 路径 + 移出；显示名在文件属性上改） */}
               <div className="flex w-[46%] min-w-0 flex-none flex-col border-r border-[var(--color-editor-border)] pr-3">
                 <div className="mb-2 flex flex-none items-center justify-between gap-2">
                   <span className="text-[11px] font-semibold">
@@ -236,13 +233,7 @@ export function MediaEditDialog({ open, kind, objectId, onClose }: MediaEditDial
                           texts={texts}
                           row={row}
                           selected={previewId === row.id}
-                          storedName={data?.names?.[row.id] ?? ""}
                           onSelect={() => setPreviewId(row.id)}
-                          onRename={(name) =>
-                            kind === "audio"
-                              ? setSoundClipName(object.id, row.id, name)
-                              : setVideoClipName(object.id, row.id, name)
-                          }
                           onRemove={() => {
                             if (kind === "audio") {
                               removeSoundClip(object.id, row.id);
@@ -338,8 +329,8 @@ export function MediaEditDialog({ open, kind, objectId, onClose }: MediaEditDial
 
 /**
  * 清单里的一行：缩略图（视频 = **首帧**，浏览器 `preload="metadata"` 直接出第一帧；
- * 音频 = 公用文件图标）+ 名字就地改（Enter / 失焦提交，Esc 还原）+ 路径 + 徽标 + 移出。
- * 点行任意处 = 选中它到右边预览。
+ * 音频 = 公用文件图标）+ 显示名（只读：显示名在**文件属性**上改，这里跟着变）+ 路径 +
+ * 徽标 + 移出。点行任意处 = 选中它到右边预览。
  */
 function MediaEditRow({
   kind,
@@ -347,9 +338,7 @@ function MediaEditRow({
   texts,
   row,
   selected,
-  storedName,
   onSelect,
-  onRename,
   onRemove,
 }: {
   readonly kind: "audio" | "video";
@@ -357,25 +346,9 @@ function MediaEditRow({
   readonly texts: (typeof MEDIA_EDIT_TEXTS)["audio"];
   readonly row: MediaEditRow;
   readonly selected: boolean;
-  readonly storedName: string;
   readonly onSelect: () => void;
-  readonly onRename: (name: string) => void;
   readonly onRemove: () => void;
 }): React.JSX.Element {
-  const [draft, setDraft] = useState(storedName);
-
-  useEffect(() => {
-    setDraft(storedName);
-  }, [row.id, storedName]);
-
-  const commit = (): void => {
-    if (draft.trim() === storedName) {
-      return;
-    }
-
-    onRename(draft);
-  };
-
   return (
     <div
       data-testid={`${prefix}-edit-row`}
@@ -404,25 +377,12 @@ function MediaEditRow({
       )}
 
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <input
-          data-testid={`${prefix}-edit-name`}
-          data-clip={row.id}
-          value={draft}
-          placeholder={row.placeholder}
-          aria-label={`${row.fileName} 的名字`}
-          title={texts.nameTitle}
-          className="w-full min-w-0 rounded border border-[var(--color-editor-border)] bg-black/30 px-1 py-0.5 text-[11px] outline-none placeholder:text-[var(--color-editor-text-dim)]"
-          onChange={(event) => setDraft(event.target.value)}
-          onBlur={commit}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              commit();
-              event.currentTarget.blur();
-            } else if (event.key === "Escape") {
-              setDraft(storedName);
-            }
-          }}
-        />
+        <span
+          className="min-w-0 truncate text-[11px]"
+          title={`显示名在文件属性上改（${row.fileName}）`}
+        >
+          {row.displayName}
+        </span>
         <span className="flex min-w-0 items-center gap-2">
           <span
             data-testid={`${prefix}-edit-path`}

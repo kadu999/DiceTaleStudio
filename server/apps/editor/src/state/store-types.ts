@@ -400,8 +400,6 @@ export interface EditorStoreState {
   removeVideoClip(objectId: string, clipId: string): boolean;
   /** 视频：选中 / 取消选中「放哪一条」（`null` = 取消选中）。 */
   selectVideoClip(objectId: string, clip: string | null): boolean;
-  /** 视频：给某个文件起显示名（空 = 退回素材文件名）。 */
-  setVideoClipName(objectId: string, clipId: string, name: string): boolean;
   /** 视频：循环播放开关（文档数据）。 */
   setVideoLoop(objectId: string, loop: boolean): boolean;
   /**
@@ -431,12 +429,13 @@ export interface EditorStoreState {
   /** 打开 / 关闭「背景音乐」弹框（顶栏「音乐」按钮唤出）。 */
   openBgmDialog(open: boolean): void;
   /**
-   * 音频文件：起显示名（`""` = 退回素材文件名）。进工程文件、可撤销、随自动落盘。
+   * 素材文件（**任何素材**：图 / 音频 / 视频）：起**显示名**（`""` = 退回素材文件名）。
+   * 进素材 meta 那条轨道、可撤销、随自动落盘；只是编辑器里给人看的标签，不进协议。
    *
-   * 界面入口只有一个：**选中那个音频文件时属性面板上的「显示名」输入框**
-   * （曾经另有一个「音频文件」列表窗口，v18 删掉了——「选中谁就改谁」本来就是这个面板的用法）。
+   * 界面入口只有一个：**选中那个文件时属性面板上的「显示名」输入框**
+   * （「选中谁就改谁」本来就是这个面板的用法；声音 / 视频编辑窗口里**不改名**）。
    */
-  setAudioName(clipId: string, name: string): boolean;
+  setAssetName(assetId: string, name: string): boolean;
   /**
    * 素材文件（**任何素材**：图 / 音频 / 视频）：替换**整份**标签 ID 清单
    * （去重升序、丢掉越界已删的，由文档命令做）。
@@ -642,12 +641,8 @@ export interface EditorStoreState {
   removeSoundClip(objectId: string, clipId: string): boolean;
   /**
    * 选这一条声音（**单选**：只能选已经加进来的，传 null 取消选中）。
-   *
-   * 名字按文件记（`names`），所以换选不会动名字。
    */
   selectSoundClip(objectId: string, clip: string | null): boolean;
-  /** 给某个音频文件起显示名（留空 = 退回素材文件名）；名字只是标签，不进协议。 */
-  setSoundClipName(objectId: string, clipId: string, name: string): boolean;
   /** 改声音层级（同层同时只响一条的那一层）；非声音对象 / 值没变返回 false。 */
   setSoundLayer(objectId: string, layer: SoundLayer): boolean;
   /**

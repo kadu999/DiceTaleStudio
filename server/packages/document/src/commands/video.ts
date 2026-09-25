@@ -6,7 +6,6 @@ import { ensureVideoData, removeFeature, videoDataOf, writeFeature } from "../ac
 import {
   dedupeItems,
   sameItemList,
-  setMediaClipName,
   setMediaPicked,
   syncMediaSideData,
   withMediaData,
@@ -40,8 +39,8 @@ export function setVideoEnabled(
         return false;
       }
 
-      // **整份留着、只把开关翻回来**：`clips` / `picked` / `names` / `loop` / `audio` 一个都不能丢
-      // （`map.fog.enabled` 那边能重建是因为它只有 regions；视频字段多，重建会悄悄丢掉选中与名字）
+      // **整份留着、只把开关翻回来**：`clips` / `picked` / `loop` / `audio` 一个都不能丢
+      // （`map.fog.enabled` 那边能重建是因为它只有 regions；视频字段多，重建会悄悄丢掉选中）
       if (video === undefined) {
         const created = ensureVideoData(object);
         if (created === undefined) return false;
@@ -113,21 +112,6 @@ export function setVideoPicked(
   clipId: string | null,
 ): boolean {
   return setMediaPicked(scene, objectId, ensureVideoData, (video) => video.clips, clipId);
-}
-
-/**
- * 给**某一个视频文件**起显示名（空 = 删掉这个名字，退回素材文件名）。
- *
- * 与 `setSoundClipName` 同一套：名字按文件记、只是编辑器里给人看的标签
- * （不参与播放、不进协议）。
- */
-export function setVideoClipName(
-  scene: Draft<SceneDoc>,
-  objectId: string,
-  clipId: string,
-  name: string,
-): boolean {
-  return setMediaClipName(scene, objectId, ensureVideoData, clipId, name);
 }
 
 /** 循环播放开关（前端 `VideoPlayer.isLooping`）；值没变返回 false。 */

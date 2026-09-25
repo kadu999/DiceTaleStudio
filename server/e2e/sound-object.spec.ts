@@ -28,7 +28,8 @@ import { canvasAverageColor, offsetFrom, preciseWorldPoint, worldSamplePoint } f
  * 编辑器**不播放**——这里既钉住「画布上看得见、点得到、拖得动」，也钉住「页面上没有播放器」。
  *
  * 两个入口的分工也在这一份里钉住：**属性面板**把加进来的音频列出来单选（播哪条）；
- * **「编辑声音」窗口**负责加 / 删 / 起名字（看得见每条音频的路径），加音频走「选择音频」弹框。
+ * **「编辑声音」窗口**负责加 / 删 / 预览（看得见每条音频的路径），加音频走「选择音频」弹框；
+ * 显示名在**文件属性**上改，窗口里只读显示。
  */
 
 const SCENE = "Map001";
@@ -55,7 +56,7 @@ async function redness(page: Page, point: { x: number; y: number }): Promise<num
 }
 
 test.describe("动作对象：播放声音", () => {
-  test("新建 → 窗口里加 / 移出音频、起名字 → 面板上换选 → 落盘；编辑器只存数据、不播放", async ({
+  test("新建 → 窗口里加 / 移出音频 → 面板上换选 → 落盘；编辑器只存数据、不播放", async ({
     page,
     request,
   }) => {
@@ -123,8 +124,8 @@ test.describe("动作对象：播放声音", () => {
       await expect(page.getByTestId("sound-edit")).toHaveText("编辑音频…");
       await expect(page.locator('[data-group="sound"]')).not.toContainText("audio/");
 
-      // 「编辑声音」窗口：这里是**这条声音对象的音频清单**（加 / 删 / 起名字），
-      // 「播哪条」在属性面板上点小方块选，所以窗口里没有选中这一套
+      // 「编辑声音」窗口：这里是**这条声音对象的音频清单**（加 / 删 / 预览），
+      // 「播哪条」在属性面板上点小方块选，所以窗口里没有选中这一套；显示名在文件属性上改
       await page.getByTestId("sound-edit").click();
       const dialog = page.getByTestId("sound-edit-dialog");
       await expect(dialog).toBeVisible();
@@ -158,11 +159,8 @@ test.describe("动作对象：播放声音", () => {
       await expect(dialog.getByTestId("sound-edit-row")).toHaveCount(2);
       await expect(dialog.getByTestId("sound-edit-list")).not.toContainText("audio/step3.mp3");
 
-      // 给 step1 起名（按文件存；留空 = 用文件名）
-      const nameInput = dialog.locator(`[data-testid="sound-edit-name"][data-clip="${step1}"]`);
-      await expect(nameInput).toHaveAttribute("placeholder", "step1");
-      await nameInput.fill("雷雨");
-      await nameInput.press("Enter");
+      // 行上只读显示显示名（没起过 = 文件名）；起名在**文件属性**上改，不在这个窗口
+      await expect(rowOf(step1)).toContainText("step1");
 
       await dialog.getByTestId("sound-edit-close").click();
       await expect(dialog).toHaveCount(0);
@@ -170,7 +168,7 @@ test.describe("动作对象：播放声音", () => {
       // 面板：**加进来的音频全列出来**（小方块）；加进来的第一条自动是「播的那条」
       const chips = page.getByTestId("sound-clip");
       await expect(chips).toHaveCount(2);
-      await expect(chips.nth(0)).toHaveText("雷雨");
+      await expect(chips.nth(0)).toHaveText("step1");
       await expect(chips.nth(1)).toHaveText("step2");
       await expect(chips.nth(0)).toHaveAttribute("data-selected", "true");
       await expect(chips.nth(1)).toHaveAttribute("data-selected", "false");
@@ -193,11 +191,11 @@ test.describe("动作对象：播放声音", () => {
       await page.getByLabel("声音层级").selectOption("voice");
       await expect(row).toContainText("旁白");
 
-      // 落盘：加进来的清单 + 选中的那条 + 每个文件的名字表 + 层级，对象和实体一样摆在世界原点。
+      // 落盘：加进来的清单 + 选中的那条 + 层级，对象和实体一样摆在世界原点。
       //
       // **这里比结构、不比具体 id**：场景文件按设计存**素材 GUID**而不是逻辑路径
       // （`sceneAssetRefsToGuids`：内存里是逻辑 ID，落盘换 GUID，这样改文件名不会断引用）。
-      // 「哪条是哪条」由上面那几条 UI 断言兜住——小方块依次是「雷雨」（= step1）与 step2，
+      // 「哪条是哪条」由上面那几条 UI 断言兜住——小方块依次是 step1 与 step2，
       // 且点第二条之后选中的是第二条。
       await expect
         .poll(async () => {
@@ -212,8 +210,6 @@ test.describe("动作对象：播放声音", () => {
             allGuids: clips.every((clip) => /^[0-9a-f]{32}$/.test(clip)),
             distinct: new Set(clips).size === clips.length,
             picked: saved.picked === clips[1] ? "second" : saved.picked === clips[0] ? "first" : "other",
-            namedClip: Object.keys(saved.names ?? {})[0] === clips[0] ? "first" : "other",
-            nameValues: Object.values(saved.names ?? {}),
             layer: saved.layer,
             position: saved.position,
           };
@@ -223,8 +219,6 @@ test.describe("动作对象：播放声音", () => {
           allGuids: true,
           distinct: true,
           picked: "second",
-          namedClip: "first",
-          nameValues: ["雷雨"],
           layer: "voice",
           position: { x: 0, y: 0 },
         });

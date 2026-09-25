@@ -248,11 +248,9 @@ describe("标签表与文件的标签", () => {
 });
 
 describe("名字兜底链", () => {
-  it("对象名 → 文件自己的显示名 → 文件名；空白一律当作没写", () => {
+  it("文件自己的显示名 → 文件名；空白一律当作没写", () => {
     const meta = audioMetaTable({ [CLIP_A]: { name: "开场曲" } });
 
-    expect(audioDisplayName(meta, CLIP_A, "序幕")).toBe("序幕");
-    expect(audioDisplayName(meta, CLIP_A, "   ")).toBe("开场曲");
     expect(audioDisplayName(meta, CLIP_A)).toBe("开场曲");
     expect(audioDisplayName(meta, CLIP_B)).toBe("battle");
     expect(audioNameOf(meta, CLIP_B)).toBeUndefined();
