@@ -7,6 +7,9 @@ import { serveStatic } from "./static";
 
 export type { HttpServerOptions } from "./context";
 
+/** 已挂过 error 兜底的连接 socket（keep-alive 下要防重复挂载，见 createHttpServer）。 */
+const errorGuardedSockets = new WeakSet<object>();
+
 /**
  * 组装 HTTP 服务器。
  *
@@ -44,7 +47,13 @@ export function createHttpServer(options: HttpServerOptions): Server {
     // 客户端中途断开（取消缩略图 / 视频下载、关页面）时，写响应会**异步**冒 'error'
     // （Windows 上是 UV_EOF 的 write）——没人接就把整个进程打崩，这里统一吞掉：
     // 断开了就是客户端不需要了，不是服务端错误。
-    request.socket.on("error", () => {});
+    // keep-alive 下一个 socket 服务很多个请求，error 监听**每个 socket 只挂一次**
+    // （挂在每个请求上会累积到 MaxListenersExceededWarning）。
+    const socket = request.socket;
+    if (!errorGuardedSockets.has(socket)) {
+      errorGuardedSockets.add(socket);
+      socket.on("error", () => {});
+    }
     response.on("error", () => {});
 
     void handle(request, response).catch((error: unknown) => {

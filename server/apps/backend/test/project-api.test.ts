@@ -1,4 +1,5 @@
 import type { AddressInfo } from "node:net";
+import { Agent, get } from "node:http";
 import type { Server } from "node:http";
 import { readFileSync } from "node:fs";
 import * as pathApi from "node:path";
@@ -393,6 +394,30 @@ describe("项目 API", () => {
       expect(health.status).toBe(200);
     } finally {
       process.off("uncaughtException", onUncaught);
+    }
+  });
+
+  it("keep-alive 同一连接反复请求：不得累积 error 监听（MaxListenersExceededWarning）", async () => {
+    const warnings: Error[] = [];
+    const onWarning = (warning: Error) => warnings.push(warning);
+    process.on("warning", onWarning);
+    try {
+      // 单 socket 长连接：15 次请求 > 默认上限 10——每个请求都挂监听就会触发泄漏警告
+      const agent = new Agent({ keepAlive: true, maxSockets: 1 });
+      for (let i = 0; i < 15; i += 1) {
+        await new Promise<void>((resolve, reject) => {
+          get(`${baseUrl}/api/health`, { agent }, (response) => {
+            response.resume();
+            response.on("end", () => resolve());
+          }).on("error", reject);
+        });
+      }
+      // process 的 warning 事件是异步投递的，等一拍再断言
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect(warnings.filter((warning) => warning.name === "MaxListenersExceededWarning")).toEqual([]);
+      agent.destroy();
+    } finally {
+      process.off("warning", onWarning);
     }
   });
 
