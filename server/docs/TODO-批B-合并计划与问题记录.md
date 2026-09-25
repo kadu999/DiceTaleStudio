@@ -1,6 +1,6 @@
 # 批 B：重复代码合并计划与问题记录
 
-> 状态：**批 B 未开始**（2025-06 记录）。批 A（死代码清除 + 低中风险合并，净减约 1900 行）已完成并提交（`ed8d34b`，其上为架构统一 `128714a`）。
+> 状态：**批 B 进行中**（2025-06 记录；2026-01 复验处置台账 #1，#7/#8/#10 已收官，剩 #9）。批 A（死代码清除 + 低中风险合并，净减约 1900 行）已完成并提交（`ed8d34b`，其上为架构统一 `128714a`）。
 > 本文档两项用途：① 批 B 的执行清单与风险注记；② 具体问题台账（每条带现象/位置/处置建议，执行批 B 时新发现的追加到第二节）。
 > 做完一项就把状态打勾并补实际净减行数。
 
@@ -10,25 +10,22 @@
 
 | # | 状态 | 任务 | 位置 | 净减 | 风险与注记 |
 |---|---|---|---|---|---|
-| 7 | ⬜ | playback ledger 泛型：`sound-playback.ts`(97 行) ↔ `video-playback.ts`(92 行) 核心 41 行逐字同构（empty/withPlaying/withPaused/withStopped/resendPlan），抽 `createPlaybackLedger<K, E extends {paused:boolean}>(keyOf)` 工厂；bgm 是单槽退化形**不动**；两个文件保留同名 re-export 薄壳（测试直接 import 函数名） | `apps/editor/src/services/` | ~55 | 状态键名进入 `set()` 的局部状态形状，泛型返回值要让 TS 满意 |
-| 8 | ⬜ | deliver* 离线守卫统一：`deliverSoundPlay`/`deliverSoundControl`/`deliverVideo`/`deliverBgm` 四份 `!connected`/`client===null` 双分支守卫抽公共助手 | `apps/editor/src/state/store-context.ts:486-774` | ~30 | **日志文案逐字保留**：`sound-object.test.tsx:598-669` 有 6 条断言精确匹配 `已记录播放：层级 音效` 等格式。注意四份文案模板本来就不一致（sound/video/bgm 格式不同），调用方传完整模板，只合并守卫结构 |
-| 10 | ⬜ | Fog/Grid 对话框外壳：画布内部**不同构**（像素擦除 vs 格子渲染），只抽外壳——对象查找 7 行抽 `useSceneObject(objectId)` hook；Root/Portal/Overlay/Content+Title+missing 分支 ~25 行抽 `MapDialogShell`（footer 用插槽：Grid 有"全部清除"、Fog 是 running 提示） | `apps/editor/src/app/FogMaskDialog.tsx`(462) ↔ `GridEditDialog.tsx`(459) | ~35-50 | data-testid 原样保留；footer 差异走插槽 |
+| 7 | ✅ | playback ledger 泛型：`sound-playback.ts`(97 行) ↔ `video-playback.ts`(92 行) 核心 41 行逐字同构（empty/withPlaying/withPaused/withStopped/resendPlan），抽 `createPlaybackLedger<K, E extends {paused:boolean}>(keyOf)` 工厂；bgm 是单槽退化形**不动**；两个文件保留同名 re-export 薄壳（测试直接 import 函数名） | `apps/editor/src/services/` | ~~-55~~ **-9**（97+92 → 44+38+98；注释 dense 风格下合并后的设计说明集中进了工厂文件，结构去重优先于行数） | 状态键名进入 `set()` 的局部状态形状，泛型返回值要让 TS 满意 |
+| 8 | ✅ | deliver* 离线守卫统一：`deliverSoundPlay`/`deliverSoundControl`/`deliverVideo`/`deliverBgm` 四份 `!connected`/`client===null` 双分支守卫抽公共助手 | `apps/editor/src/state/store-context.ts:486-774` | ~0（33 行守卫 ↔ 33 行助手；四份双分支收敛为一处） | **日志文案逐字保留**：`sound-object.test.tsx:598-669` 有 6 条断言精确匹配 `已记录播放：层级 音效` 等格式。注意四份文案模板本来就不一致（sound/video/bgm 格式不同），调用方传完整模板，只合并守卫结构 → 助手收 `(reason) => 完整文案`，两种离线原因串逐字内联在助手里 |
+| 10 | ✅ | Fog/Grid 对话框外壳：画布内部**不同构**（像素擦除 vs 格子渲染），只抽外壳——对象查找 7 行抽 `useSceneObject(objectId)` hook；Root/Portal/Overlay/Content+Title+missing 分支 ~25 行抽 `MapDialogShell`（footer 用插槽：Grid 有"全部清除"、Fog 是 running 提示） | `apps/editor/src/app/map-dialog-shell.tsx`（新）+ `FogMaskDialog.tsx`/`GridEditDialog.tsx` | ~~-35~~ **+31**（462+459 → 434+423+95；testid 三枚由 `prefix` 派生，fog-mask.spec / grid-annotate.spec 9 条用例验证通过） | data-testid 原样保留；footer 差异走插槽；Fog 窗口 children 需要收窄后的 map/imageRef/grid → 用「早退 + found=false」外壳渲染占位 |
 | 9 | ⬜ | Sound/VideoEditDialog 参数化：两文件剥注释归一化后 242 vs 252 行、**~85% 相同**，合并为 `MediaClipListDialog`（dataOf/listAssets/Picker/store actions/名词/testid 前缀参数化）；真实差异只有 video 的 `formatHint`、sound 的 `fallbackName`、徽标顺序 | `apps/editor/src/app/SoundEditDialog.tsx` ↔ `VideoEditDialog.tsx` | ~180-220 | **风险最高项**：data-testid（sound-edit-*、video-add…）被 dialog 测试大量钉住，需参数化并同步测试；placeholder 语义差异保留。可先做小步：抽 `InlineRenameInput`（~20 行，AudioTagEditorDialog 也受益）再决定是否全量参数化 |
 
 **验证口径**：每项完成后 `pnpm typecheck` 0 错误、`pnpm test` 全绿、`pnpm lint` 干净；e2e 免跑（存在 3 个预存失败，见问题 1）。
 
 ## 第二节：具体问题台账
 
-### 1. 三个 e2e 用例预存失败（优先级最高，建议先于批 B 排查）
+### 1. 三个 e2e 用例预存失败（~~优先级最高，建议先于批 B 排查~~ **已处置**，2026-01 复验）
 
-- **现象**（实测日志）：`e2e/video-object.spec.ts:216` 断言失败，diff 为
-  `expect "picked": "project:E2E项目…/Assets/video/opening.mp4"`（路径式素材 id）
-  `received "picked": "a8096fc9659cadf6f2b775335340984b"`（32 位内容 hash id）——
-  测试夹具与编辑器落盘用了**两套素材 id 口径**。
-- **位置**：`e2e/object-edit.spec.ts:742`（精灵显示图片）、`e2e/sound-object.spec.ts:58`（声音列表）、`e2e/video-object.spec.ts:157`（视频列表）；对照实验中 `e2e/video-object.spec.ts:290`（@runtime 播放命令）在同批失败。
-- **确证**：在干净 HEAD（`69249a7`）上 `git stash` 后重跑同 3 个 spec，同样失败——与历次重构（改名/统一架构/批 A）全部无关。
-- **疑似根因**：某次"素材 id 方案"改动改了一半——测试 helper 侧已改成路径式期望，编辑器落盘仍是 hash 式（或反之）。涉及 `e2e/helpers/editor.ts` 的资源挑选助手与编辑器 `services/` 的素材 id 生成。
-- **处置建议**：单独排查，先定哪套口径是对的（看 `resources` 包的 id 方案与 `.meta` 约定），再统一另一侧；修完后这 3+1 个用例应转绿，之后每次重构可全量跑 e2e 兜底。
+- **结论先行**：记录里的「两套素材 id 口径」问题**已不复存在**——落盘 GUID 断言的用例（`video-object.spec.ts` 的 clips/picked、`sound-object.spec.ts` 的 allGuids）现今通过，`object-edit.spec.ts` 的精灵落盘也断言 32 位 GUID + guid 字段。疑似在记录之后、本次复验之前的某次提交里已修掉（素材 id 方案统一为「内存路径 id / 落盘 GUID」）。
+- 本次复验（干净工作区全量 `pnpm e2e`）只剩**两类**真实失败，均已修 / 已定性：
+  1. `object-edit.spec.ts` 两条用例断言属性面板显示「（无贴图）」/ 不含「组件」字样——v24 起「图片组件缺失」修复提示（`TextureField`）**有意改了这个文案**，属**测试没跟上新设计**而非产品缺陷。已改测试：空态断言换成「图片组件缺失」+ 按钮「选择图片并添加」；「不显示内部字段」改为钉「数字+组件」计数格式（`/\d+\s*个?\s*组件/`），不再误伤用户可见的修复提示。
+  2. 全量跑中零星超时（如「画布拾取」105s、「启动引导刷新」22.5s）：**单机高负载偶发**（本机同时开着 Unity / 常驻后端 / 4 workers），单跑均秒过。与素材 id 无关。
+- **处置建议（原记录）**：~~单独排查，先定哪套口径是对的~~ 口径问题既已消解，e2e 恢复为每次重构可全量兜底的常态。`@runtime` 的播放命令用例（sound / video 各一条）本次也一并验证通过。
 
 ### 2. `fs.rename` 校验顺序变化（批 A 引入，已知情接受）
 
