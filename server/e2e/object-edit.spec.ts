@@ -769,8 +769,10 @@ test.describe("创建与编辑场景对象", () => {
       await openLeftTab(page, "hierarchy");
       await selectObject(page);
 
-      // 刚建出来的精灵没有图片：属性面板写明白，并给同一个「选择」入口
-      await expect(page.getByTestId("object-properties")).toContainText("（无贴图）");
+      // 夹具里的精灵还没挂图片组件：属性面板按「组件缺失」提示（v24 起），
+      // 并给同一个选择入口——按钮文案说明点下去会顺手把组件补上
+      await expect(page.getByTestId("object-properties")).toContainText("图片组件缺失");
+      await expect(page.getByTestId("pick-texture")).toHaveText("选择图片并添加");
       const inside = { x: 40, y: 40 };
       await expect
         .poll(async () => (await canvasAverageColor(page, await worldSamplePoint(page, inside))).g)
@@ -784,9 +786,10 @@ test.describe("创建与编辑场景对象", () => {
       await expect(page.getByTestId("image-picker-dialog")).toHaveCount(0);
 
       // 精灵那一行**不显示路径**（v21 起的设计：精灵显示的是「取图集里哪一格」，
-      // 路径只在贴图 / 地图上显示——见 `TextureField`）。所以这里只能断言「不再是无贴图」；
-      // 「面板显示简化路径」那条归 `object-edit.spec.ts` 的另一条用例（贴图对象）。
+      // 路径只在贴图 / 地图上显示——见 `TextureField`）。所以这里只能断言「不再是无贴图 /
+      // 组件缺失」；「面板显示简化路径」那条归 `object-edit.spec.ts` 的另一条用例（贴图对象）。
       await expect(page.getByTestId("object-properties")).not.toContainText("（无贴图）");
+      await expect(page.getByTestId("object-properties")).not.toContainText("图片组件缺失");
       // 精灵中心在 (0,0)，所以 (40,40) 落在它的图里 → 绿了
       await expect
         .poll(async () => (await canvasAverageColor(page, await worldSamplePoint(page, inside))).g)
@@ -835,9 +838,10 @@ test.describe("创建与编辑场景对象", () => {
       await expect(fields).toContainText("名称");
       await expect(fields).toContainText("类型");
       await expect(fields).toContainText("世界坐标");
-      // 不该有的：内部标记（id）与组件数量
+      // 不该有的：内部标记（id）与组件数量（「图片组件缺失」是 v24 起的修复提示，
+      // 面向用户、不是内部字段，所以这里钉的是「数字 + 组件」这类计数格式）
       await expect(fields).not.toContainText("ID");
-      await expect(fields).not.toContainText("组件");
+      await expect(fields).not.toContainText(/\d+\s*个?\s*组件/);
       // id 的具体值也不该露出来
       await expect(fields).not.toContainText(gameObjectDoc("木门").id as string);
 
