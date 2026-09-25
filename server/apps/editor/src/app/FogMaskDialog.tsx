@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
 import {
   ALL_MASK,
   cellMaskRgba,
@@ -30,7 +29,8 @@ import {
   splitStrokeBatch,
   type FogRevealPoint,
 } from "../services/fog-reveal";
-import { fitBox, useDialogSize } from "./dialog-size";
+import { MapDialogShell, useSceneObject } from "./map-dialog-shell";
+import { fitBox } from "./dialog-size";
 
 /**
  * 「战争雾 Mask 窗口」：**只有擦除**，而且擦的是**遮罩这张图**，不是格子。
@@ -65,20 +65,12 @@ export function FogMaskDialog({
   objectId,
   onClose,
 }: FogMaskDialogProps): React.JSX.Element {
-  const dialogSize = useDialogSize();
-  const scenes = useEditorStore((state) => state.scenes);
-  const activeSceneName = useEditorStore((state) => state.activeSceneName);
   const colors = useEditorStore((state) => state.gridPaint.colors);
   /** 运行态：擦了会下发给前端（编辑态只是预览）——底部那句话按它换。 */
   const running = useEditorStore((state) => state.mode === "run");
 
   // 目标对象现查一次：它可能已经被删掉（删了窗口就该关，这里只是兜底不崩）
-  const object =
-    objectId === null
-      ? undefined
-      : scenes
-          .find((scene) => scene.name === activeSceneName)
-          ?.objects.find((item) => item.id === objectId);
+  const object = useSceneObject(objectId);
   const map = object === undefined ? undefined : mapDataOf(object);
   const imageRef = map?.image;
 
@@ -344,119 +336,99 @@ export function FogMaskDialog({
     }
   };
 
+  // 目标对象缺了（不是地图 / 没贴图 / 没网格）：交给外壳渲染「找不到这张地图」占位
+  if (map === undefined || imageRef === undefined || grid === undefined) {
+    return (
+      <MapDialogShell open={open} onClose={onClose} prefix="fog-mask" title="战争雾 Mask" found={false}>
+        {null}
+      </MapDialogShell>
+    );
+  }
+
   return (
-    <Dialog.Root open={open} onOpenChange={(next) => (next ? undefined : onClose())}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/60" />
-        <Dialog.Content
-          data-testid="fog-mask-dialog"
-          // 尺寸按主窗口比例算（见 `dialog-size.ts`），画布那块再按**实测可用区域**等比装进去
-          style={dialogSize}
-          className="fixed left-1/2 top-1/2 z-50 flex max-h-[92vh] max-w-[92vw] -translate-x-1/2 -translate-y-1/2 flex-col rounded border border-[var(--color-editor-border)] bg-[var(--color-editor-panel)] p-3 shadow-2xl"
+    <MapDialogShell
+      open={open}
+      onClose={onClose}
+      prefix="fog-mask"
+      title="战争雾 Mask"
+      found
+      // 用法不写（软边圆刷 / 整区开关一眼就懂），只留这条会让人意外的语义
+      footer={
+        <span>
+          {running
+            ? "擦了会下发给前端（拖动中分批发）"
+            : "擦了不写文档：关掉重开就回到未探索的样子"}
+        </span>
+      }
+    >
+      <div className="flex min-h-0 flex-1 gap-2">
+        <div
+          ref={setStageNode}
+          className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden"
         >
-          <Dialog.Title className="mb-2 flex-none text-[13px] font-semibold">
-            战争雾 Mask
-          </Dialog.Title>
+          {/*
+            长宽比盒子：尺寸由 JS 按**可用区域**算（`fitBox`），所以窗口变大变小时
+            既铺得开、又不会被挤出可视区（挤出的话那部分既看不见也点不到）。
+            贴图与遮罩都铺满它，两块永远严丝合缝——落点换算也才准。
+          */}
+          <div
+            data-testid="fog-mask-stage"
+            className="relative bg-black"
+            style={{ width: stageBox.width, height: stageBox.height }}
+          >
+            <img
+              src={assetRawUrl(imageRef.id)}
+              alt="地图"
+              className="absolute left-0 top-0 h-full w-full object-contain"
+            />
+            <canvas
+              ref={setCanvas}
+              data-testid="fog-mask-canvas"
+              className="absolute left-0 top-0 h-full w-full touch-none"
+              onPointerDown={onPointerDown}
+              onPointerMove={onPointerMove}
+              onPointerUp={onPointerEnd}
+              onPointerCancel={onPointerEnd}
+            />
+          </div>
+        </div>
 
-          {map === undefined || imageRef === undefined || grid === undefined ? (
-            <div
-              data-testid="fog-mask-missing"
-              className="flex min-h-0 flex-1 items-center justify-center rounded border border-dashed border-[var(--color-editor-border)] text-[11px] text-[var(--color-editor-text-dim)]"
-            >
-              找不到这张地图（可能已经被删掉了）
-            </div>
+        {/* 右侧：**整区开关**——一区一个，打开 = 整片揭示、关闭 = 整片盖回去 */}
+        <div
+          data-testid="fog-region-panel"
+          className="flex w-40 flex-none flex-col gap-1 overflow-auto rounded border border-[var(--color-editor-border)] bg-[var(--color-editor-panel-alt)] p-2"
+        >
+          <span className="text-[10px] text-[var(--color-editor-text-dim)]">整区开关</span>
+          {regions.length === 0 ? (
+            <span className="text-[10px] text-[var(--color-editor-warn)]">还没有指定雾区</span>
           ) : (
-            <>
-              <div className="flex min-h-0 flex-1 gap-2">
-                <div
-                  ref={setStageNode}
-                  className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden"
-                >
-                  {/*
-                    长宽比盒子：尺寸由 JS 按**可用区域**算（`fitBox`），所以窗口变大变小时
-                    既铺得开、又不会被挤出可视区（挤出的话那部分既看不见也点不到）。
-                    贴图与遮罩都铺满它，两块永远严丝合缝——落点换算也才准。
-                  */}
-                  <div
-                    data-testid="fog-mask-stage"
-                    className="relative bg-black"
-                    style={{ width: stageBox.width, height: stageBox.height }}
-                  >
-                    <img
-                      src={assetRawUrl(imageRef.id)}
-                      alt="地图"
-                      className="absolute left-0 top-0 h-full w-full object-contain"
-                    />
-                    <canvas
-                      ref={setCanvas}
-                      data-testid="fog-mask-canvas"
-                      className="absolute left-0 top-0 h-full w-full touch-none"
-                      onPointerDown={onPointerDown}
-                      onPointerMove={onPointerMove}
-                      onPointerUp={onPointerEnd}
-                      onPointerCancel={onPointerEnd}
-                    />
-                  </div>
-                </div>
-
-                {/* 右侧：**整区开关**——一区一个，打开 = 整片揭示、关闭 = 整片盖回去 */}
-                <div
-                  data-testid="fog-region-panel"
-                  className="flex w-40 flex-none flex-col gap-1 overflow-auto rounded border border-[var(--color-editor-border)] bg-[var(--color-editor-panel-alt)] p-2"
-                >
-                  <span className="text-[10px] text-[var(--color-editor-text-dim)]">整区开关</span>
-                  {regions.length === 0 ? (
-                    <span className="text-[10px] text-[var(--color-editor-warn)]">还没有指定雾区</span>
-                  ) : (
-                    regions.map((bit) => (
-                      <label
-                        key={bit}
-                        className="flex items-center gap-1.5 text-[11px]"
-                        title={`${maskToLabel(bit)}：打开 = 整区揭示，关闭 = 整片盖回去（只在本窗口里，不写文档）`}
-                      >
-                        <input
-                          type="checkbox"
-                          data-testid={`fog-region-toggle-${bit}`}
-                          checked={revealedRegions.includes(bit)}
-                          className="h-3.5 w-3.5 flex-none accent-[var(--color-editor-accent)]"
-                          onChange={(event) => toggleRegion(bit, event.target.checked)}
-                        />
-                        <span
-                          aria-hidden="true"
-                          className="h-2.5 w-2.5 flex-none rounded-sm border border-black/40"
-                          style={{ background: colors[bit] ?? "#ffffff" }}
-                        />
-                        <span className="truncate">{maskToLabel(bit)}</span>
-                      </label>
-                    ))
-                  )}
-                  <span className="mt-auto text-[10px] leading-relaxed text-[var(--color-editor-text-dim)]">
-                    开关只管整区；手动擦的零散部分不跟着变
-                  </span>
-                </div>
-              </div>
-
-              <div className="mt-2 flex flex-none items-center gap-2 text-[10px] text-[var(--color-editor-text-dim)]">
-                {/* 用法不写（软边圆刷 / 整区开关一眼就懂），只留这条会让人意外的语义 */}
-                <span>
-                  {running
-                    ? "擦了会下发给前端（拖动中分批发）"
-                    : "擦了不写文档：关掉重开就回到未探索的样子"}
-                </span>
-                <Dialog.Close asChild>
-                  <button
-                    type="button"
-                    data-testid="fog-mask-close"
-                    className="toolbar-button ml-auto flex-none hover:toolbar-button-hover"
-                  >
-                    关闭
-                  </button>
-                </Dialog.Close>
-              </div>
-            </>
+            regions.map((bit) => (
+              <label
+                key={bit}
+                className="flex items-center gap-1.5 text-[11px]"
+                title={`${maskToLabel(bit)}：打开 = 整区揭示，关闭 = 整片盖回去（只在本窗口里，不写文档）`}
+              >
+                <input
+                  type="checkbox"
+                  data-testid={`fog-region-toggle-${bit}`}
+                  checked={revealedRegions.includes(bit)}
+                  className="h-3.5 w-3.5 flex-none accent-[var(--color-editor-accent)]"
+                  onChange={(event) => toggleRegion(bit, event.target.checked)}
+                />
+                <span
+                  aria-hidden="true"
+                  className="h-2.5 w-2.5 flex-none rounded-sm border border-black/40"
+                  style={{ background: colors[bit] ?? "#ffffff" }}
+                />
+                <span className="truncate">{maskToLabel(bit)}</span>
+              </label>
+            ))
           )}
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+          <span className="mt-auto text-[10px] leading-relaxed text-[var(--color-editor-text-dim)]">
+            开关只管整区；手动擦的零散部分不跟着变
+          </span>
+        </div>
+      </div>
+    </MapDialogShell>
   );
 }

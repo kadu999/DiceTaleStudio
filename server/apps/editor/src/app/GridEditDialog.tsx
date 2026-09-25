@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
 import {
   ALL_MASK,
   CellMask,
@@ -25,7 +24,7 @@ import {
   type Viewport,
 } from "@dts/renderer";
 import { sceneImage, sceneImageError, subscribeSceneImage } from "../services/scene-image";
-import { useDialogSize } from "./dialog-size";
+import { MapDialogShell, useSceneObject } from "./map-dialog-shell";
 import { useEditorStore } from "../state/editor-store";
 import { cellColorsOf, countCellsWithMask, decodeCellsCached } from "../panels/scene/grid-paint";
 
@@ -70,9 +69,6 @@ export function GridEditDialog({
   objectId,
   onClose,
 }: GridEditDialogProps): React.JSX.Element {
-  const dialogSize = useDialogSize();
-  const scenes = useEditorStore((state) => state.scenes);
-  const activeSceneName = useEditorStore((state) => state.activeSceneName);
   const colors = useEditorStore((state) => state.gridPaint.colors);
   const gridPaint = useEditorStore((state) => state.gridPaint);
   const setGridBrush = useEditorStore((state) => state.setGridBrush);
@@ -84,12 +80,7 @@ export function GridEditDialog({
   const clearGrid = useEditorStore((state) => state.clearGrid);
 
   // 目标对象现查一次：它可能已经被删掉（删了窗口就该关，这里只是兜底不崩）
-  const object =
-    objectId === null
-      ? undefined
-      : scenes
-          .find((scene) => scene.name === activeSceneName)
-          ?.objects.find((item) => item.id === objectId);
+  const object = useSceneObject(objectId);
   const map = object === undefined ? undefined : mapDataOf(object);
   const grid = map?.grid;
   const imageRef = map?.image;
@@ -296,164 +287,137 @@ export function GridEditDialog({
   };
 
   return (
-    <Dialog.Root open={open} onOpenChange={(next) => (next ? undefined : onClose())}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/60" />
-        <Dialog.Content
-          data-testid="grid-editor-dialog"
-          // 尺寸按主窗口比例算（见 `dialog-size.ts`）：写死 820×560 在宽屏上太小，白瞎画布
-          style={dialogSize}
-          className="fixed left-1/2 top-1/2 z-50 flex max-h-[92vh] max-w-[92vw] -translate-x-1/2 -translate-y-1/2 flex-col rounded border border-[var(--color-editor-border)] bg-[var(--color-editor-panel)] p-3 shadow-2xl"
+    <MapDialogShell
+      open={open}
+      onClose={onClose}
+      prefix="grid-editor"
+      title="网格编辑"
+      found={map !== undefined && grid !== undefined}
+      footer={
+        <button
+          type="button"
+          data-testid="grid-editor-clear"
+          disabled={annotated === 0}
+          title="清空这张地图的格子（可撤销）"
+          className="toolbar-button ml-auto flex-none hover:toolbar-button-hover disabled:opacity-40"
+          onClick={() => objectId !== null && clearGrid(objectId)}
         >
-          <Dialog.Title className="mb-2 flex-none text-[13px] font-semibold">网格编辑</Dialog.Title>
-
-          {map === undefined || grid === undefined ? (
+          全部清除
+        </button>
+      }
+    >
+      <div className="flex min-h-0 flex-1 gap-2">
+        <div ref={setContainer} className="relative min-h-0 flex-1 rounded bg-black/30">
+          <canvas
+            ref={setCanvas}
+            data-testid="grid-editor-canvas"
+            className="h-full w-full touch-none"
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerEnd}
+            onPointerCancel={onPointerEnd}
+          />
+          {imageError === undefined ? null : (
             <div
-              data-testid="grid-editor-missing"
-              className="flex min-h-0 flex-1 items-center justify-center rounded border border-dashed border-[var(--color-editor-border)] text-[11px] text-[var(--color-editor-text-dim)]"
+              data-testid="grid-editor-image-error"
+              className="pointer-events-none absolute left-2 top-2 rounded bg-black/70 px-2 py-1 font-mono text-[10px] text-[var(--color-editor-warn)]"
             >
-              找不到这张地图（可能已经被删掉了）
+              {imageError}
             </div>
-          ) : (
-            <>
-              <div className="flex min-h-0 flex-1 gap-2">
-                <div ref={setContainer} className="relative min-h-0 flex-1 rounded bg-black/30">
-                  <canvas
-                    ref={setCanvas}
-                    data-testid="grid-editor-canvas"
-                    className="h-full w-full touch-none"
-                    onPointerDown={onPointerDown}
-                    onPointerMove={onPointerMove}
-                    onPointerUp={onPointerEnd}
-                    onPointerCancel={onPointerEnd}
-                  />
-                  {imageError === undefined ? null : (
-                    <div
-                      data-testid="grid-editor-image-error"
-                      className="pointer-events-none absolute left-2 top-2 rounded bg-black/70 px-2 py-1 font-mono text-[10px] text-[var(--color-editor-warn)]"
-                    >
-                      {imageError}
-                    </div>
-                  )}
-                </div>
+          )}
+        </div>
 
-                {/* 右侧：**标记类型**（橡皮擦 + 8 个区域）+ 画笔大小，与战争雾窗口同一套布局 */}
-                <div
-                  data-testid="grid-editor-type-panel"
-                  className="flex w-40 flex-none flex-col gap-1 overflow-auto rounded border border-[var(--color-editor-border)] bg-[var(--color-editor-panel-alt)] p-2 text-[11px]"
-                >
-                  <span className="text-[10px] text-[var(--color-editor-text-dim)]">标记类型</span>
+        {/* 右侧：**标记类型**（橡皮擦 + 8 个区域）+ 画笔大小，与战争雾窗口同一套布局 */}
+        <div
+          data-testid="grid-editor-type-panel"
+          className="flex w-40 flex-none flex-col gap-1 overflow-auto rounded border border-[var(--color-editor-border)] bg-[var(--color-editor-panel-alt)] p-2 text-[11px]"
+        >
+          <span className="text-[10px] text-[var(--color-editor-text-dim)]">标记类型</span>
 
-                  {/* 橡皮擦：对齐 Unity 的「橡皮擦 (0)」——掩码 0 就是把整格清掉 */}
-                  <div className="flex items-center gap-1">
-                    {/* 与下面的类型行对齐：色块与显示开关的位置都留空 */}
-                    <span aria-hidden="true" className="h-5 w-6 flex-none" />
-                    <button
-                      type="button"
-                      data-testid={`grid-editor-brush-${CellMask.Empty}`}
-                      data-active={gridPaint.mask === CellMask.Empty}
-                      aria-pressed={gridPaint.mask === CellMask.Empty}
-                      className={`min-w-0 flex-1 truncate rounded border px-1.5 py-0.5 text-left ${
-                        gridPaint.mask === CellMask.Empty
-                          ? "border-[var(--color-editor-accent)] bg-[var(--color-editor-accent-dim)] text-white"
-                          : "border-[var(--color-editor-border)] hover:bg-[var(--color-editor-panel)]"
-                      }`}
-                      onClick={() => setGridBrush(CellMask.Empty)}
-                    >
-                      橡皮擦
-                    </button>
-                    <span aria-hidden="true" className="h-3.5 w-3.5 flex-none" />
-                  </div>
+          {/* 橡皮擦：对齐 Unity 的「橡皮擦 (0)」——掩码 0 就是把整格清掉 */}
+          <div className="flex items-center gap-1">
+            {/* 与下面的类型行对齐：色块与显示开关的位置都留空 */}
+            <span aria-hidden="true" className="h-5 w-6 flex-none" />
+            <button
+              type="button"
+              data-testid={`grid-editor-brush-${CellMask.Empty}`}
+              data-active={gridPaint.mask === CellMask.Empty}
+              aria-pressed={gridPaint.mask === CellMask.Empty}
+              className={`min-w-0 flex-1 truncate rounded border px-1.5 py-0.5 text-left ${
+                gridPaint.mask === CellMask.Empty
+                  ? "border-[var(--color-editor-accent)] bg-[var(--color-editor-accent-dim)] text-white"
+                  : "border-[var(--color-editor-border)] hover:bg-[var(--color-editor-panel)]"
+              }`}
+              onClick={() => setGridBrush(CellMask.Empty)}
+            >
+              橡皮擦
+            </button>
+            <span aria-hidden="true" className="h-3.5 w-3.5 flex-none" />
+          </div>
 
-                  {PAINTABLE_MASKS.map((bit) => {
-                    const selected = gridPaint.mask === bit;
-                    // 显示开关与画布共用：关掉的那类在这里也不画（数据与画笔不受影响）
-                    const visible = !hasMask(gridPaint.hiddenMask, bit);
-                    return (
-                      <div key={bit} className="flex items-center gap-1">
-                        <input
-                          type="color"
-                          data-testid={`grid-editor-color-${bit}`}
-                          aria-label={`${maskToLabel(bit)}颜色`}
-                          title={`${maskToLabel(bit)}的颜色（透明度由类型决定）`}
-                          value={colors[bit] ?? "#ffffff"}
-                          className="h-5 w-6 flex-none rounded border border-[var(--color-editor-border)] bg-transparent"
-                          onChange={(event) => setGridTypeColor(bit, event.target.value)}
-                        />
-                        <button
-                          type="button"
-                          data-testid={`grid-editor-brush-${bit}`}
-                          data-active={selected}
-                          aria-pressed={selected}
-                          className={`min-w-0 flex-1 truncate rounded border px-1.5 py-0.5 text-left ${
-                            selected
-                              ? "border-[var(--color-editor-accent)] bg-[var(--color-editor-accent-dim)] text-white"
-                              : "border-[var(--color-editor-border)] hover:bg-[var(--color-editor-panel)]"
-                          }`}
-                          onClick={() => setGridBrush(bit)}
-                        >
-                          {maskToLabel(bit)}
-                        </button>
-                        {/* 显示开关：只影响画（本窗口与画布一起），数据不动、也照样能画它 */}
-                        <input
-                          type="checkbox"
-                          data-testid={`grid-editor-visible-${bit}`}
-                          aria-label={`显示${maskToLabel(bit)}`}
-                          title={`${visible ? "不再显示" : "显示"}${maskToLabel(bit)}（只影响显示，数据不动）`}
-                          checked={visible}
-                          className="h-3.5 w-3.5 flex-none accent-[var(--color-editor-accent)]"
-                          onChange={() => toggleGridTypeVisible(bit)}
-                        />
-                      </div>
-                    );
-                  })}
-
-                  <span className="mt-1 text-[10px] text-[var(--color-editor-text-dim)]">
-                    画笔大小
-                  </span>
-                  <input
-                    type="range"
-                    data-testid="grid-editor-brush-size"
-                    aria-label="画笔大小"
-                    min={MIN_BRUSH_SIZE}
-                    max={MAX_BRUSH_SIZE}
-                    step={1}
-                    value={gridPaint.brushSize}
-                    className="w-full accent-[var(--color-editor-accent)]"
-                    onChange={(event) => setGridBrushSize(Number(event.target.value))}
-                  />
-                  <span className="font-mono text-[10px]" data-testid="grid-editor-brush-size-label">
-                    {gridPaint.brushSize}（{brushEffectiveSize(gridPaint.brushSize)}×
-                    {brushEffectiveSize(gridPaint.brushSize)} 格）
-                  </span>
-                </div>
-              </div>
-
-              <div className="mt-2 flex flex-none items-center gap-2 text-[10px] text-[var(--color-editor-text-dim)]">
+          {PAINTABLE_MASKS.map((bit) => {
+            const selected = gridPaint.mask === bit;
+            // 显示开关与画布共用：关掉的那类在这里也不画（数据与画笔不受影响）
+            const visible = !hasMask(gridPaint.hiddenMask, bit);
+            return (
+              <div key={bit} className="flex items-center gap-1">
+                <input
+                  type="color"
+                  data-testid={`grid-editor-color-${bit}`}
+                  aria-label={`${maskToLabel(bit)}颜色`}
+                  title={`${maskToLabel(bit)}的颜色（透明度由类型决定）`}
+                  value={colors[bit] ?? "#ffffff"}
+                  className="h-5 w-6 flex-none rounded border border-[var(--color-editor-border)] bg-transparent"
+                  onChange={(event) => setGridTypeColor(bit, event.target.value)}
+                />
                 <button
                   type="button"
-                  data-testid="grid-editor-clear"
-                  disabled={annotated === 0}
-                  title="清空这张地图的格子（可撤销）"
-                  className="toolbar-button ml-auto flex-none hover:toolbar-button-hover disabled:opacity-40"
-                  onClick={() => objectId !== null && clearGrid(objectId)}
+                  data-testid={`grid-editor-brush-${bit}`}
+                  data-active={selected}
+                  aria-pressed={selected}
+                  className={`min-w-0 flex-1 truncate rounded border px-1.5 py-0.5 text-left ${
+                    selected
+                      ? "border-[var(--color-editor-accent)] bg-[var(--color-editor-accent-dim)] text-white"
+                      : "border-[var(--color-editor-border)] hover:bg-[var(--color-editor-panel)]"
+                  }`}
+                  onClick={() => setGridBrush(bit)}
                 >
-                  全部清除
+                  {maskToLabel(bit)}
                 </button>
-                <Dialog.Close asChild>
-                  <button
-                    type="button"
-                    data-testid="grid-editor-close"
-                    className="toolbar-button flex-none hover:toolbar-button-hover"
-                  >
-                    关闭
-                  </button>
-                </Dialog.Close>
+                {/* 显示开关：只影响画（本窗口与画布一起），数据不动、也照样能画它 */}
+                <input
+                  type="checkbox"
+                  data-testid={`grid-editor-visible-${bit}`}
+                  aria-label={`显示${maskToLabel(bit)}`}
+                  title={`${visible ? "不再显示" : "显示"}${maskToLabel(bit)}（只影响显示，数据不动）`}
+                  checked={visible}
+                  className="h-3.5 w-3.5 flex-none accent-[var(--color-editor-accent)]"
+                  onChange={() => toggleGridTypeVisible(bit)}
+                />
               </div>
-            </>
-          )}
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+            );
+          })}
+
+          <span className="mt-1 text-[10px] text-[var(--color-editor-text-dim)]">
+            画笔大小
+          </span>
+          <input
+            type="range"
+            data-testid="grid-editor-brush-size"
+            aria-label="画笔大小"
+            min={MIN_BRUSH_SIZE}
+            max={MAX_BRUSH_SIZE}
+            step={1}
+            value={gridPaint.brushSize}
+            className="w-full accent-[var(--color-editor-accent)]"
+            onChange={(event) => setGridBrushSize(Number(event.target.value))}
+          />
+          <span className="font-mono text-[10px]" data-testid="grid-editor-brush-size-label">
+            {gridPaint.brushSize}（{brushEffectiveSize(gridPaint.brushSize)}×
+            {brushEffectiveSize(gridPaint.brushSize)} 格）
+          </span>
+        </div>
+      </div>
+    </MapDialogShell>
   );
 }
