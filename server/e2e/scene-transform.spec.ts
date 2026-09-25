@@ -14,7 +14,7 @@ import {
   solidPng,
   withComponent,
 } from "./helpers/editor";
-import { exactWorldPoint, findEmptyCanvasPoint, sceneViewport, worldSamplePoint } from "./helpers/canvas";
+import { preciseWorldPoint, findEmptyCanvasPoint, sceneViewport, worldSamplePoint } from "./helpers/canvas";
 
 /**
  * 场景变换手柄：**拖动（默认）/ 移动 / 旋转 / 缩放**四种工具。
@@ -216,7 +216,7 @@ async function dragWorld(
   from: { x: number; y: number },
   to: { x: number; y: number },
 ): Promise<void> {
-  await dragScreen(page, await exactWorldPoint(page, from), await exactWorldPoint(page, to));
+  await dragScreen(page, await preciseWorldPoint(page, from), await preciseWorldPoint(page, to));
 }
 
 /** 已落盘的对象状态（没有就失败——用例都建立在"对象已经存在"之上）。 */
@@ -294,7 +294,7 @@ test.describe("场景变换手柄", () => {
         await page.getByTestId("reset-viewport").click();
         // 「复位」= 把对象装进画布（居中在它身上），所以落点要从**真实视口**换算，
         // 不能按「世界原点在画布正中」去猜
-        const center = await exactWorldPoint(page, { x: 140, y: 110 });
+        const center = await preciseWorldPoint(page, { x: 140, y: 110 });
         await page.mouse.click(center.x, center.y);
         await page.waitForTimeout(200);
         await expect(page.getByTestId("status-selection")).toHaveText("已选 1");
@@ -313,7 +313,7 @@ test.describe("场景变换手柄", () => {
       await page.getByTestId("tool-move").click();
       await closeDrawers(page);
 
-      const center = await exactWorldPoint(page, { x: 0, y: 0 });
+      const center = await preciseWorldPoint(page, { x: 0, y: 0 });
       await page.mouse.move(center.x, center.y);
       await page.mouse.down();
       await page.mouse.up();

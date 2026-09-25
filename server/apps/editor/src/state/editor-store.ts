@@ -74,14 +74,13 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
 });
 
 // ------------------------------------------------------------------ 公开 API
-// 下面这些名字必须仍然能从 `state/editor-store` 导入（仓库里很多处从它取）。
+// 只再导出真正从这里取的名字（逐名核对过消费方）；其余直接去 `store-core` / `store-types` 引。
 
 export {
   sceneHistory,
   projectHistory,
   fitSceneViewport,
   serializeSceneFile,
-  serializeProjectFile,
   compareSceneNames,
   findResourceNode,
   withRenamedSceneImage,
@@ -89,12 +88,7 @@ export {
 
 export type {
   EditorMode,
-  EditorUiState,
-  RuntimeUiState,
-  ProjectUiState,
   ProjectDialogMode,
   SceneDialogMode,
   SceneSaveState,
-  GridPaintState,
-  EditorStoreState,
 } from "./store-types";

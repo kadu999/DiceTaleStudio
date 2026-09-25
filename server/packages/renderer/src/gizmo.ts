@@ -312,8 +312,8 @@ export function gizmoScreenGeometry(
   const axes: GizmoAxisScreen[] = (["move-x", "move-y"] as const).map((handle) => {
     const outer =
       handle === "move-x" ? bounds.halfWidth + GIZMO_AXIS_GAP : bounds.halfHeight + GIZMO_AXIS_GAP;
-    const tip = moveTipOf(handle, center, outer + GIZMO_AXIS_LENGTH);
-    return { handle, root: moveRootOf(handle, center, outer), tip };
+    const tip = moveAxisEnd(handle, center, outer + GIZMO_AXIS_LENGTH);
+    return { handle, root: moveAxisEnd(handle, center, outer), tip };
   });
 
   return {
@@ -403,19 +403,13 @@ export function hitTestGizmoHandles(
 }
 
 /**
- * 某一根移动轴的末端（屏幕坐标）：X 向右、Y 向上——与世界坐标同向。
+ * 某一根移动轴条上、离中心 `distance` 的一个端点（屏幕坐标）：X 向右、Y 向上——与世界坐标同向。
  *
  * `distance` 是从**对象中心**往外量的屏幕像素距离；调用方按对象外框算好再传进来
- * （见 `gizmoScreenGeometry`），所以手柄永远贴着对象。
+ * （见 `gizmoScreenGeometry`）：根部 = 外框外 GAP 处、末端 = 再向外 LENGTH，
+ * 所以手柄永远贴着对象。
  */
-export function moveTipOf(handle: "move-x" | "move-y", center: Point, distance: number): Point {
-  return handle === "move-x"
-    ? { x: center.x + distance, y: center.y }
-    : { x: center.x, y: center.y - distance };
-}
-
-/** 某一根移动轴的根部（屏幕坐标）：从对象外框外起画，不会压在对象身上。 */
-export function moveRootOf(handle: "move-x" | "move-y", center: Point, distance: number): Point {
+function moveAxisEnd(handle: "move-x" | "move-y", center: Point, distance: number): Point {
   return handle === "move-x"
     ? { x: center.x + distance, y: center.y }
     : { x: center.x, y: center.y - distance };

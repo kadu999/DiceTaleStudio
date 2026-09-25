@@ -1,4 +1,4 @@
-import { assetIdOfGuid, type AssetMetaDoc, type AssetMetas } from "@dts/document";
+import { assetIdOfGuid, type AssetMetas } from "@dts/document";
 import type { ResourceTreeNode } from "../services/project-api";
 import { assetPreviewKind } from "./asset-info";
 
@@ -78,15 +78,6 @@ export function findAssetByReference(
 /** Resolve a persisted resource identity to the current logical ID when it is a GUID. */
 export function currentResourceId(reference: string, metas: AssetMetas): string | undefined {
   return /^[0-9a-f]{32}$/.test(reference) ? assetIdOfGuid(metas, reference) : reference;
-}
-
-export function currentResourceIdByMetas(reference: string, metas: Readonly<Record<string, AssetMetaDoc>>): string {
-  const direct = metas[reference];
-  if (direct !== undefined) return reference;
-  for (const [id, meta] of Object.entries(metas)) {
-    if (meta.guid === reference) return id;
-  }
-  return reference;
 }
 
 /** Current path identity for an image reference; GUID wins over its historical path. */

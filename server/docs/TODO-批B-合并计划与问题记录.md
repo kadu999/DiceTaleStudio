@@ -76,3 +76,22 @@
 
 - **Playwright 浏览器二进制要装**：仓库升级后首次 `pnpm e2e` 会报 `Executable doesn't exist at …\chromium_headless_shell-NNNN`（用例 0.1s 全灭、看起来像系统性故障）。一次性 `npx playwright install chromium` 即可；Playwright 版本一升就要重装。与代码无关。
 - **全量 e2e 在单机高负载下偶发超时**：本机同时开着 Unity / 常驻后端 / 4 workers 时，零星用例 26~105s 超时（单跑秒过）。已知现象（playwright.config 注释里写过 8 workers 的同类问题），重跑即可，不是代码回归。
+
+### 全仓死代码清理（2026-09-25，独立于批 B 的新一轮）
+
+- **排查方法**：4 路并行只读排查（document+protocol / renderer+grid+resources / editor / backend+e2e+scripts）+ `npx knip` 交叉验证；每个候选再由全仓词边界 grep 逐一复核后才删。knip 有假阳性（`RuntimeUiState`/`ProjectUiState`/`AssetMetaDraft` 等同文件内被 `EditorStoreState` 组合使用），以 grep 为准。
+- **删除**：
+  - 死文件 `apps/editor/src/app/SpriteSheetPanel.tsx`（361 行，v23 精灵编辑器重构遗留；e2e 走 `SpriteEditorDialog`/`ImagePickerDialog` 的 testid，无引用）。
+  - 9 个零调用 store action（接口 + 切片实现 + union 键一并删）：`setViewport`、`setVideoAudio`、`setVideoAutoPlay`、`renameAudioTag`、`endObjectDrag`（与 `endObjectTransform` 同义）、`setObjectImage`（换图只有 `setObjectImageSprite` 一条路径）、`setObjectSprite`、`setSoundClips`、`flushProjectSave`。
+  - 3 个零引用函数：`listComponentSpecs`（document）、`nextLogId`（store-core，`makeLog` 自增不归它）、`currentResourceIdByMetas`（asset-picker）。
+  - 薄壳/别名：`transform.ts` 的 `angleAround` 再导出（文件内自用保留 import）；`store-context` 的 `currentObjectOf`（纯别名，调用方 3 处改 `findObjectById`，`StoreContext` 54→53 成员）；`editor-store` 再导出收窄（去掉 `serializeProjectFile` 与 5 个无人取的类型名，注释改为「只再导出真正从这里取的名字」）。
+  - 2 组逐字重复合并：renderer `moveTipOf`/`moveRootOf` → 私有 `moveAxisEnd`；e2e `exactWorldPoint`/`preciseWorldPoint` → 保留 `preciseWorldPoint`（3 个 spec 的调用点同步改）。
+  - 2 个无 import 的依赖：`@tanstack/react-virtual`、`@testing-library/jest-dom`（editor package.json）。
+- **发现并处置的残留语义**：`flushProjectSave` 的接口注释声称「关项目 / 进运行态前调用」，实际全仓零调用方（关闭路径只 flush 场景 + meta）——属「写了没接线」。删除并在 `save-slice.ts` 头注与 CODE-STRUCTURE §5.3.2 如实记录「工程文件没有 flush」。若将来要「关项目前 flush 工程文件」的语义，需重新接线而不是恢复这段死代码。
+- **核实后刻意保留**（避免误删）：
+  - `createFolder` / `uploadFiles`：CODE-STRUCTURE §5 明确记载为「store 级唯一写入口、当前无 UI 调用点」的**有意接缝**。
+  - `packages/document` 命令层 `setObjectImage` / `setObjectSprite` / `setSoundClips` / `setVideoAudio` / `renameAudioTag`：被各自包测试大量使用，删的只是 editor store 薄壳。
+  - protocol 对 document 的只读 schema 复刻：依赖方向刻意，契约测试锁定（本台账第 5 条）。
+  - `FOG_MASK` 等「仅内部使用的导出」：只涉及 export 关键字收窄、不减少代码，本轮不动（记入候选）。
+- **文档同步**：CODE-STRUCTURE §0 统计（源码 163→162 文件 / 35,469→34,941 行；E2E 8,959→8,940 行）、§3.2 / §3.5 包标题行数、§5 store 表（行数 + 导出清单 + 「130 个 action」）、SpriteSheetPanel 行删除、README 常用脚本表补 jsdom 测试与 check:docs。`pnpm check:docs` 通过。
+- **验证**：`pnpm check` 全绿（typecheck ×8 包 + e2e、1185 单测、lint、docs 校验）；受影响 e2e 规格（sprite-sheet / scene-transform / object-edit）单跑通过。

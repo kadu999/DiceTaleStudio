@@ -11,7 +11,6 @@ import {
   renameObject as renameGameObject,
   setMapGrid as setSceneMapGrid,
   setObjectActive as setGameObjectActive,
-  setObjectImage as setGameObjectImage,
   setObjectPosition as setGameObjectPosition,
   setObjectLocked as setGameObjectLocked,
   setObjectScale as setGameObjectScale,
@@ -25,7 +24,6 @@ import {
 import { type StoreSet, type StoreGet, type EditorStoreState } from "../store-types";
 import { createGameObjectForKind } from "../game-object-factory";
 import {
-  sceneHistory,
   makeLog,
   SCENE_CENTER,
   offsetPosition,
@@ -55,10 +53,8 @@ export function createObjectSlice(
   | "deleteObjects"
   | "duplicateObjects"
   | "moveObject"
-  | "endObjectDrag"
   | "setObjectScaleAxes"
   | "setMapGrid"
-  | "setObjectImage"
   | "openImagePicker"
 > {
   // 共享的闭包状态与局部工具都在 ctx 里：这里解构一次，方法体与拆分前逐字一致
@@ -345,10 +341,6 @@ export function createObjectSlice(
       );
     },
 
-    endObjectDrag() {
-      sceneHistory.endCoalescing();
-    },
-
     setObjectScaleAxes(id, x, y) {
       return applyActiveScene(
         "修改缩放",
@@ -364,18 +356,6 @@ export function createObjectSlice(
       return applyActiveScene("修改网格尺寸", (scene) => {
         setSceneMapGrid(scene, mapObjectId, grid);
       });
-    },
-
-    setObjectImage(objectId, image) {
-      const changed = applyActiveScene("更换贴图", (scene) => {
-        setGameObjectImage(scene, objectId, image);
-      });
-
-      if (changed) {
-        pushLog(makeLog("info", `已更换贴图：${image.id}（${image.width}×${image.height}）`));
-      }
-
-      return changed;
     },
 
     openImagePicker(objectId) {

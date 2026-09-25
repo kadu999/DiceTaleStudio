@@ -32,7 +32,7 @@ export function createTransformSlice(
   | "cancelObjectTransform"
 > {
   // 共享的闭包状态与局部工具都在 ctx 里：这里解构一次，方法体与拆分前逐字一致
-  const { currentObjectOf, applyActiveScene } = ctx;
+  const { findObjectById, applyActiveScene } = ctx;
 
   return {
     setTool(tool) {
@@ -53,7 +53,7 @@ export function createTransformSlice(
         return undefined;
       }
 
-      const object = currentObjectOf(id);
+      const object = findObjectById(id);
       // 锁定的对象**不进入变换**：锁的语义就是「不能被移动」，而旋转与缩放同样是在动它。
       // 画布那边还会先判一次（免得白进一次拖拽状态），这里的护栏是给其它调用方兜底的。
       if (object === undefined || object.position === null || object.locked) {
@@ -101,7 +101,7 @@ export function createTransformSlice(
       }
 
       // 拖拽途中对象可能已经被删掉（撤销 / 别人删了）：直接收手，别写一个不存在的 id
-      if (currentObjectOf(start.id) === undefined) {
+      if (findObjectById(start.id) === undefined) {
         return;
       }
 

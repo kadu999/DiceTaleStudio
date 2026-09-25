@@ -4,14 +4,6 @@ import type { TransformTool } from "@dts/renderer";
 import type { WorldPosition } from "@dts/document";
 
 /**
- * 指针相对某个枢轴的方位角（弧度）。
- *
- * 直接再导出渲染器那一份：编辑器的旋转拖拽与画旋转环用的是**同一个角度函数**，
- * 两处各写一遍 `atan2` 迟早会因为参数顺序不同而反号。
- */
-export { angleAround };
-
-/**
  * 一次变换拖拽的**纯计算**：把「指针现在在哪」和「按下时的快照」换算成
  * 新的坐标 / 角度 / 缩放。
  *

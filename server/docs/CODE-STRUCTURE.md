@@ -16,8 +16,8 @@
 | 后端默认地址 | `0.0.0.0:1420`（`resources/config/app.json`，可被 `HOST` / `PORT` 覆盖） |
 | 编辑器开发地址 | `http://localhost:5173`（Vite，`/api`、`/editor`、`/client` 反代到 1420） |
 | 编辑器生产地址 | `http://localhost:1420`（后端同源托管 `apps/editor/dist`） |
-| 源码规模（不含测试） | 163 个文件 / 35,469 行（packages 11,577 · backend 3,283 · editor 20,609） |
-| 测试规模 | 31,967 行（单测 22,725 · E2E 8,959 · 架构测试 283） |
+| 源码规模（不含测试） | 162 个文件 / 34,941 行（packages 11,564 · backend 3,283 · editor 20,094） |
+| 测试规模 | 31,948 行（单测 22,725 · E2E 8,940 · 架构测试 283） |
 
 > 上表两行与 §0.1 表格里加粗的文件行数、§3.x 节标题里的包规模由
 > `scripts/check-code-structure-stats.mjs` **机器校验**（`pnpm check` 的一环）：
@@ -33,7 +33,7 @@
 | **WS 一条消息一个函数** | `ws/hub.ts` 621 行、两条 `switch` | 8 个文件，`hub.ts` **476 行**（只管传输）+ `handlers/*` | 加一条消息 = 加一个函数（表的键完整性由类型保证） |
 | **Unity 式实体+组件（GameObject + Component）** | 对象上 5 个特性扁平字段 + 各处 `kind === "…"` | `components[]`（模拟 Unity GameObject 挂组件）+ 能力槽位（slot）/访问器；文档 v19 / 协议 v9 / Unity 客户端同步（子图改动后为 **v20 / v10**，见 §0） | 加一个特性 = 加一个组件 + 注册表一行 + 预设表一行（见 §1.6） |
 | **文档命令分模块** | `commands.ts` 2,069 行 | `commands/` 10 个文件（按特性） | 加一个特性的命令 = 加一个文件 |
-| **编辑器 store 分片** | `editor-store.ts` 4,493 行 | 组装点 **100 行** + 17 个切片 + 上下文（见 §5.2） | 加一个功能 = 加一个 `slices/<功能>-slice.ts` + 组装点一行（**简单字段连切片都不用加**：`setComponentField` 已经在 `component-slice.ts` 里） |
+| **编辑器 store 分片** | `editor-store.ts` 4,493 行 | 组装点 **94 行** + 17 个切片 + 上下文（见 §5.2） | 加一个功能 = 加一个 `slices/<功能>-slice.ts` + 组装点一行（**简单字段连切片都不用加**：`setComponentField` 已经在 `component-slice.ts` 里） |
 | **属性面板注册表** | `InspectorPanel.tsx` 1,195 行的 JSX 分支 | `InspectorPanel.tsx` **498 行** + `registry.tsx` + `object-fields.tsx` | 加一个特性分组 = 注册表一行 + 一个字段组件 |
 
 **代价是诚实的**：源码从 28,810 行长到 31,002 行（+7.6%；子图、kind、素材 meta 三次改动后全仓 34,624 行，见 §0）——多出来的是文件头注释、import/export
@@ -422,7 +422,7 @@ build: { outDir: "dist", sourcemap: true },
 - 画笔半径 `floor((brushSize-1)/2)`（1/2→1×1、3/4→3×3、5→5×5，含偶数尺寸的刻意保真），与 Unity `ApplyBrush` 完全一致；
 - 坐标系只有一个：**世界坐标**（x 右、y 上、像素、无限大）；`grid(0,0)` 在地图矩形左下角 = 图片最下面一行，grid.y 与世界 y 同向、不翻转；唯一的翻转发生在贴图绘制（`worldRectTopLeft`）。
 
-### 3.2 `@dts/document` — 文档模型、命令与历史（7,105 行）
+### 3.2 `@dts/document` — 文档模型、命令与历史（7,098 行）
 
 | 文件 | 行数 | 职责 | 关键导出 |
 |---|---|---|---|
@@ -440,7 +440,7 @@ build: { outDir: "dist", sourcemap: true },
 | `scale.ts` | 118 | 对象缩放语义（等比 + v11 单轴覆盖） | `DEFAULT_OBJECT_SCALE`(1)、`MIN_OBJECT_SCALE`(0.01)、`MAX_OBJECT_SCALE`(100)、`clampObjectScale`、`effectiveScaleX`、`effectiveScaleY`、`isUniformScale`、`collapseScale` |
 | `fields.ts` | 144 | 字段**描述符**（纯数据、不含 React）：`key` / `label` / `kind` / 取值约束 / 默认值 / 面板 testid 与行序 / 撤销合并，以及默认值推导与「键必须真在这份数据上」的约束类型 `TypedFieldDef` | `FieldDef`、`TypedFieldDef`、`FieldKind`、`FieldOption`、`defaultValueFor`、`defaultDataFromFields` |
 | `component-spec.ts` | 122 | **组件规格**的形状与声明助手：一个组件「有哪些简单字段」的唯一声明处；值收窄规则也在这里 | `ComponentSpec`、`defineComponent`、`REJECT`、`coerceFieldValue` |
-| `component-specs/` | 117 | **一组件一个文件**的规格（`video.ts` = `VideoOverlay`）+ 注册表 + `defaultDataOf`（默认数据的唯一归属地） | `videoSpec`、`COMPONENT_SPECS`、`componentSpecOf`、`listComponentSpecs`、`defaultDataOf` |
+| `component-specs/` | 110 | **一组件一个文件**的规格（`video.ts` = `VideoOverlay`）+ 注册表 + `defaultDataOf`（默认数据的唯一归属地） | `videoSpec`、`COMPONENT_SPECS`、`componentSpecOf`、`defaultDataOf` |
 | `object-spec.ts` | 83 | **对象自身字段的规格**（「基础」那一组）：目前只接管 `sortingOrder`；表里逐条写明其余六个字段为什么留在手写路径 | `ObjectSpec`、`defineObjectSpec`、`OBJECT_SPEC`、`objectFieldOf` |
 | `commands/field.ts` | 98 | **规格驱动的泛型写入**：组件字段与对象字段两条（取代「一个字段写一条命令」） | `setComponentField`、`setObjectField` |
 | `index.ts` | 19 | barrel | — |
@@ -755,12 +755,12 @@ resources/
 `writeBinary`、`ensureFolder`、`remove`、`rename`。`rename` 的契约：两端类别必须一致、源必须存在、
 目标必须不存在（**绝不覆盖用户数据**）。
 
-### 3.5 `@dts/renderer` — Canvas 2D 渲染与手柄几何（1,779 行）
+### 3.5 `@dts/renderer` — Canvas 2D 渲染与手柄几何（1,773 行）
 
 | 文件 | 行数 | 职责 | 关键导出 |
 |---|---|---|---|
 | `viewport.ts` | 154 | 视口（缩放 + 平移）与坐标变换 | `Viewport`、`Point`、`MIN_SCALE`(0.05)、`MAX_SCALE`(16)、`createViewport`、`createCenteredViewport`、`clampScale`、`worldToScreen`、`screenToWorld`、`panBy`、`zoomAt`、`fitViewport`、`visibleWorldRect` |
-| `gizmo.ts` | 422 | 变换手柄（移动 / 旋转 / 缩放）的**世界几何 + 屏幕几何 + 命中判定** | `TransformTool`、`toolHasGizmo`、`GizmoHandle`、`SCALE_HANDLES`、尺寸常量（`GIZMO_HANDLE_SIZE` 9、`GIZMO_HANDLE_HIT_SIZE` 10、`GIZMO_AXIS_GAP` 45、`GIZMO_AXIS_LENGTH` 40、`GIZMO_RING_GAP` 22、`GIZMO_AXIS_HIT_WIDTH` 9、`GIZMO_RING_HIT_WIDTH` 10）、`isDrawableFrame`、`rectCorners`、`rotatePointAround`、`angleAround`、`scaleHandlePoints`、`scaleAnchorFor`、`isCornerScaleHandle`、`scaleAxisOf`、`gizmoScreenGeometry`、`hitTestGizmoHandles`、`moveTipOf`、`moveRootOf` |
+| `gizmo.ts` | 416 | 变换手柄（移动 / 旋转 / 缩放）的**世界几何 + 屏幕几何 + 命中判定** | `TransformTool`、`toolHasGizmo`、`GizmoHandle`、`SCALE_HANDLES`、尺寸常量（`GIZMO_HANDLE_SIZE` 9、`GIZMO_HANDLE_HIT_SIZE` 10、`GIZMO_AXIS_GAP` 45、`GIZMO_AXIS_LENGTH` 40、`GIZMO_RING_GAP` 22、`GIZMO_AXIS_HIT_WIDTH` 9、`GIZMO_RING_HIT_WIDTH` 10）、`isDrawableFrame`、`rectCorners`、`rotatePointAround`、`angleAround`、`scaleHandlePoints`、`scaleAnchorFor`、`isCornerScaleHandle`、`scaleAxisOf`、`gizmoScreenGeometry`、`hitTestGizmoHandles`、私有 `moveAxisEnd`（轴条根 / 末端同一条公式） |
 | `scene-renderer.ts` | 1,200 | 场景绘制主循环 + 命中测试 + 音频徽标动画 + 子图的九参数 `drawImage` | `SceneLayer`（含 `sprite?`：**图片像素、左上角原点、y 向下**）、`SceneRenderInput`、`SceneToolHandles`、`SceneRenderer`、`createCanvasSceneRenderer`、`kindMarkerColor`、`hitTestRect`、`AudioPulseRing`、`AudioBadgeAnimation`、`audioBadgeAnimation` |
 | `index.ts` | 3 | barrel | — |
 
@@ -1133,29 +1133,29 @@ store 用 **zustand 切片**模式拆开了：原来是一个 4,493 行的 `edit
 
 | 文件 | 行数 | 职责 | 对外导出 |
 |---|---|---|---|
-| `editor-store.ts` | **100** | **只剩组装与再导出**：`create<EditorStoreState>()` 里展开初始状态与 17 个切片，然后把公开 API 原样再导出（仓库里 30+ 处从这里导入） | `useEditorStore`、`sceneHistory`、`projectHistory`、`fitSceneViewport`、`serializeSceneFile`、`serializeProjectFile`、`compareSceneNames`、`findResourceNode`、`withRenamedSceneImage`；类型 `EditorMode`、`EditorUiState`、`RuntimeUiState`、`ProjectUiState`、`ProjectDialogMode`、`SceneDialogMode`、`SceneSaveState`、`GridPaintState`、`EditorStoreState` |
-| `store-types.ts` | 819 | 全部状态类型 + `EditorStoreState`（**136 个 action + 48 个状态字段**）+ `StoreSet` / `StoreGet` / `EditorStoreData`（由「全部 action 名」算出来的状态部分）；素材 meta 的 `AssetMetaTable`（真源表）、`AssetMetaDraft`（`applyMetas` 拿到的那份可写草稿）与 `assetMetas`（派生索引）也在这里 | 上表那些类型 |
-| `store-core.ts` | 400 | **模块级**工具与状态：**三份** `DocumentHistory`（`sceneHistory` / `projectHistory` / `metaHistory`）、撤销轨（`lastEditTrack` / `activeTrack` / `historyOf` / `EDIT_TRACKS` = `scenes` / `project` / `metas`）、常量、`fitSceneViewport`、`serializeSceneFile` / `serializeProjectFile`、`withRenamedSceneImage`、`compareSceneNames`、`findResourceNode`、`makeLog` / `nextLogId` | 同 `editor-store` 的值导出 |
-| `store-context.ts` | 1,306 | **闭包状态与局部工具**（原 `create()` 里那段）：`StoreContext` 54 个成员——41 个函数（`pushLog` / `switchScene` / `deliverSoundPlay` / `applyActiveScene` / `scheduleSceneSave` / `scheduleMetaSave` / `metaDirtyIds` / `fogTargetOf` / `currentSceneDoc` …）、8 个稳定引用（`runtimeClient` / 两个 `ScenePushScheduler` / `savedScenes` / **`savedMetas`** / `sceneViewports` / `quietCommandIds` / `storedGridPaint`）、5 个可变标量走 get/set（`lastPushedSceneText` / `pendingRunRequest` / `viewportAdjusted` / `bootstrapping` / `savedProjectText`）；**`metaHistory.subscribe` 在这里重建 `assetMetas` 索引并安排 meta 落盘** | `StoreContext`、`createStoreContext` |
+| `editor-store.ts` | **94** | **只剩组装与再导出**：`create<EditorStoreState>()` 里展开初始状态与 17 个切片，再导出只保留真正从这里取的名字（逐名核对过消费方） | `useEditorStore`、`sceneHistory`、`projectHistory`、`fitSceneViewport`、`serializeSceneFile`、`compareSceneNames`、`findResourceNode`、`withRenamedSceneImage`；类型 `EditorMode`、`ProjectDialogMode`、`SceneDialogMode`、`SceneSaveState` |
+| `store-types.ts` | 788 | 全部状态类型 + `EditorStoreState`（**130 个 action + 48 个状态字段**）+ `StoreSet` / `StoreGet` / `EditorStoreData`（由「全部 action 名」算出来的状态部分）；素材 meta 的 `AssetMetaTable`（真源表）、`AssetMetaDraft`（`applyMetas` 拿到的那份可写草稿）与 `assetMetas`（派生索引）也在这里 | 上表那些类型 |
+| `store-core.ts` | 394 | **模块级**工具与状态：**三份** `DocumentHistory`（`sceneHistory` / `projectHistory` / `metaHistory`）、撤销轨（`lastEditTrack` / `activeTrack` / `historyOf` / `EDIT_TRACKS` = `scenes` / `project` / `metas`）、常量、`fitSceneViewport`、`serializeSceneFile` / `serializeProjectFile`、`withRenamedSceneImage`、`compareSceneNames`、`findResourceNode`、`makeLog` | 同 `editor-store` 的值导出 |
+| `store-context.ts` | 1,299 | **闭包状态与局部工具**（原 `create()` 里那段）：`StoreContext` 53 个成员——40 个函数（`pushLog` / `switchScene` / `deliverSoundPlay` / `applyActiveScene` / `scheduleSceneSave` / `scheduleMetaSave` / `metaDirtyIds` / `fogTargetOf` / `currentSceneDoc` / `findObjectById` …）、8 个稳定引用（`runtimeClient` / 两个 `ScenePushScheduler` / `savedScenes` / **`savedMetas`** / `sceneViewports` / `quietCommandIds` / `storedGridPaint`）、5 个可变标量走 get/set（`lastPushedSceneText` / `pendingRunRequest` / `viewportAdjusted` / `bootstrapping` / `savedProjectText`）；**`metaHistory.subscribe` 在这里重建 `assetMetas` 索引并安排 meta 落盘** | `StoreContext`、`createStoreContext` |
 | `initialState.ts` | 84 | 初始状态（返回类型是 `EditorStoreData`，所以**少一个状态字段就编译报错**；素材 meta 两份初始为空） | `createInitialState` |
 | `slices/history-slice.ts` | 148 | `applyScenes` `applyProject` `applyMetas` `undo` `redo` `resetDoc`（三条轨道各一个写入口，且**真的产生改动时**才 `setLastEditTrack`——撤销才会作用在「最近改过的那条」上；`resetDoc` 连 `metaHistory` 一起清） | — |
-| `slices/save-slice.ts` | 209 | `saveSceneNow` `flushSceneSave` `saveProjectNow` `flushProjectSave` `saveMetasNow` `flushMetaSave`（meta 只写内容变过的那几份） | — |
+| `slices/save-slice.ts` | 198 | `saveSceneNow` `flushSceneSave` `saveProjectNow` `saveMetasNow` `flushMetaSave`（meta 只写内容变过的那几份）；工程文件**没有 flush**——没有「关闭前 flush」的调用方，改动全走去抖定时器 | — |
 | `slices/project-slice.ts` | 513 | 项目 CRUD、资源树、建目录、打开目录、上传、删资源，以及**素材 meta 的装配与迁移**：`loadAssetMetas` 读回全部 `.meta`、给缺的素材补一份（`assetImporterKind` 定导入器；**盘上有但读不出来的那份不补**——`readMetas` 的 `unreadable` 就是给它留的，补一份新 GUID 会盖掉盘上那份）、把 `migratedMetas` 落盘、迁移新建了场景文件时**重取一次资源树**、重建索引 | — |
 | `slices/scene-slice.ts` | 316 | 场景增删改、切换、排序、载入（打开场景时的校验带 `{ metas }`） | — |
-| `slices/object-slice.ts` | 367 | 对象增删改、选区、变换属性、贴图、网格规格 | — |
+| `slices/object-slice.ts` | 369 | 对象增删改、选区、变换属性、网格规格（换图走 `sprite-slice` 的 `setObjectImageSprite`） | — |
 | `slices/component-slice.ts` | 39 | **泛型组件字段写入**（只有 `setComponentField` 一条）：标签与撤销合并都从组件规格读，所以**加一个简单字段不必碰这个文件** | — |
 | `game-object-factory.ts` | — | 按 `ObjectKind` 注册新对象工厂；地图补同名贴图与网格，声音 / 传送阵使用文档专属工厂。 | `createGameObjectForKind` |
 | `slices/transform-slice.ts` | 160 | 变换工具与手柄拖拽（`begin/apply/end/cancelObjectTransform`） | — |
-| `slices/viewport-slice.ts` | 76 | 视口缩放 / 平移 / 适配 / 尺寸 | — |
+| `slices/viewport-slice.ts` | 70 | 视口缩放 / 平移 / 适配 / 尺寸 | — |
 | `slices/runtime-slice.ts` | 67 | `setMode` / `connectRuntime` / 推场景 / 清日志 | — |
-| `slices/sound-slice.ts` | 283 | 声音对象：列表、选中、层级、名字、播放下发 | — |
-| `slices/video-slice.ts` | 274 | 视频：开关、列表、选中、循环 / 声音、播放下发 | — |
+| `slices/sound-slice.ts` | 276 | 声音对象：选中、层级、名字、播放下发（列表的加 / 删在窗口里完成，不经 store 整体替换） | — |
+| `slices/video-slice.ts` | 254 | 视频：开关、列表、选中、循环、播放下发（声音 / 自动播放开关走组件规格的 `setComponentField`） | — |
 | `slices/bgm-slice.ts` | 83 | 全局背景音乐（播放 / 暂停 / 继续 / 停止 / 补发） | — |
-| `slices/audio-meta-slice.ts` | 163 | 音频显示名 / 标签（v24 起写在**素材 meta 那条轨道**上：走 `applyMetas` + `withMetaAudioName` / `withMetaAudioTags`）+ 项目级标签表（`applyProject`）+ 三档音量 | — |
+| `slices/audio-meta-slice.ts` | 155 | 音频显示名 / 标签（v24 起写在**素材 meta 那条轨道**上：走 `applyMetas` + `withMetaAudioName` / `withMetaAudioTags`）+ 项目级标签表（`applyProject`）+ 三档音量 | — |
 | `slices/teleport-slice.ts` | 89 | 传送阵：候选、选中、触发换台 | — |
 | `slices/grid-paint-slice.ts` | 134 | 网格标注：画笔偏好、涂抹、清空 | — |
 | `slices/fog-slice.ts` | 208 | 战争雾：开关、雾区、擦除记账、补发 | — |
-| `slices/sprite-slice.ts` | 190 | 精灵（子图）：`setObjectImageSprite`（图 + 格子**一条撤销记录**）、`setObjectSprite`、`setSpriteSheet` / `setSpriteImportSettings`（切分与导入设置落在**素材 meta**那条轨道：走 `applyMetas`）、`ensureAssetMeta`（挑图那一刻把 guid 定下来） | — |
+| `slices/sprite-slice.ts` | 199 | 精灵（子图）：`setObjectImageSprite`（图 + 格子**一条撤销记录**；对象取哪一格只有这一条写入路径）、`setSpriteSheet` / `setSpriteImportSettings`（切分与导入设置落在**素材 meta**那条轨道：走 `applyMetas`）、`ensureAssetMeta`（挑图那一刻把 guid 定下来） | — |
 
 **切片的写法**（加一个功能照着抄）：
 
@@ -1206,7 +1206,6 @@ export function createSoundSlice(
 | `SceneDialog.tsx` | 104 | 新建/重命名场景：场景名 = 文件名，失败原因就地显示。 | `SceneDialog` |
 | `ObjectDialog.tsx` | 206 | 「新建对象」弹框：先选种类（实体/动作/事件）再选类型（正方形瓦片 + `kindMarkerColor` 色点），名字用 `nextObjectName` 预填去重。 | `ObjectDialog` |
 | `ImagePickerDialog.tsx` | 231 | 「选择贴图 / 精灵」：列项目全部图片，缩略图 `onLoad` 读真实像素尺寸，双击 = 直接确定；**右侧切分面板**（`allowSprite` 为 false 的地图对象不给），确定时回调 `onPick(image, sprite)`——**图 + 格子一次交出去**，「使用整图 / 使用第X行第Y列」两个按钮，尺寸没读到就禁用确定。 | `ImagePickerDialog` |
-| `SpriteSheetPanel.tsx` | 349 | 选择窗口右侧的**切分面板**：列 / 行输入（1..64，坏数字退回当前值）、一行说明（`sprite-sheet-scope-note`：切分是这张图自己的、改它引用它的对象一起变、**对象在场景里的大小不变**）、预览图上点点选格（`sprite-preview` / `sprite-preview-cell`）、`sprite-current-cell` 显示当前格（或「整张图」）、`sprite-clear-sheet` = 恢复整图（**还有对象在用这张图的格子时禁用**，提示先让它们「改回整图」）。 | `SpriteSheetPanel` |
 | `SpriteEditorDialog.tsx` | 179 | 独立的**精灵编辑器**（v23 新增）：列 / 行（1..64）、缩放、预览图上点格，草稿只在弹窗内变化，点「应用」才落到**素材 meta** 那条轨道（`setSpriteSheet`，1×1 按「恢复整图」处理）。 | `SpriteEditorDialog` |
 | `AudioPickerDialog.tsx` | 148 | 「选择音频」：`audioCatalog` 列项目里的音频（清单就是资源树，不再有「标注指向已删文件」的行），带搜索框；点一条就 `addSoundClip`，已加入的禁用。 | `AudioPickerDialog` |
 | `VideoPickerDialog.tsx` | 128 | 「选择视频」：列 `listVideoAssets`，已加入的标「已加入」；`.webm` 行给「Windows 多半解不了」提醒。 | `VideoPickerDialog` |
@@ -1229,7 +1228,7 @@ export function createSoundSlice(
 | `EmptyState.tsx` | 39 | 空状态占位：没项目时指路菜单；没场景时**占位本身是入口**（点一下弹新建场景）。 | `EmptyState` |
 | `object-kinds.ts` | 133 | 对象类型表（实体/动作/事件）+ 可创建标记 + 中文展示名 + 「画内置徽标」判定；`kind` 是前端也认的字段，不造新值（v22 起精灵写 `Sprite`、贴图写 `Image`，基类 `GameObject` 只作**不可创建**的归类项留在表里，保证每个 kind 都有归属）。 | `OBJECT_CATEGORIES`、`DEFAULT_CATEGORY`、`KIND_LABELS`、`creatableObjects`、`categoryOfKind`、`badgeIconOf`；类型 `ObjectTypeDef`、`ObjectCategoryDef` |
 | `asset-info.ts` | 149 | 按扩展名判断资源怎么显示：图标种类、可预览种类、人类可读类型名、去扩展名的显示名、字节可读化；**扩展名判断只此一处**；还给素材定 `<素材>.meta` 的导入器（`assetImporterKind`：图片 / 音频 / 视频 / 场景，`Assets/scenes/` 之外的 `.json` 不算素材）。 | `assetSuffix`、`assetIconKind`、`assetImporterKind`、`assetPreviewKind`、`assetKindLabel`、`assetDisplayName`、`formatSize`；类型 `AssetIconKind` |
-| `asset-picker.ts` | 110 | 资源显示路径（剥掉 `project:`/项目名/`Assets/`）、按 id 查资源、按类别收图片/音频/视频、原始字节 URL。 | `assetDisplayPath`、`findAssetById`、`listImageAssets`、`listAudioAssets`、`listVideoAssets`、`assetRawUrl` |
+| `asset-picker.ts` | 153 | 资源显示路径（剥掉 `project:`/项目名/`Assets/`）、按 id 查资源、按类别收图片/音频/视频、原始字节 URL。 | `assetDisplayPath`、`findAssetById`、`listImageAssets`、`listAudioAssets`、`listVideoAssets`、`assetRawUrl` |
 | `audio-catalog.ts` | 259 | 音频清单 + 标注 + 标签表的**纯函数层**（BGM 弹框 / 选择音频 / 选择标签三处共用）：tag 是整数、名字住工程文件的表里，**显示名与标签 ID 从各素材自己的 `.meta`（`assetMetaTable`）读**；名字兜底链、搜索、按标签 AND 筛、按名排序、标签用量与勾选项。 | `tagEntriesOf`、`tagNameOf`、`tagsOfClip`、`audioCatalog`、`audioNameOf`、`audioDisplayName`、`matchesAudioQuery`、`filterAudioRows`、`sortAudioRowsByName`、`allTagsOf`、`tagOptionsOf`；类型 `AudioTagRef`、`AudioTagEntry`、`AudioCatalogRow` |
 
 #### `panels/assets/`（2）
@@ -1272,7 +1271,7 @@ export function createSoundSlice(
 | `ScenePanel.tsx` | 1,317 | 场景画布：rAF 绘制循环（每帧 `getState()` 直读）、指针手势（拖拽平移、滚轮/双指缩放、点空白取消选中并带 `CLICK_SLOP` 4px 抖动阈值、中键只平移）、拾取（按显示顺序从后往前）、手柄几何（绘制与命中**共用** `gizmoGeometryOf`）、手柄/本体拖拽、双击传送徽标 = 传送；建层时按 `displaySpriteOf(object, state.assetMetas)` + 图片**自然尺寸**算源矩形（子图只画那一块）；画布左上工具开关、场景切换条（1-9 序号 + `[`/`]`）、视口变换暴露为 `data-viewport-*` 供 E2E。 | `ScenePanel`、`checkerOriginOf`、`TOOL_OPTIONS` |
 | `display.ts` | 112 | 对象在画布上占的世界矩形（显示/拾取/选中框/适配视图共用一份口径）：尺寸 = 贴图尺寸（无图用 `COLLIDER_SIZE` 64×64）× 该轴有效缩放；返回**未旋转**矩形，由消费方带 rotation。 | `COLLIDER_SIZE`、`displayRectOf`、`displaySizeOf`、`displayImageOf`、`sceneVisibleRects` |
 | `grid-paint.ts` | 87 | 网格标注**绘制侧**纯工具：掩码 + 偏好 → 一串 CSS 颜色；RLE 按 `runs` 引用缓存的解码（坏数据返回空数组，绝不让绘制循环抛错）。 | `cellColorsOf`、`decodeCellsCached`、`countCellsWithMask` |
-| `transform.ts` | 230 | 一次变换拖拽的纯计算：以「按下时的快照」为基准（不做逐帧累加）；Shift 吸附 15°。 | `resolveTransform`、`rotateIntoLocal`、`rotateOutOfLocal`、`angleAround`、`ROTATION_SNAP_DEGREES`(15)；类型 `TransformStart`、`TransformResult` |
+| `transform.ts` | 222 | 一次变换拖拽的纯计算：以「按下时的快照」为基准（不做逐帧累加）；Shift 吸附 15°。 | `resolveTransform`、`rotateIntoLocal`、`rotateOutOfLocal`、`ROTATION_SNAP_DEGREES`(15)；类型 `TransformStart`、`TransformResult` |
 
 ### 5.3 `state/` 详解（切片拆分后）
 
@@ -1310,7 +1309,7 @@ export function createSoundSlice(
 `createScene`、`renameScene`（只改文件名 + 同步**同名贴图**引用 `map.image`，不动精灵）、`deleteScene`（至少保留一个）、
 `saveSceneNow`、`flushSceneSave`；`switchScene(name, {clearAssetSelection?, log?})` 是切场景的**唯一路径**。
 
-**工程文件**：`saveProjectNow`、`flushProjectSave`。
+**工程文件**：`saveProjectNow`（没有 flush：改动全走去抖定时器，见 `save-slice.ts` 头注）。
 
 **项目**：`bootstrapEditor`（幂等 + `bootstrapping` 同步占位挡 StrictMode 双跑）、`openProjectDialog`、
 `refreshProjects`、`createProject`、`openProject`（读 `project.json` → `clearSceneImageCache()` → `resetDoc` →
@@ -1323,11 +1322,10 @@ export function createSoundSlice(
 `setObjectLocked`/`toggleObjectLocked`、`setObjectSortingOrder`、`setObjectScale`、`setObjectScaleAxes`、
 `setObjectRotation`（收弧度，面板按度）、`deleteObjects`（顺手关掉指向被删地图的窗口）、
 `duplicateObjects`（「副本」后缀 + `COPY_OFFSET` 24 递增偏移）、`moveObject`（**全项目唯一移动入口**，锁定直接拒）、
-`endObjectDrag`、`setObjectImage`、`setMapGrid`、`openObjectDialog`、`openImagePicker`。
+`setMapGrid`、`openObjectDialog`、`openImagePicker`。
 
 **精灵（子图）**：`setObjectImageSprite(objectId, image, sprite)`（「选择贴图 / 精灵」窗口确定那一下：
-**图 + 格子一次写进去 = 一条撤销记录**）、`setObjectSprite(objectId, sprite)`（`null` = 改回整图，
-撤销标签写「改回整图 / 设为子图 第X行第Y列」）、`setSpriteSheet(imageId, sheet)` / `setSpriteImportSettings(imageId, settings)`
+**图 + 格子一次写进去 = 一条撤销记录**；对象取哪一格只有这一条写入路径）、`setSpriteSheet(imageId, sheet)` / `setSpriteImportSettings(imageId, settings)`
 （改的是**那个素材自己的 `.meta`** 那条轨道——v23 起，`coalesceKey: sprite-sheet:<图片 ID>` 合并连续输入；
 **不动任何对象**——「改切分，引用它的对象一起变」是解析出来的，见 §3.2.6）、`ensureAssetMeta(imageId)`
 （挑图 / 引用图片时拿身份：没有 meta 就现建一份，把新 guid 写进 `ImageRef`）。
@@ -1336,18 +1334,18 @@ export function createSoundSlice(
 `applyObjectTransform`（pos/rot/scale 一次写完，`coalesceKey: transform:<id>`）、`endObjectTransform`、
 `cancelObjectTransform`（用快照写回 + 收尾）。
 
-**视口**：`setViewport`、`zoomAtScreen`、`panByScreen`、`fitToViewport`、`setViewportSize`（未被用户调过视口时自动适配）、`setUi`。
+**视口**：`zoomAtScreen`、`panByScreen`、`fitToViewport`、`setViewportSize`（未被用户调过视口时自动适配）、`setUi`。
 
 **运行态 / 连接**：`connectRuntime`、`setMode`（run：展开运行面板 + 未连上则记 `pendingRunRequest` 并踢一次连接；
 edit：取消去抖、`lastPushedSceneText=null`、发 `runtime_stop`）、`pushRuntimeScene`、`clearRuntimeLogs`。
 
-**声音**：`playSound`、`stopSound`、`pauseSound`、`resumeSound`、`flushSoundPlayback`、`setSoundClips`、
+**声音**：`playSound`、`stopSound`、`pauseSound`、`resumeSound`、`flushSoundPlayback`、
 `addSoundClip`（已在列表就不抢选中）、`removeSoundClip`、`selectSoundClip`、`setSoundClipName`、
 `openSoundEditor`、`setSoundLayer`。
 
 **视频**：`playVideo`、`pauseVideo`、`resumeVideo`、`stopVideo`（停止**不要求**仍选中）、`flushVideoPlayback`、
 `openVideoEditor`、`setVideoEnabled`、`addVideoClip`、`removeVideoClip`、`selectVideoClip`、`setVideoClipName`、
-`setVideoLoop`、`setVideoAudio`。
+`setVideoLoop`。
 
 **背景音乐**：`playBgm`（再点同一首 = 让前端从头重播）、`pauseBgm`、`resumeBgm`、`stopBgm`、
 `flushBgmPlayback`、`openBgmDialog`、`openGlobalSettings`。
@@ -1355,7 +1353,7 @@ edit：取消去抖、`lastPushedSceneText=null`、发 `runtime_stop`）、`push
 **音频文件标注（素材级数据，v24 起走 meta 轨）**：`setAudioName`（写那个音频的 `<素材>.meta` 的 `audio.name`，
 `coalesceKey: audio-name:<id>`）、`setAudioTags`（整份替换 `audio.tags`，按工程文件里的标签表归一化；离散、不合并）。
 
-**标签表（项目级数据，仍在工程轨）**：`renameAudioTag`、`setAudioTagName`、`openAudioTags`
+**标签表（项目级数据，仍在工程轨）**：`setAudioTagName`、`openAudioTags`
 （「哪个文件用了这个标签」在 meta 轨那边：删标签要两条轨道各做一次——命令层的 `deleteAudioTag` 只动表，
 摘引用那一半是 `withoutMetaAudioTag`）。
 
@@ -1501,7 +1499,7 @@ edit：取消去抖、`lastPushedSceneText=null`、发 `runtime_stop`）、`push
 | `EmptyState` | `project.current`、`openSceneDialog` | 没项目 / 没场景的占位；没场景时占位可点 |
 
 对话框绑定：`ProjectDialog` → `project`/`projectDialog`；`SceneDialog` → `activeSceneName`/`sceneDialog`；
-`ObjectDialog` → `objectDialog`；`ImagePickerDialog`（+ 右侧切分面板 `SpriteSheetPanel` / `SpriteEditorDialog`）→
+`ObjectDialog` → `objectDialog`；`ImagePickerDialog` / `SpriteEditorDialog`（挑图 + 取一格 / 精灵切分）→
 `imagePickerTarget`/**`assetMetas`（读切分与导入设置）**/`setSpriteSheet`；
 `SoundEditDialog`+`AudioPickerDialog` → `soundEditor(Target)`/`assetMetaTable`（每条音频的显示名）；`VideoEditDialog`+`VideoPickerDialog` → `videoEditor(Target)`；
 `TeleportEditDialog` → `teleportEditor(Target)`；`GlobalSettingsDialog` → `doc.settings.audio`；
@@ -1916,7 +1914,7 @@ upgradeRawDocument
 | `object-scale.spec.ts` | 124 | 对象缩放 | 否 |
 | `startup.spec.ts` | 113 | 编辑器启动引导 | 否 |
 | `helpers/editor.ts` | 1,094 | 用例级助手：建/删项目、打开编辑器、按 `data-testid` 定位、断言状态；**v19 起还有一组组件读取助手**：`COMPONENT`（**6 个**组件名常量：`gridMap` / `imageLayer` / `spriteLayer` / `playSound` / `teleport` / `videoOverlay`）、`componentId`、`findGameObject`、`componentInstanceOf`、`objectComponentData`、`componentDataOf(file, {objectId?\|kind?}, component)`、`withComponent`、`readSceneFile`、`readSceneMap`、`readSceneFog`、`readSceneSound`、`readSceneTeleport`、`readSceneVideo`（缺省找 `Map`，贴图要显式传 `"Image"`；spec 里**不再直接摸 `components`**，也不再有扁平字段读取）；**v20 起补子图助手**：`CURRENT_SCENE_FORMAT_VERSION = 24`、`colorGridPng(columns, rows, colors, cell)`（**每格一色的自编码 PNG**，用例靠它断言「画的是哪一格」）、`readObjectSprite`（读 `SpriteLayer` 的 `sprite`），`seedProjectDoc` 多了第四参 `projectPatch`；**v23 / v24 起补素材 meta 助手**：`readAssetMeta`（读某个素材自己的 `<素材>.meta` 原文）、`readSpriteSheet`（读 `sprite.sheet`）、`readAudioMeta`（读 `audio` 段）、`readProjectAudioTags`、`seedProjectAudioMeta`（种标签表 + 各音频的 `.meta`，缺的 meta 由编辑器打开时补齐） | — |
-| `helpers/canvas.ts` | 392 | 画布助手：世界↔屏幕换算、精确点/拖手柄、读取 `data-viewport-*` | — |
+| `helpers/canvas.ts` | 344 | 画布助手：世界↔屏幕换算、精确点/拖手柄、读取 `data-viewport-*` | — |
 | `global-teardown.ts` | 15 | 按 `DTS_E2E_RESOURCES` 清掉临时资源根 | — |
 
 **并行与隔离**：

@@ -3,7 +3,8 @@
  *
  * 两个动作看着像一对，其实落在**两条不同的撤销轨道**上（文件都不同）：
  *
- * - `setObjectSprite` 改的是**场景文件**（对象身上那一格引用）；
+ * - 对象身上那一格引用是**场景文件**数据——由 `setObjectImageSprite` 一条命令
+ *   （图 + 格子一次写入，一条撤销记录）维护；
  * - `setSpriteSheet` / `setSpriteImportSettings` 改的是**素材自己的 `.meta`**
  *   （v23 起：`<素材>.meta` 里的 `sprite` 节点，见 `@dts/document` 的 `asset-meta.ts`）。
  *
@@ -24,7 +25,6 @@ import {
   repairMapObjectComponent as repairSceneMapObjectComponent,
   objectImageSlot,
   setObjectImage as setGameObjectImage,
-  setObjectSprite as setGameObjectSprite,
   withMetaSpriteSheet,
   withMetaSpriteSettings,
   type ImageRef,
@@ -43,7 +43,6 @@ export function createSpriteSlice(
 ): Pick<
   EditorStoreState,
   | "setObjectImageSprite"
-  | "setObjectSprite"
   | "setSpriteSheet"
   | "setSpriteImportSettings"
   | "ensureAssetMeta"
@@ -102,21 +101,6 @@ export function createSpriteSlice(
           setGameObjectImage(scene, objectId, sprite === null ? ref : { ...ref, sprite });
         }
       });
-    },
-
-    /**
-     * 选这个对象要显示的**哪一格**（传 `null` = 改回整图）。
-     *
-     * 标签里带上「第几行第几列」，撤销菜单里一眼看得出退回的是哪一次选格。
-     */
-    setObjectSprite(objectId, sprite: ImageSpriteRef | null) {
-      const label =
-        sprite === null ? "改回整图" : `设为子图 第${sprite.row + 1}行第${sprite.column + 1}列`;
-      const changed = applyActiveScene(label, (scene) => {
-        setGameObjectSprite(scene, objectId, sprite);
-      });
-
-      return changed;
     },
 
     /**

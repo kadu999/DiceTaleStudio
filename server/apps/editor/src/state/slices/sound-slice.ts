@@ -34,7 +34,6 @@ export function createSoundSlice(
   | "pauseSound"
   | "resumeSound"
   | "flushSoundPlayback"
-  | "setSoundClips"
   | "selectSoundClip"
   | "addSoundClip"
   | "removeSoundClip"
@@ -197,12 +196,6 @@ export function createSoundSlice(
     },
 
     // ------------------------------------------------------------ 声音对象（动作对象）
-
-    setSoundClips(objectId, clips) {
-      return applyActiveScene("修改音频列表", (scene) => {
-        setSceneSoundClips(scene, objectId, clips);
-      });
-    },
 
     selectSoundClip(objectId, clip) {
       if (objectWithFeature(objectId, DEFAULT_SLOT_COMPONENT.sound) === undefined) {

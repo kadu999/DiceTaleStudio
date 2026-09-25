@@ -40,8 +40,8 @@ pnpm --filter @dts/backend mock   # 另开一个终端：启动 Mock 前端（�
 | `pnpm dev` | 后端 + 编辑器开发服务器 |
 | `pnpm build` | 构建编辑器产物到 `apps/editor/dist`（E2E 前必须先跑） |
 | `pnpm typecheck` | 全部包类型检查 |
-| `pnpm test` | 单元测试 + 架构边界测试（约 1.5s） |
-| `pnpm check` | 类型检查 + 单测 + Lint（提交前一把过） |
+| `pnpm test` | 单元测试 + 编辑器组件测试（jsdom）+ 架构边界测试 |
+| `pnpm check` | 类型检查 + 单测 + Lint + 文档统计校验（提交前一把过） |
 | `pnpm lint` | ESLint |
 | `pnpm e2e:smoke` | 先构建，再跑桌面启动 / 外壳 / 画布冒烟（约十几秒） |
 | `pnpm e2e:tablet-smoke` | 先构建，再跑两种平板视口的布局 / 画布冒烟 |

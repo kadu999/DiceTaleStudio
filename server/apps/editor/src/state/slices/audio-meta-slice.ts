@@ -9,7 +9,6 @@ import {
   setBgmVolume as setProjectBgmVolume,
   setSfxVolume as setProjectSfxVolume,
   setVoiceVolume as setProjectVoiceVolume,
-  renameAudioTag as renameProjectAudioTag,
   setAudioTagName as setProjectAudioTagName,
   withMetaAudioName,
   withMetaAudioTags,
@@ -26,7 +25,6 @@ export function createAudioMetaSlice(
   EditorStoreState,
   | "setAudioName"
   | "setAudioTags"
-  | "renameAudioTag"
   | "setAudioTagName"
   | "openAudioTags"
   | "setBgmVolume"
@@ -78,12 +76,6 @@ export function createAudioMetaSlice(
     },
 
     // ---------------------------------------------------------------- 项目级数据：音频标签表
-
-    renameAudioTag(tagId, name) {
-      return get().applyProject("修改标签名字", (draft) => {
-        renameProjectAudioTag(draft, tagId, name);
-      });
-    },
 
     /**
      * 给**指定的序号**命名（序号不够长就把它补出来）。

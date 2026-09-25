@@ -392,9 +392,3 @@ export function makeLog(level: RuntimeLogEntry["level"], message: string): Runti
 export function setLastEditTrack(track: EditTrack): void {
   lastEditTrack = track;
 }
-
-/** 运行日志的自增序号（`makeLog` 用它拼 id）。 */
-export function nextLogId(): number {
-  logSeq += 1;
-  return logSeq;
-}

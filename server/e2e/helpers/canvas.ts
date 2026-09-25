@@ -63,24 +63,6 @@ export async function sceneViewport(
 }
 
 /**
- * 世界坐标 → 屏幕点（**精确**，用于点手柄 / 断言手柄位置）。
- *
- * 与 `worldSamplePoint` 的区别：那个假设「世界原点在画布正中」，只在地图铺满的
- * 老用例里够用；手柄场景必须按视口真实变换算，否则点不中。
- * 不夹取：调用方自己选的点要么在视口里，要么就是用例写错了。
- */
-export async function exactWorldPoint(
-  page: Page,
-  world: { x: number; y: number },
-): Promise<{ x: number; y: number }> {
-  const viewport = await sceneViewport(page);
-  return {
-    x: viewport.left + viewport.tx + world.x * viewport.scale,
-    y: viewport.top + viewport.ty - world.y * viewport.scale,
-  };
-}
-
-/**
  * 画布（canvas）上的坐标与采样工具（用例共用）。
  *
  * `worldSamplePoint` / `scenePoint` 这些「世界原点 = 画布中心」的换算，靠的是

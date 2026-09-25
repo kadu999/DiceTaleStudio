@@ -19,7 +19,7 @@ import {
   selectObject,
   withComponent,
 } from "./helpers/editor";
-import { canvasAverageColor, exactWorldPoint } from "./helpers/canvas";
+import { canvasAverageColor, preciseWorldPoint } from "./helpers/canvas";
 
 /**
  * **精灵（子图，v20 / 协议 v10）**：把一张图按「行 × 列」切成格子，对象引用其中一格。
@@ -49,7 +49,7 @@ async function expectColorAt(
   world: { x: number; y: number },
   color: readonly [number, number, number],
 ): Promise<void> {
-  const point = await exactWorldPoint(page, world);
+  const point = await preciseWorldPoint(page, world);
   await expect
     .poll(async () => {
       const sampled = await canvasAverageColor(page, point, 3);

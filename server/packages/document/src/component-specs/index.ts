@@ -24,13 +24,6 @@ export function componentSpecOf(type: string): ComponentSpec | undefined {
   return COMPONENT_SPECS[type];
 }
 
-/** 登记在册的全部规格。 */
-export function listComponentSpecs(): readonly ComponentSpec[] {
-  return Object.values(COMPONENT_SPECS).filter(
-    (spec): spec is ComponentSpec => spec !== undefined,
-  );
-}
-
 /**
  * 某个组件类型的**默认数据**（新建 / 补壳用）。
  *

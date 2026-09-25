@@ -317,7 +317,6 @@ export interface EditorStoreState {
   setSelection(objectIds: readonly string[]): void;
   /** 选中资源文件（传 null 取消）。与对象选中互斥——属性面板一次只显示一样东西。 */
   selectAsset(id: string | null): void;
-  setViewport(viewport: Viewport): void;
   zoomAtScreen(anchor: { x: number; y: number }, factor: number): void;
   panByScreen(dx: number, dy: number): void;
   /**
@@ -405,10 +404,6 @@ export interface EditorStoreState {
   setVideoClipName(objectId: string, clipId: string, name: string): boolean;
   /** 视频：循环播放开关（文档数据）。 */
   setVideoLoop(objectId: string, loop: boolean): boolean;
-  /** 视频：是否放视频自带的声音（文档数据）。 */
-  setVideoAudio(objectId: string, audio: boolean): boolean;
-  /** 视频：场景激活时自动播放选中视频（文档数据）。 */
-  setVideoAutoPlay(objectId: string, autoPlay: boolean): boolean;
   /**
    * 全局背景音乐（v16 起）：让前端放 / **切换**到某一首。
    *
@@ -446,12 +441,6 @@ export interface EditorStoreState {
    * 音频文件：替换**整份**标签 ID 清单（去重升序、丢掉越界已删的，由文档命令做）。
    */
   setAudioTags(clipId: string, tagIds: readonly number[]): boolean;
-  /**
-   * 标签表：给某个 tag ID 改名字（**只改表**，文件里的 ID 不动）。
-   *
-   * 只改**已经存在**的槽位；给「序号预先列好、只填名字」的界面用的是 `setAudioTagName`。
-   */
-  renameAudioTag(tagId: number, name: string): boolean;
   /**
    * 标签表：给**指定的序号**命名（序号不存在就把它补出来，中间的缺口补成空名字）。
    *
@@ -508,8 +497,6 @@ export interface EditorStoreState {
    * 与 `saveSceneNow` 同一套：运行态下不写盘（改动退出运行会整体还原），失败写进 `projectSaveError`。
    */
   saveProjectNow(): Promise<boolean>;
-  /** 工程文件有待保存改动就立刻写回；关项目 / 进运行态前调用。 */
-  flushProjectSave(): Promise<void>;
 
   /**
    * 立即把**有改动的素材 meta**（`<素材>.meta`）写回磁盘。
@@ -580,8 +567,6 @@ export interface EditorStoreState {
   duplicateObjects(ids?: readonly string[]): boolean;
   /** 移动对象（画布拖动用，参数是世界坐标；连续调用合并成一条撤销记录）。 */
   moveObject(id: string, position: WorldPosition): void;
-  /** 一次拖动结束：断开撤销合并，使后续拖动成为独立记录。 */
-  endObjectDrag(): void;
   /** 换变换工具（移动 / 旋转 / 缩放）；写进浏览器本地偏好，不进文档。 */
   setTool(tool: TransformTool): void;
   /** 「背景音乐」弹框显不显示路径；同样写进浏览器本地偏好，不进文档。 */
@@ -613,27 +598,18 @@ export interface EditorStoreState {
     pointer: WorldPosition,
     options?: { readonly axis?: "x" | "y"; readonly snapAngle?: boolean; readonly uniform?: boolean },
   ): void;
-  /** 一次手柄拖拽结束：断开撤销合并（与 `endObjectDrag` 同一件事，名字说清用途）。 */
+  /** 一次手柄拖拽结束：断开撤销合并，使下一次拖拽成为独立记录。 */
   endObjectTransform(): void;
   /** 取消这次拖拽：用快照把位置 / 角度 / 两轴缩放写回按下前的样子，再收尾。 */
   cancelObjectTransform(): void;
   /** 改对象的**两轴缩放**（单轴手柄与属性面板用）；两轴相等时自动折叠回等比。 */
   setObjectScaleAxes(id: string, x: number, y: number): boolean;
-  /** 换对象显示的图片（地图写进 map.image，精灵写进 image；宽高由调用方从素材本身读出）。 */
-  setObjectImage(objectId: string, image: ImageRef): boolean;
   /**
    * 「选择贴图 / 精灵」窗口确定时的那一条命令：**图 + 格子一次写进去**（一条撤销记录）。
    *
    * `sprite` 为 `null` = 用整张图（会把对象上原来的子图引用清掉）。
    */
   setObjectImageSprite(objectId: string, image: ImageRef, sprite: ImageSpriteRef | null): boolean;
-  /**
-   * 选这张图（图集）里的**第几格**（`null` = 改回整图）。
-   *
-   * 落在**场景**那条轨道上（对象身上的引用）；「几行几列」在这个素材自己的 `.meta` 里，
-   * 由 `setSpriteSheet` 改——越界的格子在渲染与推送时统一夹到最后一格。
-   */
-  setObjectSprite(objectId: string, sprite: ImageSpriteRef | null): boolean;
   /**
    * 改一张图的**切分**（列 × 行；`null` = 恢复整图）：落在**素材 meta** 那条轨道上。
    *
@@ -651,13 +627,6 @@ export interface EditorStoreState {
    * 已经有 meta（哪怕只是按路径命中的）时原样返回，一个字节都不改。
    */
   ensureAssetMeta(imageId: string): AssetMetaDoc;
-  /**
-   * 替换声音对象的音频列表（资源逻辑 ID；去空去重，值没变不算变更）。
-   *
-   * 低层入口：面板上点小方块走 `selectSoundClip`，窗口里加 / 删走 `addSoundClip` /
-   * `removeSoundClip`（它们各自只做一件事，好读）。
-   */
-  setSoundClips(objectId: string, clips: readonly string[]): boolean;
   /**
    * 把一条音频**加进来**（已在列表里就什么都不做，只把它选上）。
    *
@@ -753,7 +722,7 @@ export interface EditorStoreState {
    * 返回是否真的产生了变更（落笔在网格外、重复涂抹都会返回 false）。
    */
   paintGridStroke(mapObjectId: string, from: GridPoint | null, to: GridPoint): boolean;
-  /** 一次涂抹结束：断开撤销合并，使下一笔成为独立记录（对齐对象拖动的 `endObjectDrag`）。 */
+  /** 一次涂抹结束：断开撤销合并，使下一笔成为独立记录（对齐对象变换的 `endObjectTransform`）。 */
   endGridStroke(): void;
   /** 清空整张网格（可撤销）。 */
   clearGrid(mapObjectId: string): boolean;

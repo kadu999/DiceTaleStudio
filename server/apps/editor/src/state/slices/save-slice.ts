@@ -1,7 +1,8 @@
 /**
  * 本文件从 `editor-store.ts` 拆出（纯搬运，行为不变）。
  *
- * 三份文件（场景 / 工程文件 / 每个素材的 `.meta`）的立即落盘与 flush。
+ * 三份文件（场景 / 工程文件 / 每个素材的 `.meta`）的立即落盘与 flush
+ * （工程文件只有立即落盘：没有「关闭前 flush」的调用方，改动全走去抖定时器）。
  */
 import { serializeAssetMetaFile } from "@dts/document";
 import { assetMetaIdOf, projectFileId, projectSceneFileId } from "@dts/resources";
@@ -19,14 +20,12 @@ export function createSaveSlice(
   | "saveSceneNow"
   | "flushSceneSave"
   | "saveProjectNow"
-  | "flushProjectSave"
   | "saveMetasNow"
   | "flushMetaSave"
 > {
   // 共享的闭包状态与局部工具都在 ctx 里：这里解构一次，方法体与拆分前逐字一致
   const {
     pushLog,
-    projectDirty,
     dirtySceneNames,
     metaDirtyIds,
     clearSceneSaveTimer,
@@ -134,16 +133,6 @@ export function createSaveSlice(
         pushLog(makeLog("error", `保存工程文件失败：${message}`));
         return false;
       }
-    },
-
-    async flushProjectSave() {
-      clearProjectSaveTimer();
-
-      if (!projectDirty()) {
-        return;
-      }
-
-      await get().saveProjectNow();
     },
 
     // ---------------------------------------------------------------- 素材 meta（切分 / 导入设置）

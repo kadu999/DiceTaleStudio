@@ -27,7 +27,6 @@ import {
 import {
   canvasAverageColor,
   clampedWorldPoint,
-  exactWorldPoint,
   findEmptyCanvasPoint,
   offsetFrom,
   preciseWorldPoint,
@@ -43,7 +42,7 @@ import {
  *
  * 这一份里的对象都摆在**世界原点附近**，所以打开场景时适配出来的视口就是
  * **1:1、世界原点在画布正中**，「世界坐标 → 画布上的点」只有一步：`screen = 画布中心 + (x, -y)`。
- * 对象挪远 / 场景大到装不下时，视口会跟着平移或缩小——那种用例得用 `exactWorldPoint`。
+ * 对象挪远 / 场景大到装不下时，视口会跟着平移或缩小——那种用例得用 `preciseWorldPoint`。
  */
 
 const SCENE_A = "Map001";
@@ -657,7 +656,7 @@ test.describe("创建与编辑场景对象", () => {
       await page.getByTestId("reset-viewport").click();
       const viewport = await sceneViewport(page);
       expect(viewport.scale).toBe(1);
-      const objectPoint = await exactWorldPoint(page, probed.world);
+      const objectPoint = await preciseWorldPoint(page, probed.world);
       await page.mouse.click(objectPoint.x, objectPoint.y);
       await expect(page.getByTestId("object-row").first()).toHaveAttribute("data-selected", "true");
     } finally {

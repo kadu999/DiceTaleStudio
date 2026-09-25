@@ -14,7 +14,6 @@ export function createViewportSlice(
   ctx: StoreContext,
 ): Pick<
   EditorStoreState,
-  | "setViewport"
   | "zoomAtScreen"
   | "panByScreen"
   | "fitToViewport"
@@ -22,11 +21,6 @@ export function createViewportSlice(
   | "setUi"
 > {
   return {
-    setViewport(viewport) {
-      ctx.viewportAdjusted = true;
-      set({ viewport });
-    },
-
     zoomAtScreen(anchor, factor) {
       ctx.viewportAdjusted = true;
       set({ viewport: zoomAt(get().viewport, factor, anchor) });

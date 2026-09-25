@@ -181,8 +181,6 @@ export interface StoreContext {
   clearMetaSaveTimer(): void;
   /** 标注偏好的落盘（画笔类型 / 大小 / 每类的显示与颜色）。 */
   persistGridPaint(gridPaint: GridPaintState): void;
-  /** 当前场景里按 id 找一个对象（画布与变换用）。 */
-  currentObjectOf(id: string): GameObjectDoc | undefined;
   /** **切场景的唯一路径**。 */
   switchScene(
     name: string | null,
@@ -1149,9 +1147,6 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
 
   const storedGridPaint = readGridPaintPrefs();
 
-  /** 当前场景里按 id 找一个对象（画布与变换用；找不到返回 undefined）。 */
-  const currentObjectOf = (id: string): GameObjectDoc | undefined => findObjectById(id);
-
   /**
    * **切场景的唯一路径**：切之前写回改动与视口，切之后恢复视口、立刻推给前端。
    *
@@ -1264,7 +1259,6 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
     clearProjectSaveTimer: projectSave.clearTimer,
     clearMetaSaveTimer: metaSave.clearTimer,
     persistGridPaint,
-    currentObjectOf,
     switchScene,
     savedScenes,
     savedMetas,

@@ -6,8 +6,6 @@
 import {
   DEFAULT_SLOT_COMPONENT,
   videoDataOf,
-  setVideoAudio as setSceneVideoAudio,
-  setVideoAutoPlay as setSceneVideoAutoPlay,
   setVideoClipName as setSceneVideoClipName,
   setVideoClips as setSceneVideoClips,
   setVideoEnabled as setSceneVideoEnabled,
@@ -42,8 +40,6 @@ export function createVideoSlice(
   | "selectVideoClip"
   | "setVideoClipName"
   | "setVideoLoop"
-  | "setVideoAudio"
-  | "setVideoAutoPlay"
 > {
   // 共享的闭包状态与局部工具都在 ctx 里：这里解构一次，方法体与拆分前逐字一致
   const { pushLog, applyActiveScene, runtimeClient, videoTargetOf, objectWithFeature, deliverVideo } = ctx;
@@ -253,22 +249,6 @@ export function createVideoSlice(
       return applyActiveScene("修改视频循环", (scene) => {
         setSceneVideoLoop(scene, objectId, loop);
       });
-    },
-
-    setVideoAudio(objectId, audio) {
-      return applyActiveScene("修改视频声音", (scene) => {
-        setSceneVideoAudio(scene, objectId, audio);
-      });
-    },
-
-    setVideoAutoPlay(objectId, autoPlay) {
-      return applyActiveScene(
-        "修改视频自动播放",
-        (scene) => {
-          setSceneVideoAutoPlay(scene, objectId, autoPlay);
-        },
-        { coalesceKey: `video-autoplay:${objectId}` },
-      );
     },
   };
 }
