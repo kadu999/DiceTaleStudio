@@ -163,6 +163,9 @@ function extractVideoFrame(source: Buffer): Promise<Buffer> {
         reject(new Error(Buffer.concat(errors).toString("utf8").trim() || `ffmpeg 退出码 ${code}`));
       }
     });
+    // ffmpeg 抽出首帧就退出，stdin 常常写不完（大文件必现）：EOF/EPIPE 是**正常**情况，
+    // 结果以 close 为准——这里不接住的话，未处理的 'error' 会把整个后端进程打崩。
+    child.stdin.on("error", () => {});
     child.stdin.write(source);
     child.stdin.end();
   });

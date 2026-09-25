@@ -41,6 +41,12 @@ export function createHttpServer(options: HttpServerOptions): Server {
   }
 
   return createServer((request, response) => {
+    // 客户端中途断开（取消缩略图 / 视频下载、关页面）时，写响应会**异步**冒 'error'
+    // （Windows 上是 UV_EOF 的 write）——没人接就把整个进程打崩，这里统一吞掉：
+    // 断开了就是客户端不需要了，不是服务端错误。
+    request.socket.on("error", () => {});
+    response.on("error", () => {});
+
     void handle(request, response).catch((error: unknown) => {
       if (response.headersSent) {
         response.end();

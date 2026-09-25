@@ -368,6 +368,52 @@ describe("项目 API", () => {
     expect(Buffer.from(await cachedResponse.arrayBuffer())).toEqual(thumbnail);
   });
 
+  it("视频缩略图：ffmpeg 提前退出时 stdin 写不满，不得把进程打崩", async () => {
+    // 进程级兜底记录：'error' 事件没人接会抛成 uncaughtException——
+    // vitest 自己的兜底不一定让用例变红，这里显式钉住「期间不得有未处理异常」。
+    const unhandled: Error[] = [];
+    const onUncaught = (error: Error) => unhandled.push(error);
+    process.on("uncaughtException", onUncaught);
+    try {
+      await postJson("/api/projects", { name: TEST_PROJECT });
+      const id = projectAssetId(TEST_PROJECT, "Assets/video/broken.mp4");
+      // 400MB 无法解码的填充：ffmpeg 探测失败立刻退出，一次 write 的大量子字节还挂在
+      // 管道写入里 —— 在途写入以 UV_EOF 失败（复现线上「打开选择视频打崩后端」）；
+      // 修复后接口如实回 400。必须足够大：小文件一次 flush 赶在退出前完成，错误冒不出来。
+      const source = Buffer.alloc(400 * 1024 * 1024, 7);
+      await provider.writeBinary(id, source.buffer.slice(source.byteOffset, source.byteOffset + source.byteLength) as ArrayBuffer);
+
+      const response = await fetch(`${baseUrl}/api/resources/thumbnail?id=${encodeURIComponent(id)}`);
+      expect(response.status).toBe(400);
+      // 等一拍：那枚写错误是异步冒出来的，给进程一个「被打崩」的机会
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      // 期间没有未处理异常 + 进程还活着（下一个请求照常响应）
+      expect(unhandled).toEqual([]);
+      const health = await fetch(`${baseUrl}/api/health`);
+      expect(health.status).toBe(200);
+    } finally {
+      process.off("uncaughtException", onUncaught);
+    }
+  });
+
+  it("客户端中途断开大文件下载：写响应的异步错误（UV_EOF）不得打崩进程", async () => {
+    await postJson("/api/projects", { name: TEST_PROJECT });
+    const id = projectAssetId(TEST_PROJECT, "Assets/video/big.mp4");
+    const big = Buffer.alloc(64 * 1024 * 1024, 1);
+    await provider.writeBinary(id, big.buffer.slice(big.byteOffset, big.byteOffset + big.byteLength) as ArrayBuffer);
+
+    // 读到第一个字节就断开：服务端 64MB 的写入还挂在半路，随后往已断的 socket 上写
+    const response = await fetch(`${baseUrl}/api/resources/raw?id=${encodeURIComponent(id)}`);
+    const reader = response.body!.getReader();
+    await reader.read();
+    await reader.cancel();
+    // 等异步的写错误冒上来
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    // 进程还活着（下一个请求照常响应）
+    const health = await fetch(`${baseUrl}/api/health`);
+    expect(health.status).toBe(200);
+  });
+
   it("删除项目会连项目文件与资源一起清掉", async () => {
     await postJson("/api/projects", { name: TEST_PROJECT });
     await fetch(
