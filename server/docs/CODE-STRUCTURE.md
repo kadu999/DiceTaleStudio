@@ -16,8 +16,12 @@
 | 后端默认地址 | `0.0.0.0:1420`（`resources/config/app.json`，可被 `HOST` / `PORT` 覆盖） |
 | 编辑器开发地址 | `http://localhost:5173`（Vite，`/api`、`/editor`、`/client` 反代到 1420） |
 | 编辑器生产地址 | `http://localhost:1420`（后端同源托管 `apps/editor/dist`） |
-| 源码规模（不含测试） | 157 个文件 / 34,624 行（packages 11,038 · backend 3,361 · editor 20,225） |
-| 测试规模 | 30,472 行（单测 21,375 · E2E 8,866 · 架构测试 231） |
+| 源码规模（不含测试） | 163 个文件 / 35,469 行（packages 11,577 · backend 3,283 · editor 20,609） |
+| 测试规模 | 31,967 行（单测 22,725 · E2E 8,959 · 架构测试 283） |
+
+> 上表两行与 §0.1 表格里加粗的文件行数、§3.x 节标题里的包规模由
+> `scripts/check-code-structure-stats.mjs` **机器校验**（`pnpm check` 的一环）：
+> 改了代码就更新这里，改了计数口径先改脚本。
 
 ### 0.1 本次重构（解耦 + 实体/组件）留下了什么
 
@@ -26,11 +30,11 @@
 | 改动 | 之前 | 之后 | 加一个功能要改几处 |
 |---|---|---|---|
 | **HTTP 一条协议一个函数** | `http/server.ts` 633 行、一条 `switch` | 13 个文件，`server.ts` **59 行** + `routes/*` | 加一个接口 = 加一个函数 + 路由表一行 |
-| **WS 一条消息一个函数** | `ws/hub.ts` 621 行、两条 `switch` | 8 个文件，`hub.ts` **465 行**（只管传输）+ `handlers/*` | 加一条消息 = 加一个函数（表的键完整性由类型保证） |
+| **WS 一条消息一个函数** | `ws/hub.ts` 621 行、两条 `switch` | 8 个文件，`hub.ts` **476 行**（只管传输）+ `handlers/*` | 加一条消息 = 加一个函数（表的键完整性由类型保证） |
 | **Unity 式实体+组件（GameObject + Component）** | 对象上 5 个特性扁平字段 + 各处 `kind === "…"` | `components[]`（模拟 Unity GameObject 挂组件）+ 能力槽位（slot）/访问器；文档 v19 / 协议 v9 / Unity 客户端同步（子图改动后为 **v20 / v10**，见 §0） | 加一个特性 = 加一个组件 + 注册表一行 + 预设表一行（见 §1.6） |
 | **文档命令分模块** | `commands.ts` 2,069 行 | `commands/` 10 个文件（按特性） | 加一个特性的命令 = 加一个文件 |
 | **编辑器 store 分片** | `editor-store.ts` 4,493 行 | 组装点 **100 行** + 17 个切片 + 上下文（见 §5.2） | 加一个功能 = 加一个 `slices/<功能>-slice.ts` + 组装点一行（**简单字段连切片都不用加**：`setComponentField` 已经在 `component-slice.ts` 里） |
-| **属性面板注册表** | `InspectorPanel.tsx` 1,195 行的 JSX 分支 | `InspectorPanel.tsx` **343 行** + `registry.tsx` + `object-fields.tsx` | 加一个特性分组 = 注册表一行 + 一个字段组件 |
+| **属性面板注册表** | `InspectorPanel.tsx` 1,195 行的 JSX 分支 | `InspectorPanel.tsx` **498 行** + `registry.tsx` + `object-fields.tsx` | 加一个特性分组 = 注册表一行 + 一个字段组件 |
 
 **代价是诚实的**：源码从 28,810 行长到 31,002 行（+7.6%；子图、kind、素材 meta 三次改动后全仓 34,624 行，见 §0）——多出来的是文件头注释、import/export
 与「显式列出 action 名」的类型。换来的是「改一个功能不必碰整个项目」。
@@ -396,7 +400,7 @@ build: { outDir: "dist", sourcemap: true },
 
 ## 3. 内部包 `packages/*`
 
-### 3.1 `@dts/grid` — 网格几何与编解码（734 行，零依赖）
+### 3.1 `@dts/grid` — 网格几何与编解码（707 行，零依赖）
 
 | 文件 | 行数 | 职责 | 关键导出 |
 |---|---|---|---|
@@ -418,7 +422,7 @@ build: { outDir: "dist", sourcemap: true },
 - 画笔半径 `floor((brushSize-1)/2)`（1/2→1×1、3/4→3×3、5→5×5，含偶数尺寸的刻意保真），与 Unity `ApplyBrush` 完全一致；
 - 坐标系只有一个：**世界坐标**（x 右、y 上、像素、无限大）；`grid(0,0)` 在地图矩形左下角 = 图片最下面一行，grid.y 与世界 y 同向、不翻转；唯一的翻转发生在贴图绘制（`worldRectTopLeft`）。
 
-### 3.2 `@dts/document` — 文档模型、命令与历史（6,506 行）
+### 3.2 `@dts/document` — 文档模型、命令与历史（7,105 行）
 
 | 文件 | 行数 | 职责 | 关键导出 |
 |---|---|---|---|
@@ -653,7 +657,7 @@ v23 起 `validateScene` 多了第二个参数：`validateScene(scene, { metas })
 > **历史**：`@dts/actions`（动作类型注册表、条件求值、动作图校验）曾是独立的一个包，
 > 随「动作挂在组件上」那套旧模型一起整包删除了；动作编辑的数据面落地时重新设计。
 
-### 3.3 `@dts/protocol` — WS 消息契约（824 行）
+### 3.3 `@dts/protocol` — WS 消息契约（820 行）
 
 单文件 `src/messages.ts`（823 行）+ `index.ts` barrel（1 行）。
 **编辑器、服务端、Unity 前端共用同一份 zod schema。**
@@ -719,7 +723,7 @@ v23 起 `validateScene` 多了第二个参数：`validateScene(scene, { metas })
 | 文件 | 行数 | 职责 | 关键导出 |
 |---|---|---|---|
 | `ids.ts` | 262 | **目录约定的唯一归属地** + 逻辑 ID 编解码（含 `<素材>.meta` 的路径 / ID 换算） | `ResourceKind`、`RESOURCE_KINDS`、`PROJECT_FOLDERS`、`DEFAULT_PROJECT_FOLDERS`、`PROJECT_FILE_NAME`、`PROJECT_SPECIAL_FILES`、`PROJECT_SCENE_FILE_EXTENSION`、`ASSET_META_SUFFIX`、`isAssetMetaPath`、`assetMetaPathOf`、`assetMetaIdOf`、`assetIdOfMetaId`、`formatResourceId`、`parseResourceId`、`projectPath`、`projectFileId`、`projectAssetId`、`projectFolderId`、`projectSceneBytesId`、`projectSceneImageId`、`projectSceneFileId`、`projectNameFromId`、`projectRelativePathFromId`、`projectNameFromFileId`、`configId`、`normalizePath` |
-| `provider.ts` | 60 | 资源访问抽象（浏览器 / Node / 测试三实现共用） | `ResourceEntry`、`ResourceProvider`、`ResourceDirs`、`DEFAULT_RESOURCE_DIRS`、`assertCompleteDirs` |
+| `provider.ts` | 49 | 资源访问抽象（浏览器 / Node / 测试三实现共用） | `ResourceEntry`、`ResourceProvider`、`ResourceDirs`、`DEFAULT_RESOURCE_DIRS`、`assertCompleteDirs` |
 | `project.ts` | 370 | 项目级业务操作（与宿主无关） | `ProjectSummary`、`ResourceTreeNode`、`validateProjectName`、`validateProjectRelativePath`、`listProjects`、`projectExists`、`readProjectEntries`、`buildResourceTree`、`createProject`、`deleteProject`、`readProjectFile`、`belongsToProject`、`CreateProjectOptions` |
 | `memory.ts` | 238 | 内存实现（测试与联调） | `MemoryResourceProvider`、`createMemoryResourceProvider` |
 | `meta.ts` | 178 | `<素材>.meta` 的路径换算、导入器判定与缺省 meta 文本；rename 校验（`assertRenameAllowed`）与「确保有 meta」（`ensureAssetMetaCore`）的公共纯函数——内存 / 文件系统两个 provider 同一套口径，错误消息只有这一份 | `ownsAssetMeta`、`assetMetaPathFor`、`assetFolderPathsFor`、`AssetImporter`、`assetImporterForPath`、`assetMetaIdFor`、`assertRenameAllowed`、`ensureAssetMetaCore`、`newAssetMetaText`、`guidFromAssetMetaText` |
@@ -1130,8 +1134,8 @@ store 用 **zustand 切片**模式拆开了：原来是一个 4,493 行的 `edit
 | 文件 | 行数 | 职责 | 对外导出 |
 |---|---|---|---|
 | `editor-store.ts` | **100** | **只剩组装与再导出**：`create<EditorStoreState>()` 里展开初始状态与 17 个切片，然后把公开 API 原样再导出（仓库里 30+ 处从这里导入） | `useEditorStore`、`sceneHistory`、`projectHistory`、`fitSceneViewport`、`serializeSceneFile`、`serializeProjectFile`、`compareSceneNames`、`findResourceNode`、`withRenamedSceneImage`；类型 `EditorMode`、`EditorUiState`、`RuntimeUiState`、`ProjectUiState`、`ProjectDialogMode`、`SceneDialogMode`、`SceneSaveState`、`GridPaintState`、`EditorStoreState` |
-| `store-types.ts` | 817 | 全部状态类型 + `EditorStoreState`（**136 个 action + 48 个状态字段**）+ `StoreSet` / `StoreGet` / `EditorStoreData`（由「全部 action 名」算出来的状态部分）；素材 meta 的 `AssetMetaTable`（真源表）、`AssetMetaDraft`（`applyMetas` 拿到的那份可写草稿）与 `assetMetas`（派生索引）也在这里 | 上表那些类型 |
-| `store-core.ts` | 379 | **模块级**工具与状态：**三份** `DocumentHistory`（`sceneHistory` / `projectHistory` / `metaHistory`）、撤销轨（`lastEditTrack` / `activeTrack` / `historyOf` / `EDIT_TRACKS` = `scenes` / `project` / `metas`）、常量、`fitSceneViewport`、`serializeSceneFile` / `serializeProjectFile`、`withRenamedSceneImage`、`compareSceneNames`、`findResourceNode`、`makeLog` / `nextLogId` | 同 `editor-store` 的值导出 |
+| `store-types.ts` | 819 | 全部状态类型 + `EditorStoreState`（**136 个 action + 48 个状态字段**）+ `StoreSet` / `StoreGet` / `EditorStoreData`（由「全部 action 名」算出来的状态部分）；素材 meta 的 `AssetMetaTable`（真源表）、`AssetMetaDraft`（`applyMetas` 拿到的那份可写草稿）与 `assetMetas`（派生索引）也在这里 | 上表那些类型 |
+| `store-core.ts` | 400 | **模块级**工具与状态：**三份** `DocumentHistory`（`sceneHistory` / `projectHistory` / `metaHistory`）、撤销轨（`lastEditTrack` / `activeTrack` / `historyOf` / `EDIT_TRACKS` = `scenes` / `project` / `metas`）、常量、`fitSceneViewport`、`serializeSceneFile` / `serializeProjectFile`、`withRenamedSceneImage`、`compareSceneNames`、`findResourceNode`、`makeLog` / `nextLogId` | 同 `editor-store` 的值导出 |
 | `store-context.ts` | 1,306 | **闭包状态与局部工具**（原 `create()` 里那段）：`StoreContext` 54 个成员——41 个函数（`pushLog` / `switchScene` / `deliverSoundPlay` / `applyActiveScene` / `scheduleSceneSave` / `scheduleMetaSave` / `metaDirtyIds` / `fogTargetOf` / `currentSceneDoc` …）、8 个稳定引用（`runtimeClient` / 两个 `ScenePushScheduler` / `savedScenes` / **`savedMetas`** / `sceneViewports` / `quietCommandIds` / `storedGridPaint`）、5 个可变标量走 get/set（`lastPushedSceneText` / `pendingRunRequest` / `viewportAdjusted` / `bootstrapping` / `savedProjectText`）；**`metaHistory.subscribe` 在这里重建 `assetMetas` 索引并安排 meta 落盘** | `StoreContext`、`createStoreContext` |
 | `initialState.ts` | 84 | 初始状态（返回类型是 `EditorStoreData`，所以**少一个状态字段就编译报错**；素材 meta 两份初始为空） | `createInitialState` |
 | `slices/history-slice.ts` | 148 | `applyScenes` `applyProject` `applyMetas` `undo` `redo` `resetDoc`（三条轨道各一个写入口，且**真的产生改动时**才 `setLastEditTrack`——撤销才会作用在「最近改过的那条」上；`resetDoc` 连 `metaHistory` 一起清） | — |

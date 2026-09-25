@@ -41,6 +41,17 @@ export default tseslint.config(
   },
 
   {
+    // Node 脚本（如 scripts/check-code-structure-stats.mjs）跑在 Node 全局上
+    files: ["**/*.mjs"],
+    languageOptions: {
+      globals: { ...globals.node },
+    },
+    rules: {
+      "no-console": "off",
+    },
+  },
+
+  {
     // 测试与 e2e 里允许更松的写法
     files: ["**/test/**/*.{ts,tsx}", "**/*.test.{ts,tsx}", "e2e/**/*.ts"],
     rules: {
