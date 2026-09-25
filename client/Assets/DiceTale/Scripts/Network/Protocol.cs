@@ -77,8 +77,17 @@ namespace DiceTale
         /// （int，缺省 0）；动作对象与没有渲染层的实体不再有这个字段。
         /// 老前端（v13）按对象级读，拿到 0 会让所有渲染层挤在同一层（不是崩，是遮挡顺序错乱），
         /// 所以照旧 +1。**命令那一组仍然一个字节都没动。**
+        ///
+        /// v15（2026-09-26）：**战争雾变成独立场景对象**（`kind: "Fog"`）。原来 `FogOfWar` 组件挂在
+        /// 地图对象上；现在它挂在独立的雾对象上，data 多了 `mapId`（引用被雾罩住的那张地图，
+        /// 地图上仍是 `GridMap`：贴图 + `grid` + `cells`）。雾对象**可摆放**，有自己的
+        /// position / rotation / scale，但没有 `GridMap` / `ImageLayer` / `SpriteLayer`；
+        /// 雾面片世界尺寸 = 被引用地图的显示图声明尺寸 × 雾对象 scale。
+        /// 两条命令 `erase_mask` / `reveal_fog_region` 的 `objectId` 从此是**雾对象 id**（不再是地图 id）。
+        /// 老前端（v14）眼里「雾设置」整个消失（没开雾），雾层不工作，属于「行为丢」，所以照旧 +1；
+        /// 这类不兼容由握手 close `4002` 挡住，别指望老前端自己看出来。
         /// </summary>
-        public const int Version = 14;
+        public const int Version = 15;
 
         /// <summary>对象特性组件的类型名（v9 起）。与服务端 `@dts/protocol` 的 `COMPONENT_TYPE` 逐字一致。</summary>
         public static class ComponentType
@@ -91,7 +100,10 @@ namespace DiceTale
             public const string Sound = "PlaySound";
             public const string Teleport = "Teleport";
             public const string Video = "VideoOverlay";
-            /// <summary>战争雾（v13 起）：**独立组件**，`{ enabled, regions }`——不再挂在 `GridMap` 的 `map.fog` 下。</summary>
+            /// <summary>
+            /// 战争雾：**独立组件，挂在独立的 `Fog` 对象上**（v13 起从 `GridMap` 拆出；v15 起雾自身成对象）。
+            /// `{ mapId, enabled, regions }`：`mapId` 引用被雾罩住的那张地图（地图那边仍是 `GridMap`）。
+            /// </summary>
             public const string FogOfWar = "FogOfWar";
         }
 
@@ -125,9 +137,9 @@ namespace DiceTale
         public const string CommandPauseSound = "pause_sound";
         /// <summary>声音：从暂停处继续放某一层。</summary>
         public const string CommandResumeSound = "resume_sound";
-        /// <summary>战争雾：沿一笔轨迹擦掉地图对象上的雾（载荷是**轨迹**，不是整张遮罩）。</summary>
+        /// <summary>战争雾：沿一笔轨迹擦掉**雾对象**上的雾（载荷是**轨迹**，不是整张遮罩）。</summary>
         public const string CommandEraseMask = "erase_mask";
-        /// <summary>战争雾：整片揭示 / 整片盖回某个区域（区域位取自那个对象的 `FogOfWar` 组件）。</summary>
+        /// <summary>战争雾：整片揭示 / 整片盖回某个区域（区域位取自**那个雾对象**的 `FogOfWar` 组件）。</summary>
         public const string CommandRevealFogRegion = "reveal_fog_region";
         /// <summary>视频：在对象自己的矩形上放它 `video.picked` 那一条（命令里不带数据）。</summary>
         public const string CommandPlayVideo = "play_video";
@@ -251,7 +263,7 @@ namespace DiceTale
         /// <summary>`erase_mask`：鼠标拖过的**归一化轨迹点**（`[0,1]`、y 向下）。</summary>
         public readonly List<Vector2> points = new List<Vector2>();
 
-        /// <summary>`reveal_fog_region`：区域位（与那个对象的 `FogOfWar` 组件 `regions` 里的值同一套）。</summary>
+        /// <summary>`reveal_fog_region`：区域位（与那个雾对象的 `FogOfWar` 组件 `regions` 里的值同一套）。</summary>
         public int region;
 
         /// <summary>`reveal_fog_region`：`true` = 整片揭示、`false` = 整片盖回。</summary>

@@ -11,7 +11,7 @@ import {
   videoDataOf,
 } from "./access";
 import type { AssetMetaDoc, AssetMetas } from "./asset-meta";
-import { DEFAULT_SLOT_COMPONENT } from "./presets";
+import { DEFAULT_SLOT_COMPONENT, supportsFog } from "./presets";
 import { spriteSheetOf } from "./sprites";
 import type {
   AudioTagTableDoc,
@@ -168,8 +168,16 @@ function validateObject(
     }
   }
 
-  // 战争雾（v25 起是独立的 `FogOfWar` 组件，从属 `GridMap`；雾区校验不再挂在地图数据里）
+  // 战争雾（v27 起是独立的 `Fog` 对象；开关与雾区住它自己的 `FogOfWar` 组件里）
   const fog = fogOf(object);
+  if (fog === undefined && supportsFog(object)) {
+    issues.push({
+      level: "error",
+      path,
+      message: "战争雾对象缺少雾数据（引用哪张地图 / 开关 / 雾区）",
+    });
+  }
+
   if (fog !== undefined) {
     // 指定的雾区位必须是可绘制的区域位：手写文件里写了别的值（0、3、256…），
     // 编辑器会把它丢掉，所以这里得说出来——不然「明明指定了却不生效」无从排查
@@ -372,6 +380,40 @@ export function validateScene(
 
     validateObject(object, path, issues, scene.name);
     validateObjectSprite(object, path, options.metas, issues);
+  }
+
+  // 战争雾对象：引用的地图必须真实存在、且一张地图最多一个雾对象
+  const fogByMap = new Map<string, string>();
+  for (const object of scene.objects) {
+    if (fogOf(object) === undefined) {
+      continue;
+    }
+
+    const path = `${base}/objects/${object.id}`;
+    const mapId = fogOf(object)?.mapId ?? "";
+    const map = mapId.length === 0 ? undefined : scene.objects.find((item) => item.id === mapId);
+    if (map === undefined || mapDataOf(map) === undefined) {
+      issues.push({
+        level: "error",
+        path: `${path}/components/FogOfWar/mapId`,
+        message:
+          mapId.length === 0
+            ? "战争雾还没选引用的地图"
+            : `战争雾引用的地图不存在或不是地图：${mapId}`,
+      });
+      continue;
+    }
+
+    if (fogByMap.has(mapId)) {
+      issues.push({
+        level: "error",
+        path: `${path}/components/FogOfWar/mapId`,
+        message: `这张地图已经有战争雾了（一张地图最多一个）`,
+      });
+      continue;
+    }
+
+    fogByMap.set(mapId, object.id);
   }
 
   return issues;

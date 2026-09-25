@@ -69,13 +69,16 @@ export function FogMaskDialog({
   /** 运行态：擦了会下发给前端（编辑态只是预览）——底部那句话按它换。 */
   const running = useEditorStore((state) => state.mode === "run");
 
-  // 目标对象现查一次：它可能已经被删掉（删了窗口就该关，这里只是兜底不崩）
-  const object = useSceneObject(objectId);
-  const map = object === undefined ? undefined : mapDataOf(object);
+  // 目标对象（**雾对象**）现查一次：它可能已经被删掉（删了窗口就该关，这里只是兜底不崩）
+  const fogObject = useSceneObject(objectId);
+  // 雾引用一张地图：格子 / 贴图尺寸都取自那张地图
+  const fogMapId = fogObject === undefined ? "" : (fogOf(fogObject)?.mapId ?? "");
+  const mapObject = useSceneObject(fogMapId.length === 0 ? null : fogMapId);
+  const map = mapObject === undefined ? undefined : mapDataOf(mapObject);
   const imageRef = map?.image;
 
-  // 雾区绑定自 v25 起住在独立的 `FogOfWar` 组件里
-  const regions = object === undefined ? [] : (fogOf(object)?.regions ?? []);
+  // 雾区绑定自 v27 起住在独立的 `Fog` 对象的 `FogOfWar` 组件里
+  const regions = fogObject === undefined ? [] : (fogOf(fogObject)?.regions ?? []);
   const fogMask = regionsToMask(regions);
 
   /**

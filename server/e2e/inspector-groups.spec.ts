@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import {
   dropProject,
   enterEditor,
+  fogObjectDoc,
   mapObjectDoc,
   newProject,
   openLeftTab,
@@ -14,7 +15,7 @@ import {
 
 /**
  * 属性面板的**分组**（可折叠）：对象分组 = 「基础」+ **一一对应的组件组**——
- * 地图对象是「基础 / 网格地图 / 战争雾 / 视频」，精灵是「基础 / 精灵层」，
+ * 地图对象是「基础 / 网格地图 / 视频」，战争雾对象是「基础 / 战争雾」，精灵是「基础 / 精灵层」，
  * 贴图是「基础 / 图片层 / 视频」。点标题收起 / 展开。
  *
  * 这里只驱动真实界面（分组是纯 UI 行为，没有数据副作用），所以一条用例够了；
@@ -30,12 +31,15 @@ test.describe("属性分组", () => {
   }) => {
     const project = await newProject(request);
     try {
+      const mapDoc = mapObjectDoc(project, SCENE, "网格地图", { width: 400, height: 300 }, { width: 8, height: 6 });
       await seedProjectDoc(request, project, [
         sceneDoc(SCENE, [
-          mapObjectDoc(project, SCENE, "网格地图", { width: 400, height: 300 }, { width: 8, height: 6 }),
+          mapDoc,
           gameObjectDoc("精灵", "Sprite", { x: 200, y: 0 }),
           // 贴图：视频那一组的宿主（v21 起从精灵换成贴图）
           gameObjectDoc("贴图", "Image", { x: -200, y: 0 }),
+          // 战争雾（v27 起是独立对象）
+          fogObjectDoc(mapDoc),
         ]),
       ]);
 
@@ -43,21 +47,20 @@ test.describe("属性分组", () => {
       await openProject(page, project);
       await openLeftTab(page, "hierarchy");
 
-      // 选中地图（列表第一行）→ 属性面板应有四个分组
+      // 选中地图（列表第一行）→ 属性面板应有三个分组（战争雾自 v27 起是独立对象）
       await selectObject(page, 0);
 
       const basic = page.locator('[data-group="basic"]');
       const map = page.locator('[data-group="map"]');
-      const fog = page.locator('[data-group="fog"]');
       const video = page.locator('[data-group="video"]');
       await expect(basic).toBeVisible();
       await expect(map).toBeVisible();
-      await expect(fog).toBeVisible();
       await expect(video).toBeVisible();
+      // 地图上不再有「战争雾」组
+      await expect(page.locator('[data-group="fog"]')).toHaveCount(0);
       // 默认都展开
       await expect(basic).toHaveAttribute("data-open", "true");
       await expect(map).toHaveAttribute("data-open", "true");
-      await expect(fog).toHaveAttribute("data-open", "true");
       await expect(video).toHaveAttribute("data-open", "true");
       await expect(basic).toContainText("名称");
       // 贴图行与网格规格都在「网格地图」组里（一个组件一个组）
@@ -68,10 +71,6 @@ test.describe("属性分组", () => {
       // 「基础」是实体属性组：挂「实体」角标；组件组不挂
       await expect(basic.locator('[data-testid="field-group-badge"]')).toHaveAttribute("data-kind", "entity");
       await expect(map.locator('[data-testid="field-group-badge"]')).toHaveCount(0);
-      // 战争雾是独立的 `FogOfWar` 组件组：没开过时挂「未添加」角标（能力入口），关着时只有开关
-      await expect(fog).toContainText("战争雾");
-      await expect(fog).toContainText("启用");
-      await expect(fog.locator('[data-testid="field-group-badge"]')).toHaveAttribute("data-kind", "capability");
       // 视频那一组还没开时只剩「启用」那一个开关（打开之后的样子见 video-object.spec.ts）
       await expect(video).toContainText("视频");
       await expect(video.getByTestId("video-enable")).toBeVisible();
@@ -89,12 +88,11 @@ test.describe("属性分组", () => {
       await expect(basic.getByTestId("inspector-grid-columns")).toHaveCount(0);
       await expect(basic).not.toContainText("每格");
       await expect(basic).not.toContainText("行序");
-      // 只在**对象属性**里数列（`data-group` 这种通用属性别人也在用，
-      // 例如分栏容器 react-resizable-panels 就给自己的 div 挂了一个）
+      // 只在**对象属性**里数列（`data-group` 这种通用属性别人也在用）
       const order = await page
         .locator('[data-testid="object-properties"] [data-group]')
         .evaluateAll((sections) => sections.map((section) => section.getAttribute("data-group")));
-      expect(order).toEqual(["basic", "map", "fog", "video"]);
+      expect(order).toEqual(["basic", "map", "video"]);
 
       // 收起「网格地图」：内容整块消失，但分组标题还在（还能再展开）
       await mapHeader.click();
@@ -109,15 +107,6 @@ test.describe("属性分组", () => {
       await expect(map).toHaveAttribute("data-open", "true");
       await expect(map.getByTestId("pick-texture")).toBeVisible();
 
-      // 收起「战争雾」：入口那行消失，标题还在
-      const fogHeader = fog.getByTestId("field-group-header");
-      await fogHeader.click();
-      await expect(fog).toHaveAttribute("data-open", "false");
-      await expect(fog.getByTestId("fog-enable")).toHaveCount(0);
-      await fogHeader.click();
-      await expect(fog).toHaveAttribute("data-open", "true");
-      await expect(fog.getByTestId("fog-enable")).toBeVisible();
-
       // 收起「视频」：那一个开关也消失，标题还在
       const videoHeader = video.getByTestId("field-group-header");
       await videoHeader.click();
@@ -126,6 +115,31 @@ test.describe("属性分组", () => {
       await videoHeader.click();
       await expect(video).toHaveAttribute("data-open", "true");
       await expect(video.getByTestId("video-enable")).toBeVisible();
+
+      // 战争雾对象（列表第 4 个）：「基础 / 战争雾」
+      await selectObject(page, 3);
+      const fog = page.locator('[data-group="fog"]');
+      await expect(page.locator('[data-group="basic"]')).toBeVisible();
+      await expect(fog).toBeVisible();
+      await expect(fog).toContainText("战争雾");
+      await expect(fog).toContainText("引用地图");
+      await expect(fog.getByTestId("fog-map")).toBeVisible();
+      await expect(fog.getByTestId("fog-enable")).toBeVisible();
+      // 组件挂在对象上 = 正式组，不挂「未添加」角标
+      await expect(fog.locator('[data-testid="field-group-badge"]')).toHaveCount(0);
+      const fogOrder = await page
+        .locator('[data-testid="object-properties"] [data-group]')
+        .evaluateAll((sections) => sections.map((section) => section.getAttribute("data-group")));
+      expect(fogOrder).toEqual(["basic", "fog"]);
+
+      // 收起「战争雾」：入口那行消失，标题还在
+      const fogHeader = fog.getByTestId("field-group-header");
+      await fogHeader.click();
+      await expect(fog).toHaveAttribute("data-open", "false");
+      await expect(fog.getByTestId("fog-enable")).toHaveCount(0);
+      await fogHeader.click();
+      await expect(fog).toHaveAttribute("data-open", "true");
+      await expect(fog.getByTestId("fog-enable")).toBeVisible();
 
       // 精灵：「基础 / 精灵层」（图片组件是 `SpriteLayer`，组 slug 跟着组件走）。
       // **没有视频**（v21 起那一组归贴图），也不是地图 → 没有网格地图 / 战争雾

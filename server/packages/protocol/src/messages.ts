@@ -94,8 +94,14 @@ import { z } from "zod";
  * 动作对象与没有渲染层的实体不再有这个字段。老前端（v13）按对象级读，拿到 undefined
  * 会把它当 0、所有渲染层挤在同一层（不是崩，是遮挡顺序错乱），按同一条纪律 +1：
  * 服务端与 Unity 客户端必须同批更新。**命令那一组仍然一个字节都没动。**
+ *
+ * v15（2026-09-26）：**战争雾变成独立的场景对象**（与文档格式 v27 同一批）。`FogOfWar`
+ * 组件从地图对象搬到新的 `Fog` 对象上，组件 data 多了 `mapId`（引用哪张地图）。
+ * 命令 `erase_mask` / `reveal_fog_region` 的 `objectId` 从「地图 id」改成「**雾对象 id**」。
+ * 老前端（v14）按地图 id 找雾组件 → 找不到（雾搬走了），且新场景里它根本不认 `Fog` 对象——
+ * 不是崩，是雾层整个不工作，按同一条纪律 +1：服务端与 Unity 客户端必须同批更新。
  */
-export const PROTOCOL_VERSION = 14;
+export const PROTOCOL_VERSION = 15;
 
 /** 未进入运行态时拒绝 `/client` 升级的 HTTP 状态与原因头。 */
 export const RUNTIME_INACTIVE_STATUS = 503;
@@ -211,17 +217,16 @@ export const cellRunsSchema = z.object({
 });
 
 /**
- * 战争雾组件的数据（v13 前是 `mapDataSchema.fog`，形状原样搬来）：**总开关** +
+ * 战争雾组件的数据（v27 起住在独立的 `Fog` 对象上）：**引用哪张地图** + **总开关** +
  * 把哪些「区域」当成雾区（区域位取自 `@dts/grid` 的可绘制位，`[1, 8]` = 区域1 + 区域4）。
  *
- * 前端据此从 `cells` 里挑出**雾格子**、生成一张像素遮罩（只盖雾区、其余透明）；
- * `enabled` 是 v4 起的总开关，**关着时前端一层的雾都不建**（不是建了再隐藏）——
- * 与文档 schema 同一口径，缺省算开（v10–v12 的文件里「有 fog」就等于「开着」）。
- * **组件不存在 = 没开战争雾**（与 v13 前「`fog` 整个不在」同一条口径）。
+ * 前端据此从**被引用地图**的 `cells` 里挑出雾格子、生成一张像素遮罩（只盖雾区、其余透明）；
+ * `mapId` 是地图对象 id；`enabled` 是总开关，**关着时前端一层的雾都不建**（不是建了再隐藏）。
  * **哪个格子被揭示了不在数据里**：那是运行态，由 `erase_mask` / `reveal_fog_region` 命令驱动，
  * 不写文档、也不随 `scene_sync` 走。
  */
 export const mapFogSchema = z.object({
+  mapId: z.string().default(""),
   enabled: z.boolean().default(true),
   regions: z.array(z.number().int()),
 });
@@ -336,7 +341,7 @@ export const projectSettingsSchema = z.object({
  */
 export const COMPONENT_TYPE = {
   map: "GridMap",
-  /** 战争雾（v13 起）：总开关 + 雾区，从 `GridMap` 的 data 里拆出来的第 7 种组件。 */
+  /** 战争雾（v15 起挂在独立的 `Fog` 对象上）：引用哪张地图 + 总开关 + 雾区。 */
   fog: "FogOfWar",
   /** 对象自己显示的图：**贴图对象**用它（整张铺满）。 */
   image: "ImageLayer",
@@ -536,8 +541,9 @@ export const eraseStrokeSchema = z.object({
  * 前端从**镜像里的那个对象**读 `sound.picked`——数据在场景里，命令只是触发器。
  * `pause_sound` / `resume_sound` 按**层级**给（同层只响一条，所以「暂停这一层」= 暂停当前那条）。
  * 视频同理：`play_video{objectId}` 只说「现在放」，放哪一条 / 循环 / 声音在那个对象的 `video` 里。
- * 战争雾同理：`erase_mask` 只给**轨迹**，雾层本身在推下去的那个地图对象里
- * （`map.fog.regions` + `map.cells`）。
+ * 战争雾同理：`erase_mask` / `reveal_fog_region` 只给**雾对象 id**（+ 轨迹 / 区域位），
+ * 雾层本身在推下去的那个**雾对象**里（`FogOfWar.regions`），格子取自它引用的地图
+ * （`map.cells`）。
  */
 export const commandRequestSchema = z.discriminatedUnion("kind", [
   z.object({
@@ -613,7 +619,7 @@ export const commandRequestSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("stop_bgm"),
   }),
-  /** 战争雾：沿这笔轨迹擦掉地图对象上的雾。 */
+  /** 战争雾：沿这笔轨迹擦掉**雾对象**上的雾（`objectId` = 雾对象 id）。 */
   z.object({
     kind: z.literal("erase_mask"),
     objectId: z.string().min(1),
@@ -622,7 +628,8 @@ export const commandRequestSchema = z.discriminatedUnion("kind", [
   /**
    * 战争雾：整片揭示（`revealed: true`）或整片盖回（`false`）某个区域。
    *
-   * 「区域」是 `map.fog.regions` 里的那个区域位：含该位的**每个**格子一起变。
+   * `objectId` = **雾对象 id**；「区域」是它 `FogOfWar.regions` 里的那个区域位：
+   * 含该位的**每个**格子一起变。
    * 盖回会连带盖掉这一区里手动擦掉的部分——与 Mask 窗口里那个「整区开关」同一口径。
    */
   z.object({

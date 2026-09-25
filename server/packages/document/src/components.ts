@@ -65,15 +65,15 @@ export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
     tooltip: "贴图 + 网格数据（列 / 行 / 行序 / 格子 RLE / 战争雾）；只有地图对象携带",
   },
   {
-    // 战争雾（v25 从 `GridMap` 的 data 里拆出来的从属组件）：雾区引用地图格子上的
-    // 区域位，所以只有地图对象携带、且依赖同对象的 `GridMap`。「组件不在」= 没开雾。
+    // 战争雾（v27 起是独立场景对象 `Fog` 的数据本体）：引用一张地图（雾区取自它的格子区域位）
+    // + 总开关 + 雾区。zod schema 见 `schema.ts` 的 `mapFogSchema`。
     type: "FogOfWar",
     displayName: "战争雾",
     gmEditable: true,
     slot: "fog",
-    templateKinds: ["Map"],
-    optionalKinds: ["Map"],
-    tooltip: "总开关 + 把哪些「区域」当成雾区；从属 GridMap（雾区引用它的格子区域位），只有地图对象携带",
+    templateKinds: ["Fog"],
+    repairKinds: ["Fog"],
+    tooltip: "引用哪张地图 + 总开关 + 把哪些「区域」当成雾区；只有战争雾对象携带，一张地图最多一个",
   },
   {
     // 贴图对象的图片组件（精灵的那一份是下面的 `SpriteLayer`，两者共用同一份 `ImageRef` 形状）

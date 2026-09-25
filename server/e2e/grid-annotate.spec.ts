@@ -3,16 +3,17 @@ import {
   COMPONENT,
   dropProject,
   expandRuns,
+  fogObjectDoc,
   mapObjectDoc,
   newProject,
   objectComponentData,
   openFirstObject,
+  readSceneFogRegions,
   readSceneMap,
   sceneDoc,
   seedProjectDoc,
   solidPng,
   uploadSceneImage,
-  withComponent,
 } from "./helpers/editor";
 import { canvasAverageColor, canvasPixelSum, fittedCellPoint, worldSamplePoint } from "./helpers/canvas";
 
@@ -201,9 +202,9 @@ test.describe("网格标注：画布显示", () => {
         encoding: "rle",
         runs: [[1, GRID.width * GRID.height]],
       };
-      const fogMap = withComponent(mapDoc, COMPONENT.fogOfWar, { enabled: true, regions: [1] });
+      const fogDoc = fogObjectDoc(mapDoc, "战争雾", { regions: [1] });
 
-      await seedProjectDoc(request, project, [sceneDoc(SCENE, [fogMap])]);
+      await seedProjectDoc(request, project, [sceneDoc(SCENE, [mapDoc, fogDoc])]);
       await uploadSceneImage(request, project, SCENE, solidPng(4, 4, [255, 255, 255]));
       await openFirstObject(page, project, "网格地图");
 
@@ -215,8 +216,8 @@ test.describe("网格标注：画布显示", () => {
       const before = await canvasAverageColor(page, point);
       expect(before.g).toBeGreaterThan(90);
 
-      // 战争雾开着（文件里有 `FogOfWar` 组件）：画布上**不该**多出任何一层（雾只在 Mask 窗口里看）
-      await expect(page.getByTestId("fog-region-1")).toBeVisible();
+      // 战争雾开着（场景里雾对象引用了这张地图且给了雾区）：画布上**不该**多出任何一层
+      await expect.poll(() => readSceneFogRegions(request, project, SCENE)).toEqual([1]);
       const after = await canvasAverageColor(page, point);
       expect(Math.abs(after.g - before.g)).toBeLessThanOrEqual(2);
 

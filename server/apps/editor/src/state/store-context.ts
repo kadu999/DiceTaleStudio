@@ -609,10 +609,12 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
   };
 
   /**
-   * 找出「能揭示战争雾」的对象：当前场景里实际挂有地图组件且指定了雾区的对象。
+   * 找出「能揭示战争雾」的对象：当前场景里真实存在的 `Fog` 对象，且引用了有效地图、
+   * 开着开关、指定了雾区。
    *
    * 找不到就写一条**说明原因**的运行日志并返回 null（不静默失败）：
-   * 这类失败恰恰说明瞄准的目标不对（对象被删了 / 拿精灵去擦雾 / 开关关着 / 还没指定雾区）。
+   * 这类失败恰恰说明瞄准的目标不对（对象被删了 / 不是雾对象 / 没引用地图 / 开关关着 /
+   * 还没指定雾区）。
    */
   const fogTargetOf = (objectId: string, what: string): GameObjectDoc | null => {
     const object = findObjectById(objectId);
@@ -622,9 +624,21 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
       return null;
     }
 
-    const map = mapDataOf(object);
-    if (map === undefined) {
-      pushLog(makeLog("warn", `${what}失败：「${object.name}」不是地图，没有雾层`));
+    const fog = fogOf(object);
+    if (fog === undefined) {
+      pushLog(makeLog("warn", `${what}失败：「${object.name}」不是战争雾对象，没有雾层`));
+      return null;
+    }
+
+    const mapId = fog.mapId ?? "";
+    const map = mapId.length === 0 ? undefined : findObjectById(mapId);
+    if (map === undefined || mapDataOf(map) === undefined) {
+      pushLog(
+        makeLog(
+          "warn",
+          `${what}失败：「${object.name}」${mapId.length === 0 ? "还没选引用的地图" : "引用的地图不存在或不是地图"}（属性面板 → 战争雾）`,
+        ),
+      );
       return null;
     }
 
@@ -633,7 +647,7 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
       return null;
     }
 
-    if ((fogOf(object)?.regions ?? []).length === 0) {
+    if ((fog.regions ?? []).length === 0) {
       pushLog(makeLog("warn", `${what}失败：「${object.name}」还没指定雾区（属性面板 → 战争雾）`));
       return null;
     }
@@ -641,15 +655,21 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
     return object;
   };
 
-  /** 这个对象**现在**还能揭示雾吗？补发前筛掉没意义的记录用——与 `fogTargetOf` 同口径，但不写日志。 */
+  /** 这个雾对象**现在**还能揭示雾吗？补发前筛掉没意义的记录用——与 `fogTargetOf` 同口径，但不写日志。 */
   const canRevealFog = (objectId: string): boolean => {
     const object = findObjectById(objectId);
-
-    if (object === undefined || mapDataOf(object) === undefined) {
+    const fog = object === undefined ? undefined : fogOf(object);
+    if (object === undefined || fog === undefined) {
       return false;
     }
 
-    return isFogEnabled(object) && (fogOf(object)?.regions ?? []).length > 0;
+    const mapId = fog.mapId ?? "";
+    const map = mapId.length === 0 ? undefined : findObjectById(mapId);
+    if (map === undefined || mapDataOf(map) === undefined) {
+      return false;
+    }
+
+    return isFogEnabled(object) && (fog.regions ?? []).length > 0;
   };
 
   /**
@@ -760,8 +780,9 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
   /**
    * 把一批轨迹**尽力**发给前端（前端不在就什么都不做，由调用方在收笔时写一条日志说明）。
    *
-   * 命令里只有 `objectId + stroke`：雾层在前端**自己镜像里的那张地图**上（`map.fog.regions`
-   * + `map.cells`），这里发的只是鼠标拖过的轨迹——参考实现也是这么做的（不发整张遮罩）。
+   * 命令里只有 `objectId + stroke`：`objectId` 是**雾对象 id**，雾层在前端它自己的
+   * `FogOfWar` 组件里（regions 来自雾对象、格子取自它引用的地图）。这里发的只是鼠标
+   * 拖过的轨迹——参考实现也是这么做的（不发整张遮罩）。
    */
   const deliverFogErase = (objectId: string, points: readonly FogRevealPoint[]): string | undefined => {
     if (!runtimeClient.connected || get().runtime.client === null) {

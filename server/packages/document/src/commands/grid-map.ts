@@ -12,7 +12,7 @@ import {
   type RleRun,
 } from "@dts/grid";
 // 特性的读写一律走访问器（「数据存在哪个组件里」只有 access.ts 知道）
-import { mapDraftOf } from "../access";
+import { fogOf, mapDraftOf } from "../access";
 import { fogMaskOf } from "./fog";
 import { findObject } from "./shared";
 import type { MapDataDoc, SceneDoc } from "../types";
@@ -70,20 +70,28 @@ export function clearMapCells(scene: Draft<SceneDoc>, mapObjectId: string): bool
 // 开关判断用 `isFogEnabled(object)`（access.ts），掩码用 `fogMaskOf(object)`（fog.ts）。
 
 /**
- * 清空战争雾：只清掉**已指定的雾区位**，其它区域位原样保留。
+ * 清空战争雾：只清掉**这个雾对象已指定的雾区位**，其它区域位原样保留。
  *
+ * v27 起雾是独立对象：传入的是**雾对象 id**，清的是它引用的那张地图的格子。
  * 与 `clearMapCells` 的区别就是「只清绑定位」：一格若是「区域1 + 区域4」而只指定了区域4，
- * 清雾之后它仍是区域1 的格子。没指定任何雾区时什么都不做（返回 `false`）。
+ * 清雾之后它仍是区域1 的格子。没指定任何雾区 / 引用的地图不存在时什么都不做（返回 `false`）。
  */
-export function clearMapFog(scene: Draft<SceneDoc>, mapObjectId: string): boolean {
-  const object = findObject(scene, mapObjectId);
-  const map = object === undefined ? undefined : mapDraftOf(object);
-  if (object === undefined || map === undefined) {
+export function clearMapFog(scene: Draft<SceneDoc>, fogObjectId: string): boolean {
+  const fogObject = findObject(scene, fogObjectId);
+  if (fogObject === undefined) {
     return false;
   }
 
-  const fogMask = fogMaskOf(object);
+  const fogMask = fogMaskOf(fogObject);
   if (fogMask === 0) {
+    return false;
+  }
+
+  // 雾引用一张地图：清的是那张地图的格子
+  const mapId = fogOf(fogObject)?.mapId ?? "";
+  const mapObject = mapId.length === 0 ? undefined : findObject(scene, mapId);
+  const map = mapObject === undefined ? undefined : mapDraftOf(mapObject);
+  if (mapObject === undefined || map === undefined) {
     return false;
   }
 
@@ -106,7 +114,7 @@ export function clearMapFog(scene: Draft<SceneDoc>, mapObjectId: string): boolea
     }
   }
 
-  return changed && setMapCells(scene, mapObjectId, encodeRle(next));
+  return changed && setMapCells(scene, mapObject.id, encodeRle(next));
 }
 
 // ---------------------------------------------------------------- 网格与标注

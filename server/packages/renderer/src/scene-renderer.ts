@@ -93,10 +93,10 @@ export interface SceneLayer {
   /**
    * **没有贴图时**在矩形里画的**内置图标**（有贴图就画贴图，不画图标）。
    *
-   * 现在只有一种：`"audio"` = 声音对象（动作对象）的喇叭徽标——它和别的对象一样摆在
-   * 世界里，刚建出来还没有图，画一个徽标才能「看得见、点得到、拖得动」。
+   * `"audio"` = 声音对象的喇叭徽标、`"teleport"` = 传送阵、`"fog"` = 战争雾（v27 起）。
+   * 它们和别的对象一样摆在世界里，刚建出来还没有图，画一个徽标才能「看得见、点得到、拖得动」。
    */
-  readonly icon?: "audio" | "teleport";
+  readonly icon?: "audio" | "teleport" | "fog";
   /**
    * 这个声音对象**现在正在播**（只对 `icon: "audio"` 有意义）：徽标会画成「活的」——
    * 一圈圈往外扩的声波 + 随节拍一胀一缩的喇叭，配合 `animationTimeMs` 出动画。
@@ -228,6 +228,8 @@ const KIND_MARKER_COLORS: Record<string, string> = {
   PlaySound: "#ff7a1a",
   // 动作对象（传送阵）：内置传送徽标用它。青色与上面五个都分得开
   Teleport: "#22c7d6",
+  // 战争雾（v27 起是独立对象）：内置雾徽标用它。雾蓝灰，与上面的蓝 / 青 / 紫都分得开
+  Fog: "#5b6b8c",
 };
 
 const DEFAULT_MARKER_COLOR = "#9aa4b2";
@@ -491,6 +493,8 @@ function drawLayer(
     context.restore();
   } else if (layer.icon === "teleport") {
     drawTeleportBadge(context, box);
+  } else if (layer.icon === "fog") {
+    drawFogBadge(context, box);
   } else {
     drawAudioBadge(context, box, { playing: layer.playing === true, timeMs: animationTimeMs });
   }
@@ -762,6 +766,77 @@ function drawTeleportBadge(
   context.closePath();
   context.fillStyle = "#ffffff";
   context.fill();
+
+  context.restore();
+}
+
+/**
+ * 战争雾对象的**内置徽标**：一块圆角牌 + 三道白色雾纹。
+ *
+ * 与音频 / 传送徽标同一套画法：**全部用路径画**（不占资产、不依赖字体），牌面实色 +
+ * 深色外描边 + 白色图形，压在任何底图上都看得清；尺寸只由矩形决定，缩放对象时跟着缩放。
+ *
+ * **不画动画**：雾的呈现（未探索的罩子 + 擦除）在 Mask 窗口与前端 `FogOfWar` 里，
+ * 编辑器画布只标记「它在这儿、能选中、能拖」。
+ */
+function drawFogBadge(
+  context: CanvasRenderingContext2D,
+  box: { readonly left: number; readonly top: number; readonly right: number; readonly bottom: number },
+): void {
+  const boxSize = Math.min(box.right - box.left, box.bottom - box.top);
+  if (boxSize < MIN_AUDIO_BADGE_SIZE) {
+    return;
+  }
+
+  const cx = (box.left + box.right) / 2;
+  const cy = (box.top + box.bottom) / 2;
+  const badge = boxSize * 0.72;
+  const half = badge / 2;
+  const left = cx - half;
+  const top = cy - half;
+  const radius = badge * 0.2;
+  const color = kindMarkerColor("Fog");
+
+  const outline = (): void => {
+    context.beginPath();
+    context.moveTo(left + radius, top);
+    context.arcTo(left + badge, top, left + badge, top + badge, radius);
+    context.arcTo(left + badge, top + badge, left, top + badge, radius);
+    context.arcTo(left, top + badge, left, top, radius);
+    context.arcTo(left, top, left + badge, top, radius);
+    context.closePath();
+  };
+
+  context.save();
+
+  // 1) 深色外描边（一半在牌外、一半被牌面盖住 → 亮底上也有清晰边界）
+  outline();
+  context.lineWidth = Math.max(2, badge * 0.12);
+  context.strokeStyle = "rgba(0,0,0,0.62)";
+  context.stroke();
+
+  // 2) 实色牌面（类型色）
+  outline();
+  context.fillStyle = color;
+  context.fill();
+
+  // 3) 三道白色雾纹（中间长、上下短，各带一点弧度）
+  context.strokeStyle = "#ffffff";
+  context.lineCap = "round";
+  context.lineWidth = Math.max(1.5, badge * 0.075);
+  for (const [offset, width] of [
+    [-0.22, 0.5],
+    [0, 0.64],
+    [0.22, 0.44],
+  ] as const) {
+    const y = cy + badge * offset;
+    const halfWidth = (badge * width) / 2;
+    context.beginPath();
+    context.moveTo(cx - halfWidth, y);
+    context.quadraticCurveTo(cx - halfWidth * 0.5, y - badge * 0.1, cx, y);
+    context.quadraticCurveTo(cx + halfWidth * 0.5, y + badge * 0.1, cx + halfWidth, y);
+    context.stroke();
+  }
 
   context.restore();
 }

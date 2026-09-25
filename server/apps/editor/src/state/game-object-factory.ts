@@ -1,6 +1,7 @@
 import {
   createMapObject,
   createGameObject,
+  createFogObject,
   createSoundObject,
   createTeleportObject,
   type ObjectKind,
@@ -16,6 +17,8 @@ interface GameObjectFactoryInput {
   readonly sceneName: string;
   readonly name: string;
   readonly position: WorldPosition;
+  /** 战争雾（`Fog`）需要：引用哪张地图（由 `createObject` 现算）。 */
+  readonly mapId?: string;
 }
 
 type GameObjectFactory = (input: GameObjectFactoryInput) => GameObjectDoc;
@@ -39,6 +42,8 @@ const GAME_OBJECT_FACTORIES: Record<ObjectKind, GameObjectFactory> = {
   Player: ({ name, position }) => createGameObject({ name, kind: "Player", position }),
   Item: ({ name, position }) => createGameObject({ name, kind: "Item", position }),
   Event: ({ name, position }) => createGameObject({ name, kind: "Event", position }),
+  // 战争雾：引用一张地图（`mapId` 由 createObject 现算；没有地图时创建会被挡在 store 那一层）
+  Fog: ({ name, position, mapId }) => createFogObject({ name, mapId: mapId ?? "", position }),
   PlaySound: ({ name, position }) => createSoundObject({ name, position }),
   Teleport: ({ name, position }) => createTeleportObject({ name, position }),
 };

@@ -58,12 +58,18 @@ export function addObject(scene: Draft<SceneDoc>, object: GameObjectDoc): void {
 export function repairObjectComponent(
   scene: Draft<SceneDoc>,
   objectId: string,
-  type: "PlaySound" | "Teleport",
+  type: "PlaySound" | "Teleport" | "FogOfWar",
 ): boolean {
   const object = findObject(scene, objectId);
   if (object === undefined || !canRepairObjectComponent(object, type)) return false;
 
-  const data = type === "PlaySound" ? { clips: [], layer: DEFAULT_SOUND_LAYER } : { targets: [] };
+  const data =
+    type === "PlaySound"
+      ? { clips: [], layer: DEFAULT_SOUND_LAYER }
+      : type === "Teleport"
+        ? { targets: [] }
+        : // 战争雾（v27：独立的 Fog 对象）：默认还没选地图，由用户在面板上选
+          { mapId: "", enabled: true, regions: [] };
   writeFeature(object, type, data);
   return true;
 }

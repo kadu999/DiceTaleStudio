@@ -14,8 +14,8 @@ namespace DiceTale
     /// └─ 场景（容器，只负责把各个场景归在一起）
     ///    ├─ 场景1        ← 一个场景 = 一个 GameObject，名字就是场景名
     ///    │  ├─ 地图（map_…）
-    ///    │  │  └─ FogOverlay（战争雾：地图对象下的**子物体**，带了 `FogOfWar` 组件且开着、
-    ///    │  │     也绑了雾区的地图才有，盖在最前面）
+    ///    │  ├─ 雾（fog_…）← v15 起的**独立战争雾对象**，`mapId` 引用它罩住的那张地图
+    ///    │  │  └─ FogOverlay（战争雾面：雾对象下的**子物体**，开关开着且绑了雾区才有，盖在最前面）
     ///    │  └─ 精灵（obj_…）
     ///    └─ 场景2        ← 只是隐藏，**不销毁**
     /// </code>
@@ -385,6 +385,11 @@ namespace DiceTale
 
             var present = new HashSet<string>();
             var autoPlayObjects = new List<string>();
+            // 战争雾对象要等所有地图对象都进了模型表再应用（雾可能排在地图前面），见循环后的第二趟
+            var fogObjects = new List<MirrorObject>();
+            // 视图回查镜像表的通道（战争雾按 `mapId` 找被引用地图用）；整份场景共用这一个委托
+            System.Func<string, MirrorObject> objectLookup =
+                id => !string.IsNullOrEmpty(id) && objectTable.TryGetValue(id, out var found) ? found : null;
             foreach (var obj in scene.objects)
             {
                 present.Add(obj.id);
@@ -427,7 +432,19 @@ namespace DiceTale
                     viewTable[obj.id] = view;
                 }
 
-                view.Apply(obj);
+                // 视图回查镜像表的通道：战争雾对象 Apply 时按 `mapId` 找到被引用地图
+                view.ObjectLookup = objectLookup;
+
+                // **战争雾对象留到第二趟再 Apply**：雾可能排在被引用地图前面，主循环跑到它时
+                // 地图还没进模型表（objectTable），解析不出格子。这里先只建 / 更新视图。
+                if (obj.fog != null)
+                {
+                    fogObjects.Add(obj);
+                }
+                else
+                {
+                    view.Apply(obj);
+                }
             }
 
             // 名单里没有的 → 这个场景里不该有（删除 / 复制后改名都走这里）。
@@ -452,6 +469,19 @@ namespace DiceTale
                 viewTable.Remove(id);
                 objectTable.Remove(id);
                 autoplayTable.Remove(id);
+            }
+
+            /*
+              第二趟：战争雾对象要等所有对象（尤其被它引用的地图）都进了模型表才能解析出格子，
+              所以放到主循环之后、表清理之后再应用。被引用的地图已被删除时此刻已从表里移除，
+              雾查不到地图数据，FogOfWar 会把自己那一层拆掉。
+            */
+            foreach (var obj in fogObjects)
+            {
+                if (viewTable.TryGetValue(obj.id, out var fogView) && fogView != null)
+                {
+                    fogView.Apply(obj);
+                }
             }
 
             // **切换 = 只切可见性**：显示这份场景，其他场景藏起来（不销毁）

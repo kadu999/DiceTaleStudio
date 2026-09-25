@@ -6,6 +6,7 @@
 import {
   fogOf,
   setFogEnabled as setSceneFogEnabled,
+  setFogMap as setSceneFogMap,
   setFogRegions as setSceneFogRegions,
 } from "@dts/document";
 import { maskToLabel } from "@dts/grid";
@@ -27,6 +28,7 @@ export function createFogSlice(
   EditorStoreState,
   | "openFogMask"
   | "openGridEditor"
+  | "setFogMap"
   | "setFogRegions"
   | "setFogEnabled"
   | "eraseFogMask"
@@ -56,21 +58,34 @@ export function createFogSlice(
       });
     },
 
-    setFogRegions(mapObjectId, regions) {
+    setFogMap(fogObjectId, mapObjectId) {
+      const changed = applyActiveScene("选择引用的地图", (scene) => {
+        setSceneFogMap(scene, fogObjectId, mapObjectId);
+      });
+
+      // 换地图后 Mask 窗口里那张图变了：顺手关掉，免得窗口还对着旧地图
+      if (changed && get().fogMaskTarget === fogObjectId) {
+        set({ fogMask: false, fogMaskTarget: null });
+      }
+
+      return changed;
+    },
+
+    setFogRegions(fogObjectId, regions) {
       return applyActiveScene("指定雾区", (scene) => {
         // 规范化与「没变更」的判断都在命令里，这里只负责找到场景
-        setSceneFogRegions(scene, mapObjectId, regions);
+        setSceneFogRegions(scene, fogObjectId, regions);
       });
     },
 
-    setFogEnabled(mapObjectId, enabled) {
+    setFogEnabled(fogObjectId, enabled) {
       const changed = applyActiveScene(enabled ? "打开战争雾" : "关闭战争雾", (scene) => {
         // 开关写的是**文档数据**：只有它跟着场景下发，前端才知道该不该生成那一层雾
-        setSceneFogEnabled(scene, mapObjectId, enabled);
+        setSceneFogEnabled(scene, fogObjectId, enabled);
       });
 
-      // 关掉了：正开着的 Mask 窗口跟着关（它编辑的那张地图已经没有雾了，留着只会擦空气）
-      if (!enabled && get().fogMaskTarget === mapObjectId) {
+      // 关掉了：正开着的 Mask 窗口跟着关（它编辑的那个雾对象现在不生成雾了）
+      if (!enabled && get().fogMaskTarget === fogObjectId) {
         set({ fogMask: false, fogMaskTarget: null });
       }
 

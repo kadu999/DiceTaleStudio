@@ -126,7 +126,8 @@
 
 | 组件 `type` | 前端行为 |
 |---|---|
-| `GridMap` | 地图面片 + 网格 + 战争雾（`data` = `{image, grid, rowOrder, cells, fog?}`） |
+| `GridMap` | 地图面片 + 网格（`data` = `{image, grid, rowOrder, cells, sortingOrder}`） |
+| `FogOfWar` | **战争雾**（v15 起挂在独立的 `Fog` 对象上）：`data` = `{ mapId, enabled, regions }`。`mapId` 引用被罩住的地图；`enabled` 总开关（缺省算开）；`regions` 哪几个「区域位」算雾区。**只有 `mapId` 有效、`enabled && regions.length > 0` 前端才建那一层雾**；**哪里被揭示了不在数据里**——那是运行态，由 `erase_mask` / `reveal_fog_region` 驱动，不写文档、也不随 `scene_sync` 回来 |
 | `ImageLayer` | **贴图对象**自己那张图（`data` = `{id, width, height}`——整张铺满） |
 | `SpriteLayer` | **精灵对象**自己那张图（`data` = `{id, width, height, sprite?, spriteGrid?}`；后两项是 **v10 的子图**） |
 | `PlaySound` | **不建可见物**：数据留在镜像里（`play_sound` 时从 `data.picked` 取播哪一条） |
@@ -187,7 +188,7 @@ v12 起叫 `Image`）——**只显示整张图**，与精灵的差别只有「�
 | `sortingOrder` | v14 起在渲染组件的 data 里（`GridMap` / 图片层）；客户端解析时填进 `MirrorObject.sortingOrder`，再映射到 `MeshRenderer.sortingOrder` + 按序微小离地（避免共面闪烁） |
 | `GridMap.data.image` | 资源逻辑 ID → `GET /api/resources/raw?id=…` 取纹理；没图时按 `kind` 上色占位 |
 | `GridMap.data.cells` | RLE（`[[掩码, 格数], …]`）——掩码值与 `@dts/grid` 的 `CellMask` / Unity 的 `GridCellType` 完全一致 |
-| `GridMap.data.fog` | **战争雾**：`enabled` = **总开关**（缺省算开），`regions` = 哪几个「区域位」算雾区。**只有 `enabled && regions.length > 0` 前端才建那一层雾**；**哪里被揭示了不在数据里**——那是运行态，由 `erase_mask` / `reveal_fog_region` 驱动，不写文档、也不随 `scene_sync` 回来 |
+| `GridMap.data.fog`（v15 起改为独立的 `FogOfWar` 组件） | **战争雾**已从地图 data 拆出：v13 拆成组件、v15 又搬成独立的 `Fog` 对象（见上表 `FogOfWar`）。**老版本地图 data 里的 `fog` 前端已不再认识**；`mapId` 无效或没指定雾区时**不建那一层雾** |
 | `PlaySound.data` | `{ clips, picked, layer }`：前端播的就是 `picked` 那条；`layer` ∈ `bgm/sfx/voice`（三档），同层同时只响一条。`layer: "bgm"` 的老对象前端会**明确拒掉**（背景音乐走 `play_bgm` 那一组） |
 | `VideoOverlay.data` | `{ enabled, clips, picked, loop, audio }`——总开关、加进来的视频、放哪一条、循不循环、出不出视频自带的声音。收到 `play_video` 时前端在**这个对象自己的矩形**上建一层视频（`Presentation/VideoOverlay.cs`）；**关掉 `enabled` 时连那一层都不建**。`names`（显示名）**不进协议** |
 | `Teleport.data` | `{ targets, picked }`。**前端不用它**：触发传送阵 = 编辑器切换当前场景 → 整份 `scene_push` 下来，前端只管换镜像 |
@@ -204,7 +205,7 @@ v12 起叫 `Image`）——**只显示整张图**，与精灵的差别只有「�
 | `play_bgm` | `{ clip }` | **放 / 切换到指定的那一首**（v7 起）。唯一带数据的一条命令：曲目清单不在任何对象上、也不在项目设置里——它就是项目 `Assets/audio/` 下的音频，编辑器弹框里点哪一首就说哪一首。重复放同一首 = 从头重播 |
 | `pause_bgm` / `resume_bgm` / `stop_bgm` | — | 背景音乐的暂停 / 继续 / 停止（v7 起）。`pause_bgm` 赶在取音频完成之前到时，前端记下意图、加载落地后立刻补一次暂停（编辑器补发暂停态是「先放再暂停」两条连发） |
 | `erase_mask` | `{ objectId, stroke: { points, radius, softness } }` | 在**镜像里那张地图**的雾层上，沿这笔**轨迹**擦出一条软边（见下） |
-| `reveal_fog_region` | `{ objectId, region, revealed }` | 含该区域位的格子**整片揭示**（`true`）/ **整片盖回**（`false`） |
+| `reveal_fog_region` | `{ objectId, region, revealed }`（**`objectId` = 雾对象 id**） | 含该区域位的格子**整片揭示**（`true`）/ **整片盖回**（`false`） |
 | `play_video` | `{ objectId }` | 在这个对象自己的矩形上放它 `video.picked` 那一条（**命令里不带数据**：放哪条 / 循环 / 声音都从镜像里读） |
 | `pause_video` | `{ objectId }` | 暂停在当前帧 |
 | `resume_video` | `{ objectId }` | 从暂停处续播 |
@@ -244,7 +245,7 @@ v12 起叫 `Image`）——**只显示整张图**，与精灵的差别只有「�
 | `Logic/CommandRouter.cs` | 命令 → 动作 → 回执（声音类命令的回执在音频加载完成后发） |
 | `Presentation/AudioPlayerManager.cs` | 三条音频通道（背景音乐恒循环 / 音效一次性 / 旁白+字幕），音量来自全局设置；`StopAll` 在会话结束时停掉一切 |
 | `Presentation/AudioClipLoader.cs` | 按逻辑 ID 取音频（本地资源包优先、回落服务端；带缓存 / 去重 / 失败记忆） |
-| `Presentation/SceneObjectView.cs` | 一个对象一块贴地面片（位置 / 缩放 / 激活 / 显示顺序 / 取图）；**开着战争雾且指定了雾区的地图**再多一个 `FogOverlay` 子物体（`map.fog.enabled` 关着就拆掉） |
-| `Presentation/FogOfWar.cs` | 战争雾层：按 `map.fog.regions` + `map.cells` 生成像素遮罩（与编辑器预览同一张尺寸），按 `erase_mask` / `reveal_fog_region` 揭示；揭示状态留在组件里，数据变了「重填 + 重放」 |
+| `Presentation/SceneObjectView.cs` | 一个对象一块贴地面片（位置 / 缩放 / 激活 / 显示顺序 / 取图）；**战争雾对象（v15）不建面片**，只挂 `FogOfWar`（它的雾面片是 `FogOverlay` 子物体） |
+| `Presentation/FogOfWar.cs` | 战争雾层：挂在**独立的雾对象**上，按 `mapId` 找到被引用地图，用它 `regions` + 地图 `cells` 生成像素遮罩（与编辑器预览同一张尺寸），按 `erase_mask` / `reveal_fog_region` 揭示；揭示状态留在组件里，数据变了「重填 + 重放」 |
 | `Presentation/VideoOverlay.cs` | 视频层：按 URL 放（本地资源包优先、否则服务端原始字节），与地图共享位置 / 尺寸 / sortingOrder；首帧就绪后隐藏地图 Renderer，停止或解码失败时恢复 |
 | `Presentation/ResourceImageLoader.cs` | 按逻辑 ID 取图（带缓存 / 去重 / 失败记忆） |

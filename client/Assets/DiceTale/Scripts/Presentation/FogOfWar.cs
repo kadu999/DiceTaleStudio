@@ -4,25 +4,27 @@ using UnityEngine;
 namespace DiceTale
 {
     /// <summary>
-    /// 战争雾（镜像驱动）：**把地图数据里那些雾格画成一层雾，再按后台发来的鼠标轨迹把它擦掉**。
+    /// 战争雾（镜像驱动）：**把被引用地图里那些雾格画成一层雾，再按后台发来的鼠标轨迹把它擦掉**。
     ///
-    /// 组件袋的一员：它**直接挂在地图对象自己的 GameObject 上**（对象带 `FogOfWar` 协议组件就有它，
-    /// 由 <see cref="SceneObjectView.Create"/> 挂上），不再由别人在场景根节点下另建一个同级物体。
+    /// **v15 起雾是独立的场景对象**（`kind: "Fog"`）：它带 `FogOfWar` 协议组件（由
+    /// <see cref="SceneObjectView.Create"/> 挂上），但自己**没有地图数据**（没有 `GridMap`）——
+    /// 挂在哪个对象身上就跟随哪个对象的 position / rotation（雾对象可自由摆放）；
+    /// 「哪些区域位涂了雾」由自己的 `regions` 说，而「这些区域位对应哪些格子」要看被引用地图
+    /// （`mapId`）的 `GridMap`：调用方把它解析成 <see cref="MirrorMap"/> 再传进来。
     /// 渲染用的面片是它自己管的一个**子物体** `FogOverlay`（见 <see cref="OverlayName"/>）：
-    /// 挂在**本组件所在 GameObject 下**，位置 / 旋转 / 缩放自动跟着地图走，不用谁替它摆一遍；
-    /// 尺寸交给子物体上的 <see cref="ImageLayer"/> 烘进网格（与地图面片同一套口径），
-    /// 离地 = 父级抬升 + <see cref="OverlayLift"/>（世界高度与以前「同级、按同一份数值摆」逐字一致）；
+    /// 挂在**本组件所在 GameObject 下**，位置 / 旋转 / 缩放自动跟着雾对象走，不用谁替它摆一遍；
+    /// 尺寸交给子物体上的 <see cref="ImageLayer"/> 烘进网格（世界尺寸 = 被引用地图的显示图声明
+    /// 尺寸 × 雾对象 scale，由调用方乘好），离地 = 父级抬升 + <see cref="OverlayLift"/>；
     /// 显示顺序取 <see cref="SortingOrder"/>（最前面）——未探索的地方连地图上的对象一起盖住
     /// （`sortingOrder` 是全局的，挂成子物体不改变这一点）。
     ///
     /// **子物体只在三个条件都满足时才存在**，每次收到场景推送都重新判断（<see cref="Apply"/>）：
-    /// 本对象有地图数据（<see cref="GridMapView"/> 在、且 <see cref="GridMapView.Map"/> 非 null）、
-    /// `FogOfWar.enabled`（编辑器那个总开关）开着、`regions` 非空。任一不满足就把子物体拆掉，
-    /// 别留一块盖着旧遮罩的面片。
+    /// 被引用地图的数据到了（方法参数 `map` 非 null）、`FogOfWar.enabled`（编辑器那个总开关）
+    /// 开着、`regions` 非空。任一不满足就把子物体拆掉，别留一块盖着旧遮罩的面片。
     ///
     /// **语义变化（组件袋化，有意为之）**：组件现在**常驻**——开关关掉 / 没绑雾区时只是没有
     /// 渲染子物体，组件自己的遮罩与操作记录都还留着（以前整个组件随开关销毁，重开等于重新探索；
-    /// 现在再打开开关，已揭示的部分原样恢复）。地图对象被隐藏（`active=false` / 未落位）时
+    /// 现在再打开开关，已揭示的部分原样恢复）。雾对象被隐藏（`active=false` / 未落位）时
     /// 子物体跟着隐藏；视图销毁时子物体作为子物体自动带走，不需要谁替它收尸。
     ///
     /// **怎么揭示**：后台只发**轨迹**（`erase_mask`：归一化点 + 归一化半径 + 软边比例），前端照轨迹擦；
@@ -106,7 +108,7 @@ namespace DiceTale
         /// </summary>
         private const float OverlayLift = 0.002f;
 
-        // ---------------------------------------------------------------- 地图数据（从 GridMapView 取）
+        // ---------------------------------------------------------------- 地图数据（由调用方从被引用地图解析后传入）
 
         /// <summary>这张地图的格子掩码（`rowOrder: bottom-up`，`gridWidth * gridHeight` 个）。</summary>
         private int[] cells = new int[0];
@@ -179,24 +181,23 @@ namespace DiceTale
         /// <summary>
         /// 按这份战争雾组件数据刷新自己（每次收到场景推送都会调；**建不建渲染子物体由它自己拿主意**）。
         ///
-        /// 三个条件缺一不可——本对象有地图数据（<see cref="GridMapView"/> 在、且
-        /// <see cref="GridMapView.Map"/> 非 null）、<paramref name="fogData"/> 的总开关开着、
-        /// `regions` 非空（空数组 = 不生成雾层，与旧版对「开着但没指定雾区」的处理一致）。
-        /// 任一不满足就把渲染子物体拆掉，别留一块盖着旧遮罩的面片。
+        /// v15 起雾是独立对象、自己不带地图数据，所以被引用地图由调用方解析好后经
+        /// <paramref name="map"/> 传进来（见 <see cref="SceneObjectView.Apply"/>）。
         ///
-        /// <paramref name="worldWidth"/> / <paramref name="worldHeight"/> 是**地图面片的世界尺寸**
-        /// （调用方已经乘过 <see cref="SceneObjectView.GlobalScale"/>），雾面片与它同大小；
-        /// <paramref name="mapLift"/> 是地图面片自己的离地抬升，雾层在它的基础上再加
-        /// <see cref="OverlayLift"/>；<paramref name="sortingOrder"/> 是对象自己的显示顺序——
-        /// 雾层**刻意不跟着它走**（未探索要连排得比地图还高的对象一起盖住），恒定取最前面
-        /// （<see cref="SortingOrder"/>），参数留在签名里只是让调用方把「地图自己排哪儿」交代清楚。
+        /// 三个条件缺一不可——<paramref name="map"/> 非 null（被引用地图的数据到了）、
+        /// <paramref name="fogData"/> 的总开关开着、`regions` 非空（空数组 = 不生成雾层，与旧版对
+        /// 「开着但没指定雾区」的处理一致）。任一不满足就把渲染子物体拆掉，别留一块盖着旧遮罩的面片。
+        ///
+        /// <paramref name="worldWidth"/> / <paramref name="worldHeight"/> 是**雾面片的世界尺寸**
+        /// （= 被引用地图的显示图声明尺寸 × 雾对象 scale × <see cref="SceneObjectView.GlobalScale"/>，
+        /// 调用方已经算好），雾面片与它同大小；<paramref name="mapLift"/> 是调用方给这一层的离地抬升，
+        /// 雾层在它的基础上再加 <see cref="OverlayLift"/>。雾层**恒定取最前面**（<see cref="SortingOrder"/>，
+        /// 未探索要连排得比地图还高的对象一起盖住），不再需要调用方交代对象的显示顺序。
         /// </summary>
-        public void Apply(MirrorFog fogData, float worldWidth, float worldHeight, int sortingOrder, float mapLift)
+        public void Apply(MirrorMap map, MirrorFog fogData, float worldWidth, float worldHeight, float mapLift)
         {
-            var gridMap = GetComponent<GridMapView>();
             var wantsOverlay =
-                gridMap != null
-                && gridMap.Map != null
+                map != null
                 && fogData != null
                 && fogData.enabled
                 && fogData.regions != null
@@ -208,7 +209,7 @@ namespace DiceTale
                 return;
             }
 
-            if (!Adopt(gridMap.Map, fogData.regions))
+            if (!Adopt(map, fogData.regions))
             {
                 // 没绑有效雾区（掩码算出来是 0）/ 格子数据不全：同样不画
                 TearDownOverlay();
@@ -230,7 +231,7 @@ namespace DiceTale
         /// <summary>
         /// 建渲染子物体（幂等）：**本组件所在 GameObject 下**挂一个 `FogOverlay` 子物体，
         /// 上面挂 <see cref="ImageLayer"/> 当渲染器（`ImageLayer` 的 RequireComponent 链会把
-        /// MeshFilter / MeshRenderer 一起带上）。挂成子物体：位置 / 旋转 / 缩放自动跟随地图，
+        /// MeshFilter / MeshRenderer 一起带上）。挂成子物体：位置 / 旋转 / 缩放自动跟随雾对象，
         /// 对象被隐藏时一起隐藏，视图销毁时自动带走。
         /// </summary>
         private void EnsureOverlay()
@@ -329,14 +330,14 @@ namespace DiceTale
             var nextFogMask = RegionsToMask(regions);
             if (nextFogMask == 0)
             {
-                WarnOnce($"「{name}」的地图数据里没指定雾区，这一层先不画");
+                WarnOnce($"「{name}」的雾区一个有效区域位都没有，这一层先不画");
                 return false;
             }
 
             if (mapData.gridWidth <= 0 || mapData.gridHeight <= 0 ||
                 mapData.cells == null || mapData.cells.Length < mapData.gridWidth * mapData.gridHeight)
             {
-                WarnOnce($"「{name}」的地图数据不全（网格 / 格子），这一层先不画");
+                WarnOnce($"「{name}」引用的地图数据不全（网格 / 格子），这一层先不画");
                 return false;
             }
 

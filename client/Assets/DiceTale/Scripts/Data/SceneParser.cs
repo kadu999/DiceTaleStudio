@@ -170,7 +170,8 @@ namespace DiceTale
                     case Protocol.ComponentType.Video:
                         obj.video = ParseVideo(data);
                         break;
-                    // 战争雾（v13）：独立组件，不再埋在 `GridMap` 的 `map.fog` 里
+                    // 战争雾（v13）：独立组件，不再埋在 `GridMap` 的 `map.fog` 里；
+                    // v15 起它挂在独立的 `Fog` 对象上，`mapId` 引用被雾罩住的地图
                     case Protocol.ComponentType.FogOfWar:
                         obj.fog = ParseFog(data);
                         break;
@@ -263,10 +264,11 @@ namespace DiceTale
         }
 
         /// <summary>
-        /// 战争雾组件（v13 起）：`{ enabled, regions }`。
+        /// 战争雾组件：`{ mapId, enabled, regions }`。
         ///
-        /// `enabled` 缺省算开（组件在就是「开了雾」，这个开关只是再关一道）；没有 `FogOfWar` 组件
-        /// 的对象 <see cref="MirrorObject.fog"/> 留 null——那与「没开战争雾」是同一件事。
+        /// v15 起多了 `mapId`（引用被雾罩住的那张地图，雾自身不带格子）；老载荷缺这一项时留空串，
+        /// 前端据此拆掉雾层。`enabled` 缺省算开（组件在就是「开了雾」，这个开关只是再关一道）；
+        /// 没有 `FogOfWar` 组件的对象 <see cref="MirrorObject.fog"/> 留 null——那与「没开战争雾」是同一件事。
         /// </summary>
         private static MirrorFog ParseFog(Dictionary<string, object> node)
         {
@@ -277,6 +279,7 @@ namespace DiceTale
 
             return new MirrorFog
             {
+                mapId = JsonParser.GetString(node, "mapId") ?? "",
                 enabled = JsonParser.GetBool(node, "enabled", true),
                 regions = GridRle.FlattenInts(JsonParser.GetArray(node, "regions")),
             };

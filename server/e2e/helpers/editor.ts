@@ -402,6 +402,23 @@ export function mapObjectDoc(
 }
 
 /**
+ * 造一个**战争雾对象**（v27 起雾是独立对象）：引用给定地图（`mapId` = 地图对象的 id）。
+ *
+ * 可摆放，画布上只画一枚图标；雾层在前端与 Mask 窗口里。
+ */
+export function fogObjectDoc(
+  map: Record<string, unknown>,
+  name = "战争雾",
+  patch: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return withComponent(
+    gameObjectDoc(name, "Fog", { x: 0, y: 0 }),
+    COMPONENT.fogOfWar,
+    { mapId: String(map["id"]), enabled: true, regions: [], ...patch },
+  );
+}
+
+/**
  * 把贴图上传到项目的 `Assets/images/` 下（模拟外部把素材提交进目录）。
  *
  * 地图对象引用的就是这张图，所以画布应该把它画出来。
@@ -701,26 +718,26 @@ export async function readSceneMap(
 }
 
 /**
- * 读场景文件里地图对象的**战争雾配置**（总开关 + 指定的雾区位）。
+ * 读场景文件里**战争雾对象**的**战争雾配置**（引用哪张地图 + 总开关 + 指定的雾区位）。
  *
- * 没开过战争雾就是 `undefined`——「没开也没指定」在文件里是**没有 `FogOfWar` 组件**
- * （v25 起雾是独立组件；v18 及更早是 `map.fog` 字段；见 `setFogEnabled` / `setFogRegions`）。
+ * v27 起雾是独立的 `Fog` 对象：这里按 `kind: "Fog"` 找那个对象上的 `FogOfWar` 组件。
+ * 没有雾对象就是 `undefined`（= 这个场景没开战争雾）。
  */
 export async function readSceneFog(
   request: APIRequestContext,
   project: string,
   sceneName: string,
-): Promise<{ enabled?: boolean; regions?: readonly number[] } | undefined> {
+): Promise<{ mapId?: string; enabled?: boolean; regions?: readonly number[] } | undefined> {
   const file = await readSceneFile(request, project, sceneName);
-  return componentDataOf(file, { kind: "Map" }, COMPONENT.fogOfWar) as
-    | { enabled?: boolean; regions?: readonly number[] }
+  return componentDataOf(file, { kind: "Fog" }, COMPONENT.fogOfWar) as
+    | { mapId?: string; enabled?: boolean; regions?: readonly number[] }
     | undefined;
 }
 
 /**
- * 读场景文件里地图对象的**战争雾绑定**（指定的雾区位）。
+ * 读场景文件里战争雾对象的**雾区绑定**（指定的雾区位）。
  *
- * 没指定过雾区就是 `undefined`——「没指定」在文件里是**没有 `FogOfWar` 组件**（或组件里
+ * 没指定过雾区就是 `undefined`——「没指定」在文件里是**没有雾对象**（或组件里
  * `regions` 为空）（见 `setFogRegions`）。
  */
 export async function readSceneFogRegions(

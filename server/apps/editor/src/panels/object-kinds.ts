@@ -88,6 +88,12 @@ export const OBJECT_CATEGORIES: readonly ObjectCategoryDef[] = [
       { id: "Teleport", kind: "Teleport", label: "传送阵", creatable: true },
     ],
   },
+  {
+    // 效果：覆盖在地图上的东西（v27 起战争雾是独立对象，引用一张地图）
+    id: "overlay",
+    label: "效果",
+    objects: [{ id: "Fog", kind: "Fog", label: "战争雾", creatable: true }],
+  },
   { id: "event", label: "事件", objects: [{ id: "Event", kind: "Event", label: "事件", creatable: false }] },
 ];
 
@@ -117,10 +123,11 @@ export function categoryOfKind(kind: ObjectKind): ObjectCategoryDef | undefined 
  * 2. 属性面板要不要给「渲染」那一组（固定徽标就没有换贴图的入口）；
  * 3. 列表行尾显示什么提示（层级 / 目标场景）。
  */
-export function badgeIconOf(target: ObjectKind | GameObjectDoc): "audio" | "teleport" | undefined {
+export function badgeIconOf(target: ObjectKind | GameObjectDoc): "audio" | "teleport" | "fog" | undefined {
   if (typeof target !== "string") {
     if (target.components.some((component) => component.type === DEFAULT_SLOT_COMPONENT.sound)) return "audio";
     if (target.components.some((component) => component.type === DEFAULT_SLOT_COMPONENT.teleport)) return "teleport";
+    if (target.components.some((component) => component.type === DEFAULT_SLOT_COMPONENT.fog)) return "fog";
     if (target.components.some((component) => SLOT_COMPONENT_TYPES.some((definition) => definition.type === component.type))) return undefined;
     return badgeIconOf(target.kind);
   }
@@ -129,7 +136,11 @@ export function badgeIconOf(target: ObjectKind | GameObjectDoc): "audio" | "tele
     return "audio";
   }
 
-  return presetOf(target)?.slots.teleport !== undefined ? "teleport" : undefined;
+  if (presetOf(target)?.slots.teleport !== undefined) {
+    return "teleport";
+  }
+
+  return presetOf(target)?.slots.fog !== undefined ? "fog" : undefined;
 }
 
 /** 对象类型的展示名（弹框的瓦片、面板的提示共用）。**只有这里写中文**，代码一律用英文。 */
@@ -139,6 +150,7 @@ export const KIND_LABELS: Record<ObjectKind, string> = {
   Sprite: "精灵",
   Image: "贴图",
   Map: "网格地图",
+  Fog: "战争雾",
   Player: "玩家",
   Item: "道具",
   Event: "事件",

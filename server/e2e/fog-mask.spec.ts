@@ -2,16 +2,19 @@ import { expect, test, type APIRequestContext, type Page } from "@playwright/tes
 import {
   COMPONENT,
   dropProject,
+  enterEditor,
   expandRuns,
+  fogObjectDoc,
   mapObjectDoc,
   newProject,
   objectComponentData,
-  openFirstObject,
+  openProject,
   readSceneFog,
   readSceneFogRegions,
   readSceneMap,
   sceneDoc,
   seedProjectDoc,
+  selectObject,
   solidPng,
   uploadSceneImage,
 } from "./helpers/editor";
@@ -20,10 +23,12 @@ import { canvasColorAt, cellPointInBox } from "./helpers/canvas";
 /**
  * 战争雾 Mask 窗口：**只有擦除**，擦的是遮罩这张图（不是格子），而且**不写文档**。
  *
+ * v27 起雾是**独立的 `Fog` 对象**（引用一张地图）：属性面板那一组挂在雾对象上，
+ * 所以这些用例先选中对象列表里的雾对象（第二个），再操作 `[data-group="fog"]`。
+ *
  * 钉住五件事（都是参考实现那套运行时语义在编辑器里的样子）：
  * 1. 罩子只盖在**已指定雾区的格子**上（其余透明）——运行时的初始状态；
- * 2. 罩子按**区域颜色**画：编辑器里要一眼看出哪块是哪区（运行时那边统一是黑的，
- *    等前端重构；配色与画布上的「网格标注」共用同一份偏好）；
+ * 2. 罩子按**区域颜色**画；
  * 3. 擦除让那块变透明（露出底图）；
  * 4. **场景文件一个字节都不动**（擦了不保存）；
  * 5. 关掉再打开就回到未探索的样子（每次打开按当前文档重画）。
@@ -74,57 +79,56 @@ async function eraseAcross(
   await page.mouse.up();
 }
 
+/** 打开项目并选中**雾对象**（场景里第 2 个对象），露出它的「战争雾」分组。 */
+async function openFogObject(page: Page, project: string): Promise<void> {
+  await enterEditor(page);
+  await openProject(page, project);
+  await selectObject(page, 1);
+  await expect(page.getByTestId("inspector-object-name")).toHaveValue("战争雾");
+}
+
 test.describe("战争雾 Mask 窗口", () => {
-  test("开关：关着只有开关，打开才露出雾区设置；开关是**文档数据**（前端按它决定生不生成雾）", async ({
+  test("开关：关着只留开关，打开才露出雾区设置；开关是**文档数据**（前端按它决定生不生成雾）", async ({
     page,
     request,
   }) => {
     const project = await newProject(request);
     try {
-      await seedProjectDoc(request, project, [
-        sceneDoc(SCENE, [mapObjectDoc(project, SCENE, "网格地图", MAP_SIZE, GRID)]),
-      ]);
+      const mapDoc = mapObjectDoc(project, SCENE, "网格地图", MAP_SIZE, GRID);
+      const mapId = String(mapDoc["id"]);
+      await seedProjectDoc(request, project, [sceneDoc(SCENE, [mapDoc, fogObjectDoc(mapDoc)])]);
       await uploadSceneImage(request, project, SCENE, solidPng(4, 4, [60, 60, 60]));
-      await openFirstObject(page, project, "网格地图");
+      await openFogObject(page, project);
 
       const fog = page.locator('[data-group="fog"]');
-      await expect(fog.getByTestId("fog-enable")).not.toBeChecked();
-      await expect(fog.getByTestId("fog-region-1")).toHaveCount(0);
-      await expect(fog.getByTestId("fog-mask-open")).toHaveCount(0);
-      // 没开过 = 文件里没有 `FogOfWar` 组件（雾自 v25 起是独立组件）
-      await expect.poll(() => readSceneFog(request, project, SCENE)).toBeUndefined();
-
-      // 打开以后才露出「指定雾区」与编辑入口，而且**开关落进了场景文件**
-      await fog.getByTestId("fog-enable").check();
+      // 新建的雾对象默认开着（`createFogObject`），但还没指定雾区
+      await expect(fog.getByTestId("fog-enable")).toBeChecked();
       await expect(fog.getByTestId("fog-region-1")).toBeVisible();
-      await expect(fog.getByTestId("fog-mask-open")).toBeVisible();
+      await expect(fog.getByTestId("fog-mask-open")).toBeDisabled();
       await expect
         .poll(() => readSceneFog(request, project, SCENE))
-        .toEqual({ enabled: true, regions: [] });
+        .toEqual({ mapId, enabled: true, regions: [] });
 
-      // 关掉又收起来
+      // 关掉：组件总在（它是雾对象的数据本体），只是 enabled=false、雾区设置收起来
       await fog.getByTestId("fog-enable").uncheck();
       await expect(fog.getByTestId("fog-region-1")).toHaveCount(0);
       await expect(fog.getByTestId("fog-mask-open")).toHaveCount(0);
-      // 一个雾区都没指定：关掉 = 没有内容要记，字段整个摘掉（与「从没开过」同义）
-      await expect.poll(() => readSceneFog(request, project, SCENE)).toBeUndefined();
+      await expect
+        .poll(() => readSceneFog(request, project, SCENE))
+        .toEqual({ mapId, enabled: false, regions: [] });
 
-      // 指定了雾区再关掉：**绑定留着**、只是把开关写 false（再打开就回来）——组件仍在文件里
+      // 打开并指定「区域1」：绑定落进场景文件
       await fog.getByTestId("fog-enable").check();
       await fog.getByTestId("fog-region-1").click();
       await expect.poll(() => readSceneFogRegions(request, project, SCENE)).toEqual([1]);
+
+      // 关掉：**绑定留着**（再打开就回来）
       await fog.getByTestId("fog-enable").uncheck();
       await expect
         .poll(() => readSceneFog(request, project, SCENE))
-        .toEqual({ enabled: false, regions: [1] });
-      // 关着只是「现在没有雾」：重新打开，绑定还在
+        .toEqual({ mapId, enabled: false, regions: [1] });
       await fog.getByTestId("fog-enable").check();
       await expect(fog.getByTestId("fog-region-1")).toHaveAttribute("data-bound", "true");
-
-      // 一个雾区都没指定时关掉 = 组件整个摘掉（与「从没开过」同义，文件里不留空壳）
-      await fog.getByTestId("fog-region-1").click();
-      await fog.getByTestId("fog-enable").uncheck();
-      await expect.poll(() => readSceneFog(request, project, SCENE)).toBeUndefined();
     } finally {
       await dropProject(request, project);
     }
@@ -134,8 +138,7 @@ test.describe("战争雾 Mask 窗口", () => {
     const project = await newProject(request);
     try {
       const mapDoc = mapObjectDoc(project, SCENE, "网格地图", MAP_SIZE, GRID);
-      // v25 起战争雾是独立的 `FogOfWar` 组件；这里的夹具只改 `GridMap` 的格子数据，
-      // 雾区由下面的 UI 操作（打开开关 → 指定区域1）写进文件
+      // 左下角 4 格是「区域1」；雾对象通过 `fogObjectDoc` 挂上
       const gridMap = objectComponentData(mapDoc, COMPONENT.gridMap)!;
       gridMap.cells = {
         encoding: "rle",
@@ -145,15 +148,11 @@ test.describe("战争雾 Mask 窗口", () => {
         ],
       };
 
-      await seedProjectDoc(request, project, [sceneDoc(SCENE, [mapDoc])]);
+      await seedProjectDoc(request, project, [sceneDoc(SCENE, [mapDoc, fogObjectDoc(mapDoc)])]);
       await uploadSceneImage(request, project, SCENE, solidPng(4, 4, [60, 60, 60]));
-      await openFirstObject(page, project, "网格地图");
+      await openFogObject(page, project);
 
       const fog = page.locator('[data-group="fog"]');
-
-      // 先打开战争雾：关着时连雾区设置都不显示（见上面那条用例）
-      await fog.getByTestId("fog-enable").check();
-
       // 没指定雾区：窗口打不开（罩子会是全透明，没什么可擦的）
       await expect(fog.getByTestId("fog-mask-open")).toBeDisabled();
 
@@ -214,12 +213,11 @@ test.describe("战争雾 Mask 窗口", () => {
         ],
       };
 
-      await seedProjectDoc(request, project, [sceneDoc(SCENE, [mapDoc])]);
+      await seedProjectDoc(request, project, [sceneDoc(SCENE, [mapDoc, fogObjectDoc(mapDoc)])]);
       await uploadSceneImage(request, project, SCENE, solidPng(4, 4, [60, 60, 60]));
-      await openFirstObject(page, project, "网格地图");
+      await openFogObject(page, project);
 
       const fog = page.locator('[data-group="fog"]');
-      await fog.getByTestId("fog-enable").check();
       await fog.getByTestId("fog-region-1").click();
       await fog.getByTestId("fog-region-8").click();
       await expect.poll(() => readSceneFogRegions(request, project, SCENE)).toEqual([1, 8]);
@@ -265,6 +263,7 @@ test.describe("战争雾 Mask 窗口", () => {
       await dropProject(request, project);
     }
   });
+
   test("两个雾区各有各的颜色；绑定变了重开按新绑定画", async ({ page, request }) => {
     const project = await newProject(request);
     try {
@@ -280,12 +279,11 @@ test.describe("战争雾 Mask 窗口", () => {
         ],
       };
 
-      await seedProjectDoc(request, project, [sceneDoc(SCENE, [mapDoc])]);
+      await seedProjectDoc(request, project, [sceneDoc(SCENE, [mapDoc, fogObjectDoc(mapDoc)])]);
       await uploadSceneImage(request, project, SCENE, solidPng(4, 4, [60, 60, 60]));
-      await openFirstObject(page, project, "网格地图");
+      await openFogObject(page, project);
 
       const fog = page.locator('[data-group="fog"]');
-      await fog.getByTestId("fog-enable").check();
       await fog.getByTestId("fog-region-1").click();
       await fog.getByTestId("fog-mask-open").click();
       await expect(page.getByTestId("fog-mask-dialog")).toBeVisible();

@@ -2,15 +2,17 @@ import { expect, test, type Page, type TestInfo } from "@playwright/test";
 import {
   COMPONENT,
   dropProject,
+  enterEditor,
+  fogObjectDoc,
   mapObjectDoc,
   newProject,
   objectComponentData,
-  openFirstObject,
+  openProject,
   sceneDoc,
   seedProjectDoc,
+  selectObject,
   solidPng,
   uploadSceneImage,
-  withComponent,
 } from "./helpers/editor";
 import { cellPointInBox } from "./helpers/canvas";
 
@@ -136,10 +138,13 @@ async function eraseAcross(
   await page.mouse.up();
 }
 
-/** 一张带雾的地图：左下角 4 格是「区域1」，且**只有区域1 算雾区**。 */
-function fogMapDoc(project: string): Record<string, unknown> {
+/** 一张带雾的地图 + 引用它的雾对象：左下角 4 格是「区域1」，且**只有区域1 算雾区**。 */
+function fogSceneDocs(project: string): {
+  readonly mapDoc: Record<string, unknown>;
+  readonly fogDoc: Record<string, unknown>;
+} {
   const mapDoc = mapObjectDoc(project, SCENE, "网格地图", MAP_SIZE, GRID);
-  // v25 起战争雾是独立的 `FogOfWar` 组件（网格数据仍在 `GridMap` 里，改的是那一份活数据）
+  // v27 起雾是独立的 `Fog` 对象（网格数据仍在 `GridMap` 里，改的是那一份活数据）
   const gridMap = objectComponentData(mapDoc, COMPONENT.gridMap)!;
   gridMap.cells = {
     encoding: "rle",
@@ -148,7 +153,7 @@ function fogMapDoc(project: string): Record<string, unknown> {
       [0, GRID.width * GRID.height - FOG_CELLS],
     ],
   };
-  return withComponent(mapDoc, COMPONENT.fogOfWar, { enabled: true, regions: [1] });
+  return { mapDoc, fogDoc: fogObjectDoc(mapDoc, "战争雾", { regions: [1] }) };
 }
 
 test.describe("战争雾：轨迹下发给前端", { tag: "@runtime" }, () => {
@@ -164,10 +169,14 @@ test.describe("战争雾：轨迹下发给前端", { tag: "@runtime" }, () => {
     const project = await newProject(request);
 
     try {
-      const mapDoc = fogMapDoc(project);
-      await seedProjectDoc(request, project, [sceneDoc(SCENE, [mapDoc])]);
+      const { mapDoc, fogDoc } = fogSceneDocs(project);
+      const fogId = String(fogDoc["id"]);
+      await seedProjectDoc(request, project, [sceneDoc(SCENE, [mapDoc, fogDoc])]);
       await uploadSceneImage(request, project, SCENE, solidPng(4, 4, [60, 60, 60]));
-      await openFirstObject(page, project, "网格地图");
+      await enterEditor(page);
+      await openProject(page, project);
+      await selectObject(page, 1);
+      await expect(page.getByTestId("inspector-object-name")).toHaveValue("战争雾");
 
       // 战争雾那一组是**文档数据**（种子文件里 `fog.enabled = true`）：开着才有「编辑」入口
       const fog = page.locator('[data-group="fog"]');
@@ -194,8 +203,8 @@ test.describe("战争雾：轨迹下发给前端", { tag: "@runtime" }, () => {
 
       const eraseCommands = (await fakeCommands(page)).filter((item) => item.kind === "erase_mask");
       for (const command of eraseCommands) {
-        // 对象对得上（就是种子文档里那张地图）；载荷里只有**轨迹**，没有格子/遮罩数据
-        expect(command.objectId).toBe(mapDoc.id);
+        // 对象对得上（就是种子文档里那个**雾对象**）；载荷里只有**轨迹**，没有格子/遮罩数据
+        expect(command.objectId).toBe(fogId);
         expect(command.stroke?.radius).toBeCloseTo(BRUSH_RATIO, 5);
         expect(command.stroke?.softness).toBe(1);
         expect(command.stroke?.points?.length ?? 0).toBeGreaterThan(0);
@@ -223,7 +232,7 @@ test.describe("战争雾：轨迹下发给前端", { tag: "@runtime" }, () => {
         .toBe(1);
 
       const region = (await fakeCommands(page)).find((item) => item.kind === "reveal_fog_region");
-      expect(region).toMatchObject({ objectId: mapDoc.id, region: 1, revealed: true });
+      expect(region).toMatchObject({ objectId: fogId, region: 1, revealed: true });
 
       // 假前端回了 ok:true → 编辑器日志里看得见「命令 执行成功」（不假装成功、也不超时）
       await expect(page.getByText(/命令\s*执行成功/).first()).toBeVisible();

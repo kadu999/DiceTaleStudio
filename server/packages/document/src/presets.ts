@@ -38,6 +38,7 @@ export const OBJECT_KINDS = [
   "Sprite",
   "Image",
   "Map",
+  "Fog",
   "Player",
   "Item",
   "Event",
@@ -54,6 +55,8 @@ export const OBJECT_KINDS = [
  * - `Sprite`：**精灵**——显示的一张图可以取图集里的一格（子图）；
  * - `Image`：**贴图**（v21 起，v22 前叫 `Texture`）——只把一张图整张铺出来，不引用格子；
  * - `Map`：地图是场景对象的一种，携带贴图与网格数据；
+ * - `Fog`：**战争雾**（v27 起是独立的场景对象）——引用一张地图（雾区取自它的格子区域位），
+ *   自带总开关与雾区；可摆放，但画布上只画一枚图标。一张地图最多一个雾对象；
  * - `Player` / `Item` / `Event`：玩家 / 道具 / 事件（前端 `BackendObjectKind` 就有的实体）；
  * - `PlaySound`：**动作对象**（「播放声音」）——基础属性与实体一样，另带「播什么 + 哪个层级」，
  *   画布上画一枚**固定的内置音频图标**（不给换贴图），编辑器**不播放**（出声是前端的事）；
@@ -112,14 +115,17 @@ export const SPRITE_COMPONENT: ComponentType = "SpriteLayer";
  * `image` 那条槽位只登记在支持贴图的具体预设上（`Sprite` / `Image` / `Player` / `Item` /
  * `Event`），避免把显示图能力泛化到动作或地图；`video` 那个槽位**刻意只给地图与贴图**
  * （`Map` / `Image`）——视频画面盖在对象自己的矩形上，精灵显示的是图集里的一格，
- * 它的渲染选项归「渲染」那一组。`fog` 槽位**只给地图**（`Map`）：雾区引用地图格子上的
- * 区域位，是 `GridMap` 的从属能力。
+ * 它的渲染选项归「渲染」那一组。`fog` 槽位**只给战争雾对象**（`Fog`）：雾引用一张地图的
+ * 格子区域位（v27 起雾是独立对象，不再挂在地图上）。
  */
 export const OBJECT_PRESETS: Readonly<Record<ObjectKind, GameObjectPreset>> = {
   GameObject: { kind: "GameObject", abstract: true, slots: {} },
   Sprite: { kind: "Sprite", slots: { image: "SpriteLayer" } },
   Image: { kind: "Image", slots: { image: "ImageLayer", video: "VideoOverlay" } },
-  Map: { kind: "Map", slots: { image: "ImageLayer", map: "GridMap", fog: "FogOfWar", video: "VideoOverlay" } },
+  Map: { kind: "Map", slots: { image: "ImageLayer", map: "GridMap", video: "VideoOverlay" } },
+  // 战争雾（v27 起是独立的场景对象）：它自己的数据就是 `FogOfWar` 组件（引用一张地图 +
+  // 开关 + 雾区）。可摆放（对象照常有位置 / 旋转 / 缩放），但画布上只画一枚图标。
+  Fog: { kind: "Fog", slots: { fog: "FogOfWar" } },
   Player: { kind: "Player", slots: { image: "ImageLayer" } },
   Item: { kind: "Item", slots: { image: "ImageLayer" } },
   Event: { kind: "Event", slots: { image: "ImageLayer" } },
@@ -185,18 +191,17 @@ export function supportsVideo(target: ObjectKind | GameObjectDoc): boolean {
 }
 
 /**
- * 哪些对象能带战争雾：已挂 `FogOfWar` 的对象；缺组件时按组件定义的可选准入 kind 添加
- * （地图预设上「战争雾」组因此**总是出现**，与「视频」组同一交互：打开开关才建组件）。
+ * 哪些对象能带战争雾：**只有 `Fog` 对象**（v27 起雾是独立的场景对象，自己就是它的数据本体）。
  *
- * 雾区引用地图格子上的区域位，`FogOfWar` 从属 `GridMap`——它出现在对象上而对象
- * 不是地图时，由 `componentKindMismatchOf` 报错位、这里不加入口。
+ * 已挂 `FogOfWar` 组件的对象照旧算数（损坏的手写文件）；组件定义里的 `templateKinds`
+ * 决定正常的创建模板。地图对象上**不再**有雾。
  */
 export function supportsFog(target: ObjectKind | GameObjectDoc): boolean {
   if (typeof target !== "string") {
     if (target.components.some((component) => component.type === DEFAULT_SLOT_COMPONENT.fog)) return true;
-    if (target.components.some((component) => findComponentType(component.type)?.slot === "fog")) return false;
+    if (target.components.some((component) => findComponentType(component.type)?.slot === "fog")) return true;
     if (componentKindMismatchOf(target.components, target.kind)) return false;
-    return findComponentType(DEFAULT_SLOT_COMPONENT.fog)?.optionalKinds?.includes(target.kind) === true;
+    return findComponentType(DEFAULT_SLOT_COMPONENT.fog)?.templateKinds?.includes(target.kind) === true;
   }
 
   return presetOf(target)?.slots.fog !== undefined;

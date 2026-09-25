@@ -108,8 +108,14 @@ import type { ObjectKind } from "./presets";
  * 进各自的 data（形状 = `ImageRef & { sortingOrder }`）；动作对象（`PlaySound` / `Teleport`）
  * 与没有渲染层的实体**不再有这个参数**。由 `migrateSortingOrderToRenderComponents` 搬一次。
  * 协议侧同步升到 v14。
+ *
+ * v27（2026-09-26）：**战争雾变成独立的场景对象**。`FogOfWar` 组件从地图对象搬到新的
+ * `Fog` 对象上（对象照常有位置 / 旋转 / 缩放，**可摆放**），组件 data 多了 `mapId`
+ * （引用哪张地图：雾区与格子取自那张地图的 `GridMap`）。一张地图最多一个雾对象，
+ * 由 `migrateFogToSceneObject` 把老的「地图上的 `FogOfWar` 组件」搬过去。协议侧同步升到
+ * v15：命令 `erase_mask` / `reveal_fog_region` 改按**雾对象 id** 寻址。
  */
-export const DOCUMENT_FORMAT_VERSION = 26;
+export const DOCUMENT_FORMAT_VERSION = 27;
 
 /** 网格行序：`bottom-up` 表示 cells 第 0 行是图片最下面一行（与 Unity GridMap 一致）。 */
 export type RowOrder = "bottom-up";
@@ -249,17 +255,25 @@ export interface MapDataDoc {
 export type ImageLayerDataDoc = ImageRef & { readonly sortingOrder: number };
 
 /**
- * 战争雾组件的数据（v25 前是 `MapDataDoc.fog`，形状原样搬来）：**总开关** +
- * 把哪些「区域」当成雾区（区域位取自 `@dts/grid` 的可绘制位）。
+ * 战争雾组件的数据（v27 起住在独立的 `Fog` 对象上；v25–v26 住在地图对象上；更早是
+ * `MapDataDoc.fog`）：**引用哪张地图** + **总开关** + 把哪些「区域」当成雾区
+ * （区域位取自 `@dts/grid` 的可绘制位）。
+ *
+ * `mapId` 指向**被引用的地图对象**（雾区引用它的格子区域位，`cells` 与网格尺寸也从它取）。
+ * 用对象 id 而不是名字：改名不会断链。一张地图最多一个雾对象（`validateScene` 报重复）。
  *
  * `enabled` 是**总开关**：只有开着，前端才生成那一层雾（`FogOfWar`）。
- * 关掉它 = 「这张地图现在没有战争雾」，但**雾区绑定留着**——再打开就回来，
+ * 关掉它 = 「这个雾对象现在不生成雾」，但**雾区绑定留着**——再打开就回来，
  * 不必重新指定一遍（见 `setFogEnabled`）。
  *
- * 「组件不存在」与「没开战争雾」同义（与 v25 前「`fog` 整个不在」同一条口径）；
- * 没开也没指定时**不写组件实例**，免得文件里留一个空壳。
+ * 与 v26 及更早不同：组件现在**总在**（它就是雾对象的数据本体），关掉只是 `enabled=false`，
+ * 不再「关且空就摘组件」——摘了雾对象就成空壳了。
  */
 export interface FogOfWarDataDoc {
+  /**
+   * 引用哪张地图（对象 id）。空字符串 = 还没选（损坏 / 刚修复的数据，校验报 error）。
+   */
+  readonly mapId: string;
   /**
    * 是否启用战争雾。
    *

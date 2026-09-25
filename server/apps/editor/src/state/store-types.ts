@@ -685,7 +685,7 @@ export interface EditorStoreState {
    */
   setComponentField(objectId: string, type: string, key: string, value: unknown): boolean;
   /** Explicitly restore the default data for a missing required component. */
-  repairObjectComponent(objectId: string, type: "PlaySound" | "Teleport"): boolean;
+  repairObjectComponent(objectId: string, type: "PlaySound" | "Teleport" | "FogOfWar"): boolean;
   /**
    * **泛型对象字段写入**：按对象字段规格（`@dts/document` 的 `OBJECT_SPEC`）改 `object` 自己的
    * 一个简单字段——与 `setComponentField` 的分工只有「写在哪」。返回 `false` 表示没有变更。
@@ -727,24 +727,27 @@ export interface EditorStoreState {
    * 选中（关掉窗口就回到原样）。两个格子编辑窗口**互斥**——同时开两层
    * 模态遮罩谁也点不到，所以开一个就把另一个关掉。
    */
-  openFogMask(objectId: string | null): void;
+  openFogMask(fogObjectId: string | null): void;
   /** 打开 / 关闭「网格编辑窗口」（`null` = 关闭）；与 Mask 窗口互斥。 */
   openGridEditor(objectId: string | null): void;
   /**
-   * 指定哪些区域算战争雾（只改绑定，不动格子数据）。
-   *
-   * 传进来的位先规范化（只留可绘制位、去重、升序）；一个都不指定时：开关**开着**就留一份空的
-   * 绑定（面板那一组与开关状态都还在），**关着**才把这份配置整个删掉。
+   * 选这个雾对象**引用哪张地图**（v27：雾是独立对象，引用一张地图；一张地图最多一个雾）。
+   * `mapObjectId` 必须是场景里真实存在的地图，否则返回 `false`。
    */
-  setFogRegions(mapObjectId: string, regions: readonly number[]): boolean;
+  setFogMap(fogObjectId: string, mapObjectId: string): boolean;
   /**
-   * 打开 / 关掉这张地图的**战争雾总开关**（文档数据，可撤销、跟着场景存盘下发）。
+   * 指定哪些区域算战争雾（只改绑定，不动格子数据）。传进来的位先规范化
+   * （只留可绘制位、去重、升序）；组件总在，关着时也照样写得进去。
+   */
+  setFogRegions(fogObjectId: string, regions: readonly number[]): boolean;
+  /**
+   * 打开 / 关掉这个雾对象的**战争雾总开关**（文档数据，可撤销、跟着场景存盘下发）。
    *
    * 只有开着，前端才生成那一层雾——关掉是**真的不建**，不是画了再藏起来。
-   * 关掉**不清雾区绑定**（再打开就回来）；一个雾区都没指定时会把 `map.fog` 整个摘掉。
-   * 正开着的 Mask 窗口跟着关掉（它编辑的那张地图现在没有雾了）。
+   * 关掉**不清雾区绑定**（再打开就回来）。
+   * 正开着的 Mask 窗口跟着关掉（它编辑的那个雾对象现在不生成雾了）。
    */
-  setFogEnabled(mapObjectId: string, enabled: boolean): boolean;
+  setFogEnabled(fogObjectId: string, enabled: boolean): boolean;
   /**
    * 战争雾：在 Mask 窗口里**擦一笔**（运行态才下发给前端）。
    *
@@ -754,9 +757,9 @@ export interface EditorStoreState {
    *
    * 编辑态（没点「运行」）什么都不做：Mask 窗口那时候只是预览，与今天完全一样。
    */
-  eraseFogMask(objectId: string, points: readonly FogRevealPoint[], done: boolean): string | undefined;
+  eraseFogMask(fogObjectId: string, points: readonly FogRevealPoint[], done: boolean): string | undefined;
   /** 战争雾：把某个雾区**整片揭示 / 整片盖回**（与 Mask 窗口右侧那个开关同一件事）。 */
-  setFogRegionRevealed(objectId: string, region: number, revealed: boolean): string | undefined;
+  setFogRegionRevealed(fogObjectId: string, region: number, revealed: boolean): string | undefined;
   /**
    * 把记着的揭示记录补发一遍（前端刚连上时调用）。
    *

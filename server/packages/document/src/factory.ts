@@ -81,6 +81,41 @@ export function createMapObject(input: {
 }
 
 /**
+ * 新建**战争雾对象**（v27 起雾是独立的场景对象）：引用一张地图 + 总开关 + 雾区。
+ *
+ * 可摆放（照常有位置 / 旋转 / 缩放），但画布上只画一枚图标；雾层本身在前端（`FogOfWar`）。
+ * `mapId` 由调用方给（必须是真实地图的 id）；新建时默认**开着、还没指定雾区**（校验会提醒）。
+ */
+export function createFogObject(input: {
+  readonly name: string;
+  readonly mapId: string;
+  readonly position?: WorldPosition | null;
+  readonly rotation?: number;
+  readonly scale?: number;
+  readonly id?: string;
+}): GameObjectDoc {
+  const id = input.id ?? createId("fog");
+
+  return {
+    id,
+    name: input.name,
+    kind: "Fog",
+    active: true,
+    position: input.position ?? null,
+    rotation: input.rotation ?? 0,
+    scale: input.scale ?? DEFAULT_OBJECT_SCALE,
+    locked: false,
+    components: [
+      featureComponent(id, DEFAULT_SLOT_COMPONENT.fog, {
+        mapId: input.mapId,
+        enabled: true,
+        regions: [],
+      }),
+    ],
+  };
+}
+
+/**
  * 新建**声音对象**（动作对象）：和实体一样摆在世界里，另带「候选音频列表 + 层级」。
  *
  * 位置 / 缩放 / 激活 / 锁定 / 显示顺序与实体完全同一套；**画布上的样子是固定的**：

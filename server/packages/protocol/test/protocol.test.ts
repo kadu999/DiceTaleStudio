@@ -129,25 +129,26 @@ describe("协议：场景（镜像的那份对象数据）", () => {
     expect(featureData(scene.objects[2], COMPONENT_TYPE.sound)?.layer).toBe("sfx");
   });
 
-  it("战争雾的总开关（v13 起是独立的 `FogOfWar` 组件）：缺省算开（老场景只有 regions），关着时原样传给前端", () => {
-    // v13 起雾是 `components[]` 里的 `FogOfWar` 实例（v25 前住在 `GridMap` 的 data.fog，
-    // 形状不变：总开关 + 雾区）
+  it("战争雾（v15 起挂在独立的 `Fog` 对象上）：缺省算开（老视角只有 regions），关着时原样传给前端", () => {
+    // v15 起雾是 `components[]` 里的 `FogOfWar` 实例（挂在 `Fog` 对象上）：引用地图 + 总开关 + 雾区
     const parseWithFog = (fog: unknown): ReturnType<typeof sceneSchema.parse> =>
       sceneSchema.parse({
         name: "s",
         objects: [mapObjectWith(feature(COMPONENT_TYPE.fog, fog as Record<string, unknown>))],
       });
 
-    // 老场景（协议 v3 及更早）里只有 regions：「有 fog」就等于「开着」
+    // 老视角（协议 v3 及更早）里只有 regions：「有 fog」就等于「开着」
     expect(featureData(parseWithFog({ regions: [8] }).objects[0], COMPONENT_TYPE.fog)).toEqual({
+      mapId: "",
       enabled: true,
       regions: [8],
     });
 
     // 编辑器关掉了：前端看到的就是关着（**不是**建了再藏起来）
     expect(
-      featureData(parseWithFog({ enabled: false, regions: [8] }).objects[0], COMPONENT_TYPE.fog),
+      featureData(parseWithFog({ mapId: "map_01", enabled: false, regions: [8] }).objects[0], COMPONENT_TYPE.fog),
     ).toEqual({
+      mapId: "map_01",
       enabled: false,
       regions: [8],
     });

@@ -93,6 +93,8 @@ export const cellRunsSchema = z.object({
  * 并随迁移回写一次（版本升到 13 时本来就要回写）。
  */
 export const mapFogSchema = z.object({
+  // v27 起雾是独立对象：引用哪张地图（对象 id）。缺省空串（损坏 / 手写文件），校验报 error
+  mapId: z.string().default(""),
   enabled: z.boolean().default(true),
   regions: z.array(z.number().int().min(1).max(255)).default([]),
 });
@@ -1243,6 +1245,87 @@ function migrateSortingOrderToRenderComponents(raw: Record<string, unknown>): {
 }
 
 /**
+ * v26 → v27：把地图对象上的 `FogOfWar` 组件搬成**独立的战争雾对象**（kind `Fog`）。
+ *
+ * 每个带 `FogOfWar` 组件的对象生成一个新的 `Fog` 对象：
+ * - id 确定性 `<对象 id>__Fog`（幂等，重复跑不会多出第二个）；
+ * - `mapId` = 原对象 id（正常就是地图；没有 `GridMap` 的手写文件也搬，`mapId` 仍写原 id，
+ *   由 `validateScene` 报「引用的不是地图」）；
+ * - `position` / `rotation` / `scale`（含单轴）取原对象现值——**保证看下去和迁移前完全一致**；
+ * - `enabled` / `regions` 原样搬进组件 data（原 data 里没有就按 schema 缺省：开、空）；
+ * - 雾对象插在原对象**之后**（顺序稳定，且不会排到地图前面）。
+ *
+ * 原对象上移除 `FogOfWar` 组件。幂等：搬过的对象不再有该组件。
+ */
+function migrateFogToSceneObject(raw: Record<string, unknown>): {
+  readonly raw: Record<string, unknown>;
+  readonly changed: boolean;
+} {
+  const objects = Array.isArray(raw.objects) ? raw.objects : [];
+  let changed = false;
+  const next: unknown[] = [];
+
+  for (const object of objects) {
+    if (
+      !isRecord(object) ||
+      // 已经是雾对象（kind `Fog`）的不能再搬——否则「再解析一遍」会把它的组件又搬成一个新对象
+      object.kind === "Fog" ||
+      !Array.isArray(object.components) ||
+      !object.components.some(
+        (component) => isRecord(component) && component.type === DEFAULT_SLOT_COMPONENT.fog,
+      )
+    ) {
+      next.push(object);
+      continue;
+    }
+
+    changed = true;
+    const baseId =
+      typeof object.id === "string" && object.id.length > 0 ? object.id : `obj${next.length}`;
+    const fogComponent = object.components.find(
+      (component) => isRecord(component) && component.type === DEFAULT_SLOT_COMPONENT.fog,
+    );
+    const fogData = isRecord(fogComponent) && isRecord(fogComponent.data) ? fogComponent.data : {};
+
+    // 原对象：摘掉战争雾组件，其余原样
+    next.push({
+      ...object,
+      components: object.components.filter(
+        (component) => !(isRecord(component) && component.type === DEFAULT_SLOT_COMPONENT.fog),
+      ),
+    });
+
+    // 新雾对象：摆放在地图当前位置（迁移前雾层就是跟着地图走的）
+    const name = typeof object.name === "string" && object.name.length > 0 ? object.name : "地图";
+    next.push({
+      id: `${baseId}__Fog`,
+      name: `${name} 战争雾`,
+      kind: "Fog",
+      active: typeof object.active === "boolean" ? object.active : true,
+      locked: typeof object.locked === "boolean" ? object.locked : false,
+      position: object.position ?? null,
+      rotation: typeof object.rotation === "number" ? object.rotation : 0,
+      scale: typeof object.scale === "number" ? object.scale : 1,
+      ...(typeof object.scaleX === "number" ? { scaleX: object.scaleX } : {}),
+      ...(typeof object.scaleY === "number" ? { scaleY: object.scaleY } : {}),
+      components: [
+        {
+          id: `${baseId}__Fog__FogOfWar`,
+          type: DEFAULT_SLOT_COMPONENT.fog,
+          data: {
+            mapId: baseId,
+            enabled: typeof fogData.enabled === "boolean" ? fogData.enabled : true,
+            regions: Array.isArray(fogData.regions) ? fogData.regions : [],
+          },
+        },
+      ],
+    });
+  }
+
+  return changed ? { raw: { ...raw, objects: next }, changed } : { raw, changed };
+}
+
+/**
  * 读一个（还没过 schema 的）对象的 `kind`；认不出来时按**精灵** `Sprite` 算
  * （`MirrorObject` 同一个兜底）。
  *
@@ -1449,6 +1532,9 @@ export function parseSceneFile(raw: unknown, size?: SceneSizeHint): SceneFileLoa
     // v26：显示顺序从对象级搬进渲染组件（GridMap / 图片层）。必须排在 `features` 之后：
     // 只有对象特性搬进组件之后，才找得到承载显示顺序的那个渲染组件
     const sorting = migrateSortingOrderToRenderComponents(fogSplit.raw);
+    // v27：战争雾从「地图上的 FogOfWar 组件」搬成独立的 `Fog` 对象。必须排在 `fogSplit`
+    // 之后（那时雾才在组件里）、并在最后（新对象要按现在的摆放复制地图的位置）
+    const fogObjects = migrateFogToSceneObject(sorting.raw);
     // v13：战争雾的总开关（`fog.enabled`）**不用单独迁移**——schema 给它默认值 `true`
     // （v10–v12 的文件里「有 fog」就等于「开着」），而版本号一升就会回写一次，
     // 于是磁盘上的文件重新变得自描述。
@@ -1461,8 +1547,9 @@ export function parseSceneFile(raw: unknown, size?: SceneSizeHint): SceneFileLoa
     // （排在 `features` 后面：先 v19 搬组件、再拆雾）。
     // v26：显示顺序从对象级搬进渲染组件，已在上面的 `sorting` 那一趟做完
     // （同样排在 `features` 后面：先搬组件，才找得到承载它的渲染组件）。
+    // v27：战争雾从地图搬成独立的 `Fog` 对象，已在上面的 `fogObjects` 那一趟做完。
     // 读出来的文档一律是当前版本（v6 起网格里不再存 `cellSize`，顺手被 schema 丢掉）
-    normalized = { ...sorting.raw, formatVersion: DOCUMENT_FORMAT_VERSION };
+    normalized = { ...fogObjects.raw, formatVersion: DOCUMENT_FORMAT_VERSION };
     needsRewrite =
       version < DOCUMENT_FORMAT_VERSION ||
       filled.changed ||
@@ -1472,7 +1559,8 @@ export function parseSceneFile(raw: unknown, size?: SceneSizeHint): SceneFileLoa
       renamed.changed ||
       features.changed ||
       fogSplit.changed ||
-      sorting.changed;
+      sorting.changed ||
+      fogObjects.changed;
   }
 
   const result = sceneFileSchema.safeParse(normalized);

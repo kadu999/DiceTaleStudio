@@ -2,12 +2,14 @@ import { expect, test, type APIRequestContext, type Page } from "@playwright/tes
 import {
   dropProject,
   expandRuns,
+  fogObjectDoc,
   mapObjectDoc,
   newProject,
   openFirstObject,
   readSceneMap,
   sceneDoc,
   seedProjectDoc,
+  selectObject,
   solidPng,
   uploadSceneImage,
 } from "./helpers/editor";
@@ -195,20 +197,23 @@ test.describe("网格编辑窗口", () => {
   test("两个窗口互斥：开一个另一个自动关", async ({ page, request }) => {
     const project = await newProject(request);
     try {
+      const mapDoc = mapObjectDoc(project, SCENE, "网格地图", MAP_SIZE, GRID);
       await seedProjectDoc(request, project, [
-        sceneDoc(SCENE, [mapObjectDoc(project, SCENE, "网格地图", MAP_SIZE, GRID)]),
+        sceneDoc(SCENE, [mapDoc, fogObjectDoc(mapDoc)]),
       ]);
       await uploadSceneImage(request, project, SCENE, solidPng(4, 4, [255, 255, 255]));
       await openFirstObject(page, project, "网格地图");
 
-      // 先打开战争雾（关着时雾区设置不显示），再指定一个雾区
-      await page.locator('[data-group="fog"]').getByTestId("fog-enable").check();
+      // 雾对象是场景里第 2 个对象：选中它才能操作「战争雾」那一组
+      await selectObject(page, 1);
+      // 指定一个雾区，才有 Mask 入口
       await page.locator('[data-group="fog"]').getByTestId("fog-region-8").click();
       await page.locator('[data-group="fog"]').getByTestId("fog-mask-open").click();
       await expect(page.getByTestId("fog-mask-dialog")).toBeVisible();
 
-      // 关掉 Mask 窗口再从「区域」组打开网格编辑窗口
+      // 关掉 Mask 窗口，回到地图（网格编辑入口在地图的「网格地图」组里）再打开网格编辑窗口
       await page.getByTestId("fog-mask-close").click();
+      await selectObject(page, 0);
       await page.getByTestId("grid-editor-open").click();
       await expect(page.getByTestId("grid-editor-dialog")).toBeVisible();
       await expect(page.getByTestId("fog-mask-dialog")).toHaveCount(0);

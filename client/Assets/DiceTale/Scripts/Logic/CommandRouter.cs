@@ -12,10 +12,11 @@ namespace DiceTale
     /// 这类失败恰恰说明镜像没同步上，不该被掩盖。
     ///
     /// 战争雾的两条命令同理：`erase_mask` 只给**鼠标轨迹**，`reveal_fog_region` 只给区域位，
-    /// 雾层本身在前端镜像里由**挂在地图对象上的** <see cref="FogOfWar"/> 组件自治
-    /// （`enabled` + `regions` + 地图的 `map.cells` 决定它建不建自己的渲染子物体），
+    /// **v15 起命令的 `objectId` 是独立雾对象的 id**（不再是地图 id）。雾层本身在前端镜像里由
+    /// **挂在那个雾对象上的** <see cref="FogOfWar"/> 组件自治
+    /// （`enabled` + `regions` + 它按 `mapId` 引用的那张地图的 `cells` 决定它建不建自己的渲染子物体），
     /// 命令经 <see cref="SceneObjectView.Fog"/> 找到那个组件执行——遮罩还没建起来时
-    /// （数据不全 / 开关关着 / 没绑雾区）两条命令由组件自己返回 false，如实回失败原因。
+    /// （被引用地图不在 / 没开 / 没绑雾区）两条命令由组件自己返回 false，如实回失败原因。
     ///
     /// 声音（v7 起**真的出声**）：`play_sound` / `stop_sound` / `pause_sound` / `resume_sound`
     /// 按**层级**作用在 <see cref="AudioPlayerManager"/> 的三条通道上（音效 / 旁白）。
@@ -485,7 +486,7 @@ namespace DiceTale
 
         // ---------------------------------------------------------------- 战争雾
 
-        /// <summary>擦一笔：**沿后台发来的轨迹**擦掉这张地图上的雾（轨迹不是遮罩数据）。</summary>
+        /// <summary>擦一笔：**沿后台发来的轨迹**擦掉这个雾对象上的雾（轨迹不是遮罩数据）。</summary>
         private void HandleEraseMask(CommandRequest command)
         {
             var fog = FogOf(command.objectId);
@@ -506,8 +507,8 @@ namespace DiceTale
 
             if (!fog.EraseStroke(command.points, command.radius, command.softness))
             {
-                Debug.LogWarning("[命令] 擦除战争雾失败：雾层还没准备好（数据不全或遮罩没建起来）");
-                session.SendCommandResult(command, false, "雾层还没准备好（这张地图的数据不全或遮罩没建起来）");
+                Debug.LogWarning("[命令] 擦除战争雾失败：雾层还没准备好（被引用地图的数据不全或遮罩没建起来）");
+                session.SendCommandResult(command, false, "雾层还没准备好（被引用地图的数据不全或遮罩没建起来）");
                 return;
             }
 
@@ -531,7 +532,7 @@ namespace DiceTale
             var obj = mirror.Find(command.objectId);
             if (!ContainsRegion(obj?.fog?.regions, command.region))
             {
-                var reason = $"区域位 {command.region} 不是这张地图的雾区";
+                var reason = $"区域位 {command.region} 不是这个雾对象的雾区";
                 Debug.LogWarning($"[命令] 战争雾整区操作失败：{reason}");
                 session.SendCommandResult(command, false, reason);
                 return;
@@ -539,8 +540,8 @@ namespace DiceTale
 
             if (!fog.RevealRegion(command.region, command.revealed))
             {
-                Debug.LogWarning("[命令] 战争雾整区操作失败：雾层还没准备好（数据不全或遮罩没建起来）");
-                session.SendCommandResult(command, false, "雾层还没准备好（这张地图的数据不全或遮罩没建起来）");
+                Debug.LogWarning("[命令] 战争雾整区操作失败：雾层还没准备好（被引用地图的数据不全或遮罩没建起来）");
+                session.SendCommandResult(command, false, "雾层还没准备好（被引用地图的数据不全或遮罩没建起来）");
                 return;
             }
 
@@ -550,9 +551,10 @@ namespace DiceTale
         }
 
         /// <summary>
-        /// 取某个地图对象上的战争雾组件（对象不在镜像里 / 没有视图 / 对象没带 `FogOfWar`
-        /// 协议组件时都是 null）。组件在**不代表雾层在**：开关关着 / 没绑雾区时它手下没有
-        /// 渲染子物体，擦除 / 整区命令由组件自己返回 false（见 <see cref="FogOfWar.EraseStroke"/> /
+        /// 取某个**雾对象**上的战争雾组件（对象不在镜像里 / 没有视图 / 对象没带 `FogOfWar`
+        /// 协议组件时都是 null）。v15 起命令的 `objectId` 就是雾对象 id，所以这里直接按它找视图。
+        /// 组件在**不代表雾层在**：开关关着 / 没绑雾区 / 被引用地图不在时它手下没有渲染子物体，
+        /// 擦除 / 整区命令由组件自己返回 false（见 <see cref="FogOfWar.EraseStroke"/> /
         /// <see cref="FogOfWar.RevealRegion"/>）。
         /// </summary>
         private FogOfWar FogOf(string objectId)
@@ -770,7 +772,10 @@ namespace DiceTale
             return $"{httpBaseUrl}/api/resources/raw?id={UnityEngine.Networking.UnityWebRequest.EscapeURL(logicalId)}";
         }
 
-        /// <summary>「为什么没有雾层」的一句人话：对象不在镜像里 / 不是地图 / 没开战争雾（没有组件或开关关着）/ 没指定雾区。</summary>
+        /// <summary>
+        /// 「为什么没有雾层」的一句人话：镜像里没有这个雾对象 / 它不是雾对象 / 它引用的地图不存在 /
+        /// 没开战争雾（开关关着）/ 没指定雾区。
+        /// </summary>
         private string DescribeFogTarget(string objectId)
         {
             var obj = mirror != null ? mirror.Find(objectId) : null;
@@ -779,22 +784,23 @@ namespace DiceTale
                 return $"镜像里没有这个对象：{objectId}（场景可能还没同步到）";
             }
 
-            if (obj.map == null)
-            {
-                return $"「{obj.name}」不是地图对象";
-            }
-
             if (obj.fog == null)
             {
-                return $"「{obj.name}」没开战争雾（没有 FogOfWar 组件，这张地图现在没有雾层）";
+                return $"「{obj.name}」不是战争雾对象（没有 FogOfWar 组件）";
+            }
+
+            var mapObject = !string.IsNullOrEmpty(obj.fog.mapId) ? mirror.Find(obj.fog.mapId) : null;
+            if (mapObject == null || mapObject.map == null)
+            {
+                return $"「{obj.name}」引用的地图不存在（mapId = {obj.fog.mapId}）";
             }
 
             if (!obj.fog.enabled)
             {
-                return $"「{obj.name}」的战争雾开关关着（FogOfWar.enabled = false，这张地图现在没有雾层）";
+                return $"「{obj.name}」的战争雾开关关着（FogOfWar.enabled = false）";
             }
 
-            return $"「{obj.name}」这张地图没指定雾区（FogOfWar.regions 为空）";
+            return $"「{obj.name}」没指定雾区（FogOfWar.regions 为空）";
         }
 
         private static bool ContainsRegion(int[] regions, int region)

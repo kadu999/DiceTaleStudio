@@ -85,23 +85,41 @@ namespace DiceTale.Tests
         [Test]
         public void FogOfWarComponentParsesEnabledAndRegions()
         {
+            // v15 起雾是独立对象（kind "Fog"）：它自己不带地图数据，data 里用 mapId 引用被罩住的地图
             var obj = ParseObject(
-                "{\"id\":\"fog\",\"kind\":\"Map\",\"components\":[" +
-                "{\"type\":\"GridMap\",\"data\":{\"image\":{\"id\":\"map.png\",\"width\":64,\"height\":32}}}," +
-                "{\"type\":\"FogOfWar\",\"data\":{\"enabled\":false,\"regions\":[1,4]}}]}");
+                "{\"id\":\"fog\",\"kind\":\"Fog\",\"components\":[" +
+                "{\"type\":\"FogOfWar\",\"data\":{\"mapId\":\"map_1\",\"enabled\":false,\"regions\":[1,4]}}]}");
 
-            Assert.That(obj.map, Is.Not.Null);
+            Assert.That(obj.map, Is.Null);
+            Assert.That(obj.image, Is.Null);
             Assert.That(obj.fog, Is.Not.Null);
+            Assert.That(obj.fog.mapId, Is.EqualTo("map_1"));
             Assert.That(obj.fog.enabled, Is.False);
             Assert.That(obj.fog.regions, Is.EqualTo(new[] { 1, 4 }));
+        }
+
+        [Test]
+        public void FogObjectCarriesMapIdWithoutMapOrImageComponents()
+        {
+            // v15：`kind:"Fog"` 的独立雾对象 —— 带 mapId / enabled / regions，且**没有** map / image
+            var obj = ParseObject(
+                "{\"id\":\"fog_1\",\"kind\":\"Fog\",\"components\":[" +
+                "{\"type\":\"FogOfWar\",\"data\":{\"mapId\":\"map_1\",\"enabled\":true,\"regions\":[1]}}]}");
+
+            Assert.That(obj.fog, Is.Not.Null);
+            Assert.That(obj.fog.mapId, Is.EqualTo("map_1"));
+            Assert.That(obj.fog.enabled, Is.True);
+            Assert.That(obj.fog.regions, Is.EqualTo(new[] { 1 }));
+            Assert.That(obj.map, Is.Null);
+            Assert.That(obj.image, Is.Null);
         }
 
         [Test]
         public void FogOfWarComponentDefaultsToEnabled()
         {
             var obj = ParseObject(
-                "{\"id\":\"fog\",\"kind\":\"Map\",\"components\":[" +
-                "{\"type\":\"FogOfWar\",\"data\":{\"regions\":[8]}}]}");
+                "{\"id\":\"fog\",\"kind\":\"Fog\",\"components\":[" +
+                "{\"type\":\"FogOfWar\",\"data\":{\"mapId\":\"map_1\",\"regions\":[8]}}]}");
 
             Assert.That(obj.fog, Is.Not.Null);
             Assert.That(obj.fog.enabled, Is.True);
@@ -111,7 +129,7 @@ namespace DiceTale.Tests
         [Test]
         public void MissingFogOfWarComponentMeansNoFog()
         {
-            // v13 起 `GridMap` 数据里不再有 `fog`：老字段被忽略，没有 `FogOfWar` 组件 = 没开战争雾
+            // 没有 `FogOfWar` 组件 = 没开战争雾；地图数据里那个老 `fog` 字段（v13 前）一律忽略
             var obj = ParseObject(
                 "{\"id\":\"map\",\"kind\":\"Map\",\"components\":[" +
                 "{\"type\":\"GridMap\",\"data\":{\"image\":{\"id\":\"map.png\",\"width\":64,\"height\":32}," +
@@ -171,27 +189,23 @@ namespace DiceTale.Tests
         [Test]
         public void FogOfWarBuildsAndTearsDownItsOwnOverlay()
         {
-            // 组件自治：FogOfWar 直接挂在对象 GameObject 上（组件袋一员），渲染子物体
-            // `FogOverlay` 由它自己建（开关开着 + 绑了雾区 + 对象有地图数据）、自己拆。
+            // 组件自治：FogOfWar 挂在**独立雾对象**的 GameObject 上（它自己没有面片），渲染子物体
+            // `FogOverlay` 由它自己建（开关开着 + 绑了雾区 + 被引用地图的数据传了进来）、自己拆。
             var go = new GameObject("fog-owner-test");
             try
             {
-                // 对象那袋组件：GridMapView 收地图数据（FogOfWar 从它取格子），ImageLayer 是
-                // 对象自己那张图（GroundLayer 的 RequireComponent 链会把 MeshFilter / MeshRenderer
-                // 一起带上）；FogOfWar 自己**不** RequireComponent(ImageLayer)——子物体才挂它
-                var gridMap = go.AddComponent<GridMapView>();
-                gridMap.Adopt(new MirrorMap { gridWidth = 2, gridHeight = 2, cells = new int[4] });
-                go.AddComponent<ImageLayer>();
                 var fog = go.AddComponent<FogOfWar>();
+                // v15：被引用地图的数据由调用方（SceneObjectView）解析好后直接传进来
+                var map = new MirrorMap { gridWidth = 2, gridHeight = 2, cells = new int[4] };
 
-                fog.Apply(new MirrorFog { enabled = true, regions = new[] { 1 } }, 1f, 1f, 0, 0.01f);
+                fog.Apply(map, new MirrorFog { enabled = true, regions = new[] { 1 } }, 1f, 1f, 0.01f);
 
                 var overlay = go.transform.Find("FogOverlay");
                 Assert.That(overlay, Is.Not.Null);
                 Assert.That(overlay.GetComponent<ImageLayer>(), Is.Not.Null);
 
                 // 总开关关掉：渲染子物体被拆掉（EditMode 下走 DestroyImmediate，立即生效）
-                fog.Apply(new MirrorFog { enabled = false, regions = new[] { 1 } }, 1f, 1f, 0, 0.01f);
+                fog.Apply(map, new MirrorFog { enabled = false, regions = new[] { 1 } }, 1f, 1f, 0.01f);
 
                 Assert.That(go.transform.Find("FogOverlay"), Is.Null);
             }
@@ -208,11 +222,10 @@ namespace DiceTale.Tests
             var go = new GameObject("fog-empty-regions-test");
             try
             {
-                var gridMap = go.AddComponent<GridMapView>();
-                gridMap.Adopt(new MirrorMap { gridWidth = 2, gridHeight = 2, cells = new int[4] });
                 var fog = go.AddComponent<FogOfWar>();
+                var map = new MirrorMap { gridWidth = 2, gridHeight = 2, cells = new int[4] };
 
-                fog.Apply(new MirrorFog { enabled = true, regions = new int[0] }, 1f, 1f, 0, 0.01f);
+                fog.Apply(map, new MirrorFog { enabled = true, regions = new int[0] }, 1f, 1f, 0.01f);
 
                 Assert.That(go.transform.Find("FogOverlay"), Is.Null);
             }

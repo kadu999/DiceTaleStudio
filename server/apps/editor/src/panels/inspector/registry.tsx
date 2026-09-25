@@ -82,10 +82,10 @@ function ComponentRepairAction({
   type,
 }: {
   readonly object: GameObjectDoc;
-  readonly type: "PlaySound" | "Teleport";
+  readonly type: "PlaySound" | "Teleport" | "FogOfWar";
 }): React.JSX.Element {
   const repair = useEditorStore((state) => state.repairObjectComponent);
-  const name = type === "PlaySound" ? "声音" : "传送";
+  const name = type === "PlaySound" ? "声音" : type === "Teleport" ? "传送" : "战争雾";
   return (
     <div className="flex items-center gap-2 px-2 py-2">
       <span className="min-w-0 flex-1 text-[11px] text-[var(--color-editor-warn)]">组件数据缺失</span>
@@ -159,11 +159,19 @@ export const COMPONENT_EDITORS: readonly ComponentEditorDef[] = [
     ],
   },
   {
-    // 战争雾（v25 起是独立的 `FogOfWar` 组件，从属 `GridMap`）：没开过时组件不存在，
-    // 组照常出现（与「视频」组同一交互），打开开关才建组件。
+    // 战争雾（v27 起是独立的 `Fog` 对象）：组件就是它的数据本体，组照常出现；
+    // 缺组件（损坏的手写文件）时给显式修复入口。
     type: COMPONENT_TYPE.fog,
-    availableWithoutComponent: (object) => supportsFog(object) && mapDataOf(object) !== undefined,
-    panels: [panel("fog", "战争雾", (object) => <FogFields object={object} />)],
+    availableWithoutComponent: (object) => supportsFog(object),
+    panels: [
+      panel("fog", "战争雾", (object) =>
+        componentOf(object, COMPONENT_TYPE.fog) === undefined ? (
+          <ComponentRepairAction object={object} type="FogOfWar" />
+        ) : (
+          <FogFields object={object} />
+        ),
+      ),
+    ],
   },
   {
     type: COMPONENT_TYPE.sound,

@@ -433,17 +433,18 @@ export function ensureVideoData(object: Draft<GameObjectDoc>): Draft<VideoDataDo
 }
 
 /**
- * 战争雾数据的 draft；缺实例时，只有具备可选战争雾能力的对象才创建默认组件。
+ * 战争雾数据的 draft；缺实例时，只有具备战争雾能力的对象才创建默认组件。
  *
- * 不是地图的对象返回 `undefined`（预设表 `OBJECT_PRESETS`：只有地图预设声明了 fog 槽位）。
- * 默认数据 `{ enabled: true, regions: [] }`：打开开关那一刻的语义就是「开着、还没指定雾区」
- * （与 v25 前 `setMapFogEnabled` 造 `{ enabled: true, regions: [] }` 同一份）。
+ * 不是 `Fog` 对象返回 `undefined`（预设表 `OBJECT_PRESETS`：只有战争雾对象声明了 fog 槽位）。
+ * 默认数据 `{ mapId: "", enabled: true, regions: [] }`：`mapId` 空着等用户在面板上选地图
+ * （校验会报 error 直到选上）。
  */
 export function ensureFogData(object: Draft<GameObjectDoc>): Draft<FogOfWarDataDoc> | undefined {
   const component = componentOfSlot(object, "fog");
   if (component !== undefined) return component.data as Draft<FogOfWarDataDoc>;
   if (!canAddOptionalObjectComponent(object, DEFAULT_SLOT_COMPONENT.fog)) return undefined;
   return writeFeature(object, DEFAULT_SLOT_COMPONENT.fog, {
+    mapId: "",
     enabled: true,
     regions: [],
   }).data as Draft<FogOfWarDataDoc>;

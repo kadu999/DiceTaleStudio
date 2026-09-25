@@ -19,6 +19,10 @@ import {
   setRenderSortingOrder as setGameObjectRenderSortingOrder,
   setObjectField as setSceneObjectField,
   objectFieldOf,
+  fogObjectOfMap,
+  fogOf,
+  mapDataOf,
+  DEFAULT_SLOT_COMPONENT,
   type GameObjectDoc,
 } from "@dts/document";
 import { type StoreSet, type StoreGet, type EditorStoreState } from "../store-types";
@@ -90,13 +94,31 @@ export function createObjectSlice(
         return "请输入对象名";
       }
 
-      // 世界无限大：落点就是给的那个坐标，不夹取
-      const at = position === undefined ? { ...SCENE_CENTER } : { x: position.x, y: position.y };
+      // 战争雾（v27）：必须先有一张「还没被别的雾引用」的地图——一张地图最多一个雾对象。
+      // 默认摆在被引用地图的位置上（尺寸也是从它推导的），拖走就挪开了。
+      let mapId: string | undefined;
+      let fogPosition: { x: number; y: number } | undefined;
+      if (kind === "Fog") {
+        const map = scene.objects.find(
+          (object) => mapDataOf(object) !== undefined && fogObjectOfMap(scene, object.id) === undefined,
+        );
+        if (map === undefined) {
+          return "没有可引用的地图（先建一张网格地图，或它的战争雾已经存在）";
+        }
+
+        mapId = map.id;
+        fogPosition = map.position === null ? { ...SCENE_CENTER } : { ...map.position };
+      }
+
+      // 世界无限大：落点就是给的那个坐标，不夹取（战争雾默认落在被引用地图上）
+      const at =
+        fogPosition ?? (position === undefined ? { ...SCENE_CENTER } : { x: position.x, y: position.y });
       const object = createGameObjectForKind(kind, {
         project,
         sceneName,
         name: trimmed,
         position: at,
+        mapId,
       });
 
       const changed = applyActiveScene(`新建对象 ${trimmed}`, (scene) => {
@@ -251,10 +273,20 @@ export function createObjectSlice(
         return false;
       }
 
+      const removedFogIds: string[] = [];
       const changed = applyActiveScene(
         targetIds.length === 1 ? "删除对象" : `删除 ${targetIds.length} 个对象`,
         (scene) => {
           for (const id of targetIds) {
+            // 删地图时**级联删它的战争雾**（雾引用地图；留着就是悬空引用）
+            const target = scene.objects.find((object) => object.id === id);
+            if (target !== undefined && mapDataOf(target) !== undefined) {
+              for (const fog of scene.objects.filter((object) => fogOf(object)?.mapId === id)) {
+                removedFogIds.push(fog.id);
+                removeGameObject(scene, fog.id);
+              }
+            }
+
             removeGameObject(scene, id);
           }
         },
@@ -262,14 +294,16 @@ export function createObjectSlice(
 
       if (changed) {
         set({ selectedObjectIds: [] });
-        // 两个格子编辑窗口同理：它们盯着的那张地图没了就把窗口关掉（否则窗口里是一张画不出来的图）
+        const removed = new Set([...targetIds, ...removedFogIds]);
+        // 两个格子编辑窗口同理：它们盯着的那张地图（或它的雾）没了就把窗口关掉
+        // （否则窗口里是一张画不出来的图）
         const fogTarget = get().fogMaskTarget;
-        if (fogTarget !== null && targetIds.includes(fogTarget)) {
+        if (fogTarget !== null && removed.has(fogTarget)) {
           set({ fogMask: false, fogMaskTarget: null });
         }
 
         const editTarget = get().gridEditorTarget;
-        if (editTarget !== null && targetIds.includes(editTarget)) {
+        if (editTarget !== null && removed.has(editTarget)) {
           set({ gridEditor: false, gridEditorTarget: null });
         }
       }
@@ -288,9 +322,18 @@ export function createObjectSlice(
         targetIds.length === 1 ? "复制对象" : `复制 ${targetIds.length} 个对象`,
         (scene) => {
           let step = 1;
+          const mapIdRemap = new Map<string, string>();
+
           for (const id of targetIds) {
             const source = scene.objects.find((object) => object.id === id);
             if (source === undefined) {
+              continue;
+            }
+
+            // 战争雾不能单独复制（一张地图最多一个雾）：跟着地图副本一起复制（见下）。
+            // 直接选中雾对象来复制时不复制它——复制出来会与地图上已有的雾冲突。
+            const sourceMapId = fogOf(source)?.mapId;
+            if (sourceMapId !== undefined && !targetIds.includes(sourceMapId)) {
               continue;
             }
 
@@ -304,6 +347,35 @@ export function createObjectSlice(
             step += 1;
             addObject(scene, copy);
             copies.push(copy.id);
+
+            if (mapDataOf(source) !== undefined) {
+              mapIdRemap.set(source.id, copy.id);
+            }
+          }
+
+          // 被复制的地图，其战争雾也要跟着复制一份并重指到地图副本
+          for (const [oldMapId, newMapId] of mapIdRemap) {
+            const sourceFog = scene.objects.find(
+              (object) => fogOf(object)?.mapId === oldMapId && !copies.includes(object.id),
+            );
+            if (sourceFog === undefined) {
+              continue;
+            }
+
+            const fogCopy: GameObjectDoc = {
+              ...sourceFog,
+              id: createId("obj"),
+              name: nextObjectName(scene.objects, `${sourceFog.name} 副本`),
+              position: offsetPosition(sourceFog.position, step),
+              components: sourceFog.components.map((component) =>
+                component.type === DEFAULT_SLOT_COMPONENT.fog
+                  ? { ...component, data: { ...component.data, mapId: newMapId } }
+                  : component,
+              ),
+            };
+            step += 1;
+            addObject(scene, fogCopy);
+            copies.push(fogCopy.id);
           }
         },
         // 连按复制合并成一条撤销记录

@@ -9,9 +9,10 @@ namespace DiceTale
     ///
     /// <list type="bullet">
     /// <item>`GridMap` 组件 → <see cref="GridMapView"/>：收下 <see cref="MirrorMap"/> 数据
-    /// （战争雾从这里取格子，以后的网格线也落这里）；</item>
+    /// （以后的网格线也落这里）；</item>
     /// <item>`FogOfWar` 组件 → <see cref="FogOfWar"/>：自治，自己的渲染子物体自己建 / 拆
-    /// （见那边类注释），这里只递数据；</item>
+    /// （见那边类注释），这里只递数据。**v15 起它挂在独立的 `Fog` 对象上**（那种对象没有
+    /// 自己的面片，也**不建占位面片**）；</item>
     /// <item>`ImageLayer` / `SpriteLayer` 组件 → 同名的 <see cref="ImageLayer"/> /
     /// <see cref="SpriteLayer"/>：对象自己那张图的面片（二选一，见 <see cref="Create"/> 的分派）；</item>
     /// <item>`VideoOverlay` 组件 → <see cref="VideoOverlay"/>：收到 `play_video` 才建的
@@ -73,15 +74,25 @@ namespace DiceTale
         private ResourceImageLoader imageLoader;
 
         /// <summary>
-        /// 地图数据的座位（对象带 `GridMap` 协议组件时建，<see cref="Create"/> 时缓存；
-        /// 雾从它这里取格子）。数据本身在每次 <see cref="Apply"/> 时递过去。
+        /// 「对象 id → 镜像对象」的查询（由 <see cref="SceneMirror"/> 用自己那份对象表接上）。
+        ///
+        /// v15 起战争雾挂在自己的 `Fog` 对象上、只带 <see cref="MirrorFog.mapId"/>，渲染要用的
+        /// 地图数据得从被引用地图那里现查，所以视图需要这条回镜像表的通道。其余对象用不到它。
+        /// </summary>
+        [System.NonSerialized]
+        public System.Func<string, MirrorObject> ObjectLookup;
+
+        /// <summary>
+        /// 地图数据的座位（对象带 `GridMap` 协议组件时建，<see cref="Create"/> 时缓存）。
+        /// 数据本身在每次 <see cref="Apply"/> 时递过去。**v15 起雾不再从这里取格子**——
+        /// 雾是独立对象，被引用地图的数据由调用方解析后直接传给 <see cref="FogOfWar"/>。
         /// </summary>
         private GridMapView gridMap;
 
         /// <summary>
         /// 战争雾组件（对象带 `FogOfWar` 协议组件时建，<see cref="Create"/> 时缓存的**组件引用**）。
         /// 渲染子物体由它自治（开关关着 / 没绑雾区时它只是没有子物体）；命令路由经
-        /// <see cref="Fog"/> 找到它。
+        /// <see cref="Fog"/> 找到它。**v15 起它挂在独立的雾对象上**（那种对象没有 `quad`）。
         /// </summary>
         private FogOfWar fog;
 
@@ -120,8 +131,9 @@ namespace DiceTale
         /// - 有 `GridMap` 或 `ImageLayer` / `SpriteLayer`（对象自己那张图）→ 当然要画；
         /// - 都没有时，**只有「动作对象」不建**——它们只带 `PlaySound` / `Teleport` 的数据
         ///   （声音靠命令播、传送靠编辑器换场景），一个 GameObject 都不该建；
-        /// - 其余（玩家 / 道具 / 事件 / 还没挑图的精灵）**仍要一块占位色面片**，
-        ///   否则它们在场上就凭空消失了。
+        /// - 其余（玩家 / 道具 / 事件 / 还没挑图的精灵 / **战争雾对象**）**仍要建 GameObject**，
+        ///   否则它们在场上就凭空消失了。战争雾对象是个例外：它只为挂 <see cref="FogOfWar"/>
+        ///   而建，**不画占位面片**（见 <see cref="Create"/>）。
         ///
         /// 判据只此一处（<see cref="SceneMirror"/> 建视图前问这里）：编辑器加一种新组件时，
         /// 不会出现「镜像建了、却忘了在别处跳过」的半套状态。
@@ -137,31 +149,68 @@ namespace DiceTale
                    !obj.HasComponent(Protocol.ComponentType.Teleport);
         }
 
-        /// <summary>判断当前视图的图片渲染组件是否与最新镜像一致。</summary>
+        /// <summary>
+        /// 判断当前视图的图片渲染组件是否与最新镜像一致。
+        ///
+        /// **战争雾对象没有面片**（见 <see cref="Create"/>）：它不该因为「镜像里没有图」被换掉重建，
+        /// 所以已经是「无 quad」状态就返回 true；反过来，一个非雾对象若还停在「无 quad」的旧状态
+        /// （对象从雾变成了图），也要 `false` 逼它重建，免得图取回来了却没有面片可画。
+        /// </summary>
         public bool MatchesImageComponent(MirrorObject obj)
         {
+            if (IsFogObject(obj))
+            {
+                return quad == null;
+            }
+
+            if (quad == null)
+            {
+                return false;
+            }
+
             var needsSpriteLayer = obj.hasSpriteLayer || obj.image?.sprite != null;
             return (quad is SpriteLayer) == needsSpriteLayer;
+        }
+
+        /// <summary>
+        /// 这个镜像对象是不是**独立的战争雾对象**（v15）：带 `FogOfWar` 组件，但自己既没有
+        /// `GridMap` 也没有图片层。它只挂 <see cref="FogOfWar"/>，不建占位面片。
+        /// </summary>
+        private static bool IsFogObject(MirrorObject obj)
+        {
+            return obj.fog != null && obj.map == null && obj.image == null;
         }
 
         /// <summary>最近一次对象数据里的染色与显示顺序（<see cref="ApplyVisual"/> 要用，含异步取图回来那次）。</summary>
         private Color currentKindColor = new Color(0.85f, 0.85f, 0.85f, 0.85f);
         private int currentSortingOrder;
 
-        /// <summary>按对象建视图（地图 / 精灵 / 任意实体都先建一块面片；动作对象**根本不建**，见 <see cref="NeedsView"/>）。</summary>
+        /// <summary>
+        /// 按对象建视图（地图 / 精灵 / 任意实体都先建一块面片；动作对象**根本不建**，见 <see cref="NeedsView"/>）。
+        /// **战争雾对象（v15）是例外**：它建 GameObject 但**不建面片**，只为挂 <see cref="FogOfWar"/>。
+        /// </summary>
         public static SceneObjectView Create(MirrorObject obj, Transform parent, ResourceImageLoader loader)
         {
             var go = new GameObject(obj.id);
             go.transform.SetParent(parent, false);
             var view = go.AddComponent<SceneObjectView>();
             view.imageLoader = loader;
-            // 显示组件分派（v21）：精灵挂 SpriteLayer（取图集里的一格、UV 内缩半纹素防渗色），
-            // 贴图 / 地图 / 占位对象挂 ImageLayer（整张铺满）。判据优先认 hasSpriteLayer
-            // （解析器见到 SpriteLayer 组件就置位，精灵没挑格子时 sprite 可能还是 null）；
-            // 旧载荷缺这一位时退回 image.sprite 兜底——数据里带了子图的按精灵对待。
-            view.quad = obj.hasSpriteLayer || obj.image?.sprite != null
-                ? go.AddComponent<SpriteLayer>()
-                : go.AddComponent<ImageLayer>();
+
+            /*
+              显示组件分派（v21）：精灵挂 SpriteLayer（取图集里的一格、UV 内缩半纹素防渗色），
+              贴图 / 地图 / 占位对象挂 ImageLayer（整张铺满）。判据优先认 hasSpriteLayer
+              （解析器见到 SpriteLayer 组件就置位，精灵没挑格子时 sprite 可能还是 null）；
+              旧载荷缺这一位时退回 image.sprite 兜底——数据里带了子图的按精灵对待。
+
+              **战争雾对象（v15）是例外：它没有自己的面片**（雾面是 FogOfWar 自己建的
+              `FogOverlay` 子物体），所以不挂 ImageLayer / SpriteLayer，`view.quad` 留 null。
+            */
+            if (!IsFogObject(obj))
+            {
+                view.quad = obj.hasSpriteLayer || obj.image?.sprite != null
+                    ? go.AddComponent<SpriteLayer>()
+                    : go.AddComponent<ImageLayer>();
+            }
 
             /*
               组件袋（表现层与协议组件 1:1）：GridMap 的数据座位是 GridMapView，FogOfWar 自治
@@ -239,10 +288,9 @@ namespace DiceTale
             ApplyVisual();
 
             /*
-              组件袋各收各的数据：地图数据交给 GridMapView（FogOfWar 从它那里取格子），
-              雾组件按自己的开关与雾区决定建不建渲染子物体。协调器只负责把最新数据递过去，
-              建 / 拆由组件自己拿主意（FogOfWar.Apply 内部判三个条件，不满足会自拆）。
-              顺序有讲究：先 Adopt 地图，雾这才能从 GridMapView 拿到格子。
+              组件袋各收各的数据：地图数据交给 GridMapView，雾组件按自己的开关与雾区决定建不建
+              渲染子物体。协调器只负责把最新数据递过去，建 / 拆由组件自己拿主意
+              （FogOfWar.Apply 内部判三个条件，不满足会自拆）。
             */
             if (gridMap != null)
             {
@@ -251,12 +299,25 @@ namespace DiceTale
 
             if (fog != null)
             {
-                var scale = GlobalScale;
+                // v15：雾对象自己不带地图数据——按 `obj.fog.mapId` 经镜像表（ObjectLookup）找到
+                // 被引用地图，取它的 `map` 交给雾组件取格子。地图不在 / 还没同步到就传 null，
+                // FogOfWar 会把自己那一层拆掉。
+                MirrorMap mapData = null;
+                if (obj.fog != null && ObjectLookup != null && !string.IsNullOrEmpty(obj.fog.mapId))
+                {
+                    var mapObject = ObjectLookup(obj.fog.mapId);
+                    mapData = mapObject != null ? mapObject.map : null;
+                }
+
+                // 世界尺寸 = 被引用地图的显示图声明尺寸 × 雾对象 scale（再折成世界单位）
+                var mapImage = mapData != null ? mapData.image : null;
+                var fogWidth = (mapImage != null && mapImage.width > 0 ? mapImage.width : FallbackSize) * obj.scale;
+                var fogHeight = (mapImage != null && mapImage.height > 0 ? mapImage.height : FallbackSize) * obj.scale;
                 fog.Apply(
+                    mapData,
                     obj.fog,
-                    currentWidth * scale,
-                    currentHeight * scale,
-                    currentSortingOrder,
+                    fogWidth * GlobalScale,
+                    fogHeight * GlobalScale,
                     LiftFor(currentSortingOrder));
             }
 
@@ -296,16 +357,22 @@ namespace DiceTale
             // 这里不碰 transform.localScale（尺寸只有一个来源，网格自己）。
             // **子图（v10）**：只取纹理里那一块（`currentUvRect` 由数据里的格子算好）；
             // 整张图时它是 (0,0,1,1)，与 v9 的老行为逐字一样。
-            var scale = GlobalScale;
-            var lift = LiftFor(currentSortingOrder);
-            quad.Apply(
-                hasTexture ? currentTexture : null,
-                currentWidth * scale,
-                currentHeight * scale,
-                hasTexture ? Color.white : currentKindColor,
-                currentSortingOrder,
-                lift,
-                currentUvRect);
+            //
+            // **战争雾对象没有 `quad`（v15）**：它不画占位面片，雾面由 FogOfWar 自治的子物体画，
+            // 所以这里要判空——没有面片的对象跳过这一段，别去操作 null。
+            if (quad != null)
+            {
+                var scale = GlobalScale;
+                var lift = LiftFor(currentSortingOrder);
+                quad.Apply(
+                    hasTexture ? currentTexture : null,
+                    currentWidth * scale,
+                    currentHeight * scale,
+                    hasTexture ? Color.white : currentKindColor,
+                    currentSortingOrder,
+                    lift,
+                    currentUvRect);
+            }
 
             ApplyVideoGeometry();
         }

@@ -83,10 +83,10 @@ describe("合成盘点 A：v18 扁平字段时代（特性住在对象顶层字�
     components: string[];
   }> = [
     {
-      title: "Map：map + video 两个扁平字段 → GridMap + VideoOverlay + FogOfWar",
+      title: "Map：map + video 两个扁平字段 → GridMap + VideoOverlay（fog 另成独立 Fog 对象）",
       object: legacyObject("o-map", "Map", { map: FLAT_MAP, video: FLAT_VIDEO }),
       kind: "Map",
-      components: ["GridMap", "VideoOverlay", "FogOfWar"],
+      components: ["GridMap", "VideoOverlay"],
     },
     {
       title: "SceneObject（v22 前的精灵名）：扁平 image → Sprite + SpriteLayer",

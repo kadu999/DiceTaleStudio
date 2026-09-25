@@ -1,5 +1,5 @@
 {
-  "formatVersion": 26,
+  "formatVersion": 27,
   "objects": [
     {
       "id": "map_mu6uln3x1l7fg",
@@ -338,11 +338,27 @@
             "loop": true,
             "audio": true
           }
-        },
+        }
+      ]
+    },
+    {
+      "id": "map_mu6uln3x1l7fg__Fog",
+      "name": "地图 战争雾",
+      "kind": "Fog",
+      "active": true,
+      "locked": true,
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "rotation": 0,
+      "scale": 1,
+      "components": [
         {
-          "id": "map_mu6uln3x1l7fg__FogOfWar",
+          "id": "map_mu6uln3x1l7fg__Fog__FogOfWar",
           "type": "FogOfWar",
           "data": {
+            "mapId": "map_mu6uln3x1l7fg",
             "enabled": true,
             "regions": [
               1,

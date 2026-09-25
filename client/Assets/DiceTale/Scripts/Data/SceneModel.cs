@@ -67,7 +67,10 @@ namespace DiceTale
         /// <summary>由 `GridMap` 组件填（v9 起；老版本是对象上的 `map` 字段）。</summary>
         public MirrorMap map;
 
-        /// <summary>由 `FogOfWar` 组件填（v13 起；之前是 `GridMap` 数据里的 `map.fog`）：`null` = 没开战争雾。</summary>
+        /// <summary>
+        /// 由 `FogOfWar` 组件填（v13 起；之前是 `GridMap` 数据里的 `map.fog`）：`null` = 没开战争雾。
+        /// **v15 起它挂在独立的 `Fog` 对象上**（`mapId` 引用被雾罩住的那张地图）。
+        /// </summary>
         public MirrorFog fog;
 
         /// <summary>由 `PlaySound` 组件填（v9 起；老版本是对象上的 `sound` 字段）。</summary>
@@ -218,13 +221,24 @@ namespace DiceTale
     }
 
     /// <summary>
-    /// 战争雾组件的数据（v13 起）：`FogOfWar` 从 `GridMap` 拆出来的独立组件。
+    /// 战争雾组件的数据：`FogOfWar` 从 `GridMap` 拆出来的独立组件（v13）。
+    ///
+    /// **v15 起雾是独立场景对象**（`kind: "Fog"`）：它自己**不带地图数据**（没有 `GridMap`），
+    /// 只通过 <see cref="mapId"/> 引用一张地图；「哪些区域位涂了雾」由 <see cref="regions"/> 说，
+    /// 「这些区域位对应哪些格子」要看被引用地图的 `cells`，两者各归各的主。
     ///
     /// **组件不存在 = 没开战争雾**（<see cref="MirrorObject.fog"/> 为 null）；组件在就是「开了」，
-    /// 只是 <see cref="enabled"/> 还可能再关上。语义与旧版 `map.fog` 逐字一致，只是搬了位置。
+    /// 只是 <see cref="enabled"/> 还可能再关上。
     /// </summary>
     public class MirrorFog
     {
+        /// <summary>
+        /// 引用哪张地图的对象 id（v15 起）：指向带 `GridMap` 组件的那个地图对象。
+        /// 雾自身没有格子，`regions` 只是「涂哪些区域位」，对不对得上格子由这张地图决定。
+        /// 空 = 没引用地图（前端据此拆掉雾层）。
+        /// </summary>
+        public string mapId = "";
+
         /// <summary>
         /// 战争雾的**总开关**：**只有开着才建那一层雾**。缺省算开（老口径：「有 fog」就等于「开着」）。
         /// </summary>
