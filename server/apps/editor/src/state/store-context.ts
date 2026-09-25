@@ -499,6 +499,36 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
   };
 
   /**
+   * deliver* 的公共守卫：编辑器没连上服务端 / 前端不在时**不发**（状态已经记下），
+   * 写一条「已记录…」日志说明原因并返回 false；前端就绪时返回 true，调用方继续发命令。
+   *
+   * 各调用方的日志**文案模板本来就不一致**（声音带层级与内容、视频 / 背景音乐格式不同），
+   * 所以这里只合并守卫结构；`recorded` 负责合成完整文案，`reason` 是两种离线原因里命中
+   * 的那一条（逐字固定，测试钉着）。
+   *
+   * `quiet` 给补发用：补发被挡住时不写日志（成功与否由调用方汇总一条）。
+   */
+  const guardDeliver = (recorded: (reason: string) => string, quiet = false): boolean => {
+    if (!runtimeClient.connected) {
+      if (!quiet) {
+        pushLog(makeLog("info", recorded("编辑器还没连上服务端，连上后自动补发")));
+      }
+
+      return false;
+    }
+
+    if (get().runtime.client === null) {
+      if (!quiet) {
+        pushLog(makeLog("info", recorded("前端未连接，等它连上后自动补发")));
+      }
+
+      return false;
+    }
+
+    return true;
+  };
+
+  /**
    * 把一条「这一层该播什么」**尽力**发给前端。
    *
    * 编辑器没连服务端 / 前端不在时**不发**（状态已经记下），只写明白原因——
@@ -508,13 +538,7 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
     const label = `层级 ${SOUND_LAYER_LABELS[entry.layer]}`;
     const what = entry.clips[0] ?? "(空)";
 
-    if (!runtimeClient.connected) {
-      pushLog(makeLog("info", `已记录播放：${label}（${what}；编辑器还没连上服务端，连上后自动补发）`));
-      return undefined;
-    }
-
-    if (get().runtime.client === null) {
-      pushLog(makeLog("info", `已记录播放：${label}（${what}；前端未连接，等它连上后自动补发）`));
+    if (!guardDeliver((reason) => `已记录播放：${label}（${what}；${reason}）`)) {
       return undefined;
     }
 
@@ -542,13 +566,7 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
   ): string | undefined => {
     const label = `层级 ${SOUND_LAYER_LABELS[layer]}`;
 
-    if (!runtimeClient.connected) {
-      pushLog(makeLog("info", `已记录${what}：${label}（编辑器还没连上服务端，连上后自动补发）`));
-      return undefined;
-    }
-
-    if (get().runtime.client === null) {
-      pushLog(makeLog("info", `已记录${what}：${label}（前端未连接，等它连上后自动补发）`));
+    if (!guardDeliver((reason) => `已记录${what}：${label}（${reason}）`)) {
       return undefined;
     }
 
@@ -729,19 +747,7 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
     label: string,
     quiet = false,
   ): string | undefined => {
-    if (!runtimeClient.connected) {
-      if (!quiet) {
-        pushLog(makeLog("info", `${label}：已记录（编辑器还没连上服务端，连上后自动补发）`));
-      }
-
-      return undefined;
-    }
-
-    if (get().runtime.client === null) {
-      if (!quiet) {
-        pushLog(makeLog("info", `${label}：已记录（前端未连接，等它连上后自动补发）`));
-      }
-
+    if (!guardDeliver((reason) => `${label}：已记录（${reason}）`, quiet)) {
       return undefined;
     }
 
@@ -811,13 +817,7 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
    * （记账已经改过），只写明白原因——等前端连上由 `flushBgmPlayback()` 补发。
    */
   const deliverBgm = (action: BgmAction): string | undefined => {
-    if (!runtimeClient.connected) {
-      pushLog(makeLog("info", `${bgmActionLabel(action)}：已记录（编辑器还没连上服务端，连上后自动补发）`));
-      return undefined;
-    }
-
-    if (get().runtime.client === null) {
-      pushLog(makeLog("info", `${bgmActionLabel(action)}：已记录（前端未连接，等它连上后自动补发）`));
+    if (!guardDeliver((reason) => `${bgmActionLabel(action)}：已记录（${reason}）`)) {
       return undefined;
     }
 
