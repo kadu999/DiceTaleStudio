@@ -16,8 +16,8 @@
 | 后端默认地址 | `0.0.0.0:1420`（`resources/config/app.json`，可被 `HOST` / `PORT` 覆盖） |
 | 编辑器开发地址 | `http://localhost:5173`（Vite，`/api`、`/editor`、`/client` 反代到 1420） |
 | 编辑器生产地址 | `http://localhost:1420`（后端同源托管 `apps/editor/dist`） |
-| 源码规模（不含测试） | 160 个文件 / 34,940 行（packages 11,564 · backend 3,283 · editor 20,093） |
-| 测试规模 | 31,948 行（单测 22,725 · E2E 8,940 · 架构测试 283） |
+| 源码规模（不含测试） | 158 个文件 / 35,158 行（packages 11,622 · backend 3,283 · editor 20,253） |
+| 测试规模 | 31,965 行（单测 22,742 · E2E 8,940 · 架构测试 283） |
 
 > 上表两行与 §0.1 表格里加粗的文件行数、§3.x 节标题里的包规模由
 > `scripts/check-code-structure-stats.mjs` **机器校验**（`pnpm check` 的一环）：
@@ -34,7 +34,7 @@
 | **Unity 式实体+组件（GameObject + Component）** | 对象上 5 个特性扁平字段 + 各处 `kind === "…"` | `components[]`（模拟 Unity GameObject 挂组件）+ 能力槽位（slot）/访问器；文档 v19 / 协议 v9 / Unity 客户端同步（子图改动后为 **v20 / v10**，见 §0） | 加一个特性 = 加一个组件 + 注册表一行 + 预设表一行（见 §1.6） |
 | **文档命令分模块** | `commands.ts` 2,069 行 | `commands/` 10 个文件（按特性） | 加一个特性的命令 = 加一个文件 |
 | **编辑器 store 分片** | `editor-store.ts` 4,493 行 | 组装点 **94 行** + 17 个切片 + 上下文（见 §5.2） | 加一个功能 = 加一个 `slices/<功能>-slice.ts` + 组装点一行（**简单字段连切片都不用加**：`setComponentField` 已经在 `component-slice.ts` 里） |
-| **属性面板注册表** | `InspectorPanel.tsx` 1,195 行的 JSX 分支 | `InspectorPanel.tsx` **498 行** + `registry.tsx` + `object-fields.tsx` | 加一个特性分组 = 注册表一行 + 一个字段组件 |
+| **属性面板注册表** | `InspectorPanel.tsx` 1,195 行的 JSX 分支 | `InspectorPanel.tsx` **499 行** + `registry.tsx` + `object-fields.tsx` | 加一个特性分组 = 注册表一行 + 一个字段组件 |
 
 **代价是诚实的**：源码从 28,810 行长到 31,002 行（+7.6%；子图、kind、素材 meta 三次改动后全仓 34,624 行，见 §0）——多出来的是文件头注释、import/export
 与「显式列出 action 名」的类型。换来的是「改一个功能不必碰整个项目」。
@@ -422,7 +422,7 @@ build: { outDir: "dist", sourcemap: true },
 - 画笔半径 `floor((brushSize-1)/2)`（1/2→1×1、3/4→3×3、5→5×5，含偶数尺寸的刻意保真），与 Unity `ApplyBrush` 完全一致；
 - 坐标系只有一个：**世界坐标**（x 右、y 上、像素、无限大）；`grid(0,0)` 在地图矩形左下角 = 图片最下面一行，grid.y 与世界 y 同向、不翻转；唯一的翻转发生在贴图绘制（`worldRectTopLeft`）。
 
-### 3.2 `@dts/document` — 文档模型、命令与历史（7,098 行）
+### 3.2 `@dts/document` — 文档模型、命令与历史（7,156 行）
 
 | 文件 | 行数 | 职责 | 关键导出 |
 |---|---|---|---|
@@ -433,7 +433,7 @@ build: { outDir: "dist", sourcemap: true },
 | `commands/` | 1,674 | **59 个文档变换命令**（`commands/*.ts` 里 `export function` 的条数；分组表里另有 3 个读/判据由 `access.ts` / `presets.ts` 提供），按特性拆成 8 个模块 | 见 §3.2.2 |
 | `validation.ts` | 627 | 文档语义校验（跨字段、跨场景 + **子图的越界格子**（切分按素材 meta 查）+ **视频只给地图与贴图** + **素材 meta 里的音频标签引用**） | `IssueLevel`、`ValidationIssue`、`SceneValidationOptions`、`hasErrors`、`formatIssues`、`validateScene`、`validateAssetMetas`、`validateProject` |
 | `sprites.ts` | 346 | **精灵（子图）的全部知识**（v20 新增）：一张图怎么切、对象取哪一格、那一格在图片里的哪块矩形、画多大；「地图贴图不支持子图」的**唯一判据**也在这里。切分从 v23 起**按素材 meta 查**（参数是 `AssetMetas` 索引，**guid 优先、路径兜底**） | `SPRITE_SHEET_MAX`(64)、`DEFAULT_SPRITE_SHEET`(1×1)、`normalizeSpriteSheet`、`isTrivialSpriteSheet`、`spriteSheetOf`（meta 里没 `sheet` = 整图）、`clampSpriteCell`、`resolvedSpriteOf`、`displaySpriteOf`、`spriteUvRectOf`、`spritePixelRectOf`、`spriteCellSizeOf`、`spriteCellAtFraction`、`resolveSceneSprites`（推送用的解析：夹格子 + 摘掉地图上的误写 + **把 guid 换算回当前路径 ID**） |
-| `asset-meta.ts` | 530 | **素材 meta 的全部知识**（v23 新增；v24 起覆盖**每一种素材**）：`<素材>.meta` 的形状（GUID + 导入器 + 精灵设置 / 切分 + 音频标注）、schema、解析、序列化、GUID 生成，以及「meta ↔ 文档词汇」的访问器与纯函数写入 | `ASSET_META_FORMAT_VERSION`(1)、`ASSET_IMPORTERS`、`AssetImporter`、`AssetMetaDoc`、`AssetMetaSpriteDoc`、`AssetMetaAudioDoc`、`AssetMetaFileLoad`、`assetMetaSchema`、`newAssetGuid`、`createAssetMeta`、`parseAssetMetaFile`（只容错"缺 guid"，补上并 `needsRewrite`）、`serializeAssetMetaFile`、`isSpriteMeta`、`spriteSettingsOfMeta`、`spriteSheetOfMeta`、`withMetaSpriteSettings`、`withMetaSpriteSheet`、`audioNameOfMeta`、`audioTagsOfMeta`、`withMetaAudioName`、`withMetaAudioTags`、`withoutMetaAudioTag`、`AssetMetas`（guid ↔ 路径双向索引）、`emptyAssetMetas`、`createAssetMetas`、`metaOfImage` |
+| `asset-meta.ts` | 594 | **素材 meta 的全部知识**（v23 新增；v24 起覆盖**每一种素材**）：`<素材>.meta` 的形状（GUID + 导入器 + 精灵设置 / 切分 + 音频标注 + **顶层 `tags`**）、schema、解析、序列化、GUID 生成，以及「meta ↔ 文档词汇」的访问器与纯函数写入。标签**任何素材**都能打：写一律落顶层 `tags`，音频旧数据（`audio.tags`）由 `assetTagsOfMeta` 兼容读、写入时一并摘掉（不需要迁移） | `ASSET_META_FORMAT_VERSION`(1)、`ASSET_IMPORTERS`、`AssetImporter`、`AssetMetaDoc`、`AssetMetaSpriteDoc`、`AssetMetaAudioDoc`、`AssetMetaFileLoad`、`assetMetaSchema`、`newAssetGuid`、`createAssetMeta`、`parseAssetMetaFile`（只容错"缺 guid"，补上并 `needsRewrite`）、`serializeAssetMetaFile`、`isSpriteMeta`、`spriteSettingsOfMeta`、`spriteSheetOfMeta`、`withMetaSpriteSettings`、`withMetaSpriteSheet`、`audioNameOfMeta`、`audioTagsOfMeta`（旧段）、`assetTagsOfMeta`（统一读）、`withMetaAudioName`、`withMetaAudioTags`（旧段）、`withMetaAssetTags`（统一写）、`withoutMetaAudioTag`（两处都摘）、`AssetMetas`（guid ↔ 路径双向索引）、`emptyAssetMetas`、`createAssetMetas`、`metaOfImage` |
 | `history.ts` | 222 | 补丁式撤销 / 重做容器 | `DocumentHistory`、`HistoryEntry`、`DEFAULT_HISTORY_LIMIT`(=200)、`DEFAULT_COALESCE_WINDOW_MS`(=700)、`SceneListDraft` |
 | `factory.ts` | 181 | 新建对象的工厂函数（默认值） | `createEmptyProject`、`createEmptyScene`、`createEmptySceneFile`、`createMapObject`、`createSoundObject`、`createTeleportObject` |
 | `components.ts` | 158 | 组件注册表（**6 种**，全部是从对象特性提升上来的——`image` 那一个字段有 `ImageLayer` / `SpriteLayer` 两种，各自自报 `slot`）。**只登记「注册」信息**（type / displayName / gmEditable / slot / legacyField / tooltip）：字段的形状归 `component-specs/`，默认数据归 `defaultDataOf`——那条老的 `fields` + `defaultComponentData` 已删除 | `ComponentType`、`ComponentTypeDef`、`COMPONENT_TYPES`、`SLOT_COMPONENT_TYPES`、`FEATURE_COMPONENT_TYPES`、`hasLegacyFeatureField`、`findComponentType`、`componentId`、`featureComponent`、`isKnownComponentType` |
@@ -1151,7 +1151,7 @@ store 用 **zustand 切片**模式拆开了：原来是一个 4,493 行的 `edit
 | `slices/sound-slice.ts` | 276 | 声音对象：选中、层级、名字、播放下发（列表的加 / 删在窗口里完成，不经 store 整体替换） | — |
 | `slices/video-slice.ts` | 254 | 视频：开关、列表、选中、循环、播放下发（声音 / 自动播放开关走组件规格的 `setComponentField`） | — |
 | `slices/bgm-slice.ts` | 83 | 全局背景音乐（播放 / 暂停 / 继续 / 停止 / 补发） | — |
-| `slices/audio-meta-slice.ts` | 155 | 音频显示名 / 标签（v24 起写在**素材 meta 那条轨道**上：走 `applyMetas` + `withMetaAudioName` / `withMetaAudioTags`）+ 项目级标签表（`applyProject`）+ 三档音量 | — |
+| `slices/audio-meta-slice.ts` | 168 | 素材**标签**（任何素材：图 / 声 / 视频；写在**素材 meta 那条轨道**上：走 `applyMetas` + `withMetaAssetTags`）+ 音频显示名（`withMetaAudioName`）+ 项目级标签表（`applyProject`）+ 三档音量 | — |
 | `slices/teleport-slice.ts` | 89 | 传送阵：候选、选中、触发换台 | — |
 | `slices/grid-paint-slice.ts` | 134 | 网格标注：画笔偏好、涂抹、清空 | — |
 | `slices/fog-slice.ts` | 208 | 战争雾：开关、雾区、擦除记账、补发 | — |
@@ -1198,19 +1198,18 @@ export function createSoundSlice(
 
 | 文件 | 行数 | 职责 | 对外导出 |
 |---|---|---|---|
-| `EditorShell.tsx` | 380 | 四区外壳（桌面三栏 / 紧凑抽屉）、启动引导 `bootstrapEditor`、**全局快捷键注册**、跨断点重置面板开合、按 store 开关渲染 12 个对话框；内部 `Drawer`。 | `EditorShell` |
+| `EditorShell.tsx` | 369 | 四区外壳（桌面三栏 / 紧凑抽屉）、启动引导 `bootstrapEditor`、**全局快捷键注册**、跨断点重置面板开合、按 store 开关渲染 12 个对话框；内部 `Drawer`。 | `EditorShell` |
 | `MenuBar.tsx` | 385 | 顶部菜单（工程/场景/编辑/视图/运行）+ 顶栏右侧（紧凑开关、`BgmControl`、`ModeSwitch`、`ClientBadge`）。原则：**所有命令都必须能从菜单触发**。 | `MenuBar` |
 | `StatusBar.tsx` | 98 | 底栏八个状态格：工程名、场景数、场景保存状态、工程保存状态、当前场景、已选数、当前工具、运行态与连接状态点；内部 `SAVE_STATE_LABELS`（含 `runtime: "运行中（不保存）"`）、`TOOL_LABELS`。 | `StatusBar` |
 | `dialog-size.ts` | 96 | 弹窗尺寸计算（比例 0.8×0.86，夹 720×520 ~ 1680×1200，且不超过窗口 92%）与「按长宽比等比装进可用区域」；`useViewportSize` 订阅 resize。 | `dialogSizeFor`、`fitBox`、`useViewportSize`、`useDialogSize` |
 | `ProjectDialog.tsx` | 177 | 新建/打开项目：列表带「N 个文件」与删除（`confirm`），创建成功即关闭，失败把 `project.error` 摆在框里。 | `ProjectDialog` |
 | `SceneDialog.tsx` | 104 | 新建/重命名场景：场景名 = 文件名，失败原因就地显示。 | `SceneDialog` |
 | `ObjectDialog.tsx` | 206 | 「新建对象」弹框：先选种类（实体/动作/事件）再选类型（正方形瓦片 + `kindMarkerColor` 色点），名字用 `nextObjectName` 预填去重。 | `ObjectDialog` |
-| `ResourcePickerDialog.tsx` | 564 | 「从项目已有素材里挑一个」的**通用选择弹框**：按 `kind`（`image` / `audio` / `video`）调整——`image` = 选贴图 / 精灵（选中 + 确认，缩略图列表 + 预览 + 精灵格网，`allowSprite` 控制切分面板，`onPick(image, sprite)` 图 + 格子一次交出）；`audio` / `video` = 点击即加入（可连点，`added` 置灰）。统一从资源树取清单（音频多一层 `audioCatalog`），testid 全部由 `kind` 派生；内部 `ImagePickerBody` / `MediaPickerBody` / `mediaPickerRows` / `MEDIA_TEXTS`。 | `ResourcePickerDialog`、`ResourcePickerKind` |
+| `ResourcePickerDialog.tsx` | 684 | 「从项目已有素材里挑一个」的**通用选择弹框**：按 `kind`（`image` / `audio` / `video`）调整——`image` = 选贴图 / 精灵（选中 + 确认，缩略图列表 + 预览 + 精灵格网，`allowSprite` 控制切分面板，`onPick(image, sprite)` 图 + 格子一次交出）；`audio` / `video` = 点击即加入（可连点，`added` 置灰）。统一从资源树取清单（音频多一层 `audioCatalog`），**搜索栏下都有标签过滤行**（AND，三种 kind 共用 `TagFilterRow`，任何素材都能打标签所以行上也带 tag chips）；testid 全部由 `kind` 派生；内部 `ImagePickerBody` / `MediaPickerBody` / `mediaPickerRows` / `MEDIA_TEXTS` / `TagFilterRow`。 | `ResourcePickerDialog`、`ResourcePickerKind` |
 | `SpriteEditorDialog.tsx` | 179 | 独立的**精灵编辑器**（v23 新增）：列 / 行（1..64）、缩放、预览图上点格，草稿只在弹窗内变化，点「应用」才落到**素材 meta** 那条轨道（`setSpriteSheet`，1×1 按「恢复整图」处理）。 | `SpriteEditorDialog` |
-| `AudioTagDialog.tsx` | 155 | 「选择标签」：给一个音频文件勾/去标签（`allTagsOf` + `setAudioTags`），只勾选不新建；目标已经不在资源树里时什么都不做（不凭空造 orphan meta）。 | `AudioTagDialog` |
+| `AudioTagDialog.tsx` | 157 | 「选择标签」：给**任何素材文件**勾/去标签（`taggableAssets` + `allTagsOf` + `setAssetTags`，「N 个文件在用」跨图 / 声 / 视频全部计数），只勾选不新建；目标已经不在资源树里时什么都不做（不凭空造 orphan meta）。 | `AudioTagDialog` |
 | `AudioTagEditorDialog.tsx` | 197 | 「标签」窗口：整数序号 `#0…#N` 预铺（`SLOTS_PER_PAGE` 16、`MAX_SLOTS` 32），只填名字，洞不画。 | `AudioTagEditorDialog` |
-| `SoundEditDialog.tsx` | 69 | 「编辑声音」窗口：加/删音频、看路径、给每条起显示名（`sound.names`）；选择弹框走 `ResourcePickerDialog kind="audio"`。 | `SoundEditDialog` |
-| `VideoEditDialog.tsx` | 71 | 「编辑视频」窗口：加/删视频、看路径、起名字（`video.names`）；选择弹框走 `ResourcePickerDialog kind="video"`。 | `VideoEditDialog` |
+| `MediaEditDialog.tsx` | 467 | 「编辑媒体清单」**通用窗口**（原「编辑声音」/「编辑视频」+ `MediaClipListDialog` 三合一，按 `kind` 调整文案 / 文档读取 / store 动作）：左文件清单（**视频首帧当缩略图** `<video preload="metadata">`、音频公用 `AssetFileIcon`；名字就地改 + 路径 + webm 徽标 + 移出）+ 右**播放预览**（点一条试听 / 预览，`<audio controls>` / `<video controls>`）；内嵌 `ResourcePickerDialog kind={kind}`。testid 由 `prefix`（`sound` / `video`）派生，e2e 钉住的 `${prefix}-edit-*` 一枚不改 | `MediaEditDialog` |
 | `TeleportEditDialog.tsx` | 117 | 「传送目标」窗口：把项目场景勾成候选（整份新清单交 `setTeleportTargets`）；已失效的目标照列并标「已失效」。 | `TeleportEditDialog` |
 | `GlobalSettingsDialog.tsx` | 110 | 「全局设置」：三档音量滑杆（`doc.settings.audio.*`，0..1 step 0.05）。 | `GlobalSettingsDialog` |
 | `BgmControl.tsx` | 79 | 顶栏「音乐」按钮：显示当前在放什么/暂停标记/播放中高亮；导出 `bgmDeliveryHint`（与声音/视频**同一套措辞**的「已记录，等连上补发」提示）。 | `BgmControl`、`bgmDeliveryHint` |
@@ -1227,7 +1226,7 @@ export function createSoundSlice(
 | `object-kinds.ts` | 133 | 对象类型表（实体/动作/事件）+ 可创建标记 + 中文展示名 + 「画内置徽标」判定；`kind` 是前端也认的字段，不造新值（v22 起精灵写 `Sprite`、贴图写 `Image`，基类 `GameObject` 只作**不可创建**的归类项留在表里，保证每个 kind 都有归属）。 | `OBJECT_CATEGORIES`、`DEFAULT_CATEGORY`、`KIND_LABELS`、`creatableObjects`、`categoryOfKind`、`badgeIconOf`；类型 `ObjectTypeDef`、`ObjectCategoryDef` |
 | `asset-info.ts` | 149 | 按扩展名判断资源怎么显示：图标种类、可预览种类、人类可读类型名、去扩展名的显示名、字节可读化；**扩展名判断只此一处**；还给素材定 `<素材>.meta` 的导入器（`assetImporterKind`：图片 / 音频 / 视频 / 场景，`Assets/scenes/` 之外的 `.json` 不算素材）。 | `assetSuffix`、`assetIconKind`、`assetImporterKind`、`assetPreviewKind`、`assetKindLabel`、`assetDisplayName`、`formatSize`；类型 `AssetIconKind` |
 | `asset-picker.ts` | 153 | 资源显示路径（剥掉 `project:`/项目名/`Assets/`）、按 id 查资源、按类别收图片/音频/视频、原始字节 URL。 | `assetDisplayPath`、`findAssetById`、`listImageAssets`、`listAudioAssets`、`listVideoAssets`、`assetRawUrl` |
-| `audio-catalog.ts` | 259 | 音频清单 + 标注 + 标签表的**纯函数层**（BGM 弹框 / 选择音频 / 选择标签三处共用）：tag 是整数、名字住工程文件的表里，**显示名与标签 ID 从各素材自己的 `.meta`（`assetMetaTable`）读**；名字兜底链、搜索、按标签 AND 筛、按名排序、标签用量与勾选项。 | `tagEntriesOf`、`tagNameOf`、`tagsOfClip`、`audioCatalog`、`audioNameOf`、`audioDisplayName`、`matchesAudioQuery`、`filterAudioRows`、`sortAudioRowsByName`、`allTagsOf`、`tagOptionsOf`；类型 `AudioTagRef`、`AudioTagEntry`、`AudioCatalogRow` |
+| `audio-catalog.ts` | 295 | 音频清单 + 标注 + 标签表的**纯函数层**（BGM 弹框 / 选择音频 / 选择标签三处共用）：tag 是整数、名字住工程文件的表里，**显示名与标签 ID 从各素材自己的 `.meta`（`assetMetaTable`）读**（统一走 `assetTagsOfMeta`，任何素材都能打标签）；`taggableAssets` = 全部可打标签素材（图 / 声 / 视频）带解析好的标签，给「选择标签」框的跨类用量计数用；名字兜底链、搜索、按标签 AND 筛、按名排序、标签用量与勾选项。 | `tagEntriesOf`、`tagNameOf`、`tagsOfClip`、`audioCatalog`、`taggableAssets`、`audioNameOf`、`audioDisplayName`、`matchesAudioQuery`、`filterAudioRows`、`sortAudioRowsByName`、`allTagsOf`、`tagOptionsOf`；类型 `AudioTagRef`、`AudioTagEntry`、`AudioCatalogRow`、`TaggableAssetRow` |
 
 #### `panels/assets/`（2）
 
@@ -1246,7 +1245,7 @@ export function createSoundSlice(
 
 | 文件 | 行数 | 职责 | 对外导出 |
 |---|---|---|---|
-| `InspectorPanel.tsx` | 493 | 右侧属性面板**只剩「显示哪一屏」**：按「资源 > 对象 > 场景 > 项目」的优先级选择视图，对象那一屏按注册表渲染分组；资源那一屏顺手显示该素材的 `.meta` 摘要（导入设置、切分几格） | `InspectorPanel` |
+| `InspectorPanel.tsx` | 499 | 右侧属性面板**只剩「显示哪一屏」**：按「资源 > 对象 > 场景 > 项目」的优先级选择视图，对象那一屏按注册表渲染分组；资源那一屏顺手显示该素材的 `.meta` 摘要（导入设置、切分几格） | `InspectorPanel` |
 | `registry.tsx` | 145 | **对象分组的注册表**：7 组（基础 / 渲染 / 声音 / 传送 / 区域 / 战争雾 / 视频）各自的 `applies`（判据走预设表与访问器，不看 `kind` 字面量）与 `render`；**数组顺序就是界面顺序**（e2e 断言它）。「基础」组里 **`sortingOrder` 由对象字段规格自动出行**，其余六个字段仍是手写控件（各有专属语义，见 `object-spec.ts`） | `ObjectGroupDef`、`OBJECT_GROUPS` |
 | `object-fields.tsx` | 789 | 对象字段的控件本体（从 `InspectorPanel.tsx` 拆出，纯搬运）：名称 / 激活 / 锁定 / **位置** / 缩放 / 单轴缩放 / 旋转 / 贴图（含**子图那一行**：`子图 第2行第3列（4×4）` + 「改回整图」，越界时挂「格子越界」提示；testid `texture-sprite` / `texture-sprite-out-of-range` / `clear-sprite`）/ 网格规格 / 每格像素 / 网格显示开关 + 它们的格式化与解析助手。**「显示顺序」已搬去描述符**（`object-spec.ts`），所以这里没有它 | `NameField`、`ActiveField`、`LockedField`、`PositionFields`、`ScaleField`、`ScaleAxisField`、`RotationField`、`TextureField`、`GridFields`、`CellSizeField`、`GridDisplayField`、`WORLD_ORIGIN_FALLBACK` 等 |
 | `fields.tsx` | 204 | 属性面板的行/分组外壳与**播放类控件**：可折叠 `FieldGroup`（`data-group` 英文 slug）、只读 `Field`、`FieldRow`（标签定宽 `w-20`，必须是行内第一个子元素）、`PlaybackRow`、`PlaybackStatus`、`PLAYBACK_BUTTON_CLASS` / `PLAYBACK_BUTTON_ACTIVE_CLASS`（高 34px、13px 字）。 | `FieldGroup`、`Field`、`FieldRow`、`PlaybackRow`、`PlaybackStatus`、`PLAYBACK_BUTTON_CLASS`、`PLAYBACK_BUTTON_ACTIVE_CLASS`；类型 `PlaybackState` |
@@ -1499,10 +1498,10 @@ edit：取消去抖、`lastPushedSceneText=null`、发 `runtime_stop`）、`push
 对话框绑定：`ProjectDialog` → `project`/`projectDialog`；`SceneDialog` → `activeSceneName`/`sceneDialog`；
 `ObjectDialog` → `objectDialog`；`ResourcePickerDialog`（kind=image 挑图 + 取一格）/ `SpriteEditorDialog`（精灵切分）→
 `imagePickerTarget`/**`assetMetas`（读切分与导入设置）**/`setSpriteSheet`；
-`SoundEditDialog`（内嵌 `ResourcePickerDialog` kind=audio）→ `soundEditor(Target)`/`assetMetaTable`（每条音频的显示名）；`VideoEditDialog`（内嵌 kind=video）→ `videoEditor(Target)`；
+`MediaEditDialog`（内嵌 `ResourcePickerDialog`，kind = `mediaEditor.kind`）→ `mediaEditor`/`assetMetaTable`（每条音频的显示名与全部素材的标签）；
 `TeleportEditDialog` → `teleportEditor(Target)`；`GlobalSettingsDialog` → `doc.settings.audio`；
 `BgmControl`+`BgmDialog` → `bgmDialog`/`bgmPlayback`/`ui.bgmPaths`/`assetMetaTable`（清单的显示名与标签）；
-`AudioTagEditorDialog`+`AudioTagDialog` → `audioTags`/`doc.audioTags`（标签表）+ **各音频的 `assetMetaTable`**（勾了哪些标签）；
+`AudioTagEditorDialog`+`AudioTagDialog` → `audioTags`/`doc.audioTags`（标签表）+ **各素材的 `assetMetaTable`**（勾了哪些标签，任何素材都能打）；
 `FogMaskDialog` → `fogMask(Target)`/`eraseFogMask`/`setFogRegionRevealed`；
 `GridEditDialog` → `gridEditor(Target)`/`gridPaint` 系列。
 

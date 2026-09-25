@@ -33,7 +33,7 @@ export function createVideoSlice(
   | "resumeVideo"
   | "stopVideo"
   | "flushVideoPlayback"
-  | "openVideoEditor"
+  | "openMediaEditor"
   | "setVideoEnabled"
   | "addVideoClip"
   | "removeVideoClip"
@@ -155,10 +155,10 @@ export function createVideoSlice(
 
     // ------------------------------------------------------------ 视频（地图 / 贴图）
 
-    openVideoEditor(objectId) {
-      set({ videoEditor: objectId !== null, videoEditorTarget: objectId });
+    openMediaEditor(kind, objectId) {
+      set({ mediaEditor: objectId === null ? null : { kind, objectId } });
       if (objectId !== null) {
-        // 与「选择音频」同一条规矩：素材由外部提交进 Assets/video/，打开时刷一次目录
+        // 与「选择贴图」同一条规矩：素材由外部提交进 Assets/video|audio/，打开时刷一次目录
         void get().refreshTree();
       }
     },
@@ -169,8 +169,9 @@ export function createVideoSlice(
       });
 
       // 关掉了：正开着的「编辑视频」窗口跟着关（那一组已经收起来了）
-      if (!enabled && get().videoEditorTarget === objectId) {
-        set({ videoEditor: false, videoEditorTarget: null });
+      const editor = get().mediaEditor;
+      if (!enabled && editor !== null && editor.kind === "video" && editor.objectId === objectId) {
+        set({ mediaEditor: null });
       }
 
       return changed;

@@ -78,7 +78,7 @@ export function SoundFields({ object }: { readonly object: GameObjectDoc }): Rea
   const scenes = useEditorStore((state) => state.scenes);
   const activeSceneName = useEditorStore((state) => state.activeSceneName);
   const playback = useEditorStore((state) => state.soundPlayback);
-  const openSoundEditor = useEditorStore((state) => state.openSoundEditor);
+  const openMediaEditor = useEditorStore((state) => state.openMediaEditor);
   const selectSoundClip = useEditorStore((state) => state.selectSoundClip);
   const setSoundLayer = useEditorStore((state) => state.setSoundLayer);
   const playSound = useEditorStore((state) => state.playSound);
@@ -239,7 +239,7 @@ export function SoundFields({ object }: { readonly object: GameObjectDoc }): Rea
           data-testid="sound-edit"
           title="打开「编辑声音」窗口：加 / 删音频、看路径、给每个音频起名字"
           className="toolbar-button flex-none hover:toolbar-button-hover"
-          onClick={() => openSoundEditor(object.id)}
+          onClick={() => openMediaEditor("audio", object.id)}
         >
           编辑音频…
         </button>

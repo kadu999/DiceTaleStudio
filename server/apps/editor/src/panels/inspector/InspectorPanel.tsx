@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import {
   DEFAULT_SLOT_COMPONENT,
+  assetTagsOfMeta,
   audioNameOfMeta,
-  audioTagsOfMeta,
   supportsObjectComponent,
   isSpriteMeta,
   metaOfImage,
@@ -134,7 +134,8 @@ function AssetProperties({
 }): React.JSX.Element {
   const [imageSize, setImageSize] = useState<{ width: number; height: number } | null>(null);
   const [spriteEditorOpen, setSpriteEditorOpen] = useState(false);
-  // 音频文件的显示名与标签住在**那个文件自己的 `.meta`** 里（v24 起），标签名仍在工程文件的表里
+  // 音频文件的显示名与标签住在**那个文件自己的 `.meta`** 里（v24 起），标签名仍在工程文件的表里；
+  // 标签**任何素材**都能打（图 / 声 / 视频）：读统一走 `assetTagsOfMeta`
   const metaTable = useEditorStore((state) => state.assetMetaTable);
   // 精灵相关的三件事（类型 / 模式 / 切分）全在**这个素材自己的 `.meta`** 里（v23 起）
   const assetMetas = useEditorStore((state) => state.assetMetas);
@@ -142,9 +143,9 @@ function AssetProperties({
   const table = useEditorStore((state) => state.doc.audioTags);
   const preview = assetPreviewKind(asset.name);
   const src = `/api/resources/raw?id=${encodeURIComponent(asset.id)}`;
-  const audioMeta = preview === "audio" ? metaTable[asset.id] : undefined;
+  const fileMeta = preview === null ? undefined : metaTable[asset.id];
   // 标签在文档里是**整数 ID**（tag 是整数、名字住在标签表里），界面上一律按名字显示
-  const tags = tagsOfClip(table, audioTagsOfMeta(audioMeta));
+  const tags = tagsOfClip(table, assetTagsOfMeta(fileMeta));
   const assetMeta = metaOfImage(assetMetas, { id: asset.id });
   const sheet = spriteSheetOfMeta(assetMeta);
   const isSprite = isSpriteMeta(assetMeta);
@@ -175,11 +176,11 @@ function AssetProperties({
         {imageSize === null ? null : (
           <Field label="尺寸" value={`${imageSize.width} × ${imageSize.height}`} mono />
         )}
+        {preview === null ? null : (
+          <AudioTagsField assetId={asset.id} tags={tags} />
+        )}
         {preview !== "audio" ? null : (
-          <>
-            <AudioDisplayNameField assetId={asset.id} fileName={asset.name} storedName={audioNameOfMeta(audioMeta) ?? ""} />
-            <AudioTagsField assetId={asset.id} tags={tags} />
-          </>
+          <AudioDisplayNameField assetId={asset.id} fileName={asset.name} storedName={audioNameOfMeta(fileMeta) ?? ""} />
         )}
         {preview === "image" ? (
           <>
@@ -374,7 +375,7 @@ function AudioDisplayNameField({
 }
 
 /**
- * 音频的**标签**：已勾的按名字列成 chip（`×` = 只从这个文件上摘掉），
+ * 素材的**标签**（任何文件都能打）：已勾的按名字列成 chip（`×` = 只从这个文件上摘掉），
  * 「＋」打开**选择标签**框（给这个文件勾 / 去、也能现建一个），
  * 「标签…」打开**标签表**（新建 / 改名 / 删除——改名字只改表）。
  */
@@ -385,7 +386,7 @@ function AudioTagsField({
   readonly assetId: string;
   readonly tags: readonly AudioTagRef[];
 }): React.JSX.Element {
-  const setAudioTags = useEditorStore((state) => state.setAudioTags);
+  const setAssetTags = useEditorStore((state) => state.setAssetTags);
   const openAudioTags = useEditorStore((state) => state.openAudioTags);
   const [picking, setPicking] = useState(false);
 
@@ -414,7 +415,7 @@ function AudioTagsField({
                 title={`摘掉「${tag.name}」`}
                 className="text-[var(--color-editor-text-dim)] hover:text-[var(--color-editor-danger)]"
                 onClick={() =>
-                  setAudioTags(
+                  setAssetTags(
                     assetId,
                     tags.filter((item) => item.id !== tag.id).map((item) => item.id),
                   )
@@ -455,7 +456,7 @@ function AudioTagsField({
       </FieldRow>
 
       {/* 选择标签：挂在这个面板上（`AssetProperties` 按资源 id 挂了 key，换文件时自动收起） */}
-      <AudioTagDialog clipId={picking ? assetId : null} onClose={() => setPicking(false)} />
+      <AudioTagDialog assetId={picking ? assetId : null} onClose={() => setPicking(false)} />
     </>
   );
 }

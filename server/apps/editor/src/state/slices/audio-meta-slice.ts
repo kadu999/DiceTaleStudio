@@ -1,8 +1,10 @@
 /**
  * 本文件从 `editor-store.ts` 拆出（纯搬运，行为不变）。
  *
- * 项目级音频**标签表**与三档音量；音频文件的**显示名与标签**（v24 起）落在
- * **那个文件自己的 `.meta`** 那条轨道上，见下面 `setAudioName` / `setAudioTags` 的说明。
+ * 项目级音频**标签表**与三档音量；素材文件的**显示名与标签**（v24 起）落在
+ * **那个文件自己的 `.meta`** 那条轨道上，见下面 `setAudioName` / `setAssetTags` 的说明。
+ * 标签**任何素材**（图 / 音频 / 视频）都能打：写一律落在顶层 `tags`，
+ * 音频旧数据（`audio.tags`）由 `assetTagsOfMeta` 兼容读。
  */
 import {
   createAssetMeta,
@@ -11,11 +13,12 @@ import {
   setVoiceVolume as setProjectVoiceVolume,
   setAudioTagName as setProjectAudioTagName,
   withMetaAudioName,
-  withMetaAudioTags,
+  withMetaAssetTags,
   type AssetMetaDoc,
 } from "@dts/document";
 import { type StoreSet, type StoreGet, type EditorStoreState } from "../store-types";
 import { type StoreContext } from "../store-context";
+import { assetImporterKind } from "../../panels/asset-info";
 
 export function createAudioMetaSlice(
   _set: StoreSet,
@@ -24,7 +27,7 @@ export function createAudioMetaSlice(
 ): Pick<
   EditorStoreState,
   | "setAudioName"
-  | "setAudioTags"
+  | "setAssetTags"
   | "setAudioTagName"
   | "openAudioTags"
   | "setBgmVolume"
@@ -48,23 +51,27 @@ export function createAudioMetaSlice(
       return get().applyMetas(
         name.trim().length === 0 ? "清除音频文件名字" : "修改音频文件名字",
         (draft) => {
-          writeAudioMeta(draft, clipId, (meta) => withMetaAudioName(meta, name));
+          writeAssetMeta(draft, clipId, (meta) => withMetaAudioName(meta, name));
         },
         { coalesceKey: `audio-name:${clipId}` },
       );
     },
 
     /**
-     * 替换一个音频文件的**整份标签 ID 清单**（界面那边只看得到「现在勾了哪些」）。
+     * 替换一个素材文件的**整份标签 ID 清单**（界面那边只看得到「现在勾了哪些」）。
+     *
+     * **任何素材**都能打标签（图 / 音频 / 视频）：写一律落在 meta 顶层的 `tags`，
+     * 音频的旧数据（更早版本写在 `audio.tags`）由 `withMetaAssetTags` 在读路径兼容、
+     * 写入时一并摘掉——不需要数据迁移。
      *
      * 归一化要按**工程文件里那张标签表**来（越界 / 指向已删的洞 / 重复的 ID 一律丢掉）：
      * 表是项目级的，所以从 `get().doc` 现取——它随时可能是刚改过的（比如「标签」窗口里刚填了名字）。
      */
-    setAudioTags(clipId, tagIds) {
+    setAssetTags(assetId, tagIds) {
       const table = get().doc.audioTags ?? [];
       // 勾一个标签是**离散**动作，所以不合并撤销记录：一次撤销就退回上一个勾选状态
-      return get().applyMetas("修改音频文件标签", (draft) => {
-        writeAudioMeta(draft, clipId, (meta) => withMetaAudioTags(meta, tagIds, table));
+      return get().applyMetas("修改素材标签", (draft) => {
+        writeAssetMeta(draft, assetId, (meta) => withMetaAssetTags(meta, tagIds, table));
       });
     },
 
@@ -125,24 +132,30 @@ export function createAudioMetaSlice(
 }
 
 /**
- * 在 meta 轨道上写一个音频文件的那一份 meta：**缺就现建一份音频 meta**（新 GUID）。
+ * 在 meta 轨道上写一个素材文件的那一份 meta：**缺就现建一份**（importer 按文件后缀认；
+ * 不是素材的文件——目录 / 配置——没有 meta 轨道，直接不建）。
  *
  * 打开项目 / 刷新资源树时每个素材都会补上自己的 `.meta`（见 `project-slice.ts`），
  * 所以这里的兜底只在「界面比装配先一步」时用得上（例如刚上传的素材还没刷新完）；
  * 与 `sprite-slice.ts` 里那套写法一致：纯函数返回原对象 = 什么都没变，**不写回**
  * （否则会在撤销栈里留一条「什么都没改」的记录）。
  */
-function writeAudioMeta(
+function writeAssetMeta(
   draft: Record<string, AssetMetaDoc>,
-  clipId: string,
+  assetId: string,
   update: (meta: AssetMetaDoc) => AssetMetaDoc,
 ): void {
-  const existing = draft[clipId];
+  const existing = draft[assetId];
   if (existing === undefined) {
-    const created = createAssetMeta("audio");
+    const importer = assetImporterKind(assetId);
+    if (importer === undefined) {
+      return;
+    }
+
+    const created = createAssetMeta(importer);
     const next = update(created);
     if (next !== created) {
-      draft[clipId] = next;
+      draft[assetId] = next;
     }
 
     return;
@@ -150,6 +163,6 @@ function writeAudioMeta(
 
   const next = update(existing);
   if (next !== existing) {
-    draft[clipId] = next;
+    draft[assetId] = next;
   }
 }

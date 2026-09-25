@@ -862,22 +862,37 @@ export async function readAssetMeta(
 }
 
 /**
- * 读某个**音频素材** meta 里的 `audio` 段（显示名 + 标签 ID 列表）；没有这一段 → `undefined`。
+ * 读某个**音频素材** meta 里的显示名 + 标签 ID 列表；都没有 → `undefined`。
  *
  * 「没有这一段」才是「这个文件还没整理过」（**不补空壳**）：每个素材都有 meta，
- * 但只有起了名字 / 勾了标签才会写出 `audio`。
+ * 但只有起了名字 / 勾了标签才会有内容。标签**任何素材**都能打、写一律落 meta 顶层
+ * `tags`（音频旧数据在 `audio.tags`，这里兼容读）；显示名仍只在 `audio.name`。
  */
 export async function readAudioMeta(
   request: APIRequestContext,
   assetId: string,
 ): Promise<{ name?: string; tags?: number[] } | undefined> {
   const meta = await readAssetMeta(request, assetId);
-  const audio = meta?.["audio"];
-  if (typeof audio !== "object" || audio === null) {
+  if (meta === undefined) {
     return undefined;
   }
 
-  return audio as { name?: string; tags?: number[] };
+  const audio = meta["audio"];
+  const name = (typeof audio === "object" && audio !== null ? audio["name"] : undefined) as
+    | string
+    | undefined;
+  const rawTags = (meta["tags"] ??
+    (typeof audio === "object" && audio !== null ? audio["tags"] : undefined)) as
+    | number[]
+    | undefined;
+  if (name === undefined && rawTags === undefined) {
+    return undefined;
+  }
+
+  return {
+    ...(name === undefined ? {} : { name }),
+    ...(rawTags === undefined ? {} : { tags: rawTags }),
+  };
 }
 
 /**

@@ -9,10 +9,9 @@ import { RuntimePanel } from "../panels/runtime/RuntimePanel";
 import { ScenePanel } from "../panels/scene/ScenePanel";
 import { FogMaskDialog } from "./FogMaskDialog";
 import { GridEditDialog } from "./GridEditDialog";
+import { MediaEditDialog } from "./MediaEditDialog";
 import { ResourcePickerDialog } from "./ResourcePickerDialog";
-import { SoundEditDialog } from "./SoundEditDialog";
 import { TeleportEditDialog } from "./TeleportEditDialog";
-import { VideoEditDialog } from "./VideoEditDialog";
 import { AudioTagEditorDialog } from "./AudioTagEditorDialog";
 import { BgmDialog } from "./BgmDialog";
 import { GlobalSettingsDialog } from "./GlobalSettingsDialog";
@@ -43,15 +42,11 @@ export function EditorShell(): React.JSX.Element {
   const imagePickerTarget = useEditorStore((state) => state.imagePickerTarget);
   const assetMetas = useEditorStore((state) => state.assetMetas);
   const openImagePicker = useEditorStore((state) => state.openImagePicker);
-  const soundEditor = useEditorStore((state) => state.soundEditor);
-  const soundEditorTarget = useEditorStore((state) => state.soundEditorTarget);
-  const openSoundEditor = useEditorStore((state) => state.openSoundEditor);
+  const mediaEditor = useEditorStore((state) => state.mediaEditor);
+  const openMediaEditor = useEditorStore((state) => state.openMediaEditor);
   const teleportEditor = useEditorStore((state) => state.teleportEditor);
   const teleportEditorTarget = useEditorStore((state) => state.teleportEditorTarget);
   const openTeleportEditor = useEditorStore((state) => state.openTeleportEditor);
-  const videoEditor = useEditorStore((state) => state.videoEditor);
-  const videoEditorTarget = useEditorStore((state) => state.videoEditorTarget);
-  const openVideoEditor = useEditorStore((state) => state.openVideoEditor);
   const fogMask = useEditorStore((state) => state.fogMask);
   const fogMaskTarget = useEditorStore((state) => state.fogMaskTarget);
   const openFogMask = useEditorStore((state) => state.openFogMask);
@@ -292,11 +287,12 @@ export function EditorShell(): React.JSX.Element {
         }}
       />
 
-      {/* 编辑声音：看得到路径、挑一条、给每个音频起名字（属性面板只显示选中的名字） */}
-      <SoundEditDialog
-        open={soundEditor && soundEditorTarget !== null}
-        objectId={soundEditorTarget}
-        onClose={() => openSoundEditor(null)}
+      {/* 编辑媒体清单：「编辑声音」/「编辑视频」合并后的通用窗口（左清单 + 右播放预览） */}
+      <MediaEditDialog
+        open={mediaEditor !== null}
+        kind={mediaEditor?.kind ?? "audio"}
+        objectId={mediaEditor?.objectId ?? null}
+        onClose={() => openMediaEditor(mediaEditor === null ? "audio" : mediaEditor.kind, null)}
       />
 
       {/* 传送目标：把项目里的场景勾成这个传送阵的候选（选哪个在属性面板上点小方块） */}
@@ -304,13 +300,6 @@ export function EditorShell(): React.JSX.Element {
         open={teleportEditor && teleportEditorTarget !== null}
         objectId={teleportEditorTarget}
         onClose={() => openTeleportEditor(null)}
-      />
-
-      {/* 编辑视频：地图 / 贴图的视频列表（放哪条在属性面板上点小方块选） */}
-      <VideoEditDialog
-        open={videoEditor && videoEditorTarget !== null}
-        objectId={videoEditorTarget}
-        onClose={() => openVideoEditor(null)}
       />
 
       {/* 背景音乐（v16 起）：项目音频清单 + 点一首就播 / 暂停 · 继续 / 停止（顶栏「音乐」唤出） */}

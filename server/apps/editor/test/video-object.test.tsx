@@ -136,8 +136,7 @@ afterEach(() => {
     activeSceneName: null,
     selectedObjectIds: [],
     mode: "edit",
-    videoEditor: false,
-    videoEditorTarget: null,
+    mediaEditor: null,
     videoPlayback: { objects: {} },
   });
 });
@@ -305,12 +304,10 @@ describe("属性面板：视频组", () => {
     render(<InspectorPanel />);
 
     fireEvent.click(screen.getByTestId("video-edit"));
-    expect(useEditorStore.getState().videoEditor).toBe(true);
-    expect(useEditorStore.getState().videoEditorTarget).toBe("map-1");
+    expect(useEditorStore.getState().mediaEditor).toEqual({ kind: "video", objectId: "map-1" });
 
-    act(() => useEditorStore.getState().openVideoEditor(null));
-    expect(useEditorStore.getState().videoEditor).toBe(false);
-    expect(useEditorStore.getState().videoEditorTarget).toBeNull();
+    act(() => useEditorStore.getState().openMediaEditor("video", null));
+    expect(useEditorStore.getState().mediaEditor).toBeNull();
   });
 });
 

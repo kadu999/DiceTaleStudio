@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { createAssetMetas, createEmptyProject, emptyAssetMetas } from "@dts/document";
+import { assetTagsOfMeta, createAssetMetas, createEmptyProject, emptyAssetMetas } from "@dts/document";
 import { InspectorPanel } from "../src/panels/inspector/InspectorPanel";
 import { metaHistory } from "../src/state/store-core";
 import { projectHistory, sceneHistory, useEditorStore } from "../src/state/editor-store";
@@ -8,18 +8,19 @@ import type { ResourceTreeNode } from "../src/services/project-api";
 import { audioMetaTable } from "./asset-meta-fixtures";
 
 /**
- * **音频文件的属性面板**（v17 / v18；v24 起数据落在文件自己的 `.meta`）：显示名 + 标签**就地改**。
+ * **素材文件的属性面板**：显示名 + 标签**就地改**。
  *
  * 「音频文件」那个列表窗口在 v18 删掉了——「选中哪个就改哪个」本来就是这个面板的用法，
  * 多一个窗口只是让人多跳一次。所以这一份钉住：
- * 1. 名称仍是**真实文件名**，显示名是就地可改的输入框（留空 = 退回文件名）；
- * 2. 标签按**名字**显示（文档里是整数 ID），`×` = 只从这个文件上摘掉；
+ * 1. 名称仍是**真实文件名**，显示名是就地可改的输入框（留空 = 退回文件名；显示名只有音频有）；
+ * 2. 标签按**名字**显示（文档里是整数 ID），`×` = 只从这个文件上摘掉——**任何素材**
+ *    （图 / 音频 / 视频）都有这一行；
  * 3. 「＋ 标签」打开**选择标签**框（给这个文件勾 / 去）；「标签…」打开**标签表**窗口；
- * 4. 图片 / 视频资源不出现这两行。
+ * 4. 图片 / 视频资源没有显示名那一行。
  *
- * 数据住哪（v24 起）：显示名与标签在**那个音频文件自己的 `.meta`**（`audio` 段），
- * 所以这里种的是 `assetMetaTable`；改动落在**素材 meta 那条轨道**上（`metaHistory`），
- * 标签的**名字**仍在工程文件的 `audioTags` 里。
+ * 数据住哪（v24 起）：显示名与标签在**那个文件自己的 `.meta`**（显示名在 `audio` 段、
+ * 标签在顶层 `tags`），所以这里种的是 `assetMetaTable`；改动落在**素材 meta 那条轨道**上
+ * （`metaHistory`），标签的**名字**仍在工程文件的 `audioTags` 里。
  */
 
 const PROJECT = "测试";
@@ -89,8 +90,17 @@ const docOf = (): ReturnType<typeof useEditorStore.getState>["doc"] =>
 const metas = (): ReturnType<typeof useEditorStore.getState>["assetMetaTable"] =>
   useEditorStore.getState().assetMetaTable;
 
-const audioOf = (id: string): { name?: string; tags?: number[] } | undefined =>
-  metas()[id]?.audio;
+/** 读这个文件的标签（任何素材都写顶层 `tags`，音频旧数据在 `audio.tags`——统一走 `assetTagsOfMeta`）。 */
+const audioOf = (id: string): { name?: string; tags?: number[] } | undefined => {
+  const meta = metas()[id];
+  // 名字与标签都空了 = 「没整理过」（meta 只剩 guid / importer 那个壳，等同 undefined）
+  if (meta === undefined || (meta.audio === undefined && assetTagsOfMeta(meta).length === 0)) {
+    return undefined;
+  }
+
+  const tags = assetTagsOfMeta(meta);
+  return { name: meta.audio?.name, tags: tags.length === 0 ? undefined : [...tags] };
+};
 
 const nameField = (): HTMLInputElement =>
   screen.getByTestId("asset-audio-name") as HTMLInputElement;
@@ -221,15 +231,15 @@ describe("标签", () => {
   });
 });
 
-describe("只对音频出现", () => {
-  it("图片资源没有显示名 / 标签这两行", () => {
+describe("按资源类型出现", () => {
+  it("图片资源没有显示名那一行，但有标签行（任何文件都能打标签）", () => {
     seed({ assetId: IMAGE });
     render(<InspectorPanel />);
 
     expect(screen.getByTestId("asset-properties").textContent).toContain("Map001.png");
     expect(screen.queryByTestId("asset-audio-name")).toBeNull();
-    expect(screen.queryByTestId("asset-audio-tags")).toBeNull();
-    expect(screen.queryByTestId("asset-audio-add-tag")).toBeNull();
+    expect(screen.getByTestId("asset-audio-tags")).toBeDefined();
+    expect(screen.getByTestId("asset-audio-add-tag")).toBeDefined();
     expect(screen.getByTestId("asset-preview-image")).toBeDefined();
   });
 });

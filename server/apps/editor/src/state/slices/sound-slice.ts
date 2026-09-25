@@ -38,7 +38,6 @@ export function createSoundSlice(
   | "addSoundClip"
   | "removeSoundClip"
   | "setSoundClipName"
-  | "openSoundEditor"
   | "setSoundLayer"
 > {
   // 共享的闭包状态与局部工具都在 ctx 里：这里解构一次，方法体与拆分前逐字一致
@@ -257,14 +256,6 @@ export function createSoundSlice(
       return applyActiveScene("修改声音名字", (scene) => {
         setSceneSoundClipName(scene, objectId, clipId, name);
       });
-    },
-
-    openSoundEditor(objectId) {
-      set({ soundEditor: objectId !== null, soundEditorTarget: objectId });
-      if (objectId !== null) {
-        // 与「选择贴图」同一条规矩：素材由外部提交进 Assets/audio/，打开时刷一次目录
-        void get().refreshTree();
-      }
     },
 
     setSoundLayer(objectId, layer) {

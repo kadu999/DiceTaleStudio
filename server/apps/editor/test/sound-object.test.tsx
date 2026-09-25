@@ -362,8 +362,7 @@ describe("属性面板：声音组", () => {
     render(<InspectorPanel />);
 
     fireEvent.click(screen.getByTestId("sound-edit"));
-    expect(useEditorStore.getState().soundEditor).toBe(true);
-    expect(useEditorStore.getState().soundEditorTarget).toBe("sound-1");
+    expect(useEditorStore.getState().mediaEditor).toEqual({ kind: "audio", objectId: "sound-1" });
   });
 });
 

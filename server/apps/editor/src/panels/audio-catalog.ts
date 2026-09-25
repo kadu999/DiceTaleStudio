@@ -1,12 +1,12 @@
 import {
   audioNameOfMeta,
-  audioTagsOfMeta,
+  assetTagsOfMeta,
   type ProjectDoc,
 } from "@dts/document";
 import type { ResourceTreeNode } from "../services/project-api";
 import type { AssetMetaTable } from "../state/store-types";
 import { assetDisplayName } from "./asset-info";
-import { assetDisplayPath, listAudioAssets } from "./asset-picker";
+import { assetDisplayPath, listAudioAssets, listImageAssets, listVideoAssets } from "./asset-picker";
 
 /**
  * **音频清单 + 标注（含标签表）→ 列表行**（「背景音乐」「选择音频」「选择标签」三个窗口共用一份）。
@@ -122,12 +122,46 @@ export function audioCatalog(
       displayName: customName.length > 0 ? customName : assetDisplayName(asset.name),
       customName,
       path: assetDisplayPath(asset.id),
-      tags: tagsOfClip(table, audioTagsOfMeta(meta)),
+      tags: tagsOfClip(table, assetTagsOfMeta(meta)),
       ...(meta === undefined ? {} : { guid: meta.guid }),
     });
   }
 
   return rows.sort((a, b) => a.path.localeCompare(b.path, "zh-Hans-CN", { numeric: true }));
+}
+
+/**
+ * **所有可打标签的素材**（图 / 音频 / 视频）各自带着解析好的标签——任何素材都能打标签
+ * （读统一走 `assetTagsOfMeta`：顶层 `tags` 优先、音频旧段 `audio.tags` 兼容）。
+ *
+ * 「选择标签」框用它：目标可能是任意素材，用量也是跨全部素材计的
+ * （同一个标签图 / 声 / 视频都在用，「N 个文件在用」就该数全部）。
+ */
+export interface TaggableAssetRow {
+  readonly id: string;
+  readonly displayName: string;
+  readonly tags: readonly AudioTagRef[];
+}
+
+export function taggableAssets(
+  tree: readonly ResourceTreeNode[],
+  metas: AssetMetaTable,
+  table: ProjectDoc["audioTags"],
+): TaggableAssetRow[] {
+  const rows: TaggableAssetRow[] = audioCatalog(tree, metas, table).map((row) => ({
+    id: row.id,
+    displayName: row.displayName,
+    tags: row.tags,
+  }));
+  for (const asset of [...listImageAssets(tree), ...listVideoAssets(tree)]) {
+    rows.push({
+      id: asset.id,
+      displayName: assetDisplayName(asset.name),
+      tags: tagsOfClip(table, assetTagsOfMeta(metas[asset.id])),
+    });
+  }
+
+  return rows;
 }
 
 /** 素材 meta 里的显示名（没起名字 / 只有空白 → `undefined`）。给名字兜底链用。 */
@@ -229,7 +263,7 @@ export function sortAudioRowsByName(rows: readonly AudioCatalogRow[]): AudioCata
  */
 export function allTagsOf(
   table: ProjectDoc["audioTags"],
-  rows: readonly AudioCatalogRow[],
+  rows: readonly { readonly tags: readonly AudioTagRef[] }[],
 ): AudioTagEntry[] {
   const counts = new Map<number, number>();
   for (const row of rows) {

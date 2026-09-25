@@ -181,18 +181,15 @@ export interface EditorStoreState {
   readonly imagePicker: boolean;
   /** 正在换贴图的地图对象 id；null 表示弹框没打开 */
   readonly imagePickerTarget: string | null;
-  /** 「编辑声音」窗口是否打开（属性面板「声音」组上的按钮唤出） */
-  readonly soundEditor: boolean;
-  /** 正在编辑哪个声音对象的声音；null 表示窗口没打开 */
-  readonly soundEditorTarget: string | null;
+  /**
+   * 「编辑媒体清单」窗口（`MediaEditDialog`：声音 / 视频同一个窗口按 kind 调整）：
+   * 非 null = 打开，`kind` 是哪一种、`objectId` 是正在编辑哪个对象。
+   */
+  readonly mediaEditor: { readonly kind: "audio" | "video"; readonly objectId: string } | null;
   /** 「传送目标」窗口是否打开（属性面板「传送」组里的 `＋` 唤出） */
   readonly teleportEditor: boolean;
   /** 正在编辑哪个传送阵的候选目标；null 表示窗口没打开 */
   readonly teleportEditorTarget: string | null;
-  /** 「编辑视频」窗口是否打开（地图 / 贴图属性面板「视频」组上的按钮唤出） */
-  readonly videoEditor: boolean;
-  /** 正在编辑哪个对象的视频列表；null 表示窗口没打开 */
-  readonly videoEditorTarget: string | null;
   /** 「全局设置」窗口是否打开（「工程」菜单唤出；里面只有三档音量） */
   readonly globalSettings: boolean;
   /** 「背景音乐」弹框是否打开（顶栏「音乐」按钮唤出） */
@@ -385,8 +382,11 @@ export interface EditorStoreState {
    * 暂停态的对象会补「先放再暂停」，前端因此回到同一帧。
    */
   flushVideoPlayback(): number;
-  /** 打开 / 关闭「编辑视频」窗口（`null` = 关闭）。 */
-  openVideoEditor(objectId: string | null): void;
+  /**
+   * 打开 / 关闭「编辑媒体清单」窗口（`MediaEditDialog`：`audio` = 声音、`video` = 视频；
+   * 传 `null` 关闭）。两扇窗口合并后只有一个开关。
+   */
+  openMediaEditor(kind: "audio" | "video", objectId: string | null): void;
   /**
    * 视频：**启用 / 关掉**这个对象的视频（文档数据）。
    *
@@ -438,9 +438,10 @@ export interface EditorStoreState {
    */
   setAudioName(clipId: string, name: string): boolean;
   /**
-   * 音频文件：替换**整份**标签 ID 清单（去重升序、丢掉越界已删的，由文档命令做）。
+   * 素材文件（**任何素材**：图 / 音频 / 视频）：替换**整份**标签 ID 清单
+   * （去重升序、丢掉越界已删的，由文档命令做）。
    */
-  setAudioTags(clipId: string, tagIds: readonly number[]): boolean;
+  setAssetTags(assetId: string, tagIds: readonly number[]): boolean;
   /**
    * 标签表：给**指定的序号**命名（序号不存在就把它补出来，中间的缺口补成空名字）。
    *
@@ -647,8 +648,6 @@ export interface EditorStoreState {
   selectSoundClip(objectId: string, clip: string | null): boolean;
   /** 给某个音频文件起显示名（留空 = 退回素材文件名）；名字只是标签，不进协议。 */
   setSoundClipName(objectId: string, clipId: string, name: string): boolean;
-  /** 打开 / 关闭「编辑声音」窗口（传声音对象 id；传 null 关闭）。 */
-  openSoundEditor(objectId: string | null): void;
   /** 改声音层级（同层同时只响一条的那一层）；非声音对象 / 值没变返回 false。 */
   setSoundLayer(objectId: string, layer: SoundLayer): boolean;
   /**

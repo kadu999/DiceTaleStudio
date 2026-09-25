@@ -1,52 +1,54 @@
 import { useMemo } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { useEditorStore } from "../state/editor-store";
-import { allTagsOf, audioCatalog } from "../panels/audio-catalog";
+import { allTagsOf, taggableAssets } from "../panels/audio-catalog";
 
 /**
- * 「选择标签」框（v18 起）：**给一个音频文件勾标签**——只做加 / 去。
+ * 「选择标签」框（v18 起）：**给一个素材文件勾标签**——只做加 / 去。
+ * 标签**任何素材**都能打（图 / 音频 / 视频，读走 `assetTagsOfMeta`）。
  *
  * 从属性面板标签行的「＋」按钮弹出。列的是**标签表里的全部标签**
  * （tag 是整数、名字在表里，见 `AudioTagEditorDialog`），点一行 = 这个文件加上 / 去掉它。
  *
  * 口径：
- * - **勾选** = 这个文件有没有这个 tag ID（走 `setAudioTags`，整份 ID 清单进文档命令：进撤销栈、可撤销）；
+ * - **勾选** = 这个文件有没有这个 tag ID（走 `setAssetTags`，整份 ID 清单进文档命令：进撤销栈、可撤销）；
  * - 这里**只能从已有的标签里挑**：新增 / 改名都在「标签」窗口（序号预先定好、只填名字）里做，
  *   所以本窗口没有新建入口——标签表在那边是完整的一列，没必要再抄一份输入框；
- * - 表里没人用的标签也会列出来（tag 是整数，先建后用是正常用法）。
+ * - 表里没人用的标签也会列出来（tag 是整数，先建后用是正常用法）；
+ * - 「N 个文件在用」按**全部可打标签的素材**计数（同一个标签图 / 声 / 视频都在用）。
  */
 export function AudioTagDialog({
-  clipId,
+  assetId,
   onClose,
 }: {
-  readonly clipId: string | null;
+  readonly assetId: string | null;
   readonly onClose: () => void;
 }): React.JSX.Element {
   const tree = useEditorStore((state) => state.project.tree);
   const metas = useEditorStore((state) => state.assetMetaTable);
   const table = useEditorStore((state) => state.doc.audioTags);
-  const setAudioTags = useEditorStore((state) => state.setAudioTags);
+  const setAssetTags = useEditorStore((state) => state.setAssetTags);
 
-  const rows = useMemo(() => audioCatalog(tree, metas, table), [tree, metas, table]);
-  const target = clipId === null ? undefined : rows.find((row) => row.id === clipId);
+  const rows = useMemo(() => taggableAssets(tree, metas, table), [tree, metas, table]);
+  const target = assetId === null ? undefined : rows.find((row) => row.id === assetId);
   const entries = useMemo(() => allTagsOf(table, rows), [table, rows]);
 
   const selected = target?.tags.map((tag) => tag.id) ?? [];
   const toggle = (tagId: number): void => {
     // 目标**不在资源树里**（素材已经被删）就什么都不做：给它勾标签等于凭空造一份
     // 没有归属的 `.meta`（还落盘）。窗口开着时那一行只显示「已经不在了」，不该能写。
-    if (clipId === null || target === undefined) {
+    if (assetId === null || target === undefined) {
       return;
     }
 
-    setAudioTags(
-      clipId,
+    setAssetTags(
+      assetId,
       selected.includes(tagId) ? selected.filter((id) => id !== tagId) : [...selected, tagId],
     );
   };
 
   return (
-    <Dialog.Root open={clipId !== null} onOpenChange={(next) => (next ? undefined : onClose())}>
+    <Dialog.Root open={assetId !== null} onOpenChange={(next) => (next ? undefined : onClose())}>
       <Dialog.Portal>
         {/* 压在「音频文件」窗口之上（与「选择音频」两层模态同一套层级） */}
         <Dialog.Overlay className="fixed inset-0 z-[60] bg-black/60" />
@@ -132,7 +134,7 @@ export function AudioTagDialog({
 
           {target === undefined ? (
             <div className="mt-2 flex-none text-[11px] text-[var(--color-editor-warn)]">
-              这个音频文件已经不在了。
+              这个文件已经不在了。
             </div>
           ) : null}
 

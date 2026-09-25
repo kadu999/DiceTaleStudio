@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { createAssetMetas, createEmptyProject, emptyAssetMetas } from "@dts/document";
+import { assetTagsOfMeta, createAssetMetas, createEmptyProject, emptyAssetMetas } from "@dts/document";
 import { AudioTagDialog } from "../src/app/AudioTagDialog";
 import { metaHistory } from "../src/state/store-core";
 import { projectHistory, sceneHistory, useEditorStore } from "../src/state/editor-store";
@@ -8,16 +8,18 @@ import type { ResourceTreeNode } from "../src/services/project-api";
 import { audioMetaTable } from "./asset-meta-fixtures";
 
 /**
- * **「选择标签」框**（v18）：给一个音频文件**勾标签**——只做加 / 去。
+ * **「选择标签」框**（v18 起）：给一个素材文件**勾标签**——只做加 / 去。
+ * 标签**任何素材**都能打（图 / 音频 / 视频），写一律落在 meta 顶层 `tags`。
  *
  * 新增 / 改名都在「标签」窗口里做（序号预先定好、只填名字），所以这一份钉住：
- * 1. 列的是**标签表里的全部标签**（含还没人用到的），带「N 个文件在用」；
- * 2. 点一行 = 给这个文件加上 / 去掉那个 **tag ID**（v24 起写进**那个文件自己的 `.meta`**
- *    的 `audio.tags`、可撤销）；
+ * 1. 列的是**标签表里的全部标签**（含还没人用到的），带「N 个文件在用」
+ *    （按**全部可打标签的素材**计数——同一个标签图 / 声 / 视频都在用）；
+ * 2. 点一行 = 给这个文件加上 / 去掉那个 **tag ID**（写进**那个文件自己的 `.meta`**、可撤销；
+ *    音频旧数据在 `audio.tags`，读统一走 `assetTagsOfMeta`）；
  * 3. **没有新建入口**（这里只从已有的标签里挑）；
  * 4. 空态 / 目标文件查不到时的提示。
  *
- * 目标文件必须**在资源树里**才勾得动：清单就是树里的音频（v24 起没有 missing 行）——
+ * 目标文件必须**在资源树里**才勾得动：清单就是树里的素材——
  * 素材一删，它那份 `.meta` 就成了看不见的孤儿。
  */
 
@@ -73,8 +75,17 @@ function seed(input?: {
 const metas = (): ReturnType<typeof useEditorStore.getState>["assetMetaTable"] =>
   useEditorStore.getState().assetMetaTable;
 
-const audioOf = (id: string): { name?: string; tags?: number[] } | undefined =>
-  metas()[id]?.audio;
+/** 读这个文件的标签（任何素材都写顶层 `tags`，音频旧数据在 `audio.tags`——统一走 `assetTagsOfMeta`）。 */
+const audioOf = (id: string): { name?: string; tags?: number[] } | undefined => {
+  const meta = metas()[id];
+  // 名字与标签都空了 = 「没整理过」（meta 只剩 guid / importer 那个壳，等同 undefined）
+  if (meta === undefined || (meta.audio === undefined && assetTagsOfMeta(meta).length === 0)) {
+    return undefined;
+  }
+
+  const tags = assetTagsOfMeta(meta);
+  return { name: meta.audio?.name, tags: tags.length === 0 ? undefined : [...tags] };
+};
 
 const rowFor = (id: number): HTMLElement => {
   const row = screen
@@ -114,7 +125,7 @@ describe("列标签 / 勾选", () => {
       tags: ["战斗", "紧张", "环境"],
       meta: { [CLIP_A]: { tags: [0, 1] }, [CLIP_B]: { tags: [0] } },
     });
-    render(<AudioTagDialog clipId={CLIP_A} onClose={() => undefined} />);
+    render(<AudioTagDialog assetId={CLIP_A} onClose={() => undefined} />);
 
     expect(screen.getAllByTestId("audio-tag-row").map((row) => row.getAttribute("data-id"))).toEqual([
       "0",
@@ -136,7 +147,7 @@ describe("列标签 / 勾选", () => {
 
   it("点一行 = 给这个文件加上那个 tag ID；再点 = 去掉（写进文件自己的 `.meta`，可撤销）", () => {
     seed({ tags: ["战斗", "紧张"], meta: { [CLIP_A]: { tags: [0] }, [CLIP_B]: { tags: [1] } } });
-    render(<AudioTagDialog clipId={CLIP_A} onClose={() => undefined} />);
+    render(<AudioTagDialog assetId={CLIP_A} onClose={() => undefined} />);
 
     fireEvent.click(toggleFor(1));
     expect(audioOf(CLIP_A)?.tags).toEqual([0, 1]);
@@ -155,7 +166,7 @@ describe("列标签 / 勾选", () => {
 
   it("洞（删过的 tag）不出现在列表里", () => {
     seed({ tags: ["战斗", null, "环境"], meta: { [CLIP_A]: { tags: [2] } } });
-    render(<AudioTagDialog clipId={CLIP_A} onClose={() => undefined} />);
+    render(<AudioTagDialog assetId={CLIP_A} onClose={() => undefined} />);
 
     expect(screen.getAllByTestId("audio-tag-row").map((row) => row.getAttribute("data-id"))).toEqual([
       "2",
@@ -168,7 +179,7 @@ describe("列标签 / 勾选", () => {
     let closed = 0;
     render(
       <AudioTagDialog
-        clipId={CLIP_A}
+        assetId={CLIP_A}
         onClose={() => {
           closed += 1;
         }}
@@ -185,7 +196,7 @@ describe("列标签 / 勾选", () => {
 describe("只从已有标签里挑（没有新建入口）", () => {
   it("界面上没有新建输入框与「添加」按钮", () => {
     seed({ tags: ["战斗"], meta: { [CLIP_A]: { tags: [0] } } });
-    render(<AudioTagDialog clipId={CLIP_A} onClose={() => undefined} />);
+    render(<AudioTagDialog assetId={CLIP_A} onClose={() => undefined} />);
 
     expect(screen.queryByTestId("audio-tag-new")).toBeNull();
     expect(screen.queryByTestId("audio-tag-create")).toBeNull();
@@ -193,7 +204,7 @@ describe("只从已有标签里挑（没有新建入口）", () => {
 
   it("标签表是空的：只显示空态提示（想建标签去「标签」窗口）", () => {
     seed();
-    render(<AudioTagDialog clipId={CLIP_A} onClose={() => undefined} />);
+    render(<AudioTagDialog assetId={CLIP_A} onClose={() => undefined} />);
 
     expect(screen.getByTestId("audio-tag-empty").textContent).toContain("还没有标签");
     expect(screen.queryAllByTestId("audio-tag-row")).toHaveLength(0);
@@ -204,7 +215,7 @@ describe("目标与关闭", () => {
   it("标题写清是哪个文件；关掉调用 onClose", () => {
     seed({ tags: ["战斗"], meta: { [CLIP_A]: { name: "开场曲", tags: [0] } } });
     const onClose = () => undefined;
-    render(<AudioTagDialog clipId={CLIP_A} onClose={onClose} />);
+    render(<AudioTagDialog assetId={CLIP_A} onClose={onClose} />);
 
     expect(screen.getByTestId("audio-tag-dialog").textContent).toContain("开场曲");
 
@@ -213,11 +224,11 @@ describe("目标与关闭", () => {
 
   it("素材已从盘上删掉（它那份 `.meta` 成了孤儿）：清单里没有它，标签一个都没勾上", () => {
     seed({ tags: ["战斗"], meta: { [GONE]: { name: "删掉的那首", tags: [0] } } });
-    render(<AudioTagDialog clipId={GONE} onClose={() => undefined} />);
+    render(<AudioTagDialog assetId={GONE} onClose={() => undefined} />);
 
     // v24 起清单**就是树里的音频**：盘上那份 `.meta` 谁也看不见（不再有 missing 行），
     // 所以标题带不出它的名字，只剩一句说明
-    expect(screen.getByTestId("audio-tag-dialog").textContent).toContain("这个音频文件已经不在了");
+    expect(screen.getByTestId("audio-tag-dialog").textContent).toContain("这个文件已经不在了");
     // 勾选状态读的是那个文件自己的 meta，而它不在清单里 → 表里的标签一个都没勾上
     expect(rowFor(0).getAttribute("data-selected")).toBe("false");
   });
@@ -226,12 +237,12 @@ describe("目标与关闭", () => {
     seed({ tags: ["战斗"] });
     render(
       <AudioTagDialog
-        clipId={`project:${PROJECT}/Assets/audio/unknown.mp3`}
+        assetId={`project:${PROJECT}/Assets/audio/unknown.mp3`}
         onClose={() => undefined}
       />,
     );
 
-    expect(screen.getByTestId("audio-tag-dialog").textContent).toContain("这个音频文件已经不在了");
+    expect(screen.getByTestId("audio-tag-dialog").textContent).toContain("这个文件已经不在了");
     expect(screen.queryByTestId("audio-tag-new")).toBeNull();
   });
 });

@@ -4,6 +4,7 @@ import {
   spriteCellSizeOf,
   spriteSettingsOfMeta,
   spriteSheetOfMeta,
+  assetTagsOfMeta,
   type ImageRef,
   type ImageSpriteRef,
   type ProjectDoc,
@@ -20,7 +21,12 @@ import {
   listVideoAssets,
 } from "../panels/asset-picker";
 import { assetDisplayName } from "../panels/asset-info";
-import { audioCatalog, type AudioTagRef } from "../panels/audio-catalog";
+import {
+  audioCatalog,
+  tagOptionsOf,
+  tagsOfClip,
+  type AudioTagRef,
+} from "../panels/audio-catalog";
 
 /**
  * 「从项目已有素材里挑一个」的**通用**选择弹框：按 `kind` 调整——
@@ -117,13 +123,18 @@ function ImagePickerBody({
 }: ImageResourcePickerProps): React.JSX.Element {
   const tree = useEditorStore((state) => state.project.tree);
   const metas = useEditorStore((state) => state.assetMetas);
+  const table = useEditorStore((state) => state.doc.audioTags);
   const images = useMemo(() => listImageAssets(tree), [tree]);
 
   const [selectedId, setSelectedId] = useState<string | null>(currentId ?? null);
   const [selectedSprite, setSelectedSprite] = useState<ImageSpriteRef | null>(currentSprite ?? null);
   const [query, setQuery] = useState("");
+  const [activeTags, setActiveTags] = useState<string[]>([]);
   const [sizes, setSizes] = useState<Record<string, { width: number; height: number }>>({});
   const [sizeError, setSizeError] = useState("");
+
+  // 任何素材都能打标签：按标签表解析成 { id, name }（越界 / 洞 / 空名跳过）
+  const tagOptions = useMemo(() => tagOptionsOf(table), [table]);
 
   const availableImages = useMemo(
     () => allowSprite
@@ -142,6 +153,7 @@ function ImagePickerBody({
           (allowSprite && currentSheet.columns * currentSheet.rows > 1 ? { column: 0, row: 0 } : null),
       );
       setQuery("");
+      setActiveTags([]);
       setSizeError("");
     }
   }, [open, currentId, currentSprite, allowSprite, metas]);
@@ -150,11 +162,18 @@ function ImagePickerBody({
   const selectedSize = selectedId === null ? undefined : sizes[selectedId];
   const sheet = spriteSheetOfMeta(selectedId === null ? undefined : metas.byId[selectedId]);
   const filteredImages = useMemo(() => {
+    // 标签过滤（AND）+ 搜索词（名字 / 路径），两件事叠加
+    const tagged = activeTags.length === 0
+      ? availableImages
+      : availableImages.filter((image) => {
+          const names = tagsOfClip(table, assetTagsOfMeta(metas.byId[image.id])).map((tag) => tag.name);
+          return activeTags.every((name) => names.includes(name));
+        });
     const needle = query.trim().toLocaleLowerCase();
     return needle.length === 0
-      ? availableImages
-      : availableImages.filter((image) => `${image.name} ${image.path}`.toLocaleLowerCase().includes(needle));
-  }, [availableImages, query]);
+      ? tagged
+      : tagged.filter((image) => `${image.name} ${image.path}`.toLocaleLowerCase().includes(needle));
+  }, [availableImages, query, activeTags, table, metas]);
 
   useEffect(() => {
     if (!open || selectedId === null || selected === undefined || sizes[selectedId] !== undefined) return;
@@ -203,6 +222,16 @@ function ImagePickerBody({
             onChange={(event) => setQuery(event.target.value)}
             className="mb-2 h-8 flex-none rounded border border-[var(--color-editor-border)] bg-black/30 px-2 text-[12px] outline-none focus:border-[var(--color-editor-accent)]"
           />
+          <TagFilterRow
+            prefix="image-picker"
+            tagOptions={tagOptions}
+            activeTags={activeTags}
+            onToggle={(name) =>
+              setActiveTags((previous) =>
+                previous.includes(name) ? previous.filter((item) => item !== name) : [...previous, name],
+              )
+            }
+          />
           <div className="min-h-0 flex-1 overflow-auto" data-testid="image-picker-list">
             {availableImages.length === 0 ? (
               <div className="py-8 text-center text-[11px] text-[var(--color-editor-text-dim)]">
@@ -241,7 +270,24 @@ function ImagePickerBody({
                       }}
                     >
                       <img src={assetThumbnailUrl(image.id)} alt="" loading="lazy" className="h-10 w-10 flex-none rounded bg-black/30 object-contain" />
-                      <span className="min-w-0 truncate text-[11px]">{assetDisplayName(image.name)}</span>
+                      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                        <span className="min-w-0 truncate text-[11px]">{assetDisplayName(image.name)}</span>
+                        {tagsOfClip(table, assetTagsOfMeta(metas.byId[image.id])).length === 0 ? null : (
+                          <span className="flex flex-wrap items-center gap-1">
+                            {tagsOfClip(table, assetTagsOfMeta(metas.byId[image.id])).map((tag) => (
+                              <span
+                                key={tag.id}
+                                data-testid="image-picker-tag"
+                                data-id={tag.id}
+                                data-tag={tag.name}
+                                className="flex-none rounded-full border border-[var(--color-editor-border)] px-1 text-[9px] text-[var(--color-editor-text-dim)]"
+                              >
+                                {tag.name}
+                              </span>
+                            ))}
+                          </span>
+                        )}
+                      </span>
                     </button>
                   );
                 })}
@@ -423,16 +469,18 @@ function mediaPickerRows(
   return listVideoAssets(tree).map((asset) => {
     const path = assetDisplayPath(asset.id);
     const displayName = assetDisplayName(asset.name);
+    // 任何素材都能打标签：视频同样从 `.meta` 读（顶层 `tags`）
+    const tags = tagsOfClip(table, assetTagsOfMeta(metas[asset.id]));
     return {
       id: asset.id,
       displayName,
       path,
-      tags: [],
+      tags,
       // `.webm` 那一条多一句提醒：Unity 在 Windows 上多半解不了 WebM（走系统解码器），建议 H.264 的 .mp4
       warning: asset.id.toLowerCase().endsWith(".webm")
         ? "WebM：Windows 上多半解不了，建议改用 H.264 的 .mp4"
         : undefined,
-      searchText: `${displayName} ${path}`,
+      searchText: [displayName, path, ...tags.map((tag) => tag.name)].join(" "),
     };
   });
 }
@@ -448,15 +496,21 @@ function MediaPickerBody({ kind, added, onPick }: MediaResourcePickerProps): Rea
   const metas = useEditorStore((state) => state.assetMetaTable);
   const table = useEditorStore((state) => state.doc.audioTags);
   const [query, setQuery] = useState("");
+  const [activeTags, setActiveTags] = useState<string[]>([]);
   const texts = MEDIA_TEXTS[kind];
+  const tagOptions = useMemo(() => tagOptionsOf(table), [table]);
 
   const rows = useMemo(() => mediaPickerRows(kind, tree, metas, table), [kind, tree, metas, table]);
   const visible = useMemo(() => {
+    // 标签过滤（AND）+ 搜索词，两件事叠加
+    const tagged = activeTags.length === 0
+      ? rows
+      : rows.filter((row) => activeTags.every((name) => row.tags.some((tag) => tag.name === name)));
     const needle = query.trim().toLocaleLowerCase();
     return needle.length === 0
-      ? rows
-      : rows.filter((row) => row.searchText.toLocaleLowerCase().includes(needle));
-  }, [rows, query]);
+      ? tagged
+      : tagged.filter((row) => row.searchText.toLocaleLowerCase().includes(needle));
+  }, [rows, query, activeTags]);
 
   return (
     <>
@@ -467,6 +521,16 @@ function MediaPickerBody({ kind, added, onPick }: MediaResourcePickerProps): Rea
         aria-label={texts.searchAria}
         className="mb-2 flex-none rounded border border-[var(--color-editor-border)] bg-black/30 px-2 py-1 text-[11px] outline-none placeholder:text-[var(--color-editor-text-dim)]"
         onChange={(event) => setQuery(event.target.value)}
+      />
+      <TagFilterRow
+        prefix={`${kind}-picker`}
+        tagOptions={tagOptions}
+        activeTags={activeTags}
+        onToggle={(name) =>
+          setActiveTags((previous) =>
+            previous.includes(name) ? previous.filter((item) => item !== name) : [...previous, name],
+          )
+        }
       />
 
       <div className="min-h-0 flex-1 overflow-auto" data-testid={`${kind}-picker-list`}>
@@ -560,5 +624,61 @@ function MediaPickerBody({ kind, added, onPick }: MediaResourcePickerProps): Rea
         </Dialog.Close>
       </div>
     </>
+  );
+}
+
+// ─── 标签过滤（image / audio / video 三种选择器共用） ──────────────────────────
+
+/**
+ * 标签过滤行（多选 = **AND**）：与「背景音乐」窗口同一套语义——列标签表里的全部标签，
+ * 点一下选上、再点一下取消；标签的名字只在「标签」窗口里改，这里没有输入框。
+ * testid 由 `prefix` 派生（`${prefix}-tag-filter` / `${prefix}-tag-option`）；
+ * 标签表是空的就不画（没有可筛的东西）。
+ */
+function TagFilterRow({
+  prefix,
+  tagOptions,
+  activeTags,
+  onToggle,
+}: {
+  readonly prefix: string;
+  readonly tagOptions: readonly AudioTagRef[];
+  readonly activeTags: readonly string[];
+  readonly onToggle: (name: string) => void;
+}): React.JSX.Element | null {
+  if (tagOptions.length === 0) {
+    return null;
+  }
+
+  return (
+    <div
+      data-testid={`${prefix}-tag-filter`}
+      className="mb-2 flex flex-none flex-wrap items-center gap-1 text-[10px]"
+    >
+      <span className="text-[var(--color-editor-text-dim)]">标签</span>
+      {tagOptions.map((tag) => {
+        const active = activeTags.includes(tag.name);
+        return (
+          <button
+            key={tag.id}
+            type="button"
+            data-testid={`${prefix}-tag-option`}
+            data-id={tag.id}
+            data-tag={tag.name}
+            data-selected={active}
+            aria-pressed={active}
+            title={active ? `取消「${tag.name}」` : `只看带「${tag.name}」的`}
+            className={`flex-none rounded-full border px-1.5 py-0.5 ${
+              active
+                ? "border-[var(--color-editor-accent)] bg-[var(--color-editor-accent-dim)] text-white"
+                : "border-[var(--color-editor-border)] text-[var(--color-editor-text-dim)] hover:border-[var(--color-editor-accent)] hover:text-[var(--color-editor-text)]"
+            }`}
+            onClick={() => onToggle(tag.name)}
+          >
+            {tag.name}
+          </button>
+        );
+      })}
+    </div>
   );
 }

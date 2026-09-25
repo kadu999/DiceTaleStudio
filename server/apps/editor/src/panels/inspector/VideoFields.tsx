@@ -78,7 +78,7 @@ export function VideoFields({ object }: { readonly object: GameObjectDoc }): Rea
   const tree = useEditorStore((state) => state.project.tree);
   const assetMetas = useEditorStore((state) => state.assetMetas);
   const playback = useEditorStore((state) => state.videoPlayback);
-  const openVideoEditor = useEditorStore((state) => state.openVideoEditor);
+  const openMediaEditor = useEditorStore((state) => state.openMediaEditor);
   const setVideoEnabled = useEditorStore((state) => state.setVideoEnabled);
   const selectVideoClip = useEditorStore((state) => state.selectVideoClip);
   const playVideo = useEditorStore((state) => state.playVideo);
@@ -204,7 +204,7 @@ export function VideoFields({ object }: { readonly object: GameObjectDoc }): Rea
           data-testid="video-edit"
           title="打开「编辑视频」窗口：加 / 删视频、看路径、给每个视频起名字"
           className="flex-none rounded bg-[var(--color-editor-accent)] px-2 py-0.5 text-[11px] text-black hover:opacity-90"
-          onClick={() => openVideoEditor(object.id)}
+          onClick={() => openMediaEditor("video", object.id)}
         >
           编辑
         </button>

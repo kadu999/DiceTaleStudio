@@ -499,54 +499,64 @@ export function validateAssetMetas(
       });
     }
 
-    const ids = meta.audio?.tags;
-    if (ids === undefined) {
-      continue;
-    }
+    validateTagIdList(`${id}/tags`, meta.tags, tags, issues);
+    validateTagIdList(`${id}/audio/tags`, meta.audio?.tags, tags, issues);
+  }
 
-    if (ids.length === 0) {
+  return issues;
+}
+
+/** 查一份标签 ID 列表（顶层 `tags` 与音频旧段 `audio.tags` 同一套规矩，路径不同而已）。 */
+function validateTagIdList(
+  path: string,
+  ids: readonly number[] | undefined,
+  tags: AudioTagTableDoc | undefined,
+  issues: ValidationIssue[],
+): void {
+  if (ids === undefined) {
+    return;
+  }
+
+  if (ids.length === 0) {
+    issues.push({
+      level: "warning",
+      path,
+      message: "标签列表是空的（会被忽略）",
+    });
+    return;
+  }
+
+  const seen = new Set<number>();
+  for (const [index, tagId] of ids.entries()) {
+    if (!Number.isInteger(tagId) || tagId < 0 || tagId >= (tags?.length ?? 0)) {
       issues.push({
         level: "warning",
-        path: `${id}/audio/tags`,
-        message: "标签列表是空的（会被忽略）",
+        path: `${path}/${index}`,
+        message: `标签 ID ${String(tagId)} 不在标签表里（会被忽略）`,
       });
       continue;
     }
 
-    const seen = new Set<number>();
-    for (const [index, tagId] of ids.entries()) {
-      if (!Number.isInteger(tagId) || tagId < 0 || tagId >= (tags?.length ?? 0)) {
-        issues.push({
-          level: "warning",
-          path: `${id}/audio/tags/${index}`,
-          message: `标签 ID ${String(tagId)} 不在标签表里（会被忽略）`,
-        });
-        continue;
-      }
-
-      if (tags?.[tagId] === null) {
-        issues.push({
-          level: "warning",
-          path: `${id}/audio/tags/${index}`,
-          message: `标签 ID ${tagId} 已经被删掉了（会被忽略）`,
-        });
-        continue;
-      }
-
-      if (seen.has(tagId)) {
-        issues.push({
-          level: "warning",
-          path: `${id}/audio/tags/${index}`,
-          message: `标签 ID ${tagId} 重复（会被去掉）`,
-        });
-        continue;
-      }
-
-      seen.add(tagId);
+    if (tags?.[tagId] === null) {
+      issues.push({
+        level: "warning",
+        path: `${path}/${index}`,
+        message: `标签 ID ${tagId} 已经被删掉了（会被忽略）`,
+      });
+      continue;
     }
-  }
 
-  return issues;
+    if (seen.has(tagId)) {
+      issues.push({
+        level: "warning",
+        path: `${path}/${index}`,
+        message: `标签 ID ${tagId} 重复（会被去掉）`,
+      });
+      continue;
+    }
+
+    seen.add(tagId);
+  }
 }
 
 /**

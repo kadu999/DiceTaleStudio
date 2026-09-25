@@ -86,8 +86,16 @@ export function FolderIcon({ open }: { readonly open: boolean }): React.JSX.Elem
  *
  * 一张纸的底（折角）是共用的，只在纸上加各自的记号——所以六种图标看上去是**一套**，
  * 而不是六个来源不同的符号拼在一起。
+ *
+ * `size` 默认是行内小图标；大展示位（如媒体编辑窗口的预览位）可以传更大的 Tailwind 尺寸类。
  */
-export function AssetFileIcon({ kind }: { readonly kind: AssetIconKind }): React.JSX.Element {
+export function AssetFileIcon({
+  kind,
+  size = ICON_CLASS,
+}: {
+  readonly kind: AssetIconKind;
+  readonly size?: string;
+}): React.JSX.Element {
   return (
     <svg
       data-icon={kind}
@@ -98,7 +106,7 @@ export function AssetFileIcon({ kind }: { readonly kind: AssetIconKind }): React
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden="true"
-      className={`${ICON_CLASS} ${FILE_COLORS[kind]}`}
+      className={`${size} ${FILE_COLORS[kind]}`}
     >
       {/* 纸：折角那一眼让所有文件图标长成一家 */}
       <path d="M6 3h7l5 5v13H6z" />

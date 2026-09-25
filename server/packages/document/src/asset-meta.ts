@@ -79,6 +79,12 @@ export interface AssetMetaDoc {
   readonly sprite?: AssetMetaSpriteDoc;
   /** 音频的显示名与标签（`importer: "audio"`）；缺省 = 还没整理过这个文件。 */
   readonly audio?: AssetMetaAudioDoc;
+  /**
+   * 这份素材的**标签 ID 列表**（**任何素材都能打标签**：图 / 音频 / 视频）：ID 是工程文件
+   * `audioTags` 表的下标。音频的旧标签住在 `audio.tags`（v24 及更早），读一律走
+   * `assetTagsOfMeta`（顶层优先、退回 `audio.tags`），写一律走 `withMetaAssetTags`（只写顶层）。
+   */
+  readonly tags?: number[];
 }
 
 /** 读一份 meta 的结果：`needsRewrite` 表示补过东西，调用方要回写一次。 */
@@ -159,6 +165,7 @@ export const assetMetaSchema = z.object({
   importer: z.enum(ASSET_IMPORTERS),
   sprite: assetMetaSpriteSchema.optional(),
   audio: assetMetaAudioSchema.optional(),
+  tags: z.array(z.number().int()).optional(),
 });
 
 /** 校验失败时把 zod 的问题列表拼成「字段路径: 消息」（与工程 / 场景文件同一个写法）。 */
@@ -360,6 +367,39 @@ export function audioTagsOfMeta(meta: AssetMetaDoc | undefined): readonly number
 }
 
 /**
+ * 这份素材的**标签 ID 列表**（任何素材：图 / 音频 / 视频）——读路径**只有这一条**。
+ *
+ * 顶层 `tags` 优先；音频的旧数据（v24 及更早写在 `audio.tags`）退回读——所以「音频标签
+ * 搬到顶层」不需要迁移，老文件照常读得出来。写一律走 `withMetaAssetTags`。
+ */
+export function assetTagsOfMeta(meta: AssetMetaDoc | undefined): readonly number[] {
+  return meta?.tags ?? meta?.audio?.tags ?? [];
+}
+
+/**
+ * 替换一份素材的**整份标签 ID 清单**（任何 importer 都写顶层 `tags`；归一化与
+ * `withMetaAudioTags` 同一条：按工程文件那张表丢掉越界 / 已删 / 重复的 ID）。
+ *
+ * 老音频文件可能还带着 `audio.tags`：写入时一并摘掉，否则「读优先顶层、摘了顶层退回旧段」
+ * 会让清空 / 改选在老文件上不生效。清空 = 摘掉 `tags` 键；值没变时返回原对象。
+ */
+export function withMetaAssetTags(
+  meta: AssetMetaDoc,
+  tags: readonly number[],
+  table: readonly (string | null)[],
+): AssetMetaDoc {
+  const next = normalizeTagIds(tags, table);
+  const current = assetTagsOfMeta(meta);
+  if (next.length === current.length && next.every((tag, index) => tag === current[index])) {
+    return meta;
+  }
+
+  const base =
+    meta.audio?.tags === undefined ? meta : withAudioNode(meta, audioNode(meta.audio?.name, undefined));
+  return next.length === 0 ? withoutKey(base, "tags") : { ...base, tags: next };
+}
+
+/**
  * 归一化一组标签 ID：丢掉越界的、指向已删（`null`）槽的、重复的，再升序。
  *
  * 升序是有意的：ID 是**身份**（不是顺序），排一下让「同一组标签」在文件里长得一样，
@@ -445,20 +485,28 @@ export function withMetaAudioTags(
 }
 
 /**
- * 从一个文件的 meta 上摘掉某个标签 ID（**删标签**时用：ID 是身份，别的文件一个字节都不动）。
+ * 从一份素材的 meta 上摘掉某个标签 ID（**删标签**时用：ID 是身份，别的文件一个字节都不动）。
  *
  * 工程文件里的 `audioTags` 是项目级的，所以「删标签」天然跨两条轨道：表在工程文件那边、
- * 引用在各文件的 meta 这边——这条纯函数负责后半截，调用方（编辑器 / 工具）把两条合起来做。
+ * 引用在各文件 meta 这边——这条纯函数负责后半截，调用方（编辑器 / 工具）把两条合起来做。
+ * 顶层 `tags` 与音频旧段 `audio.tags` **都摘**（读优先顶层，只摘一处会在老文件上漏）；
  * 这个 ID 本来就没挂在这个文件上时返回原对象。
  */
 export function withoutMetaAudioTag(meta: AssetMetaDoc, tagId: number): AssetMetaDoc {
-  const tags = meta.audio?.tags;
-  if (tags === undefined || !tags.includes(tagId)) {
-    return meta;
+  let next = meta;
+  const tags = meta.tags;
+  if (tags !== undefined && tags.includes(tagId)) {
+    const rest = tags.filter((tag) => tag !== tagId);
+    next = rest.length === 0 ? withoutKey(next, "tags") : { ...next, tags: rest };
   }
 
-  const next = tags.filter((tag) => tag !== tagId);
-  return withAudioNode(meta, audioNode(meta.audio?.name, next.length === 0 ? undefined : next));
+  const audioTags = next.audio?.tags;
+  if (audioTags === undefined || !audioTags.includes(tagId)) {
+    return next === meta ? meta : next;
+  }
+
+  const rest = audioTags.filter((tag) => tag !== tagId);
+  return withAudioNode(next, audioNode(next.audio?.name, rest.length === 0 ? undefined : rest));
 }
 
 // ---------------------------------------------------------------- 编辑器读盘后建一次的索引
