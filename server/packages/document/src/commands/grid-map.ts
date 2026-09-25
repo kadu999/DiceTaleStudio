@@ -1,4 +1,5 @@
-// 本文件从 `commands.ts` 拆出（纯搬运，行为不变）：地图数据、战争雾、网格与标注命令。
+// 本文件从 `commands.ts` 拆出（纯搬运，行为不变）：地图数据、网格与标注命令。
+// 战争雾自 v25 起是独立的 `FogOfWar` 组件，命令在 `fog.ts`。
 import type { Draft } from "immer";
 import {
   CellMask,
@@ -6,14 +7,13 @@ import {
   decodeRle,
   encodeRle,
   isInsideGrid,
-  normalizeRegions,
-  regionsToMask,
   removeMask,
   type GridPoint,
   type RleRun,
 } from "@dts/grid";
 // 特性的读写一律走访问器（「数据存在哪个组件里」只有 access.ts 知道）
 import { mapDraftOf } from "../access";
+import { fogMaskOf } from "./fog";
 import { findObject } from "./shared";
 import type { MapDataDoc, SceneDoc } from "../types";
 
@@ -64,127 +64,10 @@ export function clearMapCells(scene: Draft<SceneDoc>, mapObjectId: string): bool
   return setMapCells(scene, mapObjectId, [[CellMask.Empty, map.grid.width * map.grid.height]]);
 }
 
-// ---------------------------------------------------------------- 战争雾（地图）
+// ---------------------------------------------------------------- 战争雾（FogOfWar 组件）
 
-/**
- * 这张地图的战争雾**开着没有**（v13 起的总开关）。
- *
- * 判据只有这一处，编辑器与校验都走它：`fog` 整个不在 = 没开（也没雾区）；
- * `fog` 在就按 `enabled` 算——`enabled` **缺省算开**，那是 v10–v12 的文件
- * （schema 会把 `true` 补进去，这里的兜底只是给内存里手写的对象用）。
- */
-export function isMapFogEnabled(map: MapDataDoc): boolean {
-  return map.fog !== undefined && map.fog.enabled !== false;
-}
-
-/**
- * 地图指定的雾区 → 掩码（`0` = 一个雾区都没指定）。
- *
- * 「这一格算不算雾」只有这一个判断入口：绘制预览、数雾格、擦除范围全走它，
- * 免得每处各写一遍「遍历 regions 再看有没有这一位」。
- */
-export function mapFogMask(map: MapDataDoc): number {
-  return regionsToMask(map.fog?.regions ?? []);
-}
-
-/**
- * 打开 / 关掉战争雾的**总开关**（v13 起）。
- *
- * 关掉**不清雾区绑定**——「先关掉看看效果、再打开」不该逼人重新指定一遍；
- * 前端（`FogOfWar`）按这个开关决定建不建那一层雾，所以关掉 = 这张地图现在没有战争雾。
- *
- * - 打开：`fog` 先在（只是关着）就把 `enabled` 翻回来，绑定原样留着；`fog` 不在
- *   （新地图）就写一份 `{ enabled: true, regions: [] }`——**开关状态本身也是要存的数据**，
- *   不落盘的话下次打开项目开关又变回关着。雾区一个都没指定时**不会有雾**（也不会建层），
- *   由 `validateScene` 提醒。
- * - 关掉：还有雾区绑定就写 `{ enabled: false, regions }`；一个雾区都没指定时
- *   **把 `fog` 整个删掉**（与「从没开过」同义，文件里不留空壳）。
- *
- * 返回 `false` 表示没有变更（不是地图对象、或开关本来就是这个状态）。
- */
-export function setMapFogEnabled(
-  scene: Draft<SceneDoc>,
-  mapObjectId: string,
-  enabled: boolean,
-): boolean {
-  const map = mapDraftOfId(scene, mapObjectId);
-  if (map === undefined) {
-    return false;
-  }
-
-  const current = map.fog;
-  if (enabled) {
-    if (current !== undefined && isMapFogEnabled(map)) {
-      return false;
-    }
-
-    map.fog = { enabled: true, regions: current?.regions ?? [] };
-    return true;
-  }
-
-  if (current === undefined || !isMapFogEnabled(map)) {
-    return false;
-  }
-
-  if (current.regions.length === 0) {
-    delete map.fog;
-    return true;
-  }
-
-  map.fog = { enabled: false, regions: current.regions };
-  return true;
-}
-
-/**
- * 指定哪些区域算战争雾。
- *
- * 格子上的类型位是**中性区域**，所以「哪个区域是雾」是地图自己的配置，不是类型自带的语义。
- * 写入前先规范化（只留可绘制位、去重、升序），保证同一份选择永远写出同一个文件内容。
- *
- * 规范化后为空时：**开关开着**就留一份 `{ enabled: true, regions: [] }`（「开着但还没指定雾区」，
- * 属性面板那一组与开关状态都还在）；**开关关着**才把 `fog` 整个删掉（没有内容要记了，
- * 与「从没开过」同义——文件里不留空壳）。
- *
- * **只改绑定，不动格子数据**：解除绑定不会连带清掉已经画好的雾格子，改回来还在。
- * **也不动总开关**：关着的时候指定雾区照样写得进去（绑定与开关是两件事）。
- *
- * 返回 `false` 表示没有变更（不是地图对象、或绑定没变）。
- */
-export function setMapFogRegions(
-  scene: Draft<SceneDoc>,
-  mapObjectId: string,
-  regions: readonly number[],
-): boolean {
-  const map = mapDraftOfId(scene, mapObjectId);
-  if (map === undefined) {
-    return false;
-  }
-
-  const next = normalizeRegions(regions);
-  const current = normalizeRegions(map.fog?.regions ?? []);
-  if (next.length === current.length && next.every((bit, index) => bit === current[index])) {
-    return false;
-  }
-
-  if (next.length === 0) {
-    // （走到这里 `fog` 一定在：`next` 与 `current` 都是空数组的话，上面那条「没变更」已经拦住了。）
-    // 开关**开着**：留着字段（`{ enabled: true, regions: [] }` = 「开着但还没指定雾区」）——
-    // 取消最后一个雾区不该把属性面板那一组整个塌掉，开关状态也得有地方记。
-    // 关着：没有内容要记了，字段整个摘掉，与「从没开过」同义。
-    if (map.fog?.enabled === false) {
-      delete map.fog;
-      return true;
-    }
-
-    map.fog = { enabled: true, regions: [] };
-    return true;
-  }
-
-  // 开关状态原样保留（关着的时候绑定也写得进去）；本来没有 `fog`（新建地图）时按**开着**建——
-  // 会走到「指定雾区」这一步，本来就是想用战争雾；写成关着只会让人以为没生效
-  map.fog = { enabled: map.fog?.enabled !== false, regions: next };
-  return true;
-}
+// 战争雾的总开关 / 雾区绑定命令住在 `fog.ts`（v25 起雾是独立的 `FogOfWar` 组件）；
+// 开关判断用 `isFogEnabled(object)`（access.ts），掩码用 `fogMaskOf(object)`（fog.ts）。
 
 /**
  * 清空战争雾：只清掉**已指定的雾区位**，其它区域位原样保留。
@@ -193,12 +76,13 @@ export function setMapFogRegions(
  * 清雾之后它仍是区域1 的格子。没指定任何雾区时什么都不做（返回 `false`）。
  */
 export function clearMapFog(scene: Draft<SceneDoc>, mapObjectId: string): boolean {
-  const map = mapDraftOfId(scene, mapObjectId);
-  if (map === undefined) {
+  const object = findObject(scene, mapObjectId);
+  const map = object === undefined ? undefined : mapDraftOf(object);
+  if (object === undefined || map === undefined) {
     return false;
   }
 
-  const fogMask = mapFogMask(map);
+  const fogMask = fogMaskOf(object);
   if (fogMask === 0) {
     return false;
   }

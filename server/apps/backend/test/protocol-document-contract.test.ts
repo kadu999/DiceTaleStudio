@@ -46,6 +46,7 @@ import {
 describe("契约：协议与文档的组件口径一致", () => {
   it("组件类型名逐字一致（改一处忘了另一处会在这里炸）", () => {
     expect(COMPONENT_TYPE.map).toBe(DEFAULT_SLOT_COMPONENT.map);
+    expect(COMPONENT_TYPE.fog).toBe(DEFAULT_SLOT_COMPONENT.fog);
     expect(COMPONENT_TYPE.image).toBe(DEFAULT_SLOT_COMPONENT.image);
     // 「对象自己显示的图」有两种承载：贴图 `ImageLayer` / 精灵 `SpriteLayer`
     expect(COMPONENT_TYPE.sprite).toBe(SPRITE_COMPONENT);
@@ -66,20 +67,27 @@ describe("契约：协议与文档的组件口径一致", () => {
       }
     }
 
-    // 带 slot 的组件（对象能力组件）**恰好**是那 6 种从对象特性提升上来的：
-    // `legacyField`（v19 之前住的扁平字段名）与自报的 `slot` 一一对应，
-    // 既不能漏（老文件的字段搬不动），也不能多（把没有历史字段的组件当成迁移目标）
-    for (const def of SLOT_COMPONENT_TYPES) {
+    // 从对象扁平字段提升上来的组件（v19 那 6 种）：`legacyField`（v19 之前住的
+    // 扁平字段名）与自报的 `slot` 一一对应——既不能漏（老文件的字段搬不动），也不能多
+    // （把没有历史字段的组件当成 v19 式迁移目标）。
+    const legacyTypes = FEATURE_COMPONENT_TYPES.map((def) => def.type);
+    for (const def of FEATURE_COMPONENT_TYPES) {
       expect({ component: def.type, legacyField: def.legacyField }).toEqual({
         component: def.type,
         legacyField: def.slot,
       });
-      expect(FEATURE_COMPONENT_TYPES).toContain(def);
+      expect(SLOT_COMPONENT_TYPES).toContain(def);
     }
 
-    expect(SLOT_COMPONENT_TYPES.map((def) => def.type).sort()).toEqual(
-      FEATURE_COMPONENT_TYPES.map((def) => def.type).sort(),
-    );
+    // 有 slot、没 legacyField 的只许是 `FogOfWar`（v25 从 `GridMap` data 里拆出来的
+    // 从属组件）：它的迁移是 `migrateMapFogToComponent`，不走 v19 那套扁平字段搬迁
+    for (const def of SLOT_COMPONENT_TYPES) {
+      if (legacyTypes.includes(def.type)) continue;
+      expect({ component: def.type, legacyField: def.legacyField }).toEqual({
+        component: "FogOfWar",
+        legacyField: undefined,
+      });
+    }
   });
 
   it("文档校验接受的场景，协议侧也解析得开（真跑一遍工厂 → 校验 → 协议）", () => {

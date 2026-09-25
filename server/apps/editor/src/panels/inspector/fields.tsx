@@ -22,12 +22,20 @@ import { useState } from "react";
 export function FieldGroup({
   title,
   group,
+  badge,
   defaultOpen = true,
   children,
 }: {
   readonly title: string;
   /** 分组标识（英文 slug）：写到 `data-group` 上供测试与调试定位；中文标题只负责显示 */
   readonly group?: string;
+  /**
+   * 组的**类别角标**（对象属性面板用）：
+   * - `entity`：实体属性组（「基础」）——名称 / 变换这些不进组件的固有字段；
+   * - `capability`：能力入口——组件还没添加时的开关 / 选图 / 修复入口，加上组件后它就是正式组件组。
+   * 组件组（一一对应一个组件实例）**不挂角标**。
+   */
+  readonly badge?: "entity" | "capability";
   readonly defaultOpen?: boolean;
   readonly children: React.ReactNode;
 }): React.JSX.Element {
@@ -53,6 +61,20 @@ export function FieldGroup({
       >
         <ChevronIcon open={open} />
         <span className="truncate">{title}</span>
+        {badge === undefined ? null : (
+          <span
+            data-testid="field-group-badge"
+            data-kind={badge}
+            title={
+              badge === "entity"
+                ? "对象固有属性：不进组件的字段（名称 / 变换 / 可见性）"
+                : "能力入口：这个组件还没添加；用它建起来后就是正式的组件组"
+            }
+            className="flex-none rounded border border-[var(--color-editor-border)] px-1 text-[9px] font-normal text-[var(--color-editor-text-dim)]"
+          >
+            {badge === "entity" ? "实体" : "未添加"}
+          </span>
+        )}
       </button>
 
       {/* 收起时**不渲染**内容：只影响看见什么——数据、输入框的值都在 store / 文档里 */}

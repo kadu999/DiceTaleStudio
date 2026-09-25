@@ -106,10 +106,11 @@ test.describe("动作对象：传送阵", () => {
       const row = page.locator('[data-testid="object-row"][data-kind="Teleport"]').first();
       await expect(row).toContainText("未加目标");
 
-      // 属性面板：基础和实体一样，另有「传送」；**没有「渲染」**（徽标是固定的，不给换贴图）
+      // 属性面板：基础和实体一样，另有「传送阵」；**没有「图片层 / 精灵层」**（徽标是固定的，不给换贴图）
       await selectTeleportRow(page);
       await expect(page.locator('[data-group="teleport"]')).toBeVisible();
-      await expect(page.locator('[data-group="render"]')).toHaveCount(0);
+      await expect(page.locator('[data-group="image"]')).toHaveCount(0);
+      await expect(page.locator('[data-group="sprite"]')).toHaveCount(0);
       await expect(page.getByTestId("inspector-object-x")).toHaveValue("0");
 
       // 还没加目标：只有「＋」，按钮写「先加目标」且点不动（面板上不另起一行解释）

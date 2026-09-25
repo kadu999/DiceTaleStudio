@@ -12,14 +12,18 @@ import { InspectorPanel } from "../src/panels/inspector/InspectorPanel";
 import { sceneHistory, useEditorStore } from "../src/state/editor-store";
 
 /**
- * 属性面板的**分组**（可折叠）：地图对象分「基础 / 渲染 / 区域 / 战争雾」四组，点标题收起 / 展开。
+ * 属性面板的**分组**（可折叠）：对象分组 = 「基础」+ **一一对应的组件组**——
+ * 地图对象是「基础 / 网格地图 / 战争雾 / 视频」，精灵是「基础 / 精灵层」，
+ * 贴图是「基础 / 图片层 / 视频」。点标题收起 / 展开。
  *
  * 参考实现也是这套行为（Unity 组件头式的折叠分组）：默认全展开、点标题切换、
  * 切换对象时回到展开。所以这里钉住五件事：分组出现、能收起 / 展开、
- * 折叠只影响显示不影响数据、换对象时状态重置，以及**顺序**（渲染在基础下面、战争雾在最后）。
+ * 折叠只影响显示不影响数据、换对象时状态重置，以及**顺序**（组件组跟在基础后面）。
  *
- * 「区域」组（slug 仍是 `edit`）同时钉住**网格规格的归属**：列 · 行 / 每格 / 行序
- * 以前挂在「基础」里，现在跟显示开关、标注入口一起归这一组。
+ * 「一个组件一个组」：网格地图的贴图 / 网格规格 / 标注合并在一组（`map`），
+ * 战争雾自 v25 起是独立的 `FogOfWar` 组件（自己的 `fog` 组，跟着组件走）。
+ * 「基础」组是**实体属性**（名称 / 变换，不进组件），角标「实体」；
+ * 组件未添加时的组（视频启用开关、选图并添加、修复入口）是**能力入口**，角标「未添加」。
  */
 
 const IMAGE = { id: "project:测试/Assets/images/Map001.png", width: 400, height: 300 };
@@ -87,7 +91,7 @@ afterEach(() => {
   useEditorStore.setState({ scenes: [], activeSceneName: null, selectedObjectIds: [] });
 });
 
-describe("属性分组：基础 / 渲染 / 区域 / 战争雾 / 视频", () => {
+describe("属性分组：基础 + 一一对应的组件组", () => {
   it("空白精灵和贴图通过选图显式添加正确的图片组件并可一次撤销", () => {
     seedScene([
       createGameObject({ id: "sprite", name: "精灵", kind: "Sprite" }),
@@ -147,11 +151,11 @@ describe("属性分组：基础 / 渲染 / 区域 / 战争雾 / 视频", () => {
     seedScene([broken], ["broken-map"]);
     render(<InspectorPanel />);
 
-    const renderGroup = groupOf("render");
+    const renderGroup = groupOf("map");
     expect(within(renderGroup).getByTestId("pick-texture").textContent).toBe("选择贴图并修复");
     expect(within(renderGroup).getByText("地图数据缺失")).toBeDefined();
     expect(screen.getAllByTestId("pick-texture")).toHaveLength(1);
-    expect(groupSlugs()).not.toContain("edit");
+    // 地图数据缺失：雾区设置不显示（战争雾从属 GridMap），网格编辑入口也没有
     expect(groupSlugs()).not.toContain("fog");
 
     fireEvent.click(within(renderGroup).getByTestId("pick-texture"));
@@ -178,40 +182,43 @@ describe("属性分组：基础 / 渲染 / 区域 / 战争雾 / 视频", () => {
     expect(useEditorStore.getState().canUndo).toBe(false);
   });
 
-  it("地图对象分五组；精灵只有基础 / 渲染；贴图有基础 / 渲染 / 视频", () => {
+  it("地图对象分四组（基础 + 一一对应的组件组）；精灵 / 贴图各两组、三组", () => {
     seedScene([mapObject(), createGameObject({ id: "sprite", name: "精灵" })], ["map-1"]);
     const { unmount } = render(<InspectorPanel />);
 
     expect(headerOf("basic")).toBeDefined();
-    expect(headerOf("render")).toBeDefined();
-    expect(headerOf("edit")).toBeDefined();
+    expect(headerOf("map")).toBeDefined();
     expect(headerOf("fog")).toBeDefined();
     expect(headerOf("video")).toBeDefined();
     expect(isOpen("basic")).toBe(true);
-    expect(isOpen("render")).toBe(true);
-    expect(isOpen("edit")).toBe(true);
+    expect(isOpen("map")).toBe(true);
     expect(isOpen("fog")).toBe(true);
     expect(isOpen("video")).toBe(true);
-    expect(headerOf("render").getAttribute("aria-expanded")).toBe("true");
+    expect(headerOf("map").getAttribute("aria-expanded")).toBe("true");
 
-    // 渲染**紧跟在基础后面**（在「区域」之前）：换贴图属于「画成什么样」，与格子的编辑分开；
-    // 战争雾与视频排在最后（都是运行时要用的东西，且是随后才加的）
-    expect(groupSlugs()).toEqual(["basic", "render", "edit", "fog", "video"]);
+    // 组序 = 基础 + 组件组（注册表顺序）：网格地图 → 战争雾 → 视频
+    expect(groupSlugs()).toEqual(["basic", "map", "fog", "video"]);
 
-    // 贴图那一行搬进了「渲染」：基础组里不再有它
-    expect(within(groupOf("render")).getByTestId("pick-texture")).toBeDefined();
+    // 「基础」是实体属性组：挂「实体」角标，组件组不挂角标
+    expect(groupOf("basic").querySelector('[data-testid="field-group-badge"]')?.getAttribute("data-kind")).toBe("entity");
+    expect(groupOf("map").querySelector('[data-testid="field-group-badge"]')).toBeNull();
+
+    // 贴图那一行在「网格地图」组里：基础组里不再有它
+    expect(within(groupOf("map")).getByTestId("pick-texture")).toBeDefined();
     expect(within(groupOf("basic")).queryByTestId("pick-texture")).toBeNull();
-    // 战争雾那一组只在有地图数据时出现
+    // 战争雾是独立的 `FogOfWar` 组件组：没开过时挂「未添加」角标（能力入口），只有启用开关
     expect(within(groupOf("fog")).getByTestId("fog-enable")).toBeDefined();
-    // 视频那一组对地图与贴图都出现；还没开时整组只剩「启用」那一个开关
+    expect(groupOf("fog").querySelector('[data-testid="field-group-badge"]')?.getAttribute("data-kind")).toBe("capability");
+    // 视频那一组对地图与贴图都出现；还没开时整组只剩「启用」那一个开关（也是能力入口）
     expect(within(groupOf("video")).getByTestId("video-enable")).toBeDefined();
     expect(within(groupOf("video")).queryByTestId("video-edit")).toBeNull();
+    expect(groupOf("video").querySelector('[data-testid="field-group-badge"]')?.getAttribute("data-kind")).toBe("capability");
 
-    // 网格规格（列 · 行 / 每格 / 行序）在「区域」里，基础组里不再有它
-    expect(within(groupOf("edit")).getByTestId("inspector-grid-columns")).toBeDefined();
-    expect(within(groupOf("edit")).getByTestId("inspector-grid-rows")).toBeDefined();
-    expect(within(groupOf("edit")).getByText("每格")).toBeDefined();
-    expect(within(groupOf("edit")).getByText("行序")).toBeDefined();
+    // 网格规格（列 · 行 / 每格 / 行序）跟贴图、标注一起归「网格地图」组，基础组里不再有它
+    expect(within(groupOf("map")).getByTestId("inspector-grid-columns")).toBeDefined();
+    expect(within(groupOf("map")).getByTestId("inspector-grid-rows")).toBeDefined();
+    expect(within(groupOf("map")).getByText("每格")).toBeDefined();
+    expect(within(groupOf("map")).getByText("行序")).toBeDefined();
     expect(within(groupOf("basic")).queryByTestId("inspector-grid-columns")).toBeNull();
     expect(within(groupOf("basic")).queryByText("每格")).toBeNull();
     expect(within(groupOf("basic")).queryByText("行序")).toBeNull();
@@ -220,67 +227,70 @@ describe("属性分组：基础 / 渲染 / 区域 / 战争雾 / 视频", () => {
     seedScene([mapObject(), createGameObject({ id: "sprite", name: "精灵" })], ["sprite"]);
     const spritePanel = render(<InspectorPanel />);
 
-    // 精灵也有「渲染」（每个对象都能显示图片），但**没有**「视频」——v21 起视频宿主换成了贴图；
-    // 也没有格子可编辑、不是地图 → 没有区域 / 战争雾
+    // 精灵：「基础 / 精灵层」（图片组件是 `SpriteLayer`，组 slug 跟着组件走）。
+    // 没有「视频」（v21 起那一组归贴图），也不是地图 → 没有网格地图 / 战争雾
     expect(headerOf("basic")).toBeDefined();
-    expect(headerOf("render")).toBeDefined();
-    expect(groupSlugs()).toEqual(["basic", "render"]);
+    expect(headerOf("sprite")).toBeDefined();
+    expect(groupSlugs()).toEqual(["basic", "sprite"]);
     expect(hasGroup("video")).toBe(false);
-    expect(hasGroup("edit")).toBe(false);
+    expect(hasGroup("map")).toBe(false);
     expect(hasGroup("fog")).toBe(false);
 
     spritePanel.unmount();
     seedScene([mapObject(), textureObject()], ["tex-1"]);
     render(<InspectorPanel />);
 
-    // 贴图：基础 + 渲染 + 视频（视频的另一个宿主），但没有区域 / 战争雾
+    // 贴图：「基础 / 图片层 / 视频」（图片组件是 `ImageLayer`），同样没有地图那两组
     expect(headerOf("basic")).toBeDefined();
-    expect(headerOf("render")).toBeDefined();
+    expect(headerOf("image")).toBeDefined();
     expect(headerOf("video")).toBeDefined();
-    expect(groupSlugs()).toEqual(["basic", "render", "video"]);
+    expect(groupSlugs()).toEqual(["basic", "image", "video"]);
     expect(within(groupOf("video")).getByTestId("video-enable")).toBeDefined();
-    expect(hasGroup("edit")).toBe(false);
+    expect(hasGroup("map")).toBe(false);
     expect(hasGroup("fog")).toBe(false);
   });
 
-  it("点「渲染」标题收起内容，再点展开", () => {
+  it("点「网格地图」标题收起内容（贴图行与网格行一起），再点展开", () => {
     seedScene([mapObject()], ["map-1"]);
     render(<InspectorPanel />);
 
-    // 展开时看得见贴图那一行（「选择」按钮就是换图入口）
+    // 展开时看得见贴图那一行（「选择」按钮就是换图入口）与网格编辑入口
     expect(screen.getByTestId("pick-texture")).toBeDefined();
+    expect(screen.getByTestId("grid-editor-open")).toBeDefined();
 
-    fireEvent.click(headerOf("render"));
-    expect(isOpen("render")).toBe(false);
-    expect(headerOf("render").getAttribute("aria-expanded")).toBe("false");
-    // 收起 = 内容不渲染（不是藏起来还留在 DOM 里）
-    expect(within(groupOf("render")).queryByTestId("pick-texture")).toBeNull();
+    fireEvent.click(headerOf("map"));
+    expect(isOpen("map")).toBe(false);
+    expect(headerOf("map").getAttribute("aria-expanded")).toBe("false");
+    // 收起 = 内容不渲染（不是藏起来还留在 DOM 里）：贴图行与网格行一起消失
+    expect(within(groupOf("map")).queryByTestId("pick-texture")).toBeNull();
+    expect(within(groupOf("map")).queryByTestId("grid-editor-open")).toBeNull();
 
-    fireEvent.click(headerOf("render"));
-    expect(isOpen("render")).toBe(true);
+    fireEvent.click(headerOf("map"));
+    expect(isOpen("map")).toBe(true);
     expect(screen.getByTestId("pick-texture")).toBeDefined();
+    expect(screen.getByTestId("grid-editor-open")).toBeDefined();
   });
 
-  it("点「区域」标题收起内容，再点展开", () => {
+  it("点「战争雾」标题收起内容，再点展开", () => {
     seedScene([mapObject()], ["map-1"]);
     render(<InspectorPanel />);
 
-    // 展开时看得见编辑窗口的入口
-    expect(screen.getByTestId("grid-editor-open")).toBeDefined();
+    // 展开时看得见启用开关
+    expect(screen.getByTestId("fog-enable")).toBeDefined();
 
     // 箭头是内联 SVG（不是 10px 的 `▾` / `▸` 字形）：收起时也还在，只是转了方向
-    expect(headerOf("edit").querySelector("svg")).not.toBeNull();
+    expect(headerOf("fog").querySelector("svg")).not.toBeNull();
 
-    fireEvent.click(headerOf("edit"));
-    expect(isOpen("edit")).toBe(false);
-    expect(headerOf("edit").getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(headerOf("fog"));
+    expect(isOpen("fog")).toBe(false);
+    expect(headerOf("fog").getAttribute("aria-expanded")).toBe("false");
     // 收起 = 内容不渲染（不是藏起来还留在 DOM 里）
-    expect(within(groupOf("edit")).queryByTestId("grid-editor-open")).toBeNull();
-    expect(headerOf("edit").querySelector("svg")).not.toBeNull();
+    expect(within(groupOf("fog")).queryByTestId("fog-enable")).toBeNull();
+    expect(headerOf("fog").querySelector("svg")).not.toBeNull();
 
-    fireEvent.click(headerOf("edit"));
-    expect(isOpen("edit")).toBe(true);
-    expect(screen.getByTestId("grid-editor-open")).toBeDefined();
+    fireEvent.click(headerOf("fog"));
+    expect(isOpen("fog")).toBe(true);
+    expect(screen.getByTestId("fog-enable")).toBeDefined();
   });
 
   it("折叠只影响「看见什么」：数据与画笔都不动", () => {
@@ -288,9 +298,9 @@ describe("属性分组：基础 / 渲染 / 区域 / 战争雾 / 视频", () => {
     useEditorStore.getState().setGridBrush(128);
     render(<InspectorPanel />);
 
-    fireEvent.click(headerOf("edit"));
+    fireEvent.click(headerOf("map"));
 
-    expect(isOpen("edit")).toBe(false);
+    expect(isOpen("map")).toBe(false);
     expect(useEditorStore.getState().gridPaint.mask).toBe(128);
     // 基础组照常开着，对象数据也没被碰
     expect(isOpen("basic")).toBe(true);
@@ -301,26 +311,25 @@ describe("属性分组：基础 / 渲染 / 区域 / 战争雾 / 视频", () => {
     seedScene([mapObject(), createGameObject({ id: "sprite", name: "精灵" })], ["map-1"]);
     render(<InspectorPanel />);
 
-    fireEvent.click(headerOf("render"));
-    fireEvent.click(headerOf("edit"));
+    fireEvent.click(headerOf("map"));
     fireEvent.click(headerOf("fog"));
-    expect(isOpen("render")).toBe(false);
-    expect(isOpen("edit")).toBe(false);
+    fireEvent.click(headerOf("video"));
+    expect(isOpen("map")).toBe(false);
     expect(isOpen("fog")).toBe(false);
+    expect(isOpen("video")).toBe(false);
 
-    // 换到精灵：分组是另一套（基础 + 渲染，没有视频 / 区域 / 战争雾）
+    // 换到精灵：分组是另一套（基础 + 精灵层，没有视频 / 网格地图 / 战争雾）
     act(() => useEditorStore.getState().setSelection(["sprite"]));
     expect(headerOf("basic")).toBeDefined();
-    expect(headerOf("render")).toBeDefined();
+    expect(headerOf("sprite")).toBeDefined();
     expect(hasGroup("video")).toBe(false);
-    expect(hasGroup("edit")).toBe(false);
+    expect(hasGroup("map")).toBe(false);
     expect(hasGroup("fog")).toBe(false);
 
     // 再回到地图：那些组都是**展开**的
     act(() => useEditorStore.getState().setSelection(["map-1"]));
     expect(isOpen("basic")).toBe(true);
-    expect(isOpen("render")).toBe(true);
-    expect(isOpen("edit")).toBe(true);
+    expect(isOpen("map")).toBe(true);
     expect(isOpen("fog")).toBe(true);
     expect(isOpen("video")).toBe(true);
   });
@@ -367,7 +376,7 @@ describe("属性分组：基础 / 渲染 / 区域 / 战争雾 / 视频", () => {
     render(<InspectorPanel />);
 
     expect(groupSlugs()).toEqual(["basic", "teleport"]);
-    expect(hasGroup("render")).toBe(false);
+    expect(hasGroup("sprite")).toBe(false);
     expect(hasGroup("video")).toBe(false);
   });
 });

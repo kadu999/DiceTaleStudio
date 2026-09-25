@@ -1,5 +1,5 @@
 {
-  "formatVersion": 24,
+  "formatVersion": 25,
   "objects": [
     {
       "id": "map_mu6uln3x1l7fg",
@@ -21,9 +21,9 @@
           "data": {
             "image": {
               "id": "b8f4bef4e8362b4aeb3d10322eaf9813",
+              "guid": "b8f4bef4e8362b4aeb3d10322eaf9813",
               "width": 1920,
-              "height": 1080,
-              "guid": "b8f4bef4e8362b4aeb3d10322eaf9813"
+              "height": 1080
             },
             "grid": {
               "width": 64,
@@ -322,17 +322,8 @@
                   20
                 ]
               ]
-            },
-            "fog": {
-              "enabled": true,
-              "regions": [
-                1,
-                2,
-                4
-              ]
             }
-          },
-          "actions": []
+          }
         },
         {
           "id": "map_mu6uln3x1l7fg__VideoOverlay",
@@ -346,8 +337,19 @@
             "picked": "90460513527bd5ab8725851ec775ca36",
             "loop": true,
             "audio": true
-          },
-          "actions": []
+          }
+        },
+        {
+          "id": "map_mu6uln3x1l7fg__FogOfWar",
+          "type": "FogOfWar",
+          "data": {
+            "enabled": true,
+            "regions": [
+              1,
+              2,
+              4
+            ]
+          }
         }
       ]
     },
@@ -377,8 +379,7 @@
               "column": 0,
               "row": 0
             }
-          },
-          "actions": []
+          }
         }
       ]
     },
@@ -401,14 +402,11 @@
           "type": "PlaySound",
           "data": {
             "clips": [
-              "1186f2a3f00c22e564d34ff0b01d3d4e",
-              "04810aa3bddfc24129b4ceb6bf09cd0c",
-              "d9845d4a9c164f9519fdb47bc26ed607"
+              "2b341adee6f81cf5efcd2153bdebf232"
             ],
-            "picked": "1186f2a3f00c22e564d34ff0b01d3d4e",
+            "picked": "2b341adee6f81cf5efcd2153bdebf232",
             "layer": "voice"
-          },
-          "actions": []
+          }
         }
       ]
     },
@@ -435,8 +433,7 @@
               "场景3"
             ],
             "picked": "场景3"
-          },
-          "actions": []
+          }
         }
       ]
     },
@@ -459,11 +456,10 @@
           "type": "ImageLayer",
           "data": {
             "id": "2517ac5245edd0d02126f6307900717a",
+            "guid": "2517ac5245edd0d02126f6307900717a",
             "width": 256,
-            "height": 256,
-            "guid": "2517ac5245edd0d02126f6307900717a"
-          },
-          "actions": []
+            "height": 256
+          }
         }
       ]
     }

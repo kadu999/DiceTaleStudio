@@ -23,7 +23,7 @@ export type LeftTab = "assets" | "hierarchy";
  * 要有意制造「旧版本文件」时别用它：自己写那个版本号（`formatVersion: 4` 之类），
  * 并预期编辑器会把它升上来回写一次。
  */
-export const CURRENT_SCENE_FORMAT_VERSION = 24;
+export const CURRENT_SCENE_FORMAT_VERSION = 25;
 
 /**
  * **承载对象特性的组件类型名**（v19 起特性住在 `object.components[]` 里）。
@@ -41,6 +41,8 @@ export const CURRENT_SCENE_FORMAT_VERSION = 24;
  */
 export const COMPONENT = {
   gridMap: "GridMap",
+  /** 战争雾（v25 起是独立组件；总开关 + 雾区，从属 `GridMap`）。 */
+  fogOfWar: "FogOfWar",
   /** 对象自己那张图：**贴图对象**用它（整张铺满）。 */
   imageLayer: "ImageLayer",
   /** 对象自己那张图：**精灵对象**用它（会取图集里的一格）。 */
@@ -335,9 +337,9 @@ export function sceneDoc(
  * `kind` 缺省是**精灵** `Sprite`（`GameObject` 是抽象基类，不落进文档）。
  *
  * `position` 是**世界坐标**（场景中心为原点，x 向右、y 向上，单位像素）；不传即未放置。
- * `active` / `sortingOrder` 是 v7 起、`scale` 是 v8 起、`locked` 是 v9 起、地图的战争雾
- * （v19 起在 `GridMap` 组件的 `fog` 里，v10–v18 是 `map.fog`；v13 起里面还有总开关 `enabled`）
- * 是 v10 起的显式字段（默认「显示、顺序 0、缩放 1、不锁、没开战争雾」）。
+ * `active` / `sortingOrder` 是 v7 起、`scale` 是 v8 起、`locked` 是 v9 起的显式字段；
+ * 地图的战争雾（v25 起是独立的 `FogOfWar` 组件；v19–v24 在 `GridMap` 组件的 `fog` 里、
+ * v10–v18 是 `map.fog`；v13 起里面还有总开关 `enabled`）默认「显示、顺序 0、缩放 1、不锁、没开战争雾」。
  *
  * 对象特性（地图 / 贴图 / 声音 / 传送 / 视频）**不在这里给参数**：v19 起它们是
  * `components[]` 里的实例，要带就自己用 `withComponent` 挂上去（见 `mapObjectDoc`）。
@@ -661,8 +663,8 @@ export async function readSceneMap(
 /**
  * 读场景文件里地图对象的**战争雾配置**（总开关 + 指定的雾区位）。
  *
- * 没开过战争雾就是 `undefined`——「没开也没指定」在文件里是 **`GridMap` 组件里没有 `fog`**
- * （v18 及更早是没有 `map.fog`；见 `setMapFogEnabled` / `setMapFogRegions`）。
+ * 没开过战争雾就是 `undefined`——「没开也没指定」在文件里是**没有 `FogOfWar` 组件**
+ * （v25 起雾是独立组件；v18 及更早是 `map.fog` 字段；见 `setFogEnabled` / `setFogRegions`）。
  */
 export async function readSceneFog(
   request: APIRequestContext,
@@ -670,7 +672,7 @@ export async function readSceneFog(
   sceneName: string,
 ): Promise<{ enabled?: boolean; regions?: readonly number[] } | undefined> {
   const file = await readSceneFile(request, project, sceneName);
-  return componentDataOf(file, { kind: "Map" }, COMPONENT.gridMap)?.["fog"] as
+  return componentDataOf(file, { kind: "Map" }, COMPONENT.fogOfWar) as
     | { enabled?: boolean; regions?: readonly number[] }
     | undefined;
 }
@@ -678,8 +680,8 @@ export async function readSceneFog(
 /**
  * 读场景文件里地图对象的**战争雾绑定**（指定的雾区位）。
  *
- * 没指定过雾区就是 `undefined`——「没指定」在文件里是**没有 `fog` 这个字段**
- * （见 `setMapFogRegions`）。
+ * 没指定过雾区就是 `undefined`——「没指定」在文件里是**没有 `FogOfWar` 组件**（或组件里
+ * `regions` 为空）（见 `setFogRegions`）。
  */
 export async function readSceneFogRegions(
   request: APIRequestContext,

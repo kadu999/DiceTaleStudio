@@ -1,5 +1,5 @@
 {
-  "formatVersion": 24,
+  "formatVersion": 25,
   "objects": [
     {
       "id": "map_mu7t4t731b222",
@@ -22,7 +22,8 @@
             "image": {
               "id": "894e85be220a607ac7a51dd26c623a18",
               "width": 1920,
-              "height": 1080
+              "height": 1080,
+              "guid": "894e85be220a607ac7a51dd26c623a18"
             },
             "grid": {
               "width": 64,
@@ -38,8 +39,7 @@
                 ]
               ]
             }
-          },
-          "actions": []
+          }
         }
       ]
     }

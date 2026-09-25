@@ -10,6 +10,7 @@ import { DEFAULT_SLOT_COMPONENT, DEFAULT_SOUND_LAYER } from "./presets";
 import type { ComponentSlot } from "./presets";
 import type {
   ComponentDoc,
+  FogOfWarDataDoc,
   ImageRef,
   MapDataDoc,
   GameObjectDoc,
@@ -22,7 +23,8 @@ import type {
  * 对象特性的**唯一访问路径**。
  *
  * v19 起特性住在 `components[]` 里（`GridMap` / `ImageLayer` / `SpriteLayer` / `PlaySound` /
- * `Teleport` / `VideoOverlay`），而**「数据存在哪」只有这个文件知道**：调用方一律写
+ * `Teleport` / `VideoOverlay`，`FogOfWar` 是 v25 从 `GridMap` 拆出来的第 7 种），
+ * 而**「数据存在哪」只有这个文件知道**：调用方一律写
  * `mapDataOf(object)` / `ensureSoundData(draft)`，不写 `object.components.find(...)`。
  * 于是「把特性从扁平字段搬进组件」这件事的改动面被压在这个文件里（迁移那一次）。
  *
@@ -147,6 +149,27 @@ export function mapDataOf(object: GameObjectDoc): MapDataDoc | undefined {
 }
 
 /**
+ * 战争雾数据（总开关 + 雾区；v25 起是独立的 `FogOfWar` 组件，从属 `GridMap`）。
+ *
+ * **组件不在 = 没开战争雾**（与 v25 前「`map.fog` 整个不在」同一条口径）。
+ */
+export function fogOf(object: GameObjectDoc): FogOfWarDataDoc | undefined {
+  return componentDataOfSlot<FogOfWarDataDoc>(object, "fog");
+}
+
+/**
+ * 这个对象的战争雾**开着没有**（总开关）。
+ *
+ * 判据只有这一处，编辑器与校验都走它：没有 `FogOfWar` 组件 = 没开；
+ * 有组件就按 `enabled` 算——`enabled` **缺省算开**（schema 会给 `true`，
+ * 这里的兜底只是给内存里手写的对象用）。与 `isVideoEnabled` 同一个口径。
+ */
+export function isFogEnabled(object: GameObjectDoc): boolean {
+  const fog = fogOf(object);
+  return fog !== undefined && fog.enabled !== false;
+}
+
+/**
  * 对象自己那一份图片（**不含地图贴图**；地图的贴图在 `mapDataOf(object)?.image` 里）。
  *
  * 按 `image` 槽位直接找：精灵的图在 `SpriteLayer`、贴图的图在 `ImageLayer`，
@@ -185,7 +208,7 @@ export function videoDataOf(object: GameObjectDoc): VideoDataDoc | undefined {
  *
  * 判据只有这一处，编辑器与校验都走它：没有视频组件 = 没开（也没列表）；
  * 有组件就按 `enabled` 算——`enabled` **缺省算开**（schema 会给 `true`，
- * 这里的兜底只是给内存里手写的对象用）。与 `isMapFogEnabled` 同一个口径。
+ * 这里的兜底只是给内存里手写的对象用）。与 `isFogEnabled` 同一个口径。
  */
 export function isVideoEnabled(object: GameObjectDoc): boolean {
   const video = videoDataOf(object);
@@ -201,6 +224,17 @@ export function isVideoEnabled(object: GameObjectDoc): boolean {
  */
 export function mapDraftOf(object: Draft<GameObjectDoc>): Draft<MapDataDoc> | undefined {
   return componentDataOfSlot<MapDataDoc>(object, "map") as Draft<MapDataDoc> | undefined;
+}
+
+/**
+ * 战争雾组件数据的 draft（v25 起雾住在独立的 `FogOfWar` 组件里）。
+ *
+ * 与 `fogOf` 分开只是类型上的事：命令作用在 immer draft 上，写回时要是可变的那个类型。
+ * **不会凭空造**：开关与雾区各有专用命令（带「关且空就摘组件」的不变量），
+ * 要补壳走 `ensureFogData`（只有地图预设允许）。
+ */
+export function fogDraftOf(object: Draft<GameObjectDoc>): Draft<FogOfWarDataDoc> | undefined {
+  return componentDataOfSlot<FogOfWarDataDoc>(object, "fog") as Draft<FogOfWarDataDoc> | undefined;
 }
 
 /**
@@ -355,4 +389,21 @@ export function ensureVideoData(object: Draft<GameObjectDoc>): Draft<VideoDataDo
     DEFAULT_SLOT_COMPONENT.video,
     defaultDataOf(DEFAULT_SLOT_COMPONENT.video) as unknown as VideoDataDoc,
   ).data as Draft<VideoDataDoc>;
+}
+
+/**
+ * 战争雾数据的 draft；缺实例时，只有具备可选战争雾能力的对象才创建默认组件。
+ *
+ * 不是地图的对象返回 `undefined`（预设表 `OBJECT_PRESETS`：只有地图预设声明了 fog 槽位）。
+ * 默认数据 `{ enabled: true, regions: [] }`：打开开关那一刻的语义就是「开着、还没指定雾区」
+ * （与 v25 前 `setMapFogEnabled` 造 `{ enabled: true, regions: [] }` 同一份）。
+ */
+export function ensureFogData(object: Draft<GameObjectDoc>): Draft<FogOfWarDataDoc> | undefined {
+  const component = componentOfSlot(object, "fog");
+  if (component !== undefined) return component.data as Draft<FogOfWarDataDoc>;
+  if (!canAddOptionalObjectComponent(object, DEFAULT_SLOT_COMPONENT.fog)) return undefined;
+  return writeFeature(object, DEFAULT_SLOT_COMPONENT.fog, {
+    enabled: true,
+    regions: [],
+  }).data as Draft<FogOfWarDataDoc>;
 }

@@ -203,7 +203,7 @@ describe("属性面板：声音组", () => {
     expect(soundOf(broken.id)).toBeUndefined();
   });
 
-  it("分组是「基础 / 声音」：没有渲染（图标固定、不给换贴图），没有区域 / 战争雾", () => {
+  it("分组是「基础 / 播放声音」：没有图片层（图标固定、不给换贴图），没有网格地图 / 战争雾", () => {
     seedScene([sound([CLIP])], ["sound-1"]);
     render(<InspectorPanel />);
 
@@ -211,8 +211,9 @@ describe("属性面板：声音组", () => {
       document.querySelectorAll('[data-testid="object-properties"] [data-group]'),
     ).map((section) => section.getAttribute("data-group"));
     expect(slugs).toEqual(["basic", "sound"]);
-    expect(hasGroup("render")).toBe(false);
-    expect(hasGroup("edit")).toBe(false);
+    expect(hasGroup("image")).toBe(false);
+    expect(hasGroup("sprite")).toBe(false);
+    expect(hasGroup("map")).toBe(false);
     expect(hasGroup("fog")).toBe(false);
     // 没有换贴图的入口（图标不允许改）
     expect(screen.queryByTestId("pick-texture")).toBeNull();

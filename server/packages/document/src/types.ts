@@ -95,8 +95,14 @@ import type { ObjectKind } from "./presets";
  *   它是**项目级**数据，不是某一个文件的属性；
  * - 于是口径统一成一句话：**项目级数据在 `project.json`，素材级数据跟着素材走**。
  *   协议 / 前端仍然一个字节都不用改（音频引用一直是资源逻辑 ID）。
+ *
+ * v25（2026-09-25）：**战争雾拆成独立组件 `FogOfWar`**。原来住在 `GridMap` data 里的
+ * `fog`（总开关 + 雾区）搬成 `components[]` 里的 `FogOfWar` 实例（数据形状不变：
+ * `{ enabled, regions }`），由 `migrateMapFogToComponent` 搬一次。属性面板从此
+ * 「一组 = 一个组件」；`FogOfWar` 从属 `GridMap`（雾区引用它的格子区域位），只挂在
+ * 地图对象上。协议侧新增组件名 `FogOfWar`（v13 起），老前端不认会忽略雾层。
  */
-export const DOCUMENT_FORMAT_VERSION = 24;
+export const DOCUMENT_FORMAT_VERSION = 25;
 
 /** 网格行序：`bottom-up` 表示 cells 第 0 行是图片最下面一行（与 Unity GridMap 一致）。 */
 export type RowOrder = "bottom-up";
@@ -214,33 +220,26 @@ export interface ComponentDoc {
 // 对象类型（`ObjectKind` = 预设 id）与能力槽位住在 `presets.ts`：那张表是
 // 「哪个 kind 允许哪个槽位」的唯一归属地，本文件只在 `GameObjectDoc.kind` 上用到它。
 
-/** 地图对象携带的数据（贴图 + 网格）。 */
+/** 地图对象携带的数据（贴图 + 网格）。战争雾自 v25 起是独立的 `FogOfWar` 组件。 */
 export interface MapDataDoc {
   readonly image: ImageRef;
   readonly grid: GridSpec;
   readonly rowOrder: RowOrder;
   readonly cells: CellRuns;
-  /**
-   * 战争雾配置（v10 起；v13 起多一个总开关）。
-   *
-   * 格子上的 8 个类型位是**中性的「区域」**（面板上叫区域1–区域8），不与任何玩法绑定——
-   * 哪个区域算雾区由这里**手动指定**。指定的区域里那些格子就是战争雾：运行时
-   * （`Scripts/Presentation/FogOfWar.cs`）按「玩家进入某区域 → 揭示整片区域」处理。
-   *
-   * 缺省（字段不存在）= **没开战争雾**，与「开关关着、也没指定雾区」同义；没开也没指定时
-   * **不写这个字段**，免得文件里留一个空壳。
-   */
-  readonly fog?: MapFogDoc;
 }
 
 /**
- * 战争雾：**总开关** + 把哪些「区域」当成雾区（区域位取自 `@dts/grid` 的可绘制位）。
+ * 战争雾组件的数据（v25 前是 `MapDataDoc.fog`，形状原样搬来）：**总开关** +
+ * 把哪些「区域」当成雾区（区域位取自 `@dts/grid` 的可绘制位）。
  *
- * `enabled` 是 v13 起的**总开关**：只有开着，前端才生成那一层雾（`FogOfWar`）。
+ * `enabled` 是**总开关**：只有开着，前端才生成那一层雾（`FogOfWar`）。
  * 关掉它 = 「这张地图现在没有战争雾」，但**雾区绑定留着**——再打开就回来，
- * 不必重新指定一遍（见 `setMapFogEnabled`）。
+ * 不必重新指定一遍（见 `setFogEnabled`）。
+ *
+ * 「组件不存在」与「没开战争雾」同义（与 v25 前「`fog` 整个不在」同一条口径）；
+ * 没开也没指定时**不写组件实例**，免得文件里留一个空壳。
  */
-export interface MapFogDoc {
+export interface FogOfWarDataDoc {
   /**
    * 是否启用战争雾。
    *

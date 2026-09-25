@@ -143,6 +143,10 @@ namespace DiceTale
                     case Protocol.ComponentType.Video:
                         obj.video = ParseVideo(data);
                         break;
+                    // 战争雾（v13）：独立组件，不再埋在 `GridMap` 的 `map.fog` 里
+                    case Protocol.ComponentType.FogOfWar:
+                        obj.fog = ParseFog(data);
+                        break;
                     default:
                         // 不认识的组件（将来的新特性 / 编辑器侧的组件）：数据留在 components 里就够了
                         break;
@@ -228,15 +232,27 @@ namespace DiceTale
                 map.cells = GridRle.Decode(JsonParser.GetArray(cells, "runs"), map.gridWidth * map.gridHeight);
             }
 
-            var fog = JsonParser.GetObject(node, "fog");
-            if (fog != null)
+            return map;
+        }
+
+        /// <summary>
+        /// 战争雾组件（v13 起）：`{ enabled, regions }`。
+        ///
+        /// `enabled` 缺省算开（组件在就是「开了雾」，这个开关只是再关一道）；没有 `FogOfWar` 组件
+        /// 的对象 <see cref="MirrorObject.fog"/> 留 null——那与「没开战争雾」是同一件事。
+        /// </summary>
+        private static MirrorFog ParseFog(Dictionary<string, object> node)
+        {
+            if (node == null)
             {
-                // 总开关缺省算开：老场景（协议 v3 及更早）只有 regions，「有 fog」就等于「开着」
-                map.fogEnabled = JsonParser.GetBool(fog, "enabled", true);
-                map.fogRegions = GridRle.FlattenInts(JsonParser.GetArray(fog, "regions"));
+                return null;
             }
 
-            return map;
+            return new MirrorFog
+            {
+                enabled = JsonParser.GetBool(node, "enabled", true),
+                regions = GridRle.FlattenInts(JsonParser.GetArray(node, "regions")),
+            };
         }
 
         private static MirrorSound ParseSound(Dictionary<string, object> node)

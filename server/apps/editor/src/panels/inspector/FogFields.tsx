@@ -1,14 +1,17 @@
 import { PAINTABLE_MASKS, maskToLabel, regionsToMask } from "@dts/grid";
-import { isMapFogEnabled, mapDataOf, type GameObjectDoc } from "@dts/document";
+import { fogOf, isFogEnabled, mapDataOf, type GameObjectDoc } from "@dts/document";
 import { useEditorStore } from "../../state/editor-store";
 import { FieldRow } from "./fields";
 
 /**
  * 战争雾的**编辑区**：放进属性面板的「战争雾」分组里（分组标题由外面给，这里只出行）。
  *
+ * 数据自 v25 起住在独立的 `FogOfWar` 组件里（`fogOf(object)`）；组件不在 = 没开雾。
+ * 雾从属 `GridMap`：对象没有地图数据时这一区什么都不渲染（与旧口径一致）。
+ *
  * 整组由**第一行的总开关**管着：关着时只留那一个开关，打开以后才露出雾区设置——
  * 「没开战争雾的地图」不该摆着一排用不上的按钮。这个开关是**这张地图的文档数据**
- * （`map.fog.enabled`，可撤销、跟着场景存盘下发）：**只有开着前端才生成那一层雾**，
+ * （`FogOfWar.enabled`，可撤销、跟着场景存盘下发）：**只有开着前端才生成那一层雾**，
  * 所以它不能记在浏览器本地——那是「新旧看到的不是同一件事」的老 bug。
  *
  * **雾不在画布上画**：战争雾用的就是区域数据（`map.cells` 的 8 个区域位），画布上只有
@@ -29,9 +32,9 @@ export function FogFields({ object }: { readonly object: GameObjectDoc }): React
   }
 
   // 绑定可能来自手写文件（含未知位）：这里只做展示与判断，规范化交给文档命令
-  const regions = map.fog?.regions ?? [];
+  const regions = fogOf(object)?.regions ?? [];
   const fogMask = regionsToMask(regions);
-  const enabled = isMapFogEnabled(map);
+  const enabled = isFogEnabled(object);
 
   const toggle = (bit: number): void => {
     setFogRegions(
@@ -95,7 +98,7 @@ export function FogFields({ object }: { readonly object: GameObjectDoc }): React
 }
 
 /**
- * 「战争雾」开关：整组的闸门，也是**这张地图的文档数据**（`map.fog.enabled`）。
+ * 「战争雾」开关：整组的闸门，也是**这张地图的文档数据**（`FogOfWar` 组件的 `enabled`）。
  *
  * 行名在左（就叫**启用**）、右边只有勾选框——与「基础」组里的激活 / 锁定、以及「视频」组里
  * 那个开关同一套写法；说明收进 title，不在行里再写一遍。

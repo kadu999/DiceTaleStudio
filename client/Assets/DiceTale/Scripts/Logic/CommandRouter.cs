@@ -12,8 +12,9 @@ namespace DiceTale
     /// 这类失败恰恰说明镜像没同步上，不该被掩盖。
     ///
     /// 战争雾的两条命令同理：`erase_mask` 只给**鼠标轨迹**，`reveal_fog_region` 只给区域位，
-    /// 雾层本身在前端镜像里那张地图上（`map.fog.enabled` + `map.fog.regions` + `map.cells`），由
-    /// <see cref="SceneObjectView.Fog"/> 执行——开关关着时那一层根本不存在，命令会如实回失败原因。
+    /// 雾层本身在前端镜像里由那个对象的 `FogOfWar` 组件（`enabled` + `regions`）与地图的 `map.cells`
+    /// 决定，由 <see cref="SceneObjectView.Fog"/> 执行——没开雾（没有组件 / 开关关着）时那一层
+    /// 根本不存在，命令会如实回失败原因。
     ///
     /// 声音（v7 起**真的出声**）：`play_sound` / `stop_sound` / `pause_sound` / `resume_sound`
     /// 按**层级**作用在 <see cref="AudioPlayerManager"/> 的三条通道上（音效 / 旁白）。
@@ -527,7 +528,7 @@ namespace DiceTale
             }
 
             var obj = mirror.Find(command.objectId);
-            if (!ContainsRegion(obj?.map?.fogRegions, command.region))
+            if (!ContainsRegion(obj?.fog?.regions, command.region))
             {
                 var reason = $"区域位 {command.region} 不是这张地图的雾区";
                 Debug.LogWarning($"[命令] 战争雾整区操作失败：{reason}");
@@ -763,7 +764,7 @@ namespace DiceTale
             return $"{httpBaseUrl}/api/resources/raw?id={UnityEngine.Networking.UnityWebRequest.EscapeURL(logicalId)}";
         }
 
-        /// <summary>「为什么没有雾层」的一句人话：对象不在镜像里 / 不是地图 / 开关关着 / 没指定雾区。</summary>
+        /// <summary>「为什么没有雾层」的一句人话：对象不在镜像里 / 不是地图 / 没开战争雾（没有组件或开关关着）/ 没指定雾区。</summary>
         private string DescribeFogTarget(string objectId)
         {
             var obj = mirror != null ? mirror.Find(objectId) : null;
@@ -777,12 +778,17 @@ namespace DiceTale
                 return $"「{obj.name}」不是地图对象";
             }
 
-            if (!obj.map.fogEnabled)
+            if (obj.fog == null)
             {
-                return $"「{obj.name}」的战争雾开关关着（map.fog.enabled = false，这张地图现在没有雾层）";
+                return $"「{obj.name}」没开战争雾（没有 FogOfWar 组件，这张地图现在没有雾层）";
             }
 
-            return $"「{obj.name}」这张地图没指定雾区（map.fog.regions 为空）";
+            if (!obj.fog.enabled)
+            {
+                return $"「{obj.name}」的战争雾开关关着（FogOfWar.enabled = false，这张地图现在没有雾层）";
+            }
+
+            return $"「{obj.name}」这张地图没指定雾区（FogOfWar.regions 为空）";
         }
 
         private static bool ContainsRegion(int[] regions, int region)

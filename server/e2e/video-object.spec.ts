@@ -87,7 +87,7 @@ async function connectFakeClient(page: Page, port: number): Promise<void> {
           type: "client_hello",
           // 与 `@dts/protocol` 的 `PROTOCOL_VERSION` 一致（这里写死：e2e 不是 workspace 包，
           // 拿不到那个常量；版本一升这里会连不上、用例会当场失败，提醒同步改）
-          protocolVersion: 12,
+          protocolVersion: 13,
           name: "e2e 假前端",
           version: "0.0.0",
         }),
@@ -273,7 +273,7 @@ test.describe("地图 / 贴图：视频列表", () => {
       await selectObject(page, 1);
       await expect(page.locator('[data-group="video"]')).toBeVisible();
       // 贴图没有地图专属那两组
-      await expect(page.locator('[data-group="edit"]')).toHaveCount(0);
+      await expect(page.locator('[data-group="map"]')).toHaveCount(0);
       await expect(page.locator('[data-group="fog"]')).toHaveCount(0);
       // **贴图**身上也能真的把视频存进去（不是「面板长出来了、数据写不进去」）
       const textureVideo = page.locator('[data-group="video"]');
@@ -284,7 +284,7 @@ test.describe("地图 / 贴图：视频列表", () => {
         clips: [],
       });
 
-      // 再建一个**精灵**（新对象落在名单末尾）：它有「渲染」、**没有**视频那一组
+      // 再建一个**精灵**（新对象落在名单末尾）：它有「精灵层」、**没有**视频那一组
       //
       // 先关掉两个抽屉：`openFirstObject` 会把属性面板（平板下是**右抽屉**）露出来，
       // 而「对象」按钮在场景标题栏的**最右端**——竖屏平板上正好被右抽屉的遮罩盖住，
@@ -294,7 +294,7 @@ test.describe("地图 / 贴图：视频列表", () => {
       await page.getByTestId("object-type-Sprite").click();
       await page.getByTestId("confirm-object").click();
       await selectObject(page, 2);
-      await expect(page.locator('[data-group="render"]')).toBeVisible();
+      await expect(page.locator('[data-group="sprite"]')).toBeVisible();
       await expect(page.locator('[data-group="video"]')).toHaveCount(0);
     } finally {
       await dropProject(request, project);

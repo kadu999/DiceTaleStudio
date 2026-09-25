@@ -5,7 +5,8 @@ import type { ComponentDoc } from "./types";
  * 组件注册表。
  *
  * **v19 起，对象身上那些「可插拔特性」是组件**：地图 / 贴图 / 声音 / 传送 / 视频
- * （见 `presets.ts` 的 `OBJECT_PRESETS`）。这些组件多两项：
+ * （见 `presets.ts` 的 `OBJECT_PRESETS`），战争雾（`FogOfWar`）是 v25 从 `GridMap`
+ * 拆出来的第 7 种。这些组件多两项：
  * - `slot`：它承担对象哪种能力（**组件自报**；访问器按 slot 找对象上的组件，不看 kind）；
  * - `templateKinds`：对象创建模板中会预置/路由到该组件的 kind；
  * - `repairKinds`：组件缺失时，编辑器提供显式修复入口的 kind；
@@ -13,9 +14,10 @@ import type { ComponentDoc } from "./types";
  * - `legacyField`：v19 之前它住在对象的哪个扁平字段里——迁移函数靠它把老字段搬成组件实例。
  */
 
-/** 组件类型 ID：6 种对象能力组件（v19 从对象特性提升上来的），逐字对齐前端组件类名。 */
+/** 组件类型 ID：7 种对象能力组件（6 种 v19 从对象特性提升上来，`FogOfWar` 是 v25 从 GridMap 拆出来的），逐字对齐前端组件类名。 */
 export type ComponentType =
   | "GridMap"
+  | "FogOfWar"
   | "ImageLayer"
   | "SpriteLayer"
   | "PlaySound"
@@ -49,7 +51,7 @@ export interface ComponentTypeDef {
 export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
   // ---------------------------------------------------------------- v19：对象特性提升上来的组件
   //
-  // 这 6 条自报 `slot`。模板、显式修复和可选组件准入分别声明，
+  // 前 6 条自报 `slot`（`FogOfWar` 是 v25 加的第七条）。模板、显式修复和可选组件准入分别声明，
   // 并由 presets.test.ts 保证创建模板与 templateKinds 一致。
   // `legacyField` 记着 v19 之前它住在对象的哪个扁平字段里。
   {
@@ -61,6 +63,17 @@ export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
     templateKinds: ["Map"],
     repairKinds: ["Map"],
     tooltip: "贴图 + 网格数据（列 / 行 / 行序 / 格子 RLE / 战争雾）；只有地图对象携带",
+  },
+  {
+    // 战争雾（v25 从 `GridMap` 的 data 里拆出来的从属组件）：雾区引用地图格子上的
+    // 区域位，所以只有地图对象携带、且依赖同对象的 `GridMap`。「组件不在」= 没开雾。
+    type: "FogOfWar",
+    displayName: "战争雾",
+    gmEditable: true,
+    slot: "fog",
+    templateKinds: ["Map"],
+    optionalKinds: ["Map"],
+    tooltip: "总开关 + 把哪些「区域」当成雾区；从属 GridMap（雾区引用它的格子区域位），只有地图对象携带",
   },
   {
     // 贴图对象的图片组件（精灵的那一份是下面的 `SpriteLayer`，两者共用同一份 `ImageRef` 形状）

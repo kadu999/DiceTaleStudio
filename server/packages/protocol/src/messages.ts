@@ -79,8 +79,16 @@ import { z } from "zod";
  * 数据形状一个字节都没动，`kind` 也只是自由字符串；但**老前端（v11）不认这两个值**，
  * `KindColor` 匹配不上会退回灰色占位色——图照常显示（显示走组件名），属于「不是崩，是画面错」，
  * 按同一条纪律 +1。**命令那一组仍然一个字节都没动。**
+ *
+ * v13（2026-09-25）：**战争雾拆成独立组件**（与文档格式 v25 同一批）。`FogOfWar`
+ * （总开关 + 雾区，数据形状不变）从 `GridMap` 的 data 里搬出来成为 `components[]` 里的
+ * 第 7 种组件实例，地图 data 上不再有 `fog` 字段。老前端（v12）按 `map.fog` 读——
+ * 新场景在它眼里「雾整个没了」（不是崩，是雾层丢了），按同一条纪律 +1：
+ * 服务端与 Unity 客户端必须同批更新。**命令那一组仍然一个字节都没动**
+ * （`erase_mask` / `reveal_fog_region` 照旧，只是 `reveal_fog_region` 的「区域是雾区」
+ * 这一判据改从 `FogOfWar` 组件读）。
  */
-export const PROTOCOL_VERSION = 12;
+export const PROTOCOL_VERSION = 13;
 
 /** 未进入运行态时拒绝 `/client` 升级的 HTTP 状态与原因头。 */
 export const RUNTIME_INACTIVE_STATUS = 503;
@@ -172,12 +180,13 @@ export const cellRunsSchema = z.object({
 });
 
 /**
- * 战争雾：**总开关** + 把哪些「区域」当成雾区（区域位取自 `@dts/grid` 的可绘制位，
- * `[1, 8]` = 区域1 + 区域4）。
+ * 战争雾组件的数据（v13 前是 `mapDataSchema.fog`，形状原样搬来）：**总开关** +
+ * 把哪些「区域」当成雾区（区域位取自 `@dts/grid` 的可绘制位，`[1, 8]` = 区域1 + 区域4）。
  *
  * 前端据此从 `cells` 里挑出**雾格子**、生成一张像素遮罩（只盖雾区、其余透明）；
- * `enabled` 是 v13 起的总开关，**关着时前端一层的雾都不建**（不是建了再隐藏）——
+ * `enabled` 是 v4 起的总开关，**关着时前端一层的雾都不建**（不是建了再隐藏）——
  * 与文档 schema 同一口径，缺省算开（v10–v12 的文件里「有 fog」就等于「开着」）。
+ * **组件不存在 = 没开战争雾**（与 v13 前「`fog` 整个不在」同一条口径）。
  * **哪个格子被揭示了不在数据里**：那是运行态，由 `erase_mask` / `reveal_fog_region` 命令驱动，
  * 不写文档、也不随 `scene_sync` 走。
  */
@@ -185,13 +194,12 @@ export const mapFogSchema = z.object({
   enabled: z.boolean().default(true),
   regions: z.array(z.number().int()),
 });
-/** 地图对象携带的数据（贴图 + 网格；`rowOrder` 固定 bottom-up）。 */
+/** 地图对象携带的数据（贴图 + 网格；`rowOrder` 固定 bottom-up）。战争雾自 v13 起是独立的 `FogOfWar` 组件。 */
 export const mapDataSchema = z.object({
   image: imageRefSchema,
   grid: gridSpecSchema,
   rowOrder: z.literal("bottom-up"),
   cells: cellRunsSchema,
-  fog: mapFogSchema.optional(),
 });
 
 /**
@@ -295,6 +303,8 @@ export const projectSettingsSchema = z.object({
  */
 export const COMPONENT_TYPE = {
   map: "GridMap",
+  /** 战争雾（v13 起）：总开关 + 雾区，从 `GridMap` 的 data 里拆出来的第 7 种组件。 */
+  fog: "FogOfWar",
   /** 对象自己显示的图：**贴图对象**用它（整张铺满）。 */
   image: "ImageLayer",
   /** 对象自己显示的图：**精灵对象**用它（会取图集里的一格）。与 `image` 同一份 `imageRefSchema`。 */
@@ -343,9 +353,11 @@ function featureComponentSchema<T extends z.ZodTypeAny>(
   });
 }
 
-/** 场景对象上的组件：6 种特性组件按各自形状校验，其余宽松。 */
+/** 场景对象上的组件：7 种特性组件按各自形状校验，其余宽松。 */
 export const sceneComponentSchema = z.union([
   featureComponentSchema(COMPONENT_TYPE.map, mapDataSchema),
+  // 战争雾（v13 起）从 GridMap 拆出来：形状不变，还是 `mapFogSchema`
+  featureComponentSchema(COMPONENT_TYPE.fog, mapFogSchema),
   // 对象自己显示的图有两种承载（贴图 `ImageLayer` / 精灵 `SpriteLayer`），形状都是 `imageRefSchema`
   featureComponentSchema(COMPONENT_TYPE.image, imageRefSchema),
   featureComponentSchema(COMPONENT_TYPE.sprite, imageRefSchema),

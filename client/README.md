@@ -44,7 +44,7 @@ Assets/
 │  │  └─ Presentation/  （5+4）      表现层：直接画 / 播 / 显示
 │  │                    SceneObjectView.cs       **一个镜像对象 = 一块贴地面片**（位置/缩放/激活/顺序/取图）
 │  │                    ResourceImageLoader.cs   按资源逻辑 ID 取图（缓存 / 去重 / 失败记忆）
-│  │                    FogOfWar.cs              战争雾（按 map.fog.enabled/regions + cells 建遮罩、GPU 羽化、按后台轨迹揭示）
+│  │                    FogOfWar.cs              战争雾（按 FogOfWar 组件的 enabled/regions + cells 建遮罩、GPU 羽化、按后台轨迹揭示）
 │  │                    VideoOverlay.cs          视频层（按 URL 放；本地资源包优先，盖在那个对象自己的矩形上）
 │  │                    ImageLayer.cs     贴图对象的显示层：**整张图**铺在对象那块矩形上（只认运行时纹理）
 │  │                    SpriteLayer.cs    精灵对象的显示层：只取纹理里**一格**（v10 的子图 UV）
@@ -238,8 +238,10 @@ Assets/
   否则对象会被摆到远超自身尺寸的地方）。
   默认 `0.01` → 地图 19.2×10.8 单位、精灵 2.56×2.56 单位；改成 `0.02` → 全部翻倍（实测确认）。
   想连格子、连雾一起缩放请改**场景根节点**的 Transform（那是另一层，`localPosition` 会跟着走）。
-- **战争雾已实现（2026-09-21）**：地图**开着战争雾**（`map.fog.enabled`，协议 v4 起的总开关）
-  并且绑了雾区（`map.fog.regions`）才多一层 `FogOverlay`（`Presentation/FogOfWar.cs`）——
+- **战争雾已实现（2026-09-21；v25/协议 v13 起是独立组件）**：地图对象挂了 **`FogOfWar` 组件**、
+  **开着战争雾**（组件的 `enabled`，协议 v4 起的总开关）并且绑了雾区（组件的 `regions`）
+  才多一层 `FogOverlay`（`Presentation/FogOfWar.cs`）——
+  **组件不在就等于「没开战争雾」**（v25 前是 `GridMap` data 里的 `fog` 字段）；
   **两个条件缺一不可**：编辑器里把开关关掉，前端是真的把这一层拆掉（不是画了再藏起来）；
   没写 `enabled` 的老场景按**开着**算（那时「有 `fog`」就等于「有雾」）。
   它**与地图同级**挂在场景根节点下（不是地图的子物体，

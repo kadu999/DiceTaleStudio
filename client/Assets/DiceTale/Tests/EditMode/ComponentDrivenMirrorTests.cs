@@ -82,6 +82,46 @@ namespace DiceTale.Tests
             Assert.That(SceneObjectView.NeedsView(spriteLayer), Is.True);
         }
 
+        [Test]
+        public void FogOfWarComponentParsesEnabledAndRegions()
+        {
+            var obj = ParseObject(
+                "{\"id\":\"fog\",\"kind\":\"Map\",\"components\":[" +
+                "{\"type\":\"GridMap\",\"data\":{\"image\":{\"id\":\"map.png\",\"width\":64,\"height\":32}}}," +
+                "{\"type\":\"FogOfWar\",\"data\":{\"enabled\":false,\"regions\":[1,4]}}]}");
+
+            Assert.That(obj.map, Is.Not.Null);
+            Assert.That(obj.fog, Is.Not.Null);
+            Assert.That(obj.fog.enabled, Is.False);
+            Assert.That(obj.fog.regions, Is.EqualTo(new[] { 1, 4 }));
+        }
+
+        [Test]
+        public void FogOfWarComponentDefaultsToEnabled()
+        {
+            var obj = ParseObject(
+                "{\"id\":\"fog\",\"kind\":\"Map\",\"components\":[" +
+                "{\"type\":\"FogOfWar\",\"data\":{\"regions\":[8]}}]}");
+
+            Assert.That(obj.fog, Is.Not.Null);
+            Assert.That(obj.fog.enabled, Is.True);
+            Assert.That(obj.fog.regions, Is.EqualTo(new[] { 8 }));
+        }
+
+        [Test]
+        public void MissingFogOfWarComponentMeansNoFog()
+        {
+            // v13 起 `GridMap` 数据里不再有 `fog`：老字段被忽略，没有 `FogOfWar` 组件 = 没开战争雾
+            var obj = ParseObject(
+                "{\"id\":\"map\",\"kind\":\"Map\",\"components\":[" +
+                "{\"type\":\"GridMap\",\"data\":{\"image\":{\"id\":\"map.png\",\"width\":64,\"height\":32}," +
+                "\"fog\":{\"enabled\":true,\"regions\":[1]}}}]}");
+
+            Assert.That(obj.map, Is.Not.Null);
+            Assert.That(obj.fog, Is.Null);
+            Assert.That(obj.HasComponent("FogOfWar"), Is.False);
+        }
+
         private static MirrorObject ParseObject(string json)
         {
             var node = JsonParser.ParseObject(json);

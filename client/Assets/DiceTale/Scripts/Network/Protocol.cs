@@ -65,8 +65,14 @@ namespace DiceTale
         /// 数据形状一个字节都没动，`kind` 也只是自由字符串；但**老前端（v11）不认这两个值**，
         /// 占位色会退回灰色（图照常显示——显示走组件名），属于「不是崩，是画面错」，
         /// 按同一条纪律 +1。**命令那一组仍然一个字节都没动。**
+        ///
+        /// v13（2026-09-25）：**战争雾拆成独立组件** `FogOfWar`（`components[]` 里多一种组件实例，
+        /// data 是 `{ enabled, regions }`），不再挂在 `GridMap` 的 `map.fog` 下。语义不变：
+        /// 没有组件 = 没开雾；组件在且 `enabled` 缺省 / true = 开；`regions` 仍是那 8 个可绘制位。
+        /// 老前端（v12）只认 `map.fog`，拆出去后它眼里「雾设置」整个消失（没开雾），
+        /// 不是画面错是行为丢，所以照旧 +1。**命令那一组仍然一个字节都没动。**
         /// </summary>
-        public const int Version = 12;
+        public const int Version = 13;
 
         /// <summary>对象特性组件的类型名（v9 起）。与服务端 `@dts/protocol` 的 `COMPONENT_TYPE` 逐字一致。</summary>
         public static class ComponentType
@@ -79,6 +85,8 @@ namespace DiceTale
             public const string Sound = "PlaySound";
             public const string Teleport = "Teleport";
             public const string Video = "VideoOverlay";
+            /// <summary>战争雾（v13 起）：**独立组件**，`{ enabled, regions }`——不再挂在 `GridMap` 的 `map.fog` 下。</summary>
+            public const string FogOfWar = "FogOfWar";
         }
 
         // 服务端 → 前端
@@ -113,7 +121,7 @@ namespace DiceTale
         public const string CommandResumeSound = "resume_sound";
         /// <summary>战争雾：沿一笔轨迹擦掉地图对象上的雾（载荷是**轨迹**，不是整张遮罩）。</summary>
         public const string CommandEraseMask = "erase_mask";
-        /// <summary>战争雾：整片揭示 / 整片盖回某个区域（区域位取自 `map.fog.regions`）。</summary>
+        /// <summary>战争雾：整片揭示 / 整片盖回某个区域（区域位取自那个对象的 `FogOfWar` 组件）。</summary>
         public const string CommandRevealFogRegion = "reveal_fog_region";
         /// <summary>视频：在对象自己的矩形上放它 `video.picked` 那一条（命令里不带数据）。</summary>
         public const string CommandPlayVideo = "play_video";
@@ -237,7 +245,7 @@ namespace DiceTale
         /// <summary>`erase_mask`：鼠标拖过的**归一化轨迹点**（`[0,1]`、y 向下）。</summary>
         public readonly List<Vector2> points = new List<Vector2>();
 
-        /// <summary>`reveal_fog_region`：区域位（与 `map.fog.regions` 里的值同一套）。</summary>
+        /// <summary>`reveal_fog_region`：区域位（与那个对象的 `FogOfWar` 组件 `regions` 里的值同一套）。</summary>
         public int region;
 
         /// <summary>`reveal_fog_region`：`true` = 整片揭示、`false` = 整片盖回。</summary>

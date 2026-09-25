@@ -80,7 +80,8 @@ export const cellRunsSchema = z.object({
 });
 
 /**
- * 战争雾（v10 起：雾区；v13 起：总开关）：**开不开**，以及哪些区域算雾区。
+ * 战争雾（v10 起：雾区；v13 起：总开关；v25 起：独立 `FogOfWar` 组件的 data，形状不变）：
+ * **开不开**，以及哪些区域算雾区。
  *
  * `regions` 给默认值 `[]` 是有意的（与 v7 的 `active` 同理）：**字段在、内容空**和
  * 「字段整个不在」在语义上是一回事（没指定任何雾区），给默认值省掉一处三元判断。
@@ -96,12 +97,12 @@ export const mapFogSchema = z.object({
   regions: z.array(z.number().int().min(1).max(255)).default([]),
 });
 
+/** 地图对象携带的数据（贴图 + 网格）。战争雾自 v25 起是独立的 `FogOfWar` 组件（`mapFogSchema`）。 */
 export const mapDataSchema = z.object({
   image: imageRefSchema,
   grid: gridSpecSchema,
   rowOrder: z.literal("bottom-up"),
   cells: cellRunsSchema,
-  fog: mapFogSchema.optional(),
 });
 
 /**
@@ -168,11 +169,11 @@ export const componentSchema = z.object({
 /**
  * 组件实例（v19）。
  *
- * 从对象特性提升上来的那 6 种**按各自的 schema 硬校验**（`GridMap` 的 RLE、`PlaySound` 的层级…），
+ * 从对象特性提升上来的那 7 种**按各自的 schema 硬校验**（`GridMap` 的 RLE、`PlaySound` 的层级…），
  * 未知类型走宽松分支（`data` 是任意记录）——这样手写文件里的自定义组件
- * 照样读得回来，而**已知的 6 种写坏了会直接读不开**（与 v18 之前扁平字段的严格程度一致）。
+ * 照样读得回来，而**已知的 7 种写坏了会直接读不开**（与 v18 之前扁平字段的严格程度一致）。
  *
- * 「未知类型」分支把已知的 6 个名字排除掉：否则一个 data 坏掉的 `GridMap` 会掉进宽松分支，
+ * 「未知类型」分支把已知的 7 个名字排除掉：否则一个 data 坏掉的 `GridMap` 会掉进宽松分支，
  * 严格校验就形同虚设。
  */
 const KNOWN_COMPONENT_TYPE_NAMES: readonly string[] = COMPONENT_TYPES.map((def) => def.type);
@@ -205,6 +206,8 @@ function componentSchemaOf<T extends z.ZodTypeAny>(
 
 export const sceneComponentSchema = z.union([
   componentSchemaOf(DEFAULT_SLOT_COMPONENT.map, mapDataSchema),
+  // 战争雾（v25 起）从 GridMap 拆出来：形状不变，还是 `mapFogSchema`
+  componentSchemaOf(DEFAULT_SLOT_COMPONENT.fog, mapFogSchema),
   // 对象自己显示的图有**两种承载**：贴图 `ImageLayer`、精灵 `SpriteLayer`（同一份 `imageRefSchema`）
   componentSchemaOf(DEFAULT_SLOT_COMPONENT.image, imageRefSchema),
   componentSchemaOf(SPRITE_COMPONENT, imageRefSchema),
@@ -1095,6 +1098,76 @@ function migrateFeaturesToComponents(raw: Record<string, unknown>): {
 }
 
 /**
+ * v24 → v25：战争雾从 `GridMap` 的 data 里搬成独立的 `FogOfWar` 组件。
+ *
+ * 入口判据：对象挂了 `GridMap` 组件、且其 data 里还有 `fog` 字段。搬法与
+ * `migrateFeaturesToComponents` 同一套规矩：
+ * - 组件实例 id 是**确定性的**（`<对象 id>__FogOfWar`），重复跑不会多出第二个实例；
+ * - 对象上**已有** `FogOfWar` 组件时**不覆盖**（手写文件两份并存，保留先出现的那份——
+ *   静默删用户数据比留一条校验警告更糟）；
+ * - `fog` 字段整个不在的对象什么都不做——「组件不在 = 没开雾」的语义原样保留，
+ *   于是「从没开过雾的地图」迁移后身上一个 `FogOfWar` 组件都没有。
+ *
+ * 幂等：搬过的文件 data 里不再有 `fog`，这一趟什么都不做。
+ */
+function migrateMapFogToComponent(raw: Record<string, unknown>): {
+  readonly raw: Record<string, unknown>;
+  readonly changed: boolean;
+} {
+  const objects = Array.isArray(raw.objects) ? raw.objects : [];
+  let changed = false;
+
+  const next = objects.map((object, index) => {
+    if (!isRecord(object) || !Array.isArray(object.components)) {
+      return object;
+    }
+
+    let objectChanged = false;
+    const pendingFog: unknown[] = [];
+    const components = object.components.map((component) => {
+      if (
+        !isRecord(component) ||
+        component.type !== DEFAULT_SLOT_COMPONENT.map ||
+        !isRecord(component.data) ||
+        component.data.fog === undefined
+      ) {
+        return component;
+      }
+
+      const { fog, ...restData } = component.data;
+      objectChanged = true;
+      pendingFog.push(fog);
+      return { ...component, data: restData };
+    });
+
+    if (!objectChanged) {
+      return object;
+    }
+
+    changed = true;
+    const baseId =
+      typeof object.id === "string" && object.id.length > 0 ? object.id : `obj${index}`;
+    const withFog = [...components];
+    for (const fog of pendingFog) {
+      // 已有 `FogOfWar` 组件（手写文件两份并存）不覆盖，保留先出现的那份
+      if (withFog.some((item) => isRecord(item) && item.type === DEFAULT_SLOT_COMPONENT.fog)) {
+        continue;
+      }
+
+      withFog.push({
+        id: componentId(baseId, DEFAULT_SLOT_COMPONENT.fog),
+        type: DEFAULT_SLOT_COMPONENT.fog,
+        data: fog,
+      });
+    }
+
+    return { ...object, components: withFog };
+  });
+
+  return changed ? { raw: { ...raw, objects: next }, changed } : { raw, changed };
+}
+
+/**
  * 读一个（还没过 schema 的）对象的 `kind`；认不出来时按**精灵** `Sprite` 算
  * （`MirrorObject` 同一个兜底）。
  *
@@ -1294,6 +1367,10 @@ export function parseSceneFile(raw: unknown, size?: SceneSizeHint): SceneFileLoa
     // （老文件里精灵的图已经是 `TextureRenderer` 组件，那时 `features` 那一趟什么都不用做）
     const renamed = renameSpriteImageComponent(kinds.raw);
     const features = migrateFeaturesToComponents(renamed.raw);
+    // v25：战争雾从 `GridMap` 拆成独立的 `FogOfWar` 组件（fog 字段 → 组件实例）。
+    // 必须排在 `features` 后面：只有 v19 迁移把地图数据搬进 `GridMap` 组件之后，
+    // `fog` 才住在组件 data 里，这一趟才找得到它
+    const fogSplit = migrateMapFogToComponent(features.raw);
     // v13：战争雾的总开关（`fog.enabled`）**不用单独迁移**——schema 给它默认值 `true`
     // （v10–v12 的文件里「有 fog」就等于「开着」），而版本号一升就会回写一次，
     // 于是磁盘上的文件重新变得自描述。
@@ -1302,8 +1379,10 @@ export function parseSceneFile(raw: unknown, size?: SceneSizeHint): SceneFileLoa
     // v21：视频那一组从精灵挪到贴图，**精灵身上的 `VideoOverlay` 不在这里删**——
     // 静默删用户数据比留一条校验警告更糟（见 `validation.ts` 那一条）。
     // v22：kind 改名（`Texture` → `Image`、`SceneObject` → `Sprite`）已在上面的 `kinds` 那一趟做完。
+    // v25：战争雾从 `GridMap` 拆成独立的 `FogOfWar` 组件，已在上面的 `fogSplit` 那一趟做完
+    // （排在 `features` 后面：先 v19 搬组件、再拆雾）。
     // 读出来的文档一律是当前版本（v6 起网格里不再存 `cellSize`，顺手被 schema 丢掉）
-    normalized = { ...features.raw, formatVersion: DOCUMENT_FORMAT_VERSION };
+    normalized = { ...fogSplit.raw, formatVersion: DOCUMENT_FORMAT_VERSION };
     needsRewrite =
       version < DOCUMENT_FORMAT_VERSION ||
       filled.changed ||
@@ -1311,7 +1390,8 @@ export function parseSceneFile(raw: unknown, size?: SceneSizeHint): SceneFileLoa
       layers.changed ||
       kinds.changed ||
       renamed.changed ||
-      features.changed;
+      features.changed ||
+      fogSplit.changed;
   }
 
   const result = sceneFileSchema.safeParse(normalized);

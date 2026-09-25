@@ -60,6 +60,9 @@ namespace DiceTale
         /// <summary>由 `GridMap` 组件填（v9 起；老版本是对象上的 `map` 字段）。</summary>
         public MirrorMap map;
 
+        /// <summary>由 `FogOfWar` 组件填（v13 起；之前是 `GridMap` 数据里的 `map.fog`）：`null` = 没开战争雾。</summary>
+        public MirrorFog fog;
+
         /// <summary>由 `PlaySound` 组件填（v9 起；老版本是对象上的 `sound` 字段）。</summary>
         public MirrorSound sound;
 
@@ -77,7 +80,7 @@ namespace DiceTale
         /// 对象身上的组件（协议 v9 起）。
         ///
         /// **原始数据一律留着**：已知的特性组件会同时填进上面那几个强类型字段
-        /// （`map` / `image` / `sound` / `video`），未知类型只留在这里备查——
+        /// （`map` / `fog` / `image` / `sound` / `video`），未知类型只留在这里备查——
         /// 编辑器加一个新组件时，老前端不该整份场景解析失败，它只是不认那一个组件而已。
         ///
         /// **加新字段的规矩**：用 <see cref="ComponentBool"/> / <see cref="ComponentString"/> /
@@ -156,7 +159,7 @@ namespace DiceTale
     /// <summary>
     /// 一个组件实例（协议 v9 起）：`type` 决定它是什么，`data` 是它的数据。
     ///
-    /// 前端只解释它认识的那 5 种（解析时已经填进 <see cref="MirrorObject"/> 的强类型字段），
+    /// 前端只解释它认识的那几种（解析时已经填进 <see cref="MirrorObject"/> 的强类型字段），
     /// 其余的留着不解释。
     /// </summary>
     public class MirrorComponent
@@ -205,16 +208,23 @@ namespace DiceTale
 
         /// <summary>按行序 bottom-up 展开的格子掩码（`gridWidth * gridHeight` 个）。</summary>
         public int[] cells = new int[0];
+    }
 
-        /// <summary>被指定为战争雾的区域位（空 = 没指定）。</summary>
-        public int[] fogRegions = new int[0];
-
+    /// <summary>
+    /// 战争雾组件的数据（v13 起）：`FogOfWar` 从 `GridMap` 拆出来的独立组件。
+    ///
+    /// **组件不存在 = 没开战争雾**（<see cref="MirrorObject.fog"/> 为 null）；组件在就是「开了」，
+    /// 只是 <see cref="enabled"/> 还可能再关上。语义与旧版 `map.fog` 逐字一致，只是搬了位置。
+    /// </summary>
+    public class MirrorFog
+    {
         /// <summary>
-        /// 战争雾的**总开关**（`map.fog.enabled`）：**只有开着才建那一层雾**。
-        ///
-        /// 缺省算开（老场景里「有 fog」就等于「开着」——那时候还没有这个字段）。
+        /// 战争雾的**总开关**：**只有开着才建那一层雾**。缺省算开（老口径：「有 fog」就等于「开着」）。
         /// </summary>
-        public bool fogEnabled = true;
+        public bool enabled = true;
+
+        /// <summary>被指定为战争雾的区域位（空 = 没指定，与旧版一样不生成雾层）。</summary>
+        public int[] regions = new int[0];
     }
 
     /// <summary>声音对象的数据：前端播的就是 <see cref="picked"/> 那一条。</summary>
@@ -237,7 +247,7 @@ namespace DiceTale
         /// <summary>
         /// **总开关**（`video.enabled`）：关着 = 这个对象现在不放视频（前端连那一层都不建，
         /// 播放类命令会被明确拒掉）。缺省算开（老编辑器不发这一项，而「有 video 字段」本来
-        /// 就等于「在用」——与 `map.fog.enabled` 同一个口径）。
+        /// 就等于「在用」——与 `FogOfWar.enabled` 同一个口径）。
         /// </summary>
         public bool enabled = true;
 

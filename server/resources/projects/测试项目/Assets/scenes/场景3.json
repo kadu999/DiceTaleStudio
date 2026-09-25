@@ -1,5 +1,5 @@
 {
-  "formatVersion": 24,
+  "formatVersion": 25,
   "objects": [
     {
       "id": "map_mu7t58za2yr2b",
@@ -22,7 +22,8 @@
             "image": {
               "id": "7b8aecadae302b5f2be171a7550a0b77",
               "width": 1920,
-              "height": 1080
+              "height": 1080,
+              "guid": "7b8aecadae302b5f2be171a7550a0b77"
             },
             "grid": {
               "width": 64,
@@ -38,14 +39,14 @@
                 ]
               ]
             }
-          },
-          "actions": []
+          }
         },
         {
           "id": "map_mu7t58za2yr2b__VideoOverlay",
           "type": "VideoOverlay",
           "data": {
             "enabled": true,
+            "autoPlay": false,
             "clips": [
               "39ef22fefa62050cd98e18909273fd4a",
               "5a7751c778e5316113aee90814fc1f33",
@@ -54,8 +55,7 @@
             "picked": "39ef22fefa62050cd98e18909273fd4a",
             "loop": false,
             "audio": false
-          },
-          "actions": []
+          }
         }
       ]
     }

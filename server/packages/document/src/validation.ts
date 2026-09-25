@@ -1,7 +1,15 @@
 import { PAINTABLE_MASKS, decodeRle } from "@dts/grid";
 import { componentKindMismatchOf, isKnownComponentType } from "./components";
-import { isMapFogEnabled } from "./commands";
-import { canRepairObjectComponent, imageOf, mapDataOf, soundDataOf, teleportDataOf, videoDataOf } from "./access";
+import {
+  canRepairObjectComponent,
+  fogOf,
+  imageOf,
+  isFogEnabled,
+  mapDataOf,
+  soundDataOf,
+  teleportDataOf,
+  videoDataOf,
+} from "./access";
 import type { AssetMetaDoc, AssetMetas } from "./asset-meta";
 import { DEFAULT_SLOT_COMPONENT } from "./presets";
 import { spriteSheetOf } from "./sprites";
@@ -158,34 +166,38 @@ function validateObject(
         message: "地图贴图不支持子图（取一块会让已有格子错位），这一项会被忽略",
       });
     }
+  }
 
-    // 战争雾指定的雾区位必须是可绘制的区域位：手写文件里写了别的值（0、3、256…），
+  // 战争雾（v25 起是独立的 `FogOfWar` 组件，从属 `GridMap`；雾区校验不再挂在地图数据里）
+  const fog = fogOf(object);
+  if (fog !== undefined) {
+    // 指定的雾区位必须是可绘制的区域位：手写文件里写了别的值（0、3、256…），
     // 编辑器会把它丢掉，所以这里得说出来——不然「明明指定了却不生效」无从排查
-    const fogRegions = map.fog?.regions ?? [];
+    const fogRegions = fog.regions;
     const unknownRegions = fogRegions.filter((bit) => !PAINTABLE_MASKS.some((value) => value === bit));
     if (unknownRegions.length > 0) {
       issues.push({
         level: "warning",
-        path: `${path}/map/fog/regions`,
+        path: `${path}/components/FogOfWar/regions`,
         message: `战争雾指定的 ${unknownRegions.join(", ")} 不是可绘制的区域位（会被忽略）`,
       });
     }
 
     // 「开关开着但一个雾区都没指定」= 前端不会建雾层，也不会有雾：这不是错，
     // 但画面上什么都不会发生，得说一句（属性面板 → 战争雾 → 指定雾区）
-    if (isMapFogEnabled(map) && fogRegions.length === 0) {
+    if (isFogEnabled(object) && fogRegions.length === 0) {
       issues.push({
         level: "warning",
-        path: `${path}/map/fog/regions`,
+        path: `${path}/components/FogOfWar/regions`,
         message: "战争雾开着但没指定雾区（不会有雾）",
       });
     }
 
     // 反过来同理：开关关着时绑定是留着的（再打开就回来），但「现在没有雾」这件事要说清
-    if (!isMapFogEnabled(map) && fogRegions.length > 0) {
+    if (!isFogEnabled(object) && fogRegions.length > 0) {
       issues.push({
         level: "warning",
-        path: `${path}/map/fog/enabled`,
+        path: `${path}/components/FogOfWar/enabled`,
         message: "战争雾关着：指定的雾区不会生成雾（打开开关才生效）",
       });
     }

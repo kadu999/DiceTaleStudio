@@ -5,8 +5,8 @@ import {
   DEFAULT_SLOT_COMPONENT,
   createMapObject,
   createGameObject,
-  isMapFogEnabled,
-  mapDataOf,
+  fogOf,
+  isFogEnabled,
   withFeature,
   type GameObjectDoc,
 } from "@dts/document";
@@ -40,30 +40,19 @@ function mapObject(): GameObjectDoc {
 
 /** 一张**开了战争雾、绑了「区域4」**的地图（揭示记账只认这样的地图）。 */
 function fogMap(): GameObjectDoc {
-  const object = mapObject();
-  const map = mapDataOf(object);
-  if (map === undefined) {
-    throw new Error("createMapObject 应当带 GridMap 组件");
-  }
-
-  return withFeature(object, DEFAULT_SLOT_COMPONENT.map, {
-    ...map,
-    fog: { enabled: true, regions: [CellMask.Fog1] },
+  // v25 起雾是独立的 `FogOfWar` 组件（createMapObject 只带 GridMap）
+  return withFeature(mapObject(), DEFAULT_SLOT_COMPONENT.fog, {
+    enabled: true,
+    regions: [CellMask.Fog1],
   });
 }
 
 /** 一张**开了战争雾、但还没指定雾区**的地图（揭示记账会明确拒绝它，与「开关关着」不是一回事）。 */
 function enabledMapWithoutRegions(): GameObjectDoc {
-  const object = mapObject();
-  const map = mapDataOf(object);
-  if (map === undefined) {
-    throw new Error("createMapObject 应当带 GridMap 组件");
-  }
-
   return withFeature(
-    { ...object, id: "map-2", name: "开了没绑的地图" },
-    DEFAULT_SLOT_COMPONENT.map,
-    { ...map, fog: { enabled: true, regions: [] } },
+    { ...mapObject(), id: "map-2", name: "开了没绑的地图" },
+    DEFAULT_SLOT_COMPONENT.fog,
+    { enabled: true, regions: [] },
   );
 }
 
@@ -88,14 +77,13 @@ function seedScene(objects: GameObjectDoc[], selected: readonly string[]): void 
 /** 场景里那张地图的 fog 绑定。 */
 const mapFog = (): readonly number[] => {
   const object = useEditorStore.getState().scenes[0]?.objects.find((item) => item.id === "map-1");
-  return (object === undefined ? undefined : mapDataOf(object))?.fog?.regions ?? [];
+  return (object === undefined ? undefined : fogOf(object))?.regions ?? [];
 };
 
 /** 场景里那张地图的战争雾开关（缺省 = 没开）。 */
 const mapFogEnabled = (): boolean => {
   const object = useEditorStore.getState().scenes[0]?.objects.find((item) => item.id === "map-1");
-  const map = object === undefined ? undefined : mapDataOf(object);
-  return map !== undefined && isMapFogEnabled(map);
+  return object !== undefined && isFogEnabled(object);
 };
 
 afterEach(() => {
@@ -183,12 +171,12 @@ describe("属性面板：战争雾开关与雾区", () => {
     expect(screen.getByTestId(`fog-region-${CellMask.Fog1}`).getAttribute("data-bound")).toBe("true");
     expect(screen.getByTestId("fog-mask-open").hasAttribute("disabled")).toBe(false);
 
-    // 再点一下取消：绑定回到空——但**开关还开着**，字段留着（「开着但还没指定雾区」），
+    // 再点一下取消：绑定回到空——但**开关还开着**，组件留着（「开着但还没指定雾区」），
     // 面板那一组不会因为取消最后一个雾区就整个塌掉
     fireEvent.click(screen.getByTestId(`fog-region-${CellMask.Fog1}`));
     expect(mapFog()).toEqual([]);
     const object = useEditorStore.getState().scenes[0]?.objects[0];
-    expect(object === undefined ? undefined : mapDataOf(object)?.fog).toEqual({
+    expect(object === undefined ? undefined : fogOf(object)).toEqual({
       enabled: true,
       regions: [],
     });

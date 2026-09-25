@@ -11,7 +11,8 @@ import {
   serializeAssetMetaFile,
   videoDataOf,
   SOUND_LAYER_LABELS,
-  isMapFogEnabled,
+  fogOf,
+  isFogEnabled,
   isVideoEnabled,
   type AssetMetas,
   type ComponentType,
@@ -621,18 +622,18 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
       return null;
     }
 
-    if (mapDataOf(object) === undefined) {
+    const map = mapDataOf(object);
+    if (map === undefined) {
       pushLog(makeLog("warn", `${what}失败：「${object.name}」不是地图，没有雾层`));
       return null;
     }
 
-    const map = mapDataOf(object);
-    if (map === undefined || !isMapFogEnabled(map)) {
+    if (!isFogEnabled(object)) {
       pushLog(makeLog("warn", `${what}失败：「${object.name}」的战争雾开关关着（属性面板 → 战争雾）`));
       return null;
     }
 
-    if ((map.fog?.regions ?? []).length === 0) {
+    if ((fogOf(object)?.regions ?? []).length === 0) {
       pushLog(makeLog("warn", `${what}失败：「${object.name}」还没指定雾区（属性面板 → 战争雾）`));
       return null;
     }
@@ -648,8 +649,7 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
       return false;
     }
 
-    const map = mapDataOf(object);
-    return map !== undefined && isMapFogEnabled(map) && (map.fog?.regions ?? []).length > 0;
+    return isFogEnabled(object) && (fogOf(object)?.regions ?? []).length > 0;
   };
 
   /**

@@ -11,12 +11,12 @@ namespace DiceTale
     /// <see cref="ImageLayer"/> 烘进网格（与地图面片同一套口径）；
     /// 显示顺序的调用方会给**最前面**——未探索的地方连地图上的对象一起盖住。
     ///
-    /// **雾是哪几格**：`map.fog.regions` 指定了哪些「区域位」算雾区（区域位就是 `map.cells` 里那些位，
-    /// 与 `@dts/grid` 的 `CellMask` / <see cref="GridCellType"/> 同一套值）。一格只要含其中任意一位
+    /// **雾是哪几格**：`FogOfWar` 组件的 `regions` 指定了哪些「区域位」算雾区（区域位就是 `map.cells`
+    /// 里那些位，与 `@dts/grid` 的 `CellMask` / <see cref="GridCellType"/> 同一套值）。一格只要含其中任意一位
     /// 就是雾格——**不写死 `Fog1..Fog5`**：编辑器里可以指定任意可绘制区域位
     /// （例如区域1/2/3 = 位 `1|2|4`，旧实现一格都不会盖）。
     ///
-    /// **这一层只在开关开着时才存在**：`map.fog.enabled` 是编辑器里那个总开关，
+    /// **这一层只在开关开着时才存在**：`FogOfWar.enabled` 是编辑器里那个总开关，
     /// <see cref="SceneObjectView"/> 按它决定建不建本组件（关掉 = 这张地图现在没有战争雾）。
     /// 所以这里不必再判开关——能拿到这个组件，就说明那时它是开着的；关掉时整个物体被拆掉。
     ///
@@ -152,13 +152,14 @@ namespace DiceTale
         /// <summary>
         /// 按一份地图数据刷新雾层（每次收到场景推送都会调）。
         ///
-        /// `worldWidth` / `worldHeight` 是**地图面片的世界尺寸**（调用方已经乘过
+        /// `regions` 是那个对象的 `FogOfWar` 组件指定的雾区位（调用方已经判过「组件在、开关开着、
+        /// 数组非空」）；`worldWidth` / `worldHeight` 是**地图面片的世界尺寸**（调用方已经乘过
         /// <see cref="SceneObjectView.GlobalScale"/>），雾层与它同大小、同位置、略高一点；
         /// `sortingOrder` / `lift` 也由调用方算好（盖在自己那张地图之上）。
         /// </summary>
-        public void Apply(MirrorMap mapData, float worldWidth, float worldHeight, int sortingOrder, float lift)
+        public void Apply(MirrorMap mapData, int[] regions, float worldWidth, float worldHeight, int sortingOrder, float lift)
         {
-            if (!Adopt(mapData))
+            if (!Adopt(mapData, regions))
             {
                 return;
             }
@@ -233,14 +234,14 @@ namespace DiceTale
         /// 重建 = 重填初始态（雾格盖满）+ 按顺序重放操作，所以已揭示的部分不会丢；
         /// 数据没变时只是把引用换成最新那份（同一份内容，抓着旧数组没意义）。
         /// </summary>
-        private bool Adopt(MirrorMap mapData)
+        private bool Adopt(MirrorMap mapData, int[] regions)
         {
             if (mapData == null)
             {
                 return false;
             }
 
-            var nextFogMask = RegionsToMask(mapData.fogRegions);
+            var nextFogMask = RegionsToMask(regions);
             if (nextFogMask == 0)
             {
                 WarnOnce($"「{name}」的地图数据里没指定雾区，这一层先不画");
@@ -281,11 +282,11 @@ namespace DiceTale
 
             // 绑定位也留一份（`reveal_fog_region` 要按它校验；只认可绘制的位、去重）
             fogRegions.Clear();
-            if (mapData.fogRegions != null)
+            if (regions != null)
             {
-                for (int i = 0; i < mapData.fogRegions.Length; i++)
+                for (int i = 0; i < regions.Length; i++)
                 {
-                    var bit = mapData.fogRegions[i] & PaintableMask;
+                    var bit = regions[i] & PaintableMask;
                     if (bit != 0 && !fogRegions.Contains(bit))
                     {
                         fogRegions.Add(bit);

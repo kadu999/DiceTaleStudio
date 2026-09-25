@@ -8,6 +8,7 @@ import {
   hasComponentKindMismatch,
   mapDataOf,
   objectImageSlot,
+  supportsFog,
   supportsObjectComponent,
   supportsVideo,
   type ComponentType,
@@ -99,34 +100,54 @@ function ComponentRepairAction({
   );
 }
 
+/**
+ * 组件编辑器表：**一个组件一个组**（组 slug = 组件槽位语义、标题 = 组件 displayName）。
+ *
+ * 「基础」组（`OBJECT_EDITOR`）是**实体属性**（不进组件）；每个组件编辑器的 `panels`
+ * 只剩一个面板——分组声明里不再出现一个组件拆多组（GridMap 的渲染/区域已合并，
+ * 战争雾 v25 起是独立的 `FogOfWar` 组件）。`availableWithoutComponent` 命中的组是
+ * **能力入口**（未添加时的开关 / 选图 / 修复），InspectorPanel 会给它们挂「未添加」角标。
+ */
 export const COMPONENT_EDITORS: readonly ComponentEditorDef[] = [
   {
     type: COMPONENT_TYPE.image,
     availableWithoutComponent: (object) => imageFallback(object, COMPONENT_TYPE.image),
-    panels: [panel("render", "渲染", (object) => <TextureField object={object} />)],
+    panels: [panel("image", "图片层", (object) => <TextureField object={object} />)],
   },
   {
     type: COMPONENT_TYPE.sprite,
     availableWithoutComponent: (object) => imageFallback(object, COMPONENT_TYPE.sprite),
-    panels: [panel("render", "渲染", (object) => <TextureField object={object} />)],
+    panels: [panel("sprite", "精灵层", (object) => <TextureField object={object} />)],
   },
   {
     type: COMPONENT_TYPE.map,
     availableWithoutComponent: (object) =>
       mapDataOf(object) !== undefined || canRepairObjectComponent(object, COMPONENT_TYPE.map),
     panels: [
-      panel("render", "渲染", (object) => <TextureField object={object} />),
-      panel("edit", "区域", (object) => (
-        <>
-          <GridFields object={object} />
-          <CellSizeField object={object} />
-          <Field label="行序" value={mapDataOf(object)?.rowOrder ?? ""} mono />
-          <GridDisplayField />
-          <GridAnnotationFields object={object} />
-        </>
-      )),
-      panel("fog", "战争雾", (object) => <FogFields object={object} />),
+      panel("map", "网格地图", (object) =>
+        mapDataOf(object) === undefined ? (
+          // 地图数据缺失但可修复：只给换贴图那一行（与旧「只留渲染组」同一口径）；
+          // 网格规格那些行对着 undefined 的地图数据渲染没有意义
+          <TextureField object={object} />
+        ) : (
+          <>
+            <TextureField object={object} />
+            <GridFields object={object} />
+            <CellSizeField object={object} />
+            <Field label="行序" value={mapDataOf(object)?.rowOrder ?? ""} mono />
+            <GridDisplayField />
+            <GridAnnotationFields object={object} />
+          </>
+        ),
+      ),
     ],
+  },
+  {
+    // 战争雾（v25 起是独立的 `FogOfWar` 组件，从属 `GridMap`）：没开过时组件不存在，
+    // 组照常出现（与「视频」组同一交互），打开开关才建组件。
+    type: COMPONENT_TYPE.fog,
+    availableWithoutComponent: (object) => supportsFog(object) && mapDataOf(object) !== undefined,
+    panels: [panel("fog", "战争雾", (object) => <FogFields object={object} />)],
   },
   {
     type: COMPONENT_TYPE.sound,
@@ -134,7 +155,7 @@ export const COMPONENT_EDITORS: readonly ComponentEditorDef[] = [
       supportsObjectComponent(object, COMPONENT_TYPE.sound) ||
       canRepairObjectComponent(object, COMPONENT_TYPE.sound),
     panels: [
-      panel("sound", "声音", (object) =>
+      panel("sound", "播放声音", (object) =>
         componentOf(object, COMPONENT_TYPE.sound) === undefined ? (
           <ComponentRepairAction object={object} type="PlaySound" />
         ) : (
@@ -149,7 +170,7 @@ export const COMPONENT_EDITORS: readonly ComponentEditorDef[] = [
       supportsObjectComponent(object, COMPONENT_TYPE.teleport) ||
       canRepairObjectComponent(object, COMPONENT_TYPE.teleport),
     panels: [
-      panel("teleport", "传送", (object) =>
+      panel("teleport", "传送阵", (object) =>
         componentOf(object, COMPONENT_TYPE.teleport) === undefined ? (
           <ComponentRepairAction object={object} type="Teleport" />
         ) : (
@@ -165,7 +186,12 @@ export const COMPONENT_EDITORS: readonly ComponentEditorDef[] = [
   },
 ];
 
-/** Attached components drive editing; explicit repair and optional capability paths expose missing-instance entry points. */
+/**
+ * Attached components drive editing; explicit repair and optional capability paths expose missing-instance entry points.
+ *
+ * 返回的每个编辑器只带**一个**面板（「一个组件一个组」）；组件缺失时的过滤只看
+ * 「实例在不在 / 准入允不允许」，不再按面板裁减。
+ */
 export function componentEditorsFor(object: GameObjectDoc): readonly ComponentEditorDef[] {
   const hasMap = componentOf(object, DEFAULT_SLOT_COMPONENT.map) !== undefined;
   const canRepairMap = canRepairObjectComponent(object, DEFAULT_SLOT_COMPONENT.map);
@@ -173,8 +199,5 @@ export function componentEditorsFor(object: GameObjectDoc): readonly ComponentEd
   return COMPONENT_EDITORS.filter((editor) => {
     if ((hasMap || canRepairMap) && (editor.type === COMPONENT_TYPE.image || editor.type === COMPONENT_TYPE.sprite)) return false;
     return hasComponent(object, editor.type) || (missingComponentEntryAllowed && editor.availableWithoutComponent(object));
-  }).map((editor) => {
-    if (editor.type !== COMPONENT_TYPE.map || !canRepairMap || mapDataOf(object) !== undefined) return editor;
-    return { ...editor, panels: editor.panels.filter((item) => item.group === "render") };
   });
 }

@@ -29,7 +29,7 @@ namespace DiceTale
     /// **开着战争雾、也指定了雾区的地图**多一个同级的 `FogOverlay`（<see cref="FogOfWar"/>）：
     /// 它挂在**场景根节点**下（与地图并列，不是地图的子物体）、尺寸与地图面片同大、
     /// 位置与角度按地图同一份数值各摆一遍，显示顺序取<a cref="FogSortingOrder">最前面</a>——
-    /// 未探索的地方连对象一起盖住。开关关着（`map.fog.enabled = false`）或没指定雾区的地图
+    /// 未探索的地方连对象一起盖住。开关关着（`FogOfWar.enabled = false`）或没指定雾区的地图
     /// 都不会有它（见 <see cref="ApplyFog"/>）。
     ///
     /// **收到 `play_video` 的对象多一个 `VideoOverlay` 子物体**（<see cref="VideoOverlay"/>）：
@@ -81,8 +81,11 @@ namespace DiceTale
         private ImageLayer quad;
         private ResourceImageLoader imageLoader;
 
-        /// <summary>这张对象的地图数据（仅 `Map`；`fogEnabled` 且 `map.fog.regions` 非空时才会建雾层）。</summary>
+        /// <summary>这张对象的地图数据（仅 `Map`）；雾层另看 <see cref="currentFog"/>。</summary>
         private MirrorMap currentMap;
+
+        /// <summary>这张对象的战争雾组件数据（v13 起，仅 `FogOfWar`；`null` = 没开战争雾）。</summary>
+        private MirrorFog currentFog;
 
         /// <summary>雾层（仅绑了雾区的地图有；**与地图同级**，命令路由经 <see cref="Fog"/> 找到它）。</summary>
         private FogOfWar fog;
@@ -203,6 +206,7 @@ namespace DiceTale
             currentKindColor = KindColor(obj.kind);
             currentSortingOrder = obj.sortingOrder;
             currentMap = obj.map;
+            currentFog = obj.fog;
 
             /*
               视频：开关关掉 / 列表清空时，**正在放的那一层也要拆掉**——与战争雾「关掉开关就把
@@ -275,8 +279,10 @@ namespace DiceTale
         /// <summary>
         /// 雾层：**这张地图开着战争雾、也指定了雾区才建 / 刷，否则把旧的拆掉**（每次重画都会走这里）。
         ///
-        /// 两个条件缺一不可——`map.fog.enabled` 是编辑器里那个总开关（关掉 = 这张地图现在没有战争雾，
-        /// 哪怕雾区绑定还留着），`map.fog.regions` 是「哪些区域算雾区」。
+        /// 三个条件缺一不可——对象挂了 `FogOfWar` 组件（没挂 = 没开战争雾，与老场景同一件事）、
+        /// `FogOfWar.enabled` 是编辑器里那个总开关（关掉 = 这张地图现在没有战争雾，
+        /// 哪怕雾区绑定还留着）、`FogOfWar.regions` 是「哪些区域算雾区」（空数组 = 不生成雾层，
+        /// 与旧版对「开着但没指定雾区」的处理一致）。
         ///
         /// 雾层与地图**同级**（都挂在场景根节点下，见 <see cref="FogOverlayName"/>）：
         /// 它不是地图的一部分，而是盖在整个场景之上的一层——所以位置 / 角度要**自己摆一遍**
@@ -288,17 +294,19 @@ namespace DiceTale
         private void ApplyFog(float mapLift)
         {
             var map = currentMap;
+            var fogData = currentFog;
             var hasFog =
                 map != null
-                && map.fogEnabled
-                && map.fogRegions != null
-                && map.fogRegions.Length > 0;
+                && fogData != null
+                && fogData.enabled
+                && fogData.regions != null
+                && fogData.regions.Length > 0;
 
             if (!hasFog)
             {
                 if (fog != null)
                 {
-                    // 开关被关掉 / 绑定被解开（或本来就不是地图）：把雾层拆掉，
+                    // 开关被关掉 / 组件被摘掉 / 绑定被解开（或本来就不是地图）：把雾层拆掉，
                     // 别留一块盖着旧遮罩的面片
                     Destroy(fog.gameObject);
                     fog = null;
@@ -320,6 +328,7 @@ namespace DiceTale
             var scale = GlobalScale;
             fog.Apply(
                 map,
+                fogData.regions,
                 currentWidth * scale,
                 currentHeight * scale,
                 FogSortingOrder,

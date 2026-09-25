@@ -4,9 +4,9 @@
  * 战争雾：Mask 窗口、雾区绑定与揭示记账。
  */
 import {
-  mapDataOf,
-  setMapFogEnabled as setSceneMapFogEnabled,
-  setMapFogRegions as setSceneMapFogRegions,
+  fogOf,
+  setFogEnabled as setSceneFogEnabled,
+  setFogRegions as setSceneFogRegions,
 } from "@dts/document";
 import { maskToLabel } from "@dts/grid";
 import {
@@ -59,14 +59,14 @@ export function createFogSlice(
     setFogRegions(mapObjectId, regions) {
       return applyActiveScene("指定雾区", (scene) => {
         // 规范化与「没变更」的判断都在命令里，这里只负责找到场景
-        setSceneMapFogRegions(scene, mapObjectId, regions);
+        setSceneFogRegions(scene, mapObjectId, regions);
       });
     },
 
     setFogEnabled(mapObjectId, enabled) {
       const changed = applyActiveScene(enabled ? "打开战争雾" : "关闭战争雾", (scene) => {
         // 开关写的是**文档数据**：只有它跟着场景下发，前端才知道该不该生成那一层雾
-        setSceneMapFogEnabled(scene, mapObjectId, enabled);
+        setSceneFogEnabled(scene, mapObjectId, enabled);
       });
 
       // 关掉了：正开着的 Mask 窗口跟着关（它编辑的那张地图已经没有雾了，留着只会擦空气）
@@ -128,7 +128,7 @@ export function createFogSlice(
         return undefined;
       }
 
-      if (!(mapDataOf(object)?.fog?.regions ?? []).includes(region)) {
+      if (!(fogOf(object)?.regions ?? []).includes(region)) {
         pushLog(makeLog("warn", `雾区操作失败：「${object.name}」没把 ${maskToLabel(region)} 指定为雾区`));
         return undefined;
       }

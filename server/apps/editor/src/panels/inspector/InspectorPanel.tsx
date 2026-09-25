@@ -3,6 +3,7 @@ import {
   DEFAULT_SLOT_COMPONENT,
   assetNameOfMeta,
   assetTagsOfMeta,
+  componentOf,
   supportsObjectComponent,
   isSpriteMeta,
   metaOfImage,
@@ -70,24 +71,36 @@ export function InspectorPanel(): React.JSX.Element {
         {asset !== undefined ? (
           <AssetProperties key={asset.id} asset={asset} spriteIndex={selectedSprite?.index} />
         ) : selected !== undefined ? (
-          // 对象视图只列**人要用它做决定**的字段：内部标识（id）与组件数量不显示——
-          // id 是一串机器 id、组件数现在恒为 0，两者都只会占地方。
-          // `key` = 对象 id：**换对象时分组回到展开**（折叠状态是组件本地的，参考实现也在
-          // 切换对象时重置，免得「上一个对象收起的分组」跟着跑到下一个对象身上）
+          // 对象视图只列**人要用它做决定**的字段：内部标识（id）不显示——
+          // id 是一串机器 id，只会占地方。
           //
-          // 显示哪几组、组里是什么，全在 `registry.tsx` 的 `OBJECT_GROUPS` 里——
-          // 这里只负责「按顺序渲染适用的那些组」。
+          // 分组 = 三类，一一对应的关系从这里能直接看出来：
+          // - 「基础」（`OBJECT_EDITOR`）= **实体属性组**：名称 / 变换这些不进组件的字段（角标「实体」）；
+          // - 组件编辑器表（`registry.tsx` 的 `COMPONENT_EDITORS`）**一个组件一个组**，
+          //   组标题 = 组件 displayName；
+          // - 组件还没添加时那一组是**能力入口**（开关 / 选图 / 修复），角标「未添加」。
+          //
+          // `key` = 对象 id：**换对象时分组回到展开**（折叠状态是组件本地的，参考实现也在
+          // 切换对象时重置，免得「上一个对象收起的分组」跟着跑到下一个对象身上）。
+          // 显示哪几组、组里是什么，全在 `registry.tsx` 里——这里只负责「按顺序渲染适用的那些组」。
           <div key={selected.id} data-testid="object-properties">
-            <FieldGroup title={OBJECT_EDITOR.title} group={OBJECT_EDITOR.group}>
+            <FieldGroup title={OBJECT_EDITOR.title} group={OBJECT_EDITOR.group} badge="entity">
               {OBJECT_EDITOR.render(selected)}
             </FieldGroup>
-            {componentEditorsFor(selected).flatMap((editor) =>
-              editor.panels.map((panel) => (
-                <FieldGroup key={`${editor.type}:${panel.group}`} title={panel.title} group={panel.group}>
+            {componentEditorsFor(selected).flatMap((editor) => {
+              // 组件实例在 = 正式组件组（不挂角标）；实例不在（能力入口）= 挂「未添加」
+              const attached = componentOf(selected, editor.type) !== undefined;
+              return editor.panels.map((panel) => (
+                <FieldGroup
+                  key={`${editor.type}:${panel.group}`}
+                  title={panel.title}
+                  group={panel.group}
+                  badge={attached ? undefined : "capability"}
+                >
                   {panel.render(selected)}
                 </FieldGroup>
-              )),
-            )}
+              ));
+            })}
           </div>
         ) : activeScene !== undefined ? (
           <FieldGroup title="场景" group="scene">

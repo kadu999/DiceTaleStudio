@@ -12,6 +12,7 @@ import {
   seedProjectDoc,
   solidPng,
   uploadSceneImage,
+  withComponent,
 } from "./helpers/editor";
 import { canvasAverageColor, canvasPixelSum, fittedCellPoint, worldSamplePoint } from "./helpers/canvas";
 
@@ -194,15 +195,15 @@ test.describe("网格标注：画布显示", () => {
       const mapDoc = mapObjectDoc(project, SCENE, "网格地图", MAP_SIZE, GRID);
       // 整张网格涂「区域1」（掩码 1），并把区域1 指定成雾区：
       // 画布若给雾另加一层覆盖，同一格会被画第二遍（红 α0.6 叠两次 → 绿通道 102 掉到 41）
-      // v19 起网格与战争雾都在 `GridMap` 组件的数据里（改的就是夹具里那一份活数据）
+      // v25 起战争雾是独立的 `FogOfWar` 组件（网格数据仍在 `GridMap` 里）
       const gridMap = objectComponentData(mapDoc, COMPONENT.gridMap)!;
       gridMap.cells = {
         encoding: "rle",
         runs: [[1, GRID.width * GRID.height]],
       };
-      gridMap.fog = { enabled: true, regions: [1] };
+      const fogMap = withComponent(mapDoc, COMPONENT.fogOfWar, { enabled: true, regions: [1] });
 
-      await seedProjectDoc(request, project, [sceneDoc(SCENE, [mapDoc])]);
+      await seedProjectDoc(request, project, [sceneDoc(SCENE, [fogMap])]);
       await uploadSceneImage(request, project, SCENE, solidPng(4, 4, [255, 255, 255]));
       await openFirstObject(page, project, "网格地图");
 
@@ -214,7 +215,7 @@ test.describe("网格标注：画布显示", () => {
       const before = await canvasAverageColor(page, point);
       expect(before.g).toBeGreaterThan(90);
 
-      // 战争雾开着（文件里 `fog.enabled`）：画布上**不该**多出任何一层（雾只在 Mask 窗口里看）
+      // 战争雾开着（文件里有 `FogOfWar` 组件）：画布上**不该**多出任何一层（雾只在 Mask 窗口里看）
       await expect(page.getByTestId("fog-region-1")).toBeVisible();
       const after = await canvasAverageColor(page, point);
       expect(Math.abs(after.g - before.g)).toBeLessThanOrEqual(2);

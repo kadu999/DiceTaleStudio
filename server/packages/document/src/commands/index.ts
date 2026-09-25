@@ -18,6 +18,7 @@ export * from "./object";
 export * from "./field";
 export * from "./scene";
 export * from "./grid-map";
+export * from "./fog";
 export * from "./play-sound";
 export * from "./teleport";
 export * from "./video";

@@ -23,7 +23,7 @@ import type { SoundLayer } from "./types";
 /**
  * 能力槽位：组件自报「我承担对象哪种能力」，access.ts 按它找对象上的组件。
  */
-export type ComponentSlot = "map" | "image" | "sound" | "teleport" | "video";
+export type ComponentSlot = "map" | "fog" | "image" | "sound" | "teleport" | "video";
 
 /**
  * 全部对象类型（= 预设 id 的取值）。**顺序就是规范顺序**（文档枚举、编辑器类型表都按它排）。
@@ -96,6 +96,7 @@ export interface GameObjectPreset {
  */
 export const DEFAULT_SLOT_COMPONENT: Readonly<Record<ComponentSlot, ComponentType>> = {
   map: "GridMap",
+  fog: "FogOfWar",
   image: "ImageLayer",
   sound: "PlaySound",
   teleport: "Teleport",
@@ -111,13 +112,14 @@ export const SPRITE_COMPONENT: ComponentType = "SpriteLayer";
  * `image` 那条槽位只登记在支持贴图的具体预设上（`Sprite` / `Image` / `Player` / `Item` /
  * `Event`），避免把显示图能力泛化到动作或地图；`video` 那个槽位**刻意只给地图与贴图**
  * （`Map` / `Image`）——视频画面盖在对象自己的矩形上，精灵显示的是图集里的一格，
- * 它的渲染选项归「渲染」那一组。
+ * 它的渲染选项归「渲染」那一组。`fog` 槽位**只给地图**（`Map`）：雾区引用地图格子上的
+ * 区域位，是 `GridMap` 的从属能力。
  */
 export const OBJECT_PRESETS: Readonly<Record<ObjectKind, GameObjectPreset>> = {
   GameObject: { kind: "GameObject", abstract: true, slots: {} },
   Sprite: { kind: "Sprite", slots: { image: "SpriteLayer" } },
   Image: { kind: "Image", slots: { image: "ImageLayer", video: "VideoOverlay" } },
-  Map: { kind: "Map", slots: { image: "ImageLayer", map: "GridMap", video: "VideoOverlay" } },
+  Map: { kind: "Map", slots: { image: "ImageLayer", map: "GridMap", fog: "FogOfWar", video: "VideoOverlay" } },
   Player: { kind: "Player", slots: { image: "ImageLayer" } },
   Item: { kind: "Item", slots: { image: "ImageLayer" } },
   Event: { kind: "Event", slots: { image: "ImageLayer" } },
@@ -180,6 +182,24 @@ export function supportsVideo(target: ObjectKind | GameObjectDoc): boolean {
   }
 
   return presetOf(target)?.slots.video !== undefined;
+}
+
+/**
+ * 哪些对象能带战争雾：已挂 `FogOfWar` 的对象；缺组件时按组件定义的可选准入 kind 添加
+ * （地图预设上「战争雾」组因此**总是出现**，与「视频」组同一交互：打开开关才建组件）。
+ *
+ * 雾区引用地图格子上的区域位，`FogOfWar` 从属 `GridMap`——它出现在对象上而对象
+ * 不是地图时，由 `componentKindMismatchOf` 报错位、这里不加入口。
+ */
+export function supportsFog(target: ObjectKind | GameObjectDoc): boolean {
+  if (typeof target !== "string") {
+    if (target.components.some((component) => component.type === DEFAULT_SLOT_COMPONENT.fog)) return true;
+    if (target.components.some((component) => findComponentType(component.type)?.slot === "fog")) return false;
+    if (componentKindMismatchOf(target.components, target.kind)) return false;
+    return findComponentType(DEFAULT_SLOT_COMPONENT.fog)?.optionalKinds?.includes(target.kind) === true;
+  }
+
+  return presetOf(target)?.slots.fog !== undefined;
 }
 
 /**

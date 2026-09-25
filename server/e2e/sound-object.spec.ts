@@ -86,11 +86,12 @@ test.describe("动作对象：播放声音", () => {
       await expect(row).toHaveAttribute("data-kind", "PlaySound");
       await expect(row).toContainText("音效");
 
-      // 属性面板：基础和实体一样（位置 / 缩放 / 锁定 / 显示顺序都在），另有「声音」；
-      // **没有「渲染」**——图标是固定的内置图标，不给换贴图
+      // 属性面板：基础和实体一样（位置 / 缩放 / 锁定 / 显示顺序都在），另有「播放声音」；
+      // **没有「图片层 / 精灵层」**——图标是固定的内置图标，不给换贴图
       await selectObject(page, 0);
       await expect(page.locator('[data-group="sound"]')).toBeVisible();
-      await expect(page.locator('[data-group="render"]')).toHaveCount(0);
+      await expect(page.locator('[data-group="image"]')).toHaveCount(0);
+      await expect(page.locator('[data-group="sprite"]')).toHaveCount(0);
       await expect(page.getByTestId("pick-texture")).toHaveCount(0);
       await expect(page.getByTestId("inspector-object-x")).toHaveValue("0");
       await expect(page.getByTestId("inspector-object-scale")).toHaveValue("1");
@@ -529,7 +530,7 @@ async function connectFakeSoundClient(page: Page, port: number): Promise<void> {
           type: "client_hello",
           // 与 `@dts/protocol` 的 `PROTOCOL_VERSION` 一致（这里写死：e2e 不是 workspace 包，
           // 拿不到那个常量；版本一升这里会连不上、用例会当场失败，提醒同步改）
-          protocolVersion: 12,
+          protocolVersion: 13,
           name: "e2e 假前端",
           version: "0.0.0",
         }),

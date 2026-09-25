@@ -8,7 +8,7 @@ import {
   visibleMaskBits,
   type GridSize,
 } from "@dts/grid";
-import { mapDataOf } from "@dts/document";
+import { fogOf, mapDataOf } from "@dts/document";
 import { assetRawUrl } from "../panels/asset-picker";
 import { decodeCellsCached } from "../panels/scene/grid-paint";
 import {
@@ -74,7 +74,8 @@ export function FogMaskDialog({
   const map = object === undefined ? undefined : mapDataOf(object);
   const imageRef = map?.image;
 
-  const regions = map?.fog?.regions ?? [];
+  // 雾区绑定自 v25 起住在独立的 `FogOfWar` 组件里
+  const regions = object === undefined ? [] : (fogOf(object)?.regions ?? []);
   const fogMask = regionsToMask(regions);
 
   /**
