@@ -65,7 +65,7 @@ export function createSpriteSlice(
      * `guid` 原样带过去：它是这个引用的**身份**（v23 起有 guid 就以它为准），
      * 漏掉它这次换图就退回到「只认路径」——素材一改名，这次挑的图就断链。
      * 没有 guid 的引用也不在这里补（补 = 改 meta = 另一条轨道，那会让「一次操作一条记录」不成立）；
-     * 补身份是挑图那一刻的事，见 `ensureAssetMeta` 与 `ImagePickerDialog`。
+     * 补身份是挑图那一刻的事，见 `ensureAssetMeta` 与 `ResourcePickerDialog`。
      */
     setObjectImageSprite(objectId, image: ImageRef, sprite: ImageSpriteRef | null) {
       const state = get();

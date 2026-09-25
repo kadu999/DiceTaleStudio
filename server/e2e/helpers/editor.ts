@@ -1008,7 +1008,7 @@ export async function seedProjectAudioMeta(
  * 把一张图片的 `<素材>.meta` 写成**已启用精灵**（`importer: "texture"` + `sprite` 段）。
  *
  * 为什么需要它：精灵对象的「选择贴图」弹框**只列 `spriteSettingsOfMeta(...).type === "Sprite"`
- * 的图**（`ImagePickerDialog` 的 `allowSprite` 过滤）——而没有 `.meta` 的素材默认是 `Default`
+ * 的图**（`ResourcePickerDialog` 的 `allowSprite` 过滤）——而没有 `.meta` 的素材默认是 `Default`
  * （`spriteSettingsOfMeta` 里 `sprite === undefined → { type: "Default" }`），
  * 于是在精灵的弹框里**根本不出现**，用例会卡在选择器上。
  *

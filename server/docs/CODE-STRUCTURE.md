@@ -16,7 +16,7 @@
 | 后端默认地址 | `0.0.0.0:1420`（`resources/config/app.json`，可被 `HOST` / `PORT` 覆盖） |
 | 编辑器开发地址 | `http://localhost:5173`（Vite，`/api`、`/editor`、`/client` 反代到 1420） |
 | 编辑器生产地址 | `http://localhost:1420`（后端同源托管 `apps/editor/dist`） |
-| 源码规模（不含测试） | 162 个文件 / 34,941 行（packages 11,564 · backend 3,283 · editor 20,094） |
+| 源码规模（不含测试） | 160 个文件 / 34,940 行（packages 11,564 · backend 3,283 · editor 20,093） |
 | 测试规模 | 31,948 行（单测 22,725 · E2E 8,940 · 架构测试 283） |
 
 > 上表两行与 §0.1 表格里加粗的文件行数、§3.x 节标题里的包规模由
@@ -1198,21 +1198,19 @@ export function createSoundSlice(
 
 | 文件 | 行数 | 职责 | 对外导出 |
 |---|---|---|---|
-| `EditorShell.tsx` | 374 | 四区外壳（桌面三栏 / 紧凑抽屉）、启动引导 `bootstrapEditor`、**全局快捷键注册**、跨断点重置面板开合、按 store 开关渲染 12 个对话框；内部 `Drawer`。 | `EditorShell` |
+| `EditorShell.tsx` | 380 | 四区外壳（桌面三栏 / 紧凑抽屉）、启动引导 `bootstrapEditor`、**全局快捷键注册**、跨断点重置面板开合、按 store 开关渲染 12 个对话框；内部 `Drawer`。 | `EditorShell` |
 | `MenuBar.tsx` | 385 | 顶部菜单（工程/场景/编辑/视图/运行）+ 顶栏右侧（紧凑开关、`BgmControl`、`ModeSwitch`、`ClientBadge`）。原则：**所有命令都必须能从菜单触发**。 | `MenuBar` |
 | `StatusBar.tsx` | 98 | 底栏八个状态格：工程名、场景数、场景保存状态、工程保存状态、当前场景、已选数、当前工具、运行态与连接状态点；内部 `SAVE_STATE_LABELS`（含 `runtime: "运行中（不保存）"`）、`TOOL_LABELS`。 | `StatusBar` |
 | `dialog-size.ts` | 96 | 弹窗尺寸计算（比例 0.8×0.86，夹 720×520 ~ 1680×1200，且不超过窗口 92%）与「按长宽比等比装进可用区域」；`useViewportSize` 订阅 resize。 | `dialogSizeFor`、`fitBox`、`useViewportSize`、`useDialogSize` |
 | `ProjectDialog.tsx` | 177 | 新建/打开项目：列表带「N 个文件」与删除（`confirm`），创建成功即关闭，失败把 `project.error` 摆在框里。 | `ProjectDialog` |
 | `SceneDialog.tsx` | 104 | 新建/重命名场景：场景名 = 文件名，失败原因就地显示。 | `SceneDialog` |
 | `ObjectDialog.tsx` | 206 | 「新建对象」弹框：先选种类（实体/动作/事件）再选类型（正方形瓦片 + `kindMarkerColor` 色点），名字用 `nextObjectName` 预填去重。 | `ObjectDialog` |
-| `ImagePickerDialog.tsx` | 231 | 「选择贴图 / 精灵」：列项目全部图片，缩略图 `onLoad` 读真实像素尺寸，双击 = 直接确定；**右侧切分面板**（`allowSprite` 为 false 的地图对象不给），确定时回调 `onPick(image, sprite)`——**图 + 格子一次交出去**，「使用整图 / 使用第X行第Y列」两个按钮，尺寸没读到就禁用确定。 | `ImagePickerDialog` |
+| `ResourcePickerDialog.tsx` | 564 | 「从项目已有素材里挑一个」的**通用选择弹框**：按 `kind`（`image` / `audio` / `video`）调整——`image` = 选贴图 / 精灵（选中 + 确认，缩略图列表 + 预览 + 精灵格网，`allowSprite` 控制切分面板，`onPick(image, sprite)` 图 + 格子一次交出）；`audio` / `video` = 点击即加入（可连点，`added` 置灰）。统一从资源树取清单（音频多一层 `audioCatalog`），testid 全部由 `kind` 派生；内部 `ImagePickerBody` / `MediaPickerBody` / `mediaPickerRows` / `MEDIA_TEXTS`。 | `ResourcePickerDialog`、`ResourcePickerKind` |
 | `SpriteEditorDialog.tsx` | 179 | 独立的**精灵编辑器**（v23 新增）：列 / 行（1..64）、缩放、预览图上点格，草稿只在弹窗内变化，点「应用」才落到**素材 meta** 那条轨道（`setSpriteSheet`，1×1 按「恢复整图」处理）。 | `SpriteEditorDialog` |
-| `AudioPickerDialog.tsx` | 148 | 「选择音频」：`audioCatalog` 列项目里的音频（清单就是资源树，不再有「标注指向已删文件」的行），带搜索框；点一条就 `addSoundClip`，已加入的禁用。 | `AudioPickerDialog` |
-| `VideoPickerDialog.tsx` | 128 | 「选择视频」：列 `listVideoAssets`，已加入的标「已加入」；`.webm` 行给「Windows 多半解不了」提醒。 | `VideoPickerDialog` |
 | `AudioTagDialog.tsx` | 155 | 「选择标签」：给一个音频文件勾/去标签（`allTagsOf` + `setAudioTags`），只勾选不新建；目标已经不在资源树里时什么都不做（不凭空造 orphan meta）。 | `AudioTagDialog` |
 | `AudioTagEditorDialog.tsx` | 197 | 「标签」窗口：整数序号 `#0…#N` 预铺（`SLOTS_PER_PAGE` 16、`MAX_SLOTS` 32），只填名字，洞不画。 | `AudioTagEditorDialog` |
-| `SoundEditDialog.tsx` | 264 | 「编辑声音」窗口：加/删音频、看路径、给每条起显示名（`sound.names`）；内嵌 `AudioPickerDialog`。 | `SoundEditDialog` |
-| `VideoEditDialog.tsx` | 272 | 「编辑视频」窗口：加/删视频、看路径、起名字（`video.names`）；内嵌 `VideoPickerDialog`。 | `VideoEditDialog` |
+| `SoundEditDialog.tsx` | 69 | 「编辑声音」窗口：加/删音频、看路径、给每条起显示名（`sound.names`）；选择弹框走 `ResourcePickerDialog kind="audio"`。 | `SoundEditDialog` |
+| `VideoEditDialog.tsx` | 71 | 「编辑视频」窗口：加/删视频、看路径、起名字（`video.names`）；选择弹框走 `ResourcePickerDialog kind="video"`。 | `VideoEditDialog` |
 | `TeleportEditDialog.tsx` | 117 | 「传送目标」窗口：把项目场景勾成候选（整份新清单交 `setTeleportTargets`）；已失效的目标照列并标「已失效」。 | `TeleportEditDialog` |
 | `GlobalSettingsDialog.tsx` | 110 | 「全局设置」：三档音量滑杆（`doc.settings.audio.*`，0..1 step 0.05）。 | `GlobalSettingsDialog` |
 | `BgmControl.tsx` | 79 | 顶栏「音乐」按钮：显示当前在放什么/暂停标记/播放中高亮；导出 `bgmDeliveryHint`（与声音/视频**同一套措辞**的「已记录，等连上补发」提示）。 | `BgmControl`、`bgmDeliveryHint` |
@@ -1499,9 +1497,9 @@ edit：取消去抖、`lastPushedSceneText=null`、发 `runtime_stop`）、`push
 | `EmptyState` | `project.current`、`openSceneDialog` | 没项目 / 没场景的占位；没场景时占位可点 |
 
 对话框绑定：`ProjectDialog` → `project`/`projectDialog`；`SceneDialog` → `activeSceneName`/`sceneDialog`；
-`ObjectDialog` → `objectDialog`；`ImagePickerDialog` / `SpriteEditorDialog`（挑图 + 取一格 / 精灵切分）→
+`ObjectDialog` → `objectDialog`；`ResourcePickerDialog`（kind=image 挑图 + 取一格）/ `SpriteEditorDialog`（精灵切分）→
 `imagePickerTarget`/**`assetMetas`（读切分与导入设置）**/`setSpriteSheet`；
-`SoundEditDialog`+`AudioPickerDialog` → `soundEditor(Target)`/`assetMetaTable`（每条音频的显示名）；`VideoEditDialog`+`VideoPickerDialog` → `videoEditor(Target)`；
+`SoundEditDialog`（内嵌 `ResourcePickerDialog` kind=audio）→ `soundEditor(Target)`/`assetMetaTable`（每条音频的显示名）；`VideoEditDialog`（内嵌 kind=video）→ `videoEditor(Target)`；
 `TeleportEditDialog` → `teleportEditor(Target)`；`GlobalSettingsDialog` → `doc.settings.audio`；
 `BgmControl`+`BgmDialog` → `bgmDialog`/`bgmPlayback`/`ui.bgmPaths`/`assetMetaTable`（清单的显示名与标签）；
 `AudioTagEditorDialog`+`AudioTagDialog` → `audioTags`/`doc.audioTags`（标签表）+ **各音频的 `assetMetaTable`**（勾了哪些标签）；

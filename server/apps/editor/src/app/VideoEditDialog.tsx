@@ -2,7 +2,6 @@ import { videoDataOf } from "@dts/document";
 import { useEditorStore } from "../state/editor-store";
 import { assetDisplayName } from "../panels/asset-info";
 import { assetDisplayPath, findAssetByReference, listVideoAssets } from "../panels/asset-picker";
-import { VideoPickerDialog } from "./VideoPickerDialog";
 import {
   fileNameOf,
   MediaClipListDialog,
@@ -44,7 +43,7 @@ export function VideoEditDialog({ open, objectId, onClose }: VideoEditDialogProp
       labels={LABELS}
       dataOf={videoDataOf}
       listAssets={listVideoAssets}
-      picker={VideoPickerDialog}
+      pickerKind="video"
       buildRow={(id, { tree, assetMetas, assetIds }) => {
         const asset = findAssetByReference(tree, id, assetMetas);
         const currentId = asset?.id ?? id;

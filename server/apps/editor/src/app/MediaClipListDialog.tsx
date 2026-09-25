@@ -3,6 +3,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import type { GameObjectDoc } from "@dts/document";
 import { useEditorStore } from "../state/editor-store";
 import { useSceneObject } from "./map-dialog-shell";
+import { ResourcePickerDialog } from "./ResourcePickerDialog";
 
 /**
  * 「编辑媒体清单」窗口的**通用实现**：「编辑声音」（`SoundEditDialog`）与
@@ -20,9 +21,10 @@ import { useSceneObject } from "./map-dialog-shell";
  * 给人看的标签，不参与播放、不进协议；加进来才播 / 放得出来（面板只在清单里选）。
  *
  * 两个调用方的差异全部走参数：`labels`（只差几个单词的文案）、`dataOf` /
- * `listAssets` / `picker`（各自的文档读取、素材列举与选择弹框）、`buildRow`
+ * `listAssets`（各自的文档读取与素材列举）、`buildRow`
  * （一行的展示细节：声音的占位跟随音频文件显示名、视频带 webm 提醒徽标）、
- * 三个 store 动作回调。**testid 由 `prefix` 派生**，测试钉住的
+ * 三个 store 动作回调。选择弹框本身已由 `ResourcePickerDialog` 按 `pickerKind`
+ * 通用化，这里只传种类。**testid 由 `prefix` 派生**，测试钉住的
  * `${prefix}-edit-dialog` / `-edit-body` / `-edit-list` / `-edit-row` / `-edit-name` /
  * `-edit-path` / `-edit-close` / `${prefix}-add` / `${prefix}-remove` 一枚不改。
  */
@@ -61,15 +63,6 @@ export interface MediaClipLabels {
   readonly nameTitle: string;
 }
 
-/** 「选择素材」弹框的公共 props（Audio / Video 两个 Picker 同形）。 */
-export interface MediaPickerProps {
-  readonly open: boolean;
-  readonly onClose: () => void;
-  /** 已经加进来的素材（这些行标「已加入」、点不动）。 */
-  readonly added: readonly string[];
-  readonly onPick: (id: string) => void;
-}
-
 type ProjectTree = ReturnType<typeof useEditorStore.getState>["project"]["tree"];
 type AssetMetaTable = ReturnType<typeof useEditorStore.getState>["assetMetas"];
 type AssetMetaIndex = ReturnType<typeof useEditorStore.getState>["assetMetaTable"];
@@ -94,7 +87,8 @@ export interface MediaClipListDialogProps {
   ) => { readonly clips?: readonly string[]; readonly names?: Readonly<Record<string, string>> } | undefined;
   readonly listAssets: (tree: ProjectTree) => readonly { readonly id: string }[];
   readonly buildRow: (clipId: string, context: MediaClipRowContext) => MediaClipRow;
-  readonly picker: React.ComponentType<MediaPickerProps>;
+  /** 「选择素材」弹框的种类（`ResourcePickerDialog` 按它调整清单与文案）。 */
+  readonly pickerKind: "audio" | "video";
   readonly onAdd: (objectId: string, clipId: string) => void;
   readonly onRename: (objectId: string, clipId: string, name: string) => void;
   readonly onRemove: (objectId: string, clipId: string) => void;
@@ -114,7 +108,7 @@ export function MediaClipListDialog({
   dataOf,
   listAssets,
   buildRow,
-  picker: Picker,
+  pickerKind,
   onAdd,
   onRename,
   onRemove,
@@ -200,7 +194,8 @@ export function MediaClipListDialog({
                 </div>
               </div>
 
-              <Picker
+              <ResourcePickerDialog
+                kind={pickerKind}
                 open={picking}
                 added={clips}
                 onPick={(id) => onAdd(object.id, id)}

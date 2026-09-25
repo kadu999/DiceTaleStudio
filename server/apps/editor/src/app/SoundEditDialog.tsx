@@ -3,7 +3,6 @@ import { useEditorStore } from "../state/editor-store";
 import { audioNameOf } from "../panels/audio-catalog";
 import { assetDisplayName } from "../panels/asset-info";
 import { assetDisplayPath, findAssetByReference, listAudioAssets } from "../panels/asset-picker";
-import { AudioPickerDialog } from "./AudioPickerDialog";
 import {
   fileNameOf,
   MediaClipListDialog,
@@ -45,7 +44,7 @@ export function SoundEditDialog({ open, objectId, onClose }: SoundEditDialogProp
       labels={LABELS}
       dataOf={soundDataOf}
       listAssets={listAudioAssets}
-      picker={AudioPickerDialog}
+      pickerKind="audio"
       buildRow={(id, { tree, assetMetas, metaTable, assetIds }) => {
         const asset = findAssetByReference(tree, id, assetMetas);
         const currentId = asset?.id ?? id;

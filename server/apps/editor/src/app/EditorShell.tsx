@@ -9,7 +9,7 @@ import { RuntimePanel } from "../panels/runtime/RuntimePanel";
 import { ScenePanel } from "../panels/scene/ScenePanel";
 import { FogMaskDialog } from "./FogMaskDialog";
 import { GridEditDialog } from "./GridEditDialog";
-import { ImagePickerDialog } from "./ImagePickerDialog";
+import { ResourcePickerDialog } from "./ResourcePickerDialog";
 import { SoundEditDialog } from "./SoundEditDialog";
 import { TeleportEditDialog } from "./TeleportEditDialog";
 import { VideoEditDialog } from "./VideoEditDialog";
@@ -271,7 +271,8 @@ export function EditorShell(): React.JSX.Element {
       <StatusBar />
 
       {/* 从项目已有图片中选择整张贴图 */}
-      <ImagePickerDialog
+      <ResourcePickerDialog
+        kind="image"
         open={imagePicker && pickerTarget !== undefined}
         currentId={
           pickerTarget === undefined || objectImage(pickerTarget) === undefined

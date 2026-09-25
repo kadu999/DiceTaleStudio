@@ -62,7 +62,7 @@ export const OBJECT_KINDS = [
  *   所以它**不需要新协议命令**：切场景本来就是编辑器的事，整份 `scene_push` 下去前端就换了。
  *
  * 贴图与精灵的数据形状相同（都是一份 `ImageRef`），只是**分开用两个组件**——
- * 编辑器里贴图入口的选择图片弹框也不给右侧切分面板（见 `ImagePickerDialog` 的 `allowSprite`）；
+ * 编辑器里贴图入口的选择图片弹框也不给右侧切分面板（见 `ResourcePickerDialog` 的 `allowSprite`）；
  * 反过来，**视频这一组只有地图与贴图有**（`OBJECT_PRESETS` 里 `video` 槽位的声明）：
  * 视频是「盖在这个对象自己的矩形上的一条片」，给贴图正是它的用法。
  */

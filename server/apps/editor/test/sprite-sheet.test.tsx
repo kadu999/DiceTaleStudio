@@ -12,7 +12,7 @@ import {
   type AssetMetaDoc,
   type GameObjectDoc,
 } from "@dts/document";
-import { ImagePickerDialog } from "../src/app/ImagePickerDialog";
+import { ResourcePickerDialog } from "../src/app/ResourcePickerDialog";
 import { SpriteEditorDialog } from "../src/app/SpriteEditorDialog";
 import { InspectorPanel } from "../src/panels/inspector/InspectorPanel";
 import { metaHistory } from "../src/state/store-core";
@@ -155,7 +155,7 @@ describe("选择窗口：搜索图片与选择子精灵", () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ width: 256, height: 128 }) });
     vi.stubGlobal("fetch", fetchMock);
     render(
-      <ImagePickerDialog open allowSprite currentId={IMAGE_ID} onClose={() => undefined} onPick={picked} />,
+      <ResourcePickerDialog kind="image" open allowSprite currentId={IMAGE_ID} onClose={() => undefined} onPick={picked} />,
     );
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining("/api/resources/thumbnail?id="),
