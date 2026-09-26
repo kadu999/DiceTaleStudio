@@ -12,12 +12,12 @@
 | 语言 / 运行时 | TypeScript 5.9 + ESM，Node 22+（后端跑在 `tsx` 上，无编译产物） |
 | 包管理 | pnpm workspace（`apps/*` + `packages/*`，共 8 个包） |
 | 文档格式版本 | `DOCUMENT_FORMAT_VERSION = 28`（`packages/document/src/types.ts`） |
-| 协议版本 | `PROTOCOL_VERSION = 17`（`packages/protocol/src/messages.ts`；v17 新增视频混合组件 `VideoBlend` 与命令 `erase_video_mask`，见 §6.1） |
+| 协议版本 | `PROTOCOL_VERSION = 18`（`packages/protocol/src/messages.ts`；v17 新增视频混合组件 `VideoBlend` 与命令 `erase_video_mask`，v18 给 `VideoBlend` 加 `autoPlay`，见 §6.1） |
 | 后端默认地址 | `0.0.0.0:1420`（`resources/config/app.json`，可被 `HOST` / `PORT` 覆盖） |
 | 编辑器开发地址 | `http://localhost:5173`（Vite，`/api`、`/editor`、`/client` 反代到 1420） |
 | 编辑器生产地址 | `http://localhost:1420`（后端同源托管 `apps/editor/dist`） |
-| 源码规模（不含测试） | 168 个文件 / 37,975 行（packages 12,753 · backend 3,493 · editor 21,729） |
-| 测试规模 | 33,972 行（单测 24,293 · E2E 9,396 · 架构测试 283） |
+| 源码规模（不含测试） | 168 个文件 / 37,999 行（packages 12,777 · backend 3,493 · editor 21,729） |
+| 测试规模 | 34,035 行（单测 24,349 · E2E 9,403 · 架构测试 283） |
 
 > 上表两行与 §0.1 表格里加粗的文件行数、§3.x 节标题里的包规模由
 > `scripts/check-code-structure-stats.mjs` **机器校验**（`pnpm check` 的一环）：
@@ -429,7 +429,7 @@ build: { outDir: "dist", sourcemap: true },
 - 画笔半径 `floor((brushSize-1)/2)`（1/2→1×1、3/4→3×3、5→5×5，含偶数尺寸的刻意保真），与 Unity `ApplyBrush` 完全一致；
 - 坐标系只有一个：**世界坐标**（x 右、y 上、像素、无限大）；`grid(0,0)` 在地图矩形左下角 = 图片最下面一行，grid.y 与世界 y 同向、不翻转；唯一的翻转发生在贴图绘制（`worldRectTopLeft`）。
 
-### 3.2 `@dts/document` — 文档模型、命令与历史（8,075 行）
+### 3.2 `@dts/document` — 文档模型、命令与历史（8,092 行）
 
 | 文件 | 行数 | 职责 | 关键导出 |
 |---|---|---|---|
@@ -447,7 +447,7 @@ build: { outDir: "dist", sourcemap: true },
 | `scale.ts` | 118 | 对象缩放语义（等比 + v11 单轴覆盖） | `DEFAULT_OBJECT_SCALE`(1)、`MIN_OBJECT_SCALE`(0.01)、`MAX_OBJECT_SCALE`(100)、`clampObjectScale`、`effectiveScaleX`、`effectiveScaleY`、`isUniformScale`、`collapseScale` |
 | `fields.ts` | 144 | 字段**描述符**（纯数据、不含 React）：`key` / `label` / `kind` / 取值约束 / 默认值 / 面板 testid 与行序 / 撤销合并，以及默认值推导与「键必须真在这份数据上」的约束类型 `TypedFieldDef` | `FieldDef`、`TypedFieldDef`、`FieldKind`、`FieldOption`、`defaultValueFor`、`defaultDataFromFields` |
 | `component-spec.ts` | 122 | **组件规格**的形状与声明助手：一个组件「有哪些简单字段」的唯一声明处；值收窄规则也在这里 | `ComponentSpec`、`defineComponent`、`REJECT`、`coerceFieldValue` |
-| `component-specs/` | 110 | **一组件一个文件**的规格（`video.ts` = `VideoOverlay`）+ 注册表 + `defaultDataOf`（默认数据的唯一归属地） | `videoSpec`、`COMPONENT_SPECS`、`componentSpecOf`、`defaultDataOf` |
+| `component-specs/` | 110 | **一组件一个文件**的规格（`video.ts` = `VideoOverlay`、`video-blend.ts` = `VideoBlend`）+ 注册表 + `defaultDataOf`（默认数据的唯一归属地） | `videoSpec`、`videoBlendSpec`、`COMPONENT_SPECS`、`componentSpecOf`、`defaultDataOf` |
 | `object-spec.ts` | 65 | **对象自身字段的规格**（「基础」那一组）：**v26 起为空**（显示顺序搬进渲染组件）；表里逐条写明其余七个字段为什么留在手写路径 | `ObjectSpec`、`defineObjectSpec`、`OBJECT_SPEC`、`objectFieldOf` |
 | `commands/field.ts` | 98 | **规格驱动的泛型写入**：组件字段与对象字段两条（取代「一个字段写一条命令」） | `setComponentField`、`setObjectField` |
 | `index.ts` | 19 | barrel | — |
@@ -675,7 +675,7 @@ v23 起 `validateScene` 多了第二个参数：`validateScene(scene, { metas })
 > **历史**：`@dts/actions`（动作类型注册表、条件求值、动作图校验）曾是独立的一个包，
 > 随「动作挂在组件上」那套旧模型一起整包删除了；动作编辑的数据面落地时重新设计。
 
-### 3.3 `@dts/protocol` — WS 消息契约（934 行）
+### 3.3 `@dts/protocol` — WS 消息契约（941 行）
 
 单文件 `src/messages.ts`（874 行）+ `index.ts` barrel（1 行）。
 **编辑器、服务端、Unity 前端共用同一份 zod schema。**
@@ -687,7 +687,7 @@ v23 起 `validateScene` 多了第二个参数：`validateScene(scene, { metas })
 
 | 名称 | 值 | 用途 |
 |---|---|---|
-| `PROTOCOL_VERSION` | `17` | 握手校验；不一致则关闭连接（`4002`）。最近一次改动是**新增视频混合组件 `VideoBlend` + 命令 `erase_video_mask`**：老前端不认这个组件 / 这条命令（混合层不建、命令回「不认识」），靠握手把它挡在连上的那一刻 |
+| `PROTOCOL_VERSION` | `18` | 握手校验；不一致则关闭连接（`4002`）。最近一次改动是**给视频混合组件 `VideoBlend` 加 `autoPlay`**（场景激活时自动混合播放选中的两条）：老前端（v17）不认这一项 → 不会自动播（行为丢），靠握手把它挡在连上的那一刻 |
 | `SPRITE_SHEET_MAX` | `64` | 子图切分的**列 / 行上限**（与 `@dts/document` 的 `SPRITE_SHEET_MAX` 同值，契约测试盯着） |
 | `RUNTIME_INACTIVE_STATUS` | `503` | 未开闸时拒绝 `/client` 升级的 HTTP 状态 |
 | `RUNTIME_INACTIVE_REASON` | `"runtime-inactive"` | 写在 `x-dts-reason` 头里 |
@@ -1605,7 +1605,7 @@ edit：取消去抖、`lastPushedSceneText=null`、发 `runtime_stop`）、`push
 
 ### 6.1 版本演进
 
-`DOCUMENT_FORMAT_VERSION = 28`，`PROTOCOL_VERSION = 16`。两者**独立编号**，只有不兼容的 wire 改动才会让协议 +1：
+`DOCUMENT_FORMAT_VERSION = 28`，`PROTOCOL_VERSION = 18`。两者**独立编号**，只有不兼容的 wire 改动才会让协议 +1：
 文档 v22 ↔ 协议 v12 是**最后一次配套发布**（`kind` 改名：贴图 `Texture`→`Image`、精灵 `SceneObject`→`Sprite`，
 协议 v11 的老客户端不认这两个值——占位色退回灰色（图照常显示，显示走组件名），
 按「不是崩、是画面错」的同一条纪律靠握手 `4002` 挡住）。
@@ -1622,6 +1622,10 @@ edit：取消去抖、`lastPushedSceneText=null`、发 `runtime_stop`）、`push
 **v28 ↔ v16 是又一次配套发布**：取消 `Map` 类型，`GridMap` 的 data 去掉 `image` / `sortingOrder`
 （改由对象的 `ImageLayer` 承载）。老前端（v15）按 `map.image` 取图 → 取不到，网格地图退成占位色
 （不是崩，是画面错），按同一条纪律靠握手挡住；命令那一组仍然一个字节都没动。
+**v28 ↔ v17 / v18 是协议侧的两次追加**（文档格式停在 v28，没有配套的文档改动）：v17 新增视频混合组件
+`VideoBlend` + 命令 `erase_video_mask`（老前端 v16 不认 → 混合层不建、命令回「不认识」）；v18 给
+`VideoBlend` 的 data 加 `autoPlay`（老前端 v17 不认 → 不会自动播）。都属于「行为丢」，按同一条纪律
+靠握手 `4002` 挡住；命令那一组 v18 一个字节都没动。
 规则：文档格式**任何结构不兼容的改动 +1**；协议**任何不兼容改动 +1**。
 
 | 文档版本 | 内容 | 迁移方式 |
@@ -1982,7 +1986,8 @@ upgradeRawDocument
 **helper 的两处「复述常量」**（升级时必须同步改，注释里都写明了）：
 `e2e/helpers/editor.ts` 的 `CURRENT_SCENE_FORMAT_VERSION = 24` 复述 `@dts/document` 的
 `DOCUMENT_FORMAT_VERSION`；`fog-reveal.spec.ts` / `global-bgm.spec.ts` / `video-object.spec.ts` /
-`sound-object.spec.ts` 里写死的 `protocolVersion: 12` 复述 `@dts/protocol` 的 `PROTOCOL_VERSION`。
+`video-blend.spec.ts` / `sound-object.spec.ts` 里写死的 `protocolVersion: 18` 复述 `@dts/protocol` 的
+`PROTOCOL_VERSION`。
 E2E **不引用内部包**（根上没有 workspace 链接），所以这些常量不会被类型检查兜住。
 
 ---

@@ -396,11 +396,12 @@ namespace DiceTale
                 autoplayTable.TryGetValue(obj.id, out var previousAutoplay);
                 objectTable[obj.id] = obj;
 
-                if (ShouldAutoplayVideo(obj, previousAutoplay, sceneActivated))
+                var nowAutoplay = AutoplayStateOf(obj);
+                if (ShouldAutoplayVideo(nowAutoplay, previousAutoplay, sceneActivated))
                 {
                     autoPlayObjects.Add(obj.id);
                 }
-                autoplayTable[obj.id] = AutoplayStateOf(obj);
+                autoplayTable[obj.id] = nowAutoplay;
 
                 // **动作对象（PlaySound / Teleport）不建视图**：它们只是「一条给前端的指令」，
                 // 数据留在镜像里够用（命令要用它取数据）；编辑器画布上那两枚徽标是编辑器的画法。
@@ -511,22 +512,50 @@ namespace DiceTale
             return table;
         }
 
+        /// <summary>
+        /// 「该不该自动播」与「播的是哪两条」——**视频与视频混合互斥**，最多命中一种。
+        ///
+        /// 视频混合（v18 起）没有 `enabled`（组件在 = 在用），`autoPlay` 用泛型读取器读
+        /// （见 <see cref="MirrorObject"/> 的「加新字段的规矩」）；两条通道至少一条选中就能播
+        /// （与命令 `play_video` 同一条口径，少的那条按黑场）。
+        /// </summary>
         private static AutoplayState AutoplayStateOf(MirrorObject obj)
         {
-            return new AutoplayState
+            var state = new AutoplayState
             {
                 active = obj.active,
                 hasPosition = obj.hasPosition,
-                enabled = obj.video != null && obj.video.enabled && obj.video.autoPlay,
-                picked = obj.video != null ? obj.video.picked : null,
             };
+
+            if (obj.HasComponent(Protocol.ComponentType.VideoBlend))
+            {
+                state.picked = BlendPickedKey(obj);
+                state.enabled = obj.ComponentBool(Protocol.ComponentType.VideoBlend, "autoPlay")
+                    && state.picked != null;
+                return state;
+            }
+
+            var video = obj.video;
+            state.enabled = video != null && video.enabled && video.autoPlay
+                && !string.IsNullOrEmpty(video.picked) && video.clips.Contains(video.picked);
+            state.picked = video != null ? video.picked : null;
+            return state;
         }
 
-        private static bool ShouldAutoplayVideo(MirrorObject current, AutoplayState previous, bool sceneActivated)
+        /// <summary>
+        /// 视频混合选中的两条合成一个「变化检测键」（A / B 任一变了就重播）；两条都没选返回 null。
+        /// </summary>
+        private static string BlendPickedKey(MirrorObject obj)
         {
-            var video = current.video;
-            if (!current.active || !current.hasPosition || video == null || !video.enabled || !video.autoPlay
-                || string.IsNullOrEmpty(video.picked) || !video.clips.Contains(video.picked))
+            var data = obj.ComponentData(Protocol.ComponentType.VideoBlend);
+            var a = JsonParser.GetString(JsonParser.GetObject(data, "a"), "picked");
+            var b = JsonParser.GetString(JsonParser.GetObject(data, "b"), "picked");
+            return string.IsNullOrEmpty(a) && string.IsNullOrEmpty(b) ? null : a + "\u0000" + b;
+        }
+
+        private static bool ShouldAutoplayVideo(AutoplayState now, AutoplayState previous, bool sceneActivated)
+        {
+            if (!now.active || !now.hasPosition || !now.enabled)
             {
                 return false;
             }
@@ -536,7 +565,7 @@ namespace DiceTale
                 || !previous.active
                 || !previous.hasPosition
                 || !previous.enabled
-                || previous.picked != video.picked;
+                || previous.picked != now.picked;
         }
 
         public MirrorObject FindInScene(string sceneName, string objectId)

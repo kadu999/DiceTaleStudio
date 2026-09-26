@@ -112,8 +112,13 @@ import { z } from "zod";
  * 同一套轨迹口径，但寻址的是**贴图对象**上的 `VideoBlend`）。老前端（v16）不认这个组件 →
  * 混合层不建（不是崩，是那一层没有），且收到 `erase_video_mask` 会因未知命令被拒——
  * 按同一条纪律 +1：服务端与 Unity 客户端必须同批更新。**其余消息与命令一个字节都没动。**
+ *
+ * v18（2026-09-26）：**视频混合多了 `autoPlay`**（场景激活时自动混合播放选中的两条，
+ * 与 `VideoOverlay` 的 `autoPlay` 同义）。组件的 data 里多一个布尔，命令那一组一个字节都没动。
+ * 老前端（v17）不认这一项 → 不会自动播（不是崩，是行为丢），按同一条纪律 +1：
+ * 服务端与 Unity 客户端必须同批更新。
  */
-export const PROTOCOL_VERSION = 17;
+export const PROTOCOL_VERSION = 18;
 
 /** 未进入运行态时拒绝 `/client` 升级的 HTTP 状态与原因头。 */
 export const RUNTIME_INACTIVE_STATUS = 503;
@@ -292,7 +297,7 @@ export const videoDataSchema = z.object({
 
 /**
  * 视频混合组件（v17 起，可选，只有贴图能带）：两条视频通道（A 盖住 / B 擦开露出）
- * + 循环 + 声音来源。
+ * + 循环 + 自动播放（v18）+ 声音来源。
  *
  * 与文档 schema 同一口径：两条通道各是 `{ clips, picked? }`（列表给默认值、`picked` 不给）；
  * **没有 `enabled`**——与 `GridMap` 一样「组件在 = 在用」（编辑器 Add Component 添加 / 移除）。
@@ -310,6 +315,8 @@ export const videoBlendDataSchema = z.object({
   a: videoBlendChannelSchema.default(() => ({ clips: [] })),
   b: videoBlendChannelSchema.default(() => ({ clips: [] })),
   loop: z.boolean().default(false),
+  // 场景激活时自动混合播放（v18；与 `videoDataSchema` 的 `autoPlay` 同一口径）
+  autoPlay: z.boolean().default(false),
   // 与文档的 `VIDEO_BLEND_AUDIO` 同值（protocol 不能依赖文档包，这里复刻一份）
   audio: z.enum(["none", "a", "b"]).default("none"),
 });

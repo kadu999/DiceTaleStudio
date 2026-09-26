@@ -64,6 +64,7 @@ export interface VideoBlendDataDoc {
   readonly a: VideoBlendChannelDoc;
   readonly b: VideoBlendChannelDoc;
   readonly loop: boolean;
+  readonly autoPlay: boolean; // 场景激活时自动混合播放（与「视频」的 autoPlay 同义）
   readonly audio: VideoBlendAudio;
 }
 ```
@@ -71,15 +72,18 @@ export interface VideoBlendDataDoc {
 - **文档格式版本不动（28）**：纯加法——旧文件不含它、照常解析；新文件里的新组件由
   `sceneComponentSchema` 的 `permissiveComponentSchema` 宽松分支兜底老编辑器（保留、不删、不崩）。
   无迁移（新组件没有历史扁平字段，不属于 `FEATURE_COMPONENT_TYPES`）。
-- 默认值：`a/b = { clips: [] }`、`loop: false`、`audio: "none"`。
+- 默认值：`a/b = { clips: [] }`、`loop: false`、`autoPlay: false`、`audio: "none"`。
 - **实现与最初设计的差异（已落地）**：
   - 两条通道用**嵌套对象** `a` / `b`（而不是扁平的 `clipsA` / `pickedA`）——它们与声音 / 视频
     是**同一个形状** `{ clips, picked? }`，于是 `commands/shared.ts` 的 `setMediaList` /
     `setMediaPicked` 骨架原样复用（只多传一个 `mediaOf` 选择器取通道），不必再抄一份；
   - **去掉 `enabled`**：新组件走「组件在 = 在用」（`GridMap` 那套），不再背 `VideoOverlay.enabled`
-    那份 v19 遗留的兼容字段。
+    那份 v19 遗留的兼容字段；
+  - **后续追加了 `autoPlay`**（协议 v18）：与「视频」的 `autoPlay` 同义——场景激活 / 前端刚连上时
+    不用 GM 点「播放」，前端自己把两条起起来。它是个简单无副作用的开关，进组件规格、走泛型
+    `setComponentField`（和 `loop` / `audio` 同一条路）。
 
-## 协议（16 → 17）
+## 协议（16 → 17 → 18）
 
 - `COMPONENT_TYPE.videoBlend = "VideoBlend"` + `videoBlendDataSchema` 进 `sceneComponentSchema` 的**严格分支**
   （若不进，写坏的 data 会掉进宽松分支被静默收下）；`PROTOCOL_VERSION` 16 → **17**。
@@ -89,6 +93,8 @@ export interface VideoBlendDataDoc {
   后者在协议里明确写死 `objectId` = 雾对象 id、雾层在推下去的 `FogOfWar` 里，混用会让两条语义互相污染。
 - 老前端不认 `VideoBlend` → 混合层不建（整条场景消息仍合法）；靠握手 4002 挡在连上那一刻
   （与 v13 加 `FogOfWar` 同一条规矩）。
+- **v18**：`videoBlendDataSchema` 多一项 `autoPlay`（缺省 `false`）。老前端（v17）不认它 →
+  不会自动播（行为丢），照旧靠握手 4002 挡；命令那一组一个字节都没动。
 
 ## 编辑器
 
@@ -113,8 +119,10 @@ export interface VideoBlendDataDoc {
 - `Resources/Shaders/VideoBlend.shader`（新）：`fixed4 a = tex2D(_TexA, uv); fixed4 b = tex2D(_TexB, uv); return lerp(b, a, mask.a) * vertexColor;`
   羽化复用 `DiceTale/FogBlur` 链（遮罩是白的，模糊只作用于 alpha）。
 - 遮罩尺寸 = `VideoPlayer.width/height` → `previewMaskSizeFor`（与编辑器同式；`Prepare` 后才知道尺寸，先不建、`prepareCompleted` 再建）。
-- 接线：`Network/Protocol.cs`（组件名 + 命令）、`Data/SceneModel.cs`（镜像字段）、`Data/SceneParser.cs`（case）、
-  `Logic/SceneMirror.cs`（挂载）、`Logic/CommandRouter.cs`（路由 `erase_video_mask`）。
+- 接线：`Network/Protocol.cs`（组件名 + 命令 + 协议版本）、`Logic/SceneMirror.cs`（挂载 + **自动播放**：
+  `AutoplayStateOf` / `ShouldAutoplayVideo` 也认 `VideoBlend`，`autoPlay` 走泛型读取器）、
+  `Logic/CommandRouter.cs`（路由四条播放命令 + `erase_video_mask` + `PlayVideoBlendAutomatically`）。
+  **不加镜像强类型字段**（`SceneModel.cs` / `SceneParser.cs` 不动）——按那两处的规矩走泛型读取器。
 
 ## 任务清单
 
@@ -129,6 +137,9 @@ export interface VideoBlendDataDoc {
       + **桌面 e2e**：`e2e/video-blend.spec.ts`（编辑态「擦了不落盘」+ `@runtime` 的 `play_video` / `erase_video_mask` / `stop_video`）；
       顺带修了 4 个假前端写死的 `protocolVersion: 16`（协议已 v17，不改会连不上）
 - [x] **D7 文档**：CODE-STRUCTURE（协议版本 + 命令表）/ 运行时镜像协议 spec（组件 / 命令 / 客户端表 + v17）/ `client/README` / 本文件
+- [x] **D8 自动播放**（后续追加，与「视频」的 `autoPlay` 对齐）：文档字段 + 规格行 + 协议 **v18** +
+      Unity（`SceneMirror` 自动播放表认 `VideoBlend`、`CommandRouter.PlayVideoBlendAutomatically`）+
+      单测 / e2e（`video-blend.spec.ts` 加一行断言）/ Unity EditMode（泛型读取器）
 
 ## 验收标准
 

@@ -41,6 +41,32 @@ function mapObject(id = "map-1"): GameObjectDoc {
   return createGridMapObject({ id, name: "网格地图", image: IMAGE, grid: GRID });
 }
 
+describe("组件规格：VideoBlend", () => {
+  it("也只接管三个无副作用的开关（循环 / 声音 / 自动播放），两条通道不在里面", () => {
+    const spec = componentSpecOf(DEFAULT_SLOT_COMPONENT.videoBlend);
+    expect(spec).toBeDefined();
+    expect(spec?.fields.map((field) => field.key)).toEqual(["loop", "audio", "autoPlay"]);
+
+    const testIds = spec?.fields.map((field) => field.testId) ?? [];
+    expect(testIds).toEqual(["video-blend-loop", "video-blend-audio", "video-blend-auto-play"]);
+
+    // 行序严格递增（面板上的行序不随排序实现漂移）
+    const orders = spec?.fields.map((field) => field.order) ?? [];
+    expect([...orders].sort((a, b) => (a ?? 0) - (b ?? 0))).toEqual(orders);
+    expect(new Set(orders).size).toBe(orders.length);
+  });
+
+  it("`defaultData` 是完整形状：两条空通道 + 三个开关，`autoPlay` 默认关", () => {
+    expect(defaultDataOf(DEFAULT_SLOT_COMPONENT.videoBlend)).toEqual({
+      a: { clips: [] },
+      b: { clips: [] },
+      loop: false,
+      autoPlay: false,
+      audio: "none",
+    });
+  });
+});
+
 describe("组件规格：VideoOverlay", () => {
   it("只接管三个无副作用的开关，`enabled` 与列表字段都不在里面", () => {
     const spec = componentSpecOf(VIDEO);

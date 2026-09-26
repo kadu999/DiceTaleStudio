@@ -176,18 +176,25 @@ describe("视频混合：哪些对象能加", () => {
 });
 
 describe("视频混合：添加与移除", () => {
-  it("从菜单加上：两条空通道 + 循环 / 声音；组头移除整个摘掉（可撤销）", () => {
+  it("从菜单加上：两条空通道 + 循环 / 声音 / 自动播放；组头移除整个摘掉（可撤销）", () => {
     seedScene([texture()], ["tex-1"]);
     render(<InspectorPanel />);
 
     expect(hasGroup("videoBlend")).toBe(false);
     addComponentFromMenu("VideoBlend");
-    expect(blendOf("tex-1")).toEqual({ a: { clips: [] }, b: { clips: [] }, loop: false, audio: "none" });
+    expect(blendOf("tex-1")).toEqual({
+      a: { clips: [] },
+      b: { clips: [] },
+      loop: false,
+      autoPlay: false,
+      audio: "none",
+    });
     expect(hasGroup("videoBlend")).toBe(true);
     expect(screen.getByTestId("video-blend-a-empty").textContent).toBe("还没加视频");
     expect(screen.getByTestId("video-blend-b-empty").textContent).toBe("还没加视频");
     expect(screen.getByTestId("video-blend-loop")).toBeDefined();
     expect(screen.getByTestId("video-blend-audio")).toBeDefined();
+    expect(screen.getByTestId("video-blend-auto-play")).toBeDefined();
 
     act(() => useEditorStore.getState().addVideoBlendClip("tex-1", "a", CLIP));
     act(() => useEditorStore.getState().addVideoBlendClip("tex-1", "b", CLIP2));
@@ -201,8 +208,25 @@ describe("视频混合：添加与移除", () => {
       a: { clips: [CLIP], picked: CLIP },
       b: { clips: [CLIP2], picked: CLIP2 },
       loop: false,
+      autoPlay: false,
       audio: "none",
     });
+  });
+});
+
+describe("视频混合：自动播放开关（规格自动出行）", () => {
+  it("勾上进文档、可撤销（与「视频」那个开关同一套泛型写入）", () => {
+    blended();
+
+    const autoPlay = screen.getByTestId("video-blend-auto-play") as HTMLInputElement;
+    expect(autoPlay.checked).toBe(false);
+
+    fireEvent.click(autoPlay);
+    expect(blendOf("tex-1")?.autoPlay).toBe(true);
+    expect(autoPlay.checked).toBe(true);
+
+    act(() => useEditorStore.getState().undo());
+    expect(blendOf("tex-1")?.autoPlay).toBe(false);
   });
 });
 

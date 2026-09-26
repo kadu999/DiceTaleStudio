@@ -475,6 +475,11 @@ export interface VideoBlendDataDoc {
   readonly b: VideoBlendChannelDoc;
   /** 两条一起循环。 */
   readonly loop: boolean;
+  /**
+   * **场景激活时自动播放**（与 `VideoDataDoc.autoPlay` 同义）：切到这个场景 / 前端刚连上时，
+   * 不用 GM 点「播放」，前端自己把两条起起来。缺省关（现场别一进场景就轰）。
+   */
+  readonly autoPlay?: boolean;
   /** 出哪条的声音。 */
   readonly audio: VideoBlendAudio;
 }

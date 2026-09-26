@@ -97,8 +97,13 @@ namespace DiceTale
         /// Mask 混合：A 盖住、擦开露 B）+ 一条命令 `erase_video_mask`。老前端（v16）不认这个组件
         /// → 混合层不建（不是崩，是那一层没有），且收到 `erase_video_mask` 会回「不认识这条命令」——
         /// 属于「行为丢」，所以照旧 +1；这类不兼容由握手 close `4002` 挡住。
+        ///
+        /// v18（2026-09-26）：**视频混合多了 `autoPlay`**（场景激活时自动混合播放选中的两条，
+        /// 与 `VideoOverlay` 的 `autoPlay` 同义）。组件 data 里多一个布尔，命令那一组一个字节都没动。
+        /// 老前端（v17）不认这一项 → 不会自动播（不是崩，是行为丢），照旧 +1；
+        /// 这类不兼容由握手 close `4002` 挡住。
         /// </summary>
-        public const int Version = 17;
+        public const int Version = 18;
 
         /// <summary>对象特性组件的类型名（v9 起）。与服务端 `@dts/protocol` 的 `COMPONENT_TYPE` 逐字一致。</summary>
         public static class ComponentType
@@ -114,8 +119,8 @@ namespace DiceTale
             public const string Video = "VideoOverlay";
             /// <summary>
             /// 视频混合（v17 起）：两条视频叠在**同一个矩形**上用 Mask 混合（A 盖住、擦开露 B）。
-            /// `{ a: { clips, picked }, b: { clips, picked }, loop, audio }`；**遮罩是纯运行态**
-            /// （由 `erase_video_mask` 驱动），不随场景下发。与 `VideoOverlay` 语义互斥
+            /// `{ a: { clips, picked }, b: { clips, picked }, loop, autoPlay（v18 起）, audio }`；
+            /// **遮罩是纯运行态**（由 `erase_video_mask` 驱动），不随场景下发。与 `VideoOverlay` 语义互斥
             /// （同一对象最多其一），前端取 `VideoBlend` 优先。
             /// </summary>
             public const string VideoBlend = "VideoBlend";

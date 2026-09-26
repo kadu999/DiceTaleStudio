@@ -1,5 +1,5 @@
 import { defineComponent } from "../component-spec";
-import { DEFAULT_VIDEO_BLEND_AUDIO, DEFAULT_VIDEO_LOOP } from "../presets";
+import { DEFAULT_VIDEO_BLEND_AUDIO, DEFAULT_VIDEO_AUTO_PLAY, DEFAULT_VIDEO_LOOP } from "../presets";
 import { VIDEO_BLEND_AUDIO, type VideoBlendAudio, type VideoBlendDataDoc } from "../types";
 
 /** 声音来源的中文名（只有这里写中文；取值顺序由 `VIDEO_BLEND_AUDIO` 定）。 */
@@ -45,11 +45,21 @@ export const videoBlendSpec = defineComponent<VideoBlendDataDoc>({
       order: 40,
       tooltip: "两条同时放时声音只出一路；默认静音（现场别不小心轰一声）",
     },
+    {
+      key: "autoPlay",
+      label: "自动播放",
+      kind: "boolean",
+      default: DEFAULT_VIDEO_AUTO_PLAY,
+      testId: "video-blend-auto-play",
+      order: 50,
+      tooltip: "场景激活时自动混合播放选中的两条（与「视频」那个开关同义）",
+    },
   ],
   defaultData: () => ({
     a: { clips: [] },
     b: { clips: [] },
     loop: DEFAULT_VIDEO_LOOP,
+    autoPlay: DEFAULT_VIDEO_AUTO_PLAY,
     audio: DEFAULT_VIDEO_BLEND_AUDIO,
   }),
 });

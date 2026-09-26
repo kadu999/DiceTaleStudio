@@ -122,7 +122,7 @@ async function openBlendObject(page: Page, project: string): Promise<void> {
 // ---------------------------------------------------------------- 编辑态：面板与 Mask 窗口
 
 test.describe("视频混合：属性面板与 Mask 窗口", () => {
-  test("两条通道 / 循环 / 声音落进场景文件；Mask 窗口擦了不落盘", async ({ page, request }) => {
+  test("两条通道 / 循环 / 声音 / 自动播放落进场景文件；Mask 窗口擦了不落盘", async ({ page, request }) => {
     const project = await newProject(request);
     try {
       const clipA = await uploadVideo(request, project, "a.mp4");
@@ -134,11 +134,12 @@ test.describe("视频混合：属性面板与 Mask 窗口", () => {
       await openBlendObject(page, project);
 
       const group = page.locator('[data-group="videoBlend"]');
-      // 两条通道各一个小方块（A 还没选、B 已选）+ 循环 / 声音两行 + Mask 入口
+      // 两条通道各一个小方块（A 还没选、B 已选）+ 循环 / 声音 / 自动播放三行 + Mask 入口
       await expect(group.getByTestId("video-blend-a-clip")).toHaveCount(1);
       await expect(group.getByTestId("video-blend-b-clip")).toHaveCount(1);
       await expect(group.getByTestId("video-blend-loop")).toBeVisible();
       await expect(group.getByTestId("video-blend-audio")).toBeVisible();
+      await expect(group.getByTestId("video-blend-auto-play")).toBeVisible();
       await expect(group.getByTestId("video-blend-mask-open")).toBeVisible();
       await expect(group.getByTestId("video-blend-play")).toBeEnabled();
 
@@ -163,6 +164,12 @@ test.describe("视频混合：属性面板与 Mask 窗口", () => {
       await group.getByTestId("video-blend-loop").check();
       await expect
         .poll(async () => (await blendData(request, project, objectId))["loop"])
+        .toBe(true);
+
+      // 自动播放打开：同样是文档数据（v18，与「视频」那个开关同义）
+      await group.getByTestId("video-blend-auto-play").check();
+      await expect
+        .poll(async () => (await blendData(request, project, objectId))["autoPlay"])
         .toBe(true);
 
       const before = await blendData(request, project, objectId);
@@ -230,7 +237,7 @@ async function connectFakeClient(page: Page, port: number): Promise<void> {
           type: "client_hello",
           // 与 `@dts/protocol` 的 `PROTOCOL_VERSION` 一致（这里写死：e2e 不是 workspace 包，
           // 拿不到那个常量；版本一升这里会连不上、用例会当场失败，提醒同步改）
-          protocolVersion: 17,
+          protocolVersion: 18,
           name: "e2e 假前端",
           version: "0.0.0",
         }),

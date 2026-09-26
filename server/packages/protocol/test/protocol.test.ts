@@ -359,6 +359,7 @@ describe("协议：场景（镜像的那份对象数据）", () => {
       a: { clips: ["project:P/Assets/video/a.mp4"], picked: "project:P/Assets/video/a.mp4" },
       b: { clips: ["project:P/Assets/video/b.mp4"] },
       loop: true,
+      autoPlay: false,
       audio: "b",
     });
 
@@ -375,7 +376,7 @@ describe("协议：场景（镜像的那份对象数据）", () => {
         name: "场景1",
         objects: [{ ...sprite, components: [feature(COMPONENT_TYPE.videoBlend, {})] }],
       }).objects[0]?.components[0]?.data,
-    ).toEqual({ a: { clips: [] }, b: { clips: [] }, loop: false, audio: "none" });
+    ).toEqual({ a: { clips: [] }, b: { clips: [] }, loop: false, autoPlay: false, audio: "none" });
 
     expect(() =>
       sceneSchema.parse({

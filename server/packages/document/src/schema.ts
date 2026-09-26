@@ -180,7 +180,7 @@ export const videoDataSchema = z.object({
 });
 
 /**
- * 视频混合（可选，只有贴图能带）：两条视频通道（A 盖住 / B 擦开露出）+ 循环 + 声音来源。
+ * 视频混合（可选，只有贴图能带）：两条视频通道（A 盖住 / B 擦开露出）+ 循环 + 自动播放 + 声音来源。
  *
  * 与 `soundDataSchema` 同一套口径：两条通道各自是 `{ clips, picked? }`——列表给默认值
  * （手写文件少写一项时语义只能是「还没加视频」），`picked` **不给**（「没写」= 还没选，
@@ -199,6 +199,8 @@ export const videoBlendDataSchema = z.object({
   a: videoBlendChannelSchema.default(() => ({ clips: [] })),
   b: videoBlendChannelSchema.default(() => ({ clips: [] })),
   loop: z.boolean().default(DEFAULT_VIDEO_LOOP),
+  // 场景激活时自动播放（与视频同一口径；缺省关）
+  autoPlay: z.boolean().default(DEFAULT_VIDEO_AUTO_PLAY),
   audio: z.enum(VIDEO_BLEND_AUDIO).default(DEFAULT_VIDEO_BLEND_AUDIO),
 });
 

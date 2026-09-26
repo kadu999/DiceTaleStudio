@@ -86,7 +86,8 @@ Assets/
 **加一个字段时读哪里（规矩）**：`MirrorObject.components` 里**一直留着**每个组件的原始 `data`
 （`MirrorComponent.data`），所以新字段**就地读**，用
 `obj.ComponentBool("VideoOverlay", "autoPlay")` / `ComponentString` / `ComponentNumber`
-（`SceneModel.cs` 的四个读取器）。
+（`SceneModel.cs` 的四个读取器）。`VideoBlend` 就是这条路的一个实例：两条通道与 `autoPlay`
+都**没有**强类型镜像字段，`SceneMirror` 的自动播放表也靠这些读取器读它。
 
 **不要**再往 `MirrorVideo` / `MirrorSound` 这类强类型镜像上加字段，也不要往 `SceneParser`
 里加解析行——那是同一个事实抄两遍（镜像字段 + 解析行），而且会让「这个字段到底谁说了算」

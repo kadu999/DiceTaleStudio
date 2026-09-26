@@ -621,7 +621,19 @@ namespace DiceTale
         {
             var obj = mirror != null ? mirror.FindInScene(sceneName, objectId) : null;
             var view = mirror != null ? mirror.FindViewInScene(sceneName, objectId) : null;
-            if (obj == null || view == null || obj.video == null || !obj.video.enabled || !obj.video.autoPlay)
+            if (obj == null || view == null)
+            {
+                return;
+            }
+
+            // v18：视频混合对象也自动播（两组组件互斥，最多命中一种）
+            if (obj.HasComponent(Protocol.ComponentType.VideoBlend))
+            {
+                PlayVideoBlendAutomatically(obj, view);
+                return;
+            }
+
+            if (obj.video == null || !obj.video.enabled || !obj.video.autoPlay)
             {
                 return;
             }
@@ -820,6 +832,42 @@ namespace DiceTale
             var effect = $"开始混合播放（A={clipA ?? "-"}，B={clipB ?? "-"}）";
             Debug.Log($"[命令] 播放混合视频：{command.objectId} {effect}");
             session.SendCommandResult(command, true, effects: new[] { effect });
+        }
+
+        /// <summary>
+        /// 视频混合的**自动播放**（无网络命令，场景激活时由 <see cref="SceneMirror"/> 触发；v18）。
+        ///
+        /// 与 <see cref="HandlePlayVideoBlend"/> 同一套取数与 URL 解析，只是没有回执，
+        /// 且**自己再看一眼 `autoPlay`**（镜像变了 / 组件被摘掉都可能让这次触发过时）。
+        /// </summary>
+        private void PlayVideoBlendAutomatically(MirrorObject obj, SceneObjectView view)
+        {
+            if (!obj.ComponentBool(Protocol.ComponentType.VideoBlend, "autoPlay"))
+            {
+                return;
+            }
+
+            if (!PickedVideoBlendChannels(obj, out var clipA, out var clipB))
+            {
+                Debug.LogWarning($"[视频混合] 自动播放跳过：对象「{obj.name}」两条通道都没选视频");
+                return;
+            }
+
+            var urlA = string.IsNullOrEmpty(clipA) ? null : VideoUrlOf(clipA);
+            var urlB = string.IsNullOrEmpty(clipB) ? null : VideoUrlOf(clipB);
+            if ((!string.IsNullOrEmpty(clipA) && urlA == null) || (!string.IsNullOrEmpty(clipB) && urlB == null))
+            {
+                Debug.LogWarning($"[视频混合] 自动播放无法解析资源地址：A={clipA ?? "-"}，B={clipB ?? "-"}");
+                return;
+            }
+
+            var blend = view.VideoBlendLayer;
+            if (blend == null)
+            {
+                return;
+            }
+
+            blend.Play(urlA, urlB);
         }
 
         private void HandlePauseVideoBlend(CommandRequest command)

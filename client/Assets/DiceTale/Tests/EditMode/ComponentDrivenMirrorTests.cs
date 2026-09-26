@@ -240,6 +240,27 @@ namespace DiceTale.Tests
             }
         }
 
+        [Test]
+        public void VideoBlendFieldsAreReadableThroughGenericReaders()
+        {
+            // v17/v18：视频混合**不加强类型镜像字段**——两条通道与 `autoPlay` 一律走泛型读取器
+            // （见 MirrorObject 的「加新字段的规矩」）。`SceneMirror` / `CommandRouter` 的自动播放靠这条路。
+            var obj = ParseObject(
+                "{\"id\":\"blend\",\"kind\":\"Image\",\"components\":[" +
+                "{\"type\":\"VideoBlend\",\"data\":{\"a\":{\"clips\":[\"a.mp4\"],\"picked\":\"a.mp4\"}," +
+                "\"b\":{\"clips\":[\"b.mp4\"],\"picked\":\"b.mp4\"},\"loop\":false,\"autoPlay\":true," +
+                "\"audio\":\"none\"}}]}");
+
+            Assert.That(obj.HasComponent("VideoBlend"), Is.True);
+            Assert.That(obj.ComponentBool("VideoBlend", "autoPlay"), Is.True);
+            Assert.That(obj.ComponentBool("VideoBlend", "loop"), Is.False);
+            Assert.That(obj.ComponentString("VideoBlend", "audio"), Is.EqualTo("none"));
+            Assert.That(
+                JsonParser.GetString(JsonParser.GetObject(obj.ComponentData("VideoBlend"), "a"), "picked"),
+                Is.EqualTo("a.mp4"));
+            Assert.That(obj.video, Is.Null); // 混合不是「视频」：不带强类型字段
+        }
+
         private static MirrorObject ParseObject(string json)
         {
             var node = JsonParser.ParseObject(json);

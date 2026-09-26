@@ -17,6 +17,7 @@ import { featureComponent } from "../src/components";
 import { sceneAssetRefsToGuids, sceneAssetRefsToIds } from "../src/scene-asset-refs";
 import {
   DEFAULT_SLOT_COMPONENT,
+  DEFAULT_VIDEO_AUTO_PLAY,
   DEFAULT_VIDEO_BLEND_AUDIO,
   DEFAULT_VIDEO_LOOP,
   supportsVideoBlend,
@@ -79,7 +80,7 @@ describe("视频混合：哪些对象能带", () => {
 });
 
 describe("视频混合：添加与移除", () => {
-  it("贴图能加：写一份默认组件（两条空通道 + 不循环 + 静音）", () => {
+  it("贴图能加：写一份默认组件（两条空通道 + 不循环 + 不自动播 + 静音）", () => {
     const scene = sceneWith([textureObject()]);
     const added = mutate(scene, (draft) => {
       expect(addObjectVideoBlend(draft, "tex-1")).toBe(true);
@@ -89,6 +90,7 @@ describe("视频混合：添加与移除", () => {
       a: { clips: [] },
       b: { clips: [] },
       loop: DEFAULT_VIDEO_LOOP,
+      autoPlay: DEFAULT_VIDEO_AUTO_PLAY,
       audio: DEFAULT_VIDEO_BLEND_AUDIO,
     });
 
@@ -245,11 +247,12 @@ describe("视频混合：循环 / 声音走组件规格的泛型写入", () => {
 });
 
 describe("视频混合：schema 与校验", () => {
-  it("默认值：两条空通道 + 不循环 + 静音；声音枚举只有三档", () => {
+  it("默认值：两条空通道 + 不循环 + 不自动播 + 静音；声音枚举只有三档", () => {
     expect(videoBlendDataSchema.parse({})).toEqual({
       a: { clips: [] },
       b: { clips: [] },
       loop: false,
+      autoPlay: false,
       audio: "none",
     });
     expect([...VIDEO_BLEND_AUDIO]).toEqual(["none", "a", "b"]);
@@ -268,6 +271,7 @@ describe("视频混合：schema 与校验", () => {
               a: { clips: [CLIP_A], picked: CLIP_A },
               b: { clips: [CLIP_B] },
               loop: true,
+              autoPlay: true,
               audio: "a",
             }),
           ],
@@ -281,6 +285,7 @@ describe("视频混合：schema 与校验", () => {
       a: { clips: [CLIP_A], picked: CLIP_A },
       b: { clips: [CLIP_B] },
       loop: true,
+      autoPlay: true,
       audio: "a",
     });
   });
