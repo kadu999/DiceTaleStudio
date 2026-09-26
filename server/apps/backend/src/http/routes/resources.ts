@@ -2,6 +2,9 @@ import { RESOURCE_KINDS, parseResourceId, type ResourceKind } from "@dts/resourc
 import sharp from "sharp";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { extname, join } from "node:path";
 import { messageOf, toArrayBuffer } from "../../values";
 import {
   BundleTooLargeError,
@@ -99,14 +102,16 @@ export async function readResourceThumbnailRoute(ctx: RouteContext): Promise<voi
   const id = requireId(ctx);
   await requireExisting(ctx, id);
 
-  const isVideo = contentTypeFor(parseResourceId(id).path).startsWith("video/");
+  const resourcePath = parseResourceId(id).path;
+  const extension = extname(resourcePath).toLowerCase();
+  const isVideo = contentTypeFor(resourcePath).startsWith("video/");
   const source = Buffer.from(await ctx.provider.readBinary(id));
   if (ctx.url.searchParams.get("info") === "1") {
     // 视频：用已有的 ffmpeg 抽首帧能力探测宽高。视频混合的 Mask 窗口要给遮罩定长宽比，
     // 而编辑器又不解码视频——这是它拿到「视频像素尺寸」的正路（与缩略图同一份抽帧实现）。
     if (isVideo) {
       try {
-        const frame = await extractVideoFrame(source);
+        const frame = await extractVideoFrame(source, extension);
         const metadata = await sharp(frame, { limitInputPixels: 100_000_000 }).metadata();
         if (metadata.width === undefined || metadata.height === undefined) {
           throw new Error("Video dimensions are missing");
@@ -114,8 +119,10 @@ export async function readResourceThumbnailRoute(ctx: RouteContext): Promise<voi
         const dimensions = metadata.autoOrient ?? { width: metadata.width, height: metadata.height };
         sendJson(ctx.response, 200, { width: dimensions.width, height: dimensions.height });
         return;
-      } catch {
-        throw badRequest("无法读取视频尺寸（需要 ffmpeg 在 PATH 里）");
+      } catch (error) {
+        // 原因只写日志（ffmpeg 的原话里带着临时目录路径），**不回显给客户端**——与审核 B25 同一条口径
+        ctx.log("warn", `读取视频尺寸失败: ${id}（${messageOf(error)}）`);
+        throw badRequest("无法读取视频尺寸（需要 ffmpeg 在 PATH 里，或这条视频解不出来）");
       }
     }
 
@@ -127,7 +134,8 @@ export async function readResourceThumbnailRoute(ctx: RouteContext): Promise<voi
       const dimensions = metadata.autoOrient ?? { width: metadata.width, height: metadata.height };
       sendJson(ctx.response, 200, { width: dimensions.width, height: dimensions.height });
       return;
-    } catch {
+    } catch (error) {
+      ctx.log("warn", `读取图片尺寸失败: ${id}（${messageOf(error)}）`);
       throw badRequest("无法读取图片");
     }
   }
@@ -141,7 +149,7 @@ export async function readResourceThumbnailRoute(ctx: RouteContext): Promise<voi
     const jobKey = `${id}\n${md5}`;
     let job = thumbnailJobs.get(jobKey);
     if (job === undefined) {
-      job = createThumbnail(source, md5, isVideo);
+      job = createThumbnail(source, md5, isVideo, extension);
       thumbnailJobs.set(jobKey, job);
     }
 
@@ -152,8 +160,11 @@ export async function readResourceThumbnailRoute(ctx: RouteContext): Promise<voi
         const oldest = thumbnailCache.keys().next().value;
         if (oldest !== undefined) thumbnailCache.delete(oldest);
       }
-    } catch {
-      throw badRequest(isVideo ? "无法生成视频缩略图（需要 ffmpeg 在 PATH 里）" : "无法读取图片");
+    } catch (error) {
+      ctx.log("warn", `缩略图生成失败: ${id}（${messageOf(error)}）`);
+      throw badRequest(
+        isVideo ? "无法生成视频缩略图（需要 ffmpeg 在 PATH 里，或这条视频解不出来）" : "无法读取图片",
+      );
     } finally {
       if (thumbnailJobs.get(jobKey) === job) thumbnailJobs.delete(jobKey);
     }
@@ -167,9 +178,14 @@ export async function readResourceThumbnailRoute(ctx: RouteContext): Promise<voi
   sendBytes(ctx.response, 200, "image/webp", thumbnail.data, headers);
 }
 
-async function createThumbnail(source: Buffer, md5: string, isVideo: boolean): Promise<CachedThumbnail> {
+async function createThumbnail(
+  source: Buffer,
+  md5: string,
+  isVideo: boolean,
+  extension: string,
+): Promise<CachedThumbnail> {
   // 视频（mp4/webm）：先用 ffmpeg 抽首帧再走同一条 sharp 管线；缓存 / 尺寸头 / 失效逻辑与图片一致
-  const frame = isVideo ? await extractVideoFrame(source) : source;
+  const frame = isVideo ? await extractVideoFrame(source, extension) : source;
   const pipeline = sharp(frame, { limitInputPixels: 100_000_000 });
   const metadata = await pipeline.metadata();
   if (metadata.width === undefined || metadata.height === undefined) {
@@ -185,15 +201,42 @@ async function createThumbnail(source: Buffer, md5: string, isVideo: boolean): P
 }
 
 /**
- * 用 ffmpeg 从视频字节里抽首帧（PNG）：源从 stdin 喂、帧从 stdout 收，不落临时文件。
+ * 用 ffmpeg 从视频里抽首帧（PNG）。
+ *
+ * **必须落一个临时文件、让 ffmpeg 读文件**——不能把字节喂 `pipe:0`：
+ * `moov` 在文件尾的 MP4（非 faststart，手机与剪辑软件的默认导出形态）要 demuxer **回退 seek**
+ * 才读得到采样表，而管道**不可 seek**，这类视频一律抽不出首帧
+ * （实测 `测试项目` 6 条里 5 条栽在这，缩略图与 `?info=1` 一起废）。
+ * 小文件看不出问题：不到 ffmpeg 的 IO 缓冲（32KB）时整份都在缓冲里，管道也读得动——
+ * 夹具 `clip.mp4` 只有 1.9KB，所以这个坑一直没被测试逮住。
+ *
+ * 临时目录用完即删（`finally`；删不掉就留给系统回收，不覆盖真正的失败原因）。
  * ffmpeg 不在 PATH / 解码失败都抛错——上层转成 400，前端行内图标降级成公用图标。
  */
-function extractVideoFrame(source: Buffer): Promise<Buffer> {
+async function extractVideoFrame(source: Buffer, extension: string): Promise<Buffer> {
+  const dir = await mkdtemp(join(tmpdir(), "dts-video-"));
+  // 后缀照原样带过去：ffmpeg 主要靠内容探测，但少数容器认后缀
+  const file = join(dir, `input${extension.length > 0 ? extension : ".mp4"}`);
+  try {
+    await writeFile(file, source);
+    return await runFfmpegFrame(file);
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+/**
+ * 让 ffmpeg 从**文件**里抽首帧（PNG 仍从 stdout 收）。
+ *
+ * 文件是可 seek 的，所以 `moov` 在尾部也能读到采样表——这正是上面那份临时文件的理由。
+ * 同步收 stdout/stderr；退出码非 0 或没抽到帧都抛错（错误文本 = ffmpeg 的原话）。
+ */
+function runFfmpegFrame(file: string): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const child = spawn(
       "ffmpeg",
-      ["-hide_banner", "-loglevel", "error", "-i", "pipe:0", "-frames:v", "1", "-f", "image2pipe", "-c:v", "png", "pipe:1"],
-      { stdio: ["pipe", "pipe", "pipe"] },
+      ["-hide_banner", "-loglevel", "error", "-i", file, "-frames:v", "1", "-f", "image2pipe", "-c:v", "png", "pipe:1"],
+      { stdio: ["ignore", "pipe", "pipe"] },
     );
     const chunks: Buffer[] = [];
     const errors: Buffer[] = [];
@@ -207,11 +250,6 @@ function extractVideoFrame(source: Buffer): Promise<Buffer> {
         reject(new Error(Buffer.concat(errors).toString("utf8").trim() || `ffmpeg 退出码 ${code}`));
       }
     });
-    // ffmpeg 抽出首帧就退出，stdin 常常写不完（大文件必现）：EOF/EPIPE 是**正常**情况，
-    // 结果以 close 为准——这里不接住的话，未处理的 'error' 会把整个后端进程打崩。
-    child.stdin.on("error", () => {});
-    child.stdin.write(source);
-    child.stdin.end();
   });
 }
 

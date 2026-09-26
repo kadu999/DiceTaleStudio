@@ -30,15 +30,15 @@
           "type": "VideoBlend",
           "data": {
             "a": {
-              "kind": "video",
-              "id": "90460513527bd5ab8725851ec775ca36"
+              "kind": "image",
+              "id": "894e85be220a607ac7a51dd26c623a18"
             },
             "b": {
               "kind": "video",
               "id": "516e9ff5adaa681edcdfe5f126253185"
             },
             "loop": true,
-            "autoPlay": false,
+            "autoPlay": true,
             "audio": "none"
           }
         }

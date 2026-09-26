@@ -22,6 +22,39 @@ import sharp from "sharp";
 
 const TEST_PROJECT = "__测试项目__";
 
+/**
+ * 把一份 MP4 撑大：在 `moov` 盒**之前**插一个 `free` 盒（`moov` 仍在文件尾）。
+ *
+ * 用来复现真视频的形态——`moov` 在尾部、且文件**大于 ffmpeg 的 IO 缓冲（32KB）**。
+ * 插入点在 `mdat` 之后，所以 `mdat` 的内容与 `moov` 里记的 chunk 偏移都不用动，文件照常可解码。
+ */
+function padMp4BeforeMoov(source: Buffer, padBytes: number): Buffer {
+  const moov = topLevelBoxOffset(source, "moov");
+  const free = Buffer.alloc(8 + padBytes);
+  free.writeUInt32BE(8 + padBytes, 0);
+  free.write("free", 4, "latin1");
+  return Buffer.concat([source.subarray(0, moov), free, source.subarray(moov)]);
+}
+
+/** 沿顶层盒链找某个盒的起点（不在整份字节里 `indexOf`：`mdat` 里可能撞上同样的四字节）。 */
+function topLevelBoxOffset(source: Buffer, type: string): number {
+  let offset = 0;
+  while (offset + 8 <= source.length) {
+    const size = source.readUInt32BE(offset);
+    if (source.toString("latin1", offset + 4, offset + 8) === type) {
+      return offset;
+    }
+
+    if (size < 8) {
+      break;
+    }
+
+    offset += size;
+  }
+
+  throw new Error(`MP4 里没有 ${type} 盒`);
+}
+
 describe("项目 API", () => {
   let server: Server;
   let hub: RuntimeHub;
@@ -370,7 +403,30 @@ describe("项目 API", () => {
     expect(Buffer.from(await cachedResponse.arrayBuffer())).toEqual(thumbnail);
   });
 
-  it("视频缩略图：ffmpeg 提前退出时 stdin 写不满，不得把进程打崩", async () => {
+  it("视频缩略图：moov 在文件尾（非 faststart）也要出图——抽帧不能靠不可 seek 的管道", async () => {
+    await postJson("/api/projects", { name: TEST_PROJECT });
+    const id = projectAssetId(TEST_PROJECT, "Assets/video/tail-moov.mp4");
+    const fixture = readFileSync(fileURLToPath(new URL("./fixtures/clip.mp4", import.meta.url)));
+    // 夹具本身就是 moov 在尾部，但只有 1.9KB——小于 ffmpeg 的 IO 缓冲，整份都在缓冲里，
+    // 管道也读得动，盖不住这个坑。撑到 64KB 之上才复现真视频（手机 / 剪辑软件导出的默认形态）。
+    const padded = padMp4BeforeMoov(fixture, 64 * 1024);
+    await provider.writeBinary(
+      id,
+      padded.buffer.slice(padded.byteOffset, padded.byteOffset + padded.byteLength) as ArrayBuffer,
+    );
+
+    // `?info=1` 与缩略图都走抽帧：两条路都必须出得来（修好之前这里是 400）
+    const infoResponse = await fetch(`${baseUrl}/api/resources/thumbnail?id=${encodeURIComponent(id)}&info=1`);
+    expect(infoResponse.status).toBe(200);
+    expect(await infoResponse.json()).toEqual({ width: 64, height: 48 });
+
+    const thumbnailResponse = await fetch(`${baseUrl}/api/resources/thumbnail?id=${encodeURIComponent(id)}`);
+    expect(thumbnailResponse.status).toBe(200);
+    expect(thumbnailResponse.headers.get("x-image-width")).toBe("64");
+    expect(thumbnailResponse.headers.get("x-image-height")).toBe("48");
+  });
+
+  it("视频缩略图：解不出来的视频如实回 400，不打崩进程，也不回显底层细节", async () => {
     // 进程级兜底记录：'error' 事件没人接会抛成 uncaughtException——
     // vitest 自己的兜底不一定让用例变红，这里显式钉住「期间不得有未处理异常」。
     const unhandled: Error[] = [];
@@ -379,18 +435,24 @@ describe("项目 API", () => {
     try {
       await postJson("/api/projects", { name: TEST_PROJECT });
       const id = projectAssetId(TEST_PROJECT, "Assets/video/broken.mp4");
-      // 400MB 无法解码的填充：ffmpeg 探测失败立刻退出，一次 write 的大量子字节还挂在
-      // 管道写入里 —— 在途写入以 UV_EOF 失败（复现线上「打开选择视频打崩后端」）；
-      // 修复后接口如实回 400。必须足够大：小文件一次 flush 赶在退出前完成，错误冒不出来。
-      const source = Buffer.alloc(400 * 1024 * 1024, 7);
-      await provider.writeBinary(id, source.buffer.slice(source.byteOffset, source.byteOffset + source.byteLength) as ArrayBuffer);
+      // 一段解不出来的字节：ffmpeg 探测失败立刻退出。抽帧现在走**临时文件**（恒为文件输入），
+      // 所以不再需要「大到让 stdin 写不满」——这里只要足够让 ffmpeg 认不出是个容器。
+      const source = Buffer.alloc(2 * 1024 * 1024, 7);
+      await provider.writeBinary(
+        id,
+        source.buffer.slice(source.byteOffset, source.byteOffset + source.byteLength) as ArrayBuffer,
+      );
 
       const response = await fetch(`${baseUrl}/api/resources/thumbnail?id=${encodeURIComponent(id)}`);
       expect(response.status).toBe(400);
+      // 失败原因只进服务端日志：响应体不得回显 ffmpeg 原话 / 临时目录路径（审核 B25）
+      const body = await response.text();
+      expect(body).not.toContain("dts-video-");
+
       // info=1 也走抽帧：失败同样如实回 400（多一条路不能把进程打崩）
       const infoResponse = await fetch(`${baseUrl}/api/resources/thumbnail?id=${encodeURIComponent(id)}&info=1`);
       expect(infoResponse.status).toBe(400);
-      // 等一拍：那枚写错误是异步冒出来的，给进程一个「被打崩」的机会
+      // 等一拍：spawn 的错误是异步冒出来的，给进程一个「被打崩」的机会
       await new Promise((resolve) => setTimeout(resolve, 500));
       // 期间没有未处理异常 + 进程还活着（下一个请求照常响应）
       expect(unhandled).toEqual([]);
