@@ -16,8 +16,8 @@
 | 后端默认地址 | `0.0.0.0:1420`（`resources/config/app.json`，可被 `HOST` / `PORT` 覆盖） |
 | 编辑器开发地址 | `http://localhost:5173`（Vite，`/api`、`/editor`、`/client` 反代到 1420） |
 | 编辑器生产地址 | `http://localhost:1420`（后端同源托管 `apps/editor/dist`） |
-| 源码规模（不含测试） | 166 个文件 / 37,299 行（packages 12,723 · backend 3,493 · editor 21,083） |
-| 测试规模 | 33,488 行（单测 24,168 · E2E 9,037 · 架构测试 283） |
+| 源码规模（不含测试） | 168 个文件 / 37,916 行（packages 12,723 · backend 3,493 · editor 21,700） |
+| 测试规模 | 33,524 行（单测 24,204 · E2E 9,037 · 架构测试 283） |
 
 > 上表两行与 §0.1 表格里加粗的文件行数、§3.x 节标题里的包规模由
 > `scripts/check-code-structure-stats.mjs` **机器校验**（`pnpm check` 的一环）：

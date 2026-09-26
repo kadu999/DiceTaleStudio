@@ -8,6 +8,7 @@ import { InspectorPanel } from "../panels/inspector/InspectorPanel";
 import { RuntimePanel } from "../panels/runtime/RuntimePanel";
 import { ScenePanel } from "../panels/scene/ScenePanel";
 import { FogMaskDialog } from "./FogMaskDialog";
+import { VideoBlendMaskDialog } from "./VideoBlendMaskDialog";
 import { GridEditDialog } from "./GridEditDialog";
 import { ResourcePickerDialog } from "./ResourcePickerDialog";
 import { TeleportEditDialog } from "./TeleportEditDialog";
@@ -47,6 +48,9 @@ export function EditorShell(): React.JSX.Element {
   const fogMask = useEditorStore((state) => state.fogMask);
   const fogMaskTarget = useEditorStore((state) => state.fogMaskTarget);
   const openFogMask = useEditorStore((state) => state.openFogMask);
+  const videoBlendMask = useEditorStore((state) => state.videoBlendMask);
+  const videoBlendMaskTarget = useEditorStore((state) => state.videoBlendMaskTarget);
+  const openVideoBlendMask = useEditorStore((state) => state.openVideoBlendMask);
   const gridEditor = useEditorStore((state) => state.gridEditor);
   const gridEditorTarget = useEditorStore((state) => state.gridEditorTarget);
   const openGridEditor = useEditorStore((state) => state.openGridEditor);
@@ -305,6 +309,13 @@ export function EditorShell(): React.JSX.Element {
         open={fogMask && fogMaskTarget !== null}
         objectId={fogMaskTarget}
         onClose={() => openFogMask(null)}
+      />
+
+      {/* 视频混合 Mask 窗口：擦开的地方露出 B（目标贴图由属性面板指定） */}
+      <VideoBlendMaskDialog
+        open={videoBlendMask && videoBlendMaskTarget !== null}
+        objectId={videoBlendMaskTarget}
+        onClose={() => openVideoBlendMask(null)}
       />
 
       {/* 网格编辑窗口：同一套窗户，画笔换成 8 个区域 + 橡皮（不用在地图上对准格子） */}

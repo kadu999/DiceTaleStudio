@@ -29,6 +29,10 @@ import { type TransformStart } from "../panels/scene/transform";
 import { type SoundPlaybackState } from "../services/sound-playback";
 import { type VideoPlaybackState } from "../services/video-playback";
 import { type VideoBlendPlaybackState } from "../services/video-blend-playback";
+import {
+  type VideoBlendRevealPoint,
+  type VideoBlendRevealState,
+} from "../services/video-blend-reveal";
 import { type FogRevealPoint, type FogRevealState } from "../services/fog-reveal";
 import type { StoreApi } from "zustand";
 
@@ -243,6 +247,15 @@ export interface EditorStoreState {
    * 只是条目记的是**两条通道**与三档声音来源。
    */
   readonly videoBlendPlayback: VideoBlendPlaybackState;
+  /** 「视频混合 Mask 窗口」是否打开（属性面板的按钮唤出）。 */
+  readonly videoBlendMask: boolean;
+  /** Mask 窗口正在编辑哪张贴图；null 表示窗口没打开。 */
+  readonly videoBlendMaskTarget: string | null;
+  /**
+   * 视频混合的**擦除记账**（编辑器记账，见 `services/video-blend-reveal`）：与战争雾的
+   * `fogReveal` 同一套（运行态、按对象记、前端连上补发，**切场景不清**）。
+   */
+  readonly videoBlendReveal: VideoBlendRevealState;
   /**
    * **全局背景音乐**的期望播放状态（编辑器记账，见 `services/bgm-playback`）。
    *
@@ -419,6 +432,21 @@ export interface EditorStoreState {
   stopVideoBlend(objectId: string): string | undefined;
   /** 把记着的混合播放状态补发一遍（前端刚连上时调用）。 */
   flushVideoBlendPlayback(): number;
+  /**
+   * 打开 / 关闭「视频混合 Mask 窗口」（`null` = 关闭）。
+   *
+   * 与战争雾 Mask 窗口同一套：窗口里只擦**预览**（编辑态不写文档、不落盘、不进撤销栈）；
+   * 运行态下把轨迹下发给前端（`erase_video_mask`），前端擦在它自己那份遮罩上。
+   */
+  openVideoBlendMask(objectId: string | null): void;
+  /** 视频混合：在 Mask 窗口里擦一笔（运行态才下发给前端，编辑态只是预览）。 */
+  eraseVideoBlendMask(
+    objectId: string,
+    points: readonly VideoBlendRevealPoint[],
+    done: boolean,
+  ): string | undefined;
+  /** 把记着的擦除轨迹补发一遍（前端刚连上时调用）。 */
+  flushVideoBlendReveal(): number;
   /**
    * 全局背景音乐（v16 起）：让前端放 / **切换**到某一首。
    *

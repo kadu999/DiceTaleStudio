@@ -63,6 +63,7 @@ export function VideoBlendFields({ object }: { readonly object: GameObjectDoc })
   const pauseVideoBlend = useEditorStore((state) => state.pauseVideoBlend);
   const resumeVideoBlend = useEditorStore((state) => state.resumeVideoBlend);
   const stopVideoBlend = useEditorStore((state) => state.stopVideoBlend);
+  const openVideoBlendMask = useEditorStore((state) => state.openVideoBlendMask);
   const mode = useEditorStore((state) => state.mode);
   const status = useEditorStore((state) => state.runtime.status);
   const clientConnected = useEditorStore((state) => state.runtime.client !== null);
@@ -111,6 +112,19 @@ export function VideoBlendFields({ object }: { readonly object: GameObjectDoc })
         label="视频 B（擦开露出）"
         emptyNote="Mask 擦开的地方露出 B"
       />
+
+      {/* 入口：真正擦遮罩在 Mask 窗口里做（编辑态只预览，运行态下发给前端） */}
+      <FieldRow label="Mask">
+        <button
+          type="button"
+          data-testid="video-blend-mask-open"
+          title="打开 Mask 窗口：初始整张盖住 A，擦开的地方露出 B（不写文档）"
+          className="flex-none rounded bg-[var(--color-editor-accent)] px-2 py-0.5 text-[11px] text-black hover:opacity-90"
+          onClick={() => openVideoBlendMask(object.id)}
+        >
+          编辑
+        </button>
+      </FieldRow>
 
       {/*
         播放 / 暂停 · 继续 / 停止：与「视频」那一组**完全同一套**（同一个 `PlaybackRow`、

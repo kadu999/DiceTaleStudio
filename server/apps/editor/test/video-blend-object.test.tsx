@@ -137,6 +137,9 @@ afterEach(() => {
     selectedObjectIds: [],
     mode: "edit",
     videoBlendPlayback: { objects: {} },
+    videoBlendMask: false,
+    videoBlendMaskTarget: null,
+    videoBlendReveal: { objects: {} },
   });
 });
 
@@ -281,5 +284,38 @@ describe("视频混合：播放记账", () => {
 
     fireEvent.click(screen.getByTestId("video-blend-play"));
     expect(screen.getByTestId("video-blend-status").textContent).toContain("正在混合播放");
+  });
+});
+
+describe("视频混合：Mask 窗口与擦除记账", () => {
+  it("「编辑」按钮打开 Mask 窗口；编辑态擦一笔只预览、不记账", () => {
+    blended();
+
+    fireEvent.click(screen.getByTestId("video-blend-mask-open"));
+    expect(useEditorStore.getState().videoBlendMask).toBe(true);
+    expect(useEditorStore.getState().videoBlendMaskTarget).toBe("tex-1");
+
+    act(() => useEditorStore.getState().eraseVideoBlendMask("tex-1", [{ x: 0.5, y: 0.5 }], true));
+    expect(useEditorStore.getState().videoBlendReveal.objects["tex-1"]).toBeUndefined();
+  });
+
+  it("运行态：擦一笔记进轨迹（前端不在也只记账）；补发未连上返回 0", () => {
+    blended();
+    act(() => useEditorStore.setState({ mode: "run" }));
+    act(() => useEditorStore.getState().eraseVideoBlendMask("tex-1", [{ x: 0.3, y: 0.4 }], true));
+
+    const entry = useEditorStore.getState().videoBlendReveal.objects["tex-1"];
+    expect(entry?.ops).toHaveLength(1);
+    expect(entry?.ops[0]).toMatchObject({
+      kind: "stroke",
+      stroke: { points: [{ x: 0.3, y: 0.4 }] },
+    });
+
+    // 编辑器 / 前端都没连：补发什么都不做
+    let steps = 1;
+    act(() => {
+      steps = useEditorStore.getState().flushVideoBlendReveal();
+    });
+    expect(steps).toBe(0);
   });
 });

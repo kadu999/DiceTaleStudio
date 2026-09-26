@@ -273,6 +273,28 @@ export function fillFogMaskPixels(
 }
 
 /**
+ * 把整张遮罩填成**一个颜色**（视频混合的初始态：A 整张盖住、B 完全看不见）。
+ *
+ * 与 `fillFogMaskPixels` 的区别只有初始形状：雾是「指定雾区的格子」上色、其余透明，
+ * 视频混合是**整张**不透明——擦出来的地方 alpha 降下去，露出底下的 B。
+ * `pixels` 会被就地重写（`width × height × 4` 的 RGBA）。
+ */
+export function fillOpaqueMaskPixels(
+  pixels: Uint8ClampedArray,
+  width: number,
+  height: number,
+  rgba: readonly [number, number, number, number],
+): void {
+  for (let index = 0; index < width * height; index += 1) {
+    const offset = index * 4;
+    pixels[offset] = rgba[0];
+    pixels[offset + 1] = rgba[1];
+    pixels[offset + 2] = rgba[2];
+    pixels[offset + 3] = rgba[3];
+  }
+}
+
+/**
  * 「**整区开 / 关**」：把含指定位的格子那几块纹素一次性**揭示**（清成透明）或**盖回去**
  * （按区域配色重画）。
  *

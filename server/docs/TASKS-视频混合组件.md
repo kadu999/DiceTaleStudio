@@ -115,7 +115,9 @@ export interface VideoBlendDataDoc {
 - [x] **D1 文档**：类型 + schema + 注册表 + presets + 校验 + 命令 + 资源换算 + 单测（`video-blend.test.ts`）
 - [x] **D2 协议**：v17 + 组件 schema + `erase_video_mask` + 契约测试（`protocol-document-contract.test.ts` 加一条）
 - [ ] **D3 后端**：`?info=1` 视频探测 + 测试
-- [ ] **D4 编辑器**：store 切片 + 面板 + Add Component 入口 + Mask 窗口 + 单测 / e2e
+- [x] **D4 编辑器**：store 切片 + 面板 + Add Component 入口 + Mask 窗口 + 单测 / e2e
+      （D4a 数据面板 / D4b-1 播放记账 / D4b-2 Mask 窗口 + 擦除记账；e2e 归 D6）
+      ——Mask 窗口的盖层统一画成深色（运行时那边是 A 的画面），与雾窗口「按区域配色」同一套取舍
 - [ ] **D5 Unity**：`VideoBlend.cs` + `VideoBlend.shader` + 镜像 / 命令接线
 - [ ] **D6 验证**：`pnpm check` 全绿 + 相关 e2e + Unity MCP（编译 0 error / 0 warning + 断言 + Game 视图截图）
 - [ ] **D7 文档**：CODE-STRUCTURE / README / 运行时镜像协议 spec / 本文件

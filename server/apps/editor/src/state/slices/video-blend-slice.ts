@@ -18,6 +18,10 @@ import {
   withVideoBlendStopped,
   type VideoBlendPlaybackEntry,
 } from "../../services/video-blend-playback";
+import {
+  pruneVideoBlendReveal,
+  withVideoBlendEraseBatch,
+} from "../../services/video-blend-reveal";
 import { type StoreSet, type StoreGet, type EditorStoreState } from "../store-types";
 import { makeLog, findSceneByName } from "../store-core";
 import { type StoreContext } from "../store-context";
@@ -48,14 +52,26 @@ export function createVideoBlendSlice(
   | "resumeVideoBlend"
   | "stopVideoBlend"
   | "flushVideoBlendPlayback"
+  | "openVideoBlendMask"
+  | "eraseVideoBlendMask"
+  | "flushVideoBlendReveal"
   | "addVideoBlendClip"
   | "removeVideoBlendClip"
   | "selectVideoBlendClip"
   | "clearVideoBlendClips"
 > {
   // 共享的闭包状态与局部工具都在 ctx 里：这里解构一次，方法体与拆分前逐字一致
-  const { pushLog, applyActiveScene, objectWithFeature, videoBlendTargetOf, deliverVideo, runtimeClient } =
-    ctx;
+  const {
+    pushLog,
+    applyActiveScene,
+    objectWithFeature,
+    videoBlendTargetOf,
+    deliverVideo,
+    deliverVideoMaskErase,
+    canRevealVideoBlend,
+    frontendReady,
+    runtimeClient,
+  } = ctx;
 
   return {
     // ---------------------------------------------------------------- 视频混合（贴图）
@@ -164,6 +180,94 @@ export function createVideoBlendSlice(
       }
 
       return entries.length;
+    },
+
+    // ---------------------------------------------------------------- 视频混合（Mask 窗口）
+
+    openVideoBlendMask(objectId) {
+      set({ videoBlendMask: objectId !== null, videoBlendMaskTarget: objectId });
+    },
+
+    eraseVideoBlendMask(objectId, points, done) {
+      // 编辑态：Mask 窗口只是预览（擦了不写文档、也不下发），与「运行」之前完全一样
+      if (get().mode !== "run" || points.length === 0) {
+        return undefined;
+      }
+
+      // 擦遮罩只要求「挂着视频混合组件」——选没选视频是**播放**的事，与遮罩无关
+      const object = objectWithFeature(objectId, DEFAULT_SLOT_COMPONENT.videoBlend);
+      if (object === undefined) {
+        pushLog(makeLog("warn", `擦除视频混合遮罩失败：「${objectId}」没有视频混合组件`));
+        return undefined;
+      }
+
+      // 逐批记账：拖动中的相邻批次在记账里并成**一条完整轨迹**（补发时要的是整笔）
+      set({ videoBlendReveal: withVideoBlendEraseBatch(get().videoBlendReveal, objectId, points) });
+
+      const requestId = deliverVideoMaskErase(objectId, points);
+      if (!done) {
+        return requestId;
+      }
+
+      const entry = get().videoBlendReveal.objects[objectId];
+      const strokes = (entry?.ops ?? []).filter((op) => op.kind === "stroke").length;
+      const total = (entry?.ops ?? []).reduce(
+        (count, op) => count + (op.kind === "stroke" ? op.stroke.points.length : 0),
+        0,
+      );
+      const what = `「${object.name}」第 ${strokes} 笔（${total} 个落点）`;
+
+      pushLog(
+        frontendReady()
+          ? makeLog("info", `下发擦除：${what}（请前端沿轨迹擦掉混合遮罩）`)
+          : makeLog(
+              "info",
+              `已记录擦除：${what}（${
+                runtimeClient.connected
+                  ? "前端未连接，等它连上后自动补发"
+                  : "编辑器还没连上服务端，连上后自动补发"
+              }）`,
+            ),
+      );
+
+      return requestId;
+    },
+
+    flushVideoBlendReveal() {
+      const { videoBlendReveal } = get();
+      if (!frontendReady()) {
+        return 0;
+      }
+
+      // 先按当前文档筛掉没意义的记录（对象被删了 / 组件摘了），免得补发一堆注定失败的命令
+      const pruned = pruneVideoBlendReveal(videoBlendReveal, canRevealVideoBlend);
+      const entries = Object.entries(pruned.objects).map(([objectId, entry]) => ({ objectId, entry }));
+
+      let steps = 0;
+      for (const { objectId, entry } of entries) {
+        for (const op of entry.ops) {
+          if (op.kind === "stroke") {
+            deliverVideoMaskErase(objectId, op.stroke.points);
+            steps += 1;
+          }
+        }
+      }
+
+      if (pruned !== videoBlendReveal) {
+        set({ videoBlendReveal: pruned });
+      }
+
+      if (steps === 0) {
+        return 0;
+      }
+
+      pushLog(
+        makeLog(
+          "info",
+          `补发视频混合：${entries.length} 张贴图 / ${steps} 步（前端刚连上，把它还没看到的擦除补过去）`,
+        ),
+      );
+      return steps;
     },
 
     // ------------------------------------------------------------ 视频混合（贴图）

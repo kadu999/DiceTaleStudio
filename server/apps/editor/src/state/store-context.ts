@@ -60,6 +60,10 @@ import {
   videoBlendPlaybackResendPlan,
 } from "../services/video-blend-playback";
 import { emptyFogReveal, fogRevealResendPlan, type FogRevealPoint } from "../services/fog-reveal";
+import {
+  emptyVideoBlendReveal,
+  videoBlendRevealResendPlan,
+} from "../services/video-blend-reveal";
 import { MASK_BRUSH_RATIO, MASK_BRUSH_SOFTNESS } from "../services/mask-math";
 import { type StoreSet, type StoreGet, type AssetMetaTable, type GridPaintState, type EditorStoreState } from "./store-types";
 import {
@@ -116,6 +120,8 @@ export interface StoreContext {
   fogTargetOf(objectId: string, what: string): GameObjectDoc | null;
   /** 这个对象**现在**还能揭示雾吗（与 `fogTargetOf` 同口径，但不写日志）。 */
   canRevealFog(objectId: string): boolean;
+  /** 这张贴图**现在**还能擦混合遮罩吗（与 `videoBlendTargetOf` 同口径，但不写日志）。 */
+  canRevealVideoBlend(objectId: string): boolean;
   /** 找出「能放视频」的对象（找不到就写日志并返回 null）。 */
   videoTargetOf(objectId: string, what: string): GameObjectDoc | null;
   /** 找出「能混合放视频」的对象（找不到就写日志并返回 null）。 */
@@ -149,6 +155,8 @@ export interface StoreContext {
   ): string | undefined;
   /** 把一批轨迹**尽力**发给前端。 */
   deliverFogErase(objectId: string, points: readonly FogRevealPoint[]): string | undefined;
+  /** 把一批混合遮罩的擦除轨迹**尽力**发给前端。 */
+  deliverVideoMaskErase(objectId: string, points: readonly FogRevealPoint[]): string | undefined;
   /** 前端在不在（编辑器连着服务端 **且** 前端连着）。 */
   frontendReady(): boolean;
   /** 背景音乐动作在运行日志里的说法。 */
@@ -328,6 +336,7 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
         // 揭示记账也是运行态：关闸就清掉（前端已经被踢下线，下次运行重新开始）
         set({
           fogReveal: emptyFogReveal(),
+          videoBlendReveal: emptyVideoBlendReveal(),
           videoPlayback: emptyVideoPlayback(),
           videoBlendPlayback: emptyVideoBlendPlayback(),
         });
@@ -383,6 +392,16 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
           reveal: get().fogReveal,
         }).length > 0,
         () => get().flushFogReveal(),
+      );
+
+      // 视频混合：同一套（把它还没看到的擦除轨迹补过去）
+      resendOnReconnect(
+        videoBlendRevealResendPlan({
+          wasClientConnected,
+          isClientConnected: clientConnected,
+          reveal: get().videoBlendReveal,
+        }).length > 0,
+        () => get().flushVideoBlendReveal(),
       );
 
       // 音乐：把它还没听到的那一首补过去（暂停态先放再暂停）
@@ -703,6 +722,19 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
   };
 
   /**
+   * 这张贴图**现在**还能擦混合遮罩吗？补发前筛掉没意义的记录用——
+   * 与 `videoBlendTargetOf` 同口径，但不写日志（对象没了 / 组件没了 = 擦不了）。
+   */
+  const canRevealVideoBlend = (objectId: string): boolean => {
+    const object = findObjectById(objectId);
+    if (object === undefined || videoBlendDataOf(object) === undefined) {
+      return false;
+    }
+
+    return supportsObjectComponent(object, DEFAULT_SLOT_COMPONENT.videoBlend);
+  };
+
+  /**
    * 找出「能放视频」的对象：当前场景里实际挂有视频组件且选中了一条视频的对象。
    *
    * 与 `fogTargetOf` 同一个口径：找不到就写一条**说明原因**的运行日志并返回 null（不静默失败）。
@@ -859,6 +891,30 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
     });
 
     // 拖动中一条命令一批：成功的回执不写日志（失败照写），免得把运行日志刷屏
+    quietCommandIds.add(requestId);
+    return requestId;
+  };
+
+  /**
+   * 把一批混合遮罩的擦除轨迹**尽力**发给前端（`erase_video_mask`）。
+   *
+   * 与 `deliverFogErase` 同一套：命令里只有 `objectId + stroke`（`objectId` = **贴图对象 id**，
+   * 遮罩在推下去的那个对象的 `VideoBlend` 里）。拖动中成功回执不写日志。
+   */
+  const deliverVideoMaskErase = (
+    objectId: string,
+    points: readonly FogRevealPoint[],
+  ): string | undefined => {
+    if (!runtimeClient.connected || get().runtime.client === null) {
+      return undefined;
+    }
+
+    const requestId = runtimeClient.sendCommand({
+      kind: "erase_video_mask",
+      objectId,
+      stroke: { points: [...points], radius: MASK_BRUSH_RATIO, softness: MASK_BRUSH_SOFTNESS },
+    });
+
     quietCommandIds.add(requestId);
     return requestId;
   };
@@ -1275,6 +1331,8 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
       ...(options.clearAssetSelection === true ? { selectedAssetId: null } : {}),
       fogMask: false,
       fogMaskTarget: null,
+      videoBlendMask: false,
+      videoBlendMaskTarget: null,
       gridEditor: false,
       gridEditorTarget: null,
       // 切场景：记账里的对象属于上一个场景，清掉（前端那边由使用方自己按新场景重播）
@@ -1321,6 +1379,7 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
     deliverSoundControl,
     fogTargetOf,
     canRevealFog,
+    canRevealVideoBlend,
     videoTargetOf,
     videoBlendTargetOf,
     findObjectById,
@@ -1330,6 +1389,7 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
     requireTeleportObject,
     deliverVideo,
     deliverFogErase,
+    deliverVideoMaskErase,
     frontendReady,
     bgmActionLabel,
     sendBgmAction,
