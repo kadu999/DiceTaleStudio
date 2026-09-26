@@ -50,6 +50,8 @@ export const COMPONENT = {
   playSound: "PlaySound",
   teleport: "Teleport",
   videoOverlay: "VideoOverlay",
+  /** 视频混合（v17）：两条视频叠在同一矩形上用 Mask 混合（A 盖住、擦开露 B）；遮罩纯运行态。 */
+  videoBlend: "VideoBlend",
 } as const;
 
 /** 场景文件（或内存里的场景文档）的形状：只声明 e2e 真正会读的字段。 */
