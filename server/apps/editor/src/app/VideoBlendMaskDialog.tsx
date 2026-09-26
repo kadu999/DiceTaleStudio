@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { videoBlendDataOf } from "@dts/document";
-import { assetImageInfoUrl, assetThumbnailUrl } from "../panels/asset-picker";
+import { assetThumbnailUrl } from "../panels/asset-picker";
+import { useAssetSize } from "../hooks/useAssetSize";
 import {
   VIDEO_BLEND_MASK_SOFTNESS,
   applyEraseToPixels,
@@ -62,46 +63,6 @@ const FILL_BUTTON_CLASS =
 /** 视频尺寸还没探到时的兜底长宽比（16:9）。 */
 const FALLBACK_SIZE = { width: 16, height: 9 } as const;
 
-/**
- * 探测视频的像素尺寸（后端 `?info=1` 用 ffmpeg 抽首帧读宽高）。
- *
- * 遮罩的长宽比要按它来（笔刷在屏幕上才不变形），而编辑器不解码视频——这是拿到尺寸的正路。
- * 探不到就落回默认 16:9，不阻塞窗口。
- */
-function useVideoSize(clip: string | undefined): { width: number; height: number } | undefined {
-  const [size, setSize] = useState<{ width: number; height: number } | undefined>(undefined);
-
-  useEffect(() => {
-    if (clip === undefined) {
-      setSize(undefined);
-      return;
-    }
-
-    let alive = true;
-    fetch(assetImageInfoUrl(clip))
-      .then((response) => (response.ok ? response.json() : undefined))
-      .then((info: { width?: unknown; height?: unknown } | undefined) => {
-        if (
-          alive &&
-          info !== undefined &&
-          typeof info.width === "number" &&
-          typeof info.height === "number"
-        ) {
-          setSize({ width: info.width, height: info.height });
-        }
-      })
-      .catch(() => {
-        // 探不到就按默认 16:9（形状对得上就够用）
-      });
-
-    return () => {
-      alive = false;
-    };
-  }, [clip]);
-
-  return size;
-}
-
 export function VideoBlendMaskDialog({
   open,
   objectId,
@@ -117,7 +78,7 @@ export function VideoBlendMaskDialog({
   const pickedB = blend?.b.id;
 
   // 遮罩尺寸按**素材像素尺寸**推（A 优先，其次 B；都没有用 16:9）——图片与视频同一路（`?info=1` 两种都认）
-  const size = useVideoSize(pickedA ?? pickedB);
+  const size = useAssetSize(pickedA ?? pickedB);
   const maskSize = useMemo(
     () => previewMaskSizeFor(size ?? FALLBACK_SIZE),
     [size?.width, size?.height],

@@ -16,7 +16,7 @@
 | 后端默认地址 | `0.0.0.0:1420`（`resources/config/app.json`，可被 `HOST` / `PORT` 覆盖） |
 | 编辑器开发地址 | `http://localhost:5173`（Vite，`/api`、`/editor`、`/client` 反代到 1420） |
 | 编辑器生产地址 | `http://localhost:1420`（后端同源托管 `apps/editor/dist`） |
-| 源码规模（不含测试） | 175 个文件 / 39,949 行（packages 13,560 · backend 3,721 · editor 22,668） |
+| 源码规模（不含测试） | 176 个文件 / 39,984 行（packages 13,560 · backend 3,721 · editor 22,703） |
 | 测试规模 | 35,717 行（单测 25,612 · E2E 9,822 · 架构测试 283） |
 
 > 上表两行与 §0.1 表格里加粗的文件行数、§3.x 节标题里的包规模由
@@ -1143,11 +1143,12 @@ Radmin / Hamachi / Bluetooth）；真实网卡（Wi-Fi / WLAN / Wireless / Ether
 | `App.tsx` | 5 | 应用根组件，只包一层 `EditorShell`。 | `App` |
 | `main.tsx` | 15 | 浏览器入口：取 `#root`（取不到抛「找不到 #root 挂载点」），`createRoot` + `StrictMode` 渲染 `App`，引入全局样式。 | — |
 
-#### `hooks/`（1）
+#### `hooks/`（2）
 
 | 文件 | 行数 | 职责 | 对外导出 |
 |---|---|---|---|
 | `useMediaQuery.ts` | 38 | 订阅 `window.matchMedia`；`useCompactLayout` 把「窄屏（max-width:1023px）」与「粗指针（pointer:coarse）」合成「紧凑/平板布局」判定，供外壳切三栏/抽屉。 | `useMediaQuery`、`useCompactLayout` |
+| `useAssetSize.ts` | 49 | 探一份**素材的真实像素尺寸**（后端 `?info=1`：图片读真实宽高、视频用 ffmpeg 抽首帧）——视频混合 Mask 窗口按它定遮罩长宽比，放大镜窗口按它把「图集里那一格」等比装进可视区（引用里声明的宽高只决定「画多大」，可能与真实像素对不上）。探不到返回 `undefined`，调用方自己兜底、不阻塞窗口。 | `useAssetSize` |
 
 #### `styles/`（1）
 
@@ -1248,9 +1249,9 @@ export function createSoundSlice(
 | `BgmControl.tsx` | 79 | 顶栏「音乐」按钮：显示当前在放什么/暂停标记/播放中高亮；导出 `bgmDeliveryHint`（与声音/视频**同一套措辞**的「已记录，等连上补发」提示）。 | `BgmControl`、`bgmDeliveryHint` |
 | `BgmDialog.tsx` | 353 | 「背景音乐」弹框：项目音频清单（按显示名排序）+ 只搜名字/路径 + 标签勾选（AND）+ 路径显示开关 + 行选中跟随播放态 + 打开时滚到当前曲 + 底部播放/暂停·继续/停止。 | `BgmDialog` |
 | `FogMaskDialog.tsx` | 435 | 「战争雾 Mask 窗口」：贴图底 + canvas 遮罩（960 宽、按贴图比例定高），软边圆刷擦除，右侧「整区开关」（雾区绑定 v25 起读独立的 `FogOfWar` 组件）；运行态下按批下发 `erase_mask` 轨迹、整区开关下发 `reveal_fog_region`；编辑态纯预览、不写文档不落盘。 | `FogMaskDialog` |
-| `VideoBlendMaskDialog.tsx` | 384 | 「视频混合 Mask 窗口」：底图是 B 的缩略图（编辑器不解码视频）+ canvas 遮罩（同一张 960 宽、按素材像素尺寸定高），软边圆刷擦除（软边 0.5 有实心核）；右侧两个**「整张盖住（1）/ 整张擦开（0）」**按钮（走播放键那一档的样式：常态就有边框与底、hover 描强调色边框；按钮里那个**实心 / 空心小方块**是遮罩状态的提示）一次填满或清空；运行态下按批下发 `erase_video_mask`、整张按钮下发 `fill_video_mask`；编辑态纯预览、不写文档不落盘。 | `VideoBlendMaskDialog` |
+| `VideoBlendMaskDialog.tsx` | 345 | 「视频混合 Mask 窗口」：底图是 B 的缩略图（编辑器不解码视频）+ canvas 遮罩（同一张 960 宽、按素材像素尺寸定高），软边圆刷擦除（软边 0.5 有实心核）；右侧两个**「整张盖住（1）/ 整张擦开（0）」**按钮（走播放键那一档的样式：常态就有边框与底、hover 描强调色边框；按钮里那个**实心 / 空心小方块**是遮罩状态的提示）一次填满或清空；运行态下按批下发 `erase_video_mask`、整张按钮下发 `fill_video_mask`；编辑态纯预览、不写文档不落盘。 | `VideoBlendMaskDialog` |
 | `GridEditDialog.tsx` | 459 | 「网格编辑窗口」：**唯一**的格子涂/擦入口，用同一渲染器 + `fitViewport` 把地图铺满窗口；指针捕获 + 补齐两事件点之间的格子（不断线）；「全部清除」可撤销。 | `GridEditDialog` |
-| `MagnifierDialog.tsx` | 182 | 「放大镜窗口」：中间一张大图（`useFittedBox` 等比装进可视区）+ 下面一排**可以选的图**（点一张 = 换成展示它，写文档、可撤销）+ 底栏「在画面上打开 / 关闭画面」（只在运行态可用）；与前端那扇窗长得一样，差别就是「多这排小图 / 多这两个按钮」。关掉这扇窗**不**连带关前端那扇。 | `MagnifierDialog` |
+| `MagnifierDialog.tsx` | 207 | 「放大镜窗口」：中间一张大图（`useFittedBox` 等比装进可视区；长宽比取**素材真实尺寸**，一格图按那一格算）+ 下面一排**可以选的图**（点一张 = 换成展示它，写文档、可撤销）+ 底栏「在画面上打开 / 关闭画面」（只在运行态可用）；与前端那扇窗长得一样，差别就是「多这排小图 / 多这两个按钮」。关掉这扇窗**不**连带关前端那扇。 | `MagnifierDialog` |
 
 #### `panels/`（6）
 

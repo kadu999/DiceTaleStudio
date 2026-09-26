@@ -1,5 +1,7 @@
-import { magnifierDataOf, magnifierImageOf } from "@dts/document";
+import { useMemo } from "react";
+import { magnifierDataOf, magnifierImageOf, spriteCellSizeOf, spriteSheetOfMeta } from "@dts/document";
 import { AssetImage } from "../panels/asset-image";
+import { useAssetSize } from "../hooks/useAssetSize";
 import { useEditorStore } from "../state/editor-store";
 import { useFittedBox } from "./dialog-size";
 import { MapDialogShell, useSceneObject } from "./map-dialog-shell";
@@ -40,10 +42,33 @@ export function MagnifierDialog({
   const closeWindow = useEditorStore((state) => state.closeMagnifierWindow);
   const windowShown = useEditorStore((state) => state.magnifierShown);
   const running = useEditorStore((state) => state.mode === "run");
+  const metaTable = useEditorStore((state) => state.assetMetaTable);
 
   const showingHere = object !== undefined && windowShown === object.id;
-  // 舞台按**这一张图**的长宽比等比装进可视区（与两个 Mask 窗口同一套 `useFittedBox`）
-  const aspect = image === undefined ? 16 / 9 : image.width / Math.max(1, image.height);
+
+  /*
+    舞台按**这一张图**的长宽比等比装进可视区（与两个 Mask 窗口同一套 `useFittedBox`）。
+    长宽比取**素材的真实像素尺寸**（`?info=1` 探一下），不是引用里声明的宽高：
+    后者只决定「在世界里画多大」，重切图集 / 手写文件之后它可能与真实尺寸对不上——
+    那时按它算就会把一格画歪，而**前端那边是按纹理真实的那一格铺的**（`preserveAspect`），
+    两扇窗就对不上了。探不到时退回声明宽高（比不显示强）。
+  */
+  const natural = useAssetSize(image?.id);
+  const sheet = spriteSheetOfMeta(image === undefined ? undefined : metaTable[image.id]);
+  const aspect = useMemo(() => {
+    if (image === undefined) {
+      return 16 / 9;
+    }
+
+    const cell =
+      natural === undefined
+        ? { width: image.width, height: image.height }
+        : image.sprite === undefined
+          ? natural
+          : spriteCellSizeOf(sheet, natural);
+    return cell.width / Math.max(1, cell.height);
+  }, [image, natural, sheet]);
+
   const [stageBox, setStageNode] = useFittedBox(aspect);
 
   const hint = !running
