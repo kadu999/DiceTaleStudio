@@ -15,18 +15,10 @@ import { contentTypeFor } from "../mime";
 import { bodyTrimmed, queryRaw, queryTrimmed, readBody, readJsonBody } from "../requests";
 import { HttpError, badRequest, rethrowProviderError, sendBytes, sendEmpty, sendJson, sendText } from "../responses";
 import type { RouteContext } from "../router";
+import type { Thumbnail } from "../../resources/thumbnail-store";
 
+/** 缩略图长边上限（这一张小 WebP 的尺寸；源素材的宽高原样回在响应头里）。 */
 const THUMBNAIL_MAX_EDGE = 192;
-const THUMBNAIL_CACHE_MAX_ENTRIES = 96;
-interface CachedThumbnail {
-  readonly md5: string;
-  readonly data: Buffer;
-  readonly width: number;
-  readonly height: number;
-}
-
-const thumbnailCache = new Map<string, CachedThumbnail>();
-const thumbnailJobs = new Map<string, Promise<CachedThumbnail>>();
 
 /**
  * 通用资源接口：**一条协议一个函数**。
@@ -141,33 +133,18 @@ export async function readResourceThumbnailRoute(ctx: RouteContext): Promise<voi
   }
 
   const md5 = createHash("md5").update(source).digest("hex");
-  let thumbnail = thumbnailCache.get(id);
-  if (thumbnail?.md5 === md5) {
-    thumbnailCache.delete(id);
-    thumbnailCache.set(id, thumbnail);
-  } else {
-    const jobKey = `${id}\n${md5}`;
-    let job = thumbnailJobs.get(jobKey);
-    if (job === undefined) {
-      job = createThumbnail(source, md5, isVideo, extension);
-      thumbnailJobs.set(jobKey, job);
-    }
-
-    try {
-      thumbnail = await job;
-      thumbnailCache.set(id, thumbnail);
-      if (thumbnailCache.size > THUMBNAIL_CACHE_MAX_ENTRIES) {
-        const oldest = thumbnailCache.keys().next().value;
-        if (oldest !== undefined) thumbnailCache.delete(oldest);
-      }
-    } catch (error) {
-      ctx.log("warn", `缩略图生成失败: ${id}（${messageOf(error)}）`);
-      throw badRequest(
-        isVideo ? "无法生成视频缩略图（需要 ffmpeg 在 PATH 里，或这条视频解不出来）" : "无法读取图片",
-      );
-    } finally {
-      if (thumbnailJobs.get(jobKey) === job) thumbnailJobs.delete(jobKey);
-    }
+  let thumbnail: Thumbnail;
+  try {
+    // 内存热点 → 磁盘缓存（跨重启，见 `ThumbnailStore`）→ 都落空才真生成
+    thumbnail = await ctx.thumbnails.get(id, md5, () =>
+      createThumbnail(source, isVideo, extension),
+    );
+  } catch (error) {
+    // 原因只写日志（ffmpeg 的原话里带着临时目录路径），**不回显给客户端**——与审核 B25 同一条口径
+    ctx.log("warn", `缩略图生成失败: ${id}（${messageOf(error)}）`);
+    throw badRequest(
+      isVideo ? "无法生成视频缩略图（需要 ffmpeg 在 PATH 里，或这条视频解不出来）" : "无法读取图片",
+    );
   }
 
   const headers = {
@@ -178,13 +155,8 @@ export async function readResourceThumbnailRoute(ctx: RouteContext): Promise<voi
   sendBytes(ctx.response, 200, "image/webp", thumbnail.data, headers);
 }
 
-async function createThumbnail(
-  source: Buffer,
-  md5: string,
-  isVideo: boolean,
-  extension: string,
-): Promise<CachedThumbnail> {
-  // 视频（mp4/webm）：先用 ffmpeg 抽首帧再走同一条 sharp 管线；缓存 / 尺寸头 / 失效逻辑与图片一致
+async function createThumbnail(source: Buffer, isVideo: boolean, extension: string): Promise<Thumbnail> {
+  // 视频（mp4/webm）：先用 ffmpeg 抽首帧再走同一条 sharp 管线；尺寸头 / 缓存口径与图片一致
   const frame = isVideo ? await extractVideoFrame(source, extension) : source;
   const pipeline = sharp(frame, { limitInputPixels: 100_000_000 });
   const metadata = await pipeline.metadata();
@@ -197,7 +169,7 @@ async function createThumbnail(
     .webp({ quality: 76 })
     .toBuffer();
   const dimensions = metadata.autoOrient ?? { width: metadata.width, height: metadata.height };
-  return { md5, data, width: dimensions.width, height: dimensions.height };
+  return { data, width: dimensions.width, height: dimensions.height };
 }
 
 /**

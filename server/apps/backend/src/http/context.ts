@@ -1,7 +1,9 @@
 import type { ResourceProvider } from "@dts/resources";
 import type { LoadedConfig } from "../config";
+import { thumbnailCacheDir } from "../config";
 import { openFolder as openFolderInFileManager, revealFile as revealFileInFileManager } from "../open-folder";
 import { BundleCache } from "../resources/bundle";
+import { ThumbnailStore } from "../resources/thumbnail-store";
 import type { LogLevel, RuntimeHub } from "../ws/hub";
 
 /**
@@ -24,13 +26,15 @@ export interface HttpContext {
   readonly openFolder: (path: string, selectFile?: string) => Promise<void>;
   /** 资源包缓存（跨请求状态，见 `BundleCache`）。 */
   readonly bundles: BundleCache;
+  /** 缩略图缓存（内存热点 + 磁盘，跨重启；见 `ThumbnailStore`）。 */
+  readonly thumbnails: ThumbnailStore;
 }
 
 /**
- * 组装服务器的输入：`HttpContext` 去掉「装配时才有」的 `bundles`，并把 `openFolder`
+ * 组装服务器的输入：`HttpContext` 去掉「装配时才有」的 `bundles` / `thumbnails`，并把 `openFolder`
  * 降成可选（缺省用真实实现）——**字段清单只此一处**，不给两个接口各维护一份。
  */
-export type HttpServerOptions = Omit<HttpContext, "bundles" | "openFolder"> & {
+export type HttpServerOptions = Omit<HttpContext, "bundles" | "thumbnails" | "openFolder"> & {
   /** 覆盖默认的「打开目录 / 定位文件」实现（测试注入假实现）。 */
   readonly openFolder?: (path: string, selectFile?: string) => Promise<void>;
 };
@@ -52,5 +56,9 @@ export function createHttpContext(options: HttpServerOptions): HttpContext {
           ? openFolderInFileManager(path)
           : revealFileInFileManager(selectFile)),
     bundles: new BundleCache((message) => log("info", message)),
+    // 缓存层的毛病（写不进去 / 读坏了）只是少一条加速，报 warn 就好
+    thumbnails: new ThumbnailStore(thumbnailCacheDir(config.resourceRoot), (message) =>
+      log("warn", message),
+    ),
   };
 }

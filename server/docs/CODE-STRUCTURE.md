@@ -16,8 +16,8 @@
 | 后端默认地址 | `0.0.0.0:1420`（`resources/config/app.json`，可被 `HOST` / `PORT` 覆盖） |
 | 编辑器开发地址 | `http://localhost:5173`（Vite，`/api`、`/editor`、`/client` 反代到 1420） |
 | 编辑器生产地址 | `http://localhost:1420`（后端同源托管 `apps/editor/dist`） |
-| 源码规模（不含测试） | 168 个文件 / 38,092 行（packages 12,894 · backend 3,531 · editor 21,667） |
-| 测试规模 | 34,156 行（单测 24,468 · E2E 9,405 · 架构测试 283） |
+| 源码规模（不含测试） | 169 个文件 / 38,282 行（packages 12,894 · backend 3,721 · editor 21,667） |
+| 测试规模 | 34,333 行（单测 24,645 · E2E 9,405 · 架构测试 283） |
 
 > 上表两行与 §0.1 表格里加粗的文件行数、§3.x 节标题里的包规模由
 > `scripts/check-code-structure-stats.mjs` **机器校验**（`pnpm check` 的一环）：
@@ -820,14 +820,15 @@ resources/
 | `src/values.ts` | 26 | 后端共用小工具：`messageOf`（异常 → 文本）/ `stamp`（日志时间戳）/ `toArrayBuffer`（Buffer 切片） |
 | `src/http/server.ts` | 73 | **只剩三件事**：装配上下文、按 `/api/` 前缀二分、把失败翻成响应；外加一条保命规则——给 `response` 接空的 `error` 监听、给每个连接（`server.on("connection")`）的 socket 接一份：客户端中途断开（取消下载 / 关页面）时写响应会异步冒 `error`（Windows 上是 UV_EOF），没人接就把整个进程打崩。挂在 `connection` 上天然**每连接一次**，不需要 WeakSet 去重 |
 | `src/http/router.ts` | 64 | 路由表编译与分派（路径精确匹配 + 动词；404 `未知接口` / 405 `不支持的方法`） |
-| `src/http/context.ts` | 56 | `HttpContext`（config + provider + hub + log + openFolder + 资源包缓存）；`HttpServerOptions = Omit<HttpContext, "bundles" | "openFolder"> & { openFolder?: … }`——字段清单只此一处 |
+| `src/http/context.ts` | 64 | `HttpContext`（config + provider + hub + log + openFolder + 资源包缓存 + 缩略图缓存）；`HttpServerOptions = Omit<HttpContext, "bundles" | "thumbnails" | "openFolder"> & { openFolder?: … }`——字段清单只此一处 |
 | `src/http/responses.ts` | 98 | `HttpError`（唯一的「提前返回状态码」手段）+ `sendJson`/`sendText`/`sendBytes`/`sendEmpty` + `rethrowProviderError`（业务错误 → 400、系统错误冒泡 → 500） |
 | `src/http/requests.ts` | 106 | 请求体 / 查询参数读取助手（`readBody`/`readJsonBody` 带 `maxBytes`，超限抛 413；`queryRaw`/`queryTrimmed`/`bodyString`/`bodyTrimmed`） |
 | `src/http/mime.ts` | 35 | 扩展名 → Content-Type |
 | `src/http/static.ts` | 92 | 编辑器产物托管 + SPA 回退 + 目录穿越防护（畸形百分号编码回 400） |
-| `src/http/routes/*.ts` | 802 | **一条协议一个函数**：health(17) / config(20) / state(12) / projects(299, **7 个**：项目生命周期 + `/tree` + **`/meta`**（一次拿全项目的素材 meta，连读不出来的那几个也报出来）) / resources(388, 9 个；缩略图对视频走 ffmpeg 抽首帧，**先落临时文件再让 ffmpeg 读文件**——管道不可 seek，`moov` 在文件尾的 mp4 会整批抽不出首帧；失败原因只进服务端日志、不回显给客户端) / index(66, 路由表) |
+| `src/http/routes/*.ts` | 774 | **一条协议一个函数**：health(17) / config(20) / state(12) / projects(299, **7 个**：项目生命周期 + `/tree` + **`/meta`**（一次拿全项目的素材 meta，连读不出来的那几个也报出来）) / resources(360, 9 个；缩略图交给 `ThumbnailStore` 做**内存 + 磁盘**两级缓存，视频走 ffmpeg 抽首帧——**先落临时文件再让 ffmpeg 读文件**：管道不可 seek，`moov` 在文件尾的 mp4 会整批抽不出首帧；失败原因只进服务端日志、不回显给客户端) / index(66, 路由表) |
 | `src/resources/fs-provider.ts` | 327 | `FsResourceProvider`（唯一碰磁盘的地方）+ 原子写 |
 | `src/resources/bundle.ts` | — | 资源清单 / 指纹 / ZIP 组装与缓存；编码委托给 `fflate`（STORED） |
+| `src/resources/thumbnail-store.ts` | 199 | 缩略图**两级缓存**（内存热点 + 磁盘跨重启）：条目**按内容寻址**（文件名 = 源素材 md5 + 源宽高）→ 内容没变永远命中、变了自动换名，不用另写失效逻辑；写盘原子（临时文件 + rename）、失败只记日志（缓存只是加速，绝不拖垮请求）；内存 96 条 / 磁盘 512 条（超了按 mtime 淘汰） |
 | `src/ws/hub.ts` | 475 | `RuntimeHub`：连接、心跳、命令回执、消息分发与序列化发送 |
 | `src/ws/hub-context.ts` | — | `HubContext` 与 WS logger 类型：handler 可用能力契约 |
 | `src/ws/handlers/{editor,client,types}.ts` | — | **一条消息一个函数**：按方向划分的消息处理器与类型安全注册表 |
@@ -903,7 +904,7 @@ startServer()
 | `/api/projects/reveal` | POST | `{name, path?, selectFile?}` | `{ok:true, path}` | `400`/`404`/`405`/`500` |
 | `/api/resources/index` | GET | `?kind=` | `{entries: ResourceEntry[]}` | — |
 | `/api/resources/raw` | GET | `?id=` | 二进制（Content-Type 按扩展名，`no-store`） | `400`（缺 id）/`404` |
-| `/api/resources/thumbnail` | GET | `?id=`；`info=1` 时只回原尺寸（**图片与视频都支持**：视频走 ffmpeg 抽首帧探测） | 缩小的 WebP（含原图宽高头）或 JSON 尺寸；视频（mp4/webm）= ffmpeg 抽首帧再走同一条 sharp 管线，缓存 / 失效语义与图片一致。**抽帧先落一个临时文件**：ffmpeg 从 `pipe:0` 读时不可 seek，`moov` 在文件尾的 mp4（非 faststart，手机 / 剪辑软件的默认导出）整批抽不出来 | `400`（无效图片 / 视频抽帧失败——需 ffmpeg 在 PATH，或这条视频解不出来；**原因只进日志**）/`404` |
+| `/api/resources/thumbnail` | GET | `?id=`；`info=1` 时只回原尺寸（**图片与视频都支持**：视频走 ffmpeg 抽首帧探测） | 缩小的 WebP（含原图宽高头）或 JSON 尺寸；视频（mp4/webm）= ffmpeg 抽首帧再走同一条 sharp 管线。**缓存是内存 + 磁盘两级**（`ThumbnailStore`，磁盘在 `<资源根>/.cache/thumbnails/`、按源素材 md5 命名）：后端重启不用重算，素材一改自动失效。**抽帧先落一个临时文件**：ffmpeg 从 `pipe:0` 读时不可 seek，`moov` 在文件尾的 mp4（非 faststart，手机 / 剪辑软件的默认导出）整批抽不出来 | `400`（无效图片 / 视频抽帧失败——需 ffmpeg 在 PATH，或这条视频解不出来；**原因只进日志**）/`404` |
 | `/api/resources/raw` | PUT/POST | `?id=` + 原始字节 | `{ok:true, id, size}` | — |
 | `/api/resources/raw` | DELETE | `?id=` | `{ok:true, id}` | — |
 | `/api/resources/text` | GET | `?id=` | `text/plain`（`no-store`） | `400`/`404` |
@@ -1848,7 +1849,8 @@ upgradeRawDocument
 | 文件 | 行数 | 覆盖的行为 |
 |---|---|---|
 | `runtime-hub.test.ts` | 919 | **最大的一份**。门控（没点运行 → 握手 503 / 点运行后能连 / 退出运行 4003 踢下线）；先推场景后开前端拿到全量；运行中改场景整份转发；命令转发 + 回执 + 日志；不认识的命令回带 `requestId` 的 `editor_error`（不静默丢弃）；战争雾轨迹转发；前端不在 / 未进运行态的明确报错；编辑器刷新/断开不影响运行态；协议版本不一致 4002；**顺序断言**（`resources_prepare` → `project_settings` → `scene_sync`）；换项目重发 `resources_prepare`；前端上报资源包结果并在关闸后清掉；一组 HTTP 接口用例（`/api/health`、`/api/config`、`/api/resources/index`、`/api/resources/raw`、`/api/state`、未构建时的根路径提示） |
-| `project-api.test.ts` | 662 | 项目 CRUD（创建 `project.json` + 标准子目录、没有 `project.json` 的目录不算项目、项目文件可被编辑器直接打开、重名 400、非法名 400 且不落盘）；资源树与建目录（含目录穿越 400）；上传 → 出现 → 删除；删项目连资源一起清；**缩略图四条**（图片 = 缩小 WebP + 尺寸头 + md5 缓存失效；**视频 = ffmpeg 抽首帧**走同一管线，夹具 `fixtures/clip.mp4` 64×48，`info=1` 也认视频；**`moov` 在文件尾（非 faststart）+ 撑过 ffmpeg 的 32KB IO 缓冲**的 mp4 也要出图——拿夹具垫一个 `free` 盒复现真视频形态，改回不可 seek 的管道这条就红；**坏视频：如实回 400、不打崩进程、响应体不回显临时目录路径**——vitest 自己的兜底不一定让用例变红，用进程级 `uncaughtException` 记录显式钉住；同理「客户端中途断开大文件下载」也不得打崩；**keep-alive 单连接 15 连请求不得累积 error 监听**——挂 `MaxListenersExceededWarning` 红钉，error 兜底须每 socket 一次）；**`/api/projects/reveal` 的 10 条用例**（路径由服务端拼、项目不存在 404、非法名 400、非 POST 405、系统打不开时如实报错、带 `path` 打开项目内那一层、`selectFile` 指向存在文件 / 指向目录 / 指向不存在文件、`path` 越界 400） |
+| `project-api.test.ts` | 669 | 项目 CRUD（创建 `project.json` + 标准子目录、没有 `project.json` 的目录不算项目、项目文件可被编辑器直接打开、重名 400、非法名 400 且不落盘）；资源树与建目录（含目录穿越 400）；上传 → 出现 → 删除；删项目连资源一起清；**缩略图四条**（图片 = 缩小 WebP + 尺寸头 + md5 缓存失效 + **落盘断言**：生成结果进 `<资源根>/.cache/thumbnails/<源素材 md5>-<源宽>x<源高>.webp`；**视频 = ffmpeg 抽首帧**走同一管线，夹具 `fixtures/clip.mp4` 64×48，`info=1` 也认视频；**`moov` 在文件尾（非 faststart）+ 撑过 ffmpeg 的 32KB IO 缓冲**的 mp4 也要出图——拿夹具垫一个 `free` 盒复现真视频形态，改回不可 seek 的管道这条就红；**坏视频：如实回 400、不打崩进程、响应体不回显临时目录路径**——vitest 自己的兜底不一定让用例变红，用进程级 `uncaughtException` 记录显式钉住；同理「客户端中途断开大文件下载」也不得打崩；**keep-alive 单连接 15 连请求不得累积 error 监听**——挂 `MaxListenersExceededWarning` 红钉，error 兜底须每 socket 一次）；**`/api/projects/reveal` 的 10 条用例**（路径由服务端拼、项目不存在 404、非法名 400、非 POST 405、系统打不开时如实报错、带 `path` 打开项目内那一层、`selectFile` 指向存在文件 / 指向目录 / 指向不存在文件、`path` 越界 400） |
+| `thumbnail-store.test.ts` | 170 | 缩略图缓存**本身**（HTTP 那一层在 `project-api.test.ts`）：同 ID 同内容只生成一次、md5 一变就重新生成、同一份内容并发只生成一次；**换个实例（= 后端重启）仍命中磁盘、不再跑生成**；同一份内容换个 ID / 换个项目也命中；内存层挤掉之后由磁盘兜底；磁盘写不进去（目录位置被文件占了）照常返回结果、只记日志；条目超上限按 mtime 删最旧的 |
 | `runtime-session.test.ts` | 263 | 会话初始态；开闸幂等不清场景；快照是摘要（名字 + 对象数 + 时间）；关闸清空全部字段；推 `null`；`sessionId` 稳定可读；资源包状态；设置摘要只报时间；`projectNameOfScene`（含推不出项目名的情形、换项目跟着变） |
 | `resources-bundle.test.ts` | 229 | 清单范围（只收 `Assets/`、排除 `project.json` 与 `.gitkeep`）；`bytes` 与排序稳定；指纹随内容变、内容不变则稳定、**把 mtime 算进去**；`ProjectNotFoundError` / `BundleTooLargeError`；zip 结构（条目名 = 项目根相对路径、另有清单文件、字节与源文件逐字节一致、中文名 UTF-8 位标记、响应头、空项目也能打包） |
 | `resources-bundle-api.test.ts` | 157 | 清单 API（只列 `Assets/`、给指纹与字节数）；整包下载（zip + 响应头 + 包内条目一致）；**指纹没变 → 304**；素材改了 → 缓存失效重下拿到新内容；超上限 413；项目不存在 404 / 缺参数 400 |

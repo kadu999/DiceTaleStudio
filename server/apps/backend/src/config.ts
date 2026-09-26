@@ -29,6 +29,17 @@ export function defaultResourceRoot(moduleUrl: string = import.meta.url): string
   return fileURLToPath(new URL("../../../resources", moduleUrl));
 }
 
+/**
+ * 缩略图缓存目录（**派生数据**，删掉只是重算一遍）：资源根下的 `.cache/thumbnails/`。
+ *
+ * 放在资源根下的理由：跟着资源根走，于是「换一个资源根」就等于换一份缓存——测试的临时根
+ * （`createTempResourceRoot`）天然隔离，不用再为缓存单独开一项配置。
+ * 它**不是素材**：资源树只列 `projects/<项目>/Assets/` 下的东西；也不进 git（见 `.gitignore`）。
+ */
+export function thumbnailCacheDir(resourceRoot: string): string {
+  return resolve(resourceRoot, ".cache", "thumbnails");
+}
+
 export interface LoadedConfig {
   readonly app: AppConfig;
   readonly resourceRoot: string;

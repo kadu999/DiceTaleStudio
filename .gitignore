@@ -25,6 +25,9 @@ Thumbs.db
 .vscode/*
 !.vscode/extensions.json
 
+# 运行时缓存（缩略图等派生数据）：跟着资源根走（`resources/.cache/`），随时可删、不入库
+server/resources/.cache/
+
 # 大体积二进制资源：默认不入库，需要时显式 git add -f（详见 server/README.md）
 # 素材按「一个项目一个文件夹」放在 projects/<项目>/Assets/ 下，所以按目录忽略。
 # 注意：这里**不能**写成 `.../images/`（结尾带斜杠）——那会匹配到目录本身，

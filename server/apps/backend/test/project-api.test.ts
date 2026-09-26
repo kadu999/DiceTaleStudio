@@ -2,6 +2,7 @@ import type { AddressInfo } from "node:net";
 import { Agent, get } from "node:http";
 import type { Server } from "node:http";
 import { readFileSync } from "node:fs";
+import { readdir } from "node:fs/promises";
 import * as pathApi from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -363,6 +364,12 @@ describe("项目 API", () => {
     const thumbnailInfo = await sharp(thumbnail).metadata();
     expect(thumbnailInfo.width).toBeLessThanOrEqual(192);
     expect(thumbnailInfo.height).toBeLessThanOrEqual(192);
+
+    // 生成过的缩略图落进**磁盘**缓存（`<资源根>/.cache/thumbnails/<源素材 md5>-<宽>x<高>.webp`）：
+    // 后端重启后还认，这是「不用每次都重算」的关键；宽高是**源图**的，不是这张小图的
+    const cachedNames = await readdir(pathApi.join(root, ".cache", "thumbnails"));
+    expect(cachedNames).toHaveLength(1);
+    expect(cachedNames[0]).toMatch(/^[0-9a-f]{32}-640x320\.webp$/);
 
     const cachedResponse = await fetch(`${baseUrl}/api/resources/thumbnail?id=${encodeURIComponent(id)}`);
     expect(Buffer.from(await cachedResponse.arrayBuffer())).toEqual(thumbnail);
