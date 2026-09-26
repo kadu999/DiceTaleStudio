@@ -104,6 +104,13 @@ namespace DiceTale
         /// </summary>
         private VideoOverlay video;
 
+        /// <summary>
+        /// 视频混合组件（对象带 `VideoBlend` 协议组件时建，<see cref="Create"/> 时缓存）。
+        /// 渲染子物体由它自治（`VideoBlendLayer` 子物体自己建 / 拆）；命令路由经
+        /// <see cref="VideoBlendLayer"/> 找到它执行播放 / 擦除。
+        /// </summary>
+        private VideoBlend videoBlend;
+
         /// <summary>对象在文档里的位置 / 角度（<see cref="Place"/> 摆位用）。</summary>
         private float currentX;
         private float currentY;
@@ -229,8 +236,14 @@ namespace DiceTale
                 go.AddComponent<FogOfWar>();
             }
 
+            if (obj.HasComponent(Protocol.ComponentType.VideoBlend))
+            {
+                go.AddComponent<VideoBlend>();
+            }
+
             view.gridMap = go.GetComponent<GridMapView>();
             view.fog = go.GetComponent<FogOfWar>();
+            view.videoBlend = go.GetComponent<VideoBlend>();
             return view;
         }
 
@@ -321,6 +334,22 @@ namespace DiceTale
                     fogWidth * GlobalScale,
                     fogHeight * GlobalScale,
                     LiftFor(currentSortingOrder));
+            }
+
+            /*
+              视频混合（v17）：组件自治（自己的渲染子物体自己建 / 拆），协调器只把最新的
+              尺寸 / 显示顺序 / 循环 / 声音递过去。视频内容由 `play_video` 命令驱动
+              （与 `VideoOverlay` 共用那条命令，前端按组件分派）。
+            */
+            if (videoBlend != null)
+            {
+                var blendScale = GlobalScale;
+                videoBlend.Apply(
+                    currentWidth * blendScale,
+                    currentHeight * blendScale,
+                    currentSortingOrder,
+                    obj.ComponentBool(Protocol.ComponentType.VideoBlend, "loop"),
+                    obj.ComponentString(Protocol.ComponentType.VideoBlend, "audio"));
             }
 
             if (image != null && imageLoader != null && currentTextureId != currentImageId)
@@ -458,6 +487,13 @@ namespace DiceTale
 
         /// <summary>这一层的视频（没在放时返回 null）；命令路由用它执行 `pause_video` / `resume_video`。</summary>
         public VideoOverlay Video => video;
+
+        /// <summary>
+        /// 这一层的**视频混合**组件（对象没带 `VideoBlend` 协议组件时返回 null）；命令路由用它
+        /// 执行混合播放与 `erase_video_mask`。组件在**不代表混合层在**——没选视频 / 还没 prepare 时
+        /// 它手下没有渲染子物体，擦除会先记着、等遮罩建好重放。
+        /// </summary>
+        public VideoBlend VideoBlendLayer => videoBlend;
 
         /// <summary>
         /// 把这个对象摆到「它在世界里的位置与角度」（**局部坐标**：相对所在场景的根节点）。

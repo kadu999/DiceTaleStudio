@@ -92,8 +92,13 @@ namespace DiceTale
         /// 对象自己的 **`ImageLayer`** 组件承载（`kind` 是 `Image`）。老前端（v15）按 `map.image`
         /// 取图 → 取不到，地图对象会退成占位色（不是崩，是画面错），照旧 +1；
         /// 这类不兼容由握手 close `4002` 挡住。
+        ///
+        /// v17（2026-09-26）：**新增「视频混合」组件 `VideoBlend`**（两条视频叠在同一矩形上用
+        /// Mask 混合：A 盖住、擦开露 B）+ 一条命令 `erase_video_mask`。老前端（v16）不认这个组件
+        /// → 混合层不建（不是崩，是那一层没有），且收到 `erase_video_mask` 会回「不认识这条命令」——
+        /// 属于「行为丢」，所以照旧 +1；这类不兼容由握手 close `4002` 挡住。
         /// </summary>
-        public const int Version = 16;
+        public const int Version = 17;
 
         /// <summary>对象特性组件的类型名（v9 起）。与服务端 `@dts/protocol` 的 `COMPONENT_TYPE` 逐字一致。</summary>
         public static class ComponentType
@@ -107,6 +112,13 @@ namespace DiceTale
             public const string Sound = "PlaySound";
             public const string Teleport = "Teleport";
             public const string Video = "VideoOverlay";
+            /// <summary>
+            /// 视频混合（v17 起）：两条视频叠在**同一个矩形**上用 Mask 混合（A 盖住、擦开露 B）。
+            /// `{ a: { clips, picked }, b: { clips, picked }, loop, audio }`；**遮罩是纯运行态**
+            /// （由 `erase_video_mask` 驱动），不随场景下发。与 `VideoOverlay` 语义互斥
+            /// （同一对象最多其一），前端取 `VideoBlend` 优先。
+            /// </summary>
+            public const string VideoBlend = "VideoBlend";
             /// <summary>
             /// 战争雾：**独立组件，挂在独立的 `Fog` 对象上**（v13 起从 `GridMap` 拆出；v15 起雾自身成对象）。
             /// `{ mapId, enabled, regions }`：`mapId` 引用被雾罩住的那张地图（地图那边仍是 `GridMap`）。
@@ -148,6 +160,8 @@ namespace DiceTale
         public const string CommandEraseMask = "erase_mask";
         /// <summary>战争雾：整片揭示 / 整片盖回某个区域（区域位取自**那个雾对象**的 `FogOfWar` 组件）。</summary>
         public const string CommandRevealFogRegion = "reveal_fog_region";
+        /// <summary>视频混合：沿一笔轨迹擦掉**贴图对象**上的混合遮罩（载荷与 `erase_mask` 同一套 `stroke`）。</summary>
+        public const string CommandEraseVideoMask = "erase_video_mask";
         /// <summary>视频：在对象自己的矩形上放它 `video.picked` 那一条（命令里不带数据）。</summary>
         public const string CommandPlayVideo = "play_video";
         /// <summary>视频：暂停在当前帧。</summary>

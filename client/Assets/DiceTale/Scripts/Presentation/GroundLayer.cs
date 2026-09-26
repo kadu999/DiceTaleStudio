@@ -12,6 +12,8 @@ namespace DiceTale
     /// 显示**整张图**；</item>
     /// <item><see cref="SpriteLayer"/> —— 「精灵对象」（`kind: "Sprite"`，组件 `SpriteLayer`）：
     /// 显示图集里的**一格**（子图）。</item>
+    /// <item><see cref="VideoBlendLayer"/> —— 视频混合那一层（协议组件 `VideoBlend`）：
+    /// 只把 shader 换成 `DiceTale/VideoBlend`，网格与生命周期仍复用本类。</item>
     /// </list>
     /// 两者共用这一份网格 / 材质 / UV 逻辑，差别只有「取样矩形要不要内缩半个纹素躲开邻格渗色」
     /// ——那正是「一张图 vs 图集里的一块」的实质差别，所以它落在 <see cref="InsetUv"/> 里。
@@ -52,7 +54,15 @@ namespace DiceTale
     public abstract class GroundLayer : MonoBehaviour
     {
         private const string MeshName = "GroundTexturePlane";
-        private const string ShaderName = "DiceTale/ImageLayer";
+
+        /// <summary>
+        /// 本层用的 shader 名（默认 `DiceTale/ImageLayer`：「纹理 × 顶点色」）。
+        ///
+        /// **子类可覆盖**：视频混合那层（<see cref="VideoBlendLayer"/>）用 `DiceTale/VideoBlend`
+        /// （两张视频 + 一张 Mask 混合），它仍然复用本类的网格 / 尺寸 / 离地 / 生命周期，
+        /// 只换片元怎么算。
+        /// </summary>
+        protected virtual string ShaderName => "DiceTale/ImageLayer";
 
         private Mesh ownedMesh;
         private Material ownedMaterial;
@@ -244,6 +254,13 @@ namespace DiceTale
             Release(ownedMaterial);
             ownedMaterial = null;
         }
+
+        /// <summary>
+        /// 本层自建的那个材质（`Apply` 之后才有）。给「要往材质上塞额外贴图」的调用方用
+        /// （视频混合要设 `_TexA` / `_TexB` / `_Mask`）；普通图片层用不到。
+        /// `internal`：`VideoBlend` 不是 <see cref="GroundLayer"/> 的子类，但同在一个程序集里。
+        /// </summary>
+        internal Material OwnedMaterial => ownedMaterial;
 
         /// <summary>释放自建的 Unity 对象：运行时用 `Destroy`，编辑器（退出播放的收尾）用 `DestroyImmediate`。</summary>
         private static void Release(UnityEngine.Object owned)

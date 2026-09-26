@@ -153,6 +153,10 @@ namespace DiceTale
                     HandleRevealFogRegion(command);
                     return;
 
+                case Protocol.CommandEraseVideoMask:
+                    HandleEraseVideoMask(command);
+                    return;
+
                 case Protocol.CommandPlayVideo:
                     HandlePlayVideo(command);
                     return;
@@ -580,6 +584,13 @@ namespace DiceTale
         /// </summary>
         private void HandlePlayVideo(CommandRequest command)
         {
+            // v17：视频混合对象走另一条路（读的是 `VideoBlend` 的两条通道，不是 `VideoOverlay`）
+            if (IsVideoBlendObject(command.objectId))
+            {
+                HandlePlayVideoBlend(command);
+                return;
+            }
+
             var problem = DescribeVideoTarget(command.objectId, out var obj, out var view);
             if (problem != null)
             {
@@ -635,6 +646,12 @@ namespace DiceTale
         /// <summary>暂停：没在放就如实回失败（前端那一层可能已经被 `stop_video` 拆了）。</summary>
         private void HandlePauseVideo(CommandRequest command)
         {
+            if (IsVideoBlendObject(command.objectId))
+            {
+                HandlePauseVideoBlend(command);
+                return;
+            }
+
             var problem = DescribeVideoTarget(command.objectId, out var obj, out var view);
             if (problem != null)
             {
@@ -653,6 +670,12 @@ namespace DiceTale
         /// <summary>继续：从暂停的那一帧接着放（还没建层时前端会自己 Prepare 一遍）。</summary>
         private void HandleResumeVideo(CommandRequest command)
         {
+            if (IsVideoBlendObject(command.objectId))
+            {
+                HandleResumeVideoBlend(command);
+                return;
+            }
+
             var problem = DescribeVideoTarget(command.objectId, out var obj, out var view);
             if (problem != null)
             {
@@ -675,6 +698,12 @@ namespace DiceTale
         /// </summary>
         private void HandleStopVideo(CommandRequest command)
         {
+            if (IsVideoBlendObject(command.objectId))
+            {
+                HandleStopVideoBlend(command);
+                return;
+            }
+
             var obj = mirror != null ? mirror.Find(command.objectId) : null;
             if (obj == null)
             {
@@ -697,6 +726,197 @@ namespace DiceTale
 
             var effect = $"「{obj.name}」的视频已停止（露出它自己的贴图）";
             Debug.Log($"[命令] 停止视频：{command.objectId}");
+            session.SendCommandResult(command, true, effects: new[] { effect });
+        }
+
+        // ---------------------------------------------------------------- 视频混合（v17）
+
+        /// <summary>这个对象是不是视频混合对象（带 `VideoBlend` 组件）。</summary>
+        private bool IsVideoBlendObject(string objectId)
+        {
+            var obj = mirror != null ? mirror.Find(objectId) : null;
+            return obj != null && obj.HasComponent(Protocol.ComponentType.VideoBlend);
+        }
+
+        /// <summary>
+        /// 「现在能不能混合放这个对象上的视频」：与 `DescribeVideoTarget` 同一条口径，
+        /// 读的是 `VideoBlend` 组件的两条通道（走 `ComponentData` 的泛型读取，**不**加强类型镜像字段）。
+        /// </summary>
+        private string DescribeVideoBlendTarget(
+            string objectId,
+            out MirrorObject obj,
+            out SceneObjectView view)
+        {
+            obj = mirror != null ? mirror.Find(objectId) : null;
+            view = null;
+
+            if (obj == null)
+            {
+                return $"镜像里没有这个对象：{objectId}（场景可能还没同步到）";
+            }
+
+            if (!obj.HasComponent(Protocol.ComponentType.VideoBlend))
+            {
+                return $"「{obj.name}」没有视频混合组件（kind={obj.kind}），混合放不了";
+            }
+
+            view = mirror.FindView(objectId);
+            if (view == null || view.VideoBlendLayer == null)
+            {
+                return $"「{obj.name}」没有视频混合层（对象不可见 / 未落位）";
+            }
+
+            return null;
+        }
+
+        /// <summary>两条通道选中的视频；都没有就返回 false（「都没选」与「坏数据」同一条处理）。</summary>
+        private static bool PickedVideoBlendChannels(
+            MirrorObject obj,
+            out string clipA,
+            out string clipB)
+        {
+            var data = obj.ComponentData(Protocol.ComponentType.VideoBlend);
+            clipA = JsonParser.GetString(JsonParser.GetObject(data, "a"), "picked");
+            clipB = JsonParser.GetString(JsonParser.GetObject(data, "b"), "picked");
+            return !string.IsNullOrEmpty(clipA) || !string.IsNullOrEmpty(clipB);
+        }
+
+        /// <summary>
+        /// 在贴图上**混合放**它两条通道选中的视频（命令 `play_video` 只给 `objectId`）。
+        ///
+        /// 与 `HandlePlayVideo` 同一套：解析 URL（本地包优先）、交给视图建那一层、同步回执。
+        /// 两条通道**至少一条**有选中就放；少的那条按黑场处理。
+        /// </summary>
+        private void HandlePlayVideoBlend(CommandRequest command)
+        {
+            var problem = DescribeVideoBlendTarget(command.objectId, out var obj, out var view);
+            if (problem != null)
+            {
+                Debug.LogWarning($"[命令] 播放混合视频失败：{problem}");
+                session.SendCommandResult(command, false, problem);
+                return;
+            }
+
+            if (!PickedVideoBlendChannels(obj, out var clipA, out var clipB))
+            {
+                var reason = $"「{obj.name}」两条通道都还没选要放的视频（编辑器：属性面板 → 视频混合）";
+                Debug.LogWarning($"[命令] 播放混合视频失败：{reason}");
+                session.SendCommandResult(command, false, reason);
+                return;
+            }
+
+            var urlA = string.IsNullOrEmpty(clipA) ? null : VideoUrlOf(clipA);
+            var urlB = string.IsNullOrEmpty(clipB) ? null : VideoUrlOf(clipB);
+            if ((!string.IsNullOrEmpty(clipA) && urlA == null) || (!string.IsNullOrEmpty(clipB) && urlB == null))
+            {
+                var reason = $"「{obj.name}」的视频拿不到：本地资源包里没有，而且还不知道服务端地址";
+                Debug.LogWarning($"[命令] 播放混合视频失败：{reason}");
+                session.SendCommandResult(command, false, reason);
+                return;
+            }
+
+            view.VideoBlendLayer.Play(urlA, urlB);
+
+            var effect = $"开始混合播放（A={clipA ?? "-"}，B={clipB ?? "-"}）";
+            Debug.Log($"[命令] 播放混合视频：{command.objectId} {effect}");
+            session.SendCommandResult(command, true, effects: new[] { effect });
+        }
+
+        private void HandlePauseVideoBlend(CommandRequest command)
+        {
+            var problem = DescribeVideoBlendTarget(command.objectId, out var obj, out var view);
+            if (problem != null)
+            {
+                Debug.LogWarning($"[命令] 暂停混合视频失败：{problem}");
+                session.SendCommandResult(command, false, problem);
+                return;
+            }
+
+            view.VideoBlendLayer.Pause();
+
+            var effect = $"「{obj.name}」的视频混合已暂停";
+            Debug.Log($"[命令] 暂停混合视频：{command.objectId}");
+            session.SendCommandResult(command, true, effects: new[] { effect });
+        }
+
+        private void HandleResumeVideoBlend(CommandRequest command)
+        {
+            var problem = DescribeVideoBlendTarget(command.objectId, out var obj, out var view);
+            if (problem != null)
+            {
+                Debug.LogWarning($"[命令] 继续播放混合视频失败：{problem}");
+                session.SendCommandResult(command, false, problem);
+                return;
+            }
+
+            view.VideoBlendLayer.Resume();
+
+            var effect = $"「{obj.name}」的视频混合继续播放";
+            Debug.Log($"[命令] 继续播放混合视频：{command.objectId}");
+            session.SendCommandResult(command, true, effects: new[] { effect });
+        }
+
+        /// <summary>停止：拆掉混合层（露出对象原来的贴图）。不要求还选着视频——停止是收拾动作。</summary>
+        private void HandleStopVideoBlend(CommandRequest command)
+        {
+            var obj = mirror != null ? mirror.Find(command.objectId) : null;
+            if (obj == null)
+            {
+                var reason = $"镜像里没有这个对象：{command.objectId}（场景可能还没同步到）";
+                Debug.LogWarning($"[命令] 停止混合视频失败：{reason}");
+                session.SendCommandResult(command, false, reason);
+                return;
+            }
+
+            var view = mirror.FindView(command.objectId);
+            var blend = view != null ? view.VideoBlendLayer : null;
+            if (blend == null)
+            {
+                var reason = $"「{obj.name}」没有视频混合层（对象不可见 / 未落位）";
+                Debug.LogWarning($"[命令] 停止混合视频失败：{reason}");
+                session.SendCommandResult(command, false, reason);
+                return;
+            }
+
+            blend.StopPlayback();
+
+            var effect = $"「{obj.name}」的视频混合已停止（露出它自己的贴图）";
+            Debug.Log($"[命令] 停止混合视频：{command.objectId}");
+            session.SendCommandResult(command, true, effects: new[] { effect });
+        }
+
+        /// <summary>视频混合：沿轨迹擦掉那张**运行时遮罩**（载荷与 `erase_mask` 同一套 `stroke`）。</summary>
+        private void HandleEraseVideoMask(CommandRequest command)
+        {
+            var obj = mirror != null ? mirror.Find(command.objectId) : null;
+            var view = mirror != null ? mirror.FindView(command.objectId) : null;
+            var blend = view != null ? view.VideoBlendLayer : null;
+            if (obj == null || blend == null)
+            {
+                var reason = obj == null
+                    ? $"镜像里没有这个对象：{command.objectId}（场景可能还没同步到）"
+                    : $"「{obj.name}」没有视频混合层可擦";
+                Debug.LogWarning($"[命令] 擦除视频混合遮罩失败：{reason}");
+                session.SendCommandResult(command, false, reason);
+                return;
+            }
+
+            if (command.points.Count == 0)
+            {
+                Debug.LogWarning("[命令] 擦除视频混合遮罩失败：这笔擦除没有落点（stroke.points 为空）");
+                session.SendCommandResult(command, false, "这笔擦除没有落点（stroke.points 为空）");
+                return;
+            }
+
+            if (!blend.EraseStroke(command.points, command.radius, command.softness))
+            {
+                Debug.LogWarning("[命令] 擦除视频混合遮罩失败：组件拒绝了这一笔");
+                session.SendCommandResult(command, false, "组件拒绝了这一笔");
+                return;
+            }
+
+            var effect = $"沿轨迹擦掉 1 笔（{command.points.Count} 个落点）";
+            Debug.Log($"[命令] 擦除视频混合遮罩：{command.objectId} {effect}");
             session.SendCommandResult(command, true, effects: new[] { effect });
         }
 
