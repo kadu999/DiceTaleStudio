@@ -6,7 +6,7 @@ import {
   SLOT_COMPONENT_TYPES,
 } from "./components";
 import { defaultDataOf } from "./component-specs";
-import { DEFAULT_SLOT_COMPONENT, DEFAULT_SOUND_LAYER } from "./presets";
+import { DEFAULT_SLOT_COMPONENT, DEFAULT_SOUND_LAYER, supportsSpriteSheet } from "./presets";
 import type { ComponentSlot } from "./presets";
 import type {
   ComponentDoc,
@@ -108,11 +108,9 @@ export function supportsObjectComponent(object: GameObjectDoc, type: string): bo
 }
 
 export function objectSupportsSpriteSheet(object: GameObjectDoc): boolean {
-  if (componentOfSlot(object, "map") !== undefined) return false;
-  const imageComponent = componentOfSlot(object, "image")?.type;
-  if (imageComponent !== undefined) return imageComponent === "SpriteLayer";
-  if (hasComponentKindMismatch(object)) return false;
-  return findComponentType("SpriteLayer")?.templateKinds?.includes(object.kind) === true;
+  // 判据只有 `presets.supportsSpriteSheet` 一处（同一份 kind / 组件槽位逻辑）：
+  // 这里只是给「手上已经是对象」的调用方一个不用先取 kind 的入口。
+  return supportsSpriteSheet(object);
 }
 
 /**

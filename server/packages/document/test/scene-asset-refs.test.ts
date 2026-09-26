@@ -83,7 +83,7 @@ describe("scene asset identity", () => {
     expect((loaded.objects[0]!.components[0]!.data.clips as string[])[0]).toBe(audioId);
   });
 
-  it("resolves renamed audio and video IDs and name keys from their stable GUIDs", () => {
+  it("resolves renamed audio and video IDs from their stable GUIDs", () => {
     const oldAudio = "project:P/Assets/audio/old.wav";
     const newAudio = "project:P/Assets/audio/new.wav";
     const oldVideo = "project:P/Assets/video/old.mp4";
@@ -103,7 +103,7 @@ describe("scene asset identity", () => {
             {
               id: "sound-1__PlaySound",
               type: "PlaySound",
-              data: { clips: [oldAudio], picked: oldAudio, names: { [oldAudio]: "footstep" } },
+              data: { clips: [oldAudio], picked: oldAudio },
               actions: [],
             },
           ],
@@ -114,7 +114,7 @@ describe("scene asset identity", () => {
             {
               id: "image-1__VideoOverlay",
               type: "VideoOverlay",
-              data: { clips: [oldVideo], picked: oldVideo, names: { [oldVideo]: "opening" } },
+              data: { clips: [oldVideo], picked: oldVideo },
               actions: [],
             },
           ],
@@ -130,8 +130,8 @@ describe("scene asset identity", () => {
     const loaded = sceneAssetRefsToIds(persisted, currentMetas);
     const sound = loaded.objects[0]!.components[0]!.data;
     const video = loaded.objects[1]!.components[0]!.data;
-    expect(sound).toMatchObject({ clips: [newAudio], picked: newAudio, names: { [newAudio]: "footstep" } });
-    expect(video).toMatchObject({ clips: [newVideo], picked: newVideo, names: { [newVideo]: "opening" } });
+    expect(sound).toMatchObject({ clips: [newAudio], picked: newAudio });
+    expect(video).toMatchObject({ clips: [newVideo], picked: newVideo });
   });
 
   it("leaves unresolved legacy references untouched", () => {

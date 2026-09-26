@@ -71,6 +71,13 @@ function assertResourceId(id: string): void {
   }
 }
 
+/** 读路径的存在性校验（不存在 → 404）：三个 raw/text/thumbnail 处理器共用。 */
+async function requireExisting(ctx: RouteContext, id: string): Promise<void> {
+  if (!(await ctx.provider.exists(id))) {
+    throw new HttpError(404, `资源不存在: ${id}`);
+  }
+}
+
 /** 请求体上限（字节），来自 app 配置；读 body 之前先取好。 */
 function maxBodyBytes(ctx: RouteContext): number {
   return ctx.config.app.http.maxBodyBytes;
@@ -80,9 +87,7 @@ function maxBodyBytes(ctx: RouteContext): number {
 export async function readResourceRoute(ctx: RouteContext): Promise<void> {
   const id = requireId(ctx);
 
-  if (!(await ctx.provider.exists(id))) {
-    throw new HttpError(404, `资源不存在: ${id}`);
-  }
+  await requireExisting(ctx, id);
 
   const data = await ctx.provider.readBinary(id);
   sendBytes(ctx.response, 200, contentTypeFor(parseResourceId(id).path), Buffer.from(data));
@@ -91,9 +96,7 @@ export async function readResourceRoute(ctx: RouteContext): Promise<void> {
 /** `GET /api/resources/thumbnail?id=`: 按需生成并缓存小型 WebP，避免资源选择器下载原图。 */
 export async function readResourceThumbnailRoute(ctx: RouteContext): Promise<void> {
   const id = requireId(ctx);
-  if (!(await ctx.provider.exists(id))) {
-    throw new HttpError(404, `资源不存在: ${id}`);
-  }
+  await requireExisting(ctx, id);
 
   const isVideo = contentTypeFor(parseResourceId(id).path).startsWith("video/");
   const source = Buffer.from(await ctx.provider.readBinary(id));
@@ -224,9 +227,7 @@ export async function deleteResourceRoute(ctx: RouteContext): Promise<void> {
 export async function readResourceTextRoute(ctx: RouteContext): Promise<void> {
   const id = requireId(ctx);
 
-  if (!(await ctx.provider.exists(id))) {
-    throw new HttpError(404, `资源不存在: ${id}`);
-  }
+  await requireExisting(ctx, id);
 
   sendText(ctx.response, 200, await ctx.provider.readText(id));
 }

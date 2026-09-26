@@ -38,31 +38,24 @@ function mapComponentData(
   metas: AssetMetas,
   mode: "guid" | "id",
 ): Record<string, unknown> {
-  const resourceKeys = new Set<string>();
-  if (type === "GridMap") resourceKeys.add("image");
-  const imageLayer = type === "ImageLayer" || type === "SpriteLayer";
-  if (imageLayer) resourceKeys.add("id");
-  if (type === "PlaySound" || type === "VideoOverlay") {
-    resourceKeys.add("clips");
-    resourceKeys.add("picked");
-    resourceKeys.add("names");
-  }
-  if (resourceKeys.size === 0) return data;
-
-  let changed = false;
-  if (imageLayer) {
+  // 图片层：整份就是「图片引用 + 显示顺序」，只有 `id` 是资源 ID
+  if (type === "ImageLayer" || type === "SpriteLayer") {
     const next = mapImageReference(data, metas, mode);
     return next === data ? data : (next as Record<string, unknown>);
   }
 
+  // 声音 / 视频：只有「列表 + 选中」是资源 ID。
+  // v28 起 `GridMap` 的 data 里没有 `image`、按项记的 `names` 也已退役——那两段是
+  // **永远匹配不到**的旧分支，已经删掉（手写文件里的 `names` 由 schema 当未知键丢弃）。
+  if (type !== "PlaySound" && type !== "VideoOverlay") {
+    return data;
+  }
+
+  let changed = false;
   const mapped: Record<string, unknown> = { ...data };
-  for (const key of resourceKeys) {
+  for (const key of ["clips", "picked"] as const) {
     const value = data[key];
-    const next = key === "names"
-      ? mapResourceNameTable(value, metas, mode)
-      : key === "image" && type === "GridMap"
-        ? mapImageReference(value, metas, mode)
-        : mapResourceValue(value, metas, mode);
+    const next = mapResourceValue(value, metas, mode);
     if (next !== value) {
       changed = true;
       mapped[key] = next;
@@ -81,18 +74,6 @@ function mapImageReference(value: unknown, metas: AssetMetas, mode: "guid" | "id
     return { ...image, id: next, guid: image.guid ?? id };
   }
   return next === id ? value : { ...image, id: next };
-}
-
-function mapResourceNameTable(value: unknown, metas: AssetMetas, mode: "guid" | "id"): unknown {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return value;
-  let changed = false;
-  const mapped: Record<string, unknown> = {};
-  for (const [key, name] of Object.entries(value)) {
-    const next = mapResourceValue(key, metas, mode);
-    mapped[String(next)] = name;
-    changed ||= next !== key;
-  }
-  return changed ? mapped : value;
 }
 
 function mapResourceValue(value: unknown, metas: AssetMetas, mode: "guid" | "id"): unknown {

@@ -54,7 +54,6 @@ export interface EditorUiState {
 
 export interface RuntimeUiState {
   readonly status: RuntimeStatus;
-  readonly statusDetail: string;
   /** 服务端有没有开闸（= 编辑器声明了运行态）。没开闸时前端连不上。 */
   readonly runtimeActive: boolean;
   /** 前端是谁（连上后由 `client_hello` 补上名字与版本）；null = 没连。 */

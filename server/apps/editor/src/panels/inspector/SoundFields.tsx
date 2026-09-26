@@ -9,6 +9,7 @@ import {
 } from "@dts/document";
 import { useEditorStore, type EditorMode } from "../../state/editor-store";
 import type { RuntimeStatus } from "../../services/runtime-client";
+import { deliveryHint } from "../../services/delivery-hint";
 import { audioDisplayName } from "../audio-catalog";
 import { assetDisplayPath, currentResourceId } from "../asset-picker";
 import { ResourcePickerDialog } from "../../app/ResourcePickerDialog";
@@ -63,15 +64,7 @@ export function soundDeliveryHint(input: {
   readonly status: RuntimeStatus;
   readonly clientConnected: boolean;
 }): string | undefined {
-  if (input.mode !== "run" || input.status !== "open") {
-    return "已记录：编辑器还没连上服务端，连上后自动补发";
-  }
-
-  if (!input.clientConnected) {
-    return "已记录：前端（Unity）未连接，等它连上后自动补发";
-  }
-
-  return undefined;
+  return deliveryHint(input);
 }
 
 export function SoundFields({ object }: { readonly object: GameObjectDoc }): React.JSX.Element {

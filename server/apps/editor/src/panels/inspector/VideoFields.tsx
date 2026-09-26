@@ -5,6 +5,7 @@ import { assetDisplayPath, findAssetByReference } from "../asset-picker";
 import { ResourcePickerDialog } from "../../app/ResourcePickerDialog";
 import { useEditorStore, type EditorMode } from "../../state/editor-store";
 import type { RuntimeStatus } from "../../services/runtime-client";
+import { deliveryHint } from "../../services/delivery-hint";
 import {
   FieldRow,
   PLAYBACK_BUTTON_ACTIVE_CLASS,
@@ -60,15 +61,7 @@ export function videoDeliveryHint(input: {
   readonly status: RuntimeStatus;
   readonly clientConnected: boolean;
 }): string | undefined {
-  if (input.mode !== "run" || input.status !== "open") {
-    return "已记录：编辑器还没连上服务端，连上后自动补发";
-  }
-
-  if (!input.clientConnected) {
-    return "已记录：前端（Unity）未连接，等它连上后自动补发";
-  }
-
-  return undefined;
+  return deliveryHint(input);
 }
 
 /** `.webm` 在 Windows 上多半解不了（Unity 走系统的解码器）：选择器与面板都提一句。 */

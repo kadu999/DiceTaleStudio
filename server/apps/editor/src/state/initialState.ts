@@ -67,7 +67,6 @@ export function createInitialState(storedGridPaint: GridPaintPrefs): EditorStore
     transformStart: null,
     runtime: {
       status: "idle",
-      statusDetail: "",
       runtimeActive: false,
       client: null,
       scene: null,

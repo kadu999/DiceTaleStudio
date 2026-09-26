@@ -253,7 +253,6 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
         runtime: {
           ...state.runtime,
           status,
-          statusDetail: detail ?? "",
           // 自己没连着服务端时「前端在不在」无从得知：别留一个过期的「已连接」，
           // 也让「前端刚连上 → 补发」这条判断只在真的连上之后成立。
           // **运行态不动**：它是服务端的门控状态，断线不等于关闸——清零会让「运行中的改动不保存」

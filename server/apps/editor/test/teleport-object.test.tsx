@@ -77,7 +77,6 @@ afterEach(() => {
     teleportEditorTarget: null,
     runtime: {
       status: "idle",
-      statusDetail: "",
       runtimeActive: false,
       client: null,
       scene: null,

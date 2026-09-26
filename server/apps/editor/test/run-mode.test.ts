@@ -191,7 +191,6 @@ afterEach(() => {
     project: { list: [], current: null, tree: [], busy: false, error: "" },
     runtime: {
       status: "idle",
-      statusDetail: "",
       runtimeActive: false,
       client: null,
       scene: null,
