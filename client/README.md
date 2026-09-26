@@ -23,10 +23,11 @@ Unity 客户端（Unity **6000.3.19f1**）。方向已反转：**后台（编辑
 Assets/
 ├─ DiceTale/                          ← 本客户端唯一的游戏模块
 │  ├─ Scripts/                        DiceTale.asmdef（rootNamespace: DiceTale）
-│  │  ├─ Data/          （7）         数据层：镜像模型 / 解析 / 枚举 / 本地资源包路径
+│  │  ├─ Data/          （8）         数据层：镜像模型 / 解析 / 枚举 / 本地资源包路径
 │  │  │                 SceneModel.cs            镜像的场景与对象（与后端 `SceneDoc` 同构）
 │  │  │                 SceneParser.cs           场景 JSON → 镜像模型（JsonUtility 读不了嵌套数组）
 │  │  │                 JsonParser.cs            通用 JSON 解析（协议报文用）
+│  │  │                 MagnifierReader.cs       放大镜（v21）「现在展示哪一张」的读取口径（泛型读取器读不了数组的第 N 项）
 │  │  │                 GridRle.cs               网格 RLE 解码（掩码值与 `@dts/grid` 一致）
 │  │  │                 GridCellType.cs          网格类型位掩码（区域 / 障碍 / 雾位）
 │  │  │                 MapMarker.cs             场景标记点（id + 世界坐标，落点用）
@@ -58,6 +59,7 @@ Assets/
 │  │                    UIManager.cs             唯一 Canvas + 窗口注册/开关
 │  │                    UIWindow.cs              窗口基类
 │  │                    SceneFadeUI.cs           全屏淡入淡出遮罩（切场景时由 SceneMirror 调用）
+│  │                    MagnifierWindow.cs       放大镜窗口（全屏半透明底 + 居中一张等比放大的图；**没有按钮**，只能由后端两条命令开关）
 │  │                    SubtitleWindow.cs        字幕窗口
 │  ├─ Editor/           （2）         编辑器工具（DiceTale.Editor.asmdef）
 │  │                    SetupMaps.cs                  一次性脚本：把 Demo 场景重建成「只有 Game 宿主」
@@ -88,6 +90,9 @@ Assets/
 `obj.ComponentBool("VideoOverlay", "autoPlay")` / `ComponentString` / `ComponentNumber`
 （`SceneModel.cs` 的四个读取器）。`VideoBlend` 就是这条路的一个实例：两路的 `kind` / `id`
 都**没有**强类型镜像字段，`SceneMirror` / `CommandRouter` 也靠这些读取器读它。
+读取器读不了的那一层（**数组里的第 N 项**）另收一个小类，而不是又加镜像字段：
+放大镜的 `MagnifierReader.TryPickImage`（`Data/MagnifierReader.cs`）就是——`MirrorObject` 与
+`SceneParser` 都不动，命令路由与单元测试都从它拿结果。
 
 **不要**再往 `MirrorVideo` / `MirrorSound` 这类强类型镜像上加字段，也不要往 `SceneParser`
 里加解析行——那是同一个事实抄两遍（镜像字段 + 解析行），而且会让「这个字段到底谁说了算」
@@ -295,6 +300,13 @@ Assets/
   `erase_video_mask`，组件按**同一顺序**重放（与 `FogOfWar` 同一套；重开 Unity 回到初始）。
   遮罩尺寸按**视频像素尺寸**推（与编辑器 `mask-math.ts` 的 `previewMaskSizeFor` 同式）。
   与 `VideoOverlay` **语义互斥**（同一对象最多其一），前端按组件分派。
+- **放大镜：点开一扇图窗（2026-09-27，协议 v21）**：`Magnifier`（动作对象）带一条图片列表 +
+  「当前展示第几张」（`picked`，**下标**；每一项可以只是图集里的一格）。它自己**不建视图**
+  （徽标是编辑器的画法），也不在场上画任何东西：后端两条命令 `open_magnifier` / `close_magnifier`
+  让前端弹 / 收一扇窗（`Presentation/UI/MagnifierWindow.cs`，代码构建：全屏半透明底 + 居中一张
+  等比放大的图），**窗里没有按钮**——只能后端开、后端关。**换图没有命令**：`picked` 是文档数据，
+  编辑器一改就整份 `scene_sync` 推下来，`SceneMirror.SceneApplied` 叫一声、命令路由把窗里那张换掉
+  （对象被删 / 没图可展示时顺手把窗关掉）；前端（重）连上时编辑器补发一次开窗。
 - **缩放：`scale` 是等比，单轴字段可选（2026-09-20）**：文档 v11 起，对象上可能多出
   **可选**的 `scaleX` / `scaleY`（编辑器里拖缩放手柄的**边**、或关掉属性面板的等比锁后改单轴时会写）。
   客户端目前**按 `scale` 等比渲染**——`SceneObjectView` 把它们忽略掉是**正确**的（协议里它们是可选字段，

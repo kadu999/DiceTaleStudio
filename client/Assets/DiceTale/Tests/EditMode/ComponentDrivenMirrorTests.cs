@@ -266,6 +266,144 @@ namespace DiceTale.Tests
             Assert.That(obj.video, Is.Null); // 混合不是「视频」：不带强类型字段
         }
 
+        [Test]
+        public void MagnifierIsAnActionObjectWithoutAView()
+        {
+            // v21：放大镜也是**动作对象**（像声音 / 传送阵）：它只带 `Magnifier` 的数据，
+            // 一帧画面都不画——那扇窗由后端的两条命令弹 / 收。数据一律走泛型读取器。
+            var obj = ParseObject(
+                "{\"id\":\"mag\",\"kind\":\"Magnifier\",\"components\":[" +
+                "{\"type\":\"Magnifier\",\"data\":{\"images\":[" +
+                "{\"id\":\"a.png\",\"width\":400,\"height\":300}," +
+                "{\"id\":\"b.png\",\"width\":100,\"height\":50,\"sprite\":{\"column\":1,\"row\":0}," +
+                "\"spriteGrid\":{\"columns\":4,\"rows\":2}}],\"picked\":1}}]}");
+
+            Assert.That(obj.HasComponent("Magnifier"), Is.True);
+            Assert.That(obj.image, Is.Null);
+            Assert.That(obj.map, Is.Null);
+            Assert.That(SceneObjectView.NeedsView(obj), Is.False);
+
+            var data = obj.ComponentData("Magnifier");
+            var images = JsonParser.GetArray(data, "images");
+            var picked = (int)JsonParser.GetNumber(data, "picked", -1);
+            Assert.That(images, Is.Not.Null);
+            Assert.That(images.Count, Is.EqualTo(2));
+            Assert.That(picked, Is.EqualTo(1));
+
+            var entry = images[picked] as System.Collections.Generic.Dictionary<string, object>;
+            Assert.That(JsonParser.GetString(entry, "id"), Is.EqualTo("b.png"));
+            Assert.That(JsonParser.GetNumber(entry, "width"), Is.EqualTo(100));
+            var cell = JsonParser.GetObject(entry, "sprite");
+            var grid = JsonParser.GetObject(entry, "spriteGrid");
+            Assert.That(JsonParser.GetNumber(cell, "column"), Is.EqualTo(1));
+            Assert.That(JsonParser.GetNumber(cell, "row"), Is.EqualTo(0));
+            Assert.That(JsonParser.GetNumber(grid, "columns"), Is.EqualTo(4));
+            Assert.That(JsonParser.GetNumber(grid, "rows"), Is.EqualTo(2));
+        }
+
+        [Test]
+        public void MagnifierReaderPicksTheShownImageAndClampsTheCell()
+        {
+            // 前端真正读「现在展示哪一张」的那条路（命令路由与窗口都用它）——四种「没有图」的
+            // 情形与编辑器那边同一口径：没挂组件 / 列表空 / `picked` 缺失 / `picked` 越界。
+            var picked = ParseObject(
+                "{\"id\":\"mag\",\"kind\":\"Magnifier\",\"components\":[" +
+                "{\"type\":\"Magnifier\",\"data\":{\"images\":[" +
+                "{\"id\":\"a.png\",\"width\":400,\"height\":300}," +
+                "{\"id\":\"b.png\",\"width\":100,\"height\":50,\"sprite\":{\"column\":9,\"row\":9}," +
+                "\"spriteGrid\":{\"columns\":4,\"rows\":2}}],\"picked\":1}}]}");
+
+            Assert.That(MagnifierReader.TryPickImage(picked, out var second), Is.True);
+            Assert.That(second.Id, Is.EqualTo("b.png"));
+            // 越界的格子夹到最后一格（与推送 / 渲染同一条规矩）
+            Assert.That(second.Sprite, Is.Not.Null);
+            Assert.That(second.Sprite.columns, Is.EqualTo(4));
+            Assert.That(second.Sprite.rows, Is.EqualTo(2));
+            Assert.That(second.Sprite.column, Is.EqualTo(3));
+            Assert.That(second.Sprite.row, Is.EqualTo(1));
+
+            // 整张图（没有 `sprite`）→ Sprite 为 null
+            var whole = ParseObject(
+                "{\"id\":\"mag\",\"kind\":\"Magnifier\",\"components\":[" +
+                "{\"type\":\"Magnifier\",\"data\":{\"images\":[{\"id\":\"a.png\",\"width\":400,\"height\":300}]," +
+                "\"picked\":0}}]}");
+            Assert.That(MagnifierReader.TryPickImage(whole, out var first), Is.True);
+            Assert.That(first.Id, Is.EqualTo("a.png"));
+            Assert.That(first.Sprite, Is.Null);
+
+            // 三种「没有可展示的图」
+            var empty = ParseObject(
+                "{\"id\":\"mag\",\"kind\":\"Magnifier\",\"components\":[" +
+                "{\"type\":\"Magnifier\",\"data\":{\"images\":[]}}]}");
+            Assert.That(MagnifierReader.TryPickImage(empty, out _), Is.False);
+
+            var unpicked = ParseObject(
+                "{\"id\":\"mag\",\"kind\":\"Magnifier\",\"components\":[" +
+                "{\"type\":\"Magnifier\",\"data\":{\"images\":[{\"id\":\"a.png\",\"width\":4,\"height\":4}]}}]}");
+            Assert.That(MagnifierReader.TryPickImage(unpicked, out _), Is.False);
+
+            var outOfRange = ParseObject(
+                "{\"id\":\"mag\",\"kind\":\"Magnifier\",\"components\":[" +
+                "{\"type\":\"Magnifier\",\"data\":{\"images\":[{\"id\":\"a.png\",\"width\":4,\"height\":4}]," +
+                "\"picked\":7}}]}");
+            Assert.That(MagnifierReader.TryPickImage(outOfRange, out _), Is.False);
+
+            var noComponent = ParseObject("{\"id\":\"plain\",\"kind\":\"Sprite\",\"components\":[]}");
+            Assert.That(MagnifierReader.TryPickImage(noComponent, out _), Is.False);
+        }
+
+        [Test]
+        public void MagnifierSpriteRectsUseTheSharedUvRectConversion()
+        {
+            // 窗口里那一张（整张 / 图集某一格）的矩形：走 `SpriteLayer.UvRectOf` 那一处唯一的
+            // y 翻转——格序数从**左上**数，而纹理自下而上。
+            var texture = new Texture2D(400, 300);
+            try
+            {
+                var whole = MagnifierWindow.SpriteOf(texture, null);
+                Assert.That(whole.rect, Is.EqualTo(new Rect(0f, 0f, 400f, 300f)));
+
+                // 4×2 的格子 = 100×150；第 0 行（最上）落在纹理的高处
+                var top = MagnifierWindow.SpriteOf(
+                    texture,
+                    new MirrorSprite { columns = 4, rows = 2, column = 1, row = 0 });
+                Assert.That(top.rect, Is.EqualTo(new Rect(100f, 150f, 100f, 150f)));
+
+                // 第 1 行（最下）落在纹理的底处
+                var bottom = MagnifierWindow.SpriteOf(
+                    texture,
+                    new MirrorSprite { columns = 4, rows = 2, column = 0, row = 1 });
+                Assert.That(bottom.rect, Is.EqualTo(new Rect(0f, 0f, 100f, 150f)));
+
+                Object.DestroyImmediate(whole);
+                Object.DestroyImmediate(top);
+                Object.DestroyImmediate(bottom);
+            }
+            finally
+            {
+                Object.DestroyImmediate(texture);
+            }
+        }
+
+        [Test]
+        public void MagnifierWindowRefreshIsANoOpWhenNothingIsOpen()
+        {
+            // 镜像每次落地都会叫一声（`SceneMirror.SceneApplied` → `CommandRouter.OnSceneApplied`）：
+            // 没有窗开着时必须**安安稳稳地什么都不做**（镜像 / 会话都还没装配也不会炸）。
+            var go = new GameObject("magnifier-router-test");
+            try
+            {
+                var router = go.AddComponent<CommandRouter>();
+
+                Assert.DoesNotThrow(() => router.OnSceneApplied("Map001"));
+                Assert.DoesNotThrow(() => router.OnSceneApplied(null));
+            }
+            finally
+            {
+                Object.DestroyImmediate(go);
+            }
+        }
+
         private static MirrorObject ParseObject(string json)
         {
             var node = JsonParser.ParseObject(json);

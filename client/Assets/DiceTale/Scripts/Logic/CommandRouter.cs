@@ -43,6 +43,17 @@ namespace DiceTale
         /// <summary>按逻辑 ID 取音频片段（缓存 + 去重，见 <see cref="AudioClipLoader"/>）。</summary>
         private AudioClipLoader audioLoader;
 
+        /// <summary>按逻辑 ID 取图（缓存 + 去重，见 <see cref="ResourceImageLoader"/>）——放大镜那扇窗用它。</summary>
+        private ResourceImageLoader imageLoader;
+
+        /// <summary>
+        /// **前端的放大镜窗口现在为哪个对象开着**（`open_magnifier` 记下、`close_magnifier` 清掉）。
+        ///
+        /// 两处要用它：`close_magnifier` 的**认领**（只关正为它开着的那一扇）、以及镜像落地时的
+        /// 刷新 / 关掉（见 <see cref="OnSceneApplied"/>）。空串 = 现在没开。
+        /// </summary>
+        private string magnifierTarget = "";
+
         /// <summary>
         /// 声源（三条通道：背景音乐 / 音效 / 旁白）。
         ///
@@ -89,7 +100,8 @@ namespace DiceTale
             ResourceBundleCache cache,
             string httpBase,
             AudioClipLoader clipLoader,
-            AudioPlayerManager player)
+            AudioPlayerManager player,
+            ResourceImageLoader images)
         {
             session = clientSession;
             mirror = sceneMirror;
@@ -97,6 +109,7 @@ namespace DiceTale
             httpBaseUrl = httpBase ?? "";
             audioLoader = clipLoader;
             audio = player;
+            imageLoader = images;
             session.CommandReceived += OnCommand;
         }
 
@@ -159,6 +172,14 @@ namespace DiceTale
 
                 case Protocol.CommandFillVideoMask:
                     HandleFillVideoMask(command);
+                    return;
+
+                case Protocol.CommandOpenMagnifier:
+                    HandleOpenMagnifier(command);
+                    return;
+
+                case Protocol.CommandCloseMagnifier:
+                    HandleCloseMagnifier(command);
                     return;
 
                 case Protocol.CommandPlayVideo:
@@ -1078,6 +1099,197 @@ namespace DiceTale
             var effect = command.covered ? "整张盖住（遮罩 = 1）" : "整张擦开（遮罩 = 0）";
             Debug.Log($"[命令] 整张填混合遮罩：{command.objectId} {effect}");
             session.SendCommandResult(command, true, effects: new[] { effect });
+        }
+
+        // ---------------------------------------------------------------- 放大镜（动作对象）
+
+        /// <summary>
+        /// 放大镜（v21）：让前端**弹一扇窗**显示这个对象当前选中的那张图（命令里只有 `objectId`）。
+        ///
+        /// 与 `play_video` 同一套：放哪一张从**镜像**里读（`picked` 是文档数据），所以「编辑器里点了
+        /// 下排另一张小图」不需要再来一条命令——整份 `scene_sync` 会把新值带下来，由
+        /// <see cref="OnSceneApplied"/> 把窗里那一张换掉。
+        ///
+        /// 回执分两次：**建窗 / 目标不成立时立刻回**；取图是异步的，成功那条在加载完成后回
+        /// （与 `LoadAudioThen` 同一条做法——编辑器那边不播画面，等一两百毫秒没关系）。
+        /// </summary>
+        private void HandleOpenMagnifier(CommandRequest command)
+        {
+            var obj = mirror != null ? mirror.Find(command.objectId) : null;
+            if (obj == null)
+            {
+                var missing = $"镜像里没有这个对象：{command.objectId}（场景可能还没同步到）";
+                Debug.LogWarning($"[命令] 打开放大镜窗口失败：{missing}");
+                session.SendCommandResult(command, false, missing);
+                return;
+            }
+
+            if (!obj.HasComponent(Protocol.ComponentType.Magnifier))
+            {
+                var wrongKind = $"「{obj.name}」没有放大镜组件（kind={obj.kind}）";
+                Debug.LogWarning($"[命令] 打开放大镜窗口失败：{wrongKind}");
+                session.SendCommandResult(command, false, wrongKind);
+                return;
+            }
+
+            if (!MagnifierReader.TryPickImage(obj, out var picked))
+            {
+                var empty = $"「{obj.name}」还没有要展示的图（图片列表为空 / 还没选）";
+                Debug.LogWarning($"[命令] 打开放大镜窗口失败：{empty}");
+                session.SendCommandResult(command, false, empty);
+                return;
+            }
+
+            var window = OpenMagnifierWindow();
+            if (window == null)
+            {
+                var noUi = "前端没有装配 UI 管理器（Game 上的 UIManager）";
+                Debug.LogWarning($"[命令] 打开放大镜窗口失败：{noUi}");
+                session.SendCommandResult(command, false, noUi);
+                return;
+            }
+
+            magnifierTarget = command.objectId;
+            LoadMagnifierImageThen(window, obj, picked, command);
+        }
+
+        /// <summary>
+        /// 放大镜：关掉那扇窗。`objectId` 用来**认领**——只关正为它开着的那一扇
+        /// （换场景 / 重连之后，一条迟到的关闭不该把新开的那扇一起关掉）。
+        /// </summary>
+        private void HandleCloseMagnifier(CommandRequest command)
+        {
+            if (magnifierTarget != command.objectId)
+            {
+                var notOpen =
+                    $"画面上现在没为这个对象开着放大镜窗口（当前：{(string.IsNullOrEmpty(magnifierTarget) ? "没开" : magnifierTarget)}）";
+                Debug.LogWarning($"[命令] 关掉放大镜窗口失败：{notOpen}");
+                session.SendCommandResult(command, false, notOpen);
+                return;
+            }
+
+            var window = MagnifierWindowOf();
+            if (window != null)
+            {
+                window.Close();
+            }
+
+            magnifierTarget = "";
+            Debug.Log($"[命令] 关掉放大镜窗口：{command.objectId}");
+            session.SendCommandResult(command, true, effects: new[] { "放大镜窗口已关闭" });
+        }
+
+        /// <summary>
+        /// 镜像刚落地（换场景 / 整份重推）：放大镜那扇窗跟着刷新或关掉。
+        ///
+        /// 由 <see cref="SceneMirror.SceneApplied"/> 叫一声（与 `AutoPlayVideoRequested` 同一条
+        /// 「镜像落地后通知」的路）。四种情形：
+        /// - 窗没开 → 什么都不做；
+        /// - 目标对象**不在这一份场景里**（删了 / 换了台）→ 关掉；
+        /// - 还在、而且还有要展示的图 → 换成 `picked` 那一张（**换图不需要命令**，这就是刷新信号）；
+        /// - 还在、但已经没图可展示（列表被清空 / 取消选中）→ 关掉。
+        /// </summary>
+        public void OnSceneApplied(string sceneName)
+        {
+            if (string.IsNullOrEmpty(magnifierTarget))
+            {
+                return;
+            }
+
+            var window = MagnifierWindowOf();
+            if (window == null)
+            {
+                // 窗不见了（宿主/UIManager 随场景重建之类）：记账跟着清，别留一个永远关不掉的 id
+                magnifierTarget = "";
+                return;
+            }
+
+            var obj =
+                sceneName == null || mirror == null ? null : mirror.FindInScene(sceneName, magnifierTarget);
+            if (obj == null || !MagnifierReader.TryPickImage(obj, out var picked))
+            {
+                window.Close();
+                var why = obj == null
+                    ? $"目标对象不在这一份场景里了（{magnifierTarget}）"
+                    : $"「{obj.name}」已经没有可展示的图了";
+                Debug.LogWarning($"[放大镜] 关掉窗口：{why}");
+                magnifierTarget = "";
+                return;
+            }
+
+            // 同一张、同一格、同一个纹理时 `Show` 自己会跳过——所以每次落地都叫一遍是安全的
+            LoadMagnifierImageThen(window, obj, picked, null);
+        }
+
+        /// <summary>当前那扇放大镜窗（没建过 / UI 管理器还没准备好时 null）。**不会**顺手创建。</summary>
+        private static MagnifierWindow MagnifierWindowOf()
+        {
+            var game = Game.Instance;
+            if (game == null || game.UIManager == null)
+            {
+                return null;
+            }
+
+            return game.UIManager.GetWindow<MagnifierWindow>();
+        }
+
+        /// <summary>打开（没建过就先建）那扇放大镜窗；UI 管理器还没准备好时 null。</summary>
+        private static MagnifierWindow OpenMagnifierWindow()
+        {
+            var game = Game.Instance;
+            if (game == null || game.UIManager == null)
+            {
+                return null;
+            }
+
+            return game.UIManager.OpenWindow<MagnifierWindow>();
+        }
+
+        /// <summary>取图 → 塞进窗口；`command` 非空时回执（null = 这是镜像落地时的刷新，不回执）。</summary>
+        private void LoadMagnifierImageThen(
+            MagnifierWindow window,
+            MirrorObject obj,
+            MagnifierImage picked,
+            CommandRequest command)
+        {
+            if (imageLoader == null)
+            {
+                var noLoader = "前端没有装配取图加载器（Game 上的 ResourceImageLoader）";
+                Debug.LogWarning($"[命令] 打开放大镜窗口失败：{noLoader}");
+                if (command != null)
+                {
+                    session.SendCommandResult(command, false, noLoader);
+                }
+
+                return;
+            }
+
+            imageLoader.Load(picked.Id, texture =>
+            {
+                if (texture == null)
+                {
+                    var noImage = $"图拿不到：{picked.Id}（本地资源包里没有，服务端 /api/resources/raw 也没取到）";
+                    Debug.LogWarning($"[命令] 打开放大镜窗口失败：{noImage}");
+                    if (command != null)
+                    {
+                        session.SendCommandResult(command, false, noImage);
+                    }
+
+                    return;
+                }
+
+                window.Show(picked.Id, texture, picked.Sprite);
+
+                var cell = picked.Sprite == null
+                    ? ""
+                    : $"（第 {picked.Sprite.row + 1} 行第 {picked.Sprite.column + 1} 列）";
+                var effect = $"显示「{obj.name}」的那张图：{picked.Id}{cell}";
+                Debug.Log($"[命令] 放大镜窗口：{effect}");
+                if (command != null)
+                {
+                    session.SendCommandResult(command, true, effects: new[] { effect });
+                }
+            });
         }
 
         /// <summary>

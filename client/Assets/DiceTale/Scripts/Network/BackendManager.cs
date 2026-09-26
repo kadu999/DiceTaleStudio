@@ -79,8 +79,11 @@ namespace DiceTale
                 bundleCache,
                 HttpBaseUrl,
                 audioLoader,
-                game != null ? game.AudioPlayerManager : null);
+                game != null ? game.AudioPlayerManager : null,
+                imageLoader);
             mirror.AutoPlayVideoRequested = commandRouter.PlayVideoAutomatically;
+            // 镜像落地后叫一声：放大镜那扇窗据此刷新 / 关掉（换图没有命令，整份 scene_sync 就是信号）
+            mirror.SceneApplied = commandRouter.OnSceneApplied;
 
             // 项目级全局设置：收到就整套应用到播放器（音量立刻生效，不需要命令）
             session.SettingsReceived += OnSettingsReceived;

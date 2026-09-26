@@ -97,6 +97,15 @@ namespace DiceTale
         /// <summary>Configured by the host to resolve and start an autoplay video.</summary>
         public System.Action<string, string> AutoPlayVideoRequested { get; set; }
 
+        /// <summary>
+        /// 整份场景**落地之后**的通知（`sceneName` = 刚应用的那一份；`null` = 编辑器把场景整个关掉了）。
+        ///
+        /// 与 <see cref="AutoPlayVideoRequested"/> 同一条「镜像落地后叫一声」的路，给两类消费者：
+        /// 自动播放（按对象逐个叫）与放大镜那扇窗（**换图没有命令**，整份 `scene_sync` 就是刷新信号，
+        /// 见 `CommandRouter.OnSceneApplied`）。
+        /// </summary>
+        public System.Action<string> SceneApplied { get; set; }
+
         /// <summary>等资源包期间挂起的那份场景（只留最新一份）。</summary>
         private MirrorScene pendingScene;
         private string pendingProject;
@@ -367,12 +376,14 @@ namespace DiceTale
             if (scene != null)
             {
                 ApplyNow(scene);
+                SceneApplied?.Invoke(scene.name);
                 return;
             }
 
             HideAll();
             SceneName = null;
             Debug.Log("[镜像] 编辑器没有打开场景：已隐藏全部场景（对象与状态都留着）");
+            SceneApplied?.Invoke(null);
         }
 
         private void ApplyNow(MirrorScene scene)

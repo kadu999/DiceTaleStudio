@@ -136,8 +136,9 @@ namespace DiceTale
         ///
         /// **判据是组件，不是 `kind`**（协议 v9 起）：
         /// - 有 `GridMap` 或 `ImageLayer` / `SpriteLayer`（对象自己那张图）→ 当然要画；
-        /// - 都没有时，**只有「动作对象」不建**——它们只带 `PlaySound` / `Teleport` 的数据
-        ///   （声音靠命令播、传送靠编辑器换场景），一个 GameObject 都不该建；
+        /// - 都没有时，**只有「动作对象」不建**——它们只带 `PlaySound` / `Teleport` / `Magnifier`
+        ///   的数据（声音靠命令播、传送靠编辑器换场景、放大镜靠那两条开 / 关命令弹窗），
+        ///   一个 GameObject 都不该建；
         /// - 其余（玩家 / 道具 / 事件 / 还没挑图的精灵 / **战争雾对象**）**仍要建 GameObject**，
         ///   否则它们在场上就凭空消失了。战争雾对象是个例外：它只为挂 <see cref="FogOfWar"/>
         ///   而建，**不画占位面片**（见 <see cref="Create"/>）。
@@ -153,7 +154,8 @@ namespace DiceTale
             }
 
             return !obj.HasComponent(Protocol.ComponentType.Sound) &&
-                   !obj.HasComponent(Protocol.ComponentType.Teleport);
+                   !obj.HasComponent(Protocol.ComponentType.Teleport) &&
+                   !obj.HasComponent(Protocol.ComponentType.Magnifier);
         }
 
         /// <summary>

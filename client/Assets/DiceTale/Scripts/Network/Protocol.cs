@@ -112,8 +112,14 @@ namespace DiceTale
         /// Mask 窗口那两个「整张」按钮用）。老前端（v19）不认它 → 回一条未知命令
         /// （那两个按钮点了没反应），照旧 +1；这类不兼容由握手 close `4002` 挡住。
         /// 组件 data 一个字节都没动。
+        ///
+        /// v21（2026-09-27）：**新增「放大镜」对象**（与文档格式 v30 同一批）——第 9 种组件
+        /// `Magnifier`（图片列表 + 当前展示的那一张），另加两条命令 `open_magnifier` /
+        /// `close_magnifier`（让前端弹 / 收一扇窗）。老前端（v20）不认这个组件 → 那扇窗永远
+        /// 弹不出来（不是崩，是功能丢），也不认那两条命令，照旧 +1；这类不兼容由握手
+        /// close `4002` 挡住。**换图不是命令**：`picked` 是文档数据，整份 `scene_sync` 带下来。
         /// </summary>
-        public const int Version = 20;
+        public const int Version = 21;
 
         /// <summary>对象特性组件的类型名（v9 起）。与服务端 `@dts/protocol` 的 `COMPONENT_TYPE` 逐字一致。</summary>
         public static class ComponentType
@@ -126,6 +132,14 @@ namespace DiceTale
             public const string Sprite = "SpriteLayer";
             public const string Sound = "PlaySound";
             public const string Teleport = "Teleport";
+            /// <summary>
+            /// 放大镜（v21 起，动作对象）：**图片列表 + 当前展示的那一张**（`{ images: [{ id, width,
+            /// height, sprite?, spriteGrid? }], picked? }`，`picked` 是**下标**）。
+            /// 对象自己不渲染任何东西（画布上那枚徽标是编辑器的画法）；触发它 = 由服务端的
+            /// `open_magnifier` / `close_magnifier` 让前端弹 / 收一扇窗，窗里放的就是 `picked` 那张。
+            /// **换图不是命令**：文档一改整份 `scene_sync` 带下来（见 `Logic/SceneMirror.cs`）。
+            /// </summary>
+            public const string Magnifier = "Magnifier";
             public const string Video = "VideoOverlay";
             /// <summary>
             /// 视频混合（v17 起）：**两路素材**叠在**同一个矩形**上用 Mask 混合（A 盖住、擦开露 B）。
@@ -180,6 +194,13 @@ namespace DiceTale
         public const string CommandEraseVideoMask = "erase_video_mask";
         /// <summary>视频混合：把**整张**混合遮罩填成 1 / 0（`covered` = true 是盖住、false 是擦开）。</summary>
         public const string CommandFillVideoMask = "fill_video_mask";
+        /// <summary>
+        /// 放大镜（v21）：让前端**弹一扇窗**显示**这个对象** `picked` 那张图（命令里不带数据）。
+        /// 前端那扇窗**没有按钮**（没有选择、也没有关闭）——只能由后端开、由后端关。
+        /// </summary>
+        public const string CommandOpenMagnifier = "open_magnifier";
+        /// <summary>放大镜：关掉那扇窗（`objectId` 用来**认领**：只关正为它开着的那一扇）。</summary>
+        public const string CommandCloseMagnifier = "close_magnifier";
         /// <summary>视频：在对象自己的矩形上放它 `video.picked` 那一条（命令里不带数据）。</summary>
         public const string CommandPlayVideo = "play_video";
         /// <summary>视频：暂停在当前帧。</summary>
@@ -275,7 +296,8 @@ namespace DiceTale
     ///
     /// 字段是**扁平的多用途**：一条命令只填自己那几个（`play_sound` 用 `objectId + layer`；
     /// `erase_mask` 用 `objectId + stroke`；`reveal_fog_region` 用 `objectId + region + revealed`；
-    /// `fill_video_mask` 用 `objectId + covered`；`play_bgm` 用 `clip`）。
+    /// `fill_video_mask` 用 `objectId + covered`；`open_magnifier` / `close_magnifier` 只用
+    /// `objectId`；`play_bgm` 用 `clip`）。
     /// </summary>
     public class CommandRequest
     {
