@@ -4,6 +4,7 @@ import { describeConfig, loadConfig, resolveServerAddress, type LoadedConfig } f
 import { createHttpServer } from "./http/server";
 import { listLanAddresses } from "./net";
 import { FsResourceProvider } from "./resources/fs-provider";
+import { stamp } from "./values";
 import { RuntimeHub, type LogLevel } from "./ws/hub";
 
 export interface RunningServer {
@@ -16,9 +17,9 @@ export interface RunningServer {
 
 function createLogger(): (level: LogLevel, message: string) => void {
   return (level, message) => {
-    const stamp = new Date().toISOString().slice(11, 19);
+    const time = stamp();
     const stream = level === "error" ? console.error : console.log;
-    stream(`${stamp} [${level}] ${message}`);
+    stream(`${time} [${level}] ${message}`);
   };
 }
 

@@ -1,4 +1,5 @@
 import type { ServerResponse } from "node:http";
+import { messageOf } from "../values";
 
 /**
  * 处理器「提前返回一个状态码」的唯一手段。
@@ -48,7 +49,7 @@ export function rethrowProviderError(error: unknown): never {
     throw error;
   }
 
-  throw badRequest(error instanceof Error ? error.message : String(error));
+  throw badRequest(messageOf(error));
 }
 
 /** JSON 响应：所有接口的成功体都是 JSON，且一律 `no-store`（接口数据没有可缓存性）。 */

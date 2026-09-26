@@ -9,6 +9,7 @@ import {
   type ProjectSettingsPayload,
   type ScenePayload,
 } from "@dts/protocol";
+import { messageOf } from "../values";
 
 /**
  * Mock 前端（假 Unity 客户端）。
@@ -83,7 +84,7 @@ class MockClient {
     try {
       message = parseServerToClient(parseJsonMessage(text));
     } catch (error) {
-      console.warn(`[mock] 收到无法解析的消息: ${error instanceof Error ? error.message : String(error)}`);
+      console.warn(`[mock] 收到无法解析的消息: ${messageOf(error)}`);
       return;
     }
 

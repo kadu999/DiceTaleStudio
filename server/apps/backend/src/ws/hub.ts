@@ -15,6 +15,7 @@ import {
   type ServerToEditorMessage,
 } from "@dts/protocol";
 import type { HubContext } from "./hub-context";
+import { messageOf, stamp } from "../values";
 import { CLIENT_HANDLERS } from "./handlers/client";
 import { EDITOR_HANDLERS } from "./handlers/editor";
 import type { HubLogger, LogLevel } from "./hub-context";
@@ -208,7 +209,7 @@ export class RuntimeHub implements HubContext {
           `\r\n`,
       );
     } catch (error) {
-      this.log("warn", `拒绝前端连接时写响应失败: ${error instanceof Error ? error.message : String(error)}`);
+      this.log("warn", `拒绝前端连接时写响应失败: ${messageOf(error)}`);
     }
 
     socket.destroy();
@@ -286,7 +287,7 @@ export class RuntimeHub implements HubContext {
     try {
       message = parseClientToServer(parseJsonMessage(text));
     } catch (error) {
-      this.log("warn", error instanceof Error ? error.message : String(error));
+      this.log("warn", messageOf(error));
       return;
     }
 
@@ -324,7 +325,7 @@ export class RuntimeHub implements HubContext {
       raw = parseJsonMessage(text);
       message = parseEditorToServer(raw);
     } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error);
+      const reason = messageOf(error);
       // **能对上号的错误要挂到那条命令上**：消息没通过校验时它同样带 `requestId`（JSON 是合法的，
       // 只是字段/判别值不认识，例如服务端进程还是旧的、不认识新增的命令种类）。
       // 只发一行无主的「消息校验失败」的话，编辑器那边那条命令就成了「发出去、永远没回音」——
@@ -446,7 +447,7 @@ export class RuntimeHub implements HubContext {
       type: "editor_log",
       level,
       message,
-      time: new Date().toISOString().slice(11, 19),
+      time: stamp(),
     });
   }
 

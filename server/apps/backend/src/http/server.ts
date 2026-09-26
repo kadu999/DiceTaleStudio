@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { messageOf } from "../values";
 import { createHttpContext, type HttpServerOptions } from "./context";
 import { HttpError, sendJson } from "./responses";
 import { createApiDispatcher, type RouteContext } from "./router";
@@ -57,7 +58,7 @@ export function createHttpServer(options: HttpServerOptions): Server {
         return;
       }
 
-      context.log("error", `请求处理失败: ${error instanceof Error ? error.message : String(error)}`);
+      context.log("error", `请求处理失败: ${messageOf(error)}`);
       sendJson(response, 500, { error: "内部错误" });
     });
   });

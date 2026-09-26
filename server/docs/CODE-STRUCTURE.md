@@ -16,8 +16,8 @@
 | 后端默认地址 | `0.0.0.0:1420`（`resources/config/app.json`，可被 `HOST` / `PORT` 覆盖） |
 | 编辑器开发地址 | `http://localhost:5173`（Vite，`/api`、`/editor`、`/client` 反代到 1420） |
 | 编辑器生产地址 | `http://localhost:1420`（后端同源托管 `apps/editor/dist`） |
-| 源码规模（不含测试） | 160 个文件 / 36,115 行（packages 12,290 · backend 3,447 · editor 20,378） |
-| 测试规模 | 32,749 行（单测 23,429 · E2E 9,037 · 架构测试 283） |
+| 源码规模（不含测试） | 161 个文件 / 36,146 行（packages 12,288 · backend 3,480 · editor 20,378） |
+| 测试规模 | 32,751 行（单测 23,431 · E2E 9,037 · 架构测试 283） |
 
 > 上表两行与 §0.1 表格里加粗的文件行数、§3.x 节标题里的包规模由
 > `scripts/check-code-structure-stats.mjs` **机器校验**（`pnpm check` 的一环）：
@@ -29,8 +29,8 @@
 
 | 改动 | 之前 | 之后 | 加一个功能要改几处 |
 |---|---|---|---|
-| **HTTP 一条协议一个函数** | `http/server.ts` 633 行、一条 `switch` | 13 个文件，`server.ts` **72 行** + `routes/*` | 加一个接口 = 加一个函数 + 路由表一行 |
-| **WS 一条消息一个函数** | `ws/hub.ts` 621 行、两条 `switch` | 8 个文件，`hub.ts` **474 行**（只管传输）+ `handlers/*` | 加一条消息 = 加一个函数（表的键完整性由类型保证） |
+| **HTTP 一条协议一个函数** | `http/server.ts` 633 行、一条 `switch` | 13 个文件，`server.ts` **73 行** + `routes/*` | 加一个接口 = 加一个函数 + 路由表一行 |
+| **WS 一条消息一个函数** | `ws/hub.ts` 621 行、两条 `switch` | 8 个文件，`hub.ts` **475 行**（只管传输）+ `handlers/*` | 加一条消息 = 加一个函数（表的键完整性由类型保证） |
 | **Unity 式实体+组件（GameObject + Component）** | 对象上 5 个特性扁平字段 + 各处 `kind === "…"` | `components[]`（模拟 Unity GameObject 挂组件）+ 能力槽位（slot）/访问器；文档 v19 / 协议 v9 / Unity 客户端同步（子图改动后为 **v20 / v10**，见 §0） | 加一个特性 = 加一个组件 + 注册表一行 + 预设表一行（见 §1.6） |
 | **文档命令分模块** | `commands.ts` 2,069 行 | `commands/` 10 个文件（按特性） | 加一个特性的命令 = 加一个文件 |
 | **编辑器 store 分片** | `editor-store.ts` 4,493 行 | 组装点 **94 行** + 17 个切片 + 上下文（见 §5.2） | 加一个功能 = 加一个 `slices/<功能>-slice.ts` + 组装点一行（**简单字段连切片都不用加**：`setComponentField` 已经在 `component-slice.ts` 里） |
@@ -65,7 +65,8 @@ server/
 │  │     ├─ config.ts          # 资源根与 app.json 引导（全项目唯一允许出现资源根字面量的地方）
 │  │     ├─ net.ts             # 局域网地址探测与筛选
 │  │     ├─ open-folder.ts     # 调系统文件管理器打开/定位（唯一 spawn 的地方）
-│  │     ├─ http/              # ★ 一条协议一个函数：server.ts(74) + router/context/responses/requests/mime/static
+│  │     ├─ values.ts          # 后端共用小工具：messageOf / stamp / toArrayBuffer
+│  │     ├─ http/              # ★ 一条协议一个函数：server.ts(73) + router/context/responses/requests/mime/static
 │  │     │  └─ routes/         #   health / config / state / projects / resources + index(路由表)
 │  │     ├─ resources/         # FsResourceProvider（唯一碰磁盘的地方）、zip 打包器、资源包缓存
 │  │     ├─ ws/                # hub（传输层）+ hub-context + types + handlers/（一条消息一个函数）
@@ -428,7 +429,7 @@ build: { outDir: "dist", sourcemap: true },
 - 画笔半径 `floor((brushSize-1)/2)`（1/2→1×1、3/4→3×3、5→5×5，含偶数尺寸的刻意保真），与 Unity `ApplyBrush` 完全一致；
 - 坐标系只有一个：**世界坐标**（x 右、y 上、像素、无限大）；`grid(0,0)` 在地图矩形左下角 = 图片最下面一行，grid.y 与世界 y 同向、不翻转；唯一的翻转发生在贴图绘制（`worldRectTopLeft`）。
 
-### 3.2 `@dts/document` — 文档模型、命令与历史（7,680 行）
+### 3.2 `@dts/document` — 文档模型、命令与历史（7,678 行）
 
 | 文件 | 行数 | 职责 | 关键导出 |
 |---|---|---|---|
@@ -808,25 +809,26 @@ resources/
 
 | 文件 | 行数 | 职责 |
 |---|---|---|
-| `src/index.ts` | 81 | 进程入口：装配依赖、监听端口、打印局域网地址；`startServer(): Promise<RunningServer>` |
-| `src/config.ts` | 92 | 资源根引导 + `app.json` 加载 + 地址解析 + 日志文案 |
+| `src/index.ts` | 82 | 进程入口：装配依赖、监听端口、打印局域网地址；`startServer(): Promise<RunningServer>` |
+| `src/config.ts` | 90 | 资源根引导 + `app.json` 加载 + 地址解析 + 日志文案 |
 | `src/net.ts` | 72 | 局域网 IPv4 地址筛选与排序（纯函数 `pickLanAddresses`） |
 | `src/open-folder.ts` | 123 | 跨平台「打开目录 / 定位文件」命令构造与 spawn |
-| `src/http/server.ts` | 74 | **只剩三件事**：装配上下文、按 `/api/` 前缀二分、把失败翻成响应；外加一条保命规则——每个连接给 `request.socket` / `response` 接空的 `error` 监听：客户端中途断开（取消下载 / 关页面）时写响应会异步冒 `error`（Windows 上是 UV_EOF），没人接就把整个进程打崩。socket 那份用模块级 `WeakSet` 保证**每连接只挂一次**（keep-alive 下同一 socket 服务多个请求，逐请求挂会累积成 MaxListenersExceededWarning） |
+| `src/values.ts` | 26 | 后端共用小工具：`messageOf`（异常 → 文本）/ `stamp`（日志时间戳）/ `toArrayBuffer`（Buffer 切片） |
+| `src/http/server.ts` | 73 | **只剩三件事**：装配上下文、按 `/api/` 前缀二分、把失败翻成响应；外加一条保命规则——给 `response` 接空的 `error` 监听、给每个连接（`server.on("connection")`）的 socket 接一份：客户端中途断开（取消下载 / 关页面）时写响应会异步冒 `error`（Windows 上是 UV_EOF），没人接就把整个进程打崩。挂在 `connection` 上天然**每连接一次**，不需要 WeakSet 去重 |
 | `src/http/router.ts` | 64 | 路由表编译与分派（路径精确匹配 + 动词；404 `未知接口` / 405 `不支持的方法`） |
-| `src/http/context.ts` | 56 | `HttpServerOptions` / `HttpContext`（config + provider + hub + log + openFolder + 资源包缓存） |
-| `src/http/responses.ts` | 81 | `HttpError`（唯一的「提前返回状态码」手段）+ `sendJson`/`sendText`/`sendBytes`/`sendEmpty` |
-| `src/http/requests.ts` | 58 | 请求体 / 查询参数读取助手（`readBody`/`readJsonBody`/`queryRaw`/`queryTrimmed`/`bodyString`/`bodyTrimmed`） |
+| `src/http/context.ts` | 56 | `HttpContext`（config + provider + hub + log + openFolder + 资源包缓存）；`HttpServerOptions = Omit<HttpContext, "bundles" | "openFolder"> & { openFolder?: … }`——字段清单只此一处 |
+| `src/http/responses.ts` | 98 | `HttpError`（唯一的「提前返回状态码」手段）+ `sendJson`/`sendText`/`sendBytes`/`sendEmpty` + `rethrowProviderError`（业务错误 → 400、系统错误冒泡 → 500） |
+| `src/http/requests.ts` | 106 | 请求体 / 查询参数读取助手（`readBody`/`readJsonBody` 带 `maxBytes`，超限抛 413；`queryRaw`/`queryTrimmed`/`bodyString`/`bodyTrimmed`） |
 | `src/http/mime.ts` | 35 | 扩展名 → Content-Type |
-| `src/http/static.ts` | 86 | 编辑器产物托管 + SPA 回退 + 目录穿越防护 |
-| `src/http/routes/*.ts` | 710 | **一条协议一个函数**：health(17) / config(20) / state(12) / projects(290, **7 个**：项目生命周期 + `/tree` + **`/meta`**（一次拿全项目的素材 meta，连读不出来的那几个也报出来）) / resources(305, 9 个；缩略图对视频走 ffmpeg 抽首帧，stdin 写不满的错误必须接住——不拦截会把进程打崩) / index(66, 路由表) |
-| `src/resources/fs-provider.ts` | 326 | `FsResourceProvider`（唯一碰磁盘的地方）+ 原子写 |
+| `src/http/static.ts` | 92 | 编辑器产物托管 + SPA 回退 + 目录穿越防护（畸形百分号编码回 400） |
+| `src/http/routes/*.ts` | 751 | **一条协议一个函数**：health(17) / config(20) / state(12) / projects(299, **7 个**：项目生命周期 + `/tree` + **`/meta`**（一次拿全项目的素材 meta，连读不出来的那几个也报出来）) / resources(337, 9 个；缩略图对视频走 ffmpeg 抽首帧，stdin 写不满的错误必须接住——不拦截会把进程打崩) / index(66, 路由表) |
+| `src/resources/fs-provider.ts` | 327 | `FsResourceProvider`（唯一碰磁盘的地方）+ 原子写 |
 | `src/resources/bundle.ts` | — | 资源清单 / 指纹 / ZIP 组装与缓存；编码委托给 `fflate`（STORED） |
-| `src/ws/hub.ts` | — | `RuntimeHub`：连接、心跳、命令回执、消息分发与序列化发送 |
+| `src/ws/hub.ts` | 475 | `RuntimeHub`：连接、心跳、命令回执、消息分发与序列化发送 |
 | `src/ws/hub-context.ts` | — | `HubContext` 与 WS logger 类型：handler 可用能力契约 |
 | `src/ws/handlers/{editor,client,types}.ts` | — | **一条消息一个函数**：按方向划分的消息处理器与类型安全注册表 |
 | `src/ws/runtime-session.ts` | 187 | `RuntimeSession`：运行态内存状态（开闸 / 前端 / 场景 / 设置 / 资源包） |
-| `src/mock-client/index.ts` | 192 | 假 Unity 前端（联调与手测） |
+| `src/mock-client/index.ts` | 199 | 假 Unity 前端（联调与手测） |
 
 ### 4.2 启动流程（`index.ts`）
 

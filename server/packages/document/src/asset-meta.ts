@@ -556,11 +556,13 @@ export function withoutMetaAudioTag(meta: AssetMetaDoc, tagId: number): AssetMet
 export interface AssetMetas {
   readonly byGuid: Readonly<Record<string, AssetMetaDoc>>;
   readonly byId: Readonly<Record<string, AssetMetaDoc>>;
+  /** guid → 当前路径 ID（与 `byGuid` 同一套「重复 guid 先到赢」的口径）。 */
+  readonly idByGuid: Readonly<Record<string, string>>;
 }
 
 /** 空索引（还没读到任何 meta：没打开项目、或这个项目一张图都没有 meta）。 */
 export function emptyAssetMetas(): AssetMetas {
-  return { byGuid: {}, byId: {} };
+  return { byGuid: {}, byId: {}, idByGuid: {} };
 }
 
 /**
@@ -574,15 +576,17 @@ export function createAssetMetas(
 ): AssetMetas {
   const byGuid: Record<string, AssetMetaDoc> = {};
   const byId: Record<string, AssetMetaDoc> = {};
+  const idByGuid: Record<string, string> = {};
 
   for (const entry of entries) {
     byId[entry.id] = entry.meta;
     if (byGuid[entry.meta.guid] === undefined) {
       byGuid[entry.meta.guid] = entry.meta;
+      idByGuid[entry.meta.guid] = entry.id;
     }
   }
 
-  return { byGuid, byId };
+  return { byGuid, byId, idByGuid };
 }
 
 /**
@@ -610,13 +614,7 @@ export function metaOfImage(
 
 /** Resolve a stable asset GUID to its current logical resource ID. */
 export function assetIdOfGuid(metas: AssetMetas, guid: string): string | undefined {
-  for (const [id, meta] of Object.entries(metas.byId)) {
-    if (meta.guid === guid) {
-      return id;
-    }
-  }
-
-  return undefined;
+  return metas.idByGuid[guid];
 }
 
 /** Resolve a current logical resource ID to the GUID persisted in its sidecar. */

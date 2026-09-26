@@ -91,6 +91,7 @@ describe("scenePayloadText", () => {
     const imageId = "project:P/Assets/images/sheet.png";
     const sheets = {
       byGuid: {},
+      idByGuid: {},
       byId: {
         [imageId]: {
           formatVersion: 1,
@@ -125,6 +126,7 @@ describe("scenePayloadText", () => {
     expect(scenePayloadText(withSprite, sheets)).not.toBe(
       scenePayloadText(withSprite, {
         byGuid: {},
+      idByGuid: {},
         byId: {
           [imageId]: {
             formatVersion: 1,

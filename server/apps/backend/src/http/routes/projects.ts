@@ -20,6 +20,7 @@ import {
 import { bodyString, bodyTrimmed, queryRaw, queryTrimmed, readJsonBody } from "../requests";
 import { HttpError, badRequest, rethrowProviderError, sendJson } from "../responses";
 import type { RouteContext } from "../router";
+import { messageOf } from "../../values";
 
 interface ProjectAssetMatch {
   readonly id: string;
@@ -46,7 +47,7 @@ async function readProjectMetas(provider: ResourceProvider, project: string): Pr
       unreadable.push({
         id: entry.id,
         path: entry.path,
-        reason: error instanceof Error ? error.message : String(error),
+        reason: messageOf(error),
       });
     }
   }
@@ -285,7 +286,7 @@ export async function revealProjectPathRoute(ctx: RouteContext): Promise<void> {
   try {
     await ctx.openFolder(folderToOpen, fileToSelect);
   } catch (error) {
-    throw new HttpError(500, error instanceof Error ? error.message : String(error));
+    throw new HttpError(500, messageOf(error));
   }
 
   ctx.log(

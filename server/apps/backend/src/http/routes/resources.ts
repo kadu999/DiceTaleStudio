@@ -2,6 +2,7 @@ import { RESOURCE_KINDS, parseResourceId, type ResourceKind } from "@dts/resourc
 import sharp from "sharp";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
+import { messageOf, toArrayBuffer } from "../../values";
 import {
   BundleTooLargeError,
   ProjectNotFoundError,
@@ -67,7 +68,7 @@ function assertResourceId(id: string): void {
   try {
     parseResourceId(id);
   } catch (error) {
-    throw badRequest(error instanceof Error ? error.message : String(error));
+    throw badRequest(messageOf(error));
   }
 }
 
@@ -207,7 +208,7 @@ export async function writeResourceRoute(ctx: RouteContext): Promise<void> {
   assertResourceId(id);
 
   const body = await readBody(ctx.request, maxBodyBytes(ctx));
-  const payload = body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength) as ArrayBuffer;
+  const payload = toArrayBuffer(body);
   await ctx.provider.writeBinary(id, payload);
   ctx.log("info", `资源已写入: ${id}（${body.byteLength} 字节）`);
   sendJson(ctx.response, 200, { ok: true, id, size: body.byteLength });

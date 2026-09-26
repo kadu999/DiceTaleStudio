@@ -14,6 +14,7 @@ import {
   type ResourceKind,
   type ResourceProvider,
 } from "@dts/resources";
+import { toArrayBuffer } from "../values";
 
 /**
  * 文件系统资源实现——**全后端唯一触碰磁盘的地方**。
@@ -126,8 +127,7 @@ export class FsResourceProvider implements ResourceProvider {
   }
 
   async readBinary(id: string): Promise<ArrayBuffer> {
-    const buffer = await readFile(this.pathFor(id));
-    return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer;
+    return toArrayBuffer(await readFile(this.pathFor(id)));
   }
 
   async writeText(id: string, text: string): Promise<void> {
