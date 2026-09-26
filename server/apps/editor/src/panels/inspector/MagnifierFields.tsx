@@ -128,6 +128,8 @@ export function MagnifierFields({ object }: { readonly object: GameObjectDoc }):
         onPick={(image: ImageRef, sprite) => {
           const meta = useEditorStore.getState().ensureAssetMeta(image.id);
           addImage(object.id, sprite === null ? { ...image, guid: meta.guid } : { ...image, guid: meta.guid, sprite });
+          // 一次加一条：选完就收起（与「选择贴图」那条路一致）
+          setPicking(false);
         }}
       />
 
@@ -154,7 +156,7 @@ export function MagnifierFields({ object }: { readonly object: GameObjectDoc }):
           {showingHere ? (
             <button
               type="button"
-              data-testid="magnifier-close"
+              data-testid="magnifier-close-window"
               title="让前端把那扇窗收起来（它自己没有关闭按钮）"
               className="flex-none rounded border border-[var(--color-editor-border)] px-2 py-0.5 text-[11px] hover:border-[var(--color-editor-danger)] hover:text-[var(--color-editor-danger)]"
               onClick={() => closeMagnifierWindow()}

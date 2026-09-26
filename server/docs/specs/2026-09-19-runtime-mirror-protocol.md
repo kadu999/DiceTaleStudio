@@ -35,6 +35,10 @@
 > `clips` / `picked` 读 → 两路都读不到（混合层放不出来），照旧 +1。
 > **v20（2026-09-27）**给视频混合加了命令 `fill_video_mask`（把整张遮罩填成 1 / 0，Mask 窗口
 > 右边那两个「整张」按钮用）——**文档格式不动**，老前端（v19）不认这条命令，所以协议照旧 +1。
+> **v21（2026-09-27）**新增**「放大镜」动作对象**（第 9 种组件 `Magnifier`：一条图片列表 +
+> 「当前展示第几张」）与两条命令 `open_magnifier` / `close_magnifier`（让前端弹 / 收一扇窗；
+> **换图不是命令**——`picked` 是文档数据，整份 `scene_sync` 带下来）——与文档格式 v30 同一批；
+> 老前端（v20）不认这个组件、也不认那两条命令，照旧 +1。
 > 逐条见 `CODE-STRUCTURE.md` §6.1 与 `packages/protocol/src/messages.ts` 的版本注释。
 > 取代 [`2026-09-18-frontend-integration-contract.md`](2026-09-18-frontend-integration-contract.md)
 > （那份写的是「前端上报数据、后台按 id 寻址动作」的老模型，已整层删除）。
@@ -147,6 +151,7 @@
 | `Teleport` | **不建可见物**：数据留在镜像里（触发传送 = 编辑器换场景，整份 `scene_push`） |
 | `VideoOverlay` | 运行时在**对象自己的矩形**上建视频层（见下） |
 | `VideoBlend` | 运行时在**对象自己的矩形**上建**混合层**：两条视频（A 盖住 / B 擦开露出）各渲一张 `RenderTexture`，用一张**纯运行态**的 Mask 混合（见下）；**遮罩不随场景下发**，由 `erase_video_mask` 驱动 |
+| `Magnifier` | **不建可见物**（v21 的动作对象）：`data` = `{ images: [{ id, width, height, sprite?, spriteGrid? }], picked? }`（`picked` 是**下标**）。触发它 = 后端两条命令让前端弹 / 收一扇窗（`Presentation/UI/MagnifierWindow.cs`），窗里放 `images[picked]` 那一张；**换图没有命令**——文档一改整份 `scene_sync` 带下来，前端在场景落地时把那扇窗刷新（对象被删 / 没图可展示就关掉） |
 | 其余（未知类型 / 将来的新组件） | 忽略 |
 
 **精灵（子图，v10）**：一张图可以按「行 × 列」切成格子，对象只显示其中一格。
@@ -193,7 +198,7 @@ v12 起叫 `Image`）——**只显示整张图**，与精灵的差别只有「�
 |---|---|
 | `id` | 镜像字典的 key：新 id 建对象、老 id 更新、名单里没有的销毁；场景名变了则整场景换 |
 | `name` | GameObject 名字 |
-| `kind` | **只用来取占位色 / 排查**（不再决定建不建可见物）。v12 起具体值是 `Sprite` / `Image` / `Map` / `Player` / `Item` / `Event` / `PlaySound` / `Teleport`；`SceneObject` 是后台的抽象基类，不会出现在载荷里 |
+| `kind` | **只用来取占位色 / 排查**（不再决定建不建可见物）。v12 起具体值是 `Sprite` / `Image` / `Map` / `Player` / `Item` / `Event` / `PlaySound` / `Teleport` / `Magnifier`（v21）；`SceneObject` 是后台的抽象基类，不会出现在载荷里 |
 | `components` | **决定这个对象有什么**：`map` / `image` 这两个强类型字段由 `GridMap` / `ImageLayer` / `SpriteLayer` 填（后两个都是「对象自己那张图」，v11 起按对象类型分开）；`sound` / `video` 由 `PlaySound` / `VideoOverlay` 填 |
 | `position {x,y}` | `(x, 0, y)`：文档 y 向上 → 客户端 +Z（与 `GridMap.WorldToGrid` 同口径）；`null` = 未落位 → 不建视图 |
 | `active` | 是否显示（编辑器那个勾选框一改，前端就出现 / 消失） |
@@ -207,6 +212,7 @@ v12 起叫 `Image`）——**只显示整张图**，与精灵的差别只有「�
 | `VideoOverlay.data` | `{ enabled, autoPlay, clips, picked, loop, audio }`——总开关、**场景激活时自动播放**、加进来的视频、放哪一条、循不循环、出不出视频自带的声音。收到 `play_video` 时前端在**这个对象自己的矩形**上建一层视频（`Presentation/VideoOverlay.cs`）；**关掉 `enabled` 时连那一层都不建**。`names`（显示名）**不进协议** |
 | `VideoBlend.data` | `{ a: { kind: "image" \| "video", id? }, b: { ... }, loop, autoPlay, audio }`——**两路素材**，每路是**一个**素材（图片或视频，v19 起；之前是「列表 + 选中」）+ 循环 + **自动播放** + 声音来源（`none` / `a` / `b`）；**没有 `enabled`**（组件在 = 在用）。收到 `play_video` 时前端在对象矩形上建**混合层**（`Presentation/VideoBlend.cs`）：视频那一路 `VideoPlayer` → `RenderTexture`、图片那一路取一张贴图；**遮罩是运行态**，由 `erase_video_mask` 驱动，不随场景下发。`autoPlay` 打开时**场景激活即自动混合播放**（前端自己触发，不走命令） |
 | `Teleport.data` | `{ targets, picked }`。**前端不用它**：触发传送阵 = 编辑器切换当前场景 → 整份 `scene_push` 下来，前端只管换镜像 |
+| `Magnifier.data` | `{ images, picked }`——`picked` 是 `images` 的**下标**（同一张图的两个不同格子是两条，id 当不了键），每一条是 `{ id, width, height, sprite?, spriteGrid? }`。**取哪一张只有一处口径**（`Data/MagnifierReader.cs` 的 `TryPickImage`：没挂组件 / 列表空 / `picked` 缺失或越界 → 拿不到，明确拒掉 `open_magnifier`）；**前端不建可见物**（动作对象），窗由 `open_magnifier` / `close_magnifier` 开关 |
 | `project_settings` | **项目级全局设置**（v7 起，**不在场景里**）。v8 起只有三档音量：`{ audio: { bgm: { volume }, sfx: { volume }, voice: { volume } } }`。前端**收到即生效**，不需要命令；背景音乐**恒循环** |
 
 ## 命令
@@ -227,6 +233,8 @@ v12 起叫 `Image`）——**只显示整张图**，与精灵的差别只有「�
 | `pause_video` | `{ objectId }` | 暂停在当前帧 |
 | `resume_video` | `{ objectId }` | 从暂停处续播 |
 | `stop_video` | `{ objectId }` | 停止并**拆掉那一层**（露出对象原来的贴图） |
+| `open_magnifier` | `{ objectId }` | 让前端**弹一扇放大镜窗**显示这个对象 `images[picked]` 那一张（v21；命令里不带数据）。那扇窗**没有按钮**——只能后端开、后端关 |
+| `close_magnifier` | `{ objectId }` | 关掉那扇窗（v21）。带 `objectId` 是**认领**：只关正为它开着的那一扇（迟到的关闭不该关掉新开的那扇） |
 
 **战争雾发的是轨迹，不是整张遮罩**（照参考实现 `backend_diceTale` 的 `erase_mask` / `EraseStroke`）：
 - `points`：鼠标拖过的归一化轨迹点（`[0,1]`、**y 向下**）。前端把它翻成纹理的自下而上（`(1 - y) × 高`），
@@ -257,6 +265,7 @@ v12 起叫 `Image`）——**只显示整张图**，与精灵的差别只有「�
 |---|---|
 | `Data/SceneModel.cs` | 镜像模型（与 `SceneDoc` 同构）+ `MirrorSettings`（项目级全局设置） |
 | `Data/SceneParser.cs` + `Data/SettingsParser.cs` + `Data/JsonParser.cs` + `Data/GridRle.cs` | 解析场景 / 设置 / RLE 解码（JsonUtility 读不了嵌套数组） |
+| `Data/MagnifierReader.cs` | 放大镜（v21）「现在展示哪一张」的读取口径：泛型读取器读不了**数组的第 N 项**，这一小段单独收一处（`MirrorObject` / `SceneParser` 都不动） |
 | `Network/Protocol.cs` | 协议常量、出站 DTO、`ws://…/client` → `http://…` 推导 |
 | `Network/ServerConnection.cs` | WS 连接（未开闸时握手被拒 = 正常现象，只提示一次并重试） |
 | `Network/ClientSession.cs` | 握手 / 心跳 / 把消息变成事件 |
@@ -270,3 +279,4 @@ v12 起叫 `Image`）——**只显示整张图**，与精灵的差别只有「�
 | `Presentation/VideoOverlay.cs` | 视频层：按 URL 放（本地资源包优先、否则服务端原始字节），与宿主对象共享位置 / 尺寸 / sortingOrder；首帧就绪后隐藏宿主 Renderer，停止或解码失败时恢复 |
 | `Presentation/VideoBlend.cs` | 视频混合层：视频那一路 `VideoPlayer` → `RenderTexture`（图片那一路走 `ResourceImageLoader` 取贴图），用 `DiceTale/VideoBlend`（`lerp(B, A, mask.a)`）与一张 CPU 遮罩混合；遮罩初始**整张不透明**，按 `erase_video_mask` 擦、按 `fill_video_mask` 整张填 1 / 0，**两者按收到的先后重放**（尺寸按素材像素尺寸，与编辑器同式）；`Presentation/VideoBlendLayer.cs` 是它的渲染器（`GroundLayer` 的第三个子类） |
 | `Presentation/ResourceImageLoader.cs` | 按逻辑 ID 取图（带缓存 / 去重 / 失败记忆） |
+| `Presentation/UI/MagnifierWindow.cs` | 放大镜那扇窗（v21，代码构建）：全屏半透明底 + 居中一张等比放大的图（一格图走 `SpriteLayer.UvRectOf` 那一处唯一的 y 翻转）；**没有按钮、不吃点击**，只能由 `open_magnifier` / `close_magnifier` 开关，场景落地时刷新或关掉 |

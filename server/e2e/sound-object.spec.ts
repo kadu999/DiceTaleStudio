@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Page, type TestInfo } from "@playwright/test";
+ï»¿import { expect, test, type APIRequestContext, type Page, type TestInfo } from "@playwright/test";
 import {
   COMPONENT,
   closeDrawers,
@@ -20,21 +20,21 @@ import {
 import { canvasAverageColor, offsetFrom, preciseWorldPoint, worldSamplePoint } from "./helpers/canvas";
 
 /**
- * **ÉùÒô¶ÔÏó**£¨¶¯×÷¶ÔÏó£©£ºµ¯¿òÀï¡¸¶¯×÷¡¹ÖÖÀàÏÂµÄ¡¸²¥·ÅÉùÒô¡¹¡£
+ * **å£°éŸ³å¯¹è±¡**ï¼ˆåŠ¨ä½œå¯¹è±¡ï¼‰ï¼šå¼¹æ¡†é‡Œã€ŒåŠ¨ä½œã€ç§ç±»ä¸‹çš„ã€Œæ’­æ”¾å£°éŸ³ã€ã€‚
  *
- * ËüºÍÊµÌåÒ»Ñù°ÚÔÚÊÀ½çÀï£¨Î»ÖÃ / Ëõ·Å / ¼¤»î / Ëø¶¨ / ÏÔÊ¾Ë³Ğò£©£¬»­²¼ÉÏÊÇÒ»Ã¶**¹Ì¶¨µÄ
- * ÄÚÖÃÒôÆµÍ¼±ê**£¨²»¸ø»»ÌùÍ¼£¬ÄÜµãÑ¡¡¢ÄÜÍÏ£©£¬Áí´ø×Ô¼ºµÄ¶«Î÷£º**¼Ó½øÀ´µÄÒôÆµÁĞ±í + Ñ¡ÖĞµÄ
- * ÄÇÌõ**£¨Ãæ°åÉÏµ¥Ñ¡£¬Ç°¶Ë²¥µÄ¾ÍÊÇËü£©Óë**²ã¼¶**£¨Í¬²ãÍ¬Ê±Ö»ÏìÒ»Ìõ£©¡£
- * ±à¼­Æ÷**²»²¥·Å**¡ª¡ªÕâÀï¼È¶¤×¡¡¸»­²¼ÉÏ¿´µÃ¼û¡¢µãµÃµ½¡¢ÍÏµÃ¶¯¡¹£¬Ò²¶¤×¡¡¸Ò³ÃæÉÏÃ»ÓĞ²¥·ÅÆ÷¡¹¡£
+ * å®ƒå’Œå®ä½“ä¸€æ ·æ‘†åœ¨ä¸–ç•Œé‡Œï¼ˆä½ç½® / ç¼©æ”¾ / æ¿€æ´» / é”å®š / æ˜¾ç¤ºé¡ºåºï¼‰ï¼Œç”»å¸ƒä¸Šæ˜¯ä¸€æš**å›ºå®šçš„
+ * å†…ç½®éŸ³é¢‘å›¾æ ‡**ï¼ˆä¸ç»™æ¢è´´å›¾ï¼Œèƒ½ç‚¹é€‰ã€èƒ½æ‹–ï¼‰ï¼Œå¦å¸¦è‡ªå·±çš„ä¸œè¥¿ï¼š**åŠ è¿›æ¥çš„éŸ³é¢‘åˆ—è¡¨ + é€‰ä¸­çš„
+ * é‚£æ¡**ï¼ˆé¢æ¿ä¸Šå•é€‰ï¼Œå‰ç«¯æ’­çš„å°±æ˜¯å®ƒï¼‰ä¸**å±‚çº§**ï¼ˆåŒå±‚åŒæ—¶åªå“ä¸€æ¡ï¼‰ã€‚
+ * ç¼–è¾‘å™¨**ä¸æ’­æ”¾**â€”â€”è¿™é‡Œæ—¢é’‰ä½ã€Œç”»å¸ƒä¸Šçœ‹å¾—è§ã€ç‚¹å¾—åˆ°ã€æ‹–å¾—åŠ¨ã€ï¼Œä¹Ÿé’‰ä½ã€Œé¡µé¢ä¸Šæ²¡æœ‰æ’­æ”¾å™¨ã€ã€‚
  *
- * Çåµ¥µÄ**È«²¿¹ÜÀí¶¼ÔÚÊôĞÔÃæ°åµÄ¡¸ÉùÒô¡¹×éÀï**£ºĞ¡·½¿éµ¥Ñ¡£¨²¥ÄÄÌõ£©¡¢`¡Á` ÒÆ³öÒ»Ìõ¡¢
- * ¡¸Çå¿Õ¡¹È«²¿ÒÆ³ö¡¢`£«` ´ÓÏîÄ¿ËØ²ÄÀï**Ìí¼Ó**£¨µ¯¡¸Ñ¡ÔñÒôÆµ¡¹£©¡£Ã»ÓĞ±ğµÄ´°¿Ú£»
- * ÏÔÊ¾ÃûÔÚ**ÎÄ¼şÊôĞÔ**ÉÏ¸Ä¡£
+ * æ¸…å•çš„**å…¨éƒ¨ç®¡ç†éƒ½åœ¨å±æ€§é¢æ¿çš„ã€Œå£°éŸ³ã€ç»„é‡Œ**ï¼šå°æ–¹å—å•é€‰ï¼ˆæ’­å“ªæ¡ï¼‰ã€`Ã—` ç§»å‡ºä¸€æ¡ã€
+ * ã€Œæ¸…ç©ºã€å…¨éƒ¨ç§»å‡ºã€`ï¼‹` ä»é¡¹ç›®ç´ æé‡Œ**æ·»åŠ **ï¼ˆå¼¹ã€Œé€‰æ‹©éŸ³é¢‘ã€ï¼‰ã€‚æ²¡æœ‰åˆ«çš„çª—å£ï¼›
+ * æ˜¾ç¤ºååœ¨**æ–‡ä»¶å±æ€§**ä¸Šæ”¹ã€‚
  */
 
 const SCENE = "Map001";
 
-/** °ÑÒ»¶Î¼ÙÒôÆµÌá½»µ½ `Assets/audio/`£¨ÄÚÈİÎŞËùÎ½£º±à¼­Æ÷²»½âÎöÒôÆµ¡¢Ò²²»²¥·Å£©¡£ */
+/** æŠŠä¸€æ®µå‡éŸ³é¢‘æäº¤åˆ° `Assets/audio/`ï¼ˆå†…å®¹æ— æ‰€è°“ï¼šç¼–è¾‘å™¨ä¸è§£æéŸ³é¢‘ã€ä¹Ÿä¸æ’­æ”¾ï¼‰ã€‚ */
 async function uploadAudio(
   request: APIRequestContext,
   project: string,
@@ -49,14 +49,14 @@ async function uploadAudio(
   return id;
 }
 
-/** Ä³¸öÆÁÄ»µãµÄ¡¸Å¯¶È¡¹£¨r ? g£©£ºÒôÆµÍ¼±êµÄÅÆÃæÊÇÅ¯³È£¬ÆåÅÌµ×ÎÆÊÇÖĞĞÔ»Ò¡£ */
+/** æŸä¸ªå±å¹•ç‚¹çš„ã€Œæš–åº¦ã€ï¼ˆr âˆ’ gï¼‰ï¼šéŸ³é¢‘å›¾æ ‡çš„ç‰Œé¢æ˜¯æš–æ©™ï¼Œæ£‹ç›˜åº•çº¹æ˜¯ä¸­æ€§ç°ã€‚ */
 async function redness(page: Page, point: { x: number; y: number }): Promise<number> {
   const color = await canvasAverageColor(page, point, 12);
   return color.r - color.g;
 }
 
-test.describe("¶¯×÷¶ÔÏó£º²¥·ÅÉùÒô", () => {
-  test("ĞÂ½¨ ¡ú ´°¿ÚÀï¼Ó / ÒÆ³öÒôÆµ ¡ú Ãæ°åÉÏ»»Ñ¡ ¡ú ÂäÅÌ£»±à¼­Æ÷Ö»´æÊı¾İ¡¢²»²¥·Å", async ({
+test.describe("åŠ¨ä½œå¯¹è±¡ï¼šæ’­æ”¾å£°éŸ³", () => {
+  test("æ–°å»º â†’ çª—å£é‡ŒåŠ  / ç§»å‡ºéŸ³é¢‘ â†’ é¢æ¿ä¸Šæ¢é€‰ â†’ è½ç›˜ï¼›ç¼–è¾‘å™¨åªå­˜æ•°æ®ã€ä¸æ’­æ”¾", async ({
     page,
     request,
   }) => {
@@ -71,23 +71,23 @@ test.describe("¶¯×÷¶ÔÏó£º²¥·ÅÉùÒô", () => {
       await openProject(page, project);
       await openLeftTab(page, "hierarchy");
 
-      // ĞÂ½¨¶ÔÏó ¡ú¡¸¶¯×÷¡¹¡ú¡¸²¥·ÅÉùÒô¡¹£¨Ãû×Ö°´ÀàĞÍÔ¤Ìî£©
+      // æ–°å»ºå¯¹è±¡ â†’ã€ŒåŠ¨ä½œã€â†’ã€Œæ’­æ”¾å£°éŸ³ã€ï¼ˆåå­—æŒ‰ç±»å‹é¢„å¡«ï¼‰
       await page.getByTestId("new-object").click();
       await page.getByTestId("object-category-action").click();
       await page.getByTestId("object-type-PlaySound").click();
-      await expect(page.getByTestId("object-name-input")).toHaveValue("²¥·ÅÉùÒô");
+      await expect(page.getByTestId("object-name-input")).toHaveValue("æ’­æ”¾å£°éŸ³");
       await page.getByTestId("confirm-object").click();
       await expect(page.getByTestId("object-dialog")).toHaveCount(0);
 
-      // ÁĞ±í£º¶¯×÷ÖÖÀàÉ¸µÃ³öÀ´£»ĞĞÎ²ÏÔÊ¾²ã¼¶
+      // åˆ—è¡¨ï¼šåŠ¨ä½œç§ç±»ç­›å¾—å‡ºæ¥ï¼›è¡Œå°¾æ˜¾ç¤ºå±‚çº§
       await expect(page.getByTestId("category-filter-action")).toBeVisible();
       await page.getByTestId("category-filter-action").click();
       const row = page.getByTestId("object-row").first();
       await expect(row).toHaveAttribute("data-kind", "PlaySound");
-      await expect(row).toContainText("ÒôĞ§");
+      await expect(row).toContainText("éŸ³æ•ˆ");
 
-      // ÊôĞÔÃæ°å£º»ù´¡ºÍÊµÌåÒ»Ñù£¨Î»ÖÃ / Ëõ·Å / Ëø¶¨ / ÏÔÊ¾Ë³Ğò¶¼ÔÚ£©£¬ÁíÓĞ¡¸²¥·ÅÉùÒô¡¹£»
-      // **Ã»ÓĞ¡¸Í¼Æ¬²ã / ¾«Áé²ã¡¹**¡ª¡ªÍ¼±êÊÇ¹Ì¶¨µÄÄÚÖÃÍ¼±ê£¬²»¸ø»»ÌùÍ¼
+      // å±æ€§é¢æ¿ï¼šåŸºç¡€å’Œå®ä½“ä¸€æ ·ï¼ˆä½ç½® / ç¼©æ”¾ / é”å®š / æ˜¾ç¤ºé¡ºåºéƒ½åœ¨ï¼‰ï¼Œå¦æœ‰ã€Œæ’­æ”¾å£°éŸ³ã€ï¼›
+      // **æ²¡æœ‰ã€Œå›¾ç‰‡å±‚ / ç²¾çµå±‚ã€**â€”â€”å›¾æ ‡æ˜¯å›ºå®šçš„å†…ç½®å›¾æ ‡ï¼Œä¸ç»™æ¢è´´å›¾
       await selectObject(page, 0);
       await expect(page.locator('[data-group="sound"]')).toBeVisible();
       await expect(page.locator('[data-group="image"]')).toHaveCount(0);
@@ -95,37 +95,37 @@ test.describe("¶¯×÷¶ÔÏó£º²¥·ÅÉùÒô", () => {
       await expect(page.getByTestId("pick-texture")).toHaveCount(0);
       await expect(page.getByTestId("inspector-object-x")).toHaveValue("0");
       await expect(page.getByTestId("inspector-object-scale")).toHaveValue("1");
-      await expect(page.getByLabel("ÉùÒô²ã¼¶")).toHaveValue("sfx");
+      await expect(page.getByLabel("å£°éŸ³å±‚çº§")).toHaveValue("sfx");
 
-      // **±à¼­Æ÷²»²¥·Å**£ºÒ³ÃæÉÏÃ»ÓĞÈÎºÎ²¥·ÅÆ÷£¨ÒôÆµÊÔÌı²»ÔÚÕâ¸ö¹¦ÄÜÀï£©
+      // **ç¼–è¾‘å™¨ä¸æ’­æ”¾**ï¼šé¡µé¢ä¸Šæ²¡æœ‰ä»»ä½•æ’­æ”¾å™¨ï¼ˆéŸ³é¢‘è¯•å¬ä¸åœ¨è¿™ä¸ªåŠŸèƒ½é‡Œï¼‰
       await expect(page.locator("audio")).toHaveCount(0);
 
       /*
-        Ãæ°åĞĞĞòÊÇ ²ã¼¶ ¡ú ÒôÆµ ¡ú ²¥·Å£¨²ã¼¶ÔÚÉÏÃæ£©£»¡¸ÒôÆµ¡¹ÄÇÒ»ĞĞ×Ô¼º¾ÍÊÇÇåµ¥¹ÜÀí£º
-        Ğ¡·½¿é£¨µ¥Ñ¡²¥ÄÄÌõ£©+ £« Ìí¼Ó + Çå¿Õ¡£
-        ¿Ø¼şĞĞÓë¡¸ÊÓÆµ¡¹ÄÇÒ»×é**ÍêÈ«Ò»ÖÂ**£º²¥·Å / ÔİÍ£ / Í£Ö¹ + Ò»ĞĞ×´Ì¬¡£
-        Ò»Ìõ¶¼Ã»¼ÓÊ±Ğ´Ã÷¡¸»¹Ã»¼ÓÒôÆµ¡¹¡£
+        é¢æ¿è¡Œåºæ˜¯ å±‚çº§ â†’ éŸ³é¢‘ â†’ æ’­æ”¾ï¼ˆå±‚çº§åœ¨ä¸Šé¢ï¼‰ï¼›ã€ŒéŸ³é¢‘ã€é‚£ä¸€è¡Œè‡ªå·±å°±æ˜¯æ¸…å•ç®¡ç†ï¼š
+        å°æ–¹å—ï¼ˆå•é€‰æ’­å“ªæ¡ï¼‰+ ï¼‹ æ·»åŠ  + æ¸…ç©ºã€‚
+        æ§ä»¶è¡Œä¸ã€Œè§†é¢‘ã€é‚£ä¸€ç»„**å®Œå…¨ä¸€è‡´**ï¼šæ’­æ”¾ / æš‚åœ / åœæ­¢ + ä¸€è¡ŒçŠ¶æ€ã€‚
+        ä¸€æ¡éƒ½æ²¡åŠ æ—¶å†™æ˜ã€Œè¿˜æ²¡åŠ éŸ³é¢‘ã€ã€‚
       */
       const panelOrder = await page
         .locator('[data-group="sound"] [data-testid^="sound-"]')
         .evaluateAll((elements) => elements.map((element) => element.getAttribute("data-testid")));
       expect(panelOrder).toEqual([
         "sound-layer",
-        // ¡¸ÒôÆµ¡¹ÄÇÒ»ĞĞµÄÈİÆ÷£¨ÏÖÔÚÀïÃæÖ»ÓĞ¡¸»¹Ã»¼ÓÒôÆµ¡¹£« £« Ìí¼Ó£©
+        // ã€ŒéŸ³é¢‘ã€é‚£ä¸€è¡Œçš„å®¹å™¨ï¼ˆç°åœ¨é‡Œé¢åªæœ‰ã€Œè¿˜æ²¡åŠ éŸ³é¢‘ã€ï¼‹ ï¼‹ æ·»åŠ ï¼‰
         "sound-clips",
         "sound-empty",
         "sound-add",
         "sound-play",
         "sound-pause",
         "sound-stop",
-        // °´Å¥ÏÂÃæÄÇĞĞĞ¡×Ö£ºÏÖÔÚÔÚ²¥Ê²Ã´£¨µãÏÂÈ¥ÓĞÃ»ÓĞÉúĞ§Ò»ÑÛ¿´µÃ¼û£©
+        // æŒ‰é’®ä¸‹é¢é‚£è¡Œå°å­—ï¼šç°åœ¨åœ¨æ’­ä»€ä¹ˆï¼ˆç‚¹ä¸‹å»æœ‰æ²¡æœ‰ç”Ÿæ•ˆä¸€çœ¼çœ‹å¾—è§ï¼‰
         "sound-status",
       ]);
-      await expect(page.getByTestId("sound-empty")).toHaveText("»¹Ã»¼ÓÒôÆµ");
+      await expect(page.getByTestId("sound-empty")).toHaveText("è¿˜æ²¡åŠ éŸ³é¢‘");
       await expect(page.locator('[data-group="sound"]')).not.toContainText("audio/");
 
-      // ¡¸£« Ìí¼Ó¡¹µ¯¡¸Ñ¡ÔñÒôÆµ¡¹£ºÁĞ³öÏîÄ¿ÀïµÄÒôÆµ£¨Â·¾¶ÔÚ tooltip / ÓÒ²àÔ¤ÀÀÍ·Àï£©£¬
-      // Ñ¡ÖĞÒ»Ìõ ¡ú µã¡¸Ìí¼Ó¡¹¼ÓÈë£¨Ò»´ÎÒ»Ìõ£¬µ¯¿òËæ¼´¹Ø±Õ£©
+      // ã€Œï¼‹ æ·»åŠ ã€å¼¹ã€Œé€‰æ‹©éŸ³é¢‘ã€ï¼šåˆ—å‡ºé¡¹ç›®é‡Œçš„éŸ³é¢‘ï¼ˆè·¯å¾„åœ¨ tooltip / å³ä¾§é¢„è§ˆå¤´é‡Œï¼‰ï¼Œ
+      // é€‰ä¸­ä¸€æ¡ â†’ ç‚¹ã€Œæ·»åŠ ã€åŠ å…¥ï¼ˆä¸€æ¬¡ä¸€æ¡ï¼Œå¼¹æ¡†éšå³å…³é—­ï¼‰
       await page.getByTestId("sound-add").click();
       const picker = page.getByTestId("audio-picker-dialog");
       await expect(picker).toBeVisible();
@@ -135,7 +135,7 @@ test.describe("¶¯×÷¶ÔÏó£º²¥·ÅÉùÒô", () => {
       await pickItem(step1).click();
       await picker.getByTestId("audio-picker-add").click();
       await expect(picker).toHaveCount(0);
-      // ÔÙ¼ÓÁ½Ìõ£ºÒ»´ÎÒ»Ìõ£¬¼ÓÍêµ¯¿ò¾Í¹Ø
+      // å†åŠ ä¸¤æ¡ï¼šä¸€æ¬¡ä¸€æ¡ï¼ŒåŠ å®Œå¼¹æ¡†å°±å…³
       for (const id of [step2, step3]) {
         await page.getByTestId("sound-add").click();
         const again = page.getByTestId("audio-picker-dialog");
@@ -144,32 +144,32 @@ test.describe("¶¯×÷¶ÔÏó£º²¥·ÅÉùÒô", () => {
         await expect(again).toHaveCount(0);
       }
 
-      // Ãæ°å£º**¼Ó½øÀ´µÄÒôÆµÈ«ÁĞ³öÀ´**£¨Ğ¡·½¿é£©£»¼Ó½øÀ´µÄµÚÒ»Ìõ×Ô¶¯ÊÇ¡¸²¥µÄÄÇÌõ¡¹
+      // é¢æ¿ï¼š**åŠ è¿›æ¥çš„éŸ³é¢‘å…¨åˆ—å‡ºæ¥**ï¼ˆå°æ–¹å—ï¼‰ï¼›åŠ è¿›æ¥çš„ç¬¬ä¸€æ¡è‡ªåŠ¨æ˜¯ã€Œæ’­çš„é‚£æ¡ã€
       const chips = page.getByTestId("sound-clip");
       await expect(chips).toHaveCount(3);
 
-      // ¼Ó´íÁË¿ÉÒÔÒÆ³ö£ºµãĞ¡·½¿éÉÏµÄ ¡Á£¨ËØ²ÄÎÄ¼ş²»»á±»É¾£©
+      // åŠ é”™äº†å¯ä»¥ç§»å‡ºï¼šç‚¹å°æ–¹å—ä¸Šçš„ Ã—ï¼ˆç´ ææ–‡ä»¶ä¸ä¼šè¢«åˆ ï¼‰
       await page.locator(`[data-testid="sound-clip-remove"][data-clip="${step3}"]`).click();
       await expect(chips).toHaveCount(2);
       await expect(page.getByTestId("sound-clips")).not.toContainText("step3");
 
-      // Ğ¡·½¿éÖ»¶ÁÏÔÊ¾ÏÔÊ¾Ãû£¨Ã»Æğ¹ı = ÎÄ¼şÃû£©£»ÆğÃûÔÚ**ÎÄ¼şÊôĞÔ**ÉÏ¸Ä
+      // å°æ–¹å—åªè¯»æ˜¾ç¤ºæ˜¾ç¤ºåï¼ˆæ²¡èµ·è¿‡ = æ–‡ä»¶åï¼‰ï¼›èµ·ååœ¨**æ–‡ä»¶å±æ€§**ä¸Šæ”¹
       await expect(chips.nth(0)).toHaveText("step1");
       await expect(chips.nth(1)).toHaveText("step2");
       await expect(chips.nth(0)).toHaveAttribute("data-selected", "true");
       await expect(chips.nth(1)).toHaveAttribute("data-selected", "false");
 
-      // »»Ñ¡¾ÍÔÚÃæ°åÉÏµã£¨µ¥Ñ¡£©£ºµãµÚ¶şÌõ ¡ú ²¥µÄ¾Í»»³ÉËü£¨Çåµ¥²»¶¯£©
+      // æ¢é€‰å°±åœ¨é¢æ¿ä¸Šç‚¹ï¼ˆå•é€‰ï¼‰ï¼šç‚¹ç¬¬äºŒæ¡ â†’ æ’­çš„å°±æ¢æˆå®ƒï¼ˆæ¸…å•ä¸åŠ¨ï¼‰
       await chips.nth(1).click();
       await expect(chips.nth(1)).toHaveAttribute("data-selected", "true");
       await expect(chips.nth(0)).toHaveAttribute("data-selected", "false");
       await expect(chips.nth(1)).toHaveAttribute("title", /audio\/step2\.mp3/);
 
-      // ¡¸Çå¿Õ¡¹Ò»´ÎÈ«²¿ÒÆ³ö£¨ËØ²ÄÎÄ¼ş²»»á±»É¾£©
+      // ã€Œæ¸…ç©ºã€ä¸€æ¬¡å…¨éƒ¨ç§»å‡ºï¼ˆç´ ææ–‡ä»¶ä¸ä¼šè¢«åˆ ï¼‰
       await page.getByTestId("sound-clear").click();
-      await expect(page.getByTestId("sound-empty")).toHaveText("»¹Ã»¼ÓÒôÆµ");
+      await expect(page.getByTestId("sound-empty")).toHaveText("è¿˜æ²¡åŠ éŸ³é¢‘");
 
-      // ÖØĞÂ¼ÓÁ½Ìõ£¨ÏÂÃæÂäÅÌ¶ÏÑÔÒªÊı£©£ºÒ»´ÎÒ»Ìõ
+      // é‡æ–°åŠ ä¸¤æ¡ï¼ˆä¸‹é¢è½ç›˜æ–­è¨€è¦æ•°ï¼‰ï¼šä¸€æ¬¡ä¸€æ¡
       for (const id of [step1, step2]) {
         await page.getByTestId("sound-add").click();
         const repick = page.getByTestId("audio-picker-dialog");
@@ -178,20 +178,20 @@ test.describe("¶¯×÷¶ÔÏó£º²¥·ÅÉùÒô", () => {
         await expect(repick).toHaveCount(0);
       }
       await expect(page.getByTestId("sound-clip")).toHaveCount(2);
-      // ¼Ó½øÀ´µÄµÚÒ»Ìõ×Ô¶¯ÊÇ¡¸²¥µÄÄÇÌõ¡¹£»ÔÙµãµÚ¶şÌõ ¡ú ²¥µÄ¾Í»»³ÉËü
+      // åŠ è¿›æ¥çš„ç¬¬ä¸€æ¡è‡ªåŠ¨æ˜¯ã€Œæ’­çš„é‚£æ¡ã€ï¼›å†ç‚¹ç¬¬äºŒæ¡ â†’ æ’­çš„å°±æ¢æˆå®ƒ
       await page.getByTestId("sound-clip").nth(1).click();
 
-      // »»²ã¼¶£ºÒôĞ§ ¡ú ÅÔ°×£¨**±³¾°ÒôÀÖ²»ÔÚ¶ÔÏóÉÏ**ÁË£ºv15 ÆğËüÊÇÏîÄ¿¼¶È«¾ÖÉèÖÃ£¬
-      // ¼û `global-bgm.spec.ts`£»ÕâÀïÖ»ÁôÒôĞ§ / ÅÔ°×Á½µµ£©
-      await page.getByLabel("ÉùÒô²ã¼¶").selectOption("voice");
-      await expect(row).toContainText("ÅÔ°×");
+      // æ¢å±‚çº§ï¼šéŸ³æ•ˆ â†’ æ—ç™½ï¼ˆ**èƒŒæ™¯éŸ³ä¹ä¸åœ¨å¯¹è±¡ä¸Š**äº†ï¼šv15 èµ·å®ƒæ˜¯é¡¹ç›®çº§å…¨å±€è®¾ç½®ï¼Œ
+      // è§ `global-bgm.spec.ts`ï¼›è¿™é‡Œåªç•™éŸ³æ•ˆ / æ—ç™½ä¸¤æ¡£ï¼‰
+      await page.getByLabel("å£°éŸ³å±‚çº§").selectOption("voice");
+      await expect(row).toContainText("æ—ç™½");
 
-      // ÂäÅÌ£º¼Ó½øÀ´µÄÇåµ¥ + Ñ¡ÖĞµÄÄÇÌõ + ²ã¼¶£¬¶ÔÏóºÍÊµÌåÒ»Ñù°ÚÔÚÊÀ½çÔ­µã¡£
+      // è½ç›˜ï¼šåŠ è¿›æ¥çš„æ¸…å• + é€‰ä¸­çš„é‚£æ¡ + å±‚çº§ï¼Œå¯¹è±¡å’Œå®ä½“ä¸€æ ·æ‘†åœ¨ä¸–ç•ŒåŸç‚¹ã€‚
       //
-      // **ÕâÀï±È½á¹¹¡¢²»±È¾ßÌå id**£º³¡¾°ÎÄ¼ş°´Éè¼Æ´æ**ËØ²Ä GUID**¶ø²»ÊÇÂß¼­Â·¾¶
-      // £¨`sceneAssetRefsToGuids`£ºÄÚ´æÀïÊÇÂß¼­ ID£¬ÂäÅÌ»» GUID£¬ÕâÑù¸ÄÎÄ¼şÃû²»»á¶ÏÒıÓÃ£©¡£
-      // ¡¸ÄÄÌõÊÇÄÄÌõ¡¹ÓÉÉÏÃæÄÇ¼¸Ìõ UI ¶ÏÑÔ¶µ×¡¡ª¡ªĞ¡·½¿éÒÀ´ÎÊÇ step1 Óë step2£¬
-      // ÇÒµãµÚ¶şÌõÖ®ºóÑ¡ÖĞµÄÊÇµÚ¶şÌõ¡£
+      // **è¿™é‡Œæ¯”ç»“æ„ã€ä¸æ¯”å…·ä½“ id**ï¼šåœºæ™¯æ–‡ä»¶æŒ‰è®¾è®¡å­˜**ç´ æ GUID**è€Œä¸æ˜¯é€»è¾‘è·¯å¾„
+      // ï¼ˆ`sceneAssetRefsToGuids`ï¼šå†…å­˜é‡Œæ˜¯é€»è¾‘ IDï¼Œè½ç›˜æ¢ GUIDï¼Œè¿™æ ·æ”¹æ–‡ä»¶åä¸ä¼šæ–­å¼•ç”¨ï¼‰ã€‚
+      // ã€Œå“ªæ¡æ˜¯å“ªæ¡ã€ç”±ä¸Šé¢é‚£å‡ æ¡ UI æ–­è¨€å…œä½â€”â€”å°æ–¹å—ä¾æ¬¡æ˜¯ step1 ä¸ step2ï¼Œ
+      // ä¸”ç‚¹ç¬¬äºŒæ¡ä¹‹åé€‰ä¸­çš„æ˜¯ç¬¬äºŒæ¡ã€‚
       await expect
         .poll(async () => {
           const saved = await readSceneSound(request, project, SCENE);
@@ -222,14 +222,14 @@ test.describe("¶¯×÷¶ÔÏó£º²¥·ÅÉùÒô", () => {
     }
   });
 
-  test("ÊÀ½çÀï¿´µÃ¼û£º»­²¼ÉÏÊÇÒ»Ã¶ÒôÆµ»Õ±ê£¬ÄÜµãÑ¡¡¢ÄÜÍÏ", async ({ page, request }) => {
+  test("ä¸–ç•Œé‡Œçœ‹å¾—è§ï¼šç”»å¸ƒä¸Šæ˜¯ä¸€æšéŸ³é¢‘å¾½æ ‡ï¼Œèƒ½ç‚¹é€‰ã€èƒ½æ‹–", async ({ page, request }) => {
     const project = await newProject(request);
     try {
-      // Ò»¸ö°ÚÔÚÊÀ½çÔ­µãµÄÉùÒô¶ÔÏó£¨ÊÖĞ´ÎÄ¼şÀïµÄÑù×Ó£ºkind + PlaySound ×é¼ş£©
+      // ä¸€ä¸ªæ‘†åœ¨ä¸–ç•ŒåŸç‚¹çš„å£°éŸ³å¯¹è±¡ï¼ˆæ‰‹å†™æ–‡ä»¶é‡Œçš„æ ·å­ï¼škind + PlaySound ç»„ä»¶ï¼‰
       await seedProjectDoc(request, project, [
         sceneDoc(SCENE, [
           withComponent(
-            gameObjectDoc("½Å²½", "PlaySound", { x: 0, y: 0 }),
+            gameObjectDoc("è„šæ­¥", "PlaySound", { x: 0, y: 0 }),
             COMPONENT.playSound,
             { clips: [], layer: "sfx" },
           ),
@@ -240,24 +240,24 @@ test.describe("¶¯×÷¶ÔÏó£º²¥·ÅÉùÒô", () => {
       await openProject(page, project);
       await openLeftTab(page, "hierarchy");
 
-      // ÏñËØ²ÉÑùÓëµã»÷¶¼ÓÃ**¾«È·**»»Ëã£º²ÉÑùµã±ØĞëÂäÔÚÍ¼±êÉÏ£¬µã»÷µã±ØĞëÂäÔÚ 7px ¼¶±ğµÄ
-      // ÊÖ±úÉÏ¡ª¡ªÁ½Õß¶¼²»ÄÜÓÃ¡¸ÊÀ½çÔ­µã = »­²¼ÖĞĞÄ¡¹ÄÇÌõ½üËÆ
+      // åƒç´ é‡‡æ ·ä¸ç‚¹å‡»éƒ½ç”¨**ç²¾ç¡®**æ¢ç®—ï¼šé‡‡æ ·ç‚¹å¿…é¡»è½åœ¨å›¾æ ‡ä¸Šï¼Œç‚¹å‡»ç‚¹å¿…é¡»è½åœ¨ 7px çº§åˆ«çš„
+      // æ‰‹æŸ„ä¸Šâ€”â€”ä¸¤è€…éƒ½ä¸èƒ½ç”¨ã€Œä¸–ç•ŒåŸç‚¹ = ç”»å¸ƒä¸­å¿ƒã€é‚£æ¡è¿‘ä¼¼
       const origin = await preciseWorldPoint(page, { x: 0, y: 0 });
 
-      // 1) »­³öÀ´ÁË£ºÅÆÃæÊÇ**ÊµÉ«**Å¯³È£¨Å¯¶ÈºÜ¸ß£©£¬ÅÔ±ßµÄÆåÅÌµ×ÎÆÊÇÖĞĞÔ»Ò£¨Å¯¶È ¡Ö 0£©
+      // 1) ç”»å‡ºæ¥äº†ï¼šç‰Œé¢æ˜¯**å®è‰²**æš–æ©™ï¼ˆæš–åº¦å¾ˆé«˜ï¼‰ï¼Œæ—è¾¹çš„æ£‹ç›˜åº•çº¹æ˜¯ä¸­æ€§ç°ï¼ˆæš–åº¦ â‰ˆ 0ï¼‰
       const plainRedness = await redness(page, await preciseWorldPoint(page, { x: 240, y: 0 }));
       await expect.poll(() => redness(page, origin)).toBeGreaterThan(plainRedness + 20);
 
-      // 2) µãµÃµ½£ºÊ°È¡ÓÃµÄ»¹ÊÇÄÇ¿éÏÔÊ¾¾ØĞÎ£¨ÓëÊµÌåÍ¬Ò»Ì×£©
+      // 2) ç‚¹å¾—åˆ°ï¼šæ‹¾å–ç”¨çš„è¿˜æ˜¯é‚£å—æ˜¾ç¤ºçŸ©å½¢ï¼ˆä¸å®ä½“åŒä¸€å¥—ï¼‰
       await page.mouse.click(origin.x, origin.y);
       const soundRow = page.getByTestId("object-row").first();
       await expect(soundRow).toHaveAttribute("data-kind", "PlaySound");
       await expect(soundRow).toHaveAttribute("data-selected", "true");
 
-      // 3) ÓÃÊÖ±úÒÆ¶¯Ëü£ºÎ»ÖÃ¸ú×Å×ß£¬²¢×Ô¶¯ÂäÅÌ¡£
-      //    ×¢ÒâÊÇ¡¸ÒÆ¶¯¡¹¹¤¾ß¡ª¡ªÍÏ¶¯¹¤¾ßÖ»Æ½ÒÆ»­²¼£¬¶ÔÏó±¾Ìå²»»á±»¸úÊÖÍÏ×ß¡£
-      //    ÏÈ°Ñ¶ÔÏóÅ²µ½**»­²¼¿¿×ó**£ºÆ½°åÊúÆÁÏÂÊôĞÔÊÇ¸²¸ÇÊ½ÓÒ³éÌë£¬¶ÔÏó°ÚÔÚÕıÖĞÊ±
-      //    ËüÓÒ²àµÄÊÖ±ú»áÕıºÃÂäÔÚ³éÌëµ×ÏÂ£¨ÄÇÒ»ÏÂ¾Íµã²»ÖĞ£©
+      // 3) ç”¨æ‰‹æŸ„ç§»åŠ¨å®ƒï¼šä½ç½®è·Ÿç€èµ°ï¼Œå¹¶è‡ªåŠ¨è½ç›˜ã€‚
+      //    æ³¨æ„æ˜¯ã€Œç§»åŠ¨ã€å·¥å…·â€”â€”æ‹–åŠ¨å·¥å…·åªå¹³ç§»ç”»å¸ƒï¼Œå¯¹è±¡æœ¬ä½“ä¸ä¼šè¢«è·Ÿæ‰‹æ‹–èµ°ã€‚
+      //    å…ˆæŠŠå¯¹è±¡æŒªåˆ°**ç”»å¸ƒé å·¦**ï¼šå¹³æ¿ç«–å±ä¸‹å±æ€§æ˜¯è¦†ç›–å¼å³æŠ½å±‰ï¼Œå¯¹è±¡æ‘†åœ¨æ­£ä¸­æ—¶
+      //    å®ƒå³ä¾§çš„æ‰‹æŸ„ä¼šæ­£å¥½è½åœ¨æŠ½å±‰åº•ä¸‹ï¼ˆé‚£ä¸€ä¸‹å°±ç‚¹ä¸ä¸­ï¼‰
       await openInspector(page);
       await page.getByTestId("inspector-object-x").fill("-200");
       await page.getByTestId("inspector-object-y").fill("0");
@@ -284,21 +284,21 @@ test.describe("¶¯×÷¶ÔÏó£º²¥·ÅÉùÒô", () => {
   });
 
   /**
-   * Î´·ÅÖÃ£¨`position: null`£©µÄÉùÒô¶ÔÏó£º**»­²¼ÉÏÊ²Ã´Ò²»­²»³öÀ´**¡ª¡ªÃ»ÓĞÎ»ÖÃ¾ÍÃ»ÓĞÄÇ¿é
-   * ÏÔÊ¾¾ØĞÎ£¨ÓëÃ»ÂäÎ»µÄ¾«ÁéÍ¬Ò»¸ö¿Ú¾¶£©£¬ËùÒÔ¾ÉÎÄ¼ş / ÊÖĞ´ÎÄ¼şÀïµÄÕâÖÖ¶ÔÏóÒª¡¸ÂäÎ»¡¹²Å¿´µÃ¼û¡£
-   * ÕâÀï°ÑÄÇÌõÂ·¶¤×¡£ºÁĞ±íĞ´Ã÷¡¸Î´·ÅÖÃ¡¹¡ú ÊôĞÔÃæ°å¸ø¸ö×ø±ê ¡ú Í¼±ê³öÏÖ²¢ÂäÅÌ¡£
+   * æœªæ”¾ç½®ï¼ˆ`position: null`ï¼‰çš„å£°éŸ³å¯¹è±¡ï¼š**ç”»å¸ƒä¸Šä»€ä¹ˆä¹Ÿç”»ä¸å‡ºæ¥**â€”â€”æ²¡æœ‰ä½ç½®å°±æ²¡æœ‰é‚£å—
+   * æ˜¾ç¤ºçŸ©å½¢ï¼ˆä¸æ²¡è½ä½çš„ç²¾çµåŒä¸€ä¸ªå£å¾„ï¼‰ï¼Œæ‰€ä»¥æ—§æ–‡ä»¶ / æ‰‹å†™æ–‡ä»¶é‡Œçš„è¿™ç§å¯¹è±¡è¦ã€Œè½ä½ã€æ‰çœ‹å¾—è§ã€‚
+   * è¿™é‡ŒæŠŠé‚£æ¡è·¯é’‰ä½ï¼šåˆ—è¡¨å†™æ˜ã€Œæœªæ”¾ç½®ã€â†’ å±æ€§é¢æ¿ç»™ä¸ªåæ ‡ â†’ å›¾æ ‡å‡ºç°å¹¶è½ç›˜ã€‚
    */
-  test("Î´·ÅÖÃµÄÉùÒô¶ÔÏóÒªÂäÎ»²Å¿´µÃ¼û£¨ÁĞ±íĞ´Ã÷¡¸Î´·ÅÖÃ¡¹£¬¸ø×ø±êºóÍ¼±ê³öÏÖ£©", async ({
+  test("æœªæ”¾ç½®çš„å£°éŸ³å¯¹è±¡è¦è½ä½æ‰çœ‹å¾—è§ï¼ˆåˆ—è¡¨å†™æ˜ã€Œæœªæ”¾ç½®ã€ï¼Œç»™åæ ‡åå›¾æ ‡å‡ºç°ï¼‰", async ({
     page,
     request,
   }) => {
     const project = await newProject(request);
     try {
-      // ÊÖĞ´ÎÄ¼şÀïµÄÑù×Ó£ºÓĞ kind Óë PlaySound ×é¼ş£¬µ« position ÊÇ null
+      // æ‰‹å†™æ–‡ä»¶é‡Œçš„æ ·å­ï¼šæœ‰ kind ä¸ PlaySound ç»„ä»¶ï¼Œä½† position æ˜¯ null
       await seedProjectDoc(request, project, [
         sceneDoc(SCENE, [
           withComponent(
-            gameObjectDoc("½Å²½", "PlaySound", null),
+            gameObjectDoc("è„šæ­¥", "PlaySound", null),
             COMPONENT.playSound,
             { clips: [], layer: "sfx" },
           ),
@@ -309,21 +309,21 @@ test.describe("¶¯×÷¶ÔÏó£º²¥·ÅÉùÒô", () => {
       await openProject(page, project);
       await openLeftTab(page, "hierarchy");
 
-      // ÁĞ±íĞ´Ã÷¡¸Î´·ÅÖÃ¡¹£¬»­²¼ÉÏÃ»ÓĞËü£¨ÊÀ½çÔ­µãÄÇ¿é¾ÍÊÇ¿Õµ×ÎÆ£©
+      // åˆ—è¡¨å†™æ˜ã€Œæœªæ”¾ç½®ã€ï¼Œç”»å¸ƒä¸Šæ²¡æœ‰å®ƒï¼ˆä¸–ç•ŒåŸç‚¹é‚£å—å°±æ˜¯ç©ºåº•çº¹ï¼‰
       const row = page.getByTestId("object-row").first();
-      await expect(row).toContainText("Î´·ÅÖÃ");
+      await expect(row).toContainText("æœªæ”¾ç½®");
 
       const origin = await worldSamplePoint(page, { x: 0, y: 0 });
       const plainRedness = await redness(page, await worldSamplePoint(page, { x: 240, y: 0 }));
       expect(await redness(page, origin)).toBeLessThan(plainRedness + 6);
 
-      // ÊôĞÔÃæ°å¸øÒ»¸ö×ø±ê£¨ÕâÀïµã¡¸ÂäÎ»¡¹= Ò»¼ü·Åµ½ÊÀ½çÔ­µã£©¡ú Í¼±êÁ¢¿Ì³öÏÖ
+      // å±æ€§é¢æ¿ç»™ä¸€ä¸ªåæ ‡ï¼ˆè¿™é‡Œç‚¹ã€Œè½ä½ã€= ä¸€é”®æ”¾åˆ°ä¸–ç•ŒåŸç‚¹ï¼‰â†’ å›¾æ ‡ç«‹åˆ»å‡ºç°
       await selectObject(page, 0);
       await expect(page.getByTestId("place-object-at-origin")).toBeVisible();
       await page.getByTestId("place-object-at-origin").click();
 
       await expect.poll(() => redness(page, origin)).toBeGreaterThan(plainRedness + 20);
-      await expect(row).not.toContainText("Î´·ÅÖÃ");
+      await expect(row).not.toContainText("æœªæ”¾ç½®");
       await expect
         .poll(async () => (await readSceneSound(request, project, SCENE))?.position)
         .toEqual({ x: 0, y: 0 });
@@ -333,23 +333,23 @@ test.describe("¶¯×÷¶ÔÏó£º²¥·ÅÉùÒô", () => {
   });
 
   /**
-   * ²¥·Å / Í£Ö¹°´Å¥µÄ**ÄÜ²»ÄÜµã**£ºËæÊ±¶¼ÄÜµã¡ª¡ª±à¼­Æ÷Ö»**¼ÇÕË**£¨ÄÄÒ»²ã¸Ã²¥Ê²Ã´£©£¬
-   * Á¬ÉÏÁË¾ÍÏÂ·¢£¬Ã»Á¬ÉÏ¾ÍµÈÇ°¶ËÁ¬ÉÏ²¹·¢¡£ËùÒÔÕâÀï¶¤×¡¡¸µãµÃ¶¯ + ¼ÇÕË + ²»Ğ´ÎÄµµ¡¹¡£
+   * æ’­æ”¾ / åœæ­¢æŒ‰é’®çš„**èƒ½ä¸èƒ½ç‚¹**ï¼šéšæ—¶éƒ½èƒ½ç‚¹â€”â€”ç¼–è¾‘å™¨åª**è®°è´¦**ï¼ˆå“ªä¸€å±‚è¯¥æ’­ä»€ä¹ˆï¼‰ï¼Œ
+   * è¿ä¸Šäº†å°±ä¸‹å‘ï¼Œæ²¡è¿ä¸Šå°±ç­‰å‰ç«¯è¿ä¸Šè¡¥å‘ã€‚æ‰€ä»¥è¿™é‡Œé’‰ä½ã€Œç‚¹å¾—åŠ¨ + è®°è´¦ + ä¸å†™æ–‡æ¡£ã€ã€‚
    *
-   * ¡¸Ç°¶ËÒÑÁ¬ + Õæ»ØÖ´ + Á¬ÉÏ²¹·¢¡¹ÄÇÌõÁ´Â·ÔÚ `apps/backend/test/runtime-hub.test.ts`
-   * Óë `apps/editor/test/sound-playback.test.ts` Àï¶¤£¨²»ÔÚ e2e ³£×¤Ò»¸ö mock£º
-   * ÄÇ»áÈÃËùÓĞ²¢ĞĞÓÃÀı¶¼¿´µ½Ò»¸ö¡¸ÒÑÁ¬½ÓµÄÇ°¶Ë¡¹£©¡£
+   * ã€Œå‰ç«¯å·²è¿ + çœŸå›æ‰§ + è¿ä¸Šè¡¥å‘ã€é‚£æ¡é“¾è·¯åœ¨ `apps/backend/test/runtime-hub.test.ts`
+   * ä¸ `apps/editor/test/sound-playback.test.ts` é‡Œé’‰ï¼ˆä¸åœ¨ e2e å¸¸é©»ä¸€ä¸ª mockï¼š
+   * é‚£ä¼šè®©æ‰€æœ‰å¹¶è¡Œç”¨ä¾‹éƒ½çœ‹åˆ°ä¸€ä¸ªã€Œå·²è¿æ¥çš„å‰ç«¯ã€ï¼‰ã€‚
    */
-  test("²¥·Å / Í£Ö¹ËæÊ±¿Éµã£º±à¼­Ì¬µãÒ»ÏÂÖ»¼ÇÕË£¬²»Ğ´ÎÄµµ", async ({ page, request }) => {
+  test("æ’­æ”¾ / åœæ­¢éšæ—¶å¯ç‚¹ï¼šç¼–è¾‘æ€ç‚¹ä¸€ä¸‹åªè®°è´¦ï¼Œä¸å†™æ–‡æ¡£", async ({ page, request }) => {
     const project = await newProject(request);
     try {
-      // Ò»ÌõÒôÆµËØ²Ä£º´°¿ÚÀï²Å¼ÓµÃ½øÀ´
+      // ä¸€æ¡éŸ³é¢‘ç´ æï¼šçª—å£é‡Œæ‰åŠ å¾—è¿›æ¥
       const step1 = await uploadAudio(request, project, "step1.mp3");
 
       await seedProjectDoc(request, project, [
         sceneDoc(SCENE, [
           withComponent(
-            gameObjectDoc("½Å²½", "PlaySound", { x: 0, y: 0 }),
+            gameObjectDoc("è„šæ­¥", "PlaySound", { x: 0, y: 0 }),
             COMPONENT.playSound,
             { clips: [], layer: "sfx" },
           ),
@@ -364,14 +364,14 @@ test.describe("¶¯×÷¶ÔÏó£º²¥·ÅÉùÒô", () => {
       const play = page.getByTestId("sound-play");
       const stop = page.getByTestId("sound-stop");
 
-      // ±à¼­Ì¬£¨±à¼­Æ÷»¹Ã»Á¬·şÎñ¶Ë£©£ºÁ½¸ö°´Å¥¶¼**µãµÃ¶¯**£¬title Ğ´Ã÷°×¡¸ÒÑ¼ÇÂ¼¡¢µÈÁ¬ÉÏ²¹·¢¡¹£»
-      // Ò»ÌõÒôÆµ¶¼Ã»¼Ó ¡ú ¡¸²¥·Å¡¹ÖÃ»Ò£¬¡¸Í£Ö¹¡¹ÕÕÑùÄÜµã
+      // ç¼–è¾‘æ€ï¼ˆç¼–è¾‘å™¨è¿˜æ²¡è¿æœåŠ¡ç«¯ï¼‰ï¼šä¸¤ä¸ªæŒ‰é’®éƒ½**ç‚¹å¾—åŠ¨**ï¼Œtitle å†™æ˜ç™½ã€Œå·²è®°å½•ã€ç­‰è¿ä¸Šè¡¥å‘ã€ï¼›
+      // ä¸€æ¡éŸ³é¢‘éƒ½æ²¡åŠ  â†’ ã€Œæ’­æ”¾ã€ç½®ç°ï¼Œã€Œåœæ­¢ã€ç…§æ ·èƒ½ç‚¹
       await expect(play).toBeDisabled();
-      await expect(play).toHaveAttribute("title", /ÏÈ¼ÓÒ»ÌõÒôÆµ/);
+      await expect(play).toHaveAttribute("title", /å…ˆåŠ ä¸€æ¡éŸ³é¢‘/);
       await expect(stop).toBeEnabled();
-      await expect(stop).toHaveAttribute("title", /ÒÑ¼ÇÂ¼£º±à¼­Æ÷»¹Ã»Á¬ÉÏ·şÎñ¶Ë/);
+      await expect(stop).toHaveAttribute("title", /å·²è®°å½•ï¼šç¼–è¾‘å™¨è¿˜æ²¡è¿ä¸ŠæœåŠ¡ç«¯/);
 
-      // µã¡¸£« Ìí¼Ó¡¹¼ÓÒ»Ìõ ¡ú Ëü×Ô¶¯³ÉÎª¡¸²¥µÄÄÇÌõ¡¹£¬¡¸²¥·Å¡¹¿ÉÒÔµãÁË
+      // ç‚¹ã€Œï¼‹ æ·»åŠ ã€åŠ ä¸€æ¡ â†’ å®ƒè‡ªåŠ¨æˆä¸ºã€Œæ’­çš„é‚£æ¡ã€ï¼Œã€Œæ’­æ”¾ã€å¯ä»¥ç‚¹äº†
       await page.getByTestId("sound-add").click();
       const picker = page.getByTestId("audio-picker-dialog");
       await expect(picker).toBeVisible();
@@ -383,21 +383,21 @@ test.describe("¶¯×÷¶ÔÏó£º²¥·ÅÉùÒô", () => {
       await expect(page.getByTestId("sound-clip")).toHaveAttribute("data-selected", "true");
       await expect(page.getByTestId("sound-clip")).toHaveText("step1");
       await expect(play).toBeEnabled();
-      await expect(play).toHaveAttribute("title", /ÒÑ¼ÇÂ¼£º±à¼­Æ÷»¹Ã»Á¬ÉÏ·şÎñ¶Ë/);
+      await expect(play).toHaveAttribute("title", /å·²è®°å½•ï¼šç¼–è¾‘å™¨è¿˜æ²¡è¿ä¸ŠæœåŠ¡ç«¯/);
 
-      // µã¡¸²¥·Å¡¹£º**¿´µÃ¼ûµÄ±ä»¯** ¡ª¡ª °´Å¥Ğ´³É¡¸²¥·ÅÖĞ¡¹²¢¸ßÁÁ£¬ÅÔ±ßĞ´Ã÷ÕıÔÚ²¥·ÅÊ²Ã´£»
-      // Ö»¼ÇÕË + ÏÂ·¢Ö¸Áî ¡ª¡ª Ò³ÃæÉÏÈÔÈ»Ã»ÓĞ²¥·ÅÆ÷£¬±£´æ×´Ì¬Ò²»¹ÊÇ¡¸ÒÑ±£´æ¡¹£¨²»Ğ´ÎÄµµ£©
+      // ç‚¹ã€Œæ’­æ”¾ã€ï¼š**çœ‹å¾—è§çš„å˜åŒ–** â€”â€” æŒ‰é’®å†™æˆã€Œæ’­æ”¾ä¸­ã€å¹¶é«˜äº®ï¼Œæ—è¾¹å†™æ˜æ­£åœ¨æ’­æ”¾ä»€ä¹ˆï¼›
+      // åªè®°è´¦ + ä¸‹å‘æŒ‡ä»¤ â€”â€” é¡µé¢ä¸Šä»ç„¶æ²¡æœ‰æ’­æ”¾å™¨ï¼Œä¿å­˜çŠ¶æ€ä¹Ÿè¿˜æ˜¯ã€Œå·²ä¿å­˜ã€ï¼ˆä¸å†™æ–‡æ¡£ï¼‰
       await expect(page.getByTestId("sound-status")).toHaveAttribute("data-state", "idle");
-      await expect(page.getByTestId("sound-status")).toHaveText("Ã»ÔÚ²¥·Å");
+      await expect(page.getByTestId("sound-status")).toHaveText("æ²¡åœ¨æ’­æ”¾");
 
       await play.click();
-      await expect(play).toHaveText("²¥·ÅÖĞ");
+      await expect(play).toHaveText("æ’­æ”¾ä¸­");
       await expect(play).toHaveAttribute("data-playing", "true");
       await expect(page.getByTestId("sound-status")).toHaveAttribute("data-state", "playing");
-      await expect(page.getByTestId("sound-status")).toHaveText("ÕıÔÚ²¥·Å£ºstep1");
+      await expect(page.getByTestId("sound-status")).toHaveText("æ­£åœ¨æ’­æ”¾ï¼šstep1");
 
-      // »á¶¯µÄÄÇ¸öÍ¼±ê£ºÈı¸ùÉùÒôÌõ**ÕæÔÚÅÜ¶¯»­**£¨²»ÊÇÖ»·ÅÁËÒ»ÕÅ¾²Ì¬Í¼£©
-      // ¡ª¡ª ÏÈ¹Øµô¡¸¸úËæÏµÍ³¼õÉÙ¶¯Ğ§¡¹£¬·ñÔòÏµÍ³Æ«ºÃ»áÈÃËü°´¹æ·¶Í£ÏÂÀ´£¨ÄÇÊ±¿¿ÎÄ×Ö±í´ï£©
+      // ä¼šåŠ¨çš„é‚£ä¸ªå›¾æ ‡ï¼šä¸‰æ ¹å£°éŸ³æ¡**çœŸåœ¨è·‘åŠ¨ç”»**ï¼ˆä¸æ˜¯åªæ”¾äº†ä¸€å¼ é™æ€å›¾ï¼‰
+      // â€”â€” å…ˆå…³æ‰ã€Œè·Ÿéšç³»ç»Ÿå‡å°‘åŠ¨æ•ˆã€ï¼Œå¦åˆ™ç³»ç»Ÿåå¥½ä¼šè®©å®ƒæŒ‰è§„èŒƒåœä¸‹æ¥ï¼ˆé‚£æ—¶é æ–‡å­—è¡¨è¾¾ï¼‰
       await page.emulateMedia({ reducedMotion: "no-preference" });
       const wave = play.getByTestId("sound-wave").locator("span").first();
       await expect(wave).toBeVisible();
@@ -411,18 +411,18 @@ test.describe("¶¯×÷¶ÔÏó£º²¥·ÅÉùÒô", () => {
       await expect(page.locator("audio")).toHaveCount(0);
       await expect(page.getByTestId("status-scene-save")).toHaveAttribute("data-state", "saved");
 
-      // µã¡¸Í£Ö¹¡¹£º×´Ì¬»ØÂäµ½¡¸Ã»ÔÚ²¥·Å¡¹£¬°´Å¥Ò²±ä»Ø¡¸²¥·Å¡¹
+      // ç‚¹ã€Œåœæ­¢ã€ï¼šçŠ¶æ€å›è½åˆ°ã€Œæ²¡åœ¨æ’­æ”¾ã€ï¼ŒæŒ‰é’®ä¹Ÿå˜å›ã€Œæ’­æ”¾ã€
       await stop.click();
-      await expect(play).toHaveText("? ²¥·Å");
+      await expect(play).toHaveText("â–¶ æ’­æ”¾");
       await expect(play).toHaveAttribute("data-playing", "false");
       await expect(page.getByTestId("sound-wave")).toHaveCount(0);
       await expect(page.getByTestId("sound-status")).toHaveAttribute("data-state", "idle");
-      await expect(page.getByTestId("sound-status")).toHaveText("Ã»ÔÚ²¥·Å");
+      await expect(page.getByTestId("sound-status")).toHaveText("æ²¡åœ¨æ’­æ”¾");
 
       /*
-        ¡¸ÇĞµ½ÔËĞĞÌ¬¡¢Ç°¶Ë»¹Ã»Á¬ ¡ú ÕÕÑùµãµÃ¶¯£¬title »»³É¡ºÇ°¶ËÎ´Á¬½Ó£¬µÈËüÁ¬ÉÏ²¹·¢¡»¡¹ÕâÌõ
-        **²»ÔÚÕâÀïµã**£ºÔËĞĞÌ¬ÊÇ**·şÎñ¶Ë×´Ì¬**£¨È«¾Ö£©£¬e2e ²¢ĞĞÓÃÀı»á»¥ÏàÓ°Ïì£»
-        ËüÓÉ jsdom µ¥²â¶¤£¨`apps/editor/test/sound-object.test.tsx` µÄ¡¸ÔËĞĞÌ¬µ«Ç°¶ËÃ»Á¬¡¹£©¡£
+        ã€Œåˆ‡åˆ°è¿è¡Œæ€ã€å‰ç«¯è¿˜æ²¡è¿ â†’ ç…§æ ·ç‚¹å¾—åŠ¨ï¼Œtitle æ¢æˆã€å‰ç«¯æœªè¿æ¥ï¼Œç­‰å®ƒè¿ä¸Šè¡¥å‘ã€ã€è¿™æ¡
+        **ä¸åœ¨è¿™é‡Œç‚¹**ï¼šè¿è¡Œæ€æ˜¯**æœåŠ¡ç«¯çŠ¶æ€**ï¼ˆå…¨å±€ï¼‰ï¼Œe2e å¹¶è¡Œç”¨ä¾‹ä¼šäº’ç›¸å½±å“ï¼›
+        å®ƒç”± jsdom å•æµ‹é’‰ï¼ˆ`apps/editor/test/sound-object.test.tsx` çš„ã€Œè¿è¡Œæ€ä½†å‰ç«¯æ²¡è¿ã€ï¼‰ã€‚
       */
     } finally {
       await dropProject(request, project);
@@ -430,22 +430,22 @@ test.describe("¶¯×÷¶ÔÏó£º²¥·ÅÉùÒô", () => {
   });
 
   /**
-   * **»­²¼ÉÏ¿´µÃ¼û¡¸ÔÚ²¥¡¹**£ºÕıÔÚ²¥µÄÉùÒô¶ÔÏó£¬Í¼±êÊÇ»îµÄ£¨Ò»È¦È¦ÍùÍâÀ©µÄÉù²¨ + À®°ÈºôÎü£©¡£
+   * **ç”»å¸ƒä¸Šçœ‹å¾—è§ã€Œåœ¨æ’­ã€**ï¼šæ­£åœ¨æ’­çš„å£°éŸ³å¯¹è±¡ï¼Œå›¾æ ‡æ˜¯æ´»çš„ï¼ˆä¸€åœˆåœˆå¾€å¤–æ‰©çš„å£°æ³¢ + å–‡å­å‘¼å¸ï¼‰ã€‚
    *
-   * ±à¼­Æ÷×Ô¼º²»³öÉù£¬ËùÒÔÕâÌõ¡¸¿´µÃ¼ûµÄ±ä»¯¡¹¾ÍÊÇËüÔÚÏìµÄÎ¨Ò»Ö¤¾İ¡ª¡ªÕâÀïÓÃ¡¸Ïà¸ôÒ»»á¶ùµÄ
-   * Á½Ö¡»­²¼**ÏñËØÊÇ·ñÏàÍ¬**¡¹À´¶¤£ºÃ»ÔÚ²¥Ê±Ò»Ö¡¶¼²»¸Ã±ä£¬²¥ÆğÀ´±ØĞë±ä£¬Í£µôÓÖ»Øµ½²»±ä¡£
-   * ¶¯»­±¾ÉíµÄ²ÎÊı£¨È¦Êı / Ô½À©Ô½µ­ / ÖÜÆÚĞÔ£©ÔÚ `packages/renderer/test/audio-badge.test.ts` Àï¶¤¡£
+   * ç¼–è¾‘å™¨è‡ªå·±ä¸å‡ºå£°ï¼Œæ‰€ä»¥è¿™æ¡ã€Œçœ‹å¾—è§çš„å˜åŒ–ã€å°±æ˜¯å®ƒåœ¨å“çš„å”¯ä¸€è¯æ®â€”â€”è¿™é‡Œç”¨ã€Œç›¸éš”ä¸€ä¼šå„¿çš„
+   * ä¸¤å¸§ç”»å¸ƒ**åƒç´ æ˜¯å¦ç›¸åŒ**ã€æ¥é’‰ï¼šæ²¡åœ¨æ’­æ—¶ä¸€å¸§éƒ½ä¸è¯¥å˜ï¼Œæ’­èµ·æ¥å¿…é¡»å˜ï¼Œåœæ‰åˆå›åˆ°ä¸å˜ã€‚
+   * åŠ¨ç”»æœ¬èº«çš„å‚æ•°ï¼ˆåœˆæ•° / è¶Šæ‰©è¶Šæ·¡ / å‘¨æœŸæ€§ï¼‰åœ¨ `packages/renderer/test/audio-badge.test.ts` é‡Œé’‰ã€‚
    */
-  test("ÕıÔÚ²¥µÄÉùÒô¶ÔÏó£º»­²¼ÉÏµÄÍ¼±ê»á¶¯£¬Í£µô¾Í²»¶¯ÁË", async ({ page, request }) => {
+  test("æ­£åœ¨æ’­çš„å£°éŸ³å¯¹è±¡ï¼šç”»å¸ƒä¸Šçš„å›¾æ ‡ä¼šåŠ¨ï¼Œåœæ‰å°±ä¸åŠ¨äº†", async ({ page, request }) => {
     const project = await newProject(request);
     try {
       const clip = await uploadAudio(request, project, "step1.mp3");
 
       await seedProjectDoc(request, project, [
         sceneDoc(SCENE, [
-          // ¼Ó½øÀ´Ò»Ìõ²¢Ñ¡ÖĞËü£¨`picked`£©£¬·ñÔò¡¸²¥·Å¡¹µã²»ÁË
+          // åŠ è¿›æ¥ä¸€æ¡å¹¶é€‰ä¸­å®ƒï¼ˆ`picked`ï¼‰ï¼Œå¦åˆ™ã€Œæ’­æ”¾ã€ç‚¹ä¸äº†
           withComponent(
-            gameObjectDoc("½Å²½", "PlaySound", { x: 0, y: 0 }),
+            gameObjectDoc("è„šæ­¥", "PlaySound", { x: 0, y: 0 }),
             COMPONENT.playSound,
             { clips: [clip], picked: clip, layer: "sfx" },
           ),
@@ -459,12 +459,12 @@ test.describe("¶¯×÷¶ÔÏó£º²¥·ÅÉùÒô", () => {
 
       const canvas = page.locator('[data-testid="scene-viewport"] canvas');
 
-      // 1) »¹Ã»²¥£ºÍ¼±êÊÇ¾²Ö¹µÄ¡ª¡ªÏà¸ôÒ»»á¶ùÁ½Ö¡**Ò»Ä£Ò»Ñù**
+      // 1) è¿˜æ²¡æ’­ï¼šå›¾æ ‡æ˜¯é™æ­¢çš„â€”â€”ç›¸éš”ä¸€ä¼šå„¿ä¸¤å¸§**ä¸€æ¨¡ä¸€æ ·**
       const still = await canvas.screenshot();
       await page.waitForTimeout(200);
       expect((await canvas.screenshot()).equals(still)).toBe(true);
 
-      // 2) µã¡¸²¥·Å¡¹£¨Ö»¼ÇÕË + ÏÂ·¢Ö¸Áî£¬±à¼­Æ÷²»³öÉù£©£ºÍ¼±ê¶¯ÆğÀ´ÁË
+      // 2) ç‚¹ã€Œæ’­æ”¾ã€ï¼ˆåªè®°è´¦ + ä¸‹å‘æŒ‡ä»¤ï¼Œç¼–è¾‘å™¨ä¸å‡ºå£°ï¼‰ï¼šå›¾æ ‡åŠ¨èµ·æ¥äº†
       await page.getByTestId("sound-play").click();
       await expect(page.getByTestId("sound-status")).toHaveAttribute("data-state", "playing");
 
@@ -472,7 +472,7 @@ test.describe("¶¯×÷¶ÔÏó£º²¥·ÅÉùÒô", () => {
       await page.waitForTimeout(200);
       expect((await canvas.screenshot()).equals(playing)).toBe(false);
 
-      // 3) Í£µô£º»Øµ½¾²Ö¹£¨ÔÙÈ¡Á½Ö¡ÓÖÒ»ÑùÁË£©
+      // 3) åœæ‰ï¼šå›åˆ°é™æ­¢ï¼ˆå†å–ä¸¤å¸§åˆä¸€æ ·äº†ï¼‰
       await page.getByTestId("sound-stop").click();
       await expect(page.getByTestId("sound-status")).toHaveAttribute("data-state", "idle");
 
@@ -486,14 +486,14 @@ test.describe("¶¯×÷¶ÔÏó£º²¥·ÅÉùÒô", () => {
 });
 
 /* ------------------------------------------------------------------
-   ÉùÒôÃüÁîÕæµÄ»áÏÂ·¢µ½Ç°¶Ë£¨`play_sound` / `pause_sound` / `resume_sound` / `stop_sound`£©¡£
+   å£°éŸ³å‘½ä»¤çœŸçš„ä¼šä¸‹å‘åˆ°å‰ç«¯ï¼ˆ`play_sound` / `pause_sound` / `resume_sound` / `stop_sound`ï¼‰ã€‚
 
-   Óë `video-object.spec.ts` Í¬Ò»Ì××ö·¨£ºä¯ÀÀÆ÷ÀïÔÙ¿ªÒ»Ìõ**¼ÙÇ°¶Ë** WebSocket£¨`/client`£¬
-   Óë Unity ×ßÍ¬Ò»ÌõĞ­Òé£©£¬°ÑÊÕµ½µÄÃüÁî¼ÇÔÚ `window` ÉÏ²¢°´Ğ­Òé»ØÖ´¡£
-   ±à¼­Æ÷×Ô¼º²»³öÉù£¬ËùÒÔÕâÀï¶¤µÄÊÇ¡¸°´ÏÂÈ¥µÄÄÇ¼¸¸ö¼üÈ·Êµ·¢³öÈ¥ÁË¡¹ÕâÒ»°ë¡£
+   ä¸ `video-object.spec.ts` åŒä¸€å¥—åšæ³•ï¼šæµè§ˆå™¨é‡Œå†å¼€ä¸€æ¡**å‡å‰ç«¯** WebSocketï¼ˆ`/client`ï¼Œ
+   ä¸ Unity èµ°åŒä¸€æ¡åè®®ï¼‰ï¼ŒæŠŠæ”¶åˆ°çš„å‘½ä»¤è®°åœ¨ `window` ä¸Šå¹¶æŒ‰åè®®å›æ‰§ã€‚
+   ç¼–è¾‘å™¨è‡ªå·±ä¸å‡ºå£°ï¼Œæ‰€ä»¥è¿™é‡Œé’‰çš„æ˜¯ã€ŒæŒ‰ä¸‹å»çš„é‚£å‡ ä¸ªé”®ç¡®å®å‘å‡ºå»äº†ã€è¿™ä¸€åŠã€‚
    ------------------------------------------------------------------ */
 
-/** ¼ÙÇ°¶ËÊÕµ½µÄÒ»ÌõÃüÁî£¨ÕâÌõÓÃÀıÖ»¹ØĞÄ kind / objectId / layer£©¡£ */
+/** å‡å‰ç«¯æ”¶åˆ°çš„ä¸€æ¡å‘½ä»¤ï¼ˆè¿™æ¡ç”¨ä¾‹åªå…³å¿ƒ kind / objectId / layerï¼‰ã€‚ */
 interface FakeSoundCommand {
   readonly kind?: string;
   readonly objectId?: string;
@@ -506,15 +506,15 @@ interface FakeSoundWindow {
   __soundSocket?: WebSocket;
 }
 
-/** ÔËĞĞÌ¬ÊÇ·şÎñ¶ËÈ«¾Öµ¥Àı£ºÖ»ÔÚÒ»¸öµµÎ»ÉÏÅÜ£¬ÃâµÃ²¢ĞĞµµÎ»»¥Ïà¿ª¹Ø¡£ */
+/** è¿è¡Œæ€æ˜¯æœåŠ¡ç«¯å…¨å±€å•ä¾‹ï¼šåªåœ¨ä¸€ä¸ªæ¡£ä½ä¸Šè·‘ï¼Œå…å¾—å¹¶è¡Œæ¡£ä½äº’ç›¸å¼€å…³ã€‚ */
 function skipOutsideDesktop(testInfo: TestInfo): void {
   test.skip(
     !testInfo.project.name.startsWith("desktop"),
-    "ÔËĞĞÌ¬ÊÇÈ«¾Ö×´Ì¬£ºÖ»ÔÚÒ»¸öµµÎ»ÉÏÅÜ£¬ÃâµÃ²¢ĞĞµµÎ»»¥Ïà¿ª¹Ø",
+    "è¿è¡Œæ€æ˜¯å…¨å±€çŠ¶æ€ï¼šåªåœ¨ä¸€ä¸ªæ¡£ä½ä¸Šè·‘ï¼Œå…å¾—å¹¶è¡Œæ¡£ä½äº’ç›¸å¼€å…³",
   );
 }
 
-/** ÔÚÒ³ÃæÀï¿ªÒ»Ìõ**¼ÙÇ°¶Ë**Á¬½Ó£ºÎÕÊÖ¡¢ÊÕ³¡¾°¡¢°ÑÃüÁî¼ÇÏÂÀ´²¢°´Ğ­Òé»ØÖ´¡£ */
+/** åœ¨é¡µé¢é‡Œå¼€ä¸€æ¡**å‡å‰ç«¯**è¿æ¥ï¼šæ¡æ‰‹ã€æ”¶åœºæ™¯ã€æŠŠå‘½ä»¤è®°ä¸‹æ¥å¹¶æŒ‰åè®®å›æ‰§ã€‚ */
 async function connectFakeSoundClient(page: Page, port: number): Promise<void> {
   await page.evaluate((clientPort) => {
     const scope = window as unknown as FakeSoundWindow;
@@ -528,10 +528,10 @@ async function connectFakeSoundClient(page: Page, port: number): Promise<void> {
       socket.send(
         JSON.stringify({
           type: "client_hello",
-          // Óë `@dts/protocol` µÄ `PROTOCOL_VERSION` Ò»ÖÂ£¨ÕâÀïĞ´ËÀ£ºe2e ²»ÊÇ workspace °ü£¬
-          // ÄÃ²»µ½ÄÇ¸ö³£Á¿£»°æ±¾Ò»ÉıÕâÀï»áÁ¬²»ÉÏ¡¢ÓÃÀı»áµ±³¡Ê§°Ü£¬ÌáĞÑÍ¬²½¸Ä£©
+          // ä¸ `@dts/protocol` çš„ `PROTOCOL_VERSION` ä¸€è‡´ï¼ˆè¿™é‡Œå†™æ­»ï¼še2e ä¸æ˜¯ workspace åŒ…ï¼Œ
+          // æ‹¿ä¸åˆ°é‚£ä¸ªå¸¸é‡ï¼›ç‰ˆæœ¬ä¸€å‡è¿™é‡Œä¼šè¿ä¸ä¸Šã€ç”¨ä¾‹ä¼šå½“åœºå¤±è´¥ï¼Œæé†’åŒæ­¥æ”¹ï¼‰
           protocolVersion: 21,
-          name: "e2e ¼ÙÇ°¶Ë",
+          name: "e2e å‡å‰ç«¯",
           version: "0.0.0",
         }),
       );
@@ -556,7 +556,7 @@ async function connectFakeSoundClient(page: Page, port: number): Promise<void> {
             type: "command_result",
             requestId: parsed.requestId,
             ok: true,
-            effects: ["e2e ¼ÙÇ°¶ËÊÕµ½ÉùÒôÃüÁî"],
+            effects: ["e2e å‡å‰ç«¯æ”¶åˆ°å£°éŸ³å‘½ä»¤"],
           }),
         );
       }
@@ -567,10 +567,10 @@ async function connectFakeSoundClient(page: Page, port: number): Promise<void> {
 const fakeSoundCommands = async (page: Page): Promise<readonly FakeSoundCommand[]> =>
   page.evaluate(() => (window as unknown as FakeSoundWindow).__soundCommands ?? []);
 
-test.describe("ÉùÒô£ºÃüÁîÏÂ·¢¸øÇ°¶Ë", { tag: "@runtime" }, () => {
+test.describe("å£°éŸ³ï¼šå‘½ä»¤ä¸‹å‘ç»™å‰ç«¯", { tag: "@runtime" }, () => {
   test.describe.configure({ mode: "serial" });
 
-  test("²¥·Å / ÔİÍ£ / ¼ÌĞø / Í£Ö¹ ¡ú Ç°¶ËÊÕµ½ËÄÌõÃüÁî£¨¿Ø¼şĞĞÓëÊÓÆµÄÇ×éÒ»ÖÂ£©", async ({
+  test("æ’­æ”¾ / æš‚åœ / ç»§ç»­ / åœæ­¢ â†’ å‰ç«¯æ”¶åˆ°å››æ¡å‘½ä»¤ï¼ˆæ§ä»¶è¡Œä¸è§†é¢‘é‚£ç»„ä¸€è‡´ï¼‰", async ({
     page,
     request,
   }, testInfo) => {
@@ -582,14 +582,14 @@ test.describe("ÉùÒô£ºÃüÁîÏÂ·¢¸øÇ°¶Ë", { tag: "@runtime" }, () => {
     try {
       const clip = await uploadAudio(request, project, "step1.mp3");
       const soundDoc = withComponent(
-        gameObjectDoc("½Å²½", "PlaySound", { x: 0, y: 0 }),
+        gameObjectDoc("è„šæ­¥", "PlaySound", { x: 0, y: 0 }),
         COMPONENT.playSound,
         { clips: [clip], picked: clip, layer: "sfx" },
       );
       await seedProjectDoc(request, project, [sceneDoc(SCENE, [soundDoc])]);
-      await openFirstObject(page, project, "½Å²½");
+      await openFirstObject(page, project, "è„šæ­¥");
 
-      // ½øÈëÔËĞĞÌ¬£ºÃ»µã¡¸ÔËĞĞ¡¹Ö®Ç°£¬Ç°¶Ë¸ù±¾Á¬²»ÉÏ£¨503 ¾ÜÎÕÊÖ£©
+      // è¿›å…¥è¿è¡Œæ€ï¼šæ²¡ç‚¹ã€Œè¿è¡Œã€ä¹‹å‰ï¼Œå‰ç«¯æ ¹æœ¬è¿ä¸ä¸Šï¼ˆ503 æ‹’æ¡æ‰‹ï¼‰
       await page.getByTestId("mode-run").click();
       await expect(page.getByTestId("status-mode")).toHaveAttribute("data-mode", "run");
 
@@ -600,7 +600,7 @@ test.describe("ÉùÒô£ºÃüÁîÏÂ·¢¸øÇ°¶Ë", { tag: "@runtime" }, () => {
       const kinds = async (): Promise<string[]> =>
         (await fakeSoundCommands(page)).map((item) => item.kind ?? "");
 
-      // ²¥·Å ¡ú play_sound{objectId, layer}£¨²¥ÄÄÒ»ÌõÓÉÇ°¶Ë´Ó¾µÏñÀï¶Á£¬ÃüÁîÀï²»´ø£©
+      // æ’­æ”¾ â†’ play_sound{objectId, layer}ï¼ˆæ’­å“ªä¸€æ¡ç”±å‰ç«¯ä»é•œåƒé‡Œè¯»ï¼Œå‘½ä»¤é‡Œä¸å¸¦ï¼‰
       await page.getByTestId("sound-play").click();
       await expect.poll(async () => (await kinds()).filter((kind) => kind === "play_sound").length).toBe(1);
       await expect(page.getByTestId("sound-status")).toHaveAttribute("data-state", "playing");
@@ -610,7 +610,7 @@ test.describe("ÉùÒô£ºÃüÁîÏÂ·¢¸øÇ°¶Ë", { tag: "@runtime" }, () => {
         layer: "sfx",
       });
 
-      // ÔİÍ£ / ¼ÌĞø£º°´**²ã¼¶**¸ø£¨Í¬²ãÖ»ÏìÒ»Ìõ£¬ËùÒÔ²»´ø objectId£©
+      // æš‚åœ / ç»§ç»­ï¼šæŒ‰**å±‚çº§**ç»™ï¼ˆåŒå±‚åªå“ä¸€æ¡ï¼Œæ‰€ä»¥ä¸å¸¦ objectIdï¼‰
       await page.getByTestId("sound-pause").click();
       await expect.poll(async () => (await kinds()).filter((kind) => kind === "pause_sound").length).toBe(1);
       await expect(page.getByTestId("sound-status")).toHaveAttribute("data-state", "paused");
@@ -623,15 +623,15 @@ test.describe("ÉùÒô£ºÃüÁîÏÂ·¢¸øÇ°¶Ë", { tag: "@runtime" }, () => {
       await expect.poll(async () => (await kinds()).filter((kind) => kind === "resume_sound").length).toBe(1);
       await expect(page.getByTestId("sound-status")).toHaveAttribute("data-state", "playing");
 
-      // Í£Ö¹ ¡ú stop_sound{layer}
+      // åœæ­¢ â†’ stop_sound{layer}
       await page.getByTestId("sound-stop").click();
       await expect.poll(async () => (await kinds()).filter((kind) => kind === "stop_sound").length).toBe(1);
       await expect(page.getByTestId("sound-status")).toHaveAttribute("data-state", "idle");
 
-      // »ØÖ´ ok:true ¡ú ±à¼­Æ÷ÈÕÖ¾Àï¿´µÃ¼û¡¸ÃüÁî Ö´ĞĞ³É¹¦¡¹
-      await expect(page.getByText(/ÃüÁî\s*Ö´ĞĞ³É¹¦/).first()).toBeVisible();
+      // å›æ‰§ ok:true â†’ ç¼–è¾‘å™¨æ—¥å¿—é‡Œçœ‹å¾—è§ã€Œå‘½ä»¤ æ‰§è¡ŒæˆåŠŸã€
+      await expect(page.getByText(/å‘½ä»¤\s*æ‰§è¡ŒæˆåŠŸ/).first()).toBeVisible();
 
-      // ÊÕÎ²£ºÍË³öÔËĞĞÌ¬£¨Ç°¶Ë»á±»ÌßÏÂÏß£©
+      // æ”¶å°¾ï¼šé€€å‡ºè¿è¡Œæ€ï¼ˆå‰ç«¯ä¼šè¢«è¸¢ä¸‹çº¿ï¼‰
       await page.getByTestId("mode-edit").click();
       await expect(page.getByTestId("status-mode")).toHaveAttribute("data-mode", "edit");
     } finally {

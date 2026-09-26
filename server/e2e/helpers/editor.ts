@@ -23,7 +23,7 @@ export type LeftTab = "assets" | "hierarchy";
  * 要有意制造「旧版本文件」时别用它：自己写那个版本号（`formatVersion: 4` 之类），
  * 并预期编辑器会把它升上来回写一次。
  */
-export const CURRENT_SCENE_FORMAT_VERSION = 28;
+export const CURRENT_SCENE_FORMAT_VERSION = 30;
 
 /**
  * **承载对象特性的组件类型名**（v19 起特性住在 `object.components[]` 里）。
@@ -49,6 +49,8 @@ export const COMPONENT = {
   spriteLayer: "SpriteLayer",
   playSound: "PlaySound",
   teleport: "Teleport",
+  /** 放大镜（v30 的动作对象）：图片列表 + 当前展示的那一张；触发 = 让前端弹 / 收一扇窗。 */
+  magnifier: "Magnifier",
   videoOverlay: "VideoOverlay",
   /** 视频混合（v17）：两条视频叠在同一矩形上用 Mask 混合（A 盖住、擦开露 B）；遮罩纯运行态。 */
   videoBlend: "VideoBlend",

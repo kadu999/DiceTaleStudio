@@ -1,7 +1,7 @@
 # TASKS：放大镜对象（点开一扇窗，中间看图、下面挑图）
 
 日期：2026-09-27
-状态：**进行中**（设计已拍板；D1–D6 见文末清单）
+状态：**已完成**（D1–D5；`pnpm check` 全绿 + 桌面 e2e 4 条全过 + Unity MCP 编译 0 error / 0 warning、EditMode 18/18）
 前置：[[TASKS-战争雾独立对象]]（窗口形态 / 运行态命令的写法）、[[TASKS-视频混合组件]]（弹框 + 运行态记账 /
 「数据在文档、命令只是触发器」那套口径）、[[TASKS-属性组与组件一一对应]]（一个组件一个组）
 
@@ -138,14 +138,28 @@ export interface MagnifierDataDoc {
 
 ## 任务清单
 
-- [ ] **D1 文档**：类型 + schema（格式 30）+ 注册表 + presets + 工厂 + 访问器 + 三条命令 + 资源换算 +
-      子图解析 + 校验 + 单测（`magnifier.test.ts` / `document.test.ts` 各补一条）
-- [ ] **D2 协议**：`COMPONENT_TYPE.magnifier` + `magnifierDataSchema` + `resourceIdsOfObject` +
-      `open_magnifier` / `close_magnifier` + 版本 21 + 契约测试
-- [ ] **D3 编辑器**：store 切片 + 面板 + Add/修复入口 + 窗口 + 画布徽标与双击 + 单测
-- [ ] **D4 Unity**：镜像解析 + `MagnifierWindow` + 命令路由 + `SceneApplied` 接线（Unity MCP 编译 0 error / 0 warning）
-- [ ] **D5 验证与文档**：`pnpm check` 全绿 + e2e（`magnifier.spec.ts`，含 `@runtime` 的两条命令）+
+- [x] **D1 文档**：类型 + schema（格式 30）+ 注册表 + presets + 工厂 + 访问器 + 三条命令 + 资源换算 +
+      子图解析 + 校验 + 单测（`magnifier.test.ts` 27 条）
+- [x] **D2 协议**：`COMPONENT_TYPE.magnifier` + `magnifierDataSchema` + `resourceIdsOfObject` +
+      `open_magnifier` / `close_magnifier` + 版本 21 + 契约测试（组件名 / 缺省值 / 非法样本三条 + 真跑一遍）
+- [x] **D3 编辑器**：store 切片 + 面板 + 修复入口 + 窗口 + 画布徽标与双击 + 单测（14 条）
+- [x] **D4 Unity**：`MagnifierReader` + `MagnifierWindow` + 命令路由 + `SceneApplied` 接线
+      （Unity MCP：0 error / 0 warning；EditMode 18/18，新增 3 条）
+- [x] **D5 验证与文档**：`pnpm check` 全绿 + `e2e/magnifier.spec.ts` 4 条（3 编辑态 + 1 `@runtime`）+
       CODE-STRUCTURE / 运行时镜像协议 spec / `client/README` / 本文件
+
+## 实现时顺手做的（都在这一批里）
+
+- **修了一个真 bug**：`SceneObjectView.NeedsView` 原来只跳过 `PlaySound` / `Teleport`，放大镜对象会被
+  建出一个空视图（动作对象一个 GameObject 都不该建）。已加上 `Magnifier`，并由 EditMode 用例钉住。
+- **泛型读取器读不了的那一层单独收一处**：`MagnifierReader.TryPickImage`（`Data/MagnifierReader.cs`）
+  ——`MirrorObject` / `SceneParser` 一个字节都没动（不然「数组的第 N 项」会把镜像税带回来），
+  测试直接打它。
+- **一格图的矩形复用 `SpriteLayer.UvRectOf`**：那是全链路唯一一次 y 翻转，放大镜不另写一份。
+- **`useFittedBox` 抽进 `dialog-size.ts`**：视频混合 Mask 窗口那份内联的「量实测尺寸 + 按长宽比
+  算等比盒子」改成用它——量法只剩一份。
+- **`<AssetImage>` 抽成 `panels/asset-image.tsx`**：整张 / 图集某一格，与素材面板的精灵预览同一套算式。
+- **`panels/asset-picker.ts` 加 `spriteCellBackgroundPosition`**：精灵预览的格子偏移原来两处各写一遍。
 
 ## 验收标准
 

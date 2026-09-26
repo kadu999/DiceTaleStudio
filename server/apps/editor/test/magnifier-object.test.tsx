@@ -222,10 +222,10 @@ describe("属性面板：图片小方块 + 加 / 移出 + 打开窗口", () => {
 
     // 「关闭画面」只在**这个对象正被投影**时出现；点它就是清记账 + 尽力下发关闭
     await act(async () => {
-      fireEvent.click(screen.getByTestId("magnifier-close"));
+      fireEvent.click(screen.getByTestId("magnifier-close-window"));
     });
     expect(useEditorStore.getState().magnifierShown).toBeNull();
-    expect(screen.queryByTestId("magnifier-close")).toBeNull();
+    expect(screen.queryByTestId("magnifier-close-window")).toBeNull();
   });
 });
 

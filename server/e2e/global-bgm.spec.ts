@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Page, type TestInfo } from "@playwright/test";
+ï»¿import { expect, test, type APIRequestContext, type Page, type TestInfo } from "@playwright/test";
 import {
   CURRENT_SCENE_FORMAT_VERSION,
   closeBgmDialog,
@@ -17,21 +17,21 @@ import {
 } from "./helpers/editor";
 
 /**
- * **±³¾°ÒôÀÖ**£¨v16£©£º¶¥À¸¡¸ÒôÀÖ¡¹µ¯¿ò + ËÄÌõÃüÁî£¬ÓëÏîÄ¿ÉèÖÃ**·ÖÀë**¡£
+ * **èƒŒæ™¯éŸ³ä¹**ï¼ˆv16ï¼‰ï¼šé¡¶æ ã€ŒéŸ³ä¹ã€å¼¹æ¡† + å››æ¡å‘½ä»¤ï¼Œä¸é¡¹ç›®è®¾ç½®**åˆ†ç¦»**ã€‚
  *
- * ÕâÒ»·İ×ß**Õæä¯ÀÀÆ÷**¶¤ËÄ¼şÊÂ£¨´ë´ÇÓë´¿Âß¼­ÔÚ `apps/editor/test/bgm-*.test.*`£©£º
- * 1. µ¯¿òÀïÁĞ³öµÄ¾ÍÊÇ**ÏîÄ¿ `Assets/audio/` ÏÂµÄÒôÆµ**£¨°´Ãû×ÖÅÅ¡¢¿ÉËÑ¡¢±êÇ©¿¿¹´£©£¬
- *    µãÒ»Ê×¾Í·¢Ò»Ìõ `play_bgm{clip}`£»
- * 2. **¹¤³ÌÎÄ¼şÀïÃ»ÓĞ¸èµ¥**£º`settings.audio.bgm` Ö»ÓĞ `volume`£¬Ò²Ã»ÓĞÄ¬ÈÏÇú / Ñ­»· / Ãû×Ö£»
- * 3. ½øÔËĞĞÌ¬**²»»á×Ô¶¯³öÉù**£¨Ã»ÓĞ¡¸Ä¬ÈÏÇú¡¹Õâ»ØÊÂÁË£©£¬²¥·ÅÈ¨È«ÔÚ DM ÊÖÉÏ£»
- * 4. ÔİÍ£ / ¼ÌĞø / Í£Ö¹¸÷Ò»ÌõÃüÁî£»Ç°¶Ë£¨ÖØ£©Á¬ÉÏºó²¹·¢¼ÇÕËÀïµÄÄÇÒ»Ê×¡£
+ * è¿™ä¸€ä»½èµ°**çœŸæµè§ˆå™¨**é’‰å››ä»¶äº‹ï¼ˆæªè¾ä¸çº¯é€»è¾‘åœ¨ `apps/editor/test/bgm-*.test.*`ï¼‰ï¼š
+ * 1. å¼¹æ¡†é‡Œåˆ—å‡ºçš„å°±æ˜¯**é¡¹ç›® `Assets/audio/` ä¸‹çš„éŸ³é¢‘**ï¼ˆæŒ‰åå­—æ’ã€å¯æœã€æ ‡ç­¾é å‹¾ï¼‰ï¼Œ
+ *    ç‚¹ä¸€é¦–å°±å‘ä¸€æ¡ `play_bgm{clip}`ï¼›
+ * 2. **å·¥ç¨‹æ–‡ä»¶é‡Œæ²¡æœ‰æ­Œå•**ï¼š`settings.audio.bgm` åªæœ‰ `volume`ï¼Œä¹Ÿæ²¡æœ‰é»˜è®¤æ›² / å¾ªç¯ / åå­—ï¼›
+ * 3. è¿›è¿è¡Œæ€**ä¸ä¼šè‡ªåŠ¨å‡ºå£°**ï¼ˆæ²¡æœ‰ã€Œé»˜è®¤æ›²ã€è¿™å›äº‹äº†ï¼‰ï¼Œæ’­æ”¾æƒå…¨åœ¨ DM æ‰‹ä¸Šï¼›
+ * 4. æš‚åœ / ç»§ç»­ / åœæ­¢å„ä¸€æ¡å‘½ä»¤ï¼›å‰ç«¯ï¼ˆé‡ï¼‰è¿ä¸Šåè¡¥å‘è®°è´¦é‡Œçš„é‚£ä¸€é¦–ã€‚
  *
- * ÕæÇ°¶Ë£¨Unity£©³öÉùÔÚ `client/` ÄÇ±ßÑé£¨¼û client/README µÄÑéÊÕÇåµ¥£©¡£
+ * çœŸå‰ç«¯ï¼ˆUnityï¼‰å‡ºå£°åœ¨ `client/` é‚£è¾¹éªŒï¼ˆè§ client/README çš„éªŒæ”¶æ¸…å•ï¼‰ã€‚
  */
 
 const SCENE = "Map001";
 
-/** °ÑÒ»¶Î¼ÙÒôÆµÌá½»µ½ `Assets/audio/`£¨ÄÚÈİÎŞËùÎ½£ºÕâÀïµÄ¼ÙÇ°¶Ë²»½âÎöÒôÆµ£©¡£ */
+/** æŠŠä¸€æ®µå‡éŸ³é¢‘æäº¤åˆ° `Assets/audio/`ï¼ˆå†…å®¹æ— æ‰€è°“ï¼šè¿™é‡Œçš„å‡å‰ç«¯ä¸è§£æéŸ³é¢‘ï¼‰ã€‚ */
 async function uploadAudio(
   request: APIRequestContext,
   project: string,
@@ -47,7 +47,7 @@ async function uploadAudio(
   return id;
 }
 
-/** ¼ÙÇ°¶ËÊÕµ½µÄÒ»ÌõÃüÁî£¨±³¾°ÒôÀÖÕâÒ»×éÖ»¹ØĞÄ kind / clip£©¡£ */
+/** å‡å‰ç«¯æ”¶åˆ°çš„ä¸€æ¡å‘½ä»¤ï¼ˆèƒŒæ™¯éŸ³ä¹è¿™ä¸€ç»„åªå…³å¿ƒ kind / clipï¼‰ã€‚ */
 interface FakeBgmCommand {
   readonly kind?: string;
   readonly clip?: string;
@@ -60,19 +60,19 @@ interface FakeBgmWindow {
   __bgmConnect?: () => void;
 }
 
-/** ÔËĞĞÌ¬ÊÇ·şÎñ¶ËÈ«¾Öµ¥Àı£ºÖ»ÔÚÒ»¸öµµÎ»ÉÏÅÜ£¬ÃâµÃ²¢ĞĞµµÎ»»¥Ïà¿ª¹Ø¡£ */
+/** è¿è¡Œæ€æ˜¯æœåŠ¡ç«¯å…¨å±€å•ä¾‹ï¼šåªåœ¨ä¸€ä¸ªæ¡£ä½ä¸Šè·‘ï¼Œå…å¾—å¹¶è¡Œæ¡£ä½äº’ç›¸å¼€å…³ã€‚ */
 function skipOutsideDesktop(testInfo: TestInfo): void {
   test.skip(
     !testInfo.project.name.startsWith("desktop"),
-    "ÔËĞĞÌ¬ÊÇÈ«¾Ö×´Ì¬£ºÖ»ÔÚÒ»¸öµµÎ»ÉÏÅÜ£¬ÃâµÃ²¢ĞĞµµÎ»»¥Ïà¿ª¹Ø",
+    "è¿è¡Œæ€æ˜¯å…¨å±€çŠ¶æ€ï¼šåªåœ¨ä¸€ä¸ªæ¡£ä½ä¸Šè·‘ï¼Œå…å¾—å¹¶è¡Œæ¡£ä½äº’ç›¸å¼€å…³",
   );
 }
 
 /**
- * ÔÚÒ³ÃæÀï×°Ò»Ö»**¼ÙÇ°¶Ë**£ºÎÕÊÖ¡¢ÊÕ³¡¾°¡¢°ÑÃüÁî¼ÇÏÂÀ´²¢°´Ğ­Òé»ØÖ´¡£
+ * åœ¨é¡µé¢é‡Œè£…ä¸€åª**å‡å‰ç«¯**ï¼šæ¡æ‰‹ã€æ”¶åœºæ™¯ã€æŠŠå‘½ä»¤è®°ä¸‹æ¥å¹¶æŒ‰åè®®å›æ‰§ã€‚
  *
- * ×°Ò»´Î¡¢¿ÉÒÔÁ¬¶à´Î£¨`__bgmConnect()`£©£ºÓÃÀıÒªÑé¡¸µôÏßÔÙÁ¬ÉÏ»á²¹·¢¡¹£¬
- * ¶øÃüÁîÁĞ±íÔÚÁ½´ÎÁ¬½ÓÖ®¼ä**²»Çå¿Õ**£¨·ñÔò¿´²»³ö²¹·¢£©¡£
+ * è£…ä¸€æ¬¡ã€å¯ä»¥è¿å¤šæ¬¡ï¼ˆ`__bgmConnect()`ï¼‰ï¼šç”¨ä¾‹è¦éªŒã€Œæ‰çº¿å†è¿ä¸Šä¼šè¡¥å‘ã€ï¼Œ
+ * è€Œå‘½ä»¤åˆ—è¡¨åœ¨ä¸¤æ¬¡è¿æ¥ä¹‹é—´**ä¸æ¸…ç©º**ï¼ˆå¦åˆ™çœ‹ä¸å‡ºè¡¥å‘ï¼‰ã€‚
  */
 async function installFakeBgmClient(page: Page, port: number): Promise<void> {
   await page.evaluate((clientPort) => {
@@ -89,10 +89,10 @@ async function installFakeBgmClient(page: Page, port: number): Promise<void> {
         socket.send(
           JSON.stringify({
             type: "client_hello",
-            // Óë `@dts/protocol` µÄ `PROTOCOL_VERSION` Ò»ÖÂ£¨ÕâÀïĞ´ËÀ£ºe2e ²»ÊÇ workspace °ü£¬
-            // ÄÃ²»µ½ÄÇ¸ö³£Á¿£»°æ±¾Ò»ÉıÕâÀï»áÁ¬²»ÉÏ¡¢ÓÃÀı»áµ±³¡Ê§°Ü£¬ÌáĞÑÍ¬²½¸Ä£©
+            // ä¸ `@dts/protocol` çš„ `PROTOCOL_VERSION` ä¸€è‡´ï¼ˆè¿™é‡Œå†™æ­»ï¼še2e ä¸æ˜¯ workspace åŒ…ï¼Œ
+            // æ‹¿ä¸åˆ°é‚£ä¸ªå¸¸é‡ï¼›ç‰ˆæœ¬ä¸€å‡è¿™é‡Œä¼šè¿ä¸ä¸Šã€ç”¨ä¾‹ä¼šå½“åœºå¤±è´¥ï¼Œæé†’åŒæ­¥æ”¹ï¼‰
             protocolVersion: 21,
-            name: "e2e ¼ÙÇ°¶Ë",
+            name: "e2e å‡å‰ç«¯",
             version: "0.0.0",
           }),
         );
@@ -107,7 +107,7 @@ async function installFakeBgmClient(page: Page, port: number): Promise<void> {
         };
 
         if (parsed.type === "resources_prepare") {
-          // ¼Ù×°×ÊÔ´°üÒÑ¾­ÏÂÍê£¨±³¾°ÒôÀÖÒªÔÚÕâ¸ö°üÀïµÄÒôÆµ²ÅÄÜ·Å³öÀ´£©
+          // å‡è£…èµ„æºåŒ…å·²ç»ä¸‹å®Œï¼ˆèƒŒæ™¯éŸ³ä¹è¦åœ¨è¿™ä¸ªåŒ…é‡Œçš„éŸ³é¢‘æ‰èƒ½æ”¾å‡ºæ¥ï¼‰
           socket.send(
             JSON.stringify({
               type: "resources_ready",
@@ -133,7 +133,7 @@ async function installFakeBgmClient(page: Page, port: number): Promise<void> {
               type: "command_result",
               requestId: parsed.requestId,
               ok: true,
-              effects: ["e2e ¼ÙÇ°¶ËÊÕµ½±³¾°ÒôÀÖÃüÁî"],
+              effects: ["e2e å‡å‰ç«¯æ”¶åˆ°èƒŒæ™¯éŸ³ä¹å‘½ä»¤"],
             }),
           );
         }
@@ -151,7 +151,7 @@ const fakeBgmCommands = async (page: Page): Promise<readonly FakeBgmCommand[]> =
 const fakeBgmKinds = async (page: Page): Promise<string[]> =>
   (await fakeBgmCommands(page)).map((item) => item.kind ?? "");
 
-/** ¹Øµô¼ÙÇ°¶ËµÄÈ«²¿Á¬½Ó£¨ÓÃÀıÊÕÎ² + ¡¸µôÏß¡¹ÄÇÒ»²½¶¼ÓÃËü£©¡£ */
+/** å…³æ‰å‡å‰ç«¯çš„å…¨éƒ¨è¿æ¥ï¼ˆç”¨ä¾‹æ”¶å°¾ + ã€Œæ‰çº¿ã€é‚£ä¸€æ­¥éƒ½ç”¨å®ƒï¼‰ã€‚ */
 const closeFakeBgmSockets = async (page: Page): Promise<void> =>
   page.evaluate(() => {
     for (const socket of (window as unknown as FakeBgmWindow).__bgmSockets ?? []) {
@@ -161,8 +161,8 @@ const closeFakeBgmSockets = async (page: Page): Promise<void> =>
     (window as unknown as FakeBgmWindow).__bgmSockets = [];
   });
 
-test.describe("±³¾°ÒôÀÖ£ºÇåµ¥À´×ÔÏîÄ¿ÒôÆµ£¬ÓëÏîÄ¿ÉèÖÃ·ÖÀë", () => {
-  test("µ¯¿òÁĞ³ö Assets/audio ÏÂµÄÒôÆµ£¨¿ÉËÑ£©£»¹¤³ÌÎÄ¼şÀïÃ»ÓĞÈÎºÎ¸èµ¥×Ö¶Î", async ({
+test.describe("èƒŒæ™¯éŸ³ä¹ï¼šæ¸…å•æ¥è‡ªé¡¹ç›®éŸ³é¢‘ï¼Œä¸é¡¹ç›®è®¾ç½®åˆ†ç¦»", () => {
+  test("å¼¹æ¡†åˆ—å‡º Assets/audio ä¸‹çš„éŸ³é¢‘ï¼ˆå¯æœï¼‰ï¼›å·¥ç¨‹æ–‡ä»¶é‡Œæ²¡æœ‰ä»»ä½•æ­Œå•å­—æ®µ", async ({
     page,
     request,
   }) => {
@@ -179,33 +179,33 @@ test.describe("±³¾°ÒôÀÖ£ºÇåµ¥À´×ÔÏîÄ¿ÒôÆµ£¬ÓëÏîÄ¿ÉèÖÃ·ÖÀë", () => {
 
       await openBgmDialog(page);
 
-      // Çåµ¥ = ÏîÄ¿ÒôÆµ£¨°´ÏÔÊ¾ÃûÅÅĞò£ºbattle < rain < theme£©£»Â·¾¶**Ä¬ÈÏ²»Â¶**
+      // æ¸…å• = é¡¹ç›®éŸ³é¢‘ï¼ˆæŒ‰æ˜¾ç¤ºåæ’åºï¼šbattle < rain < themeï¼‰ï¼›è·¯å¾„**é»˜è®¤ä¸éœ²**
       await expect(page.getByTestId("bgm-track")).toHaveCount(3);
       await expect(page.getByTestId("bgm-list")).toContainText("battle");
       await expect(page.getByTestId("bgm-track").nth(0)).toContainText("battle");
       await expect(page.getByTestId("bgm-track").nth(1)).toContainText("rain");
       await expect(page.getByTestId("bgm-list")).not.toContainText("audio/environment");
 
-      // ¡¸Â·¾¶¡¹¿ª¹Ø£ºµã¿ª²ÅÔÚĞĞÓÒ±ßÏÔÊ¾Â·¾¶£¬ÔÙµãÒ»ÏÂÊÕ»ØÈ¥
+      // ã€Œè·¯å¾„ã€å¼€å…³ï¼šç‚¹å¼€æ‰åœ¨è¡Œå³è¾¹æ˜¾ç¤ºè·¯å¾„ï¼Œå†ç‚¹ä¸€ä¸‹æ”¶å›å»
       await page.getByTestId("bgm-paths-toggle").click();
       await expect(page.getByTestId("bgm-list")).toContainText("audio/environment");
       await page.getByTestId("bgm-paths-toggle").click();
       await expect(page.getByTestId("bgm-list")).not.toContainText("audio/environment");
 
-      // ËÑË÷°´ÎÄ¼şÃû / Â·¾¶¹ıÂË
+      // æœç´¢æŒ‰æ–‡ä»¶å / è·¯å¾„è¿‡æ»¤
       await page.getByTestId("bgm-search").fill("rain");
       await expect(page.getByTestId("bgm-track")).toHaveCount(1);
       await page.getByTestId("bgm-search").fill("nope");
-      await expect(page.getByTestId("bgm-empty")).toContainText("Ã»ÓĞÆ¥ÅäµÄÒôÆµ");
+      await expect(page.getByTestId("bgm-empty")).toContainText("æ²¡æœ‰åŒ¹é…çš„éŸ³é¢‘");
       await page.getByTestId("bgm-search").fill("");
 
       await closeBgmDialog(page);
 
-      // ¹¤³ÌÎÄ¼şÀï**Ã»ÓĞ¸èµ¥**£¨Ò²Ã»ÓĞÄ¬ÈÏÇú / Ñ­»· / Ãû×Ö£©£ºÇ¨ÒÆ°Ñ v4 µÄ¹¤³ÌÎÄ¼şÉıµ½µ±Ç°°æ±¾
+      // å·¥ç¨‹æ–‡ä»¶é‡Œ**æ²¡æœ‰æ­Œå•**ï¼ˆä¹Ÿæ²¡æœ‰é»˜è®¤æ›² / å¾ªç¯ / åå­—ï¼‰ï¼šè¿ç§»æŠŠ v4 çš„å·¥ç¨‹æ–‡ä»¶å‡åˆ°å½“å‰ç‰ˆæœ¬
       await expect
         .poll(async () => await readProjectFormatVersion(request, project), {
           timeout: 8000,
-          message: "µÈ´ı¹¤³ÌÎÄ¼şÉıµ½µ±Ç°°æ±¾",
+          message: "ç­‰å¾…å·¥ç¨‹æ–‡ä»¶å‡åˆ°å½“å‰ç‰ˆæœ¬",
         })
         .toBe(CURRENT_SCENE_FORMAT_VERSION);
 
@@ -220,7 +220,7 @@ test.describe("±³¾°ÒôÀÖ£ºÇåµ¥À´×ÔÏîÄ¿ÒôÆµ£¬ÓëÏîÄ¿ÉèÖÃ·ÖÀë", () => {
     }
   });
 
-  test("¡¸¹¤³Ì ¡ú È«¾ÖÉèÖÃ¡­¡¹ÀïÖ»ÓĞÈıµµÒôÁ¿£»¸ÄÁË»áÂäÅÌ£¨¸èµ¥ / Ä¬ÈÏÇú / Ñ­»·¶¼²»ÔÚ£©", async ({
+  test("ã€Œå·¥ç¨‹ â†’ å…¨å±€è®¾ç½®â€¦ã€é‡Œåªæœ‰ä¸‰æ¡£éŸ³é‡ï¼›æ”¹äº†ä¼šè½ç›˜ï¼ˆæ­Œå• / é»˜è®¤æ›² / å¾ªç¯éƒ½ä¸åœ¨ï¼‰", async ({
     page,
     request,
   }) => {
@@ -233,27 +233,27 @@ test.describe("±³¾°ÒôÀÖ£ºÇåµ¥À´×ÔÏîÄ¿ÒôÆµ£¬ÓëÏîÄ¿ÉèÖÃ·ÖÀë", () => {
       await enterEditor(page);
       await openProject(page, project);
 
-      await openMenu(page, "¹¤³Ì");
-      await page.getByRole("menuitem", { name: /^È«¾ÖÉèÖÃ/ }).click();
+      await openMenu(page, "å·¥ç¨‹");
+      await page.getByRole("menuitem", { name: /^å…¨å±€è®¾ç½®/ }).click();
 
       await expect(page.getByTestId("global-settings-dialog")).toBeVisible();
       await expect(page.getByTestId("volume-bgm")).toBeVisible();
       await expect(page.getByTestId("volume-sfx")).toBeVisible();
       await expect(page.getByTestId("volume-voice")).toBeVisible();
-      // ¸èµ¥ / Ä¬ÈÏÇú / Ñ­»·ÄÇÒ»Ì×ÒÑ¾­²»ÔÚÕâÀïÁË
+      // æ­Œå• / é»˜è®¤æ›² / å¾ªç¯é‚£ä¸€å¥—å·²ç»ä¸åœ¨è¿™é‡Œäº†
       await expect(page.getByTestId("bgm-list")).toHaveCount(0);
       await expect(page.getByTestId("bgm-add")).toHaveCount(0);
       await expect(page.getByTestId("bgm-loop")).toHaveCount(0);
       await expect(page.getByTestId("bgm-default")).toHaveCount(0);
 
       await page.getByTestId("volume-bgm").fill("0.2");
-      await expect(page.getByTestId("global-settings-dialog")).toContainText("±³¾°ÒôÀÖ·ÅÄÄÒ»Ê×");
+      await expect(page.getByTestId("global-settings-dialog")).toContainText("èƒŒæ™¯éŸ³ä¹æ”¾å“ªä¸€é¦–");
       await page.getByTestId("global-settings-close").click();
 
       await expect
         .poll(async () => (await readProjectSettings(request, project))?.bgm?.volume, {
           timeout: 8000,
-          message: "µÈ´ıÒôÁ¿ÂäÅÌ",
+          message: "ç­‰å¾…éŸ³é‡è½ç›˜",
         })
         .toBe(0.2);
     } finally {
@@ -262,10 +262,10 @@ test.describe("±³¾°ÒôÀÖ£ºÇåµ¥À´×ÔÏîÄ¿ÒôÆµ£¬ÓëÏîÄ¿ÉèÖÃ·ÖÀë", () => {
   });
 });
 
-test.describe("±³¾°ÒôÀÖ£ºÃüÁîÏÂ·¢¸øÇ°¶Ë", { tag: "@runtime" }, () => {
+test.describe("èƒŒæ™¯éŸ³ä¹ï¼šå‘½ä»¤ä¸‹å‘ç»™å‰ç«¯", { tag: "@runtime" }, () => {
   test.describe.configure({ mode: "serial" });
 
-  test("µãÒ»Ê× ¡ú play_bgm{clip}£»ÔİÍ£ ¡¤ ¼ÌĞø / Í£Ö¹£»µôÏßÖØÁ¬²¹·¢µ±Ç°ÄÇÒ»Ê×", async ({
+  test("ç‚¹ä¸€é¦– â†’ play_bgm{clip}ï¼›æš‚åœ Â· ç»§ç»­ / åœæ­¢ï¼›æ‰çº¿é‡è¿è¡¥å‘å½“å‰é‚£ä¸€é¦–", async ({
     page,
     request,
   }, testInfo) => {
@@ -275,32 +275,32 @@ test.describe("±³¾°ÒôÀÖ£ºÃüÁîÏÂ·¢¸øÇ°¶Ë", { tag: "@runtime" }, () => {
     const project = await newProject(request);
 
     try {
-      // ÅÅĞò°´**ÏÔÊ¾Ãû**£º`battle` < `theme`£¬µÚÒ»ĞĞÊÇ battle
+      // æ’åºæŒ‰**æ˜¾ç¤ºå**ï¼š`battle` < `theme`ï¼Œç¬¬ä¸€è¡Œæ˜¯ battle
       const battle = await uploadAudio(request, project, "battle.wav");
       await uploadAudio(request, project, "theme.mp3");
       await seedProjectDoc(request, project, [{ name: SCENE, objects: [] }]);
 
-      // ±ê×¢ÒªÔÚ**½øÔËĞĞÌ¬Ö®Ç°**ÅäºÃ£ºÔËĞĞÌ¬Àï¸ÄËØ²Ä meta ²»ÂäÅÌ£¨ÍË³öÔËĞĞ»á»¹Ô­£©¡£
-      // ÕâÒ»ÌõÖ»¹ØĞÄ¡¸°´Ãû×Ö / ±êÇ©ÕÒ ¡ú µã²¥¡¹£¬ËùÒÔ±êÇ©±íÓë¸÷ÒôÆµÎÄ¼şµÄ±ê×¢Ö±½ÓĞ´ÅÌ
-      // £¨ÔÚ½çÃæÀï¸ÄµÄÄÇÌõÂ·×ß `audio-meta.spec.ts`£©¡£
+      // æ ‡æ³¨è¦åœ¨**è¿›è¿è¡Œæ€ä¹‹å‰**é…å¥½ï¼šè¿è¡Œæ€é‡Œæ”¹ç´ æ meta ä¸è½ç›˜ï¼ˆé€€å‡ºè¿è¡Œä¼šè¿˜åŸï¼‰ã€‚
+      // è¿™ä¸€æ¡åªå…³å¿ƒã€ŒæŒ‰åå­— / æ ‡ç­¾æ‰¾ â†’ ç‚¹æ’­ã€ï¼Œæ‰€ä»¥æ ‡ç­¾è¡¨ä¸å„éŸ³é¢‘æ–‡ä»¶çš„æ ‡æ³¨ç›´æ¥å†™ç›˜
+      // ï¼ˆåœ¨ç•Œé¢é‡Œæ”¹çš„é‚£æ¡è·¯èµ° `audio-meta.spec.ts`ï¼‰ã€‚
       await seedProjectAudioMeta(request, project, {
-        tags: ["Õ½¶·"],
-        meta: { [battle]: { name: "Õ½¶·Çú", tags: [0] } },
+        tags: ["æˆ˜æ–—"],
+        meta: { [battle]: { name: "æˆ˜æ–—æ›²", tags: [0] } },
       });
 
       await enterEditor(page);
       await openProject(page, project);
 
-      await test.step("ËØ²Ä meta Àï¶ÁµÃµ½±ê×¢£¨ÒôÆµÎÄ¼ş¼ÇÕûÊı ID£¬Ãû×ÖÔÚ±êÇ©±íÀï£©", async () => {
+      await test.step("ç´ æ meta é‡Œè¯»å¾—åˆ°æ ‡æ³¨ï¼ˆéŸ³é¢‘æ–‡ä»¶è®°æ•´æ•° IDï¼Œåå­—åœ¨æ ‡ç­¾è¡¨é‡Œï¼‰", async () => {
         await expect
           .poll(async () => (await readAudioMeta(request, battle))?.name, {
             timeout: 8000,
-            message: "µÈ´ıËØ²Ä meta ¶Á³ö±ê×¢",
+            message: "ç­‰å¾…ç´ æ meta è¯»å‡ºæ ‡æ³¨",
           })
-          .toBe("Õ½¶·Çú");
+          .toBe("æˆ˜æ–—æ›²");
         expect((await readAudioMeta(request, battle))?.tags).toEqual([0]);
-        // ±êÇ©±íÊÇ**ÏîÄ¿¼¶**Êı¾İ£¬ÈÔÔÚ¹¤³ÌÎÄ¼şÀï
-        expect(await readProjectAudioTags(request, project)).toEqual(["Õ½¶·"]);
+        // æ ‡ç­¾è¡¨æ˜¯**é¡¹ç›®çº§**æ•°æ®ï¼Œä»åœ¨å·¥ç¨‹æ–‡ä»¶é‡Œ
+        expect(await readProjectAudioTags(request, project)).toEqual(["æˆ˜æ–—"]);
       });
 
       await page.getByTestId("mode-run").click();
@@ -311,22 +311,22 @@ test.describe("±³¾°ÒôÀÖ£ºÃüÁîÏÂ·¢¸øÇ°¶Ë", { tag: "@runtime" }, () => {
       await page.waitForFunction(() => (window as unknown as FakeBgmWindow).__bgmScene === true);
       await expect(page.getByTestId("client-badge")).toHaveAttribute("data-connected", "yes");
 
-      await test.step("½øÔËĞĞÌ¬²»»á×Ô¶¯³öÉù£¨Ã»ÓĞÄ¬ÈÏÇúÕâ»ØÊÂÁË£©", async () => {
+      await test.step("è¿›è¿è¡Œæ€ä¸ä¼šè‡ªåŠ¨å‡ºå£°ï¼ˆæ²¡æœ‰é»˜è®¤æ›²è¿™å›äº‹äº†ï¼‰", async () => {
         await page.waitForTimeout(400);
         expect(await fakeBgmCommands(page)).toEqual([]);
-        await expect(page.getByTestId("bgm-control")).toContainText("±³¾°ÒôÀÖ");
+        await expect(page.getByTestId("bgm-control")).toContainText("èƒŒæ™¯éŸ³ä¹");
       });
 
-      await test.step("°´Ãû×ÖÕÒµ½Ëü£¬µãÒ»Ê×¾Í·¢Ò»Ìõ play_bgm{clip}£»±êÇ©¿¿¹´Ñ¡É¸", async () => {
+      await test.step("æŒ‰åå­—æ‰¾åˆ°å®ƒï¼Œç‚¹ä¸€é¦–å°±å‘ä¸€æ¡ play_bgm{clip}ï¼›æ ‡ç­¾é å‹¾é€‰ç­›", async () => {
         await openBgmDialog(page);
 
-        // ËÑË÷¿òÖ»¹ÜÃû×Ö / Â·¾¶ / ÎÄ¼şÃû£¨±êÇ©²»¹éËü¹Ü£¬v19 Æğ£©
-        await page.getByTestId("bgm-search").fill("Õ½¶·Çú");
+        // æœç´¢æ¡†åªç®¡åå­— / è·¯å¾„ / æ–‡ä»¶åï¼ˆæ ‡ç­¾ä¸å½’å®ƒç®¡ï¼Œv19 èµ·ï¼‰
+        await page.getByTestId("bgm-search").fill("æˆ˜æ–—æ›²");
         await expect(page.getByTestId("bgm-track")).toHaveCount(1);
-        await expect(page.getByTestId("bgm-track").first()).toContainText("Õ½¶·Çú");
+        await expect(page.getByTestId("bgm-track").first()).toContainText("æˆ˜æ–—æ›²");
         await page.getByTestId("bgm-search").fill("");
 
-        // ±êÇ©ÊÇ**¹´µÄ**£ºÇåµ¥ÉÏ·½ÄÇÒ»ÅÅµãÒ»ÏÂ = °´ËüÉ¸£¬ÔÙµãÒ»ÏÂÈ¡Ïû
+        // æ ‡ç­¾æ˜¯**å‹¾çš„**ï¼šæ¸…å•ä¸Šæ–¹é‚£ä¸€æ’ç‚¹ä¸€ä¸‹ = æŒ‰å®ƒç­›ï¼Œå†ç‚¹ä¸€ä¸‹å–æ¶ˆ
         await page.getByTestId("bgm-tag-option").click();
         await expect(page.getByTestId("bgm-tag-option")).toHaveAttribute("data-selected", "true");
         await expect(page.getByTestId("bgm-track")).toHaveCount(1);
@@ -334,7 +334,7 @@ test.describe("±³¾°ÒôÀÖ£ºÃüÁîÏÂ·¢¸øÇ°¶Ë", { tag: "@runtime" }, () => {
         await expect(page.getByTestId("bgm-tag-option")).toHaveAttribute("data-selected", "false");
         await expect(page.getByTestId("bgm-track")).toHaveCount(2);
 
-        // µãĞĞÖ»**Ñ¡ÖĞ**£¬²»³öÉù£º»á³öÉùµÄ¼üÖ»ÓĞµ×²¿ÄÇÒ»ÅÅ£¨²¥·Å / ÔİÍ£ / Í£Ö¹£©
+        // ç‚¹è¡Œåª**é€‰ä¸­**ï¼Œä¸å‡ºå£°ï¼šä¼šå‡ºå£°çš„é”®åªæœ‰åº•éƒ¨é‚£ä¸€æ’ï¼ˆæ’­æ”¾ / æš‚åœ / åœæ­¢ï¼‰
         await page.getByTestId("bgm-track").first().click();
         await expect(page.getByTestId("bgm-track").first()).toHaveAttribute("data-selected", "true");
         await page.waitForTimeout(200);
@@ -347,26 +347,26 @@ test.describe("±³¾°ÒôÀÖ£ºÃüÁîÏÂ·¢¸øÇ°¶Ë", { tag: "@runtime" }, () => {
           .toBe(1);
         expect((await fakeBgmCommands(page)).at(-1)).toEqual({ kind: "play_bgm", clip: battle });
 
-        // ÔÙ°´Ò»´Î²¥·Å£º»¹ÊÇÕæ·¢Ò»Ìõ£¨Ç°¶Ë´ÓÍ·ÖØ²¥£©
+        // å†æŒ‰ä¸€æ¬¡æ’­æ”¾ï¼šè¿˜æ˜¯çœŸå‘ä¸€æ¡ï¼ˆå‰ç«¯ä»å¤´é‡æ’­ï¼‰
         await page.getByTestId("bgm-play").click();
         await expect
           .poll(async () => (await fakeBgmKinds(page)).filter((kind) => kind === "play_bgm").length)
           .toBe(2);
       });
 
-      await test.step("¹ØµôÔÙ´ò¿ª£ºÕıÔÚ·ÅµÄÄÇÒ»Ê×»¹ÊÇ¡¸Ñ¡ÖĞµÄ¡¹", async () => {
+      await test.step("å…³æ‰å†æ‰“å¼€ï¼šæ­£åœ¨æ”¾çš„é‚£ä¸€é¦–è¿˜æ˜¯ã€Œé€‰ä¸­çš„ã€", async () => {
         await closeBgmDialog(page);
         await openBgmDialog(page);
 
-        // Ñ¡ÖĞ / ²¥·ÅÌ¬¶¼ÔÚ store Àï£ºµ¯¿òÖ»ÊÇ°ÑËü»­³öÀ´£¨²»¿¿µ¯¿ò×Ô¼º¼Ç£©
+        // é€‰ä¸­ / æ’­æ”¾æ€éƒ½åœ¨ store é‡Œï¼šå¼¹æ¡†åªæ˜¯æŠŠå®ƒç”»å‡ºæ¥ï¼ˆä¸é å¼¹æ¡†è‡ªå·±è®°ï¼‰
         await expect(page.getByTestId("bgm-track").first()).toHaveAttribute("data-selected", "true");
         await expect(page.getByTestId("bgm-track").first()).toHaveAttribute("data-playing", "true");
-        await expect(page.getByTestId("bgm-track").first()).toContainText("¡ñ");
-        await expect(page.getByTestId("bgm-status")).toContainText("ÕıÔÚ·Å");
-        await expect(page.getByTestId("bgm-pause")).toContainText("ÔİÍ£");
+        await expect(page.getByTestId("bgm-track").first()).toContainText("â—");
+        await expect(page.getByTestId("bgm-status")).toContainText("æ­£åœ¨æ”¾");
+        await expect(page.getByTestId("bgm-pause")).toContainText("æš‚åœ");
       });
 
-      await test.step("ÔİÍ£ / ¼ÌĞø / Í£Ö¹¸÷Ò»Ìõ", async () => {
+      await test.step("æš‚åœ / ç»§ç»­ / åœæ­¢å„ä¸€æ¡", async () => {
         await page.getByTestId("bgm-pause").click();
         await expect
           .poll(async () => (await fakeBgmKinds(page)).filter((kind) => kind === "pause_bgm").length)
@@ -381,41 +381,41 @@ test.describe("±³¾°ÒôÀÖ£ºÃüÁîÏÂ·¢¸øÇ°¶Ë", { tag: "@runtime" }, () => {
         await expect
           .poll(async () => (await fakeBgmKinds(page)).filter((kind) => kind === "stop_bgm").length)
           .toBe(1);
-        // Ã»ÔÚ·Å¾ÍÊ²Ã´¶¼²»Ğ´£¨ÄÇ¾ä¡¸Ã»ÔÚ·Å¡¹ÊÇ·Ï»°£ºÔİÍ£ / Í£Ö¹»Ò×ÅÒÑ¾­ËµÃ÷ÁË£©£¬Ñ¡ÖĞ»¹ÔÚ
+        // æ²¡åœ¨æ”¾å°±ä»€ä¹ˆéƒ½ä¸å†™ï¼ˆé‚£å¥ã€Œæ²¡åœ¨æ”¾ã€æ˜¯åºŸè¯ï¼šæš‚åœ / åœæ­¢ç°ç€å·²ç»è¯´æ˜äº†ï¼‰ï¼Œé€‰ä¸­è¿˜åœ¨
         await expect(page.getByTestId("bgm-status")).toHaveText("");
         await expect(page.getByTestId("bgm-play")).toBeEnabled();
       });
 
-      await test.step("µôÏßÖØÁ¬£º²¹·¢¼ÇÕËÀïµÄÄÇÒ»Ê×", async () => {
-        // Í£¹ıÒ»´ÎÖ®ºóÄÇÒ»Ê×»¹Ñ¡×Å£ºÔÙ°´²¥·Å = ´ÓÍ··Å
+      await test.step("æ‰çº¿é‡è¿ï¼šè¡¥å‘è®°è´¦é‡Œçš„é‚£ä¸€é¦–", async () => {
+        // åœè¿‡ä¸€æ¬¡ä¹‹åé‚£ä¸€é¦–è¿˜é€‰ç€ï¼šå†æŒ‰æ’­æ”¾ = ä»å¤´æ”¾
         await page.getByTestId("bgm-play").click();
         await expect
           .poll(async () => (await fakeBgmKinds(page)).filter((kind) => kind === "play_bgm").length)
           .toBe(3);
 
-        // µôÏß£¨¼ÙÇ°¶ËÈ«²¿¹Øµô£©¡ú µÈ±à¼­Æ÷¿´¼û¡¸Ç°¶Ë²»ÔÚÁË¡¹¡ú ÔÙÁ¬Ò»Ö»ĞÂµÄ
+        // æ‰çº¿ï¼ˆå‡å‰ç«¯å…¨éƒ¨å…³æ‰ï¼‰â†’ ç­‰ç¼–è¾‘å™¨çœ‹è§ã€Œå‰ç«¯ä¸åœ¨äº†ã€â†’ å†è¿ä¸€åªæ–°çš„
         await closeFakeBgmSockets(page);
         await expect(page.getByTestId("client-badge")).toHaveAttribute("data-connected", "no");
 
         await connectFakeBgmClient(page);
         await expect(page.getByTestId("client-badge")).toHaveAttribute("data-connected", "yes");
 
-        // ²¹·¢Ò»Ìõ play_bgm{battle}£¨Í£¹ıÒ»´ÎÖ®ºóÓÖÖØĞÂµãµÄÄÇÒ»Ê×£©
+        // è¡¥å‘ä¸€æ¡ play_bgm{battle}ï¼ˆåœè¿‡ä¸€æ¬¡ä¹‹ååˆé‡æ–°ç‚¹çš„é‚£ä¸€é¦–ï¼‰
         await expect
           .poll(async () => (await fakeBgmKinds(page)).filter((kind) => kind === "play_bgm").length)
           .toBe(4);
         expect((await fakeBgmCommands(page)).at(-1)).toEqual({ kind: "play_bgm", clip: battle });
       });
 
-      // »ØÖ´ ok:true ¡ú ±à¼­Æ÷ÈÕÖ¾Àï¿´µÃ¼û¡¸ÃüÁî Ö´ĞĞ³É¹¦¡¹
-      await expect(page.getByText(/ÃüÁî\s*Ö´ĞĞ³É¹¦/).first()).toBeVisible();
+      // å›æ‰§ ok:true â†’ ç¼–è¾‘å™¨æ—¥å¿—é‡Œçœ‹å¾—è§ã€Œå‘½ä»¤ æ‰§è¡ŒæˆåŠŸã€
+      await expect(page.getByText(/å‘½ä»¤\s*æ‰§è¡ŒæˆåŠŸ/).first()).toBeVisible();
 
-      // ×ß³öÔËĞĞÌ¬Ö®Ç°ÏÈ°Ñµ¯¿òÊÕÆğÀ´£ºRadix µÄÄ£Ì¬¿ª×ÅÊ±»á³ÔµôÈ«Ò³µÄÖ¸ÕëÊÂ¼ş
+      // èµ°å‡ºè¿è¡Œæ€ä¹‹å‰å…ˆæŠŠå¼¹æ¡†æ”¶èµ·æ¥ï¼šRadix çš„æ¨¡æ€å¼€ç€æ—¶ä¼šåƒæ‰å…¨é¡µçš„æŒ‡é’ˆäº‹ä»¶
       await closeBgmDialog(page);
       await page.getByTestId("mode-edit").click();
       await expect(page.getByTestId("status-mode")).toHaveAttribute("data-mode", "edit");
     } finally {
-      // ÊÕÎ²Òª**ÎÈ**£ºÒ³ÃæÒÑ¾­¹ØµôÊ± `page.evaluate` »áÅ×£¬ÄÇ»á°ÑÕæÕıµÄÊ§°Üµã¸Çµô
+      // æ”¶å°¾è¦**ç¨³**ï¼šé¡µé¢å·²ç»å…³æ‰æ—¶ `page.evaluate` ä¼šæŠ›ï¼Œé‚£ä¼šæŠŠçœŸæ­£çš„å¤±è´¥ç‚¹ç›–æ‰
       await closeFakeBgmSockets(page).catch(() => undefined);
       await dropProject(request, project);
     }

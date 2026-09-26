@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Page, type TestInfo } from "@playwright/test";
+ï»¿import { expect, test, type APIRequestContext, type Page, type TestInfo } from "@playwright/test";
 import {
   closeDrawers,
   dropProject,
@@ -16,26 +16,26 @@ import {
 } from "./helpers/editor";
 
 /**
- * µØÍ¼ / ¾«ÁéÉÏµÄ**ÊÓÆµ**£¨v14 Æğ£©£º¼ÓÒ»×éÊÓÆµ£¬ÔËĞĞÊ±Ñ¡Ò»Ìõ·Å¡£
+ * åœ°å›¾ / ç²¾çµä¸Šçš„**è§†é¢‘**ï¼ˆv14 èµ·ï¼‰ï¼šåŠ ä¸€ç»„è§†é¢‘ï¼Œè¿è¡Œæ—¶é€‰ä¸€æ¡æ”¾ã€‚
  *
- * Á½°ë£º
- * 1. **±à¼­Æ÷ÔõÃ´Åä**£¨²»ĞèÒªÔËĞĞÌ¬£©£ºÃæ°å¡¸ÊÓÆµ¡¹×é ¡ú Ğ¡·½¿éµ¥Ñ¡·ÅÄÄÌõ¡¢`¡Á` /¡¸Çå¿Õ¡¹ÒÆ³ö¡¢
- *    `£«` Ìí¼Ó ¡ú Ñ­»· / ÉùÒôÁ½¸ö¿ª¹Ø ¡ú ¶¼Âä½ø³¡¾°ÎÄ¼şµÄ `video` ×Ö¶Î£»
- *    £¨Çåµ¥¹ÜÀíÈ«ÔÚÃæ°åÉÏ£¬Ã»ÓĞ±ğµÄ´°¿Ú£»ÏÔÊ¾ÃûÔÚ**ÎÄ¼şÊôĞÔ**ÉÏ¸Ä¡££©
- * 2. **ÃüÁîÔõÃ´ÏÂ·¢**£¨`@runtime`£©£ºä¯ÀÀÆ÷ÀïÔÙ¿ªÒ»Ìõ**¼ÙÇ°¶Ë** WebSocket£¨`/client`£©£¬
- *    µã²¥·Å / ÔİÍ£ / ¼ÌĞø / Í£Ö¹ ¡ú Ç°¶ËÒÀ´ÎÊÕµ½
- *    `play_video` / `pause_video` / `resume_video` / `stop_video`£¬**ÇÒÖ»´ø `objectId`**
- *    £¨·ÅÄÄÒ»Ìõ¡¢Ñ­»·¡¢ÉùÒô¶¼ÔÚÍÆÏÂÈ¥µÄÄÇ¸ö¶ÔÏóÀï£©¡£
+ * ä¸¤åŠï¼š
+ * 1. **ç¼–è¾‘å™¨æ€ä¹ˆé…**ï¼ˆä¸éœ€è¦è¿è¡Œæ€ï¼‰ï¼šé¢æ¿ã€Œè§†é¢‘ã€ç»„ â†’ å°æ–¹å—å•é€‰æ”¾å“ªæ¡ã€`Ã—` /ã€Œæ¸…ç©ºã€ç§»å‡ºã€
+ *    `ï¼‹` æ·»åŠ  â†’ å¾ªç¯ / å£°éŸ³ä¸¤ä¸ªå¼€å…³ â†’ éƒ½è½è¿›åœºæ™¯æ–‡ä»¶çš„ `video` å­—æ®µï¼›
+ *    ï¼ˆæ¸…å•ç®¡ç†å…¨åœ¨é¢æ¿ä¸Šï¼Œæ²¡æœ‰åˆ«çš„çª—å£ï¼›æ˜¾ç¤ºååœ¨**æ–‡ä»¶å±æ€§**ä¸Šæ”¹ã€‚ï¼‰
+ * 2. **å‘½ä»¤æ€ä¹ˆä¸‹å‘**ï¼ˆ`@runtime`ï¼‰ï¼šæµè§ˆå™¨é‡Œå†å¼€ä¸€æ¡**å‡å‰ç«¯** WebSocketï¼ˆ`/client`ï¼‰ï¼Œ
+ *    ç‚¹æ’­æ”¾ / æš‚åœ / ç»§ç»­ / åœæ­¢ â†’ å‰ç«¯ä¾æ¬¡æ”¶åˆ°
+ *    `play_video` / `pause_video` / `resume_video` / `stop_video`ï¼Œ**ä¸”åªå¸¦ `objectId`**
+ *    ï¼ˆæ”¾å“ªä¸€æ¡ã€å¾ªç¯ã€å£°éŸ³éƒ½åœ¨æ¨ä¸‹å»çš„é‚£ä¸ªå¯¹è±¡é‡Œï¼‰ã€‚
  *
- * ±à¼­Æ÷**²»²¥·Å**£ºÒ³ÃæÉÏÃ»ÓĞ `<video>` Ô¤ÀÀ¡ª¡ª·ÅÊÓÆµÊÇÇ°¶Ë£¨Unity£©µÄÊÂ¡£
+ * ç¼–è¾‘å™¨**ä¸æ’­æ”¾**ï¼šé¡µé¢ä¸Šæ²¡æœ‰ `<video>` é¢„è§ˆâ€”â€”æ”¾è§†é¢‘æ˜¯å‰ç«¯ï¼ˆUnityï¼‰çš„äº‹ã€‚
  */
 
 const SCENE = "Map001";
 const MAP_SIZE = { width: 400, height: 300 };
 const GRID = { width: 8, height: 6 };
-const SPRITE = "¾«Áé";
+const SPRITE = "ç²¾çµ";
 
-/** °ÑÒ»¶Î¼ÙÊÓÆµÌá½»µ½ `Assets/video/`£¨ÄÚÈİÎŞËùÎ½£º±à¼­Æ÷²»½âÎöÊÓÆµ¡¢Ò²²»²¥·Å£©¡£ */
+/** æŠŠä¸€æ®µå‡è§†é¢‘æäº¤åˆ° `Assets/video/`ï¼ˆå†…å®¹æ— æ‰€è°“ï¼šç¼–è¾‘å™¨ä¸è§£æè§†é¢‘ã€ä¹Ÿä¸æ’­æ”¾ï¼‰ã€‚ */
 async function uploadVideo(
   request: APIRequestContext,
   project: string,
@@ -50,28 +50,28 @@ async function uploadVideo(
   return id;
 }
 
-/** ¼ÙÇ°¶ËÊÕµ½µÄÒ»ÌõÃüÁî£¨ÕâÌõÓÃÀıÖ»¹ØĞÄ kind Óë objectId£©¡£ */
+/** å‡å‰ç«¯æ”¶åˆ°çš„ä¸€æ¡å‘½ä»¤ï¼ˆè¿™æ¡ç”¨ä¾‹åªå…³å¿ƒ kind ä¸ objectIdï¼‰ã€‚ */
 interface FakeCommand {
   readonly kind?: string;
   readonly objectId?: string;
 }
 
-/** ¼ÙÇ°¶ËµÄ×´Ì¬·ÅÔÚÒ³ÃæÈ«¾Ö£¨`page.evaluate` À´»Ø¶Á£©¡£ */
+/** å‡å‰ç«¯çš„çŠ¶æ€æ”¾åœ¨é¡µé¢å…¨å±€ï¼ˆ`page.evaluate` æ¥å›è¯»ï¼‰ã€‚ */
 interface FakeClientWindow {
   __videoCommands?: FakeCommand[];
   __videoScene?: boolean;
   __videoSocket?: WebSocket;
 }
 
-/** ÔËĞĞÌ¬ÊÇ·şÎñ¶ËÈ«¾Öµ¥Àı£ºÖ»ÔÚÒ»¸öµµÎ»ÉÏÅÜ£¬ÃâµÃ²¢ĞĞµµÎ»»¥Ïà¿ª¹Ø¡£ */
+/** è¿è¡Œæ€æ˜¯æœåŠ¡ç«¯å…¨å±€å•ä¾‹ï¼šåªåœ¨ä¸€ä¸ªæ¡£ä½ä¸Šè·‘ï¼Œå…å¾—å¹¶è¡Œæ¡£ä½äº’ç›¸å¼€å…³ã€‚ */
 function skipOutsideDesktop(testInfo: TestInfo): void {
   test.skip(
     !testInfo.project.name.startsWith("desktop"),
-    "ÔËĞĞÌ¬ÊÇÈ«¾Ö×´Ì¬£ºÖ»ÔÚÒ»¸öµµÎ»ÅÜ£¬ÃâµÃ²¢ĞĞµµÎ»»¥Ïà¿ª¹Ø",
+    "è¿è¡Œæ€æ˜¯å…¨å±€çŠ¶æ€ï¼šåªåœ¨ä¸€ä¸ªæ¡£ä½è·‘ï¼Œå…å¾—å¹¶è¡Œæ¡£ä½äº’ç›¸å¼€å…³",
   );
 }
 
-/** ÔÚÒ³ÃæÀï¿ªÒ»Ìõ**¼ÙÇ°¶Ë**Á¬½Ó£ºÎÕÊÖ¡¢ÊÕ³¡¾°¡¢°ÑÃüÁî¼ÇÏÂÀ´²¢°´Ğ­Òé»ØÖ´¡£ */
+/** åœ¨é¡µé¢é‡Œå¼€ä¸€æ¡**å‡å‰ç«¯**è¿æ¥ï¼šæ¡æ‰‹ã€æ”¶åœºæ™¯ã€æŠŠå‘½ä»¤è®°ä¸‹æ¥å¹¶æŒ‰åè®®å›æ‰§ã€‚ */
 async function connectFakeClient(page: Page, port: number): Promise<void> {
   await page.evaluate((clientPort) => {
     const scope = window as unknown as FakeClientWindow;
@@ -85,10 +85,10 @@ async function connectFakeClient(page: Page, port: number): Promise<void> {
       socket.send(
         JSON.stringify({
           type: "client_hello",
-          // Óë `@dts/protocol` µÄ `PROTOCOL_VERSION` Ò»ÖÂ£¨ÕâÀïĞ´ËÀ£ºe2e ²»ÊÇ workspace °ü£¬
-          // ÄÃ²»µ½ÄÇ¸ö³£Á¿£»°æ±¾Ò»ÉıÕâÀï»áÁ¬²»ÉÏ¡¢ÓÃÀı»áµ±³¡Ê§°Ü£¬ÌáĞÑÍ¬²½¸Ä£©
+          // ä¸ `@dts/protocol` çš„ `PROTOCOL_VERSION` ä¸€è‡´ï¼ˆè¿™é‡Œå†™æ­»ï¼še2e ä¸æ˜¯ workspace åŒ…ï¼Œ
+          // æ‹¿ä¸åˆ°é‚£ä¸ªå¸¸é‡ï¼›ç‰ˆæœ¬ä¸€å‡è¿™é‡Œä¼šè¿ä¸ä¸Šã€ç”¨ä¾‹ä¼šå½“åœºå¤±è´¥ï¼Œæé†’åŒæ­¥æ”¹ï¼‰
           protocolVersion: 21,
-          name: "e2e ¼ÙÇ°¶Ë",
+          name: "e2e å‡å‰ç«¯",
           version: "0.0.0",
         }),
       );
@@ -113,7 +113,7 @@ async function connectFakeClient(page: Page, port: number): Promise<void> {
             type: "command_result",
             requestId: parsed.requestId,
             ok: true,
-            effects: ["e2e ¼ÙÇ°¶ËÊÕµ½ÊÓÆµÃüÁî"],
+            effects: ["e2e å‡å‰ç«¯æ”¶åˆ°è§†é¢‘å‘½ä»¤"],
           }),
         );
       }
@@ -121,12 +121,12 @@ async function connectFakeClient(page: Page, port: number): Promise<void> {
   }, port);
 }
 
-/** ¶Á»Ø¼ÙÇ°¶ËÊÕµ½µÄÃüÁî¡£ */
+/** è¯»å›å‡å‰ç«¯æ”¶åˆ°çš„å‘½ä»¤ã€‚ */
 async function fakeCommands(page: Page): Promise<readonly FakeCommand[]> {
   return page.evaluate(() => (window as unknown as FakeClientWindow).__videoCommands ?? []);
 }
 
-/** ³£¼û¿ªÍ·£º½¨ÏîÄ¿¡¢·ÅÒ»ÕÅµØÍ¼ + Ò»¸ö**ÌùÍ¼**¡¢ÉÏ´«Á½¸ö¼ÙÊÓÆµ¡£ */
+/** å¸¸è§å¼€å¤´ï¼šå»ºé¡¹ç›®ã€æ”¾ä¸€å¼ åœ°å›¾ + ä¸€ä¸ª**è´´å›¾**ã€ä¸Šä¼ ä¸¤ä¸ªå‡è§†é¢‘ã€‚ */
 async function seed(
   project: string,
   request: APIRequestContext,
@@ -134,9 +134,9 @@ async function seed(
   const a = await uploadVideo(request, project, "opening.mp4");
   const b = await uploadVideo(request, project, "rain.webm");
 
-  const mapDoc = mapObjectDoc(project, SCENE, "Íø¸ñµØÍ¼", MAP_SIZE, GRID);
+  const mapDoc = mapObjectDoc(project, SCENE, "ç½‘æ ¼åœ°å›¾", MAP_SIZE, GRID);
   await seedProjectDoc(request, project, [
-    // v21 ÆğÊÓÆµÄÇÒ»×éµÄËŞÖ÷ÊÇ**ÌùÍ¼**£¨`kind: "Image"`£©£¬²»ÊÇ¾«Áé¡ª¡ª¼ûÏÂÃæÄÇÌõÓÃÀı
+    // v21 èµ·è§†é¢‘é‚£ä¸€ç»„çš„å®¿ä¸»æ˜¯**è´´å›¾**ï¼ˆ`kind: "Image"`ï¼‰ï¼Œä¸æ˜¯ç²¾çµâ€”â€”è§ä¸‹é¢é‚£æ¡ç”¨ä¾‹
     sceneDoc(SCENE, [mapDoc, gameObjectDoc(SPRITE, "Image", { x: 0, y: 0 })]),
   ]);
   await uploadSceneImage(request, project, SCENE, solidPng(4, 4, [60, 60, 60]));
@@ -145,42 +145,42 @@ async function seed(
 }
 
 /**
- * µÈ×Ô¶¯±£´æÍê³É¡£`pending` ÊÇ¶ÌÔİ×´Ì¬£¬ÊäÈë²Ù×÷·µ»ØÇ°¿ÉÄÜÒÑ¾­¹ıÈ¥£»ÏÂ·½Ã¿´¦µ÷ÓÃ
- * ¶¼»á¼ÌĞø¶ÁÈ¡³¡¾°ÎÄ¼ş²¢¶ÏÑÔ¾ßÌåÊı¾İ£¬±£´æ×´Ì¬Ö»¸ºÔğÍ¬²½Ê±»ú¡£
+ * ç­‰è‡ªåŠ¨ä¿å­˜å®Œæˆã€‚`pending` æ˜¯çŸ­æš‚çŠ¶æ€ï¼Œè¾“å…¥æ“ä½œè¿”å›å‰å¯èƒ½å·²ç»è¿‡å»ï¼›ä¸‹æ–¹æ¯å¤„è°ƒç”¨
+ * éƒ½ä¼šç»§ç»­è¯»å–åœºæ™¯æ–‡ä»¶å¹¶æ–­è¨€å…·ä½“æ•°æ®ï¼Œä¿å­˜çŠ¶æ€åªè´Ÿè´£åŒæ­¥æ—¶æœºã€‚
  */
 async function waitForSaved(page: Page): Promise<void> {
   await expect(page.getByTestId("status-scene-save")).toHaveAttribute("data-state", "saved");
 }
 
-test.describe("µØÍ¼ / ÌùÍ¼£ºÊÓÆµÁĞ±í", () => {
-  test("Ãæ°å¿ÕÌ¬ ¡ú Ìí¼ÓÁ½Ìõ ¡ú Ñ¡Ò»Ìõ ¡ú Ñ­»· / ÉùÒô ¡ú È«²¿Âä½ø³¡¾°ÎÄ¼ş", async ({
+test.describe("åœ°å›¾ / è´´å›¾ï¼šè§†é¢‘åˆ—è¡¨", () => {
+  test("é¢æ¿ç©ºæ€ â†’ æ·»åŠ ä¸¤æ¡ â†’ é€‰ä¸€æ¡ â†’ å¾ªç¯ / å£°éŸ³ â†’ å…¨éƒ¨è½è¿›åœºæ™¯æ–‡ä»¶", async ({
     page,
     request,
   }) => {
     const project = await newProject(request);
     try {
       const { a, b } = await seed(project, request);
-      await openFirstObject(page, project, "Íø¸ñµØÍ¼");
+      await openFirstObject(page, project, "ç½‘æ ¼åœ°å›¾");
 
-      // Ã»¼ÓÊÓÆµ£º²»³öÊÓÆµ×é£»Èë¿ÚÔÚµ×²¿µÄ¡¸Ìí¼Ó×é¼ş¡¹£¨Óë¡¸Íø¸ñµØÍ¼¡¹Í¬Ò»Ì×£©
+      // æ²¡åŠ è§†é¢‘ï¼šä¸å‡ºè§†é¢‘ç»„ï¼›å…¥å£åœ¨åº•éƒ¨çš„ã€Œæ·»åŠ ç»„ä»¶ã€ï¼ˆä¸ã€Œç½‘æ ¼åœ°å›¾ã€åŒä¸€å¥—ï¼‰
       await expect(page.locator('[data-group="video"]')).toHaveCount(0);
-      // ±à¼­Æ÷**²»²¥·Å**£ºÒ³ÃæÉÏÃ»ÓĞÈÎºÎÊÓÆµ²¥·ÅÆ÷
+      // ç¼–è¾‘å™¨**ä¸æ’­æ”¾**ï¼šé¡µé¢ä¸Šæ²¡æœ‰ä»»ä½•è§†é¢‘æ’­æ”¾å™¨
       await expect(page.locator("video")).toHaveCount(0);
       expect(await readSceneVideo(request, project, SCENE)).toBeUndefined();
 
-      // µã¡¸Ìí¼Ó×é¼ş ¡ú ÊÓÆµ¡¹£ºÕâ²ÅÂ¶³öÊÓÆµÁĞ±í¡¢£« Ìí¼ÓÓëÄÇ¼¸¸ö°´Å¥
+      // ç‚¹ã€Œæ·»åŠ ç»„ä»¶ â†’ è§†é¢‘ã€ï¼šè¿™æ‰éœ²å‡ºè§†é¢‘åˆ—è¡¨ã€ï¼‹ æ·»åŠ ä¸é‚£å‡ ä¸ªæŒ‰é’®
       await page.getByTestId("add-component").click();
       await page.getByTestId("add-component-VideoOverlay").click();
       const video = page.locator('[data-group="video"]');
       await expect(video).toBeVisible();
-      await expect(video.getByTestId("video-empty")).toHaveText("»¹Ã»¼ÓÊÓÆµ");
+      await expect(video.getByTestId("video-empty")).toHaveText("è¿˜æ²¡åŠ è§†é¢‘");
       await expect(video.getByTestId("video-add")).toBeVisible();
       await expect(video.getByTestId("video-play")).toBeDisabled();
-      await expect(video.getByTestId("video-play")).toHaveAttribute("title", /ÏÈ¼ÓÒ»ÌõÊÓÆµ/);
+      await expect(video.getByTestId("video-play")).toHaveAttribute("title", /å…ˆåŠ ä¸€æ¡è§†é¢‘/);
       await waitForSaved(page);
       expect(await readSceneVideo(request, project, SCENE)).toMatchObject({ enabled: true, clips: [] });
 
-      // ¡¸£« Ìí¼ÓÊÓÆµ¡¹Ö±½Óµ¯¡¸Ñ¡ÔñÊÓÆµ¡¹£ºÑ¡ÖĞÒ»Ìõ ¡ú µã¡¸Ìí¼Ó¡¹¼ÓÈë£¨Ò»´ÎÒ»Ìõ£¬µ¯¿òËæ¼´¹Ø±Õ£©
+      // ã€Œï¼‹ æ·»åŠ è§†é¢‘ã€ç›´æ¥å¼¹ã€Œé€‰æ‹©è§†é¢‘ã€ï¼šé€‰ä¸­ä¸€æ¡ â†’ ç‚¹ã€Œæ·»åŠ ã€åŠ å…¥ï¼ˆä¸€æ¬¡ä¸€æ¡ï¼Œå¼¹æ¡†éšå³å…³é—­ï¼‰
       await video.getByTestId("video-add").click();
       const picker = page.getByTestId("video-picker-dialog");
       await expect(picker).toBeVisible();
@@ -189,7 +189,7 @@ test.describe("µØÍ¼ / ÌùÍ¼£ºÊÓÆµÁĞ±í", () => {
       await item(a).click();
       await picker.getByTestId("video-picker-add").click();
       await expect(picker).toHaveCount(0);
-      // ¼ÓµÚ¶şÌõ£ºÖØĞÂ´ò¿ª£¬ÔÙÒ»´ÎÒ»Ìõ£»webm ÄÇÌõ´øÌáĞÑ£¨Unity ÔÚ Windows ÉÏ¶à°ë½â²»ÁË£©
+      // åŠ ç¬¬äºŒæ¡ï¼šé‡æ–°æ‰“å¼€ï¼Œå†ä¸€æ¬¡ä¸€æ¡ï¼›webm é‚£æ¡å¸¦æé†’ï¼ˆUnity åœ¨ Windows ä¸Šå¤šåŠè§£ä¸äº†ï¼‰
       await video.getByTestId("video-add").click();
       const picker2 = page.getByTestId("video-picker-dialog");
       await picker2.locator(`[data-testid="video-picker-item"][data-asset-id="${b}"]`).click();
@@ -197,21 +197,21 @@ test.describe("µØÍ¼ / ÌùÍ¼£ºÊÓÆµÁĞ±í", () => {
       await picker2.getByTestId("video-picker-add").click();
       await expect(picker2).toHaveCount(0);
 
-      // Ãæ°åÉÏÁ½ÌõĞ¡·½¿é£ºÖ»¶ÁÏÔÊ¾Ãû£¨ÆğÃûÔÚÎÄ¼şÊôĞÔÉÏ¸Ä£©£¬webm ÄÇÌõµÄ tooltip Àï´ø×ÅÌáĞÑ
+      // é¢æ¿ä¸Šä¸¤æ¡å°æ–¹å—ï¼šåªè¯»æ˜¾ç¤ºåï¼ˆèµ·ååœ¨æ–‡ä»¶å±æ€§ä¸Šæ”¹ï¼‰ï¼Œwebm é‚£æ¡çš„ tooltip é‡Œå¸¦ç€æé†’
       await expect(video.getByTestId("video-clip")).toHaveCount(2);
       await expect(video.getByTestId("video-clip").first()).toHaveText("opening");
       await expect(video.getByTestId("video-clip").nth(1)).toHaveText("rain");
       await expect(video.getByTestId("video-clip").nth(1)).toHaveAttribute(
         "title",
-        /WebM£ºWindows ÉÏ¶à°ë½â²»ÁË/,
+        /WebMï¼šWindows ä¸Šå¤šåŠè§£ä¸äº†/,
       );
 
-      // ÂäÅÌ£ºÁĞ±í°´¼Ó½øÀ´µÄË³Ğò£¬µÚÒ»Ìõ×Ô¶¯Ñ¡ÖĞ£¨¼Ó½øÀ´¾ÍÄÜÖ±½Ó·Å£©¡£
+      // è½ç›˜ï¼šåˆ—è¡¨æŒ‰åŠ è¿›æ¥çš„é¡ºåºï¼Œç¬¬ä¸€æ¡è‡ªåŠ¨é€‰ä¸­ï¼ˆåŠ è¿›æ¥å°±èƒ½ç›´æ¥æ”¾ï¼‰ã€‚
       //
-      // **ÕâÀï±ÈµÄÊÇ½á¹¹£¬²»ÊÇ¾ßÌå id**£º³¡¾°ÎÄ¼ş°´Éè¼Æ´æµÄÊÇ**ËØ²Ä GUID**¡¢²»ÊÇÂß¼­Â·¾¶
-      // £¨`sceneAssetRefsToGuids`£ºÄÚ´æÀïÊÇÂß¼­ ID£¬ÂäÅÌ»»³É GUID£¬ÕâÑù¸ÄÎÄ¼şÃû²»»á¶ÏÒıÓÃ£©¡£
-      // ËùÒÔ¶ÏÑÔ¡¸Á½Ìõ¡¢Ë³Ğò±£³Ö¡¢µÚÒ»Ìõ±»Ñ¡ÖĞ¡¹£¬id ÓÃ 32 Î»Ê®Áù½øÖÆÆ¥Åä£»
-      // ¡¸Ë³Ğò = [a, b]¡¹ÓÉÉÏÃæ UI ÄÇÌõ¶ÏÑÔ£¨Ğ¡·½¿éÒÀ´ÎÊÇ¡¸opening¡¹¡¸rain¡¹£©¶µ×¡¡£
+      // **è¿™é‡Œæ¯”çš„æ˜¯ç»“æ„ï¼Œä¸æ˜¯å…·ä½“ id**ï¼šåœºæ™¯æ–‡ä»¶æŒ‰è®¾è®¡å­˜çš„æ˜¯**ç´ æ GUID**ã€ä¸æ˜¯é€»è¾‘è·¯å¾„
+      // ï¼ˆ`sceneAssetRefsToGuids`ï¼šå†…å­˜é‡Œæ˜¯é€»è¾‘ IDï¼Œè½ç›˜æ¢æˆ GUIDï¼Œè¿™æ ·æ”¹æ–‡ä»¶åä¸ä¼šæ–­å¼•ç”¨ï¼‰ã€‚
+      // æ‰€ä»¥æ–­è¨€ã€Œä¸¤æ¡ã€é¡ºåºä¿æŒã€ç¬¬ä¸€æ¡è¢«é€‰ä¸­ã€ï¼Œid ç”¨ 32 ä½åå…­è¿›åˆ¶åŒ¹é…ï¼›
+      // ã€Œé¡ºåº = [a, b]ã€ç”±ä¸Šé¢ UI é‚£æ¡æ–­è¨€ï¼ˆå°æ–¹å—ä¾æ¬¡æ˜¯ã€Œopeningã€ã€Œrainã€ï¼‰å…œä½ã€‚
       await waitForSaved(page);
       const saved = await readSceneVideo(request, project, SCENE);
       const guid = /^[0-9a-f]{32}$/;
@@ -222,19 +222,19 @@ test.describe("µØÍ¼ / ÌùÍ¼£ºÊÓÆµÁĞ±í", () => {
       expect(saved?.clips?.[0]).not.toBe(saved?.clips?.[1]);
       expect(saved?.picked).toBe(saved?.clips?.[0]);
 
-      // µãµÚ¶şÌõ = ¸Ä³É·ÅËü£»Ğ¡·½¿éÉÏµÄ ¡Á = ÒÆ³öÄÇÒ»Ìõ
+      // ç‚¹ç¬¬äºŒæ¡ = æ”¹æˆæ”¾å®ƒï¼›å°æ–¹å—ä¸Šçš„ Ã— = ç§»å‡ºé‚£ä¸€æ¡
       await video.getByTestId("video-clip").nth(1).click();
       await expect(video.getByTestId("video-clip").nth(1)).toHaveAttribute("data-selected", "true");
       await waitForSaved(page);
       expect(await readSceneVideo(request, project, SCENE)).toMatchObject({ picked: saved?.clips?.[1] });
 
-      // Ğ¡·½¿éÉÏµÄ ¡Á£ºÒÆ³öÄÇÒ»Ìõ£¨ËØ²ÄÎÄ¼ş²»»á±»É¾£©£»ÒÆ×ßµÄÕıºÃÊÇÑ¡ÖĞµÄ ¡ú Ñ¡ÖĞË³µ½Ê£ÏÂµÄÄÇÌõ
+      // å°æ–¹å—ä¸Šçš„ Ã—ï¼šç§»å‡ºé‚£ä¸€æ¡ï¼ˆç´ ææ–‡ä»¶ä¸ä¼šè¢«åˆ ï¼‰ï¼›ç§»èµ°çš„æ­£å¥½æ˜¯é€‰ä¸­çš„ â†’ é€‰ä¸­é¡ºåˆ°å‰©ä¸‹çš„é‚£æ¡
       await video.locator(`[data-testid="video-clip-remove"][data-clip="${b}"]`).click();
       await expect(video.getByTestId("video-clip")).toHaveCount(1);
       await waitForSaved(page);
       expect(await readSceneVideo(request, project, SCENE)).toMatchObject({ picked: saved?.clips?.[0] });
 
-      // ÖØĞÂ¼Ó»ØµÚ¶şÌõ£¨Ñ­»· / ÉùÒô¶ÏÑÔÒªÊı£©£ºÒ»´ÎÒ»Ìõ
+      // é‡æ–°åŠ å›ç¬¬äºŒæ¡ï¼ˆå¾ªç¯ / å£°éŸ³æ–­è¨€è¦æ•°ï¼‰ï¼šä¸€æ¬¡ä¸€æ¡
       await video.getByTestId("video-add").click();
       const repick = page.getByTestId("video-picker-dialog");
       await repick.locator(`[data-testid="video-picker-item"][data-asset-id="${b}"]`).click();
@@ -243,7 +243,7 @@ test.describe("µØÍ¼ / ÌùÍ¼£ºÊÓÆµÁĞ±í", () => {
       await expect(video.getByTestId("video-clip")).toHaveCount(2);
       await video.getByTestId("video-clip").nth(1).click();
 
-      // Ñ­»· / ÉùÒôÁ½¸ö¿ª¹Ø£ºĞ´ÎÄµµ£¨ĞĞÀïÖ»ÓĞ¹´Ñ¡¿ò£¬×´Ì¬¿´¹´Ã»¹´ÉÏ£©
+      // å¾ªç¯ / å£°éŸ³ä¸¤ä¸ªå¼€å…³ï¼šå†™æ–‡æ¡£ï¼ˆè¡Œé‡Œåªæœ‰å‹¾é€‰æ¡†ï¼ŒçŠ¶æ€çœ‹å‹¾æ²¡å‹¾ä¸Šï¼‰
       await video.getByTestId("video-loop").check();
       await video.getByTestId("video-audio").check();
       await expect(video.getByTestId("video-loop")).toBeChecked();
@@ -251,36 +251,36 @@ test.describe("µØÍ¼ / ÌùÍ¼£ºÊÓÆµÁĞ±í", () => {
       await waitForSaved(page);
       expect(await readSceneVideo(request, project, SCENE)).toMatchObject({ loop: true, audio: true });
 
-      // ¡¸²¥·Å¡¹ÏÖÔÚµãµÃ¶¯ÁË
+      // ã€Œæ’­æ”¾ã€ç°åœ¨ç‚¹å¾—åŠ¨äº†
       await expect(video.getByTestId("video-play")).toBeEnabled();
     } finally {
       await dropProject(request, project);
     }
   });
 
-  test("ÌùÍ¼Ò²ÓĞÕâÒ»×é£¨ÊÓÆµ¸ÇÔÚËü×Ô¼ºµÄ¾ØĞÎÉÏ£©£»¾«Áé / ÉùÒô¶ÔÏó / ´«ËÍÕóÃ»ÓĞ", async ({
+  test("è´´å›¾ä¹Ÿæœ‰è¿™ä¸€ç»„ï¼ˆè§†é¢‘ç›–åœ¨å®ƒè‡ªå·±çš„çŸ©å½¢ä¸Šï¼‰ï¼›ç²¾çµ / å£°éŸ³å¯¹è±¡ / ä¼ é€é˜µæ²¡æœ‰", async ({
     page,
     request,
   }) => {
     const project = await newProject(request);
     try {
       await seed(project, request);
-      await openFirstObject(page, project, "Íø¸ñµØÍ¼");
+      await openFirstObject(page, project, "ç½‘æ ¼åœ°å›¾");
       await openLeftTab(page, "hierarchy");
 
-      // µÚ¶ş¸ö¶ÔÏóÊÇ**ÌùÍ¼**£ºv21 ÆğÊÓÆµÄÇÒ»×é´Ó¾«ÁéÅ²µ½ÁËÌùÍ¼
+      // ç¬¬äºŒä¸ªå¯¹è±¡æ˜¯**è´´å›¾**ï¼šv21 èµ·è§†é¢‘é‚£ä¸€ç»„ä»ç²¾çµæŒªåˆ°äº†è´´å›¾
       await selectObject(page, 1);
-      // ÌùÍ¼²»ÊÇ¡¸µØÍ¼¶ÔÏó¡¹£¬µ« v28 ÆğÍø¸ñÓëÊÓÆµ¶¼ÊÇ**¿ÉÑ¡×é¼ş**£ºÃ»¼ÓÊ±²»³ö×é£¬
-      // Èë¿ÚÔÚµ×²¿¡¸Ìí¼Ó×é¼ş¡¹£¨Íø¸ñµØÍ¼ + ÊÓÆµ£©£»Õ½ÕùÎíÖ»ÊôÓÚ¶ÀÁ¢µÄ `Fog` ¶ÔÏó£¬ÌùÍ¼Ã»ÓĞ
+      // è´´å›¾ä¸æ˜¯ã€Œåœ°å›¾å¯¹è±¡ã€ï¼Œä½† v28 èµ·ç½‘æ ¼ä¸è§†é¢‘éƒ½æ˜¯**å¯é€‰ç»„ä»¶**ï¼šæ²¡åŠ æ—¶ä¸å‡ºç»„ï¼Œ
+      // å…¥å£åœ¨åº•éƒ¨ã€Œæ·»åŠ ç»„ä»¶ã€ï¼ˆç½‘æ ¼åœ°å›¾ + è§†é¢‘ï¼‰ï¼›æˆ˜äº‰é›¾åªå±äºç‹¬ç«‹çš„ `Fog` å¯¹è±¡ï¼Œè´´å›¾æ²¡æœ‰
       await expect(page.locator('[data-group="map"]')).toHaveCount(0);
       await expect(page.locator('[data-group="video"]')).toHaveCount(0);
       await expect(page.locator('[data-group="fog"]')).toHaveCount(0);
       await page.getByTestId("add-component").click();
       await expect(page.getByTestId("add-component-GridMap")).toBeVisible();
       await expect(page.getByTestId("add-component-VideoOverlay")).toBeVisible();
-      // **ÌùÍ¼**ÉíÉÏÒ²ÄÜÕæµÄ°ÑÊÓÆµ´æ½øÈ¥£¨²»ÊÇ¡¸Ãæ°å³¤³öÀ´ÁË¡¢Êı¾İĞ´²»½øÈ¥¡¹£©¡£
-      // v28 ÆğÍø¸ñµØÍ¼Ò²ÊÇ `Image`£¬ËùÒÔÒª°´ **id** Ö¸Ãû¶ÁÕâÒ»ÕÅÌùÍ¼£¨kind ·Ö²»ÇåËüÁ©£»
-      // `gameObjectDoc` °Ñ id Æ´³É `object_<name>`£©
+      // **è´´å›¾**èº«ä¸Šä¹Ÿèƒ½çœŸçš„æŠŠè§†é¢‘å­˜è¿›å»ï¼ˆä¸æ˜¯ã€Œé¢æ¿é•¿å‡ºæ¥äº†ã€æ•°æ®å†™ä¸è¿›å»ã€ï¼‰ã€‚
+      // v28 èµ·ç½‘æ ¼åœ°å›¾ä¹Ÿæ˜¯ `Image`ï¼Œæ‰€ä»¥è¦æŒ‰ **id** æŒ‡åè¯»è¿™ä¸€å¼ è´´å›¾ï¼ˆkind åˆ†ä¸æ¸…å®ƒä¿©ï¼›
+      // `gameObjectDoc` æŠŠ id æ‹¼æˆ `object_<name>`ï¼‰
       await page.getByTestId("add-component-VideoOverlay").click();
       const textureVideo = page.locator('[data-group="video"]');
       await expect(textureVideo).toBeVisible();
@@ -292,11 +292,11 @@ test.describe("µØÍ¼ / ÌùÍ¼£ºÊÓÆµÁĞ±í", () => {
         clips: [],
       });
 
-      // ÔÙ½¨Ò»¸ö**¾«Áé**£¨ĞÂ¶ÔÏóÂäÔÚÃûµ¥Ä©Î²£©£ºËüÓĞ¡¸¾«Áé²ã¡¹¡¢**Ã»ÓĞ**ÊÓÆµÄÇÒ»×é
+      // å†å»ºä¸€ä¸ª**ç²¾çµ**ï¼ˆæ–°å¯¹è±¡è½åœ¨åå•æœ«å°¾ï¼‰ï¼šå®ƒæœ‰ã€Œç²¾çµå±‚ã€ã€**æ²¡æœ‰**è§†é¢‘é‚£ä¸€ç»„
       //
-      // ÏÈ¹ØµôÁ½¸ö³éÌë£º`openFirstObject` »á°ÑÊôĞÔÃæ°å£¨Æ½°åÏÂÊÇ**ÓÒ³éÌë**£©Â¶³öÀ´£¬
-      // ¶ø¡¸¶ÔÏó¡¹°´Å¥ÔÚ³¡¾°±êÌâÀ¸µÄ**×îÓÒ¶Ë**¡ª¡ªÊúÆÁÆ½°åÉÏÕıºÃ±»ÓÒ³éÌëµÄÕÚÕÖ¸Ç×¡£¬
-      // Ö±½Óµã»áÒ»Ö±µÈ¿Éµã»÷Ö±µ½ÓÃÀı³¬Ê±¡£×ÀÃæµµÎ»Ã»ÓĞ³éÌë£¬Õâ¸öµ÷ÓÃÊÇ¿Õ²Ù×÷¡£
+      // å…ˆå…³æ‰ä¸¤ä¸ªæŠ½å±‰ï¼š`openFirstObject` ä¼šæŠŠå±æ€§é¢æ¿ï¼ˆå¹³æ¿ä¸‹æ˜¯**å³æŠ½å±‰**ï¼‰éœ²å‡ºæ¥ï¼Œ
+      // è€Œã€Œå¯¹è±¡ã€æŒ‰é’®åœ¨åœºæ™¯æ ‡é¢˜æ çš„**æœ€å³ç«¯**â€”â€”ç«–å±å¹³æ¿ä¸Šæ­£å¥½è¢«å³æŠ½å±‰çš„é®ç½©ç›–ä½ï¼Œ
+      // ç›´æ¥ç‚¹ä¼šä¸€ç›´ç­‰å¯ç‚¹å‡»ç›´åˆ°ç”¨ä¾‹è¶…æ—¶ã€‚æ¡Œé¢æ¡£ä½æ²¡æœ‰æŠ½å±‰ï¼Œè¿™ä¸ªè°ƒç”¨æ˜¯ç©ºæ“ä½œã€‚
       await closeDrawers(page);
       await page.getByTestId("new-object").click();
       await page.getByTestId("object-type-Sprite").click();
@@ -310,10 +310,10 @@ test.describe("µØÍ¼ / ÌùÍ¼£ºÊÓÆµÁĞ±í", () => {
   });
 });
 
-test.describe("ÊÓÆµ£ºÃüÁîÏÂ·¢¸øÇ°¶Ë", { tag: "@runtime" }, () => {
+test.describe("è§†é¢‘ï¼šå‘½ä»¤ä¸‹å‘ç»™å‰ç«¯", { tag: "@runtime" }, () => {
   test.describe.configure({ mode: "serial" });
 
-  test("²¥·Å / ÔİÍ£ / ¼ÌĞø / Í£Ö¹ ¡ú Ç°¶ËÊÕµ½ËÄÌõÃüÁî£¨Ö»´ø objectId£©", async ({
+  test("æ’­æ”¾ / æš‚åœ / ç»§ç»­ / åœæ­¢ â†’ å‰ç«¯æ”¶åˆ°å››æ¡å‘½ä»¤ï¼ˆåªå¸¦ objectIdï¼‰", async ({
     page,
     request,
   }, testInfo) => {
@@ -325,8 +325,8 @@ test.describe("ÊÓÆµ£ºÃüÁîÏÂ·¢¸øÇ°¶Ë", { tag: "@runtime" }, () => {
     try {
       const { a, mapId } = await seed(project, request);
 
-      // Ö±½ÓÔÚÃæ°åÉÏÅäºÃ£¨ÕâÒ»Ìõ¶¤µÄÊÇ**ÃüÁîÁ´Â·**£¬ÅäÊÓÆµµÄ½»»¥ÔÚÉÏÒ»ÌõÓÃÀıÀï¶¤¹ıÁË£©
-      await openFirstObject(page, project, "Íø¸ñµØÍ¼");
+      // ç›´æ¥åœ¨é¢æ¿ä¸Šé…å¥½ï¼ˆè¿™ä¸€æ¡é’‰çš„æ˜¯**å‘½ä»¤é“¾è·¯**ï¼Œé…è§†é¢‘çš„äº¤äº’åœ¨ä¸Šä¸€æ¡ç”¨ä¾‹é‡Œé’‰è¿‡äº†ï¼‰
+      await openFirstObject(page, project, "ç½‘æ ¼åœ°å›¾");
       await page.getByTestId("add-component").click();
       await page.getByTestId("add-component-VideoOverlay").click();
       const video = page.locator('[data-group="video"]');
@@ -335,29 +335,29 @@ test.describe("ÊÓÆµ£ºÃüÁîÏÂ·¢¸øÇ°¶Ë", { tag: "@runtime" }, () => {
       await picker.locator(`[data-testid="video-picker-item"][data-asset-id="${a}"]`).click();
       await picker.getByTestId("video-picker-add").click();
       await waitForSaved(page);
-      // ÂäÅÌÊÇ **GUID**£¨¼ûÉÏÒ»ÌõÓÃÀıµÄËµÃ÷£©£»ÕâÀïÖ»¹ØĞÄ¡¸ÓĞÒ»Ìõ±»Ñ¡ÖĞ¡¹£¬¾ßÌåÊÇÄÄÌõÓÉÃæ°åµ¥Ñ¡¶¤×¡
+      // è½ç›˜æ˜¯ **GUID**ï¼ˆè§ä¸Šä¸€æ¡ç”¨ä¾‹çš„è¯´æ˜ï¼‰ï¼›è¿™é‡Œåªå…³å¿ƒã€Œæœ‰ä¸€æ¡è¢«é€‰ä¸­ã€ï¼Œå…·ä½“æ˜¯å“ªæ¡ç”±é¢æ¿å•é€‰é’‰ä½
       const runtimeSaved = await readSceneVideo(request, project, SCENE);
       expect(runtimeSaved).toMatchObject({ enabled: true });
       expect(runtimeSaved?.clips).toHaveLength(1);
       expect(runtimeSaved?.picked).toBe(runtimeSaved?.clips?.[0]);
 
-      // ½øÈëÔËĞĞÌ¬£ºÃ»µã¡¸ÔËĞĞ¡¹Ö®Ç°£¬Ç°¶Ë¸ù±¾Á¬²»ÉÏ£¨503 ¾ÜÎÕÊÖ£©
+      // è¿›å…¥è¿è¡Œæ€ï¼šæ²¡ç‚¹ã€Œè¿è¡Œã€ä¹‹å‰ï¼Œå‰ç«¯æ ¹æœ¬è¿ä¸ä¸Šï¼ˆ503 æ‹’æ¡æ‰‹ï¼‰
       await page.getByTestId("mode-run").click();
       await expect(page.getByTestId("status-mode")).toHaveAttribute("data-mode", "run");
 
-      // ¼ÙÇ°¶ËÁ¬ÉÏ£ºÄÃµ½Õû·İ³¡¾°£¨ËµÃ÷¾µÏñĞ­ÒéÄÇÌõÂ·ÊÇÍ¨µÄ£©
+      // å‡å‰ç«¯è¿ä¸Šï¼šæ‹¿åˆ°æ•´ä»½åœºæ™¯ï¼ˆè¯´æ˜é•œåƒåè®®é‚£æ¡è·¯æ˜¯é€šçš„ï¼‰
       await connectFakeClient(page, port);
       await page.waitForFunction(() => (window as unknown as FakeClientWindow).__videoScene === true);
       await expect(page.getByTestId("client-badge")).toHaveAttribute("data-connected", "yes");
 
       const kinds = async (): Promise<string[]> => (await fakeCommands(page)).map((item) => item.kind ?? "");
 
-      // ²¥·Å ¡ú play_video{objectId}
+      // æ’­æ”¾ â†’ play_video{objectId}
       await video.getByTestId("video-play").click();
       await expect.poll(async () => (await kinds()).filter((kind) => kind === "play_video").length).toBe(1);
       await expect(video.getByTestId("video-status")).toHaveAttribute("data-state", "playing");
 
-      // ÔİÍ£ / ¼ÌĞø
+      // æš‚åœ / ç»§ç»­
       await video.getByTestId("video-pause").click();
       await expect.poll(async () => (await kinds()).filter((kind) => kind === "pause_video").length).toBe(1);
       await expect(video.getByTestId("video-status")).toHaveAttribute("data-state", "paused");
@@ -366,12 +366,12 @@ test.describe("ÊÓÆµ£ºÃüÁîÏÂ·¢¸øÇ°¶Ë", { tag: "@runtime" }, () => {
       await expect.poll(async () => (await kinds()).filter((kind) => kind === "resume_video").length).toBe(1);
       await expect(video.getByTestId("video-status")).toHaveAttribute("data-state", "playing");
 
-      // Í£Ö¹ ¡ú stop_video£»½çÃæÉÏ»Øµ½¡¸Ã»ÔÚ·Å¡¹
+      // åœæ­¢ â†’ stop_videoï¼›ç•Œé¢ä¸Šå›åˆ°ã€Œæ²¡åœ¨æ”¾ã€
       await video.getByTestId("video-stop").click();
       await expect.poll(async () => (await kinds()).filter((kind) => kind === "stop_video").length).toBe(1);
       await expect(video.getByTestId("video-status")).toHaveAttribute("data-state", "idle");
 
-      // ÃüÁîÀï**Ö»ÓĞ objectId**£º·ÅÄÄÒ»Ìõ / Ñ­»· / ÉùÒô¶¼ÔÚÍÆÏÂÈ¥µÄÄÇ¸ö¶ÔÏóÀï
+      // å‘½ä»¤é‡Œ**åªæœ‰ objectId**ï¼šæ”¾å“ªä¸€æ¡ / å¾ªç¯ / å£°éŸ³éƒ½åœ¨æ¨ä¸‹å»çš„é‚£ä¸ªå¯¹è±¡é‡Œ
       const commands = await fakeCommands(page);
       for (const command of commands) {
         expect(command.objectId).toBe(mapId);
@@ -379,10 +379,10 @@ test.describe("ÊÓÆµ£ºÃüÁîÏÂ·¢¸øÇ°¶Ë", { tag: "@runtime" }, () => {
         expect(JSON.stringify(command)).not.toContain("loop");
       }
 
-      // »ØÖ´ ok:true ¡ú ±à¼­Æ÷ÈÕÖ¾Àï¿´µÃ¼û¡¸ÃüÁî Ö´ĞĞ³É¹¦¡¹£¨²»¼Ù×°³É¹¦¡¢Ò²²»³¬Ê±£©
-      await expect(page.getByText(/ÃüÁî\s*Ö´ĞĞ³É¹¦/).first()).toBeVisible();
+      // å›æ‰§ ok:true â†’ ç¼–è¾‘å™¨æ—¥å¿—é‡Œçœ‹å¾—è§ã€Œå‘½ä»¤ æ‰§è¡ŒæˆåŠŸã€ï¼ˆä¸å‡è£…æˆåŠŸã€ä¹Ÿä¸è¶…æ—¶ï¼‰
+      await expect(page.getByText(/å‘½ä»¤\s*æ‰§è¡ŒæˆåŠŸ/).first()).toBeVisible();
 
-      // ÊÕÎ²£ºÍË³öÔËĞĞÌ¬£¨Ç°¶Ë»á±»ÌßÏÂÏß£©
+      // æ”¶å°¾ï¼šé€€å‡ºè¿è¡Œæ€ï¼ˆå‰ç«¯ä¼šè¢«è¸¢ä¸‹çº¿ï¼‰
       await page.getByTestId("mode-edit").click();
       await expect(page.getByTestId("status-mode")).toHaveAttribute("data-mode", "edit");
     } finally {
