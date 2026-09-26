@@ -1,7 +1,7 @@
 # TASKS：视频混合组件（用 Mask 混合两条视频）
 
 日期：2026-09-26
-状态：**已完成**（D1–D5、D7；D6 的 Unity MCP 断言已跑，浏览器 e2e 未跑）
+状态：**已完成**（D1–D7；`pnpm check` 全绿 + 桌面 `@runtime` e2e 10 条全过 + Unity MCP 断言通过）
 前置：[[TASKS-战争雾独立对象]]（遮罩擦除的像素运算 / 窗口形态）、[[TASKS-视频变成可选组件]]（视频是可选组件）、
 [[TASKS-属性面板添加组件]]（底部 Add Component + 组头移除）
 
@@ -119,8 +119,9 @@ export interface VideoBlendDataDoc {
       （D4a 数据面板 / D4b-1 播放记账 / D4b-2 Mask 窗口 + 擦除记账；e2e 归 D6）
       ——Mask 窗口的盖层统一画成深色（运行时那边是 A 的画面），与雾窗口「按区域配色」同一套取舍
 - [x] **D5 Unity**：`VideoBlend.cs` + `VideoBlend.shader` + 镜像 / 命令接线（Unity MCP 编译 0 error / 0 warning）
-- [x] **D6 验证**：`pnpm check` 全绿（服务端侧随 D1–D4 每批跑）+ Unity MCP 断言（shader 存在 / 擦除记账 / 空轨迹拒绝 / `ComponentData` 读取路径）。
-      **浏览器 e2e 未跑**（需要编辑器 Vite + 后端同时起着，留作下一步手测 / 补测）
+- [x] **D6 验证**：`pnpm check` 全绿 + Unity MCP 断言（shader 存在 / 擦除记账 / 空轨迹拒绝 / `ComponentData` 读取路径）
+      + **桌面 e2e**：`e2e/video-blend.spec.ts`（编辑态「擦了不落盘」+ `@runtime` 的 `play_video` / `erase_video_mask` / `stop_video`）；
+      顺带修了 4 个假前端写死的 `protocolVersion: 16`（协议已 v17，不改会连不上）
 - [x] **D7 文档**：CODE-STRUCTURE（协议版本 + 命令表）/ 运行时镜像协议 spec（组件 / 命令 / 客户端表 + v17）/ `client/README` / 本文件
 
 ## 验收标准
