@@ -1,4 +1,4 @@
-ï»¿import { expect, test, type APIRequestContext, type Page, type TestInfo } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Page, type TestInfo } from "@playwright/test";
 import {
   COMPONENT,
   dropProject,
@@ -19,29 +19,29 @@ import {
 import { canvasColorAt } from "./helpers/canvas";
 
 /**
- * è´´å›¾ä¸Šçš„**è§†é¢‘æ··åˆ**ï¼ˆv17ï¼‰ï¼šä¸¤è·¯ç´ æï¼ˆå›¾ç‰‡ / è§†é¢‘ï¼ŒA ç›–ä½ / B æ“¦å¼€éœ²å‡ºï¼‰+ ä¸€å¼ **çº¯è¿è¡Œæ€**çš„ Maskã€‚
+ * ÌùÍ¼ÉÏµÄ**ÊÓÆµ»ìºÏ**£¨v17£©£ºÁ½Â·ËØ²Ä£¨Í¼Æ¬ / ÊÓÆµ£¬A ¸Ç×¡ / B ²Á¿ªÂ¶³ö£©+ Ò»ÕÅ**´¿ÔËĞĞÌ¬**µÄ Mask¡£
  *
- * ä¸¤åŠï¼š
- * 1. **ç¼–è¾‘å™¨æ€ä¹ˆé… / Mask çª—å£æ€ä¹ˆæ“¦**ï¼ˆä¸éœ€è¦è¿è¡Œæ€ï¼‰ï¼šä¸¤è·¯å„è‡ªã€Œç§ç±»å¼€å…³ + é€‰æ‹©æŒ‰é’®ã€ã€
- *    å¾ªç¯ / å£°éŸ³æ¥æºè½è¿›åœºæ™¯æ–‡ä»¶ï¼›Mask çª—å£åˆå§‹æ•´å¼ ç›–ä½ã€æ“¦å¼€éœ²å‡ºã€å³è¾¹ä¸¤ä¸ªã€Œæ•´å¼ ã€æŒ‰é’®
- *    ä¸€æ¬¡å¡« 0 / 1ï¼Œ**åœºæ™¯æ–‡ä»¶ä¸€ä¸ªå­—èŠ‚éƒ½ä¸åŠ¨**ï¼›
- * 2. **å‘½ä»¤æ€ä¹ˆä¸‹å‘**ï¼ˆ`@runtime`ï¼‰ï¼šæµè§ˆå™¨é‡Œå†å¼€ä¸€æ¡**å‡å‰ç«¯** WebSocketï¼ˆ`/client`ï¼‰ï¼Œ
- *    ç‚¹æ’­æ”¾ â†’ å‰ç«¯æ”¶åˆ° `play_video`ï¼ˆ**åªå¸¦ `objectId`**ï¼‰ï¼›Mask çª—å£æ“¦ä¸€ç¬” â†’ æ”¶åˆ°
- *    `erase_video_mask`ï¼ˆè½½è·æ˜¯**è½¨è¿¹**ï¼šå½’ä¸€åŒ–ç‚¹ + åŠå¾„ `0.05` + è½¯è¾¹ `0.5`â€”â€”ä¸æ˜¯é›¾é‚£æ¡£ `1`ï¼Œ
- *    è¦å®å¿ƒæ ¸ï¼Œæ“¦åˆ°çš„åœ°æ–¹æ‰çœŸçš„åˆ° 0ï¼‰ï¼›æ•´å¼ æŒ‰é’® â†’ æ”¶åˆ° `fill_video_mask`ï¼ˆåªæœ‰ `covered`ï¼‰ã€‚
+ * Á½°ë£º
+ * 1. **±à¼­Æ÷ÔõÃ´Åä / Mask ´°¿ÚÔõÃ´²Á**£¨²»ĞèÒªÔËĞĞÌ¬£©£ºÁ½Â·¸÷×Ô¡¸ÖÖÀà¿ª¹Ø + Ñ¡Ôñ°´Å¥¡¹¡¢
+ *    Ñ­»· / ÉùÒôÀ´Ô´Âä½ø³¡¾°ÎÄ¼ş£»Mask ´°¿Ú³õÊ¼ÕûÕÅ¸Ç×¡¡¢²Á¿ªÂ¶³ö¡¢ÓÒ±ßÁ½¸ö¡¸ÕûÕÅ¡¹°´Å¥
+ *    Ò»´ÎÌî 0 / 1£¬**³¡¾°ÎÄ¼şÒ»¸ö×Ö½Ú¶¼²»¶¯**£»
+ * 2. **ÃüÁîÔõÃ´ÏÂ·¢**£¨`@runtime`£©£ºä¯ÀÀÆ÷ÀïÔÙ¿ªÒ»Ìõ**¼ÙÇ°¶Ë** WebSocket£¨`/client`£©£¬
+ *    µã²¥·Å ¡ú Ç°¶ËÊÕµ½ `play_video`£¨**Ö»´ø `objectId`**£©£»Mask ´°¿Ú²ÁÒ»±Ê ¡ú ÊÕµ½
+ *    `erase_video_mask`£¨ÔØºÉÊÇ**¹ì¼£**£º¹éÒ»»¯µã + °ë¾¶ `0.05` + Èí±ß `0.5`¡ª¡ª²»ÊÇÎíÄÇµµ `1`£¬
+ *    ÒªÊµĞÄºË£¬²Áµ½µÄµØ·½²ÅÕæµÄµ½ 0£©£»ÕûÕÅ°´Å¥ ¡ú ÊÕµ½ `fill_video_mask`£¨Ö»ÓĞ `covered`£©¡£
  *
- * ç¼–è¾‘å™¨**ä¸æ’­æ”¾è§†é¢‘**ï¼ˆä¸æ¥è§£ç ï¼‰ï¼šè¿™é‡Œé’‰çš„å…¨æ˜¯ã€Œé¢æ¿ / çª—å£ / å‘½ä»¤ã€ã€‚
+ * ±à¼­Æ÷**²»²¥·ÅÊÓÆµ**£¨²»½Ó½âÂë£©£ºÕâÀï¶¤µÄÈ«ÊÇ¡¸Ãæ°å / ´°¿Ú / ÃüÁî¡¹¡£
  */
 
 const SCENE = "Map001";
 const TEXTURE_SIZE = { width: 320, height: 180 };
-/** ç¼–è¾‘å™¨ä¸‹å‘çš„å½’ä¸€åŒ–åŠå¾„ï¼ˆ`48/960`ï¼Œè·¨ç«¯å¥‘çº¦é‡Œçš„é‚£ä¸ªæ•°ï¼‰ã€‚ */
+/** ±à¼­Æ÷ÏÂ·¢µÄ¹éÒ»»¯°ë¾¶£¨`48/960`£¬¿ç¶ËÆõÔ¼ÀïµÄÄÇ¸öÊı£©¡£ */
 const BRUSH_RATIO = 0.05;
 const CANVAS = "video-blend-mask-canvas";
-/** åœºæ™¯æ–‡ä»¶é‡Œå­˜çš„æ˜¯**ç´ æ GUID**ï¼ˆ`sceneAssetRefsToGuids`ï¼‰ï¼Œä¸æ˜¯é€»è¾‘è·¯å¾„ã€‚ */
+/** ³¡¾°ÎÄ¼şÀï´æµÄÊÇ**ËØ²Ä GUID**£¨`sceneAssetRefsToGuids`£©£¬²»ÊÇÂß¼­Â·¾¶¡£ */
 const GUID = /^[0-9a-f]{32}$/;
 
-/** æŠŠä¸€æ®µå‡è§†é¢‘æäº¤åˆ° `Assets/video/`ï¼ˆå†…å®¹æ— æ‰€è°“ï¼šç¼–è¾‘å™¨ä¸è§£æè§†é¢‘ã€ä¹Ÿä¸æ’­æ”¾ï¼‰ã€‚ */
+/** °ÑÒ»¶Î¼ÙÊÓÆµÌá½»µ½ `Assets/video/`£¨ÄÚÈİÎŞËùÎ½£º±à¼­Æ÷²»½âÎöÊÓÆµ¡¢Ò²²»²¥·Å£©¡£ */
 async function uploadVideo(
   request: APIRequestContext,
   project: string,
@@ -56,9 +56,9 @@ async function uploadVideo(
   return id;
 }
 
-/** ä¸€å¼ è´´å›¾ + `VideoBlend`ï¼ˆA / B å„ä¸€è·¯ï¼Œ**A æ•…æ„ä¸é€‰**â€”â€”ç•™ç»™ã€Œé€‰ç´ æã€é‚£ä¸€æ­¥ï¼›B é€‰äº†ï¼‰ã€‚ */
+/** Ò»ÕÅÌùÍ¼ + `VideoBlend`£¨A / B ¸÷Ò»Â·£¬**A ¹ÊÒâ²»Ñ¡**¡ª¡ªÁô¸ø¡¸Ñ¡ËØ²Ä¡¹ÄÇÒ»²½£»B Ñ¡ÁË£©¡£ */
 function blendTextureDoc(project: string, clipB: string): Record<string, unknown> {
-  const base = gameObjectDoc("è§†é¢‘æ··åˆè´´å›¾", "Image", { x: 0, y: 0 });
+  const base = gameObjectDoc("ÊÓÆµ»ìºÏÌùÍ¼", "Image", { x: 0, y: 0 });
   const withImage = withComponent(base, COMPONENT.imageLayer, {
     id: `project:${project}/Assets/images/${SCENE}.png`,
     width: TEXTURE_SIZE.width,
@@ -74,7 +74,7 @@ function blendTextureDoc(project: string, clipB: string): Record<string, unknown
   });
 }
 
-/** åœºæ™¯æ–‡ä»¶é‡Œé‚£ä¸ªå¯¹è±¡çš„ `VideoBlend` æ•°æ®ï¼ˆæ²¡æœ‰å°±æŠ›ï¼‰ã€‚ */
+/** ³¡¾°ÎÄ¼şÀïÄÇ¸ö¶ÔÏóµÄ `VideoBlend` Êı¾İ£¨Ã»ÓĞ¾ÍÅ×£©¡£ */
 async function blendData(
   request: APIRequestContext,
   project: string,
@@ -83,17 +83,17 @@ async function blendData(
   const file = await readSceneFile(request, project, SCENE);
   const data = objectComponentData(findGameObject(file, { objectId }), COMPONENT.videoBlend);
   if (data === undefined) {
-    throw new Error("åœºæ™¯æ–‡ä»¶é‡Œæ²¡æœ‰ VideoBlend ç»„ä»¶");
+    throw new Error("³¡¾°ÎÄ¼şÀïÃ»ÓĞ VideoBlend ×é¼ş");
   }
 
   return data;
 }
 
-/** åœ¨ Mask ç”»å¸ƒä¸Šæ²¿ä¸­çº¿æ‹–ä¸€ç¬”ï¼ˆæ¨¡æ‹Ÿ GM æ“¦é™¤ï¼‰ã€‚ */
+/** ÔÚ Mask »­²¼ÉÏÑØÖĞÏßÍÏÒ»±Ê£¨Ä£Äâ GM ²Á³ı£©¡£ */
 async function eraseAcross(page: Page): Promise<void> {
   const box = await page.getByTestId(CANVAS).boundingBox();
   if (box === null) {
-    throw new Error("æ‹¿ä¸åˆ° Mask ç”»å¸ƒå°ºå¯¸");
+    throw new Error("ÄÃ²»µ½ Mask »­²¼³ß´ç");
   }
 
   await page.mouse.move(box.x + box.width * 0.2, box.y + box.height * 0.5);
@@ -102,28 +102,28 @@ async function eraseAcross(page: Page): Promise<void> {
   await page.mouse.up();
 }
 
-/** Mask ç”»å¸ƒæ­£ä¸­çš„å¹³å‡é¢œè‰²ï¼ˆç›–å±‚æ˜¯æ·±è‰²ä¸é€æ˜ï¼›æ“¦å¼€å alpha æ‰ä¸‹å»ï¼‰ã€‚ */
+/** Mask »­²¼ÕıÖĞµÄÆ½¾ùÑÕÉ«£¨¸Ç²ãÊÇÉîÉ«²»Í¸Ã÷£»²Á¿ªºó alpha µôÏÂÈ¥£©¡£ */
 async function maskCenter(page: Page): Promise<{ readonly a: number }> {
   const box = await page.getByTestId(CANVAS).boundingBox();
   if (box === null) {
-    throw new Error("æ‹¿ä¸åˆ° Mask ç”»å¸ƒå°ºå¯¸");
+    throw new Error("ÄÃ²»µ½ Mask »­²¼³ß´ç");
   }
 
   return canvasColorAt(page, CANVAS, { x: box.x + box.width / 2, y: box.y + box.height / 2 }, 2);
 }
 
-/** æ‰“å¼€é¡¹ç›®å¹¶é€‰ä¸­é‚£å¼ **è§†é¢‘æ··åˆè´´å›¾**ã€‚ */
+/** ´ò¿ªÏîÄ¿²¢Ñ¡ÖĞÄÇÕÅ**ÊÓÆµ»ìºÏÌùÍ¼**¡£ */
 async function openBlendObject(page: Page, project: string): Promise<void> {
   await enterEditor(page);
   await openProject(page, project);
   await selectObject(page, 0);
-  await expect(page.getByTestId("inspector-object-name")).toHaveValue("è§†é¢‘æ··åˆè´´å›¾");
+  await expect(page.getByTestId("inspector-object-name")).toHaveValue("ÊÓÆµ»ìºÏÌùÍ¼");
 }
 
-// ---------------------------------------------------------------- ç¼–è¾‘æ€ï¼šé¢æ¿ä¸ Mask çª—å£
+// ---------------------------------------------------------------- ±à¼­Ì¬£ºÃæ°åÓë Mask ´°¿Ú
 
-test.describe("è§†é¢‘æ··åˆï¼šå±æ€§é¢æ¿ä¸ Mask çª—å£", () => {
-  test("ä¸¤è·¯ç´ æ / å¾ªç¯ / å£°éŸ³ / è‡ªåŠ¨æ’­æ”¾è½è¿›åœºæ™¯æ–‡ä»¶ï¼›Mask çª—å£æ“¦äº† / æ•´å¼ å¡«äº†éƒ½ä¸è½ç›˜", async ({
+test.describe("ÊÓÆµ»ìºÏ£ºÊôĞÔÃæ°åÓë Mask ´°¿Ú", () => {
+  test("Á½Â·ËØ²Ä / Ñ­»· / ÉùÒô / ×Ô¶¯²¥·ÅÂä½ø³¡¾°ÎÄ¼ş£»Mask ´°¿Ú²ÁÁË / ÕûÕÅÌîÁË¶¼²»ÂäÅÌ", async ({
     page,
     request,
   }) => {
@@ -138,8 +138,8 @@ test.describe("è§†é¢‘æ··åˆï¼šå±æ€§é¢æ¿ä¸ Mask çª—å£", () => {
       await openBlendObject(page, project);
 
       const group = page.locator('[data-group="videoBlend"]');
-      // ä¸¤è·¯å„æ˜¯ã€Œç§ç±»å¼€å…³ + é€‰æ‹©æŒ‰é’® + å½“å‰ç´ æã€ï¼šB å·²é€‰ï¼ˆfixture ç»™çš„ï¼‰ã€A è¿˜ç©ºç€ï¼›
-      // å†åŠ å¾ªç¯ / å£°éŸ³ / è‡ªåŠ¨æ’­æ”¾ä¸‰è¡Œ + Mask å…¥å£
+      // Á½Â·¸÷ÊÇ¡¸ÖÖÀà¿ª¹Ø + Ñ¡Ôñ°´Å¥ + µ±Ç°ËØ²Ä¡¹£ºB ÒÑÑ¡£¨fixture ¸øµÄ£©¡¢A »¹¿Õ×Å£»
+      // ÔÙ¼ÓÑ­»· / ÉùÒô / ×Ô¶¯²¥·ÅÈıĞĞ + Mask Èë¿Ú
       await expect(group.getByTestId("video-blend-a-kind-video")).toHaveAttribute("data-active", "true");
       await expect(group.getByTestId("video-blend-a-kind-image")).toHaveAttribute("data-active", "false");
       await expect(group.getByTestId("video-blend-a-empty")).toBeVisible();
@@ -150,8 +150,8 @@ test.describe("è§†é¢‘æ··åˆï¼šå±æ€§é¢æ¿ä¸ Mask çª—å£", () => {
       await expect(group.getByTestId("video-blend-mask-open")).toBeVisible();
       await expect(group.getByTestId("video-blend-play")).toBeEnabled();
 
-      // A è¿˜æ²¡é€‰ â†’ ç‚¹ã€Œé€‰æ‹©è§†é¢‘â€¦ã€å¼¹é€šç”¨é€‰æ‹©æ¡†ï¼ŒæŒ‘ä¸€æ¡ã€Œæ·»åŠ ã€ï¼ˆå†™æ–‡æ¡£ã€å¯æ’¤é”€ï¼‰ã€‚
-      // è½ç›˜çš„æ˜¯**ç´ æ GUID** è€Œä¸æ˜¯é€»è¾‘è·¯å¾„ï¼Œæ‰€ä»¥æ–­è¨€å½¢çŠ¶ï¼ˆ32 ä½åå…­è¿›åˆ¶ï¼‰
+      // A »¹Ã»Ñ¡ ¡ú µã¡¸Ñ¡ÔñÊÓÆµ¡­¡¹µ¯Í¨ÓÃÑ¡Ôñ¿ò£¬ÌôÒ»Ìõ¡¸Ìí¼Ó¡¹£¨Ğ´ÎÄµµ¡¢¿É³·Ïú£©¡£
+      // ÂäÅÌµÄÊÇ**ËØ²Ä GUID** ¶ø²»ÊÇÂß¼­Â·¾¶£¬ËùÒÔ¶ÏÑÔĞÎ×´£¨32 Î»Ê®Áù½øÖÆ£©
       await group.getByTestId("video-blend-a-pick").click();
       const picker = page.getByTestId("video-picker-dialog");
       await picker.locator(`[data-testid="video-picker-item"][data-asset-id="${clipA}"]`).click();
@@ -166,13 +166,13 @@ test.describe("è§†é¢‘æ··åˆï¼šå±æ€§é¢æ¿ä¸ Mask çª—å£", () => {
         })
         .toEqual({ kind: "video", idIsGuid: true });
 
-      // å¾ªç¯æ‰“å¼€ï¼šä¹Ÿæ˜¯æ–‡æ¡£æ•°æ®
+      // Ñ­»·´ò¿ª£ºÒ²ÊÇÎÄµµÊı¾İ
       await group.getByTestId("video-blend-loop").check();
       await expect
         .poll(async () => (await blendData(request, project, objectId))["loop"])
         .toBe(true);
 
-      // è‡ªåŠ¨æ’­æ”¾æ‰“å¼€ï¼šåŒæ ·æ˜¯æ–‡æ¡£æ•°æ®ï¼ˆv18ï¼Œä¸ã€Œè§†é¢‘ã€é‚£ä¸ªå¼€å…³åŒä¹‰ï¼‰
+      // ×Ô¶¯²¥·Å´ò¿ª£ºÍ¬ÑùÊÇÎÄµµÊı¾İ£¨v18£¬Óë¡¸ÊÓÆµ¡¹ÄÇ¸ö¿ª¹ØÍ¬Òå£©
       await group.getByTestId("video-blend-auto-play").check();
       await expect
         .poll(async () => (await blendData(request, project, objectId))["autoPlay"])
@@ -180,7 +180,7 @@ test.describe("è§†é¢‘æ··åˆï¼šå±æ€§é¢æ¿ä¸ Mask çª—å£", () => {
 
       const before = await blendData(request, project, objectId);
 
-      // Mask çª—å£ï¼šåˆå§‹æ•´å¼ ä¸é€æ˜ï¼ˆç›–å±‚ï¼‰ï¼Œæ“¦ä¸€ç¬”ä¹‹åé‚£ä¸€å¸¦çš„ alpha æ‰ä¸‹å»
+      // Mask ´°¿Ú£º³õÊ¼ÕûÕÅ²»Í¸Ã÷£¨¸Ç²ã£©£¬²ÁÒ»±ÊÖ®ºóÄÇÒ»´øµÄ alpha µôÏÂÈ¥
       await group.getByTestId("video-blend-mask-open").click();
       await expect(page.getByTestId("video-blend-mask-dialog")).toBeVisible();
       const covered = await maskCenter(page);
@@ -189,15 +189,15 @@ test.describe("è§†é¢‘æ··åˆï¼šå±æ€§é¢æ¿ä¸ Mask çª—å£", () => {
       await eraseAcross(page);
       await expect.poll(async () => (await maskCenter(page)).a).toBeLessThan(50);
 
-      // å³è¾¹ä¸¤ä¸ªã€Œæ•´å¼ ã€æŒ‰é’®ï¼š0 = æ•´å¼ æ¸…ç©ºï¼ˆå®Œå…¨éœ²å‡º Bï¼Œalpha å½’é›¶ï¼‰ï¼›
-      // 1 = æ•´å¼ ç›–å›ï¼ˆæ¢å¤æˆåˆå§‹é‚£å—ç›–å±‚ï¼Œalpha å›åˆ° 235ï¼‰ã€‚éƒ½ä¸è½ç›˜ã€‚
+      // ÓÒ±ßÁ½¸ö¡¸ÕûÕÅ¡¹°´Å¥£º0 = ÕûÕÅÇå¿Õ£¨ÍêÈ«Â¶³ö B£¬alpha ¹éÁã£©£»
+      // 1 = ÕûÕÅ¸Ç»Ø£¨»Ö¸´³É³õÊ¼ÄÇ¿é¸Ç²ã£¬alpha »Øµ½ 235£©¡£¶¼²»ÂäÅÌ¡£
       await page.getByTestId("video-blend-mask-fill-revealed").click();
       await expect.poll(async () => (await maskCenter(page)).a).toBe(0);
 
       await page.getByTestId("video-blend-mask-fill-covered").click();
       await expect.poll(async () => (await maskCenter(page)).a).toBeGreaterThan(200);
 
-      // **æ“¦äº†ä¸è½ç›˜**ï¼šåœºæ™¯æ–‡ä»¶é‡Œé‚£ä»½ VideoBlend ä¸æ“¦ä¹‹å‰é€å­—ä¸€è‡´ï¼ˆæ²¡æœ‰é®ç½©å­—æ®µï¼‰
+      // **²ÁÁË²»ÂäÅÌ**£º³¡¾°ÎÄ¼şÀïÄÇ·İ VideoBlend Óë²ÁÖ®Ç°Öğ×ÖÒ»ÖÂ£¨Ã»ÓĞÕÚÕÖ×Ö¶Î£©
       expect(await blendData(request, project, objectId)).toEqual(before);
 
       await page.getByTestId("video-blend-mask-close").click();
@@ -208,13 +208,13 @@ test.describe("è§†é¢‘æ··åˆï¼šå±æ€§é¢æ¿ä¸ Mask çª—å£", () => {
   });
 });
 
-// ---------------------------------------------------------------- è¿è¡Œæ€ï¼šå‘½ä»¤ä¸‹å‘
+// ---------------------------------------------------------------- ÔËĞĞÌ¬£ºÃüÁîÏÂ·¢
 
-/** å‡å‰ç«¯æ”¶åˆ°çš„ä¸€æ¡å‘½ä»¤ï¼ˆåªåˆ—è¿™æ¡ç”¨ä¾‹ç”¨åˆ°çš„å­—æ®µï¼‰ã€‚ */
+/** ¼ÙÇ°¶ËÊÕµ½µÄÒ»ÌõÃüÁî£¨Ö»ÁĞÕâÌõÓÃÀıÓÃµ½µÄ×Ö¶Î£©¡£ */
 interface FakeCommand {
   readonly kind?: string;
   readonly objectId?: string;
-  /** `fill_video_mask`ï¼š`true` = æ•´å¼ ç›–ä½ã€`false` = æ•´å¼ æ“¦å¼€ã€‚ */
+  /** `fill_video_mask`£º`true` = ÕûÕÅ¸Ç×¡¡¢`false` = ÕûÕÅ²Á¿ª¡£ */
   readonly covered?: boolean;
   readonly stroke?: {
     readonly points?: ReadonlyArray<{ readonly x: number; readonly y: number }>;
@@ -229,15 +229,15 @@ interface FakeClientWindow {
   __blendSocket?: WebSocket;
 }
 
-/** è¿è¡Œæ€æ˜¯æœåŠ¡ç«¯å…¨å±€å•ä¾‹ï¼šåªåœ¨ä¸€ä¸ªæ¡£ä½ä¸Šè·‘ï¼Œå…å¾—å¹¶è¡Œæ¡£ä½äº’ç›¸å¼€å…³ã€‚ */
+/** ÔËĞĞÌ¬ÊÇ·şÎñ¶ËÈ«¾Öµ¥Àı£ºÖ»ÔÚÒ»¸öµµÎ»ÉÏÅÜ£¬ÃâµÃ²¢ĞĞµµÎ»»¥Ïà¿ª¹Ø¡£ */
 function skipOutsideDesktop(testInfo: TestInfo): void {
   test.skip(
     !testInfo.project.name.startsWith("desktop"),
-    "è¿è¡Œæ€æ˜¯å…¨å±€çŠ¶æ€ï¼šåªåœ¨ä¸€ä¸ªæ¡£ä½è·‘ï¼Œå…å¾—å¹¶è¡Œæ¡£ä½äº’ç›¸å¼€å…³",
+    "ÔËĞĞÌ¬ÊÇÈ«¾Ö×´Ì¬£ºÖ»ÔÚÒ»¸öµµÎ»ÅÜ£¬ÃâµÃ²¢ĞĞµµÎ»»¥Ïà¿ª¹Ø",
   );
 }
 
-/** åœ¨é¡µé¢é‡Œå¼€ä¸€æ¡**å‡å‰ç«¯**è¿æ¥ï¼šæ¡æ‰‹ã€æ”¶åœºæ™¯ã€æŠŠå‘½ä»¤è®°ä¸‹æ¥å¹¶æŒ‰åè®®å›æ‰§ã€‚ */
+/** ÔÚÒ³ÃæÀï¿ªÒ»Ìõ**¼ÙÇ°¶Ë**Á¬½Ó£ºÎÕÊÖ¡¢ÊÕ³¡¾°¡¢°ÑÃüÁî¼ÇÏÂÀ´²¢°´Ğ­Òé»ØÖ´¡£ */
 async function connectFakeClient(page: Page, port: number): Promise<void> {
   await page.evaluate((clientPort) => {
     const scope = window as unknown as FakeClientWindow;
@@ -251,10 +251,10 @@ async function connectFakeClient(page: Page, port: number): Promise<void> {
       socket.send(
         JSON.stringify({
           type: "client_hello",
-          // ä¸ `@dts/protocol` çš„ `PROTOCOL_VERSION` ä¸€è‡´ï¼ˆè¿™é‡Œå†™æ­»ï¼še2e ä¸æ˜¯ workspace åŒ…ï¼Œ
-          // æ‹¿ä¸åˆ°é‚£ä¸ªå¸¸é‡ï¼›ç‰ˆæœ¬ä¸€å‡è¿™é‡Œä¼šè¿ä¸ä¸Šã€ç”¨ä¾‹ä¼šå½“åœºå¤±è´¥ï¼Œæé†’åŒæ­¥æ”¹ï¼‰
-          protocolVersion: 20,
-          name: "e2e å‡å‰ç«¯",
+          // Óë `@dts/protocol` µÄ `PROTOCOL_VERSION` Ò»ÖÂ£¨ÕâÀïĞ´ËÀ£ºe2e ²»ÊÇ workspace °ü£¬
+          // ÄÃ²»µ½ÄÇ¸ö³£Á¿£»°æ±¾Ò»ÉıÕâÀï»áÁ¬²»ÉÏ¡¢ÓÃÀı»áµ±³¡Ê§°Ü£¬ÌáĞÑÍ¬²½¸Ä£©
+          protocolVersion: 21,
+          name: "e2e ¼ÙÇ°¶Ë",
           version: "0.0.0",
         }),
       );
@@ -279,7 +279,7 @@ async function connectFakeClient(page: Page, port: number): Promise<void> {
             type: "command_result",
             requestId: parsed.requestId,
             ok: true,
-            effects: ["e2e å‡å‰ç«¯æ”¶åˆ°å‘½ä»¤"],
+            effects: ["e2e ¼ÙÇ°¶ËÊÕµ½ÃüÁî"],
           }),
         );
       }
@@ -291,10 +291,10 @@ async function fakeCommands(page: Page): Promise<readonly FakeCommand[]> {
   return page.evaluate(() => (window as unknown as FakeClientWindow).__blendCommands ?? []);
 }
 
-test.describe("è§†é¢‘æ··åˆï¼šè½¨è¿¹ä¸‹å‘ç»™å‰ç«¯", { tag: "@runtime" }, () => {
+test.describe("ÊÓÆµ»ìºÏ£º¹ì¼£ÏÂ·¢¸øÇ°¶Ë", { tag: "@runtime" }, () => {
   test.describe.configure({ mode: "serial" });
 
-  test("æ’­æ”¾ / åœæ­¢ â†’ play_video / stop_videoï¼›Mask çª—å£æ“¦ä¸€ç¬” / æ•´å¼ å¡« â†’ erase_video_mask / fill_video_mask", async ({
+  test("²¥·Å / Í£Ö¹ ¡ú play_video / stop_video£»Mask ´°¿Ú²ÁÒ»±Ê / ÕûÕÅÌî ¡ú erase_video_mask / fill_video_mask", async ({
     page,
     request,
   }, testInfo) => {
@@ -308,7 +308,7 @@ test.describe("è§†é¢‘æ··åˆï¼šè½¨è¿¹ä¸‹å‘ç»™å‰ç«¯", { tag: "@runtime" }, () =>
       const clipB = await uploadVideo(request, project, "b.mp4");
       const doc = blendTextureDoc(project, clipB);
       const objectId = String(doc["id"]);
-      // A ä¹Ÿé€‰ä¸Šï¼Œè¿™æ ·ã€Œæ’­æ”¾ã€æ‰ç‚¹å¾—åŠ¨
+      // A Ò²Ñ¡ÉÏ£¬ÕâÑù¡¸²¥·Å¡¹²ÅµãµÃ¶¯
       const blend = objectComponentData(doc, COMPONENT.videoBlend)!;
       blend["a"] = { kind: "video", id: clipA };
 
@@ -318,14 +318,14 @@ test.describe("è§†é¢‘æ··åˆï¼šè½¨è¿¹ä¸‹å‘ç»™å‰ç«¯", { tag: "@runtime" }, () =>
 
       const group = page.locator('[data-group="videoBlend"]');
 
-      // è¿›å…¥è¿è¡Œæ€ â†’ å‡å‰ç«¯è¿ä¸Šï¼ˆæ‹¿åˆ°æ•´ä»½åœºæ™¯ = é•œåƒåè®®é‚£æ¡è·¯æ˜¯é€šçš„ï¼‰
+      // ½øÈëÔËĞĞÌ¬ ¡ú ¼ÙÇ°¶ËÁ¬ÉÏ£¨ÄÃµ½Õû·İ³¡¾° = ¾µÏñĞ­ÒéÄÇÌõÂ·ÊÇÍ¨µÄ£©
       await page.getByTestId("mode-run").click();
       await expect(page.getByTestId("status-mode")).toHaveAttribute("data-mode", "run");
       await connectFakeClient(page, port);
       await page.waitForFunction(() => (window as unknown as FakeClientWindow).__blendScene === true);
       await expect(page.getByTestId("client-badge")).toHaveAttribute("data-connected", "yes");
 
-      // æ’­æ”¾ï¼šå‘½ä»¤åªå¸¦ objectIdï¼ˆæ”¾å“ªä¸¤è·¯ / å¾ªç¯ / å£°éŸ³éƒ½åœ¨æ¨ä¸‹å»çš„é‚£ä¸ªå¯¹è±¡é‡Œï¼‰
+      // ²¥·Å£ºÃüÁîÖ»´ø objectId£¨·ÅÄÄÁ½Â· / Ñ­»· / ÉùÒô¶¼ÔÚÍÆÏÂÈ¥µÄÄÇ¸ö¶ÔÏóÀï£©
       await group.getByTestId("video-blend-play").click();
       await expect
         .poll(async () => (await fakeCommands(page)).filter((item) => item.kind === "play_video").length)
@@ -335,7 +335,7 @@ test.describe("è§†é¢‘æ··åˆï¼šè½¨è¿¹ä¸‹å‘ç»™å‰ç«¯", { tag: "@runtime" }, () =>
       expect(play?.objectId).toBe(objectId);
       expect(play?.stroke).toBeUndefined();
 
-      // Mask çª—å£æ“¦ä¸€ç¬” â†’ erase_video_maskï¼šåªæœ‰è½¨è¿¹ï¼ˆå½’ä¸€åŒ–ç‚¹ + åŠå¾„ 0.05 + è½¯è¾¹ 0.5ï¼‰
+      // Mask ´°¿Ú²ÁÒ»±Ê ¡ú erase_video_mask£ºÖ»ÓĞ¹ì¼££¨¹éÒ»»¯µã + °ë¾¶ 0.05 + Èí±ß 0.5£©
       await group.getByTestId("video-blend-mask-open").click();
       await expect(page.getByTestId("video-blend-mask-dialog")).toBeVisible();
       await eraseAcross(page);
@@ -358,7 +358,7 @@ test.describe("è§†é¢‘æ··åˆï¼šè½¨è¿¹ä¸‹å‘ç»™å‰ç«¯", { tag: "@runtime" }, () =>
         }
       }
 
-      // å³è¾¹ä¸¤ä¸ªã€Œæ•´å¼ ã€æŒ‰é’® â†’ fill_video_maskï¼šåªæœ‰ objectId + coveredï¼Œ**ä¸å¸¦è½¨è¿¹**
+      // ÓÒ±ßÁ½¸ö¡¸ÕûÕÅ¡¹°´Å¥ ¡ú fill_video_mask£ºÖ»ÓĞ objectId + covered£¬**²»´ø¹ì¼£**
       await page.getByTestId("video-blend-mask-fill-revealed").click();
       await expect
         .poll(async () => (await fakeCommands(page)).filter((item) => item.kind === "fill_video_mask").length)
@@ -375,10 +375,10 @@ test.describe("è§†é¢‘æ··åˆï¼šè½¨è¿¹ä¸‹å‘ç»™å‰ç«¯", { tag: "@runtime" }, () =>
       expect(fills[1]).toMatchObject({ objectId, covered: true });
       expect(fills[1]?.stroke).toBeUndefined();
 
-      // å‡å‰ç«¯å›æ‰§ ok:true â†’ ç¼–è¾‘å™¨æ—¥å¿—é‡Œçœ‹å¾—è§ã€Œå‘½ä»¤ æ‰§è¡ŒæˆåŠŸã€
-      await expect(page.getByText(/å‘½ä»¤\s*æ‰§è¡ŒæˆåŠŸ/).first()).toBeVisible();
+      // ¼ÙÇ°¶Ë»ØÖ´ ok:true ¡ú ±à¼­Æ÷ÈÕÖ¾Àï¿´µÃ¼û¡¸ÃüÁî Ö´ĞĞ³É¹¦¡¹
+      await expect(page.getByText(/ÃüÁî\s*Ö´ĞĞ³É¹¦/).first()).toBeVisible();
 
-      // åœæ­¢ï¼šæ‹†æ‰æ··åˆå±‚
+      // Í£Ö¹£º²ğµô»ìºÏ²ã
       await page.getByTestId("video-blend-mask-close").click();
       await group.getByTestId("video-blend-stop").click();
       await expect
@@ -389,7 +389,7 @@ test.describe("è§†é¢‘æ··åˆï¼šè½¨è¿¹ä¸‹å‘ç»™å‰ç«¯", { tag: "@runtime" }, () =>
       await page.evaluate(() => {
         (window as unknown as FakeClientWindow).__blendSocket?.close();
       });
-      // é€€å‡ºè¿è¡Œæ€ï¼ˆå‰ç«¯ä¼šè¢«è¸¢ä¸‹çº¿ï¼‰
+      // ÍË³öÔËĞĞÌ¬£¨Ç°¶Ë»á±»ÌßÏÂÏß£©
       await page.getByTestId("mode-edit").click().catch(() => undefined);
       await dropProject(request, project);
     }

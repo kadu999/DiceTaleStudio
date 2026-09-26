@@ -2,6 +2,7 @@ import {
   createGridMapObject,
   createGameObject,
   createFogObject,
+  createMagnifierObject,
   createSoundObject,
   createTeleportObject,
   type ObjectKind,
@@ -35,6 +36,7 @@ const GAME_OBJECT_FACTORIES: Record<ObjectKind, GameObjectFactory> = {
   Fog: ({ name, position, mapId }) => createFogObject({ name, mapId: mapId ?? "", position }),
   PlaySound: ({ name, position }) => createSoundObject({ name, position }),
   Teleport: ({ name, position }) => createTeleportObject({ name, position }),
+  Magnifier: ({ name, position }) => createMagnifierObject({ name, position }),
 };
 
 export function createGameObjectForKind(

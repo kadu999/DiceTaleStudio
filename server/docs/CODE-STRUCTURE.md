@@ -16,8 +16,8 @@
 | 后端默认地址 | `0.0.0.0:1420`（`resources/config/app.json`，可被 `HOST` / `PORT` 覆盖） |
 | 编辑器开发地址 | `http://localhost:5173`（Vite，`/api`、`/editor`、`/client` 反代到 1420） |
 | 编辑器生产地址 | `http://localhost:1420`（后端同源托管 `apps/editor/dist`） |
-| 源码规模（不含测试） | 169 个文件 / 38,465 行（packages 12,914 · backend 3,721 · editor 21,830） |
-| 测试规模 | 34,468 行（单测 24,749 · E2E 9,436 · 架构测试 283） |
+| 源码规模（不含测试） | 170 个文件 / 39,107 行（packages 13,543 · backend 3,721 · editor 21,843） |
+| 测试规模 | 35,006 行（单测 25,287 · E2E 9,436 · 架构测试 283） |
 
 > 上表两行与 §0.1 表格里加粗的文件行数、§3.x 节标题里的包规模由
 > `scripts/check-code-structure-stats.mjs` **机器校验**（`pnpm check` 的一环）：
@@ -429,7 +429,7 @@ build: { outDir: "dist", sourcemap: true },
 - 画笔半径 `floor((brushSize-1)/2)`（1/2→1×1、3/4→3×3、5→5×5，含偶数尺寸的刻意保真），与 Unity `ApplyBrush` 完全一致；
 - 坐标系只有一个：**世界坐标**（x 右、y 上、像素、无限大）；`grid(0,0)` 在地图矩形左下角 = 图片最下面一行，grid.y 与世界 y 同向、不翻转；唯一的翻转发生在贴图绘制（`worldRectTopLeft`）。
 
-### 3.2 `@dts/document` — 文档模型、命令与历史（8,197 行）
+### 3.2 `@dts/document` — 文档模型、命令与历史（8,687 行）
 
 | 文件 | 行数 | 职责 | 关键导出 |
 |---|---|---|---|
@@ -544,13 +544,14 @@ kind 只是预设 id，没有层级——「允许哪些能力槽位」看 `OBJE
 | `fog.ts` | 151 | 战争雾（v27 起是独立的 `Fog` 对象的数据）：`setFogMap` / 总开关 / 指定雾区 / `fogMaskOf` / `fogMapOf`——组件总在，雾引用一张地图 |
 | `play-sound.ts` | 63 | 声音对象（音频列表 / 选中 / 层级） |
 | `teleport.ts` | 48 | 传送阵（候选场景 / 选中） |
+| `magnifier.ts` | 157 | 放大镜（v30）：图片列表的「加一条 / 移出一条 / 换展示第几张」——列表项是完整的图片引用（可带格子），所以**选中是下标**（`picked: number`），移出一条要顺手调它 |
 | `video.ts` | 133 | 视频（开关 / 列表 / 选中 / 移除组件；循环 / 声音 / 自动播放走泛型 `setComponentField`） |
 | `video-blend.ts` | 112 | 视频混合（两路素材的「种类 + 素材」；换种类顺手清素材；循环 / 声音 / 自动播放走泛型 `setComponentField`） |
 | `component.ts` | 47 | 可选组件的**添加 / 移除统一入口**（属性面板底部的 Add Component 与组件头的移除）：按组件类型分派到 `object` / `video` 的初始化命令；加第三种可选组件只在这里加一条 `case` |
 | `project.ts` | 247 | **只剩项目级数据**：三档音量 + 音频**标签表**（`addAudioTag` / `renameAudioTag` / `setAudioTagName` / `deleteAudioTag`）。音频文件的显示名 / 标签（旧的 `setAudioMetaName` / `setAudioMetaTags`）v24 已删、图片切分（旧的 `setSpriteSheet` / `setSpriteImportSettings`）v23 已删——它们现在写在各自素材的 `.meta` 里，写入口径是 `asset-meta.ts` 的纯函数 |
 
 **依赖方向严格单向**：`shared` → `../presets`/`../types`（不 import 任何命令模块）；
-`object`/`scene` → `./shared`；`grid-map`/`fog`/`play-sound`/`teleport`/`video` → `./shared` + `../access` + `../presets`；
+`object`/`scene` → `./shared`；`grid-map`/`fog`/`play-sound`/`teleport`/`magnifier`/`video` → `./shared` + `../access` + `../presets`；
 `component` → `./object` + `./video`（只分派，不碰数据）；
 `project` → `../schema`/`../types`。**没有任何模块 import barrel**（barrel 只做 re-export），所以不存在环。
 
@@ -566,6 +567,7 @@ kind 只是预设 id，没有层级——「允许哪些能力槽位」看 `OBJE
 | 战争雾 | `fogMaskOf`、`fogMapOf`、`setFogMap`、`setFogEnabled`、`setFogRegions`、`clearMapFog`（后者在 `grid-map.ts`：按雾对象 → 被引用地图，动格子数据） |
 | 声音对象 | `setSoundClips`、`setSoundPicked`、`setSoundLayer` |
 | 传送阵 | `setTeleportTargets`、`setTeleportPicked` |
+| 放大镜（v30） | `addMagnifierImage`、`removeMagnifierImage`、`setMagnifierPicked`（列表项是图片引用，所以选中是下标） |
 | 视频 | `supportsVideo`、`isVideoEnabled`、`setVideoEnabled`、`removeObjectVideo`、`setVideoClips`、`setVideoPicked`（循环 / 声音 / 自动播放走泛型 `setComponentField`） |
 | 组件（可选能力） | `addObjectComponent`、`removeObjectComponent`（网格 / 视频的统一添加 / 移除入口，属性面板底部的 Add Component） |
 | 全局设置 | `setBgmVolume`、`setSfxVolume`、`setVoiceVolume` |
@@ -676,7 +678,7 @@ v23 起 `validateScene` 多了第二个参数：`validateScene(scene, { metas })
 > **历史**：`@dts/actions`（动作类型注册表、条件求值、动作图校验）曾是独立的一个包，
 > 随「动作挂在组件上」那套旧模型一起整包删除了；动作编辑的数据面落地时重新设计。
 
-### 3.3 `@dts/protocol` — WS 消息契约（973 行）
+### 3.3 `@dts/protocol` — WS 消息契约（1,034 行）
 
 单文件 `src/messages.ts`（874 行）+ `index.ts` barrel（1 行）。
 **编辑器、服务端、Unity 前端共用同一份 zod schema。**
@@ -776,7 +778,7 @@ resources/
 `writeBinary`、`ensureFolder`、`remove`、`rename`。`rename` 的契约：两端类别必须一致、源必须存在、
 目标必须不存在（**绝不覆盖用户数据**）。
 
-### 3.5 `@dts/renderer` — Canvas 2D 渲染与手柄几何（1,855 行）
+### 3.5 `@dts/renderer` — Canvas 2D 渲染与手柄几何（1,933 行）
 
 | 文件 | 行数 | 职责 | 关键导出 |
 |---|---|---|---|
@@ -1887,6 +1889,7 @@ upgradeRawDocument
 | `document/asset-meta.test.ts` | 869 | **素材 meta 本身**（v23 新增、v24 扩到音频）：`<素材>.meta` 的 schema 与解析（缺 guid 补一个并 `needsRewrite`、高版本拒读、坏形状拒读）、GUID 生成与「只认小写」、导入设置与切分两个纯函数写入（`Default` 摘节点、`1×1` 摘 sheet、值没变返回原对象）、**音频那一段**（`audioNameOfMeta` / `audioTagsOfMeta` / `withMetaAudioName` / `withMetaAudioTags` / `withoutMetaAudioTag`：归一化去重升序、越界与洞丢弃、跨字段不互相覆盖）、`AssetMetas` 索引（guid ↔ 路径、重复 guid 先到先得、`metaOfImage` 先 guid 再 id）、以及 `validateAssetMetas` 的每一条 warning |
 | `document/audio-meta.test.ts` | 472 | **素材轨**：显示名（旧 `setAudioMetaName` 的口径，写进 `.meta` 的 `audio.name`）、文件上的标签 ID 列表（旧 `setAudioMetaTags` 的口径，按工程文件的表归一化）、`withoutMetaAudioTag`（删标签的后半截）；**项目轨**：标签表新建/改名/按序号命名/删除（留洞）；读写工程文件与 **v17 → v18 → v24 迁移**（`audioMeta` 搬进 `migratedMetas`，表留在工程文件）；校验（`validateProject` 不再报 `audioMeta/...` 路径，那几条搬去了 `validateAssetMetas`） |
 | `document/teleport.test.ts` | 370 | 传送阵工厂；`setTeleportTargets`（加/移候选）；`setTeleportPicked`；解析与版本（含 `{target}` 老形状迁移）；校验 |
+| `document/magnifier.test.ts` | 492 | 放大镜工厂；`addMagnifierImage` / `removeMagnifierImage` / `setMagnifierPicked`（重复项、`picked` 跟着走、越界）；解析与版本（格式 30）；校验；存盘（GUID 换算）与推送（`spriteGrid` + 夹格） |
 | `document/sound.test.ts` | 406 | 声音对象工厂；声音命令（列表/选中/层级/名字）；场景文件 schema；校验 |
 | `renderer/gizmo.test.ts` | 363 | 矩形四角；绕枢轴旋转；八个缩放手柄与**边中点 = 相邻两角平均**；锚点对侧且随旋转转；角=等比 / 边=单轴；屏幕几何（中心点=平移量、柄落在角与边中点、太小不可绘制、移动轴贴着对象长、旋转环包住整个对象、**间距与环半径用矩形自己的半尺寸所以转过角度不「呼吸」**、转 45° 后绘制与命中仍是同一份坐标）；`toolHasGizmo` 与命中的口径一致；命中测试（容差是一条带子、旋转环内外都不命中、移动轴只认自己的轴、**拖动模式一个手柄都点不到**、太小一律不给命中） |
 | `document/bgm-settings.test.ts` | 312 | 全局设置缺省值；**v16 迁移**（歌单从工程文件里拿掉）；三档音量；校验；**场景格式 v15**（环境音并进背景音乐） |

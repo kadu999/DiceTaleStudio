@@ -23,7 +23,7 @@ import type { SoundLayer, VideoBlendAudio, VideoBlendKind } from "./types";
 /**
  * 能力槽位：组件自报「我承担对象哪种能力」，access.ts 按它找对象上的组件。
  */
-export type ComponentSlot = "map" | "fog" | "image" | "sound" | "teleport" | "video" | "videoBlend";
+export type ComponentSlot = "map" | "fog" | "image" | "sound" | "teleport" | "magnifier" | "video" | "videoBlend";
 
 /**
  * 全部对象类型（= 预设 id 的取值）。**顺序就是规范顺序**（文档枚举、编辑器类型表都按它排）。
@@ -43,6 +43,7 @@ export const OBJECT_KINDS = [
   "Event",
   "PlaySound",
   "Teleport",
+  "Magnifier",
 ] as const;
 
 /**
@@ -63,6 +64,9 @@ export const OBJECT_KINDS = [
  * - `Teleport`：**动作对象**里的「传送阵」——另带「传送到哪一张场景」，画布上同样是
  *   **固定的内置徽标**（不给换贴图）。触发它 = **切换当前场景**（对 DM 就是「换台」），
  *   所以它**不需要新协议命令**：切场景本来就是编辑器的事，整份 `scene_push` 下去前端就换了。
+ * - `Magnifier`：**动作对象**里的「放大镜」——另带「图片列表 + 当前展示的那一张」，
+ *   画布上也是**固定的内置徽标**。触发它 = 让前端**弹一扇窗**显示选中的那张图
+ *   （开 / 关两条命令；换图是文档数据，整份 `scene_push` 带过去）。
  *
  * 贴图与精灵的数据形状相同（都是一份 `ImageRef`），只是**分开用两个组件**——
  * 编辑器里贴图入口的选择图片弹框也不给右侧切分面板（见 `ResourcePickerDialog` 的 `allowSprite`）；
@@ -103,6 +107,7 @@ export const DEFAULT_SLOT_COMPONENT: Readonly<Record<ComponentSlot, ComponentTyp
   image: "ImageLayer",
   sound: "PlaySound",
   teleport: "Teleport",
+  magnifier: "Magnifier",
   video: "VideoOverlay",
   videoBlend: "VideoBlend",
 };
@@ -133,6 +138,9 @@ export const OBJECT_PRESETS: Readonly<Record<ObjectKind, GameObjectPreset>> = {
   Event: { kind: "Event", slots: { image: "ImageLayer" } },
   PlaySound: { kind: "PlaySound", slots: { sound: "PlaySound" } },
   Teleport: { kind: "Teleport", slots: { teleport: "Teleport" } },
+  // 放大镜（动作对象，v30）：它自己的数据就是 `Magnifier` 组件（图片列表 + 当前展示的那一张）。
+  // 可摆放（照常有位置 / 旋转 / 缩放），但画布上只画一枚内置徽标；那扇窗在前端弹（`MagnifierWindow`）。
+  Magnifier: { kind: "Magnifier", slots: { magnifier: "Magnifier" } },
 };
 
 /**
@@ -228,6 +236,24 @@ export function supportsFog(target: ObjectKind | GameObjectDoc): boolean {
   }
 
   return presetOf(target)?.slots.fog !== undefined;
+}
+
+/**
+ * 哪些对象能带放大镜：**只有 `Magnifier` 对象**（v30 起它是独立的动作对象，自己就是它的数据本体）。
+ *
+ * 已挂 `Magnifier` 组件的对象照旧算数（损坏的手写文件）；组件定义里的 `templateKinds`
+ * 决定正常的创建模板。与 `supportsFog` 同一套写法——两处各写一份判据迟早会漂移出
+ * 「面板给了入口、命令却拒了」那种半套状态。
+ */
+export function supportsMagnifier(target: ObjectKind | GameObjectDoc): boolean {
+  if (typeof target !== "string") {
+    if (target.components.some((component) => component.type === DEFAULT_SLOT_COMPONENT.magnifier)) return true;
+    if (target.components.some((component) => findComponentType(component.type)?.slot === "magnifier")) return true;
+    if (componentKindMismatchOf(target.components, target.kind)) return false;
+    return findComponentType(DEFAULT_SLOT_COMPONENT.magnifier)?.templateKinds?.includes(target.kind) === true;
+  }
+
+  return presetOf(target)?.slots.magnifier !== undefined;
 }
 
 /**

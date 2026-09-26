@@ -41,6 +41,10 @@ import {
  * 画布上，前端不建可见物），另带「传送到哪一张场景」。触发它 = **切换当前场景**（编辑器 →
  * 整份 `scene_push` → 前端换镜像），所以它**不需要新协议命令**。
  *
+ * 「放大镜」是动作种类下的第三个（v30）：`kind: "Magnifier"`，同样画一枚固定的内置徽标
+ * （前端不建可见物），另带「图片列表 + 当前展示的那一张」。触发它 = 让前端**弹一扇窗**显示
+ * 选中的那张图（开 / 关两条命令；换图是文档数据，整份 `scene_push` 带过去）。
+ *
  * 「贴图」是实体种类下的第三个：`kind: "Image"`，**只负责把一张图渲染出来**——和精灵一样挑一张图
  * 显示，唯一的区别是它**不引用图集里的格子**（选择时不显示子精灵）。数据上两者用**不同的图片组件**
  * （贴图 `ImageLayer`、精灵 `SpriteLayer`），而「视频」那一组只对贴图出现（`supportsVideo`）。
@@ -92,6 +96,7 @@ export const OBJECT_CATEGORIES: readonly ObjectCategoryDef[] = [
     objects: [
       { id: "PlaySound", kind: "PlaySound", label: "播放声音", creatable: true },
       { id: "Teleport", kind: "Teleport", label: "传送阵", creatable: true },
+      { id: "Magnifier", kind: "Magnifier", label: "放大镜", creatable: true },
     ],
   },
   {
@@ -129,10 +134,11 @@ export function categoryOfKind(kind: ObjectKind): ObjectCategoryDef | undefined 
  * 2. 属性面板要不要给「渲染」那一组（固定徽标就没有换贴图的入口）；
  * 3. 列表行尾显示什么提示（层级 / 目标场景）。
  */
-export function badgeIconOf(target: ObjectKind | GameObjectDoc): "audio" | "teleport" | "fog" | undefined {
+export function badgeIconOf(target: ObjectKind | GameObjectDoc): "audio" | "teleport" | "fog" | "magnifier" | undefined {
   if (typeof target !== "string") {
     if (target.components.some((component) => component.type === DEFAULT_SLOT_COMPONENT.sound)) return "audio";
     if (target.components.some((component) => component.type === DEFAULT_SLOT_COMPONENT.teleport)) return "teleport";
+    if (target.components.some((component) => component.type === DEFAULT_SLOT_COMPONENT.magnifier)) return "magnifier";
     if (target.components.some((component) => component.type === DEFAULT_SLOT_COMPONENT.fog)) return "fog";
     if (target.components.some((component) => SLOT_COMPONENT_TYPES.some((definition) => definition.type === component.type))) return undefined;
     return badgeIconOf(target.kind);
@@ -144,6 +150,10 @@ export function badgeIconOf(target: ObjectKind | GameObjectDoc): "audio" | "tele
 
   if (presetOf(target)?.slots.teleport !== undefined) {
     return "teleport";
+  }
+
+  if (presetOf(target)?.slots.magnifier !== undefined) {
+    return "magnifier";
   }
 
   return presetOf(target)?.slots.fog !== undefined ? "fog" : undefined;
@@ -161,4 +171,5 @@ export const KIND_LABELS: Record<ObjectKind, string> = {
   Event: "事件",
   PlaySound: "播放声音",
   Teleport: "传送阵",
+  Magnifier: "放大镜",
 };

@@ -101,10 +101,11 @@ export interface SceneLayer {
   /**
    * **没有贴图时**在矩形里画的**内置图标**（有贴图就画贴图，不画图标）。
    *
-   * `"audio"` = 声音对象的喇叭徽标、`"teleport"` = 传送阵、`"fog"` = 战争雾（v27 起）。
+   * `"audio"` = 声音对象的喇叭徽标、`"teleport"` = 传送阵、`"fog"` = 战争雾（v27 起）、
+   * `"magnifier"` = 放大镜（v30 起）。
    * 它们和别的对象一样摆在世界里，刚建出来还没有图，画一个徽标才能「看得见、点得到、拖得动」。
    */
-  readonly icon?: "audio" | "teleport" | "fog";
+  readonly icon?: "audio" | "teleport" | "fog" | "magnifier";
   /**
    * 这个声音对象**现在正在播**（只对 `icon: "audio"` 有意义）：徽标会画成「活的」——
    * 一圈圈往外扩的声波 + 随节拍一胀一缩的喇叭，配合 `animationTimeMs` 出动画。
@@ -238,6 +239,9 @@ const KIND_MARKER_COLORS: Record<string, string> = {
   Teleport: "#22c7d6",
   // 战争雾（v27 起是独立对象）：内置雾徽标用它。雾蓝灰，与上面的蓝 / 青 / 紫都分得开
   Fog: "#5b6b8c",
+  // 放大镜（v30 起的动作对象）：内置放大镜徽标用它。暖黄（放大镜本来的颜色），
+  // 与上面的橙（声音）分得开——那一枚更红、这一枚偏黄
+  Magnifier: "#e8c840",
 };
 
 const DEFAULT_MARKER_COLOR = "#9aa4b2";
@@ -503,6 +507,8 @@ function drawLayer(
     drawTeleportBadge(context, box);
   } else if (layer.icon === "fog") {
     drawFogBadge(context, box);
+  } else if (layer.icon === "magnifier") {
+    drawMagnifierBadge(context, box);
   } else {
     drawAudioBadge(context, box, { playing: layer.playing === true, timeMs: animationTimeMs });
   }
@@ -842,6 +848,78 @@ function drawFogBadge(
     context.quadraticCurveTo(cx + halfWidth * 0.5, y + badge * 0.1, cx + halfWidth, y);
     context.stroke();
   }
+
+  context.restore();
+}
+
+/**
+ * 放大镜（动作对象，v30 起）：类型色的圆角牌面 + 一个**白色放大镜**（镜圈 + 斜手柄）。
+ *
+ * 与传送阵 / 战争雾那两枚同一套画法（深色外描边 + 实色牌面 + 白色图形），尺寸按矩形短边算，
+ * 缩得极小时不画。它不是声音：不做「正在播」的动画（`playing` 只对 `icon: "audio"` 有意义）。
+ */
+function drawMagnifierBadge(
+  context: CanvasRenderingContext2D,
+  box: { readonly left: number; readonly top: number; readonly right: number; readonly bottom: number },
+): void {
+  const boxSize = Math.min(box.right - box.left, box.bottom - box.top);
+  if (boxSize < MIN_AUDIO_BADGE_SIZE) {
+    return;
+  }
+
+  const cx = (box.left + box.right) / 2;
+  const cy = (box.top + box.bottom) / 2;
+  const badge = boxSize * 0.72;
+  const half = badge / 2;
+  const left = cx - half;
+  const top = cy - half;
+  const radius = badge * 0.2;
+
+  const outline = (): void => {
+    context.beginPath();
+    context.moveTo(left + radius, top);
+    context.arcTo(left + badge, top, left + badge, top + badge, radius);
+    context.arcTo(left + badge, top + badge, left, top + badge, radius);
+    context.arcTo(left, top + badge, left, top, radius);
+    context.arcTo(left, top, left + badge, top, radius);
+    context.closePath();
+  };
+
+  context.save();
+
+  // 1) 深色外描边（一半在牌外、一半被牌面盖住 → 亮底上也有清晰边界）
+  outline();
+  context.lineWidth = Math.max(2, badge * 0.12);
+  context.strokeStyle = "rgba(0,0,0,0.62)";
+  context.stroke();
+
+  // 2) 实色牌面（类型色）
+  outline();
+  context.fillStyle = kindMarkerColor("Magnifier");
+  context.fill();
+
+  // 3) 白色放大镜：镜圈偏左上，手柄朝右下（与「拿在手里看」的方向一致）
+  const lensRadius = badge * 0.19;
+  const lensX = cx - badge * 0.07;
+  const lensY = cy - badge * 0.07;
+  const handleAngle = Math.PI / 4;
+  context.strokeStyle = "#ffffff";
+  context.lineCap = "round";
+  context.lineWidth = Math.max(1.5, badge * 0.085);
+  context.beginPath();
+  context.arc(lensX, lensY, lensRadius, 0, Math.PI * 2);
+  context.stroke();
+
+  context.beginPath();
+  context.moveTo(
+    lensX + Math.cos(handleAngle) * lensRadius,
+    lensY + Math.sin(handleAngle) * lensRadius,
+  );
+  context.lineTo(
+    lensX + Math.cos(handleAngle) * (lensRadius + badge * 0.16),
+    lensY + Math.sin(handleAngle) * (lensRadius + badge * 0.16),
+  );
+  context.stroke();
 
   context.restore();
 }

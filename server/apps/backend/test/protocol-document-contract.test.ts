@@ -6,6 +6,7 @@ import {
   componentDataOf,
   componentSchema,
   mapFogSchema as protocolMapFogSchema,
+  magnifierDataSchema as protocolMagnifierDataSchema,
   sceneComponentSchema,
   sceneSchema,
   soundDataSchema as protocolSoundDataSchema,
@@ -30,10 +31,12 @@ import {
   createEmptyScene,
   createGridMapObject,
   createGameObject,
+  createMagnifierObject,
   createSoundObject,
   createTeleportObject,
   hasErrors,
   imageOf,
+  magnifierDataSchema,
   mapFogSchema,
   parseSceneFile,
   resolveSceneSprites,
@@ -64,6 +67,7 @@ describe("契约：协议与文档的组件口径一致", () => {
     expect(COMPONENT_TYPE.sprite).toBe(SPRITE_COMPONENT);
     expect(COMPONENT_TYPE.sound).toBe(DEFAULT_SLOT_COMPONENT.sound);
     expect(COMPONENT_TYPE.teleport).toBe(DEFAULT_SLOT_COMPONENT.teleport);
+    expect(COMPONENT_TYPE.magnifier).toBe(DEFAULT_SLOT_COMPONENT.magnifier);
     expect(COMPONENT_TYPE.video).toBe(DEFAULT_SLOT_COMPONENT.video);
     expect(COMPONENT_TYPE.videoBlend).toBe(DEFAULT_SLOT_COMPONENT.videoBlend);
   });
@@ -92,9 +96,9 @@ describe("契约：协议与文档的组件口径一致", () => {
       expect(SLOT_COMPONENT_TYPES).toContain(def);
     }
 
-    // 有 slot、没 legacyField 的只许是「不来自 v19 扁平字段迁移」的两种：
-    // v25 从 `GridMap` data 里拆出来的 `FogOfWar`，与后加的 `VideoBlend`
-    const slotOnlyNoLegacy = ["FogOfWar", "VideoBlend"];
+    // 有 slot、没 legacyField 的只许是「不来自 v19 扁平字段迁移」的那三种：
+    // v25 从 `GridMap` data 里拆出来的 `FogOfWar`、后加的 `VideoBlend`、以及 v30 的 `Magnifier`
+    const slotOnlyNoLegacy = ["FogOfWar", "VideoBlend", "Magnifier"];
     for (const def of SLOT_COMPONENT_TYPES) {
       if (legacyTypes.includes(def.type)) continue;
       expect(slotOnlyNoLegacy, def.type).toContain(def.type);
@@ -118,6 +122,11 @@ describe("契约：协议与文档的组件口径一致", () => {
         position: { x: 0, y: 0 },
       }),
       createTeleportObject({ name: "传送阵", targets: ["场景2"], position: { x: 0, y: 0 } }),
+      createMagnifierObject({
+        name: "放大镜",
+        images: [{ id: "project:P/Assets/images/handout.png", width: 400, height: 300 }],
+        position: { x: 0, y: 0 },
+      }),
     ];
 
     // 文档侧：三个对象都通过语义校验（没有 error）
@@ -261,6 +270,7 @@ describe("契约：协议与文档的组件口径一致", () => {
       { name: "FogOfWar", doc: mapFogSchema, proto: protocolMapFogSchema },
       { name: "PlaySound", doc: soundDataSchema, proto: protocolSoundDataSchema },
       { name: "Teleport", doc: teleportDataSchema, proto: protocolTeleportDataSchema },
+      { name: "Magnifier", doc: magnifierDataSchema, proto: protocolMagnifierDataSchema },
       { name: "VideoOverlay", doc: videoDataSchema, proto: protocolVideoDataSchema },
       { name: "VideoBlend", doc: videoBlendDataSchema, proto: protocolVideoBlendDataSchema },
     ];
@@ -278,6 +288,18 @@ describe("契约：协议与文档的组件口径一致", () => {
       { name: "clips 含空串", doc: soundDataSchema, proto: protocolSoundDataSchema, sample: { clips: [""] } },
       { name: "layer 未知", doc: soundDataSchema, proto: protocolSoundDataSchema, sample: { layer: "bogus" } },
       { name: "targets 含空串", doc: teleportDataSchema, proto: protocolTeleportDataSchema, sample: { targets: [""] } },
+      {
+        name: "magnifier 图片缺 id",
+        doc: magnifierDataSchema,
+        proto: protocolMagnifierDataSchema,
+        sample: { images: [{ width: 4, height: 4 }] },
+      },
+      {
+        name: "magnifier picked 是小数",
+        doc: magnifierDataSchema,
+        proto: protocolMagnifierDataSchema,
+        sample: { picked: 0.5 },
+      },
       { name: "video clips 含空串", doc: videoDataSchema, proto: protocolVideoDataSchema, sample: { clips: [""] } },
       {
         name: "videoBlend 声音来源未知",

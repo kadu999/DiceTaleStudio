@@ -160,6 +160,20 @@ export const teleportDataSchema = z.object({
 });
 
 /**
+ * 放大镜（动作对象，v30）：**图片列表 + 当前展示的那一张**。
+ *
+ * 每一项直接复用 `imageRefSchema`（一张图的引用，可带 `sprite` = 取图集里的一格）——
+ * 与贴图 / 精灵引用是同一个形状，所以这里连「格子从左上数、越界不算解析错误」都是同一套。
+ * `images` 给默认值 `[]`（与 `sound.clips` / `teleport.targets` 同一个口径：手写文件里少写
+ * 一项时，语义只能是「还没加图」）；`picked` **不给默认值**——它的「没写」有明确语义：
+ * 还没选展示哪一张（「在画面上打开」点不了）。
+ */
+export const magnifierDataSchema = z.object({
+  images: z.array(imageRefSchema).default([]),
+  picked: z.number().int().nonnegative().optional(),
+});
+
+/**
  * 视频列表（v14 起，可选）：地图 / 精灵上的「一组视频 + 选中哪条 + 循环 / 声音」。
  *
  * 与 `soundDataSchema` 同一套口径：`clips` / `loop` / `audio` **给默认值**（手写文件里少写一项时，
@@ -254,6 +268,8 @@ export const sceneComponentSchema = z.union([
   componentSchemaOf(SPRITE_COMPONENT, imageLayerDataSchema),
   componentSchemaOf(DEFAULT_SLOT_COMPONENT.sound, soundDataSchema),
   componentSchemaOf(DEFAULT_SLOT_COMPONENT.teleport, teleportDataSchema),
+  // 放大镜（v30）：另一条动作对象的必需组件，数据是「图片列表 + 当前展示的那一张」
+  componentSchemaOf(DEFAULT_SLOT_COMPONENT.magnifier, magnifierDataSchema),
   componentSchemaOf(DEFAULT_SLOT_COMPONENT.video, videoDataSchema),
   componentSchemaOf(DEFAULT_SLOT_COMPONENT.videoBlend, videoBlendDataSchema),
   permissiveComponentSchema,

@@ -126,8 +126,14 @@ import { z } from "zod";
  * v20（2026-09-27）：视频混合多一条命令 **`fill_video_mask`**（把整张遮罩填成 1 / 0，
  * Mask 窗口那两个「整张」按钮用）。老前端（v19）不认它 → 回一条未知命令（那两个按钮点了没反应），
  * 按同一条纪律 +1。组件数据一个字节都没动。
+ *
+ * v21（2026-09-27）：**新增「放大镜」对象**（与文档格式 v30 同一批）——第 9 种组件 `Magnifier`
+ * （图片列表 + 当前展示的那一张），另加两条命令 `open_magnifier` / `close_magnifier`
+ * （让前端弹 / 收一扇窗；**换图不是命令**：`picked` 是文档数据，整份 `scene_push` 带过去）。
+ * 老前端（v20）不认这个组件 → 那扇窗永远弹不出来（不是崩，是功能丢），也不认那两条命令，
+ * 按同一条纪律 +1：服务端与 Unity 客户端必须同批更新。
  */
-export const PROTOCOL_VERSION = 20;
+export const PROTOCOL_VERSION = 21;
 
 /** 未进入运行态时拒绝 `/client` 升级的 HTTP 状态与原因头。 */
 export const RUNTIME_INACTIVE_STATUS = 503;
@@ -345,6 +351,22 @@ export const teleportDataSchema = z.object({
 });
 
 /**
+ * 放大镜（动作对象，v21 起）的数据：**图片列表 + 当前展示的那一张**。
+ *
+ * 每一项复用 `imageRefSchema`（一张图的引用；`sprite` / `spriteGrid` 与图片层同一个口径——
+ * `spriteGrid` 是编辑器推送时解析进去的，前端不能依赖「几行几列」在别处）。
+ * `picked` 是 `images` 的**下标**（同一张图的两个不同格子是两条，id 当不了键）：
+ * 前端窗里放的就是它，缺省 = 还没选（那扇窗没有图可放）。
+ *
+ * **换图不是命令**：它是文档数据，编辑器一改就整份 `scene_push` 下来，前端跟着换
+ * （与 `video.picked` / `sound.picked` 同一条「数据在场景里」的规矩）。
+ */
+export const magnifierDataSchema = z.object({
+  images: z.array(imageRefSchema).default([]),
+  picked: z.number().int().nonnegative().optional(),
+});
+
+/**
  * 三档音量的缺省值（与 `@dts/document` 的 `DEFAULT_*_VOLUME` 同值；`protocol` 是被三端共用的
  * 最底层包，不能反过来依赖文档包，所以这里复刻一份数字）。
  */
@@ -402,6 +424,8 @@ export const COMPONENT_TYPE = {
   sprite: "SpriteLayer",
   sound: "PlaySound",
   teleport: "Teleport",
+  /** 放大镜（v21 起）：图片列表 + 当前展示的那一张；触发 = 让前端弹一扇显示它的窗。 */
+  magnifier: "Magnifier",
   video: "VideoOverlay",
   /** 视频混合（v17 起）：两条视频叠在同一矩形上用 Mask 混合（A 盖住、擦开露 B）；遮罩纯运行态。 */
   videoBlend: "VideoBlend",
@@ -457,6 +481,8 @@ export const sceneComponentSchema = z.union([
   featureComponentSchema(COMPONENT_TYPE.sprite, imageLayerDataSchema),
   featureComponentSchema(COMPONENT_TYPE.sound, soundDataSchema),
   featureComponentSchema(COMPONENT_TYPE.teleport, teleportDataSchema),
+  // 放大镜（v21）：另一条动作对象的必需组件（图片列表 + 当前展示的那一张）
+  featureComponentSchema(COMPONENT_TYPE.magnifier, magnifierDataSchema),
   featureComponentSchema(COMPONENT_TYPE.video, videoDataSchema),
   featureComponentSchema(COMPONENT_TYPE.videoBlend, videoBlendDataSchema),
   componentSchema,
@@ -491,9 +517,9 @@ export const gameObjectSchema = z.object({
    * 对象身上挂的组件（v9 起）。
    *
    * 前端按 `type` 分派：`GridMap` → 地图面片 + 网格 + 战争雾；`ImageLayer`（贴图对象）/
-   * `SpriteLayer`（精灵对象）→ 那张图的显示层；`PlaySound` / `Teleport` → **不建可见物**
-   * （数据留在镜像里，命令要用）；`VideoOverlay` → 运行时建视频层；`VideoBlend` → 运行时建
-   * 混合层（两条视频 → 两张 `RenderTexture` → 一个 Mask）。
+   * `SpriteLayer`（精灵对象）→ 那张图的显示层；`PlaySound` / `Teleport` / `Magnifier` →
+   * **不建可见物**（数据留在镜像里，命令要用）；`VideoOverlay` → 运行时建视频层；
+   * `VideoBlend` → 运行时建混合层（两条视频 → 两张 `RenderTexture` → 一个 Mask）。
    * 不认识的类型忽略即可（数据仍留在镜像里）。
    *
    * 缺省给 `[]`：一份「什么都没有的对象」是合法状态，而**缺字段**在老编辑器 / 手写载荷里
@@ -544,6 +570,18 @@ export function resourceIdsOfObject(object: GameObjectPayload): readonly string[
   for (const type of [COMPONENT_TYPE.sound, COMPONENT_TYPE.video]) {
     const media = componentDataOf<{ clips?: readonly string[] }>(object, type);
     ids.push(...(media?.clips ?? []));
+  }
+
+  // 放大镜（v21 起）：图片列表里每一张都要进资源包——那扇窗放的正是它们。
+  // 漏了这一条最不容易发现：资源包只影响「先下后载」，弹窗要等到逐文件回落时才慢慢出图。
+  const magnifier = componentDataOf<{ images?: readonly { id?: string }[] }>(
+    object,
+    COMPONENT_TYPE.magnifier,
+  );
+  for (const image of magnifier?.images ?? []) {
+    if (image.id !== undefined) {
+      ids.push(image.id);
+    }
   }
 
   // 视频混合：两路各是**一个素材**（v19 起；之前是「列表 + 选中」），都要进资源包
@@ -737,6 +775,29 @@ export const commandRequestSchema = z.discriminatedUnion("kind", [
     kind: z.literal("fill_video_mask"),
     objectId: z.string().min(1),
     covered: z.boolean(),
+  }),
+  /**
+   * 放大镜（v21 起）：让前端**弹一扇窗**，显示**这个对象**当前选中的那张图（`picked`）。
+   *
+   * 与 `play_video` 同一套：**载荷里不带数据**（没有图 ID、没有下标）——放哪一张从镜像里读。
+   * 于是「编辑器里点了下排另一张小图」**不需要**再来一条命令：那是文档数据，
+   * 整份 `scene_push` 会把新值带下来（前端在镜像落地后刷新那扇窗）。
+   *
+   * 前端那扇窗**没有任何按钮**（没有选择、也没有关闭）——只能由后端开、由后端关。
+   */
+  z.object({
+    kind: z.literal("open_magnifier"),
+    objectId: z.string().min(1),
+  }),
+  /**
+   * 放大镜：关掉那扇窗。
+   *
+   * **带 `objectId` 是为了认领**：只关「当前正为这个对象开着」的那一扇。换场景 / 前端重连之后，
+   * 一条迟到的关闭不该把新开的窗一起关掉（窗是**全场只有一扇**的界面状态，不是某个对象的数据）。
+   */
+  z.object({
+    kind: z.literal("close_magnifier"),
+    objectId: z.string().min(1),
   }),
 ]);
 

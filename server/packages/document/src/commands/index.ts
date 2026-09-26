@@ -22,6 +22,7 @@ export * from "./grid-map";
 export * from "./fog";
 export * from "./play-sound";
 export * from "./teleport";
+export * from "./magnifier";
 export * from "./video";
 export * from "./video-blend";
 export * from "./component";

@@ -626,6 +626,30 @@ describe("协议：编辑器 → 服务端", () => {
     }
   });
 
+  it("放大镜（v21）：开 / 关两条命令都只带对象 id（放哪张图从镜像里读）；缺字段拒", () => {
+    for (const kind of ["open_magnifier", "close_magnifier"] as const) {
+      const parsed = parseEditorToServer({
+        type: "editor_command",
+        requestId: `magnifier-${kind}`,
+        command: { kind, objectId: "mag_01" },
+      });
+
+      expect(parsed.type).toBe("editor_command");
+      if (parsed.type === "editor_command") {
+        expect(parsed.command).toEqual({ kind, objectId: "mag_01" });
+        // **命令里没有数据**：没有图片列表、也没有「展示第几张」——那是文档数据，
+        // 整份 scene_push 带下来（换图因此不需要第三条命令）
+        const wire = JSON.stringify(parsed.command);
+        expect(wire).not.toContain("images");
+        expect(wire).not.toContain("picked");
+      }
+
+      expect(() =>
+        parseEditorToServer({ type: "editor_command", requestId: `magnifier-${kind}-2`, command: { kind } }),
+      ).toThrow();
+    }
+  });
+
   it("声音（v6）：暂停 / 继续按**层级**给（同层只响一条，所以暂停这一层 = 暂停当前那条）", () => {
     for (const kind of ["pause_sound", "resume_sound"] as const) {
       const parsed = parseEditorToServer({

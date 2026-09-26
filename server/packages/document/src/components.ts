@@ -6,7 +6,8 @@ import type { ComponentDoc } from "./types";
  *
  * **v19 起，对象身上那些「可插拔特性」是组件**：地图 / 贴图 / 声音 / 传送 / 视频
  * （见 `presets.ts` 的 `OBJECT_PRESETS`），战争雾（`FogOfWar`）是 v25 从 `GridMap`
- * 拆出来的第 7 种，视频混合（`VideoBlend`）是后加的第 8 种。这些组件多两项：
+ * 拆出来的第 7 种，视频混合（`VideoBlend`）是第 8 种，放大镜（`Magnifier`）是 v30 加的第 9 种。
+ * 这些组件多两项：
  * - `slot`：它承担对象哪种能力（**组件自报**；访问器按 slot 找对象上的组件，不看 kind）；
  * - `templateKinds`：对象创建模板中会预置/路由到该组件的 kind；
  * - `repairKinds`：组件缺失时，编辑器提供显式修复入口的 kind；
@@ -14,7 +15,7 @@ import type { ComponentDoc } from "./types";
  * - `legacyField`：v19 之前它住在对象的哪个扁平字段里——迁移函数靠它把老字段搬成组件实例。
  */
 
-/** 组件类型 ID：8 种对象能力组件（6 种 v19 从对象特性提升上来，`FogOfWar` 是 v25 从 GridMap 拆出来的），逐字对齐前端组件类名。 */
+/** 组件类型 ID：9 种对象能力组件（6 种 v19 从对象特性提升上来，`FogOfWar` 是 v25 从 GridMap 拆出来的），逐字对齐前端组件类名。 */
 export type ComponentType =
   | "GridMap"
   | "FogOfWar"
@@ -22,6 +23,7 @@ export type ComponentType =
   | "SpriteLayer"
   | "PlaySound"
   | "Teleport"
+  | "Magnifier"
   | "VideoOverlay"
   | "VideoBlend";
 
@@ -121,6 +123,20 @@ export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
     templateKinds: ["Teleport"],
     repairKinds: ["Teleport"],
     tooltip: "候选目标场景 + 选中的那一个；触发 = 切换当前场景（不需要新协议命令）",
+  },
+  {
+    // 放大镜（动作对象，v30 加的第 9 种）：图片列表 + 当前展示的那一张。
+    // 对象自己**什么都不渲染**（画布上画一枚内置放大镜徽标），声明的是「告诉前端弹一扇窗、
+    // 窗里放哪张图」——开 / 关是两条命令（`open_magnifier` / `close_magnifier`），
+    // 换图不是命令（`picked` 是文档数据，整份 `scene_push` 会把新值带到前端）。
+    // 与 `Teleport` 同一条「必需组件」的路：缺组件（坏的手写文件）走面板上的显式修复入口。
+    type: "Magnifier",
+    displayName: "放大镜",
+    gmEditable: true,
+    slot: "magnifier",
+    templateKinds: ["Magnifier"],
+    repairKinds: ["Magnifier"],
+    tooltip: "图片列表 + 当前展示的那一张；触发 = 让前端弹一扇窗显示它",
   },
   {
     type: "VideoOverlay",

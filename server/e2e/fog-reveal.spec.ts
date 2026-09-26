@@ -1,4 +1,4 @@
-ï»¿import { expect, test, type Page, type TestInfo } from "@playwright/test";
+import { expect, test, type Page, type TestInfo } from "@playwright/test";
 import {
   COMPONENT,
   dropProject,
@@ -17,31 +17,31 @@ import {
 import { cellPointInBox } from "./helpers/canvas";
 
 /**
- * æˆ˜äº‰é›¾ï¼šç¼–è¾‘å™¨é‡Œçš„è½¨è¿¹**çœŸçš„ä¼šä¸‹å‘åˆ°å‰ç«¯**ï¼ˆ`erase_mask` / `reveal_fog_region`ï¼‰ã€‚
+ * Õ½ÕùÎí£º±à¼­Æ÷ÀïµÄ¹ì¼£**ÕæµÄ»áÏÂ·¢µ½Ç°¶Ë**£¨`erase_mask` / `reveal_fog_region`£©¡£
  *
- * è¿™æ˜¯è¿™æ¡é“¾è·¯å”¯ä¸€èƒ½è‡ªåŠ¨è·‘é€šçš„ç«¯åˆ°ç«¯ç”¨ä¾‹ï¼šæµè§ˆå™¨é‡Œå†å¼€ä¸€æ¡**å‡å‰ç«¯** WebSocket
- * ï¼ˆ`/client`ï¼Œä¸ Unity èµ°åŒä¸€æ¡åè®®ï¼‰ï¼ŒæŠŠæ”¶åˆ°çš„å‘½ä»¤è®°åœ¨ `window` ä¸Šï¼Œå†æŒ‰åè®®å›æ‰§ã€‚
+ * ÕâÊÇÕâÌõÁ´Â·Î¨Ò»ÄÜ×Ô¶¯ÅÜÍ¨µÄ¶Ëµ½¶ËÓÃÀı£ºä¯ÀÀÆ÷ÀïÔÙ¿ªÒ»Ìõ**¼ÙÇ°¶Ë** WebSocket
+ * £¨`/client`£¬Óë Unity ×ßÍ¬Ò»ÌõĞ­Òé£©£¬°ÑÊÕµ½µÄÃüÁî¼ÇÔÚ `window` ÉÏ£¬ÔÙ°´Ğ­Òé»ØÖ´¡£
  *
- * é’‰ä½å››ä»¶äº‹ï¼š
- * 1. Mask çª—å£é‡Œæ“¦ä¸€ç¬” â†’ å‰ç«¯æ”¶åˆ° `erase_mask`ï¼Œè½½è·æ˜¯**è½¨è¿¹**ï¼ˆå½’ä¸€åŒ–ç‚¹ + åŠå¾„ `0.05` + è½¯è¾¹ 1ï¼‰ï¼Œ
- *    **ä¸æ˜¯**æ•´å¼ é®ç½©/æ ¼å­æ•°æ®ï¼›
- * 2. ã€Œæ•´åŒºå¼€å…³ã€â†’ å‰ç«¯æ”¶åˆ° `reveal_fog_region`ï¼ˆåŒºåŸŸä½ + æ­ç¤º/ç›–å›ï¼‰ï¼›
- * 3. å‰ç«¯å›æ‰§ `ok:true` â†’ ç¼–è¾‘å™¨æ—¥å¿—é‡Œå‡ºç°ã€Œå‘½ä»¤æ‰§è¡ŒæˆåŠŸã€ï¼ˆä¸å‡è£…æˆåŠŸã€ä¹Ÿä¸è¶…æ—¶ï¼‰ï¼›
- * 4. ç¼–è¾‘æ€æ“¦é™¤**ä¸ä¸‹å‘**ï¼ˆMask çª—å£é‚£æ—¶åªæ˜¯é¢„è§ˆï¼‰â€”â€”è¿™æ¡ç”± store å•æµ‹é’‰ï¼Œè¿™é‡Œåªä¿è¯è¿è¡Œæ€èƒ½å‘å‡ºå»ã€‚
+ * ¶¤×¡ËÄ¼şÊÂ£º
+ * 1. Mask ´°¿ÚÀï²ÁÒ»±Ê ¡ú Ç°¶ËÊÕµ½ `erase_mask`£¬ÔØºÉÊÇ**¹ì¼£**£¨¹éÒ»»¯µã + °ë¾¶ `0.05` + Èí±ß 1£©£¬
+ *    **²»ÊÇ**ÕûÕÅÕÚÕÖ/¸ñ×ÓÊı¾İ£»
+ * 2. ¡¸ÕûÇø¿ª¹Ø¡¹¡ú Ç°¶ËÊÕµ½ `reveal_fog_region`£¨ÇøÓòÎ» + ½ÒÊ¾/¸Ç»Ø£©£»
+ * 3. Ç°¶Ë»ØÖ´ `ok:true` ¡ú ±à¼­Æ÷ÈÕÖ¾Àï³öÏÖ¡¸ÃüÁîÖ´ĞĞ³É¹¦¡¹£¨²»¼Ù×°³É¹¦¡¢Ò²²»³¬Ê±£©£»
+ * 4. ±à¼­Ì¬²Á³ı**²»ÏÂ·¢**£¨Mask ´°¿ÚÄÇÊ±Ö»ÊÇÔ¤ÀÀ£©¡ª¡ªÕâÌõÓÉ store µ¥²â¶¤£¬ÕâÀïÖ»±£Ö¤ÔËĞĞÌ¬ÄÜ·¢³öÈ¥¡£
  *
- * `@runtime` æ ‡è®°ï¼šè¿è¡Œæ€æ˜¯æœåŠ¡ç«¯å…¨å±€å•ä¾‹ï¼Œè¿™ä¸€ç»„åªåœ¨ä¸€ä¸ªæ¡£ä½ã€ä¸²è¡Œè·‘ï¼ˆè§ `smoke.spec.ts` çš„è¯´æ˜ï¼‰ã€‚
+ * `@runtime` ±ê¼Ç£ºÔËĞĞÌ¬ÊÇ·şÎñ¶ËÈ«¾Öµ¥Àı£¬ÕâÒ»×éÖ»ÔÚÒ»¸öµµÎ»¡¢´®ĞĞÅÜ£¨¼û `smoke.spec.ts` µÄËµÃ÷£©¡£
  */
 
 const SCENE = "Map001";
 const MAP_SIZE = { width: 400, height: 300 };
 const GRID = { width: 8, height: 6 };
 const CANVAS = "fog-mask-canvas";
-/** å·¦ä¸‹è§’ 4 æ ¼æ˜¯ã€ŒåŒºåŸŸ1ã€ï¼šæŒ‡å®šå®ƒä¹‹å Mask çª—å£é‡Œæ‰æœ‰å¯æ“¦çš„é›¾ã€‚ */
+/** ×óÏÂ½Ç 4 ¸ñÊÇ¡¸ÇøÓò1¡¹£ºÖ¸¶¨ËüÖ®ºó Mask ´°¿ÚÀï²ÅÓĞ¿É²ÁµÄÎí¡£ */
 const FOG_CELLS = 4;
-/** ç¼–è¾‘å™¨ä¸‹å‘çš„å½’ä¸€åŒ–åŠå¾„ï¼ˆ`48/960`ï¼Œè·¨ç«¯å¥‘çº¦é‡Œçš„é‚£ä¸ªæ•°ï¼‰ã€‚ */
+/** ±à¼­Æ÷ÏÂ·¢µÄ¹éÒ»»¯°ë¾¶£¨`48/960`£¬¿ç¶ËÆõÔ¼ÀïµÄÄÇ¸öÊı£©¡£ */
 const BRUSH_RATIO = 0.05;
 
-/** å‡å‰ç«¯æ”¶åˆ°çš„ä¸€æ¡å‘½ä»¤ï¼ˆåªåˆ—è¿™æ¡ç”¨ä¾‹ç”¨åˆ°çš„å­—æ®µï¼‰ã€‚ */
+/** ¼ÙÇ°¶ËÊÕµ½µÄÒ»ÌõÃüÁî£¨Ö»ÁĞÕâÌõÓÃÀıÓÃµ½µÄ×Ö¶Î£©¡£ */
 interface FakeCommand {
   readonly kind?: string;
   readonly objectId?: string;
@@ -54,22 +54,22 @@ interface FakeCommand {
   readonly revealed?: boolean;
 }
 
-/** å‡å‰ç«¯çš„çŠ¶æ€æ”¾åœ¨é¡µé¢å…¨å±€ï¼ˆ`page.evaluate` æ¥å›è¯»ï¼‰ã€‚ */
+/** ¼ÙÇ°¶ËµÄ×´Ì¬·ÅÔÚÒ³ÃæÈ«¾Ö£¨`page.evaluate` À´»Ø¶Á£©¡£ */
 interface FakeClientWindow {
   __fogCommands?: FakeCommand[];
   __fogScene?: boolean;
   __fogSocket?: WebSocket;
 }
 
-/** è¿è¡Œæ€æ˜¯æœåŠ¡ç«¯å…¨å±€å•ä¾‹ï¼šåªåœ¨ä¸€ä¸ªæ¡£ä½ä¸Šè·‘ï¼Œå…å¾—å¹¶è¡Œæ¡£ä½äº’ç›¸å¼€å…³ã€‚ */
+/** ÔËĞĞÌ¬ÊÇ·şÎñ¶ËÈ«¾Öµ¥Àı£ºÖ»ÔÚÒ»¸öµµÎ»ÉÏÅÜ£¬ÃâµÃ²¢ĞĞµµÎ»»¥Ïà¿ª¹Ø¡£ */
 function skipOutsideDesktop(testInfo: TestInfo): void {
   test.skip(
     !testInfo.project.name.startsWith("desktop"),
-    "è¿è¡Œæ€æ˜¯å…¨å±€çŠ¶æ€ï¼šåªåœ¨ä¸€ä¸ªæ¡£ä½è·‘ï¼Œå…å¾—å¹¶è¡Œæ¡£ä½äº’ç›¸å¼€å…³",
+    "ÔËĞĞÌ¬ÊÇÈ«¾Ö×´Ì¬£ºÖ»ÔÚÒ»¸öµµÎ»ÅÜ£¬ÃâµÃ²¢ĞĞµµÎ»»¥Ïà¿ª¹Ø",
   );
 }
 
-/** åœ¨é¡µé¢é‡Œå¼€ä¸€æ¡**å‡å‰ç«¯**è¿æ¥ï¼šæ¡æ‰‹ã€æ”¶åœºæ™¯ã€æŠŠå‘½ä»¤è®°ä¸‹æ¥å¹¶æŒ‰åè®®å›æ‰§ã€‚ */
+/** ÔÚÒ³ÃæÀï¿ªÒ»Ìõ**¼ÙÇ°¶Ë**Á¬½Ó£ºÎÕÊÖ¡¢ÊÕ³¡¾°¡¢°ÑÃüÁî¼ÇÏÂÀ´²¢°´Ğ­Òé»ØÖ´¡£ */
 async function connectFakeClient(page: Page, port: number): Promise<void> {
   await page.evaluate((clientPort) => {
     const scope = window as unknown as FakeClientWindow;
@@ -83,10 +83,10 @@ async function connectFakeClient(page: Page, port: number): Promise<void> {
       socket.send(
         JSON.stringify({
           type: "client_hello",
-          // ä¸ `@dts/protocol` çš„ `PROTOCOL_VERSION` ä¸€è‡´ï¼ˆè¿™é‡Œå†™æ­»ï¼še2e ä¸æ˜¯ workspace åŒ…ï¼Œ
-          // æ‹¿ä¸åˆ°é‚£ä¸ªå¸¸é‡ï¼›ç‰ˆæœ¬ä¸€å‡è¿™é‡Œä¼šè¿ä¸ä¸Šã€ç”¨ä¾‹ä¼šå½“åœºå¤±è´¥ï¼Œæé†’åŒæ­¥æ”¹ï¼‰
-          protocolVersion: 20,
-          name: "e2e å‡å‰ç«¯",
+          // Óë `@dts/protocol` µÄ `PROTOCOL_VERSION` Ò»ÖÂ£¨ÕâÀïĞ´ËÀ£ºe2e ²»ÊÇ workspace °ü£¬
+          // ÄÃ²»µ½ÄÇ¸ö³£Á¿£»°æ±¾Ò»ÉıÕâÀï»áÁ¬²»ÉÏ¡¢ÓÃÀı»áµ±³¡Ê§°Ü£¬ÌáĞÑÍ¬²½¸Ä£©
+          protocolVersion: 21,
+          name: "e2e ¼ÙÇ°¶Ë",
           version: "0.0.0",
         }),
       );
@@ -111,7 +111,7 @@ async function connectFakeClient(page: Page, port: number): Promise<void> {
             type: "command_result",
             requestId: parsed.requestId,
             ok: true,
-            effects: ["e2e å‡å‰ç«¯æ”¶åˆ°è½¨è¿¹"],
+            effects: ["e2e ¼ÙÇ°¶ËÊÕµ½¹ì¼£"],
           }),
         );
       }
@@ -119,12 +119,12 @@ async function connectFakeClient(page: Page, port: number): Promise<void> {
   }, port);
 }
 
-/** è¯»å›å‡å‰ç«¯æ”¶åˆ°çš„å‘½ä»¤ã€‚ */
+/** ¶Á»Ø¼ÙÇ°¶ËÊÕµ½µÄÃüÁî¡£ */
 async function fakeCommands(page: Page): Promise<readonly FakeCommand[]> {
   return page.evaluate(() => (window as unknown as FakeClientWindow).__fogCommands ?? []);
 }
 
-/** åœ¨é®ç½©ç”»å¸ƒä¸ŠæŒ‰ä½æ‹–ä¸€ç¬”ï¼ˆä¸ `fog-mask.spec.ts` åŒä¸€å¥—æ¨¡æ‹Ÿ GM æ“¦é™¤ï¼‰ã€‚ */
+/** ÔÚÕÚÕÖ»­²¼ÉÏ°´×¡ÍÏÒ»±Ê£¨Óë `fog-mask.spec.ts` Í¬Ò»Ì×Ä£Äâ GM ²Á³ı£©¡£ */
 async function eraseAcross(
   page: Page,
   from: { x: number; y: number },
@@ -138,13 +138,13 @@ async function eraseAcross(
   await page.mouse.up();
 }
 
-/** ä¸€å¼ å¸¦é›¾çš„åœ°å›¾ + å¼•ç”¨å®ƒçš„é›¾å¯¹è±¡ï¼šå·¦ä¸‹è§’ 4 æ ¼æ˜¯ã€ŒåŒºåŸŸ1ã€ï¼Œä¸”**åªæœ‰åŒºåŸŸ1 ç®—é›¾åŒº**ã€‚ */
+/** Ò»ÕÅ´øÎíµÄµØÍ¼ + ÒıÓÃËüµÄÎí¶ÔÏó£º×óÏÂ½Ç 4 ¸ñÊÇ¡¸ÇøÓò1¡¹£¬ÇÒ**Ö»ÓĞÇøÓò1 ËãÎíÇø**¡£ */
 function fogSceneDocs(project: string): {
   readonly mapDoc: Record<string, unknown>;
   readonly fogDoc: Record<string, unknown>;
 } {
-  const mapDoc = mapObjectDoc(project, SCENE, "ç½‘æ ¼åœ°å›¾", MAP_SIZE, GRID);
-  // v27 èµ·é›¾æ˜¯ç‹¬ç«‹çš„ `Fog` å¯¹è±¡ï¼ˆç½‘æ ¼æ•°æ®ä»åœ¨ `GridMap` é‡Œï¼Œæ”¹çš„æ˜¯é‚£ä¸€ä»½æ´»æ•°æ®ï¼‰
+  const mapDoc = mapObjectDoc(project, SCENE, "Íø¸ñµØÍ¼", MAP_SIZE, GRID);
+  // v27 ÆğÎíÊÇ¶ÀÁ¢µÄ `Fog` ¶ÔÏó£¨Íø¸ñÊı¾İÈÔÔÚ `GridMap` Àï£¬¸ÄµÄÊÇÄÇÒ»·İ»îÊı¾İ£©
   const gridMap = objectComponentData(mapDoc, COMPONENT.gridMap)!;
   gridMap.cells = {
     encoding: "rle",
@@ -153,13 +153,13 @@ function fogSceneDocs(project: string): {
       [0, GRID.width * GRID.height - FOG_CELLS],
     ],
   };
-  return { mapDoc, fogDoc: fogObjectDoc(mapDoc, "æˆ˜äº‰é›¾", { regions: [1] }) };
+  return { mapDoc, fogDoc: fogObjectDoc(mapDoc, "Õ½ÕùÎí", { regions: [1] }) };
 }
 
-test.describe("æˆ˜äº‰é›¾ï¼šè½¨è¿¹ä¸‹å‘ç»™å‰ç«¯", { tag: "@runtime" }, () => {
+test.describe("Õ½ÕùÎí£º¹ì¼£ÏÂ·¢¸øÇ°¶Ë", { tag: "@runtime" }, () => {
   test.describe.configure({ mode: "serial" });
 
-  test("Mask çª—å£æ“¦ä¸€ç¬” / æ•´åŒºå¼€å…³ â†’ å‰ç«¯æ”¶åˆ° erase_mask / reveal_fog_region", async ({
+  test("Mask ´°¿Ú²ÁÒ»±Ê / ÕûÇø¿ª¹Ø ¡ú Ç°¶ËÊÕµ½ erase_mask / reveal_fog_region", async ({
     page,
     request,
   }, testInfo) => {
@@ -176,23 +176,23 @@ test.describe("æˆ˜äº‰é›¾ï¼šè½¨è¿¹ä¸‹å‘ç»™å‰ç«¯", { tag: "@runtime" }, () => {
       await enterEditor(page);
       await openProject(page, project);
       await selectObject(page, 1);
-      await expect(page.getByTestId("inspector-object-name")).toHaveValue("æˆ˜äº‰é›¾");
+      await expect(page.getByTestId("inspector-object-name")).toHaveValue("Õ½ÕùÎí");
 
-      // æˆ˜äº‰é›¾é‚£ä¸€ç»„æ˜¯**æ–‡æ¡£æ•°æ®**ï¼ˆç§å­æ–‡ä»¶é‡Œ `fog.enabled = true`ï¼‰ï¼šå¼€ç€æ‰æœ‰ã€Œç¼–è¾‘ã€å…¥å£
+      // Õ½ÕùÎíÄÇÒ»×éÊÇ**ÎÄµµÊı¾İ**£¨ÖÖ×ÓÎÄ¼şÀï `fog.enabled = true`£©£º¿ª×Å²ÅÓĞ¡¸±à¼­¡¹Èë¿Ú
       const fog = page.locator('[data-group="fog"]');
       await expect(fog.getByTestId("fog-enable")).toBeChecked();
       await expect(fog.getByTestId("fog-mask-open")).toBeVisible();
 
-      // è¿›å…¥è¿è¡Œæ€ï¼šæ²¡ç‚¹ã€Œè¿è¡Œã€ä¹‹å‰ï¼Œå‰ç«¯æ ¹æœ¬è¿ä¸ä¸Šï¼ˆ503 æ‹’æ¡æ‰‹ï¼‰
+      // ½øÈëÔËĞĞÌ¬£ºÃ»µã¡¸ÔËĞĞ¡¹Ö®Ç°£¬Ç°¶Ë¸ù±¾Á¬²»ÉÏ£¨503 ¾ÜÎÕÊÖ£©
       await page.getByTestId("mode-run").click();
       await expect(page.getByTestId("status-mode")).toHaveAttribute("data-mode", "run");
 
-      // å‡å‰ç«¯è¿ä¸Šï¼šæ‹¿åˆ°æ•´ä»½åœºæ™¯ï¼ˆè¯´æ˜é•œåƒåè®®é‚£æ¡è·¯æ˜¯é€šçš„ï¼‰
+      // ¼ÙÇ°¶ËÁ¬ÉÏ£ºÄÃµ½Õû·İ³¡¾°£¨ËµÃ÷¾µÏñĞ­ÒéÄÇÌõÂ·ÊÇÍ¨µÄ£©
       await connectFakeClient(page, port);
       await page.waitForFunction(() => (window as unknown as FakeClientWindow).__fogScene === true);
       await expect(page.getByTestId("client-badge")).toHaveAttribute("data-connected", "yes");
 
-      // æ‰“å¼€ Mask çª—å£ï¼šæ“¦ä¸€ç¬”ï¼ˆæ‹–åŠ¨ä¸­åˆ†æ‰¹ä¸‹å‘ï¼ŒæŠ¬æ‰‹è¡¥æœ€åä¸€æ‰¹ï¼‰
+      // ´ò¿ª Mask ´°¿Ú£º²ÁÒ»±Ê£¨ÍÏ¶¯ÖĞ·ÖÅúÏÂ·¢£¬Ì§ÊÖ²¹×îºóÒ»Åú£©
       await fog.getByTestId("fog-mask-open").click();
       await expect(page.getByTestId("fog-mask-dialog")).toBeVisible();
       await eraseAcross(page, { x: 0, y: 0 }, { x: 1, y: 0 });
@@ -203,13 +203,13 @@ test.describe("æˆ˜äº‰é›¾ï¼šè½¨è¿¹ä¸‹å‘ç»™å‰ç«¯", { tag: "@runtime" }, () => {
 
       const eraseCommands = (await fakeCommands(page)).filter((item) => item.kind === "erase_mask");
       for (const command of eraseCommands) {
-        // å¯¹è±¡å¯¹å¾—ä¸Šï¼ˆå°±æ˜¯ç§å­æ–‡æ¡£é‡Œé‚£ä¸ª**é›¾å¯¹è±¡**ï¼‰ï¼›è½½è·é‡Œåªæœ‰**è½¨è¿¹**ï¼Œæ²¡æœ‰æ ¼å­/é®ç½©æ•°æ®
+        // ¶ÔÏó¶ÔµÃÉÏ£¨¾ÍÊÇÖÖ×ÓÎÄµµÀïÄÇ¸ö**Îí¶ÔÏó**£©£»ÔØºÉÀïÖ»ÓĞ**¹ì¼£**£¬Ã»ÓĞ¸ñ×Ó/ÕÚÕÖÊı¾İ
         expect(command.objectId).toBe(fogId);
         expect(command.stroke?.radius).toBeCloseTo(BRUSH_RATIO, 5);
         expect(command.stroke?.softness).toBe(1);
         expect(command.stroke?.points?.length ?? 0).toBeGreaterThan(0);
         for (const point of command.stroke?.points ?? []) {
-          // å½’ä¸€åŒ– [0,1]ï¼ˆy å‘ä¸‹ï¼‰ï¼›æ“¦çš„æ˜¯å·¦ä¸‹è§’é‚£ä¸€æ ¼é™„è¿‘
+          // ¹éÒ»»¯ [0,1]£¨y ÏòÏÂ£©£»²ÁµÄÊÇ×óÏÂ½ÇÄÇÒ»¸ñ¸½½ü
           expect(point.x).toBeGreaterThanOrEqual(0);
           expect(point.x).toBeLessThanOrEqual(1);
           expect(point.y).toBeGreaterThanOrEqual(0.5);
@@ -217,14 +217,14 @@ test.describe("æˆ˜äº‰é›¾ï¼šè½¨è¿¹ä¸‹å‘ç»™å‰ç«¯", { tag: "@runtime" }, () => {
         }
       }
 
-      // ä¸€ç¬”è¢«åˆ‡æˆå‡ æ‰¹æ—¶ï¼Œç›¸é‚»ä¸¤æ‰¹å…±äº«ä¸€ä¸ªè½ç‚¹ï¼ˆæ¥ç¼å¤„ä¸èƒ½æ–­ï¼‰
+      // Ò»±Ê±»ÇĞ³É¼¸ÅúÊ±£¬ÏàÁÚÁ½Åú¹²ÏíÒ»¸öÂäµã£¨½Ó·ì´¦²»ÄÜ¶Ï£©
       if (eraseCommands.length > 1) {
         const first = eraseCommands[0]?.stroke?.points ?? [];
         const second = eraseCommands[1]?.stroke?.points ?? [];
         expect(second[0]).toEqual(first[first.length - 1]);
       }
 
-      // æ•´åŒºå¼€å…³ï¼šåŒºåŸŸ1 æ•´ç‰‡æ­ç¤º
+      // ÕûÇø¿ª¹Ø£ºÇøÓò1 ÕûÆ¬½ÒÊ¾
       await page.getByTestId("fog-region-toggle-1").check();
 
       await expect
@@ -234,10 +234,10 @@ test.describe("æˆ˜äº‰é›¾ï¼šè½¨è¿¹ä¸‹å‘ç»™å‰ç«¯", { tag: "@runtime" }, () => {
       const region = (await fakeCommands(page)).find((item) => item.kind === "reveal_fog_region");
       expect(region).toMatchObject({ objectId: fogId, region: 1, revealed: true });
 
-      // å‡å‰ç«¯å›äº† ok:true â†’ ç¼–è¾‘å™¨æ—¥å¿—é‡Œçœ‹å¾—è§ã€Œå‘½ä»¤ æ‰§è¡ŒæˆåŠŸã€ï¼ˆä¸å‡è£…æˆåŠŸã€ä¹Ÿä¸è¶…æ—¶ï¼‰
-      await expect(page.getByText(/å‘½ä»¤\s*æ‰§è¡ŒæˆåŠŸ/).first()).toBeVisible();
+      // ¼ÙÇ°¶Ë»ØÁË ok:true ¡ú ±à¼­Æ÷ÈÕÖ¾Àï¿´µÃ¼û¡¸ÃüÁî Ö´ĞĞ³É¹¦¡¹£¨²»¼Ù×°³É¹¦¡¢Ò²²»³¬Ê±£©
+      await expect(page.getByText(/ÃüÁî\s*Ö´ĞĞ³É¹¦/).first()).toBeVisible();
 
-      // æ”¶å°¾ï¼šå…³å¯¹è¯æ¡† â†’ é€€å‡ºè¿è¡Œæ€ï¼ˆå‰ç«¯ä¼šè¢«è¸¢ä¸‹çº¿ï¼‰
+      // ÊÕÎ²£º¹Ø¶Ô»°¿ò ¡ú ÍË³öÔËĞĞÌ¬£¨Ç°¶Ë»á±»ÌßÏÂÏß£©
       await page.getByTestId("fog-mask-close").click();
       await page.getByTestId("mode-edit").click();
       await expect(page.getByTestId("status-mode")).toHaveAttribute("data-mode", "edit");

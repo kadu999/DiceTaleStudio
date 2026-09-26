@@ -64,7 +64,7 @@ export function addObject(scene: Draft<SceneDoc>, object: GameObjectDoc): void {
 export function repairObjectComponent(
   scene: Draft<SceneDoc>,
   objectId: string,
-  type: "PlaySound" | "Teleport" | "FogOfWar",
+  type: "PlaySound" | "Teleport" | "Magnifier" | "FogOfWar",
 ): boolean {
   const object = findObject(scene, objectId);
   if (object === undefined || !canRepairObjectComponent(object, type)) return false;
@@ -74,8 +74,11 @@ export function repairObjectComponent(
       ? { clips: [], layer: DEFAULT_SOUND_LAYER }
       : type === "Teleport"
         ? { targets: [] }
-        : // 战争雾（v27：独立的 Fog 对象）：默认还没选地图，由用户在面板上选
-          { mapId: "", enabled: true, regions: [] };
+        : // 放大镜（v30）：补出来是一扇还没有图的窗（面板上再挑图片）
+          type === "Magnifier"
+          ? { images: [] }
+          : // 战争雾（v27：独立的 Fog 对象）：默认还没选地图，由用户在面板上选
+            { mapId: "", enabled: true, regions: [] };
   writeFeature(object, type, data);
   return true;
 }

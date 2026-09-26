@@ -71,6 +71,27 @@ function mapComponentData(
     return changed ? mapped : data;
   }
 
+  /*
+    放大镜（v30）：`images[]` 里每一条都是**一份完整的图片引用**（`{ id, guid?, width, height, sprite? }`），
+    所以逐条走 `mapImageReference`——与图片层那一份是同一个形状、同一套「guid 优先」的换算。
+    注意要**整份重写** `data`（`images` 是新数组），否则引用对不上时磁盘上留的还是旧的。
+  */
+  if (type === "Magnifier") {
+    const images = data.images;
+    if (!Array.isArray(images)) {
+      return data;
+    }
+
+    let changed = false;
+    const mapped = images.map((item) => {
+      const next = mapImageReference(item, metas, mode);
+      changed ||= next !== item;
+      return next;
+    });
+
+    return changed ? { ...data, images: mapped } : data;
+  }
+
   return data;
 }
 

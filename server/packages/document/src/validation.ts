@@ -5,6 +5,7 @@ import {
   fogOf,
   imageOf,
   isFogEnabled,
+  magnifierDataOf,
   mapDataOf,
   soundDataOf,
   teleportDataOf,
@@ -287,6 +288,42 @@ function validateObject(
         level: "warning",
         path: `${path}/teleport/picked`,
         message: "传送阵的目标就是它自己所在的场景（按下去不会换图）",
+      });
+    }
+  }
+
+  /*
+    放大镜（动作对象，v30）：图片列表 + 当前展示的那一张。
+    与传送阵那几条同一个口径——错了都是「按没加 / 按没选处理」，所以只报警告不拦运行：
+    一条都没加、加了但没选，都是**合法状态**（刚建出来就是这样），但那时窗口里没图可放。
+  */
+  const magnifier = magnifierDataOf(object);
+  if (magnifier === undefined && canRepairObjectComponent(object, DEFAULT_SLOT_COMPONENT.magnifier)) {
+    issues.push({ level: "error", path, message: "放大镜缺少图片数据（图片列表 + 当前展示的那一张）" });
+  }
+  if (magnifier !== undefined) {
+    if (magnifier.images.length === 0) {
+      issues.push({
+        level: "warning",
+        path: `${path}/magnifier/images`,
+        message: "放大镜还没加图片（窗口中间没有图可放）",
+      });
+    }
+
+    if (magnifier.picked === undefined) {
+      if (magnifier.images.length > 0) {
+        issues.push({
+          level: "warning",
+          path: `${path}/magnifier/picked`,
+          message: "放大镜还没选要展示哪一张（窗口中间没有图可放）",
+        });
+      }
+    } else if (magnifier.picked >= magnifier.images.length) {
+      // 对不上就是数据坏了（列表被改短 / 手写文件），按「还没选」处理
+      issues.push({
+        level: "warning",
+        path: `${path}/magnifier/picked`,
+        message: "要展示的那一张不在图片列表里（按还没选处理）",
       });
     }
   }

@@ -204,6 +204,47 @@ export function createTeleportObject(input: {
   };
 }
 
+/**
+ * 新建**放大镜**（动作对象）：和实体一样摆在世界里，另带「图片列表 + 当前展示的那一张」。
+ *
+ * 位置 / 缩放 / 激活 / 锁定 / 显示顺序与实体完全同一套；**画布上的样子是固定的**：
+ * 编辑器给它画一枚**内置放大镜徽标**（不给换贴图，所以没有贴图组件），不然一个没有图的
+ * 「放大镜」在场景里既看不见也点不到。
+ *
+ * 触发它 = 让**前端**弹一扇窗显示选中的那张图（开 / 关是两条命令，见 `client/.../MagnifierWindow.cs`）。
+ * 新建时图片列表是空的（还没挑素材）——那扇窗中间写「还没选图」，「在画面上打开」点不了；
+ * 给了 `images` 就把第一条当作已选中（与 `createTeleportObject` 同一个口径：点开面板就能用）。
+ */
+export function createMagnifierObject(input: {
+  readonly name: string;
+  readonly images?: readonly ImageRef[];
+  readonly picked?: number;
+  readonly id?: string;
+  /** 对象中心的世界坐标；不传 = 未放置（与普通对象同一个口径，由调用方给落点）。 */
+  readonly position?: WorldPosition | null;
+}): GameObjectDoc {
+  const id = input.id ?? createId("magnifier");
+  const images = (input.images ?? []).map((image) => ({ ...image }));
+  const picked = input.picked ?? (images.length > 0 ? 0 : undefined);
+
+  return {
+    id,
+    name: input.name,
+    kind: "Magnifier",
+    active: true,
+    position: input.position ?? null,
+    rotation: 0,
+    scale: DEFAULT_OBJECT_SCALE,
+    locked: false,
+    components: [
+      featureComponent(id, DEFAULT_SLOT_COMPONENT.magnifier, {
+        images,
+        ...(picked === undefined ? {} : { picked }),
+      }),
+    ],
+  };
+}
+
 /** 新建工程文件内容：只有项目级数据，场景由调用方在 `Assets/scenes/` 下各自建文件。 */
 export function createEmptyProject(name = "未命名项目"): ProjectDoc {
   return {

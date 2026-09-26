@@ -13,6 +13,7 @@ import type {
   FogOfWarDataDoc,
   ImageRef,
   ImageLayerDataDoc,
+  MagnifierDataDoc,
   MapDataDoc,
   GameObjectDoc,
   SoundDataDoc,
@@ -25,8 +26,8 @@ import type {
  * 对象特性的**唯一访问路径**。
  *
  * v19 起特性住在 `components[]` 里（`GridMap` / `ImageLayer` / `SpriteLayer` / `PlaySound` /
- * `Teleport` / `VideoOverlay`，`FogOfWar` 是 v25 从 `GridMap` 拆出来的第 7 种，
- * `VideoBlend` 是后加的第 8 种），
+ * `Teleport` / `Magnifier` / `VideoOverlay`，`FogOfWar` 是 v25 从 `GridMap` 拆出来的第 7 种，
+ * `VideoBlend` 是第 8 种、`Magnifier` 是 v30 加的第 9 种），
  * 而**「数据存在哪」只有这个文件知道**：调用方一律写
  * `mapDataOf(object)` / `ensureSoundData(draft)`，不写 `object.components.find(...)`。
  * 于是「把特性从扁平字段搬进组件」这件事的改动面被压在这个文件里（迁移那一次）。
@@ -256,6 +257,11 @@ export function teleportDataOf(object: GameObjectDoc): TeleportDataDoc | undefin
   return componentDataOfSlot<TeleportDataDoc>(object, "teleport");
 }
 
+/** 放大镜数据（图片列表 + 当前展示的那一张）。 */
+export function magnifierDataOf(object: GameObjectDoc): MagnifierDataDoc | undefined {
+  return componentDataOfSlot<MagnifierDataDoc>(object, "magnifier");
+}
+
 /** 视频数据（列表 + 选中的那条 + 循环 / 声音）。 */
 export function videoDataOf(object: GameObjectDoc): VideoDataDoc | undefined {
   return componentDataOfSlot<VideoDataDoc>(object, "video");
@@ -427,6 +433,17 @@ export function ensureSoundData(object: Draft<GameObjectDoc>): Draft<SoundDataDo
 export function ensureTeleportData(object: Draft<GameObjectDoc>): Draft<TeleportDataDoc> | undefined {
   return ensureSlotData<TeleportDataDoc>(object, "teleport", () => ({
     targets: [],
+  }));
+}
+
+/**
+ * 放大镜数据的 draft；缺失组件须先通过显式修复操作恢复（与传送阵同一套必需组件口径）。
+ *
+ * 默认数据就是「一扇还没有图的窗」：`images: []`、`picked` 不写（那扇窗中间写「还没选图」）。
+ */
+export function ensureMagnifierData(object: Draft<GameObjectDoc>): Draft<MagnifierDataDoc> | undefined {
+  return ensureSlotData<MagnifierDataDoc>(object, "magnifier", () => ({
+    images: [],
   }));
 }
 

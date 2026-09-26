@@ -285,52 +285,160 @@ function payloadIdOf(metas: AssetMetas, image: ImageRef): string {
 export function resolveSceneSprites(scene: SceneDoc, metas: AssetMetas): SceneDoc {
   let changed = false;
   const objects = scene.objects.map((object) => {
-    // 对象自己那份图片的子图（带网格的贴图一律没有——`displaySpriteOf` 是那条口径的唯一判据）
-    const sprite = displaySpriteOf(object, metas);
-    const image = imageOf(object);
-    // 带网格的贴图不该有子图：手写文件里误写了一个时，顺手从载荷里摘掉
-    const stripGridSprite = mapDataOf(object) !== undefined && image?.sprite !== undefined;
-    if (sprite === undefined && !stripGridSprite) {
-      return object;
-    }
-
-    changed = true;
-    const components = object.components.map((component) => {
-      // 图片槽位有两种组件（精灵 `SpriteLayer` / 贴图 `ImageLayer`）——**有格子要写回的那个**
-      // 只可能是其中实际存在的那一种，所以按组件自报的 slot 匹配，不再按 kind 判一次
-      if (findComponentType(component.type)?.slot !== "image" || image === undefined) {
-        return component;
-      }
-
-      // 显示顺序住在图片层数据里（v26）：这里整份重写 data，必须带上它，否则推送一份
-      // 就把它抹成缺省 0（与 `setObjectImage` 的写洞同一类）。guid 不下发（载荷只有路径 ID）。
-      const sortingOrder = (component.data as { sortingOrder?: number }).sortingOrder;
-      const base = {
-        id: payloadIdOf(metas, image),
-        width: image.width,
-        height: image.height,
-        ...(sortingOrder === undefined ? {} : { sortingOrder }),
-      };
-
-      // 带网格的贴图上的误写子图：摘掉（格子按整张算）
-      if (sprite === undefined) {
-        return { ...component, data: base };
-      }
-
-      // 格子按解析结果写回（越界的已夹），切分一并带上；路径按索引里的当前值写、
-      // guid 不下发（载荷只有路径 ID 这一种身份）
-      return {
-        ...component,
-        data: {
-          ...base,
-          sprite: { column: sprite.column, row: sprite.row },
-          spriteGrid: { columns: sprite.columns, rows: sprite.rows },
-        },
-      };
-    });
-
-    return { ...object, components };
+    const withImage = resolveObjectImageSprites(object, metas);
+    const withMagnifier = resolveMagnifierSprites(withImage, metas);
+    changed ||= withMagnifier !== object;
+    return withMagnifier;
   });
 
   return changed ? { ...scene, objects } : scene;
+}
+
+/**
+ * **对象自己那张图**的子图引用（`ImageLayer` / `SpriteLayer`）——上面的主转换里的一趟。
+ *
+ * 两件事在这里做干净：
+ * - **夹格子**：切分被改小之后，老对象可能指向越界的格子——推送时统一夹到最后一格
+ *   （协议 schema 会拒越界值，前端也不必自己防）；
+ * - **摘掉地图贴图上的误写**：地图的格子按整张贴图算，子图引用会被两边忽略
+ *   （编辑器画布走 `displaySpriteOf`）——这里顺手从载荷里摘掉，免得前端收到一个它不该理会的字段。
+ */
+function resolveObjectImageSprites(object: GameObjectDoc, metas: AssetMetas): GameObjectDoc {
+  // 对象自己那份图片的子图（带网格的贴图一律没有——`displaySpriteOf` 是那条口径的唯一判据）
+  const sprite = displaySpriteOf(object, metas);
+  const image = imageOf(object);
+  // 带网格的贴图不该有子图：手写文件里误写了一个时，顺手从载荷里摘掉
+  const stripGridSprite = mapDataOf(object) !== undefined && image?.sprite !== undefined;
+  if (sprite === undefined && !stripGridSprite) {
+    return object;
+  }
+
+  const components = object.components.map((component) => {
+    // 图片槽位有两种组件（精灵 `SpriteLayer` / 贴图 `ImageLayer`）——**有格子要写回的那个**
+    // 只可能是其中实际存在的那一种，所以按组件自报的 slot 匹配，不再按 kind 判一次
+    if (findComponentType(component.type)?.slot !== "image" || image === undefined) {
+      return component;
+    }
+
+    // 显示顺序住在图片层数据里（v26）：这里整份重写 data，必须带上它，否则推送一份
+    // 就把它抹成缺省 0（与 `setObjectImage` 的写洞同一类）。guid 不下发（载荷只有路径 ID）。
+    const sortingOrder = (component.data as { sortingOrder?: number }).sortingOrder;
+    const base = {
+      id: payloadIdOf(metas, image),
+      width: image.width,
+      height: image.height,
+      ...(sortingOrder === undefined ? {} : { sortingOrder }),
+    };
+
+    // 带网格的贴图上的误写子图：摘掉（格子按整张算）
+    if (sprite === undefined) {
+      return { ...component, data: base };
+    }
+
+    // 格子按解析结果写回（越界的已夹），切分一并带上；路径按索引里的当前值写、
+    // guid 不下发（载荷只有路径 ID 这一种身份）
+    return {
+      ...component,
+      data: {
+        ...base,
+        sprite: { column: sprite.column, row: sprite.row },
+        spriteGrid: { columns: sprite.columns, rows: sprite.rows },
+      },
+    };
+  });
+
+  return { ...object, components };
+}
+
+/**
+ * **放大镜（v30）的图片列表**：逐条把「第几格」解析成 `sprite` + `spriteGrid`——上面的主转换里的一趟。
+ *
+ * 与图片层那一条同一套理由（切分只有一份、住在素材 `.meta` 里，前端手上没有它，所以必须随载荷
+ * 走、越界的格子在这里统一夹）。差别只有一处：列表项**没有 `sortingOrder`**（它不渲染在世界里，
+ * 是弹出来的一扇窗），所以不需要图片层那份「整份重写、别把显示顺序抹掉」的小心。
+ */
+function resolveMagnifierSprites(object: GameObjectDoc, metas: AssetMetas): GameObjectDoc {
+  const component = object.components.find((item) => findComponentType(item.type)?.slot === "magnifier");
+  const images = component === undefined ? undefined : (component.data as { images?: unknown }).images;
+  if (component === undefined || !Array.isArray(images)) {
+    return object;
+  }
+
+  let changed = false;
+  const next = images.map((item) => {
+    if (typeof item !== "object" || item === null) {
+      return item;
+    }
+
+    const payload = payloadImageOf(item as ImageRef, metas);
+    if (payload === null) {
+      return item;
+    }
+
+    changed = true;
+    return payload;
+  });
+
+  if (!changed) {
+    return object;
+  }
+
+  return {
+    ...object,
+    components: object.components.map((item) =>
+      item === component ? { ...item, data: { ...item.data, images: next } } : item,
+    ),
+  };
+}
+
+/**
+ * 把一份图片引用改写成**载荷形状**：`id` 用索引里的当前路径、摘掉 `guid`（载荷只有路径 ID 这
+ * 一种身份）、有格子时补上 `spriteGrid`（几行几列，越界的已夹）。
+ *
+ * 已经是载荷形状时返回 `null`——推送路径上要按值比对，别每次造一堆等价的新对象
+ * （与 `resolveObjectImageSprites` 开头那两个提前返回同一条取舍）。
+ */
+function payloadImageOf(image: ImageRef, metas: AssetMetas): Record<string, unknown> | null {
+  const sprite = resolvedSpriteOf(image, metas);
+  const id = payloadIdOf(metas, image);
+  const cell = sprite === undefined ? undefined : { column: sprite.column, row: sprite.row };
+  const grid = sprite === undefined ? undefined : { columns: sprite.columns, rows: sprite.rows };
+  const current = image as unknown as Record<string, unknown>;
+
+  if (
+    id === image.id &&
+    current.guid === undefined &&
+    samePlainObject(current.sprite, cell) &&
+    samePlainObject(current.spriteGrid, grid)
+  ) {
+    return null;
+  }
+
+  return {
+    id,
+    width: image.width,
+    height: image.height,
+    ...(cell === undefined ? {} : { sprite: cell, spriteGrid: grid }),
+  };
+}
+
+/** 两个「小对象」逐键相同（`undefined` 与缺失同义）——只用来判「载荷要不要重写」。 */
+function samePlainObject(left: unknown, right: unknown): boolean {
+  if (left === undefined || right === undefined) {
+    return left === right;
+  }
+
+  if (typeof left !== "object" || typeof right !== "object" || left === null || right === null) {
+    return false;
+  }
+
+  const a = left as Record<string, unknown>;
+  const b = right as Record<string, unknown>;
+  for (const key of new Set([...Object.keys(a), ...Object.keys(b)])) {
+    if (a[key] !== b[key]) {
+      return false;
+    }
+  }
+
+  return true;
 }
