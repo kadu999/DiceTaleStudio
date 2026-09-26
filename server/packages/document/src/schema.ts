@@ -10,6 +10,11 @@ import type { AssetMetaDoc } from "./asset-meta";
 import { COMPONENT_TYPES, FEATURE_COMPONENT_TYPES, componentId, findComponentType, hasLegacyFeatureField } from "./components";
 import {
   DEFAULT_SLOT_COMPONENT,
+  DEFAULT_SOUND_LAYER,
+  DEFAULT_VIDEO_AUDIO,
+  DEFAULT_VIDEO_AUTO_PLAY,
+  DEFAULT_VIDEO_ENABLED,
+  DEFAULT_VIDEO_LOOP,
   SPRITE_COMPONENT,
   componentForSlot,
   presetOf,
@@ -134,7 +139,7 @@ export const imageLayerDataSchema = imageRefSchema.extend({
 export const soundDataSchema = z.object({
   clips: z.array(z.string().min(1)).default([]),
   picked: z.string().min(1).optional(),
-  layer: z.enum(SOUND_LAYERS).default("sfx"),
+  layer: z.enum(SOUND_LAYERS).default(DEFAULT_SOUND_LAYER),
 });
 
 /**
@@ -164,12 +169,12 @@ export const teleportDataSchema = z.object({
 export const videoDataSchema = z.object({
   // v14 起，与 `map.fog.enabled` 同一个口径：老编辑器不发这一项时语义只能是「在用」
   // （`video` 只有加过视频才写出来），补成 false 会把已有的视频静默关掉
-  enabled: z.boolean().default(true),
-  autoPlay: z.boolean().default(false),
+  enabled: z.boolean().default(DEFAULT_VIDEO_ENABLED),
+  autoPlay: z.boolean().default(DEFAULT_VIDEO_AUTO_PLAY),
   clips: z.array(z.string().min(1)).default([]),
   picked: z.string().min(1).optional(),
-  loop: z.boolean().default(false),
-  audio: z.boolean().default(false),
+  loop: z.boolean().default(DEFAULT_VIDEO_LOOP),
+  audio: z.boolean().default(DEFAULT_VIDEO_AUDIO),
 });
 
 /**

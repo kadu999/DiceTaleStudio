@@ -9,8 +9,15 @@ import {
   type ImageSize,
   type WorldRect,
 } from "@dts/grid";
-import { visibleWorldRect, worldToScreen, type Point, type Viewport } from "./viewport";
-import { GIZMO_HANDLE_SIZE, toolHasGizmo, type GizmoHandle, type TransformTool } from "./gizmo";
+import { visibleWorldRect, worldToScreen, type Point, type ScreenBox, type Viewport } from "./viewport";
+import {
+  GIZMO_HANDLE_SIZE,
+  toolHasGizmo,
+  type GizmoAxisScreen,
+  type GizmoHandle,
+  type GizmoHandlePointScreen,
+  type TransformTool,
+} from "./gizmo";
 
 /**
  * Canvas 2D 场景渲染器。
@@ -158,8 +165,8 @@ export interface SceneToolHandles {
   readonly center: Point;
   readonly corners: readonly Point[];
   /** 两根移动轴（移动工具画）。 */
-  readonly axes: readonly { readonly handle: "move-x" | "move-y"; readonly root: Point; readonly tip: Point }[];
-  readonly scale: readonly { readonly handle: GizmoHandle; readonly point: Point }[];
+  readonly axes: readonly GizmoAxisScreen[];
+  readonly scale: readonly GizmoHandlePointScreen[];
   readonly ringRadius: number;
   /** 对象被锁住：手柄画成灰的（「看得见但拖不动」，与灰色选中框同一套说法）。 */
   readonly locked: boolean;
@@ -855,10 +862,7 @@ function drawFogBadge(
 }
 
 /** 图片矩形在屏幕上的外框（贴图就画在这个框里）。 */
-function screenBoxOf(
-  rect: WorldRect,
-  viewport: Viewport,
-): { left: number; top: number; right: number; bottom: number } {
+function screenBoxOf(rect: WorldRect, viewport: Viewport): ScreenBox {
   const topLeft = worldToScreen(viewport, worldRectTopLeft(rect));
   return {
     left: topLeft.x,
@@ -899,7 +903,7 @@ function drawCells(
   context: CanvasRenderingContext2D,
   layer: SceneLayer,
   viewport: Viewport,
-  visible: { left: number; top: number; right: number; bottom: number },
+  visible: ScreenBox,
 ): void {
   const grid = layer.grid;
   const cells = layer.cells;
@@ -951,7 +955,7 @@ function drawGridLines(
   context: CanvasRenderingContext2D,
   layer: SceneLayer,
   viewport: Viewport,
-  visible: { left: number; top: number; right: number; bottom: number },
+  visible: ScreenBox,
   view: ImageSize,
 ): void {
   const grid = layer.grid;

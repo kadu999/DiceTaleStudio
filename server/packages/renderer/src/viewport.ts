@@ -136,11 +136,16 @@ export function fitViewport(
   };
 }
 
+/** 屏幕坐标里的一块矩形（canvas CSS 像素，y 向下）。 */
+export interface ScreenBox {
+  readonly left: number;
+  readonly top: number;
+  readonly right: number;
+  readonly bottom: number;
+}
+
 /** 当前视口在世界坐标里的可见范围（用于裁剪绘制）。 */
-export function visibleWorldRect(
-  viewport: Viewport,
-  view: ImageSize,
-): { left: number; top: number; right: number; bottom: number } {
+export function visibleWorldRect(viewport: Viewport, view: ImageSize): ScreenBox {
   const topLeft = screenToWorld(viewport, { x: 0, y: 0 });
   const bottomRight = screenToWorld(viewport, { x: view.width, y: view.height });
   return {

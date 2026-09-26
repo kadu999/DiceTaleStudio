@@ -16,7 +16,7 @@
 | 后端默认地址 | `0.0.0.0:1420`（`resources/config/app.json`，可被 `HOST` / `PORT` 覆盖） |
 | 编辑器开发地址 | `http://localhost:5173`（Vite，`/api`、`/editor`、`/client` 反代到 1420） |
 | 编辑器生产地址 | `http://localhost:1420`（后端同源托管 `apps/editor/dist`） |
-| 源码规模（不含测试） | 161 个文件 / 36,146 行（packages 12,288 · backend 3,480 · editor 20,378） |
+| 源码规模（不含测试） | 161 个文件 / 36,154 行（packages 12,296 · backend 3,480 · editor 20,378） |
 | 测试规模 | 32,751 行（单测 23,431 · E2E 9,037 · 架构测试 283） |
 
 > 上表两行与 §0.1 表格里加粗的文件行数、§3.x 节标题里的包规模由
@@ -429,7 +429,7 @@ build: { outDir: "dist", sourcemap: true },
 - 画笔半径 `floor((brushSize-1)/2)`（1/2→1×1、3/4→3×3、5→5×5，含偶数尺寸的刻意保真），与 Unity `ApplyBrush` 完全一致；
 - 坐标系只有一个：**世界坐标**（x 右、y 上、像素、无限大）；`grid(0,0)` 在地图矩形左下角 = 图片最下面一行，grid.y 与世界 y 同向、不翻转；唯一的翻转发生在贴图绘制（`worldRectTopLeft`）。
 
-### 3.2 `@dts/document` — 文档模型、命令与历史（7,678 行）
+### 3.2 `@dts/document` — 文档模型、命令与历史（7,677 行）
 
 | 文件 | 行数 | 职责 | 关键导出 |
 |---|---|---|---|
@@ -771,7 +771,7 @@ resources/
 `writeBinary`、`ensureFolder`、`remove`、`rename`。`rename` 的契约：两端类别必须一致、源必须存在、
 目标必须不存在（**绝不覆盖用户数据**）。
 
-### 3.5 `@dts/renderer` — Canvas 2D 渲染与手柄几何（1,846 行）
+### 3.5 `@dts/renderer` — Canvas 2D 渲染与手柄几何（1,855 行）
 
 | 文件 | 行数 | 职责 | 关键导出 |
 |---|---|---|---|

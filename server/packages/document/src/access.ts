@@ -400,14 +400,9 @@ export function ensureTeleportData(object: Draft<GameObjectDoc>): Draft<Teleport
  * 默认数据住在 `component-specs/video.ts`（与属性面板、泛型写入同一份规格）。
  */
 export function ensureVideoData(object: Draft<GameObjectDoc>): Draft<VideoDataDoc> | undefined {
-  const component = componentOfSlot(object, "video");
-  if (component !== undefined) return component.data as Draft<VideoDataDoc>;
-  if (!canAddOptionalObjectComponent(object, DEFAULT_SLOT_COMPONENT.video)) return undefined;
-  return writeFeature(
-    object,
-    DEFAULT_SLOT_COMPONENT.video,
+  return ensureSlotData<VideoDataDoc>(object, "video", () =>
     defaultDataOf(DEFAULT_SLOT_COMPONENT.video) as unknown as VideoDataDoc,
-  ).data as Draft<VideoDataDoc>;
+  );
 }
 
 /**
@@ -418,12 +413,9 @@ export function ensureVideoData(object: Draft<GameObjectDoc>): Draft<VideoDataDo
  * （校验会报 error 直到选上）。
  */
 export function ensureFogData(object: Draft<GameObjectDoc>): Draft<FogOfWarDataDoc> | undefined {
-  const component = componentOfSlot(object, "fog");
-  if (component !== undefined) return component.data as Draft<FogOfWarDataDoc>;
-  if (!canAddOptionalObjectComponent(object, DEFAULT_SLOT_COMPONENT.fog)) return undefined;
-  return writeFeature(object, DEFAULT_SLOT_COMPONENT.fog, {
+  return ensureSlotData<FogOfWarDataDoc>(object, "fog", () => ({
     mapId: "",
     enabled: true,
     regions: [],
-  }).data as Draft<FogOfWarDataDoc>;
+  }));
 }

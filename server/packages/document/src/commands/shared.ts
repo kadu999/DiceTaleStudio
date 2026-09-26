@@ -98,9 +98,11 @@ export function withMediaData<T>(
 /** 去空、去重后的列表（保序：重复项留在第一次出现的位置，即用户加进来的顺序）。 */
 export function dedupeItems(items: readonly string[]): string[] {
   const next: string[] = [];
+  const seen = new Set<string>();
   for (const item of items) {
     const trimmed = item.trim();
-    if (trimmed.length > 0 && !next.includes(trimmed)) {
+    if (trimmed.length > 0 && !seen.has(trimmed)) {
+      seen.add(trimmed);
       next.push(trimmed);
     }
   }
