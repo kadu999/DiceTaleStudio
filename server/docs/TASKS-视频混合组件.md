@@ -25,8 +25,10 @@
   （`access.ts` 的 `canAddOptionalObjectComponent`）——不新增机制，照 `VideoOverlay` 的形状克隆一份最省。
   - 新增一个 `ComponentSlot`：`videoBlend`；`DEFAULT_SLOT_COMPONENT.videoBlend = "VideoBlend"`；
     `OBJECT_PRESETS.Image.slots.videoBlend = "VideoBlend"`。
-- **`VideoOverlay` 与 `VideoBlend` 互斥**：一个对象最多挂二者之一（各占一个槽位，机制上不再禁止，所以要显式管）。
-  Add Component 菜单里挂着其一时不再列另一个；`validateScene` 对并存报一条 warning。
+- **`VideoOverlay` 与 `VideoBlend` 互斥**：一个对象最多挂二者之一。**准入层直接拒绝**——
+  挂了一个之后，另一个既不能加（Add Component 菜单里不列、`canAddOptionalObjectComponent` 为假），
+  也不能补建（`componentTypeForObjectSlot` / `ensureSlotData`）——判据只有 `access.ts` 的
+  `EXCLUSIVE_SLOTS` 一处。手写文件里两个都写的属于损坏数据：读取不拦，`validateScene` 报一条 **error**。
 - 遮罩的初始形态**不是**「格子区域位」（视频没有网格），就是**整张不透明**：所以没有 `regions`、
   没有 `reveal_fog_region` 那种整区开关，组件数据里也不存任何遮罩状态。
 - 编辑器窗口的底图**不能是视频**（编辑器不解码、不预览，见 `VideoOverlay.cs` 头注）：用两条视频的
@@ -91,7 +93,7 @@ export interface VideoBlendDataDoc {
 | `components.ts` | `ComponentType` union 加 `"VideoBlend"`；`COMPONENT_TYPES` 加一条（`slot: "videoBlend"`、`templateKinds: ["Image"]`、`optionalKinds: ["Image"]`、displayName「视频混合」） |
 | `presets.ts` | `ComponentSlot` 加 `"videoBlend"`；`DEFAULT_SLOT_COMPONENT` 加一行；`OBJECT_PRESETS.Image.slots` 加一行；`supportsVideoBlend`（照 `supportsVideo` 写） |
 | `schema.ts` | `videoBlendDataSchema` + `sceneComponentSchema` union 分支 |
-| `validation.ts` | 校验块：`picked` ∈ `clips`、空 clip 报错；`VideoOverlay` 与 `VideoBlend` 并存报 warning |
+| `validation.ts` | 校验块：`picked` ∈ `clips`、空 clip 报错；`VideoOverlay` 与 `VideoBlend` 并存报 **error**（互斥） |
 | `commands/video-blend.ts` | `setVideoBlendClips(channel, clips)` / `setVideoBlendPicked(channel, clipId)` / `removeObjectVideoBlend`；`commands/component.ts` 两条 `case` |
 | `scene-asset-refs.ts` | 两条通道的 `clips` / `picked` 的 guid ↔ id 换算（`mapMediaFields` 与声音 / 视频共用） |
 | 面板 | `VideoBlendFields.tsx`：两组通道（各「加列表 + 选一条」）+ `loop` + `audio` + 「打开 Mask 窗口」+ 播放三键；`registry.tsx` 注册组（`removable`） |

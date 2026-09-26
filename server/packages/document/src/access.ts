@@ -60,6 +60,28 @@ export function componentOfSlot(object: GameObjectDoc, slot: ComponentSlot): Com
   return object.components.find((item) => findComponentType(item.type)?.slot === slot);
 }
 
+/**
+ * **互斥的能力槽位**：一个对象最多挂其中之一。
+ *
+ * `video`（`VideoOverlay`）与 `videoBlend`（`VideoBlend`）**语义互斥**——两条流同时想盖在
+ * 同一个矩形上，谁盖谁没有意义。所以**准入层直接拒绝**：挂了一个之后，另一个既不能加
+ * （`canAddOptionalObjectComponent` → Add Component 菜单），也不能补建
+ * （`componentTypeForObjectSlot` → `ensureSlotData` / 各 `ensureXxxData`）。
+ *
+ * 手写文件里两个都写的属于**损坏数据**：读取不拦（免得整份场景读不开，与「未知组件保留」
+ * 同一条取舍），由 `validateScene` 报一条 **error** 让人去摘掉一个。
+ */
+const EXCLUSIVE_SLOTS: Readonly<Partial<Record<ComponentSlot, ComponentSlot>>> = {
+  video: "videoBlend",
+  videoBlend: "video",
+};
+
+/** 对象上是否挂着「与这个槽位互斥」的那个组件。 */
+function hasExclusiveComponent(object: GameObjectDoc, slot: ComponentSlot): boolean {
+  const other = EXCLUSIVE_SLOTS[slot];
+  return other !== undefined && componentOfSlot(object, other) !== undefined;
+}
+
 /** Get the attached component type, or an explicitly addable optional component. */
 export function componentTypeForObjectSlot(
   object: GameObjectDoc,
@@ -67,6 +89,8 @@ export function componentTypeForObjectSlot(
 ): string | undefined {
   const attached = componentOfSlot(object, slot);
   if (attached !== undefined) return attached.type;
+  // 互斥的那个已经挂上：这个槽位**不许补建**（视频 / 视频混合二选一）
+  if (hasExclusiveComponent(object, slot)) return undefined;
   if (object.components.some((component) => findComponentType(component.type)?.slot === slot)) return undefined;
   if (hasComponentKindMismatch(object)) return undefined;
   return SLOT_COMPONENT_TYPES.find(
@@ -92,7 +116,9 @@ export function canAddOptionalObjectComponent(object: GameObjectDoc, type: strin
     definition?.slot !== undefined &&
     definition.optionalKinds?.includes(object.kind) === true &&
     !hasComponentKindMismatch(object) &&
-    !object.components.some((component) => findComponentType(component.type)?.slot === definition.slot)
+    !object.components.some((component) => findComponentType(component.type)?.slot === definition.slot) &&
+    // 互斥的那个已经挂上：这个可选组件**不能加**（视频 / 视频混合二选一）
+    !hasExclusiveComponent(object, definition.slot)
   );
 }
 

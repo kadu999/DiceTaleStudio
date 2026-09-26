@@ -9,8 +9,9 @@ import {
   setComponentField,
   setVideoBlendClips,
   setVideoBlendPicked,
+  setVideoEnabled,
 } from "../src/commands";
-import { videoBlendDataOf } from "../src/access";
+import { videoBlendDataOf, videoDataOf } from "../src/access";
 import { ASSET_META_FORMAT_VERSION, createAssetMetas } from "../src/asset-meta";
 import { featureComponent } from "../src/components";
 import { sceneAssetRefsToGuids, sceneAssetRefsToIds } from "../src/scene-asset-refs";
@@ -284,7 +285,7 @@ describe("视频混合：schema 与校验", () => {
     });
   });
 
-  it("校验：空条目 / 选中不在列表 / 与「视频」并存都给 warning", () => {
+  it("校验：空条目 / 选中不在列表；与「视频」并存是 **error**（二者互斥）", () => {
     const object = textureObject();
     const scene = sceneWith([
       {
@@ -306,12 +307,56 @@ describe("视频混合：schema 与校验", () => {
       },
     ]);
 
-    const messages = validateScene(scene)
-      .map((issue) => issue.message)
-      .join("\n");
+    const issues = validateScene(scene);
+    const messages = issues.map((issue) => issue.message).join("\n");
     expect(messages).toMatch(/视频混合通道 A 里有空条目/);
     expect(messages).toMatch(/通道 A 选中的那条视频不在它的列表里/);
-    expect(messages).toMatch(/同时挂了「视频」与「视频混合」/);
+    // 互斥：并存是损坏数据 → error（不是 warning）
+    expect(issues.find((issue) => /同时挂了「视频」与「视频混合」/.test(issue.message))?.level).toBe(
+      "error",
+    );
+  });
+});
+
+describe("视频混合：与「视频」互斥", () => {
+  it("挂了视频就加不上视频混合（准入层直接拒绝，无变更）", () => {
+    const withVideo = mutate(sceneWith([textureObject()]), (draft) => {
+      setVideoEnabled(draft, "tex-1", true);
+    });
+    expect(videoDataOf(withVideo.objects[0]!)).toBeDefined();
+
+    const blocked = mutate(withVideo, (draft) => {
+      expect(addObjectVideoBlend(draft, "tex-1")).toBe(false);
+      expect(addObjectComponent(draft, "tex-1", "VideoBlend")).toBe(false);
+    });
+    expect(blocked).toBe(withVideo);
+    expect(videoBlendDataOf(blocked.objects[0]!)).toBeUndefined();
+  });
+
+  it("挂了视频混合就加不上视频（准入层直接拒绝，无变更）", () => {
+    const blended = mutate(sceneWith([textureObject()]), (draft) => {
+      addObjectVideoBlend(draft, "tex-1");
+    });
+
+    const blocked = mutate(blended, (draft) => {
+      expect(setVideoEnabled(draft, "tex-1", true)).toBe(false);
+      expect(addObjectComponent(draft, "tex-1", "VideoOverlay")).toBe(false);
+    });
+    expect(blocked).toBe(blended);
+    expect(videoDataOf(blocked.objects[0]!)).toBeUndefined();
+  });
+
+  it("摘掉一个之后另一个就加得上（互斥不是单向锁）", () => {
+    const withVideo = mutate(sceneWith([textureObject()]), (draft) => {
+      setVideoEnabled(draft, "tex-1", true);
+    });
+    const removed = mutate(withVideo, (draft) => {
+      removeObjectComponent(draft, "tex-1", "VideoOverlay");
+    });
+    const blended = mutate(removed, (draft) => {
+      expect(addObjectVideoBlend(draft, "tex-1")).toBe(true);
+    });
+    expect(videoBlendDataOf(blended.objects[0]!)).toBeDefined();
   });
 });
 

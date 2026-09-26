@@ -318,17 +318,19 @@ function validateObject(
   }
 
   /*
-    视频混合（新，可选）：两条通道各自「列表 + 选中」，与视频同一套口径。
-    遮罩不在文档里（纯运行态），所以这里没有可校验的遮罩；「同时挂了视频与视频混合」
-    是数据上的歧义（两条流同时想盖同一个矩形）——只提醒，按组件处理、不拦。
+    视频混合（v17，可选）：两条通道各自「列表 + 选中」，与视频同一套口径。
+    遮罩不在文档里（纯运行态），所以这里没有可校验的遮罩。
+
+    「视频」与「视频混合」**互斥**（`access.ts` 的准入层直接拒绝同时添加），所以这里报的是
+    手写文件里的损坏数据——**error**（读取不拦，让人去摘掉一个）。
   */
   const videoBlend = videoBlendDataOf(object);
   if (videoBlend !== undefined) {
     if (video !== undefined) {
       issues.push({
-        level: "warning",
+        level: "error",
         path: `${path}/components`,
-        message: "同时挂了「视频」与「视频混合」：前端只按视频混合处理（建议摘掉一个）",
+        message: "同时挂了「视频」与「视频混合」：二者互斥、不能共存（请摘掉一个）",
       });
     }
 

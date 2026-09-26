@@ -158,6 +158,21 @@ describe("视频混合：哪些对象能加", () => {
     render(<InspectorPanel />);
     expect(addableLabels()).not.toContain("视频混合");
   });
+
+  it("与「视频」互斥：挂了一个，另一个就不在「添加组件」里", () => {
+    // 先挂视频 → 底部菜单里没有「视频混合」
+    seedScene([texture()], ["tex-1"]);
+    const first = render(<InspectorPanel />);
+    addComponentFromMenu("VideoOverlay");
+    expect(addableLabels()).not.toContain("视频混合");
+    first.unmount();
+
+    // 先挂视频混合 → 底部菜单里没有「视频」
+    seedScene([texture()], ["tex-1"]);
+    render(<InspectorPanel />);
+    addComponentFromMenu("VideoBlend");
+    expect(addableLabels()).not.toContain("视频");
+  });
 });
 
 describe("视频混合：添加与移除", () => {

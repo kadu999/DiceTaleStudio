@@ -136,8 +136,8 @@ export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
     // 视频混合（对象特性之外新加的第 8 种）：两条视频叠在**同一个矩形**上用 Mask 混合
     // （A 盖住、擦开露 B）。遮罩是**纯运行态**（新命令 `erase_video_mask` 驱动，不写文档），
     // 组件只声明「放什么」。
-    // 与「视频」各占一个槽位、机制上可并存，但语义互斥（两条流同时想盖同一矩形）——
-    // `validateScene` 给一条 warning，前端取 `VideoBlend` 优先。
+    // 与「视频」**互斥**（两条流同时想盖同一矩形没有意义）：准入层直接拒绝同时挂
+    // （见 `access.ts` 的 `EXCLUSIVE_SLOTS`），手写文件里两个都写的由 `validateScene` 报 error。
     type: "VideoBlend",
     displayName: "视频混合",
     gmEditable: true,

@@ -198,8 +198,9 @@ export function supportsVideo(target: ObjectKind | GameObjectDoc): boolean {
  * 与 `supportsVideo` 同一套：`videoBlend` 槽位**只给贴图**（`OBJECT_PRESETS.Image`）——
  * 混合结果盖在对象自己的矩形上，与「视频」是同一种用法。
  *
- * 与 `VideoOverlay` 的关系：两者各占一个槽位，机制上可以并存，但语义上互斥
- * （两条视频流同时想盖同一个矩形）——校验会给一条 warning，前端取 `VideoBlend` 优先。
+ * 与 `VideoOverlay` 的关系：二者**互斥**（两条视频流同时想盖同一个矩形没有意义）——
+ * 准入层（`access.ts` 的 `EXCLUSIVE_SLOTS`）**直接拒绝同时挂**：挂了一个，另一个就加不上
+ * / 补不出来。手写文件里两个都写的由 `validateScene` 报一条 error。
  */
 export function supportsVideoBlend(target: ObjectKind | GameObjectDoc): boolean {
   if (typeof target !== "string") {
