@@ -1,5 +1,5 @@
 {
-  "formatVersion": 29,
+  "formatVersion": 30,
   "objects": [
     {
       "id": "map_mu7t58za2yr2b",
@@ -55,9 +55,9 @@
           "type": "ImageLayer",
           "data": {
             "id": "7b8aecadae302b5f2be171a7550a0b77",
+            "guid": "7b8aecadae302b5f2be171a7550a0b77",
             "width": 1920,
             "height": 1080,
-            "guid": "7b8aecadae302b5f2be171a7550a0b77",
             "sortingOrder": -10
           }
         }

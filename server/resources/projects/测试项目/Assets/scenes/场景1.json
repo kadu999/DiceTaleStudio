@@ -1,5 +1,5 @@
 {
-  "formatVersion": 29,
+  "formatVersion": 30,
   "objects": [
     {
       "id": "map_mu6uln3x1l7fg",
@@ -374,36 +374,6 @@
       ]
     },
     {
-      "id": "obj_mu72r20g1mvao",
-      "name": "精灵",
-      "kind": "Sprite",
-      "active": true,
-      "locked": false,
-      "position": {
-        "x": -596.029508686826,
-        "y": 120.68109669970805
-      },
-      "rotation": 0,
-      "scale": 0.1,
-      "components": [
-        {
-          "id": "obj_mu72r20g1mvao__SpriteLayer",
-          "type": "SpriteLayer",
-          "data": {
-            "id": "2d0195e4ae656c6fc24fd5ba68e79b1b",
-            "guid": "2d0195e4ae656c6fc24fd5ba68e79b1b",
-            "width": 2048,
-            "height": 2048,
-            "sprite": {
-              "column": 0,
-              "row": 0
-            },
-            "sortingOrder": 1
-          }
-        }
-      ]
-    },
-    {
       "id": "sound_mu7z5bqp15o91",
       "name": "播放声音",
       "kind": "PlaySound",
@@ -477,6 +447,50 @@
             "width": 256,
             "height": 256,
             "sortingOrder": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "magnifier_muit3qiw1r2c5",
+      "name": "放大镜",
+      "kind": "Magnifier",
+      "active": true,
+      "position": {
+        "x": -654.7587522935779,
+        "y": 14.42994495412844
+      },
+      "rotation": 0,
+      "scale": 1,
+      "locked": false,
+      "components": [
+        {
+          "id": "magnifier_muit3qiw1r2c5__Magnifier",
+          "type": "Magnifier",
+          "data": {
+            "images": [
+              {
+                "id": "4931d082cd13f6805e5b13bf97983572",
+                "guid": "4931d082cd13f6805e5b13bf97983572",
+                "width": 2048,
+                "height": 2048,
+                "sprite": {
+                  "column": 0,
+                  "row": 0
+                }
+              },
+              {
+                "id": "4931d082cd13f6805e5b13bf97983572",
+                "guid": "4931d082cd13f6805e5b13bf97983572",
+                "width": 2048,
+                "height": 2048,
+                "sprite": {
+                  "column": 1,
+                  "row": 0
+                }
+              }
+            ],
+            "picked": 1
           }
         }
       ]
