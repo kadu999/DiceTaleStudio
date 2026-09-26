@@ -146,7 +146,8 @@ export interface MagnifierDataDoc {
 - [x] **D4 Unity**：`MagnifierReader` + `MagnifierWindow` + 命令路由 + `SceneApplied` 接线
       （Unity MCP：0 error / 0 warning；EditMode 18/18，新增 3 条）
 - [x] **D5 验证与文档**：`pnpm check` 全绿 + `e2e/magnifier.spec.ts` 4 条（3 编辑态 + 1 `@runtime`）+
-      CODE-STRUCTURE / 运行时镜像协议 spec / `client/README` / 本文件
+      **`server/README.md`（动作对象章节 + 类型表 + 组件树 + 已知限制）** / CODE-STRUCTURE /
+      运行时镜像协议 spec / `client/README` / 本文件
 
 ## 实现时顺手做的（都在这一批里）
 
@@ -160,6 +161,26 @@ export interface MagnifierDataDoc {
   算等比盒子」改成用它——量法只剩一份。
 - **`<AssetImage>` 抽成 `panels/asset-image.tsx`**：整张 / 图集某一格，与素材面板的精灵预览同一套算式。
 - **`panels/asset-picker.ts` 加 `spriteCellBackgroundPosition`**：精灵预览的格子偏移原来两处各写一遍。
+- **修回一处我自己造成的事故**：上一批我用 PowerShell 的 `Get-Content -Raw | Set-Content` 改 5 个 e2e spec
+  里写死的 `protocolVersion`——PS 5.1 下这条往返把**没有 BOM 的 UTF-8 当 ANSI**，5 个文件的中文当场变成
+  「????」（e2e 表现为一堆「期望值与界面上的字对不上」）。已从改之前那个提交取回、用 **Node**（UTF-8）
+  重做那一处替换，逐文件核过只剩「1 行版本号」的差。**教训：这个仓库的文件一律用编辑工具 / Node，
+  不要用 PowerShell 的 `Get-Content` / `Set-Content` 往返。**
+- **顺手修了一处本来就红的**：`e2e/helpers/editor.ts` 的 `CURRENT_SCENE_FORMAT_VERSION` 还停在 **28**
+  （v29 那次发布忘了跟着抬），于是 `hierarchy` / `scene-menu` / `global-bgm` 里 9 条「旧文件打开后被
+  回写成当前版本」的断言一直是「期望 28、实收 29」。这次按同一处注释的规矩（升级时必须同步改）
+  一起抬到 **30**，那 9 条随之变绿。
+
+## 验收进度
+
+自动化那几层都过了（见下「验收标准」的逐条勾）。**还没做的只有手工试放**：
+
+- 在编辑器里用**两张真图**（其中一张取精灵格）挑一遍、开关窗口、换图；
+- 在 Unity 里看实际像素：开 / 关那扇窗、换图后窗里那张跟着换、一格图取的是不是那一块。
+
+**注意协议已是 v21**：跑着的旧 Unity 客户端会被握手拒掉（close `4002`），要先重新编译 / 重连再试。
+已知限制（前端那台机器点不开、窗口同时只有一扇、编辑器窗口是模态的）写在
+`server/README.md` 的「已知限制与下一步」与本文档的「风险与遗留」里。
 
 ## 验收标准
 
