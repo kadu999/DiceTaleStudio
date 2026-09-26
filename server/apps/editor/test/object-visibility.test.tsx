@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
-import { createEmptyScene, createMapObject, createGameObject, sortingOrderOf, type GameObjectDoc } from "@dts/document";
+import { createEmptyScene, createGridMapObject, createGameObject, sortingOrderOf, type GameObjectDoc } from "@dts/document";
 import { HierarchyPanel } from "../src/panels/hierarchy/HierarchyPanel";
 import { checkerOriginOf } from "../src/panels/scene/ScenePanel";
 import { sceneHistory, useEditorStore } from "../src/state/editor-store";
@@ -41,7 +41,7 @@ afterEach(() => {
 describe("场景对象列表：激活按钮", () => {
   it("每个对象都有一枚激活按钮，默认是激活的", () => {
     seedScene([
-      createMapObject({ name: "网格地图", image: IMAGE, grid: { width: 8, height: 6 } }),
+      createGridMapObject({ name: "网格地图", image: IMAGE, grid: { width: 8, height: 6 } }),
       createGameObject({ name: "木门", position: { x: 0, y: 0 } }),
     ]);
 
@@ -88,7 +88,7 @@ describe("场景对象列表：激活按钮", () => {
 
 describe("棋盘底纹的锚点", () => {
   it("有地图时锚在地图矩形的左下角（格子与地图网格同一套）", () => {
-    const map = createMapObject({
+    const map = createGridMapObject({
       name: "网格地图",
       image: IMAGE,
       grid: { width: 8, height: 6 },

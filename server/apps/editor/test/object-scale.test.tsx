@@ -7,7 +7,7 @@ import {
   SPRITE_COMPONENT,
   featureComponent,
 } from "@dts/document";
-import { createMapObject, createGameObject, type GameObjectDoc } from "@dts/document";
+import { createGridMapObject, createGameObject, type GameObjectDoc } from "@dts/document";
 import { InspectorPanel } from "../src/panels/inspector/InspectorPanel";
 import { displayRectOf } from "../src/panels/scene/display";
 import { sceneHistory, useEditorStore } from "../src/state/editor-store";
@@ -62,7 +62,7 @@ afterEach(() => {
 
 describe("缩放字段（所有对象都有）", () => {
   it("默认显示 1；精灵与地图都有这一行", () => {
-    seedScene([sprite(), createMapObject({ id: "map-1", name: "地图", image: IMAGE, grid: GRID })], [
+    seedScene([sprite(), createGridMapObject({ id: "map-1", name: "地图", image: IMAGE, grid: GRID })], [
       "sprite-1",
     ]);
     const { unmount } = render(<InspectorPanel />);
@@ -70,7 +70,7 @@ describe("缩放字段（所有对象都有）", () => {
     unmount();
 
     seedScene(
-      [sprite(), createMapObject({ id: "map-1", name: "地图", image: IMAGE, grid: GRID })],
+      [sprite(), createGridMapObject({ id: "map-1", name: "地图", image: IMAGE, grid: GRID })],
       ["map-1"],
     );
     render(<InspectorPanel />);
@@ -135,7 +135,7 @@ describe("displayRectOf：显示 / 拾取 / 选中框共用的矩形", () => {
   });
 
   it("地图按缩放后的矩形算（贴图与网格一起缩放）", () => {
-    const map = { ...createMapObject({ name: "地图", image: IMAGE, grid: GRID }), scale: 2 };
+    const map = { ...createGridMapObject({ name: "地图", image: IMAGE, grid: GRID }), scale: 2 };
     expect(displayRectOf(map)?.size).toEqual({ width: 800, height: 600 });
   });
 

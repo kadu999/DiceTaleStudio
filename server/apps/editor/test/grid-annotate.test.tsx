@@ -8,7 +8,7 @@ import {
   maskToLabel,
   type RleRun,
 } from "@dts/grid";
-import { createMapObject, createGameObject, mapDataOf, type GameObjectDoc } from "@dts/document";
+import { createGridMapObject, createGameObject, mapDataOf, type GameObjectDoc } from "@dts/document";
 import { InspectorPanel } from "../src/panels/inspector/InspectorPanel";
 import { cellColorsOf } from "../src/panels/scene/grid-paint";
 import { sceneHistory, useEditorStore } from "../src/state/editor-store";
@@ -30,7 +30,7 @@ const IMAGE = { id: "project:测试/Assets/images/Map001.png", width: 400, heigh
 const GRID = { width: 8, height: 6 };
 
 function mapObject(): GameObjectDoc {
-  return createMapObject({ id: "map-1", name: "网格地图", image: IMAGE, grid: GRID });
+  return createGridMapObject({ id: "map-1", name: "网格地图", image: IMAGE, grid: GRID });
 }
 
 /**

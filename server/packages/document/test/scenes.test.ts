@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { produce, type Draft } from "immer";
 import { addObject, findScene, isSceneNameTaken, nextObjectName, validateSceneName } from "../src/commands";
 import { mapDataOf } from "../src/access";
-import { createEmptyScene, createMapObject } from "../src/factory";
+import { createEmptyScene, createGridMapObject } from "../src/factory";
 import type { SceneDoc } from "../src/types";
 
 /** 场景层命令：场景已各自成文件，这里只剩「按名字找 / 判重名 / 名校验」。 */
@@ -80,13 +80,13 @@ describe("场景内容命令", () => {
     expect(result.objects.map((object) => object.id)).toEqual(["door"]);
   });
 
-  it("地图也可以后加进场景", () => {
+  it("网格地图也可以后加进场景（贴图 + 网格组件）", () => {
     const result = mutate(scene("Map001"), (draft) => {
-      addObject(draft, createMapObject({ name: "背景地图", image: IMAGE, grid: GRID, id: "m1" }));
+      addObject(draft, createGridMapObject({ name: "背景地图", image: IMAGE, grid: GRID, id: "m1" }));
     });
 
-    expect(result.objects[0]?.kind).toBe("Map");
-    // v19 起地图数据住在 `GridMap` 组件里，读走 `mapDataOf`
+    expect(result.objects[0]?.kind).toBe("Image");
+    // 网格数据住在 `GridMap` 组件里，读走 `mapDataOf`
     expect(mapDataOf(result.objects[0]!)?.grid).toEqual(GRID);
   });
 });

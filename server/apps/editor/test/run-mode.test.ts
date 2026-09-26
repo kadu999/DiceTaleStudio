@@ -4,7 +4,7 @@ import {
   createAssetMeta,
   createAssetMetas,
   createEmptyProject,
-  createMapObject,
+  createGridMapObject,
   createGameObject,
   type GameObjectDoc,
 } from "@dts/document";
@@ -207,7 +207,7 @@ describe("运行中的改动：不保存、退出即还原", () => {
   it("loads old path references and migrates the scene file to GUIDs", async () => {
     const imageId = `project:${PROJECT}/Assets/images/Map001.png`;
     const meta = createAssetMeta("texture");
-    const map = createMapObject({
+    const map = createGridMapObject({
       id: "map-1",
       name: "map",
       image: { id: imageId, width: 64, height: 64 },

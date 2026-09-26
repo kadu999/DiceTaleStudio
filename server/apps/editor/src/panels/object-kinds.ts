@@ -43,8 +43,11 @@ import {
  *
  * 「贴图」是实体种类下的第三个：`kind: "Image"`，**只负责把一张图渲染出来**——和精灵一样挑一张图
  * 显示，唯一的区别是它**不引用图集里的格子**（选择时不显示子精灵）。数据上两者用**不同的图片组件**
- * （贴图 `ImageLayer`、精灵 `SpriteLayer`），
- * 而「视频」那一组只对地图与贴图出现（`supportsVideo`）。
+ * （贴图 `ImageLayer`、精灵 `SpriteLayer`），而「视频」那一组只对贴图出现（`supportsVideo`）。
+ *
+ * 「网格地图」是实体种类下的第四个（v28）：它**不是一种对象类型**，而是**贴图 + `GridMap` 组件**
+ * ——同一个 `kind: "Image"`，只是创建时顺手把网格组件加上（`withGrid`）。所以表里允许同 kind
+ * 出现两次（弹框用 `id` 区分瓦片）。网格只有数据 + 网格编辑窗口，没有渲染实体。
  */
 
 export interface ObjectTypeDef {
@@ -55,6 +58,8 @@ export interface ObjectTypeDef {
   readonly label: string;
   /** 现在能不能从「新建对象」弹框创建；还没做的类型先只参与归类。 */
   readonly creatable: boolean;
+  /** 创建时顺手加一个 `GridMap` 组件（「网格地图」= 贴图 + 网格，v28）。 */
+  readonly withGrid?: boolean;
 }
 
 export interface ObjectCategoryDef {
@@ -68,7 +73,8 @@ export const OBJECT_CATEGORIES: readonly ObjectCategoryDef[] = [
     id: "entity",
     label: "实体",
     objects: [
-      { id: "Map", kind: "Map", label: "网格地图", creatable: true },
+      // 网格地图 = 贴图 + 网格组件（v28；不是独立 kind，创建时加网格）
+      { id: "GridMap", kind: "Image", label: "网格地图", creatable: true, withGrid: true },
       // 精灵 = 场景对象这条线上的具体类型（v22 起有自己的 kind `Sprite`；以前写的是基类 `SceneObject`）
       { id: "Sprite", kind: "Sprite", label: "精灵", creatable: true },
       // 贴图 = 只显示一张图（不切子图）。kind 是编辑器侧新增的 `Image`（v21 时叫 `Texture`），前端按它给占位色
@@ -89,7 +95,7 @@ export const OBJECT_CATEGORIES: readonly ObjectCategoryDef[] = [
     ],
   },
   {
-    // 效果：覆盖在地图上的东西（v27 起战争雾是独立对象，引用一张地图）
+    // 效果：覆盖在带网格贴图上的东西（v27 起战争雾是独立对象，引用一张带网格的贴图）
     id: "overlay",
     label: "效果",
     objects: [{ id: "Fog", kind: "Fog", label: "战争雾", creatable: true }],
@@ -149,7 +155,6 @@ export const KIND_LABELS: Record<ObjectKind, string> = {
   GameObject: "游戏对象",
   Sprite: "精灵",
   Image: "贴图",
-  Map: "网格地图",
   Fog: "战争雾",
   Player: "玩家",
   Item: "道具",

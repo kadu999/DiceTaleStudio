@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { createEmptyScene, createMapObject, createGameObject, type GameObjectDoc } from "@dts/document";
+import { createEmptyScene, createGridMapObject, createGameObject, type GameObjectDoc } from "@dts/document";
 import { HierarchyPanel } from "../src/panels/hierarchy/HierarchyPanel";
 import { InspectorPanel } from "../src/panels/inspector/InspectorPanel";
 import { sceneHistory, useEditorStore } from "../src/state/editor-store";
@@ -40,7 +40,7 @@ afterEach(() => {
 describe("列表里的锁按钮", () => {
   it("每个对象都有一枚锁，默认不锁；点一下锁上、再点解开", () => {
     seedScene([
-      createMapObject({ id: "map-1", name: "网格地图", image: IMAGE, grid: { width: 8, height: 6 } }),
+      createGridMapObject({ id: "map-1", name: "网格地图", image: IMAGE, grid: { width: 8, height: 6 } }),
       createGameObject({ id: "door", name: "木门", position: { x: 0, y: 0 } }),
     ]);
     render(<HierarchyPanel />);
@@ -97,7 +97,7 @@ describe("锁住 = 不能移动", () => {
 
   it("锁地图也一样（底图最容易被误拖）", () => {
     seedScene([
-      createMapObject({ id: "map-1", name: "网格地图", image: IMAGE, grid: { width: 8, height: 6 } }),
+      createGridMapObject({ id: "map-1", name: "网格地图", image: IMAGE, grid: { width: 8, height: 6 } }),
     ]);
     useEditorStore.getState().setObjectLocked("map-1", true);
 

@@ -1,5 +1,5 @@
 import type { ImageSize } from "@dts/grid";
-import { imageOf, mapDataOf, objectImageSlot } from "./access";
+import { imageOf, mapDataOf } from "./access";
 import type { AssetMetaDoc, AssetMetas } from "./asset-meta";
 import { findComponentType } from "./components";
 import type {
@@ -139,8 +139,8 @@ export function displaySpriteOf(
   object: GameObjectDoc,
   metas: AssetMetas,
 ): ResolvedSprite | undefined {
-  // 地图的贴图住在 GridMap 里，格子按整张贴图算：取一块会让已有标注的含义静默改变
-  if (objectImageSlot(object) === "map") {
+  // 带网格的贴图的格子按整张贴图算：取一块会让已有标注的含义静默改变
+  if (mapDataOf(object) !== undefined) {
     return undefined;
   }
 
@@ -285,10 +285,12 @@ function payloadIdOf(metas: AssetMetas, image: ImageRef): string {
 export function resolveSceneSprites(scene: SceneDoc, metas: AssetMetas): SceneDoc {
   let changed = false;
   const objects = scene.objects.map((object) => {
-    // 对象自己那份图片的子图（地图对象一律没有——`displaySpriteOf` 是那条口径的唯一判据）
+    // 对象自己那份图片的子图（带网格的贴图一律没有——`displaySpriteOf` 是那条口径的唯一判据）
     const sprite = displaySpriteOf(object, metas);
-    const mapSprite = mapDataOf(object)?.image.sprite;
-    if (sprite === undefined && mapSprite === undefined) {
+    const image = imageOf(object);
+    // 带网格的贴图不该有子图：手写文件里误写了一个时，顺手从载荷里摘掉
+    const stripGridSprite = mapDataOf(object) !== undefined && image?.sprite !== undefined;
+    if (sprite === undefined && !stripGridSprite) {
       return object;
     }
 
@@ -296,51 +298,35 @@ export function resolveSceneSprites(scene: SceneDoc, metas: AssetMetas): SceneDo
     const components = object.components.map((component) => {
       // 图片槽位有两种组件（精灵 `SpriteLayer` / 贴图 `ImageLayer`）——**有格子要写回的那个**
       // 只可能是其中实际存在的那一种，所以按组件自报的 slot 匹配，不再按 kind 判一次
-      if (findComponentType(component.type)?.slot === "image" && sprite !== undefined) {
-        const image = imageOf(object);
-        if (image === undefined) {
-          return component;
-        }
-
-        // 显示顺序住在图片层数据里（v26）：这里整份重写 data，必须带上它，否则推送一份
-        // 就把它抹成缺省 0（与 `setObjectImage` 的写洞同一类）。guid 不下发（载荷只有路径 ID）。
-        const sortingOrder = (component.data as { sortingOrder?: number }).sortingOrder;
-        return {
-          ...component,
-          // 格子按解析结果写回（越界的已夹），切分一并带上；路径按索引里的当前值写、
-          // guid 不下发（载荷只有路径 ID 这一种身份）
-          data: {
-            id: payloadIdOf(metas, image),
-            width: image.width,
-            height: image.height,
-            sprite: { column: sprite.column, row: sprite.row },
-            spriteGrid: { columns: sprite.columns, rows: sprite.rows },
-            ...(sortingOrder === undefined ? {} : { sortingOrder }),
-          },
-        };
+      if (findComponentType(component.type)?.slot !== "image" || image === undefined) {
+        return component;
       }
 
-      if (findComponentType(component.type)?.slot === "map" && mapSprite !== undefined) {
-        const map = mapDataOf(object);
-        if (map === undefined) {
-          return component;
-        }
+      // 显示顺序住在图片层数据里（v26）：这里整份重写 data，必须带上它，否则推送一份
+      // 就把它抹成缺省 0（与 `setObjectImage` 的写洞同一类）。guid 不下发（载荷只有路径 ID）。
+      const sortingOrder = (component.data as { sortingOrder?: number }).sortingOrder;
+      const base = {
+        id: payloadIdOf(metas, image),
+        width: image.width,
+        height: image.height,
+        ...(sortingOrder === undefined ? {} : { sortingOrder }),
+      };
 
-        // 整份地图数据原样，只把贴图上那份误写的引用摘掉
-        return {
-          ...component,
-          data: {
-            ...(component.data as Record<string, unknown>),
-            image: {
-              id: payloadIdOf(metas, map.image),
-              width: map.image.width,
-              height: map.image.height,
-            },
-          },
-        };
+      // 带网格的贴图上的误写子图：摘掉（格子按整张算）
+      if (sprite === undefined) {
+        return { ...component, data: base };
       }
 
-      return component;
+      // 格子按解析结果写回（越界的已夹），切分一并带上；路径按索引里的当前值写、
+      // guid 不下发（载荷只有路径 ID 这一种身份）
+      return {
+        ...component,
+        data: {
+          ...base,
+          sprite: { column: sprite.column, row: sprite.row },
+          spriteGrid: { columns: sprite.columns, rows: sprite.rows },
+        },
+      };
     });
 
     return { ...object, components };

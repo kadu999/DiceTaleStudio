@@ -37,7 +37,6 @@ export const OBJECT_KINDS = [
   "GameObject",
   "Sprite",
   "Image",
-  "Map",
   "Fog",
   "Player",
   "Item",
@@ -53,9 +52,10 @@ export const OBJECT_KINDS = [
  *   它**不会出现在文档里**；老文件里写的 `SceneObject` 由 v22 迁移改成 `Sprite`，
  *   因为当时它代表精灵原型；
  * - `Sprite`：**精灵**——显示的一张图可以取图集里的一格（子图）；
- * - `Image`：**贴图**（v21 起，v22 前叫 `Texture`）——只把一张图整张铺出来，不引用格子；
- * - `Map`：地图是场景对象的一种，携带贴图与网格数据；
- * - `Fog`：**战争雾**（v27 起是独立的场景对象）——引用一张地图（雾区取自它的格子区域位），
+ * - `Image`：**贴图**（v21 起，v22 前叫 `Texture`）——只把一张图整张铺出来，不引用格子。
+ *   v28 起**「网格地图」就是「贴图 + `GridMap` 组件」**（网格是可选能力，见 `components.ts`），
+ *   不再是一种独立的对象类型；
+ * - `Fog`：**战争雾**（v27 起是独立的场景对象）——引用一张带网格的贴图（雾区取自它的格子区域位），
  *   自带总开关与雾区；可摆放，但画布上只画一枚图标。一张地图最多一个雾对象；
  * - `Player` / `Item` / `Event`：玩家 / 道具 / 事件（前端 `BackendObjectKind` 就有的实体）；
  * - `PlaySound`：**动作对象**（「播放声音」）——基础属性与实体一样，另带「播什么 + 哪个层级」，
@@ -113,17 +113,18 @@ export const SPRITE_COMPONENT: ComponentType = "SpriteLayer";
  * 全部对象预设（顺序同 `OBJECT_KINDS`）。
  *
  * `image` 那条槽位只登记在支持贴图的具体预设上（`Sprite` / `Image` / `Player` / `Item` /
- * `Event`），避免把显示图能力泛化到动作或地图；`video` 那个槽位**刻意只给地图与贴图**
- * （`Map` / `Image`）——视频画面盖在对象自己的矩形上，精灵显示的是图集里的一格，
- * 它的渲染选项归「渲染」那一组。`fog` 槽位**只给战争雾对象**（`Fog`）：雾引用一张地图的
- * 格子区域位（v27 起雾是独立对象，不再挂在地图上）。
+ * `Event`）；`video` 那个槽位**刻意只给贴图**（`Image`）——视频画面盖在对象自己的矩形上，
+ * 精灵显示的是图集里的一格，它的渲染选项归「渲染」那一组。`fog` 槽位**只给战争雾对象**（`Fog`）：
+ * 雾引用一张带网格的贴图的格子区域位（v27 起雾是独立对象）。
+ *
+ * **网格（`GridMap`）是贴图上的可选能力**（v28 起）：`Image` 预设声明了 `map` 槽位，
+ * 但组件本身是可选的（`optionalKinds`）——「网格地图」= 贴图 + 网格组件，不是独立类型。
  */
 export const OBJECT_PRESETS: Readonly<Record<ObjectKind, GameObjectPreset>> = {
   GameObject: { kind: "GameObject", abstract: true, slots: {} },
   Sprite: { kind: "Sprite", slots: { image: "SpriteLayer" } },
-  Image: { kind: "Image", slots: { image: "ImageLayer", video: "VideoOverlay" } },
-  Map: { kind: "Map", slots: { image: "ImageLayer", map: "GridMap", video: "VideoOverlay" } },
-  // 战争雾（v27 起是独立的场景对象）：它自己的数据就是 `FogOfWar` 组件（引用一张地图 +
+  Image: { kind: "Image", slots: { image: "ImageLayer", map: "GridMap", video: "VideoOverlay" } },
+  // 战争雾（v27 起是独立的场景对象）：它自己的数据就是 `FogOfWar` 组件（引用一张带网格的贴图 +
   // 开关 + 雾区）。可摆放（对象照常有位置 / 旋转 / 缩放），但画布上只画一枚图标。
   Fog: { kind: "Fog", slots: { fog: "FogOfWar" } },
   Player: { kind: "Player", slots: { image: "ImageLayer" } },
@@ -224,17 +225,6 @@ export function supportsSpriteSheet(target: ObjectKind | GameObjectDoc): boolean
   }
 
   return presetOf(target)?.slots.image === SPRITE_COMPONENT;
-}
-
-/**
- * **显示用的图片**从哪个槽位取：地图类取它自己的地图数据（`map.image`），
- * 其余对象取 `image` 那一份。
- *
- * 两处形状完全一致（都是 `ImageRef`），所以显示、换图、改名同步都走 `objectImage` 一个入口，
- * 不必到处判 `kind`。
- */
-export function displayImageField(kind: ObjectKind): "map" | "image" {
-  return presetOf(kind)?.slots.map !== undefined ? "map" : "image";
 }
 
 // ---------------------------------------------------------------- 特性缺省值

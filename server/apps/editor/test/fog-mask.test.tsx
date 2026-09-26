@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, act } from "@testing-library/react"
 import { CellMask } from "@dts/grid";
 import {
   DEFAULT_SLOT_COMPONENT,
-  createMapObject,
+  createGridMapObject,
   createGameObject,
   createFogObject,
   fogOf,
@@ -34,7 +34,7 @@ const IMAGE = { id: "project:测试/Assets/images/Map001.png", width: 400, heigh
 const GRID = { width: 8, height: 6 };
 
 function mapObject(id = "map-1"): GameObjectDoc {
-  return createMapObject({ id, name: id === "map-1" ? "网格地图" : id, image: IMAGE, grid: GRID });
+  return createGridMapObject({ id, name: id === "map-1" ? "网格地图" : id, image: IMAGE, grid: GRID });
 }
 
 /** 一个战争雾对象（默认引用 `map-1`、开着、绑了「区域4」）。 */

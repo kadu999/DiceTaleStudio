@@ -91,16 +91,12 @@ namespace DiceTale
         /// <summary>
         /// 取对象的**显示顺序**（v14 起它住在渲染组件的数据里，不再挂在对象上）。
         ///
-        /// 路由与后端 `sortingOrderOf` 一致：**先地图、后图片层**（`ImageLayer` / `SpriteLayer`），
+        /// 路由与后端 `sortingOrderOf` 一致：**图片层**（`ImageLayer` / `SpriteLayer`），
         /// 都没有（动作对象 / 还没挑图的实体）→ 0。缺这一项时也按 0 兜底。
+        /// v16 起带网格的贴图的显示顺序也在图片层，所以不再先看 `GridMap`。
         /// </summary>
         private static int ResolveSortingOrder(MirrorObject obj)
         {
-            if (obj.HasComponent(Protocol.ComponentType.Map))
-            {
-                return (int)obj.ComponentNumber(Protocol.ComponentType.Map, "sortingOrder");
-            }
-
             if (obj.HasComponent(Protocol.ComponentType.Image))
             {
                 return (int)obj.ComponentNumber(Protocol.ComponentType.Image, "sortingOrder");
@@ -242,10 +238,7 @@ namespace DiceTale
                 return null;
             }
 
-            var map = new MirrorMap
-            {
-                image = ParseImage(JsonParser.GetObject(node, "image")),
-            };
+            var map = new MirrorMap();
 
             var grid = JsonParser.GetObject(node, "grid");
             if (grid != null)

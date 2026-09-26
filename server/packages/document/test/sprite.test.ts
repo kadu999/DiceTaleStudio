@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { produce, type Draft } from "immer";
 import { createGameObject, repairImageObjectComponent, setObjectImage, setObjectSprite } from "../src/commands";
-import { createEmptyScene, createMapObject } from "../src/factory";
+import { createEmptyScene, createGridMapObject } from "../src/factory";
 import { imageOf } from "../src/access";
 import {
   ASSET_META_FORMAT_VERSION,
@@ -216,7 +216,7 @@ describe("对象：引用哪一格", () => {
     ).toEqual(sceneWith([noImage]));
 
     const mapScene = sceneWith([
-      createMapObject({ id: "map-1", name: "网格地图", image: IMAGE, grid: { width: 8, height: 6 } }),
+      createGridMapObject({ id: "map-1", name: "网格地图", image: IMAGE, grid: { width: 8, height: 6 } }),
     ]);
     expect(
       mutateScene(mapScene, (draft) => {
@@ -287,15 +287,14 @@ describe("解析：格子落在图片的哪块矩形", () => {
     expect(resolvedSpriteOf(undefined, emptyAssetMetas())).toBeUndefined();
   });
 
-  it("地图贴图一律没有子图（判据只有 displaySpriteOf 一处）", () => {
+  it("带网格的贴图一律没有子图（判据只有 displaySpriteOf 一处）", () => {
     const metas = imageMetas(sheetOf(4, 4));
-    const map = setImage(
-      createMapObject({ id: "map-1", name: "网格地图", image: IMAGE, grid: { width: 8, height: 6 } }),
-      "map-1",
-    );
+    const map = createGridMapObject({ id: "map-1", name: "网格地图", image: IMAGE, grid: { width: 8, height: 6 } });
     const mapWithSprite = produce(map, (draft) => {
-      const mapData = draft.components[0]!.data as { image: { sprite?: unknown } };
-      mapData.image.sprite = { column: 1, row: 1 };
+      const layer = draft.components.find((item) => item.type === "ImageLayer");
+      if (layer !== undefined) {
+        (layer.data as { sprite?: unknown }).sprite = { column: 1, row: 1 };
+      }
     });
 
     // 数据留在文件里（不静默删），但两边都不认它：编辑器与前端都按整图渲染
@@ -428,17 +427,25 @@ describe("推送用的解析：切分随载荷走", () => {
     expect(data.spriteGrid).toEqual({ columns: 2, rows: 3 });
   });
 
-  it("地图贴图上误写的引用在载荷里被摘掉（前端不会收到它）", () => {
-    const map = createMapObject({
+  it("带网格的贴图上误写的引用在载荷里被摘掉（前端不会收到它）", () => {
+    const base = createGridMapObject({
       id: "map-1",
       name: "网格地图",
-      image: { ...IMAGE, sprite: { column: 1, row: 0 } },
+      image: IMAGE,
       grid: { width: 8, height: 6 },
+    });
+    const map = produce(base, (draft) => {
+      const layer = draft.components.find((item) => item.type === "ImageLayer");
+      if (layer !== undefined) {
+        (layer.data as { sprite?: unknown }).sprite = { column: 1, row: 0 };
+      }
     });
 
     const resolved = resolveSceneSprites(sceneWith([map]), imageMetas(sheetOf(4, 4)));
-    const data = resolved.objects[0]!.components[0]!.data as { image: Record<string, unknown> };
-    expect(data.image).toEqual(IMAGE);
+    const data = resolved.objects[0]!.components.find((item) => item.type === "ImageLayer")!
+      .data as Record<string, unknown>;
+    expect(data.sprite).toBeUndefined();
+    expect(data.id).toBe(IMAGE_ID);
     expect(JSON.stringify(resolved)).not.toMatch(/spriteGrid/);
   });
 
@@ -477,15 +484,21 @@ describe("校验：只提醒，不算错", () => {
     expect(formatIssues(validateScene(scene, { metas }))).toMatch(/超出这张图的切分 2×2/);
   });
 
-  it("地图贴图带了 sprite → warning（会被忽略）", () => {
-    const map = createMapObject({
+  it("带网格的贴图带了 sprite → warning（会被忽略）", () => {
+    const base = createGridMapObject({
       id: "map-1",
       name: "网格地图",
-      image: { ...IMAGE, sprite: { column: 1, row: 0 } },
+      image: IMAGE,
       grid: { width: 8, height: 6 },
     });
+    const map = produce(base, (draft) => {
+      const layer = draft.components.find((item) => item.type === "ImageLayer");
+      if (layer !== undefined) {
+        (layer.data as { sprite?: unknown }).sprite = { column: 1, row: 0 };
+      }
+    });
 
-    expect(formatIssues(validateScene(sceneWith([map])))).toMatch(/地图贴图不支持子图/);
+    expect(formatIssues(validateScene(sceneWith([map])))).toMatch(/带网格的贴图不支持子图/);
   });
 });
 
@@ -625,7 +638,11 @@ describe("v21 迁移：图片组件改名（按 kind）", () => {
     };
 
     const loaded = load([legacySprite("obj_1", { id: IMAGE_ID, width: 64, height: 64 }), map]);
-    expect(loaded.file.objects[1]!.components.map((item) => item.type)).toEqual(["GridMap"]);
+    // 地图的 GridMap 原样；v28 再给它补一个图片层（贴图从 GridMap 搬出来）
+    expect(loaded.file.objects[1]!.components.map((item) => item.type)).toEqual([
+      "GridMap",
+      "ImageLayer",
+    ]);
     expect(loaded.file.objects[1]!.components[0]?.id).toBe("map_1__GridMap");
   });
 
@@ -709,7 +726,7 @@ describe("v22 迁移：kind 改名（Texture → Image / GameObject → Sprite�
       bare("teleport_1", "Teleport"),
     ]);
     expect(known.file.objects.map((object) => object.kind)).toEqual([
-      "Map",
+      "Image",
       "Player",
       "Item",
       "Event",

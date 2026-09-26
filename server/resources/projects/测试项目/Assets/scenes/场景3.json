@@ -1,10 +1,10 @@
 {
-  "formatVersion": 27,
+  "formatVersion": 28,
   "objects": [
     {
       "id": "map_mu7t58za2yr2b",
       "name": "网格地图",
-      "kind": "Map",
+      "kind": "Image",
       "active": true,
       "locked": true,
       "position": {
@@ -18,12 +18,6 @@
           "id": "map_mu7t58za2yr2b__GridMap",
           "type": "GridMap",
           "data": {
-            "image": {
-              "id": "7b8aecadae302b5f2be171a7550a0b77",
-              "width": 1920,
-              "height": 1080,
-              "guid": "7b8aecadae302b5f2be171a7550a0b77"
-            },
             "grid": {
               "width": 64,
               "height": 36
@@ -37,8 +31,7 @@
                   2304
                 ]
               ]
-            },
-            "sortingOrder": -10
+            }
           }
         },
         {
@@ -55,6 +48,17 @@
             "picked": "39ef22fefa62050cd98e18909273fd4a",
             "loop": false,
             "audio": false
+          }
+        },
+        {
+          "id": "map_mu7t58za2yr2b__ImageLayer",
+          "type": "ImageLayer",
+          "data": {
+            "id": "7b8aecadae302b5f2be171a7550a0b77",
+            "width": 1920,
+            "height": 1080,
+            "guid": "7b8aecadae302b5f2be171a7550a0b77",
+            "sortingOrder": -10
           }
         }
       ]

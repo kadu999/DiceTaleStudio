@@ -100,8 +100,14 @@ import { z } from "zod";
  * 命令 `erase_mask` / `reveal_fog_region` 的 `objectId` 从「地图 id」改成「**雾对象 id**」。
  * 老前端（v14）按地图 id 找雾组件 → 找不到（雾搬走了），且新场景里它根本不认 `Fog` 对象——
  * 不是崩，是雾层整个不工作，按同一条纪律 +1：服务端与 Unity 客户端必须同批更新。
+ *
+ * v16（2026-09-26）：**取消 `Map` 对象类型，网格变成贴图上的可选组件**（与文档格式 v28 同一批）。
+ * `mapDataSchema` 去掉 `image` 与 `sortingOrder`，地图对象改为下发一个 **`ImageLayer`** 组件
+ * 承载贴图 + 显示顺序；`GridMap` 的 data 只剩网格。老前端（v15）按 `map.image` 取图 → 取不到，
+ * 地图对象会退成占位色（不是崩，是画面错），按同一条纪律 +1：服务端与 Unity 客户端必须同批更新。
+ * **命令那一组仍然一个字节都没动。**
  */
-export const PROTOCOL_VERSION = 15;
+export const PROTOCOL_VERSION = 16;
 
 /** 未进入运行态时拒绝 `/client` 升级的 HTTP 状态与原因头。 */
 export const RUNTIME_INACTIVE_STATUS = 503;
@@ -230,14 +236,11 @@ export const mapFogSchema = z.object({
   enabled: z.boolean().default(true),
   regions: z.array(z.number().int()),
 });
-/** 地图对象携带的数据（贴图 + 网格；`rowOrder` 固定 bottom-up）。战争雾自 v13 起是独立的 `FogOfWar` 组件。 */
+/** `GridMap` 组件携带的**网格数据**（`rowOrder` 固定 bottom-up）。贴图与显示顺序自 v16 起在 `ImageLayer` 组件里，战争雾在独立的 `FogOfWar` 组件里。 */
 export const mapDataSchema = z.object({
-  image: imageRefSchema,
   grid: gridSpecSchema,
   rowOrder: z.literal("bottom-up"),
   cells: cellRunsSchema,
-  // v14 起显示顺序住在这里（从对象级搬来）：老编辑器少发时按 0 补
-  sortingOrder: z.number().int().default(0),
 });
 
 /**
@@ -340,10 +343,11 @@ export const projectSettingsSchema = z.object({
  * 断言两边一致，改一处忘了另一处会直接测试失败。
  */
 export const COMPONENT_TYPE = {
+  /** 网格（v16 起是贴图上的**可选组件**，纯数据；贴图在 `ImageLayer` 里）。 */
   map: "GridMap",
-  /** 战争雾（v15 起挂在独立的 `Fog` 对象上）：引用哪张地图 + 总开关 + 雾区。 */
+  /** 战争雾（v15 起挂在独立的 `Fog` 对象上）：引用哪个带网格的贴图 + 总开关 + 雾区。 */
   fog: "FogOfWar",
-  /** 对象自己显示的图：**贴图对象**用它（整张铺满）。 */
+  /** 对象自己显示的图（整张铺满）：**贴图对象**与**带网格的贴图**都用它。 */
   image: "ImageLayer",
   /** 对象自己显示的图：**精灵对象**用它（会取图集里的一格）。与 `image` 同一份 `imageRefSchema`。 */
   sprite: "SpriteLayer",
@@ -463,11 +467,13 @@ export function componentDataOf<T = Record<string, unknown>>(
 }
 
 /**
- * 这个对象引用到的**全部资源逻辑 ID**（贴图 / 地图贴图 / 音频 / 视频）。
+ * 这个对象引用到的**全部资源逻辑 ID**（贴图 / 音频 / 视频）。
  *
  * 服务端用它从推下来的场景里反推「这是哪个项目的资源」（`RuntimeSession.resourceProject`），
  * 好让前端**先下资源包、再载入场景**。放在协议包里是因为它只依赖协议自己的字段形状；
  * 换成一个组件时只改这里，服务端与 Mock 前端都不用动。
+ *
+ * v16 起**带网格的贴图的图也在 `ImageLayer` 里**，所以贴图这一条扫两种组件就够，不用再单独看地图。
  */
 export function resourceIdsOfObject(object: GameObjectPayload): readonly string[] {
   const ids: string[] = [];
@@ -480,11 +486,6 @@ export function resourceIdsOfObject(object: GameObjectPayload): readonly string[
     if (image?.id !== undefined) {
       ids.push(image.id);
     }
-  }
-
-  const map = componentDataOf<{ image?: { id?: string } }>(object, COMPONENT_TYPE.map);
-  if (map?.image?.id !== undefined) {
-    ids.push(map.image.id);
   }
 
   for (const type of [COMPONENT_TYPE.sound, COMPONENT_TYPE.video]) {

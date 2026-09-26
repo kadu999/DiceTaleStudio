@@ -26,7 +26,7 @@ namespace DiceTale
     /// - 位置 = `position`（文档世界坐标 x/y 向上 → 客户端 x/z + 离地抬升）；
     ///   写的是 **`localPosition` / `localRotation`**——相对所在**场景的根节点**，
     ///   所以根节点可以自由平移 / 旋转 / **缩放**，整棵场景一起变，不用逐个改世界坐标；
-    /// - 大小 = 声明尺寸（`image` / `map.image`）× `scale` × **<see cref="GlobalScale"/>**
+    /// - 大小 = 声明尺寸（对象自己的 `image`）× `scale` × **<see cref="GlobalScale"/>**
     ///   ——后者是「文档像素 → 世界单位」的全局换算，位置也乘它；
     ///   尺寸由 <see cref="ImageLayer"/> 烘进网格顶点，本组件**不碰 `localScale`**
     ///   （保持 1，这样根节点的缩放才是唯一影响整体大小的因素）；
@@ -299,22 +299,24 @@ namespace DiceTale
 
             if (fog != null)
             {
-                // v15：雾对象自己不带地图数据——按 `obj.fog.mapId` 经镜像表（ObjectLookup）找到
-                // 被引用地图，取它的 `map` 交给雾组件取格子。地图不在 / 还没同步到就传 null，
-                // FogOfWar 会把自己那一层拆掉。
+                // v15：雾对象自己不带网格数据——按 `obj.fog.mapId` 经镜像表（ObjectLookup）找到
+                // 被引用对象，取它的 `map` 交给雾组件取格子。对象不在 / 还没同步到就传 null，
+                // FogOfWar 会把自己那一层拆掉。v16 起被引用对象的图在它自己的图片层里。
                 MirrorMap mapData = null;
+                MirrorImage mapImage = null;
                 if (obj.fog != null && ObjectLookup != null && !string.IsNullOrEmpty(obj.fog.mapId))
                 {
                     var mapObject = ObjectLookup(obj.fog.mapId);
                     mapData = mapObject != null ? mapObject.map : null;
+                    mapImage = mapObject != null ? mapObject.DisplayImage : null;
                 }
 
-                // 世界尺寸 = 被引用地图的显示图声明尺寸 × 雾对象 scale（再折成世界单位）
-                var mapImage = mapData != null ? mapData.image : null;
+                // 世界尺寸 = 被引用对象的显示图声明尺寸 × 雾对象 scale（再折成世界单位）
                 var fogWidth = (mapImage != null && mapImage.width > 0 ? mapImage.width : FallbackSize) * obj.scale;
                 var fogHeight = (mapImage != null && mapImage.height > 0 ? mapImage.height : FallbackSize) * obj.scale;
                 fog.Apply(
                     mapData,
+                    mapImage,
                     obj.fog,
                     fogWidth * GlobalScale,
                     fogHeight * GlobalScale,
@@ -510,11 +512,10 @@ namespace DiceTale
         {
             switch (kind)
             {
-                case "Map":
-                    return new Color(0.25f, 0.35f, 0.30f, 0.85f);
                 // 精灵与贴图分开（v21 起两种图片组件，v22 起两个 kind）：两者都显示一张图，
                 // 差别是精灵取图集里的一格。占位色只在这一张图还没取回来的那几百毫秒里看得见，
-                // 但它是「这个对象是什么」的唯一提示
+                // 但它是「这个对象是什么」的唯一提示。
+                // v16 起没有 `Map` 分支：带网格的贴图 kind 就是 `Image`。
                 case "Sprite":
                     return new Color(0.31f, 0.61f, 0.98f, 0.85f);
                 case "Image":

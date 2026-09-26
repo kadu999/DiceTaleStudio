@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import {
-  createMapObject,
+  createGridMapObject,
   createGameObject,
   createFogObject,
   featureComponent,
@@ -31,7 +31,7 @@ const IMAGE = { id: "project:测试/Assets/images/Map001.png", width: 400, heigh
 const GRID = { width: 8, height: 6 };
 
 function mapObject(): GameObjectDoc {
-  return createMapObject({ id: "map-1", name: "网格地图", image: IMAGE, grid: GRID });
+  return createGridMapObject({ id: "map-1", name: "网格地图", image: IMAGE, grid: GRID });
 }
 
 /** 贴图（v21 起取代精灵成为视频的另一个宿主）。 */
@@ -142,9 +142,9 @@ describe("属性分组：基础 + 一一对应的组件组", () => {
     });
   });
 
-  it("损坏地图提供明确选图修复入口，修复一次撤销即可完整还原", () => {
+  it("没有网格的贴图：网格组给「添加网格」入口，加完按图片尺寸建网格（一次撤销可还原）", () => {
     const broken = {
-      ...createGameObject({ id: "broken-map", name: "坏地图", kind: "Map" }),
+      ...createGameObject({ id: "broken-map", name: "贴图", kind: "Image" }),
       components: [
         featureComponent("broken-map", "ImageLayer", {
           id: "stale-image.png",
@@ -157,30 +157,19 @@ describe("属性分组：基础 + 一一对应的组件组", () => {
     seedScene([broken], ["broken-map"]);
     render(<InspectorPanel />);
 
-    const renderGroup = groupOf("map");
-    expect(within(renderGroup).getByTestId("pick-texture").textContent).toBe("选择贴图并修复");
-    expect(within(renderGroup).getByText("地图数据缺失")).toBeDefined();
-    expect(screen.getAllByTestId("pick-texture")).toHaveLength(1);
-    // 地图数据缺失：雾区设置不显示（战争雾 v27 起是独立对象），网格编辑入口也没有
+    const gridGroup = groupOf("map");
+    expect(within(gridGroup).getByTestId("add-grid-map")).toBeDefined();
+    // 战争雾自 v27 起是独立对象，这里没有它那一组
     expect(groupSlugs()).not.toContain("fog");
 
-    fireEvent.click(within(renderGroup).getByTestId("pick-texture"));
-    expect(useEditorStore.getState().imagePickerTarget).toBe("broken-map");
-    act(() => {
-      useEditorStore.getState().setObjectImageSprite(
-        "broken-map",
-        { id: "project:测试/Assets/images/repaired.png", width: 420, height: 300 },
-        null,
-      );
-    });
+    fireEvent.click(within(gridGroup).getByTestId("add-grid-map"));
 
-    const repaired = useEditorStore.getState().scenes[0]?.objects[0];
-    expect(mapDataOf(repaired!)).toMatchObject({
-      image: { id: "project:测试/Assets/images/repaired.png", width: 420, height: 300 },
-      grid: { width: 14, height: 10 },
-      cells: { encoding: "rle", runs: [[0, 140]] },
+    const withGrid = useEditorStore.getState().scenes[0]?.objects[0];
+    expect(mapDataOf(withGrid!)).toMatchObject({
+      grid: { width: 4, height: 2 },
+      cells: { encoding: "rle", runs: [[0, 8]] },
     });
-    expect(repaired?.components.find((component) => component.type === "FutureComponent")?.data).toEqual({ keep: true });
+    expect(withGrid?.components.find((component) => component.type === "FutureComponent")?.data).toEqual({ keep: true });
     expect(useEditorStore.getState().canUndo).toBe(true);
 
     act(() => useEditorStore.getState().undo());
@@ -188,7 +177,7 @@ describe("属性分组：基础 + 一一对应的组件组", () => {
     expect(useEditorStore.getState().canUndo).toBe(false);
   });
 
-  it("地图对象分四组（基础 + 一一对应的组件组）；精灵 / 贴图各两组、三组", () => {
+  it("网格地图分四组（基础 + 图片层 + 网格 + 视频）；精灵 / 贴图各两组、三组", () => {
     seedScene(
       [mapObject(), createGameObject({ id: "sprite", name: "精灵" }), fogObject()],
       ["map-1"],
@@ -196,33 +185,34 @@ describe("属性分组：基础 + 一一对应的组件组", () => {
     const { unmount } = render(<InspectorPanel />);
 
     expect(headerOf("basic")).toBeDefined();
+    expect(headerOf("image")).toBeDefined();
     expect(headerOf("map")).toBeDefined();
     expect(headerOf("video")).toBeDefined();
     expect(isOpen("basic")).toBe(true);
+    expect(isOpen("image")).toBe(true);
     expect(isOpen("map")).toBe(true);
     expect(isOpen("video")).toBe(true);
-    expect(headerOf("map").getAttribute("aria-expanded")).toBe("true");
 
-    // 组序 = 基础 + 组件组（注册表顺序）：网格地图 → 视频
-    // （战争雾自 v27 起是**独立对象**，不再挂在地图上）
-    expect(groupSlugs()).toEqual(["basic", "map", "video"]);
+    // 组序 = 基础 + 组件组（注册表顺序）：图片层 → 网格地图 → 视频
+    // （战争雾自 v27 起是**独立对象**；网格自 v28 起是贴图上的可选组件）
+    expect(groupSlugs()).toEqual(["basic", "image", "map", "video"]);
     expect(hasGroup("fog")).toBe(false);
 
     // 「基础」是实体属性组：挂「实体」角标，组件组不挂角标
     expect(groupOf("basic").querySelector('[data-testid="field-group-badge"]')?.getAttribute("data-kind")).toBe("entity");
+    expect(groupOf("image").querySelector('[data-testid="field-group-badge"]')).toBeNull();
     expect(groupOf("map").querySelector('[data-testid="field-group-badge"]')).toBeNull();
 
-    // 贴图那一行在「网格地图」组里：基础组里不再有它
-    expect(within(groupOf("map")).getByTestId("pick-texture")).toBeDefined();
+    // 贴图那一行在「图片层」组里（v28 起网格地图的贴图也在图片层）：基础组里不再有它
+    expect(within(groupOf("image")).getByTestId("pick-texture")).toBeDefined();
     expect(within(groupOf("basic")).queryByTestId("pick-texture")).toBeNull();
-    // 战争雾自 v27 起是独立对象，地图上不再有这一组
-    expect(hasGroup("fog")).toBe(false);
-    // 视频那一组对地图与贴图都出现；还没开时整组只剩「启用」那一个开关（也是能力入口）
+
+    // 视频那一组对贴图（含网格地图）出现；还没开时整组只剩「启用」那一个开关（也是能力入口）
     expect(within(groupOf("video")).getByTestId("video-enable")).toBeDefined();
     expect(within(groupOf("video")).queryByTestId("video-edit")).toBeNull();
     expect(groupOf("video").querySelector('[data-testid="field-group-badge"]')?.getAttribute("data-kind")).toBe("capability");
 
-    // 网格规格（列 · 行 / 每格 / 行序）跟贴图、标注一起归「网格地图」组，基础组里不再有它
+    // 网格规格（列 · 行 / 每格 / 行序）跟标注一起归「网格地图」组，基础组里不再有它
     expect(within(groupOf("map")).getByTestId("inspector-grid-columns")).toBeDefined();
     expect(within(groupOf("map")).getByTestId("inspector-grid-rows")).toBeDefined();
     expect(within(groupOf("map")).getByText("每格")).toBeDefined();
@@ -259,34 +249,35 @@ describe("属性分组：基础 + 一一对应的组件组", () => {
     seedScene([mapObject(), textureObject()], ["tex-1"]);
     render(<InspectorPanel />);
 
-    // 贴图：「基础 / 图片层 / 视频」（图片组件是 `ImageLayer`），同样没有地图那两组
+    // 贴图：「基础 / 图片层 / 网格 / 视频」（网格是可选能力，入口照常出现），没有战争雾
     expect(headerOf("basic")).toBeDefined();
     expect(headerOf("image")).toBeDefined();
+    expect(headerOf("map")).toBeDefined();
     expect(headerOf("video")).toBeDefined();
-    expect(groupSlugs()).toEqual(["basic", "image", "video"]);
+    expect(groupSlugs()).toEqual(["basic", "image", "map", "video"]);
     expect(within(groupOf("video")).getByTestId("video-enable")).toBeDefined();
-    expect(hasGroup("map")).toBe(false);
+    expect(within(groupOf("map")).getByTestId("add-grid-map")).toBeDefined();
     expect(hasGroup("fog")).toBe(false);
   });
 
-  it("点「网格地图」标题收起内容（贴图行与网格行一起），再点展开", () => {
+  it("点「网格地图」标题收起内容（网格行一起），再点展开", () => {
     seedScene([mapObject()], ["map-1"]);
     render(<InspectorPanel />);
 
-    // 展开时看得见贴图那一行（「选择」按钮就是换图入口）与网格编辑入口
-    expect(screen.getByTestId("pick-texture")).toBeDefined();
+    // 展开时看得见网格规格与网格编辑入口
+    expect(screen.getByTestId("inspector-grid-columns")).toBeDefined();
     expect(screen.getByTestId("grid-editor-open")).toBeDefined();
 
     fireEvent.click(headerOf("map"));
     expect(isOpen("map")).toBe(false);
     expect(headerOf("map").getAttribute("aria-expanded")).toBe("false");
-    // 收起 = 内容不渲染（不是藏起来还留在 DOM 里）：贴图行与网格行一起消失
-    expect(within(groupOf("map")).queryByTestId("pick-texture")).toBeNull();
+    // 收起 = 内容不渲染（不是藏起来还留在 DOM 里）：网格行一起消失
+    expect(within(groupOf("map")).queryByTestId("inspector-grid-columns")).toBeNull();
     expect(within(groupOf("map")).queryByTestId("grid-editor-open")).toBeNull();
 
     fireEvent.click(headerOf("map"));
     expect(isOpen("map")).toBe(true);
-    expect(screen.getByTestId("pick-texture")).toBeDefined();
+    expect(screen.getByTestId("inspector-grid-columns")).toBeDefined();
     expect(screen.getByTestId("grid-editor-open")).toBeDefined();
   });
 

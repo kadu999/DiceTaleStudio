@@ -21,7 +21,7 @@ import {
   componentId,
   createAssetMetas,
   createEmptyScene,
-  createMapObject,
+  createGridMapObject,
   createGameObject,
   createSoundObject,
   createTeleportObject,
@@ -92,7 +92,7 @@ describe("契约：协议与文档的组件口径一致", () => {
 
   it("文档校验接受的场景，协议侧也解析得开（真跑一遍工厂 → 校验 → 协议）", () => {
     const objects: GameObjectDoc[] = [
-      createMapObject({
+      createGridMapObject({
         name: "地图",
         image: { id: "project:P/Assets/images/场景1.png", width: 1920, height: 1080 },
         grid: { width: 64, height: 36 },

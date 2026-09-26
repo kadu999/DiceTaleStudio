@@ -72,17 +72,6 @@ export function componentTypeForObjectSlot(
   )?.type;
 }
 
-/** Component instances declare image behavior; kind selects map semantics only while its required component is missing. */
-export function objectImageSlot(object: GameObjectDoc): "map" | "image" {
-  if (componentOfSlot(object, "map") !== undefined) return "map";
-  if (canRepairObjectComponent(object, DEFAULT_SLOT_COMPONENT.map)) return "map";
-  if (componentOfSlot(object, "image") !== undefined) return "image";
-  if (hasComponentKindMismatch(object)) return "image";
-  return findComponentType(DEFAULT_SLOT_COMPONENT.map)?.templateKinds?.includes(object.kind) === true
-    ? "map"
-    : "image";
-}
-
 /** Whether the editor can offer an explicit repair for a missing required component. */
 export function canRepairObjectComponent(object: GameObjectDoc, type: string): boolean {
   const definition = findComponentType(type);
@@ -211,22 +200,24 @@ export function imageLayerDataOf(object: GameObjectDoc): ImageLayerDataDoc | und
  * 全仓唯一读口：地图 → `GridMap.data.sortingOrder`；有图片层 → 它的 `sortingOrder`；
  * 都没有（动作对象 / 还没挑图的实体）→ `0`。画布排序、mock 客户端与测试读回都走它。
  */
+/**
+ * 这个对象的**显示顺序**（渲染层属性，v26 起；v28 起带网格的贴图也不再例外）。
+ *
+ * 全仓唯一读口：有图片层（`ImageLayer` / `SpriteLayer`）→ 它的 `sortingOrder`；
+ * 都没有（动作对象 / 还没挑图的实体）→ `0`。画布排序、mock 客户端与测试读回都走它。
+ */
 export function sortingOrderOf(object: GameObjectDoc): number {
-  const map = mapDataOf(object);
-  if (map !== undefined) {
-    return map.sortingOrder;
-  }
-
   return imageLayerDataOf(object)?.sortingOrder ?? 0;
 }
 
 /**
- * **显示用的图片**：地图类取自己的地图数据，其余取贴图组件。
+ * **显示用的图片**：对象自己那份图片（`ImageLayer` / `SpriteLayer`）。
  *
- * 两处形状一致（都是 `ImageRef`），所以画布绘制、换图、场景改名同步贴图都走这一个入口。
+ * v28 起带网格的贴图的图也住 `ImageLayer` 里，所以这里不再给「地图」开分支——画布绘制、
+ * 换图、场景改名同步贴图、雾尺寸推导都走这一个入口。
  */
 export function objectImage(object: GameObjectDoc): ImageRef | undefined {
-  return objectImageSlot(object) === "map" ? mapDataOf(object)?.image : imageOf(object);
+  return imageOf(object);
 }
 
 /** 声音数据（音频列表 + 选中的那条 + 层级）。 */

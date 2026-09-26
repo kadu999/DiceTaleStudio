@@ -14,7 +14,7 @@ import {
   type GridPoint,
   type WorldRect,
 } from "@dts/grid";
-import { mapDataOf } from "@dts/document";
+import { mapDataOf, objectImage } from "@dts/document";
 import {
   createCanvasSceneRenderer,
   fitViewport,
@@ -83,7 +83,7 @@ export function GridEditDialog({
   const object = useSceneObject(objectId);
   const map = object === undefined ? undefined : mapDataOf(object);
   const grid = map?.grid;
-  const imageRef = map?.image;
+  const imageRef = object === undefined ? undefined : objectImage(object);
 
   /**
    * 窗口自己的世界矩形：以贴图尺寸为基准、中心在世界原点。

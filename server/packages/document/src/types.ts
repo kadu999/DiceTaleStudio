@@ -114,8 +114,19 @@ import type { ObjectKind } from "./presets";
  * （引用哪张地图：雾区与格子取自那张地图的 `GridMap`）。一张地图最多一个雾对象，
  * 由 `migrateFogToSceneObject` 把老的「地图上的 `FogOfWar` 组件」搬过去。协议侧同步升到
  * v15：命令 `erase_mask` / `reveal_fog_region` 改按**雾对象 id** 寻址。
+ *
+ * v28（2026-09-26）：**取消 `Map` 对象类型，网格变成贴图上的一个可选组件**。
+ * 「网格地图」不再是一种实体——它就是**一张贴图**（`Image`，走普通图片层）**加一个 `GridMap` 组件**：
+ * - `MapDataDoc` 去掉 `image` 与 `sortingOrder`，只留网格数据（`grid` / `rowOrder` / `cells`）；
+ *   贴图与显示顺序住贴图自己的 `ImageLayer` 里（v26 起本来就在图片层，地图只是不再特殊）；
+ * - `GridMap` 组件改为**可选能力**（像「视频」一样能加在贴图上，也能移除）；
+ * - 老 `Map` 对象由 `migrateMapKindToImage` 迁成「`Image` + `ImageLayer` + `GridMap`」。
+ *
+ * 于是「地图」这条特殊路径整个消失：`objectImage` / `sortingOrderOf` / 换图 / 画布 / 前端
+ * 都不再给地图开分支，网格数据只有「数据 + 网格编辑窗口」，没有任何渲染实体。
+ * 协议侧同步升到 v16：`mapDataSchema` 去掉这两项，地图对象改为下发 `ImageLayer` 组件。
  */
-export const DOCUMENT_FORMAT_VERSION = 27;
+export const DOCUMENT_FORMAT_VERSION = 28;
 
 /** 网格行序：`bottom-up` 表示 cells 第 0 行是图片最下面一行（与 Unity GridMap 一致）。 */
 export type RowOrder = "bottom-up";
@@ -233,24 +244,20 @@ export interface ComponentDoc {
 // 对象类型（`ObjectKind` = 预设 id）与能力槽位住在 `presets.ts`：那张表是
 // 「哪个 kind 允许哪个槽位」的唯一归属地，本文件只在 `GameObjectDoc.kind` 上用到它。
 
-/** 地图对象携带的数据（贴图 + 网格）。战争雾自 v25 起是独立的 `FogOfWar` 组件。 */
+/** `GridMap` 组件携带的**网格数据**（v28 起贴图与显示顺序住图片层，这里只剩网格）。战争雾自 v25 起是独立的 `FogOfWar` 组件。 */
 export interface MapDataDoc {
-  readonly image: ImageRef;
   readonly grid: GridSpec;
   readonly rowOrder: RowOrder;
   readonly cells: CellRuns;
-  /**
-   * 显示顺序（v26 起从对象级搬进渲染组件）：**大的画在前面**，相同则按场景里的先后顺序。
-   * 地图通常给一个很小的值（甚至负数）当底图。
-   */
-  readonly sortingOrder: number;
 }
 
 /**
  * 图片层组件的数据（`ImageLayer` / `SpriteLayer` 共用，v26 起）：一份图片引用 + 显示顺序。
  *
- * 显示顺序**不塞进 `ImageRef`**：那个形状是「只存引用」的共享形状，`GridMap.image`
- * 也是它，污染不得。这里用交叉类型多挂一项，两类图片组件的 data 都长这样。
+ * 显示顺序**不塞进 `ImageRef`**：那个形状是「只存引用」的共享形状，污染不得。这里用交叉
+ * 类型多挂一项，两类图片组件的 data 都长这样。
+ *
+ * v28 起**带网格的贴图也用它承载贴图与显示顺序**（以前这两项在 `MapDataDoc` 里）。
  */
 export type ImageLayerDataDoc = ImageRef & { readonly sortingOrder: number };
 

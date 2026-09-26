@@ -83,10 +83,10 @@ describe("合成盘点 A：v18 扁平字段时代（特性住在对象顶层字�
     components: string[];
   }> = [
     {
-      title: "Map：map + video 两个扁平字段 → GridMap + VideoOverlay（fog 另成独立 Fog 对象）",
+      title: "Map：map + video 两个扁平字段 → GridMap + VideoOverlay + ImageLayer（fog 另成独立 Fog 对象）",
       object: legacyObject("o-map", "Map", { map: FLAT_MAP, video: FLAT_VIDEO }),
-      kind: "Map",
-      components: ["GridMap", "VideoOverlay"],
+      kind: "Image",
+      components: ["GridMap", "VideoOverlay", "ImageLayer"],
     },
     {
       title: "SceneObject（v22 前的精灵名）：扁平 image → Sprite + SpriteLayer",
@@ -221,8 +221,9 @@ describe("合成盘点 C：更早的结构时代", () => {
     const scene = migratedScenes[0]!;
     expect(scene.name).toBe("老地图");
     expect(scene.objects).toHaveLength(2);
-    expect(scene.objects[0]!.kind).toBe("Map");
+    expect(scene.objects[0]!.kind).toBe("Image");
     expect(componentOfSlot(scene.objects[0]!, "map")?.type).toBe("GridMap");
+    expect(componentOfSlot(scene.objects[0]!, "image")?.type).toBe("ImageLayer");
     expect(scene.objects[0]!.position).toEqual({ x: 0, y: 0 }); // v1 地图没位置 → 补世界原点
     expect(scene.objects[1]!.kind).toBe("Sprite");
     expect(componentOfSlot(scene.objects[1]!, "image")?.type).toBe("SpriteLayer");
@@ -230,7 +231,7 @@ describe("合成盘点 C：更早的结构时代", () => {
   });
 });
 
-describe("合成盘点 D：现行版本（v24）无组件对象 = 不完整文档，走显式修复", () => {
+describe("合成盘点 D：现行版本（v28）无组件对象 = 不完整文档，走显式修复", () => {
   function currentObject(id: string, kind: string) {
     return {
       id,
@@ -246,11 +247,10 @@ describe("合成盘点 D：现行版本（v24）无组件对象 = 不完整文�
   }
 
   const cases: Array<{ kind: string; repairType: string; expectError: boolean }> = [
-    // 地图 / 动作对象：特性组件就是它的全部意义，缺失 = error + 显式修复
-    { kind: "Map", repairType: "GridMap", expectError: true },
+    // 动作对象：特性组件就是它的全部意义，缺失 = error + 显式修复
     { kind: "PlaySound", repairType: "PlaySound", expectError: true },
     { kind: "Teleport", repairType: "Teleport", expectError: true },
-    // 图片组件：缺失是「还没选图」的合法态，不报错；显式添加（首次选图）入口可用
+    // 图片组件 / 网格：缺失是合法态（还没选图 / 还没加网格），不报错；显式添加入口可用
     { kind: "Sprite", repairType: "SpriteLayer", expectError: false },
     { kind: "Image", repairType: "ImageLayer", expectError: false },
   ];

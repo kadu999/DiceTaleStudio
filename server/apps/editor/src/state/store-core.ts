@@ -5,7 +5,8 @@
  */
 import {
   DOCUMENT_FORMAT_VERSION,
-  DEFAULT_SLOT_COMPONENT,
+  componentForSlot,
+  imageLayerDataOf,
   mapDataOf,
   withFeature,
   DocumentHistory,
@@ -219,12 +220,15 @@ function fileNameOfResourceId(id: string): string {
  * 场景改名时同步**场景名隐式引用**的贴图 ID。
  *
  * 贴图是按「与场景同名」的约定自动指到 `Assets/images/<场景名>.png` 的
- * （见 `projectSceneImageId`）。所以只要某个**地图**的贴图当前指向旧场景名，
+ * （见 `projectSceneImageId`）。所以只要某个**网格地图**的贴图当前指向旧场景名，
  * 就把它改指到新场景名——否则场景一改名，贴图立刻就找不到了。
  *
- * **只动地图的 `map.image`，不动精灵的 `image`**：地图的引用是**约定**（跟着场景名走），
+ * **只动网格地图的图片层，不动精灵的 `image`**：网格地图的引用是**约定**（跟着场景名走），
  * 精灵的图片是用户**明确挑的**（哪怕它恰好和场景同名，那也还是他挑的那张文件，
  * 改指到别的文件反而是篡改）。手工指定的其它贴图同理不受影响。
+ *
+ * v28 起带网格的贴图的图住在 `ImageLayer` 组件里（不再是 `map.image`），整份替换时带上
+ * 显示顺序。
  */
 export function withRenamedSceneImage(
   project: string,
@@ -237,16 +241,17 @@ export function withRenamedSceneImage(
 
   const objects = file.objects.map((object) => {
     const map = mapDataOf(object);
-    if (map === undefined || fileNameOfResourceId(map.image.id) !== oldFile) {
+    const image = imageLayerDataOf(object);
+    if (map === undefined || image === undefined || fileNameOfResourceId(image.id) !== oldFile) {
       return object;
     }
 
     changed += 1;
-    // v19：贴图在 `GridMap` 组件里——**必须经访问器替换**，不能再往对象上写一个扁平 `map`
+    // 贴图在图片层组件里——**必须经访问器替换**，不能再往对象上写扁平字段
     // （那样 schema 会在下次解析时把它当未知键丢掉，场景一改名贴图就找不到了）
-    return withFeature(object, DEFAULT_SLOT_COMPONENT.map, {
-      ...map,
-      image: { ...map.image, id: projectSceneImageId(project, newName) },
+    return withFeature(object, componentForSlot("image", object.kind), {
+      ...image,
+      id: projectSceneImageId(project, newName),
     });
   });
 

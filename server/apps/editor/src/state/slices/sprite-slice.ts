@@ -20,10 +20,7 @@ import {
   createAssetMeta,
   canRepairObjectComponent,
   componentForSlot,
-  DEFAULT_SLOT_COMPONENT,
   repairImageObjectComponent as repairSceneImageObjectComponent,
-  repairMapObjectComponent as repairSceneMapObjectComponent,
-  objectImageSlot,
   setObjectImage as setGameObjectImage,
   withMetaSpriteSheet,
   withMetaSpriteSettings,
@@ -72,18 +69,13 @@ export function createSpriteSlice(
       const object = state.scenes
         .find((scene) => scene.name === state.activeSceneName)
         ?.objects.find((item) => item.id === objectId);
-      const repairingMap = object !== undefined &&
-        canRepairObjectComponent(object, DEFAULT_SLOT_COMPONENT.map);
       const imageComponent = object === undefined ? undefined : componentForSlot("image", object.kind);
-      const repairingImage = !repairingMap && object !== undefined && imageComponent !== undefined &&
-        objectImageSlot(object) !== "map" &&
+      const repairingImage = object !== undefined && imageComponent !== undefined &&
         canRepairObjectComponent(object, imageComponent);
       const label =
-        repairingMap
-          ? "修复地图贴图"
-          : repairingImage
-            ? "添加图片组件"
-            : sprite === null ? "更换贴图" : `换图并取子图 第${sprite.row + 1}行第${sprite.column + 1}列`;
+        repairingImage
+          ? "添加图片组件"
+          : sprite === null ? "更换贴图" : `换图并取子图 第${sprite.row + 1}行第${sprite.column + 1}列`;
       return applyActiveScene(label, (scene) => {
         const ref: ImageRef = {
           id: image.id,
@@ -92,9 +84,7 @@ export function createSpriteSlice(
           ...(image.guid === undefined ? {} : { guid: image.guid }),
         };
 
-        if (repairingMap) {
-          repairSceneMapObjectComponent(scene, objectId, ref);
-        } else if (repairingImage) {
+        if (repairingImage) {
           repairSceneImageObjectComponent(scene, objectId, sprite === null ? ref : { ...ref, sprite });
         } else {
           // 整图时显式不带 sprite；带格子时由 setObjectImage 原样写入。

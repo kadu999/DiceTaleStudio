@@ -99,21 +99,20 @@ export const mapFogSchema = z.object({
   regions: z.array(z.number().int().min(1).max(255)).default([]),
 });
 
-/** 地图对象携带的数据（贴图 + 网格）。战争雾自 v25 起是独立的 `FogOfWar` 组件（`mapFogSchema`）。 */
+/** `GridMap` 组件携带的**网格数据**（v28 起只到这里；`rowOrder` 固定 bottom-up）。贴图与显示顺序住在 `ImageLayer` 里，战争雾在独立的 `FogOfWar` 组件里。 */
 export const mapDataSchema = z.object({
-  image: imageRefSchema,
   grid: gridSpecSchema,
   rowOrder: z.literal("bottom-up"),
   cells: cellRunsSchema,
-  // v26 起显示顺序住在这里（从对象级搬来）：老文件没有时按 0 补，与 v7 的 `sortingOrder` 同一个口径
-  sortingOrder: z.number().int().default(0),
 });
 
 /**
  * 图片层组件（`ImageLayer` / `SpriteLayer`）的数据：一份图片引用 + v26 起的显示顺序。
  *
  * 刻意**不**把 `sortingOrder` 加进 `imageRefSchema`：那个形状是「只存引用」的共享形状，
- * `GridMap.image` 也是它——多一项会污染地图贴图。这里扩一份只给图片层用。
+ * 多一项会污染它。这里扩一份只给图片层用。
+ *
+ * v28 起**带网格的贴图也用它承载贴图与显示顺序**：`mapDataSchema` 不再有 `image`。
  */
 export const imageLayerDataSchema = imageRefSchema.extend({
   sortingOrder: z.number().int().default(0),
@@ -1326,6 +1325,79 @@ function migrateFogToSceneObject(raw: Record<string, unknown>): {
 }
 
 /**
+ * v27 → v28：把**带网格对象**（老地图）的贴图与显示顺序从 `GridMap` 的 data 搬进它自己的
+ * `ImageLayer` 组件（`Map` kind 已在 `renameObjectKinds` 里落到 `Image`）。
+ *
+ * 每个带 `GridMap` 组件的对象：
+ * - `GridMap.data` 里有 `image` 时，把它（+ `sortingOrder`）搬进（没有则新建）`ImageLayer` 组件；
+ * - 从 `GridMap.data` 里删掉 `image` 与 `sortingOrder`，只留网格数据。
+ *
+ * 已有图片层的对象以**地图数据里的那份**为准（迁移前渲染用的就是它），组件 id 保持不变。
+ * 幂等：搬过的 `GridMap` 不再有这两项，再跑什么都不做。不带网格的对象不受影响。
+ */
+function migrateGridMapImageToLayer(raw: Record<string, unknown>): {
+  readonly raw: Record<string, unknown>;
+  readonly changed: boolean;
+} {
+  const objects = Array.isArray(raw.objects) ? raw.objects : [];
+  let changed = false;
+  const next = objects.map((object) => {
+    if (!isRecord(object) || !Array.isArray(object.components)) {
+      return object;
+    }
+
+    const gridMap = object.components.find(
+      (component) => isRecord(component) && component.type === DEFAULT_SLOT_COMPONENT.map,
+    );
+    if (gridMap === undefined || !isRecord(gridMap.data)) {
+      return object;
+    }
+
+    const data = gridMap.data;
+    const image = isRecord(data.image) ? data.image : undefined;
+    if (image === undefined && !("sortingOrder" in data)) {
+      return object;
+    }
+
+    changed = true;
+    const sortingOrder = typeof data.sortingOrder === "number" ? data.sortingOrder : 0;
+
+    // GridMap：只留网格数据
+    const gridData = { ...data };
+    delete gridData.image;
+    delete gridData.sortingOrder;
+
+    const components: unknown[] = object.components.map((component) =>
+      component === gridMap
+        ? { ...(component as Record<string, unknown>), data: gridData }
+        : component,
+    );
+
+    if (image !== undefined) {
+      const payload = { ...image, sortingOrder };
+      const existingIndex = components.findIndex(
+        (component) => isRecord(component) && component.type === DEFAULT_SLOT_COMPONENT.image,
+      );
+      if (existingIndex >= 0) {
+        const existing = components[existingIndex] as Record<string, unknown>;
+        components[existingIndex] = { ...existing, data: payload };
+      } else {
+        const objectId = typeof object.id === "string" && object.id.length > 0 ? object.id : "obj";
+        components.push({
+          id: `${objectId}__${DEFAULT_SLOT_COMPONENT.image}`,
+          type: DEFAULT_SLOT_COMPONENT.image,
+          data: payload,
+        });
+      }
+    }
+
+    return { ...object, components };
+  });
+
+  return changed ? { raw: { ...raw, objects: next }, changed } : { raw, changed };
+}
+
+/**
  * 读一个（还没过 schema 的）对象的 `kind`；认不出来时按**精灵** `Sprite` 算
  * （`MirrorObject` 同一个兜底）。
  *
@@ -1354,6 +1426,9 @@ const LEGACY_KINDS: Readonly<Record<string, ObjectKind>> = {
   Texture: "Image",
   SceneObject: "Sprite",
   GameObject: "Sprite",
+  // v28：`Map` 不再是对象类型——「网格地图」= 贴图 + `GridMap` 组件。老文件里的地图先落到 `Image`，
+  // 再由 `migrateGridMapImageToLayer` 把贴图从 `GridMap` 搬进图片层
+  Map: "Image",
 };
 
 /**
@@ -1535,6 +1610,9 @@ export function parseSceneFile(raw: unknown, size?: SceneSizeHint): SceneFileLoa
     // v27：战争雾从「地图上的 FogOfWar 组件」搬成独立的 `Fog` 对象。必须排在 `fogSplit`
     // 之后（那时雾才在组件里）、并在最后（新对象要按现在的摆放复制地图的位置）
     const fogObjects = migrateFogToSceneObject(sorting.raw);
+    // v28：把带网格对象（老地图）的贴图与显示顺序从 `GridMap` 搬进 `ImageLayer`（`Map` kind 已在
+    // `kinds` 那一趟落到 `Image`）。排在 `sorting` 之后（那时显示顺序才在 GridMap 里）
+    const gridImage = migrateGridMapImageToLayer(fogObjects.raw);
     // v13：战争雾的总开关（`fog.enabled`）**不用单独迁移**——schema 给它默认值 `true`
     // （v10–v12 的文件里「有 fog」就等于「开着」），而版本号一升就会回写一次，
     // 于是磁盘上的文件重新变得自描述。
@@ -1548,8 +1626,9 @@ export function parseSceneFile(raw: unknown, size?: SceneSizeHint): SceneFileLoa
     // v26：显示顺序从对象级搬进渲染组件，已在上面的 `sorting` 那一趟做完
     // （同样排在 `features` 后面：先搬组件，才找得到承载它的渲染组件）。
     // v27：战争雾从地图搬成独立的 `Fog` 对象，已在上面的 `fogObjects` 那一趟做完。
-    // 读出来的文档一律是当前版本（v6 起网格里不再存 `cellSize`，顺手被 schema 丢掉）
-    normalized = { ...fogObjects.raw, formatVersion: DOCUMENT_FORMAT_VERSION };
+    // v28：`Map` kind 落到 `Image`（`kinds` 那一趟）、贴图从 `GridMap` 搬进 `ImageLayer`
+    // （`gridImage` 那一趟）。读出来的文档一律是当前版本（v6 起网格里不再存 `cellSize`，顺手被 schema 丢掉）
+    normalized = { ...gridImage.raw, formatVersion: DOCUMENT_FORMAT_VERSION };
     needsRewrite =
       version < DOCUMENT_FORMAT_VERSION ||
       filled.changed ||
@@ -1560,7 +1639,8 @@ export function parseSceneFile(raw: unknown, size?: SceneSizeHint): SceneFileLoa
       features.changed ||
       fogSplit.changed ||
       sorting.changed ||
-      fogObjects.changed;
+      fogObjects.changed ||
+      gridImage.changed;
   }
 
   const result = sceneFileSchema.safeParse(normalized);

@@ -792,7 +792,7 @@ namespace DiceTale
             var mapObject = !string.IsNullOrEmpty(obj.fog.mapId) ? mirror.Find(obj.fog.mapId) : null;
             if (mapObject == null || mapObject.map == null)
             {
-                return $"「{obj.name}」引用的地图不存在（mapId = {obj.fog.mapId}）";
+                return $"「{obj.name}」引用的网格对象不存在或没有网格（mapId = {obj.fog.mapId}）";
             }
 
             if (!obj.fog.enabled)

@@ -362,6 +362,7 @@ test.describe("场景数据", () => {
           return {
             version: file.formatVersion,
             gridMap: componentInstanceOf(mapObject, COMPONENT.gridMap),
+            imageLayer: componentInstanceOf(mapObject, COMPONENT.imageLayer),
             playSound: componentInstanceOf(soundObject, COMPONENT.playSound),
             // 扁平字段必须**真的被搬走**（留着就是两处数据源，迟早对不上）
             legacyFields: [
@@ -379,15 +380,19 @@ test.describe("场景数据", () => {
             id: "map_01__GridMap",
             type: "GridMap",
             data: {
-              image: {
-                id: `project:${project}/Assets/images/${SCENE_A}.png`,
-                width: 400,
-                height: 300,
-              },
               grid: { width: 8, height: 6 },
               rowOrder: "bottom-up",
               cells: { encoding: "rle", runs: [[0, 8 * 6]] },
-              // v26：对象级 `sortingOrder: -10` 搬进 GridMap 的 data
+            },
+          },
+          // v28：贴图与显示顺序从 GridMap 搬进图片层
+          imageLayer: {
+            id: "map_01__ImageLayer",
+            type: "ImageLayer",
+            data: {
+              id: `project:${project}/Assets/images/${SCENE_A}.png`,
+              width: 400,
+              height: 300,
               sortingOrder: -10,
             },
           },

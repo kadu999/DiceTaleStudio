@@ -21,7 +21,7 @@ import type { VideoDataDoc } from "../types";
  *   （`setVideoClips` 会顺手收拾 `names` 与 `picked`），继续走 `commands/video.ts`。
  *
  * `defaultData` 给的是**完整**形状（含上面那几个不归规格管的字段）：补壳出来的组件必须与
- * `createMapObject` 走的工厂、以及 `validateScene` 的预期一致，少一个字段就会在别处露出来。
+ * `createGridMapObject` 走的工厂、以及 `validateScene` 的预期一致，少一个字段就会在别处露出来。
  */
 export const videoSpec = defineComponent<VideoDataDoc>({
   type: "VideoOverlay",

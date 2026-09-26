@@ -77,7 +77,7 @@ export function ObjectDialog({ open, onClose }: ObjectDialogProps): React.JSX.El
       return;
     }
 
-    const reason = await createObject(selected.kind, name);
+    const reason = await createObject(selected.kind, name, undefined, selected.withGrid === true);
     if (reason === undefined) {
       onClose();
     } else {

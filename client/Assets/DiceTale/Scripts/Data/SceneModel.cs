@@ -51,7 +51,7 @@ namespace DiceTale
         public float rotation;
         public float scale = 1f;
 
-        /// <summary>对象自己要显示的图（精灵与贴图都用它；地图的图在 <see cref="map"/> 里）。</summary>
+        /// <summary>对象自己要显示的图（精灵与贴图都用它；v16 起带网格的贴图的图也在这里）。</summary>
         public MirrorImage image;
 
         /// <summary>
@@ -83,8 +83,8 @@ namespace DiceTale
         /// </summary>
         public MirrorVideo video;
 
-        /// <summary>要显示的图（地图对象取 <c>map.image</c>）。</summary>
-        public MirrorImage DisplayImage => image ?? map?.image;
+        /// <summary>要显示的图（v16 起一律取对象自己的图片层）。</summary>
+        public MirrorImage DisplayImage => image;
 
         /// <summary>
         /// 对象身上的组件（协议 v9 起）。
@@ -209,10 +209,9 @@ namespace DiceTale
         public int row;
     }
 
-    /// <summary>地图对象的数据：贴图 + 网格（格子已从 RLE 解成掩码数组）。</summary>
+    /// <summary>带网格对象（贴图）的数据：网格（格子已从 RLE 解成掩码数组）。贴图自 v16 起在 <see cref="MirrorObject.image"/> 里。</summary>
     public class MirrorMap
     {
-        public MirrorImage image;
         public int gridWidth;
         public int gridHeight;
 

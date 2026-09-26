@@ -19,7 +19,7 @@ import {
   DEFAULT_VIDEO_LOOP,
   supportsVideo,
 } from "../src/presets";
-import { createEmptyScene, createMapObject, createSoundObject } from "../src/factory";
+import { createEmptyScene, createGridMapObject, createSoundObject } from "../src/factory";
 import { parseSceneFile } from "../src/schema";
 import { formatIssues, hasErrors, validateScene } from "../src/validation";
 import { DOCUMENT_FORMAT_VERSION, type SceneDoc, type GameObjectDoc } from "../src/types";
@@ -67,7 +67,7 @@ function videoEnabled(scene: SceneDoc, id: string): boolean {
 
 /** 一张地图（视频的合法宿主之一）。 */
 function mapObject(id = "map-1"): GameObjectDoc {
-  return createMapObject({ id, name: "网格地图", image: IMAGE, grid: GRID });
+  return createGridMapObject({ id, name: "网格地图", image: IMAGE, grid: GRID });
 }
 
 /** 一张贴图（另一个合法宿主，v21 起取代精灵）。 */
@@ -81,8 +81,7 @@ function spriteObject(id = "sprite-1"): GameObjectDoc {
 }
 
 describe("视频：哪些对象能带", () => {
-  it("只有地图与贴图能放视频；精灵与动作对象不行", () => {
-    expect(supportsVideo("Map")).toBe(true);
+  it("只有贴图（含网格地图）能放视频；精灵与动作对象不行", () => {
     expect(supportsVideo("Image")).toBe(true);
     expect(supportsVideo("Sprite")).toBe(false);
     expect(supportsVideo("PlaySound")).toBe(false);

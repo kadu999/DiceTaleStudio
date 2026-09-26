@@ -5,9 +5,11 @@
  */
 import {
   addObject,
+  addObjectGridMap as addSceneGridMap,
   createId,
   nextObjectName,
   removeObject as removeGameObject,
+  removeObjectGridMap as removeSceneGridMap,
   renameObject as renameGameObject,
   setMapGrid as setSceneMapGrid,
   setObjectActive as setGameObjectActive,
@@ -26,7 +28,7 @@ import {
   type GameObjectDoc,
 } from "@dts/document";
 import { type StoreSet, type StoreGet, type EditorStoreState } from "../store-types";
-import { createGameObjectForKind } from "../game-object-factory";
+import { createEditorGridMapObject, createGameObjectForKind } from "../game-object-factory";
 import {
   makeLog,
   SCENE_CENTER,
@@ -59,6 +61,8 @@ export function createObjectSlice(
   | "moveObject"
   | "setObjectScaleAxes"
   | "setMapGrid"
+  | "addObjectGridMap"
+  | "removeObjectGridMap"
   | "openImagePicker"
 > {
   // 共享的闭包状态与局部工具都在 ctx 里：这里解构一次，方法体与拆分前逐字一致
@@ -81,7 +85,7 @@ export function createObjectSlice(
 
     // ---------------------------------------------------------------- 场景对象
 
-    async createObject(kind, name, position) {
+    async createObject(kind, name, position, withGrid = false) {
       const project = get().project.current;
       const sceneName = get().activeSceneName;
       const scene = findSceneByName(get().scenes, sceneName);
@@ -94,8 +98,8 @@ export function createObjectSlice(
         return "请输入对象名";
       }
 
-      // 战争雾（v27）：必须先有一张「还没被别的雾引用」的地图——一张地图最多一个雾对象。
-      // 默认摆在被引用地图的位置上（尺寸也是从它推导的），拖走就挪开了。
+      // 战争雾（v27）：必须先有一个「还没被别的雾引用」的带网格贴图——一个网格最多一个雾对象。
+      // 默认摆在被引用对象的位置上（尺寸也是从它推导的），拖走就挪开了。
       let mapId: string | undefined;
       let fogPosition: { x: number; y: number } | undefined;
       if (kind === "Fog") {
@@ -103,23 +107,27 @@ export function createObjectSlice(
           (object) => mapDataOf(object) !== undefined && fogObjectOfMap(scene, object.id) === undefined,
         );
         if (map === undefined) {
-          return "没有可引用的地图（先建一张网格地图，或它的战争雾已经存在）";
+          return "没有可引用的网格（先建一个网格地图，或它的战争雾已经存在）";
         }
 
         mapId = map.id;
         fogPosition = map.position === null ? { ...SCENE_CENTER } : { ...map.position };
       }
 
-      // 世界无限大：落点就是给的那个坐标，不夹取（战争雾默认落在被引用地图上）
+      // 世界无限大：落点就是给的那个坐标，不夹取（战争雾默认落在被引用对象上）
       const at =
         fogPosition ?? (position === undefined ? { ...SCENE_CENTER } : { x: position.x, y: position.y });
-      const object = createGameObjectForKind(kind, {
-        project,
-        sceneName,
-        name: trimmed,
-        position: at,
-        mapId,
-      });
+      // 「网格地图」= 贴图 + 网格组件（v28）：走单独那条工厂；其余按 kind 查表
+      const object =
+        withGrid && kind === "Image"
+          ? createEditorGridMapObject({ project, sceneName, name: trimmed, position: at })
+          : createGameObjectForKind(kind, {
+              project,
+              sceneName,
+              name: trimmed,
+              position: at,
+              mapId,
+            });
 
       const changed = applyActiveScene(`新建对象 ${trimmed}`, (scene) => {
         addObject(scene, object);
@@ -427,6 +435,18 @@ export function createObjectSlice(
     setMapGrid(mapObjectId, grid) {
       return applyActiveScene("修改网格尺寸", (scene) => {
         setSceneMapGrid(scene, mapObjectId, grid);
+      });
+    },
+
+    addObjectGridMap(objectId) {
+      return applyActiveScene("添加网格", (scene) => {
+        addSceneGridMap(scene, objectId);
+      });
+    },
+
+    removeObjectGridMap(objectId) {
+      return applyActiveScene("移除网格", (scene) => {
+        removeSceneGridMap(scene, objectId);
       });
     },
 

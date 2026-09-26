@@ -5,10 +5,8 @@ import {
   isUniformScale,
   canRepairObjectComponent,
   componentForSlot,
-  DEFAULT_SLOT_COMPONENT,
   mapDataOf,
   normalizeDegrees,
-  objectImageSlot,
   objectImage,
   sortingOrderOf,
   SORTING_ORDER_LIMIT,
@@ -120,7 +118,7 @@ export function LockedField({ object }: { readonly object: GameObjectDoc }): Rea
 }
 
 /**
- * 对象要显示的图片（**精灵**就靠它显示图片；地图的贴图也是这个字段，只是存在 `map.image` 里）：
+ * 对象要显示的图片（**精灵 / 贴图 / 带网格的贴图**都靠它显示图片）：
  * 普通贴图显示项目内相对路径，后面跟一个「选择」按钮；精灵只显示当前子精灵状态。
  *
  * 这是**「渲染」分组目前唯一的一行**：现阶段渲染只做到「换一张图片」与「取图集里的哪一格」，
@@ -131,26 +129,21 @@ export function LockedField({ object }: { readonly object: GameObjectDoc }): Rea
  * （刚建出来的精灵）只画一个标记点，这里给一行说明 + 同一个「选择」入口。
  *
  * **子图（v20）**：图片是图集时显示「子图 第2行第3列（4×4）」。整图 / 子精灵在选择窗口中选择。
- * 只有**预设允许贴图槽位**的对象（`OBJECT_PRESETS` 里声明了 image 槽位，即精灵 / 玩家 / 道具 / 事件）才有这套 UI；
- * 地图的贴图在 `GridMap` 里、且不允许取子图（取一块会让已有格子标注错位）。
+ * 只有**预设允许贴图槽位**的对象（`OBJECT_PRESETS` 里声明了 image 槽位，即精灵 / 玩家 / 道具 /
+ * 事件 / 贴图 / 带网格的贴图）才有这套 UI；带网格的贴图不允许取子图（取一块会让已有格子标注错位）。
  */
 export function TextureField({ object }: { readonly object: GameObjectDoc }): React.JSX.Element {
   const tree = useEditorStore((state) => state.project.tree);
   const assetMetas = useEditorStore((state) => state.assetMetas);
   const openImagePicker = useEditorStore((state) => state.openImagePicker);
-  const missingMapData = canRepairObjectComponent(object, DEFAULT_SLOT_COMPONENT.map);
-  const missingImageComponent = !missingMapData &&
-    objectImageSlot(object) !== "map" &&
-    canRepairObjectComponent(object, componentForSlot("image", object.kind));
-  const missingComponent = missingMapData || missingImageComponent;
-  const image = missingMapData ? undefined : objectImage(object);
+  const missingImageComponent = canRepairObjectComponent(object, componentForSlot("image", object.kind));
+  const image = objectImage(object);
 
   // 引用的文件不在项目里（素材没提交 / 改名了）：直接把这件事写出来
   const currentAsset = image === undefined ? undefined : findImageAsset(tree, image, assetMetas);
   const missing = image !== undefined && currentAsset === undefined;
 
-  // 子图：能不能切由**图片用的是哪个组件**说了算（`supportsSpriteSheet`：精灵能、贴图不能、
-  // 地图的贴图在 GridMap 里根本不在这一套里）。
+  // 子图：能不能切由**图片用的是哪个组件**说了算（`supportsSpriteSheet`：精灵能、贴图 / 带网格的贴图不能）。
   // 这里显示的是**文件里存的那一格**（不是夹取后的那一格）：越界时旁边挂一枚提示，
   // 「文件里写的」与「实际画的」都说清楚，人才知道要去重选一格
   const spriteCapable = supportsSpriteSheet(object);
@@ -176,8 +169,8 @@ export function TextureField({ object }: { readonly object: GameObjectDoc }): Re
           }`}
           title={currentAsset?.id ?? image?.id}
         >
-          {missingComponent
-            ? missingMapData ? "地图数据缺失" : "图片组件缺失"
+          {missingImageComponent
+            ? "图片组件缺失"
             : image === undefined
               ? "（无贴图）"
               : assetDisplayPath(currentAsset?.id ?? currentImageAssetId(image, assetMetas))}
@@ -216,7 +209,7 @@ export function TextureField({ object }: { readonly object: GameObjectDoc }): Re
         className="toolbar-button flex-none hover:toolbar-button-hover"
         onClick={() => openImagePicker(object.id)}
       >
-        {missingMapData ? "选择贴图并修复" : missingImageComponent ? "选择图片并添加" : "选择"}
+        {missingImageComponent ? "选择图片并添加" : "选择"}
       </button>
     </FieldRow>
   );
@@ -225,9 +218,9 @@ export function TextureField({ object }: { readonly object: GameObjectDoc }): Re
 /**
  * **显示顺序**（渲染层属性，v26 起住在渲染组件里）：大的画在前面（盖住小的）。
  *
- * 从 `sortingOrderOf` 读（地图取 `GridMap` 的 data、其余取图片层的 data），经 store 的
- * `setRenderSortingOrder` 写回——那条命令按「先地图、后图片层」路由。这一行只出现在
- * 三个渲染组（网格地图 / 图片层 / 精灵层）里：**没有渲染层的对象没有这个参数**。
+ * 从 `sortingOrderOf` 读（v28 起一律取图片层的 data），经 store 的
+ * `setRenderSortingOrder` 写回。这一行只出现在两个渲染组（图片层 / 精灵层）里：
+ * **没有图片层的对象没有这个参数**。
  *
  * 提交规则与缩放 / 角度同一套：失焦 / 回车生效、Esc 还原、连续输入合并成一条撤销记录。
  */
@@ -773,7 +766,7 @@ export function GridFields({ object }: { readonly object: GameObjectDoc }): Reac
  * 文档里不存这个数（v6 起那个恒为 1 的 `cellSize` 已经删掉）——存一份只会和事实不一致。
  */
 export function CellSizeField({ object }: { readonly object: GameObjectDoc }): React.JSX.Element {
-  const image = mapDataOf(object)?.image;
+  const image = objectImage(object);
   const grid = mapDataOf(object)?.grid;
   if (image === undefined || grid === undefined) {
     return <Field label="每格" value="—" />;

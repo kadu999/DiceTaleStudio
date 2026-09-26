@@ -128,9 +128,9 @@ test.describe("场景菜单", () => {
       await expect(page.getByTestId("status-active-scene")).toHaveText("当前场景 大厅");
 
       // 贴图是按「与场景同名」约定引用的，所以引用要一起改指到 大厅.png
-      // （只改引用：声明尺寸原样留着）
+      // （只改引用：声明尺寸与显示顺序原样留着）
       const file = await readSceneFile(request, project, "大厅");
-      expect(componentDataOf(file, { kind: "Map" }, COMPONENT.gridMap)?.["image"]).toEqual({
+      expect(componentDataOf(file, { kind: "Image" }, COMPONENT.imageLayer)).toMatchObject({
         id: `project:${project}/Assets/images/大厅.png`,
         width: 1920,
         height: 1080,

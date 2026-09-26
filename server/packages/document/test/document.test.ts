@@ -6,6 +6,7 @@ import {
   MAX_OBJECT_SCALE,
   MIN_OBJECT_SCALE,
   addObject,
+  addObjectGridMap,
   clearMapCells,
   clearMapFog,
   createGameObject,
@@ -16,8 +17,8 @@ import {
   objectsInDrawOrder,
   paintMapCells,
   removeObject,
+  removeObjectGridMap,
   repairImageObjectComponent,
-  repairMapObjectComponent,
   setMapCells,
   setFogEnabled,
   setFogMap,
@@ -38,7 +39,6 @@ import {
   isFogEnabled,
   mapDataOf,
   objectImage,
-  objectImageSlot,
   objectSupportsSpriteSheet,
   sortingOrderOf,
   supportsObjectComponent,
@@ -53,7 +53,7 @@ import {
   createEmptyScene,
   createEmptySceneFile,
   createFogObject,
-  createMapObject,
+  createGridMapObject,
 } from "../src/factory";
 import { parseProjectDoc, parseProjectFile, parseSceneFile, upgradeRawDocument } from "../src/schema";
 import { DEFAULT_HISTORY_LIMIT } from "../src/history";
@@ -69,7 +69,7 @@ function makeScene(name = "Map001"): SceneDoc {
 
 function withMapObject(scene: SceneDoc, name = "Map001"): SceneDoc {
   return produce(scene, (draft) => {
-    addObject(draft, createMapObject({ name: `${name} 地图`, image: IMAGE, grid: GRID, id: "map-1" }));
+    addObject(draft, createGridMapObject({ name: `${name} 地图`, image: IMAGE, grid: GRID, id: "map-1" }));
   });
 }
 
@@ -154,11 +154,12 @@ describe("文档工厂：场景是容器，对象挂在场景上", () => {
     expect(Object.keys(scene).sort()).toEqual(["name", "objects"]);
   });
 
-  it("地图是一个普通对象，数据挂在自己身上", () => {
-    const mapObject = createMapObject({ name: "背景地图", image: IMAGE, grid: GRID, id: "m1" });
-    expect(mapObject.kind).toBe("Map");
-    // v19 起地图数据住在 `GridMap` 组件里，读一律走 `mapDataOf`
-    expect(mapDataOf(mapObject)?.image).toEqual(IMAGE);
+  it("网格地图是「贴图 + 网格组件」，不是独立的对象类型（v28）", () => {
+    const mapObject = createGridMapObject({ name: "背景地图", image: IMAGE, grid: GRID, id: "m1" });
+    expect(mapObject.kind).toBe("Image");
+    // 贴图在图片层（v28 起），网格数据在 `GridMap` 里
+    expect(objectImage(mapObject)).toEqual(IMAGE);
+    expect(mapDataOf(mapObject)?.grid).toEqual(GRID);
     // 显式写出「整张图都是空格子」，否则校验会判为数据不完整
     expect(mapDataOf(mapObject)?.cells).toEqual({
       encoding: "rle",
@@ -259,25 +260,25 @@ describe("对象命令（都在场景上操作）", () => {
 
   it("显示顺序：大的画在前面，取整并夹在范围内（v26 起住在渲染组件里）", () => {
     const scene = withMapObject(makeScene(), "Map001");
-    const start = mapDataOf(scene.objects[0]!)?.sortingOrder ?? 0;
+    const start = sortingOrderOf(scene.objects[0]!);
 
     const sorted = mutate(scene, (draft) => {
       expect(setRenderSortingOrder(draft, "map-1", 12.6)).toBe(true);
     });
-    expect(mapDataOf(sorted.objects[0]!)?.sortingOrder).toBe(13);
+    expect(sortingOrderOf(sorted.objects[0]!)).toBe(13);
 
     // 夹取：顺序只是个层号，不接受失控的大数
     const clamped = mutate(scene, (draft) => {
       setRenderSortingOrder(draft, "map-1", 1e9);
     });
-    expect(mapDataOf(clamped.objects[0]!)?.sortingOrder).toBe(9999);
+    expect(sortingOrderOf(clamped.objects[0]!)).toBe(9999);
 
     // NaN / Infinity 直接拒绝，绝不写进文档
     mutate(scene, (draft) => {
       expect(setRenderSortingOrder(draft, "map-1", Number.NaN)).toBe(false);
       expect(setRenderSortingOrder(draft, "map-1", Number.POSITIVE_INFINITY)).toBe(false);
     });
-    expect(mapDataOf(scene.objects[0]!)?.sortingOrder).toBe(start);
+    expect(sortingOrderOf(scene.objects[0]!)).toBe(start);
   });
 
   it("显示顺序：没有渲染层的对象没有这个参数（写入返回 false）", () => {
@@ -742,25 +743,24 @@ describe("对象命令（都在场景上操作）", () => {
     expect(cleared.objects[0]?.position).toBeNull();
   });
 
-  it("isPositionableObject 早就不在了；对象图片：地图在 map.image，精灵在 image", () => {
+  it("对象图片：贴图 / 网格地图都在图片层（v28 起没有 map.image）", () => {
     const sprite = createGameObject({
       name: "精灵",
       kind: "Sprite",
       position: { x: 0, y: 0 },
     });
     expect(objectImage(sprite)).toBeUndefined();
-    expect(objectImage(createMapObject({ name: "地图", image: IMAGE, grid: GRID }))).toEqual(IMAGE);
+    expect(objectImage(createGridMapObject({ name: "地图", image: IMAGE, grid: GRID }))).toEqual(IMAGE);
   });
 
-  it("显式添加图片组件：地图写进 map.image，精灵写进 SpriteLayer", () => {
+  it("换图：写进图片层（v28 起不再有 map.image）", () => {
     const next = { id: "project:C/Assets/images/sprite.png", width: 200, height: 150 };
 
     const withMap = mutate(withMapObject(makeScene()), (draft) => {
       expect(setObjectImage(draft, "map-1", next)).toBe(true);
     });
-    expect(mapDataOf(withMap.objects[0]!)?.image).toEqual(next);
-    // 地图的贴图住在 GridMap 里，没有单独的图片层组件
-    expect(imageOf(withMap.objects[0]!)).toBeUndefined();
+    expect(objectImage(withMap.objects[0]!)).toEqual(next);
+    expect(imageOf(withMap.objects[0]!)).toEqual(next);
 
     const withSprite = mutate(withObject(makeScene(), "sprite"), (draft) => {
       expect(repairImageObjectComponent(draft, "sprite", next)).toBe(true);
@@ -826,29 +826,24 @@ describe("对象命令（都在场景上操作）", () => {
     ]);
   });
 
-  it("地图图片由 GridMap 承载，不允许单独创建 ImageLayer", () => {
+  it("网格地图的贴图在图片层：已经有图片层时不会重复添加", () => {
     const scene = mutate(withMapObject(makeScene()), (draft) => {
       expect(repairImageObjectComponent(draft, "map-1", IMAGE)).toBe(false);
     });
-    expect(scene.objects[0]?.components.map((component) => component.type)).toEqual(["GridMap"]);
+    expect(scene.objects[0]?.components.map((component) => component.type)).toEqual([
+      "ImageLayer",
+      "GridMap",
+    ]);
   });
 
-  it("setObjectImage：已有 GridMap 组件优先于 kind，贴图写回该组件", () => {
+  it("setObjectImage：网格地图的贴图也写进图片层", () => {
     const next = { id: "project:C/Assets/images/custom.png", width: 320, height: 180 };
-    const sprite = createGameObject({ name: "组合对象", kind: "Sprite", id: "hybrid" });
-    const hybrid = withFeature(sprite, DEFAULT_SLOT_COMPONENT.map, {
-      image: IMAGE,
-      grid: GRID,
-      rowOrder: "bottom-up" as const,
-      cells: { encoding: "rle" as const, runs: [[0, GRID.width * GRID.height] as [number, number]] },
-    });
-    const scene = mutate(createEmptyScene("Map001"), (draft) => {
-      draft.objects.push(hybrid);
-      expect(setObjectImage(draft, "hybrid", next)).toBe(true);
+    const scene = mutate(withMapObject(makeScene()), (draft) => {
+      expect(setObjectImage(draft, "map-1", next)).toBe(true);
     });
 
-    expect(mapDataOf(scene.objects[0]!)?.image).toEqual(next);
-    expect(imageOf(scene.objects[0]!)).toBeUndefined();
+    expect(objectImage(scene.objects[0]!)).toEqual(next);
+    expect(imageOf(scene.objects[0]!)).toEqual(next);
   });
 
   it("已有组件的行为校验按组件数据，不按 kind 否决", () => {
@@ -871,9 +866,9 @@ describe("对象命令（都在场景上操作）", () => {
   });
 
   it("新建地图对象带着世界坐标（默认原点）——它就是贴图中心", () => {
-    const map = createMapObject({ name: "地图", image: IMAGE, grid: GRID, position: { x: 30, y: -40 } });
+    const map = createGridMapObject({ name: "地图", image: IMAGE, grid: GRID, position: { x: 30, y: -40 } });
     expect(map.position).toEqual({ x: 30, y: -40 });
-    expect(createMapObject({ name: "地图", image: IMAGE, grid: GRID }).position).toEqual({
+    expect(createGridMapObject({ name: "地图", image: IMAGE, grid: GRID }).position).toEqual({
       x: 0,
       y: 0,
     });
@@ -1129,7 +1124,7 @@ describe("战争雾：独立对象（Fog）", () => {
     });
 
     expect(load.file.formatVersion).toBe(DOCUMENT_FORMAT_VERSION);
-    expect(load.file.objects.map((item) => item.kind)).toEqual(["Map", "Fog"]);
+    expect(load.file.objects.map((item) => item.kind)).toEqual(["Image", "Fog"]);
     expect(fogOf(load.file.objects[1]!)).toEqual({
       mapId: "map-1",
       enabled: true,
@@ -1190,56 +1185,73 @@ describe("文档校验", () => {
     // 引用的 id 不存在
     const dangling = withFogObject(withMapObject(makeScene()), "fog-1", "nope");
     expect(hasErrors(validateScene(dangling))).toBe(true);
-    expect(formatIssues(validateScene(dangling))).toMatch(/引用的地图不存在或不是地图/);
+    expect(formatIssues(validateScene(dangling))).toMatch(/引用的对象不存在或没有网格/);
 
-    // 引用一个不是地图的对象
+    // 引用一个不是网格对象的对象
     const notMap = withFogObject(withObject(withMapObject(makeScene()), "door"), "fog-1", "door");
     expect(hasErrors(validateScene(notMap))).toBe(true);
-    expect(formatIssues(validateScene(notMap))).toMatch(/引用的地图不存在或不是地图/);
+    expect(formatIssues(validateScene(notMap))).toMatch(/引用的对象不存在或没有网格/);
 
-    // 一张地图两个雾
+    // 一个网格两个雾
     const duplicate = withFogObject(withFogObject(withMapObject(makeScene()), "fog-1"), "fog-2");
     expect(hasErrors(validateScene(duplicate))).toBe(true);
-    expect(formatIssues(validateScene(duplicate))).toMatch(/这张地图已经有战争雾了/);
+    expect(formatIssues(validateScene(duplicate))).toMatch(/这个网格已经有战争雾了/);
   });
 
-  it("地图对象缺少地图数据时报错", () => {
+  it("网格是可选能力：普通贴图没有网格不报错；加了网格才有网格数据", () => {
     const scene = mutate(makeScene(), (draft) => {
-      addObject(draft, plainObject("broken-map", { name: "坏地图", kind: "Map" }));
+      addObject(draft, plainObject("plain-image", { name: "贴图", kind: "Image" }));
     });
 
-    expect(formatIssues(validateScene(scene))).toMatch(/缺少地图数据/);
+    expect(hasErrors(validateScene(scene))).toBe(false);
+    expect(mapDataOf(scene.objects[0]!)).toBeUndefined();
+
+    const withGrid = mutate(scene, (draft) => {
+      expect(addObjectGridMap(draft, "plain-image")).toBe(true);
+    });
+    expect(mapDataOf(withGrid.objects[0]!)).toEqual({
+      grid: { width: 8, height: 6 },
+      rowOrder: "bottom-up",
+      cells: { encoding: "rle", runs: [[0, 48]] },
+    });
+
+    // 再摘掉：回到普通贴图（没有网格数据）
+    const removed = mutate(withGrid, (draft) => {
+      expect(removeObjectGridMap(draft, "plain-image")).toBe(true);
+    });
+    expect(mapDataOf(removed.objects[0]!)).toBeUndefined();
   });
 
-  it("显式修复缺失的 GridMap：按图片尺寸建空网格并保留未知组件", () => {
+  it("addObjectGridMap：按图片尺寸建空网格并保留未知组件", () => {
     const scene = mutate(makeScene(), (draft) => {
-      addObject(draft, plainObject("broken-map", {
-        name: "坏地图",
-        kind: "Map",
-        components: [{ id: "legacy-unknown", type: "FutureComponent", data: { keep: true } }],
+      addObject(draft, plainObject("grid-image", {
+        name: "网格地图",
+        kind: "Image",
+        components: [
+          {
+            id: "grid-image__ImageLayer",
+            type: "ImageLayer",
+            data: {
+              id: "project:C/Assets/images/repaired.png",
+              guid: "a".repeat(32),
+              width: 420,
+              height: 300,
+              sortingOrder: -10,
+            },
+          },
+          { id: "legacy-unknown", type: "FutureComponent", data: { keep: true } },
+        ],
       }));
     });
-    const repaired = mutate(scene, (draft) => {
-      expect(repairMapObjectComponent(draft, "broken-map", {
-        id: "project:C/Assets/images/repaired.png",
-        guid: "a".repeat(32),
-        width: 420,
-        height: 300,
-      })).toBe(true);
+    const withGrid = mutate(scene, (draft) => {
+      expect(addObjectGridMap(draft, "grid-image")).toBe(true);
     });
 
-    const object = findObject(repaired, "broken-map");
+    const object = findObject(withGrid, "grid-image");
     expect(mapDataOf(object!)).toEqual({
-      image: {
-        id: "project:C/Assets/images/repaired.png",
-        guid: "a".repeat(32),
-        width: 420,
-        height: 300,
-      },
       grid: { width: 14, height: 10 },
       rowOrder: "bottom-up",
       cells: { encoding: "rle", runs: [[0, 140]] },
-      sortingOrder: -10,
     });
     expect(object?.components.find((item) => item.type === "FutureComponent")).toEqual({
       id: "legacy-unknown",
@@ -1248,31 +1260,30 @@ describe("文档校验", () => {
     });
   });
 
-  it("普通 setObjectImage 不会隐式修复缺失地图数据，kind mismatch 也禁止显式修复", () => {
+  it("setObjectImage 不会隐式添加图片层；组件冲突时 addObjectGridMap 也拒绝", () => {
     const scene = mutate(makeScene(), (draft) => {
-      addObject(draft, plainObject("broken-map", { name: "坏地图", kind: "Map" }));
-      addObject(draft, plainObject("mismatched-map", {
-        name: "组件冲突地图",
-        kind: "Map",
-        components: [{ id: "mismatched-map__Teleport", type: "Teleport", data: { targets: [] } }],
+      addObject(draft, plainObject("broken-image", { name: "没图片层", kind: "Image" }));
+      addObject(draft, plainObject("mismatched", {
+        name: "组件冲突",
+        kind: "Image",
+        components: [{ id: "mismatched__Teleport", type: "Teleport", data: { targets: [] } }],
       }));
     });
-    const unchanged = mutate(scene, (draft) => {
-      expect(setObjectImage(draft, "broken-map", IMAGE)).toBe(false);
-      expect(repairMapObjectComponent(draft, "mismatched-map", IMAGE)).toBe(false);
+    mutate(scene, (draft) => {
+      expect(setObjectImage(draft, "broken-image", IMAGE)).toBe(false);
+      expect(addObjectGridMap(draft, "mismatched")).toBe(false);
     });
 
-    expect(mapDataOf(findObject(unchanged, "broken-map")!)).toBeUndefined();
-    expect(mapDataOf(findObject(unchanged, "mismatched-map")!)).toBeUndefined();
+    expect(imageOf(findObject(scene, "broken-image")!)).toBeUndefined();
+    expect(mapDataOf(findObject(scene, "mismatched")!)).toBeUndefined();
   });
 
-  it("非 Map kind 对象挂载 GridMap 时按组件校验地图数据", () => {
-    const scene = mutate(makeScene(), (draft) => {
-      addObject(draft, plainObject("odd", { name: "怪对象" }));
+  it("网格只允许加在贴图上：挂在精灵上按 kind 不一致提示", () => {
+    const onSprite = mutate(makeScene(), (draft) => {
+      addObject(draft, plainObject("odd", { name: "精灵", kind: "Sprite" }));
       const object = findObject(draft, "odd");
       if (object !== undefined) {
         writeFeature(object, DEFAULT_SLOT_COMPONENT.map, {
-          image: IMAGE,
           grid: GRID,
           rowOrder: "bottom-up",
           cells: { encoding: "rle", runs: [[0, GRID.width * GRID.height]] },
@@ -1280,9 +1291,27 @@ describe("文档校验", () => {
       }
     });
 
-    const issues = validateScene(scene);
-    expect(hasErrors(issues)).toBe(false);
-    expect(formatIssues(issues)).not.toMatch(/不应携带地图数据/);
+    // 只是警告（组件仍在、仍按组件生效），不是错误
+    expect(hasErrors(validateScene(onSprite))).toBe(false);
+    expect(formatIssues(validateScene(onSprite))).toMatch(/旧模板不一致/);
+
+    // 贴在贴图上就完全合法
+    const onImage = mutate(makeScene(), (draft) => {
+      addObject(draft, plainObject("grid-image", {
+        name: "网格地图",
+        kind: "Image",
+        components: [
+          {
+            id: "grid-image__ImageLayer",
+            type: "ImageLayer",
+            data: { id: IMAGE.id, width: IMAGE.width, height: IMAGE.height, sortingOrder: -10 },
+          },
+        ],
+      }));
+      addObjectGridMap(draft, "grid-image");
+    });
+    expect(hasErrors(validateScene(onImage))).toBe(false);
+    expect(formatIssues(validateScene(onImage))).not.toMatch(/旧模板不一致/);
   });
 
   it("kind 与显式组件不一致时只提示迁移，不拒绝组件数据", () => {
@@ -1302,21 +1331,25 @@ describe("文档校验", () => {
     });
     expect(supportsObjectComponent(scene.objects[0]!, DEFAULT_SLOT_COMPONENT.teleport)).toBe(true);
     expect(supportsObjectComponent(scene.objects[0]!, DEFAULT_SLOT_COMPONENT.image)).toBe(false);
-    expect(objectImageSlot(scene.objects[0]!)).toBe("image");
     expect(objectSupportsSpriteSheet(scene.objects[0]!)).toBe(false);
   });
 
-  it("Map kind 上存在 GridMap 与 ImageLayer 时由实际组件共同决定能力", () => {
+  it("网格地图上 GridMap 与 ImageLayer 共存：按实际组件共同决定能力", () => {
     const scene = mutate(withMapObject(makeScene()), (draft) => {
       const object = findObject(draft, "map-1");
       if (object !== undefined) {
-        writeFeature(object, DEFAULT_SLOT_COMPONENT.image, IMAGE);
+        writeFeature(object, DEFAULT_SLOT_COMPONENT.image, {
+          id: IMAGE.id,
+          width: IMAGE.width,
+          height: IMAGE.height,
+          sortingOrder: -10,
+        });
       }
     });
 
     const issues = validateScene(scene);
     expect(hasErrors(issues)).toBe(false);
-    expect(formatIssues(issues)).not.toMatch(/写在 map.image/);
+    expect(objectImage(scene.objects[0]!)).toEqual(IMAGE);
   });
 
   it("地图网格格数与网格尺寸不符时报错", () => {
@@ -1430,8 +1463,8 @@ describe("工程文件 schema 与版本迁移", () => {
     expect(loaded.needsRewrite).toBe(true);
     expect(loaded.migratedScenes.map((scene) => scene.name)).toEqual(["Map001", "酒馆"]);
     // 地图数据原样搬进场景（对象仍是场景上的对象），且内存场景没有 id
-    expect(loaded.migratedScenes[0]?.objects.map((object) => object.kind)).toEqual(["Map"]);
-    expect(mapDataOf(loaded.migratedScenes[0]!.objects[0]!)?.image).toEqual(IMAGE);
+    expect(loaded.migratedScenes[0]?.objects.map((object) => object.kind)).toEqual(["Image"]);
+    expect(objectImage(loaded.migratedScenes[0]!.objects[0]!)).toEqual(IMAGE);
     expect("id" in (loaded.migratedScenes[0] ?? {})).toBe(false);
     // 工程文件本身只留项目级数据
     expect("scenes" in loaded.doc).toBe(false);
@@ -1473,9 +1506,9 @@ describe("工程文件 schema 与版本迁移", () => {
 
     const scene = loaded.migratedScenes[0];
     expect(scene?.name).toBe("Map001");
-    // 原来的地图数据被搬到一个 Map 对象上，原有对象保持不动（只有 kind 被 v22 改成具体类型）
-    expect(scene?.objects.map((object) => object.kind)).toEqual(["Map", "Sprite"]);
-    expect(mapDataOf(scene!.objects[0]!)?.image).toEqual(IMAGE);
+    // 原来的地图数据被搬到一个带网格的贴图上，原有对象保持不动（只有 kind 被 v22 改成具体类型）
+    expect(scene?.objects.map((object) => object.kind)).toEqual(["Image", "Sprite"]);
+    expect(objectImage(scene!.objects[0]!)).toEqual(IMAGE);
     expect(scene?.objects[1]?.id).toBe("door");
 
     // 旧名字仍可用：只取项目级数据
@@ -1525,7 +1558,7 @@ describe("场景文件 schema", () => {
     const parsed = parseSceneFile(JSON.parse(JSON.stringify(raw)));
     expect(parsed.needsRewrite).toBe(false);
     expect(parsed.file.formatVersion).toBe(DOCUMENT_FORMAT_VERSION);
-    expect(parsed.file.objects.map((object) => object.kind)).toEqual(["Map"]);
+    expect(parsed.file.objects.map((object) => object.kind)).toEqual(["Image"]);
     expect("name" in parsed.file).toBe(false);
   });
 
@@ -1538,7 +1571,7 @@ describe("场景文件 schema", () => {
 
     const parsed = parseSceneFile(JSON.parse(JSON.stringify(raw)));
     expect(parsed.needsRewrite).toBe(true);
-    expect(parsed.file.objects.map((object) => object.kind)).toEqual(["Map"]);
+    expect(parsed.file.objects.map((object) => object.kind)).toEqual(["Image"]);
   });
 
   it("v4 场景文件：归一化位置按场景尺寸换算成世界坐标（y 翻转）", () => {
@@ -1849,8 +1882,8 @@ describe("场景文件 schema", () => {
       objects: [
         {
           id: "map-1",
-          name: "地图",
-          kind: "Map",
+          name: "网格地图",
+          kind: "Image",
           active: true,
           locked: false,
           position: { x: 0, y: 0 },
@@ -1858,14 +1891,18 @@ describe("场景文件 schema", () => {
           scale: 1,
           components: [
             {
+              id: "map-1__ImageLayer",
+              type: "ImageLayer",
+              data: { ...IMAGE, sortingOrder: -10 },
+              actions: [],
+            },
+            {
               id: "map-1__GridMap",
               type: "GridMap",
               data: {
-                image: IMAGE,
                 grid: GRID,
                 rowOrder: "bottom-up",
                 cells: { encoding: "rle", runs: [[0, GRID.width * GRID.height]] },
-                sortingOrder: -10,
               },
               actions: [],
             },
@@ -1971,9 +2008,9 @@ describe("场景文件 schema", () => {
         {
           ...object,
           active: false,
-          // v26 起显示顺序住在渲染组件里：改那个组件数据，而不是对象自己
+          // v26 起显示顺序住在渲染组件（v28 起一律是图片层）里：改那个组件数据，而不是对象自己
           components: object.components.map((component) =>
-            component.type === "GridMap"
+            component.type === "ImageLayer"
               ? { ...component, data: { ...component.data, sortingOrder: 42 } }
               : component,
           ),
@@ -1984,19 +2021,32 @@ describe("场景文件 schema", () => {
     const parsed = parseSceneFile(raw);
     expect(parsed.needsRewrite).toBe(false);
     expect(parsed.file.objects[0]?.active).toBe(false);
-    expect(mapDataOf(parsed.file.objects[0]!)?.sortingOrder).toBe(42);
+    expect(sortingOrderOf(parsed.file.objects[0]!)).toBe(42);
   });
 
-  it("当前版本：没有位置的地图补成世界原点，并要求回写一次", () => {
-    const scene = withMapObject(createEmptyScene("Map001"));
+  it("老地图（kind Map）没有位置时补成世界原点，并要求回写一次", () => {
+    // `filled` 跑在 `renameObjectKinds` 前面：那时 kind 还是老的 `Map`，于是按「地图补原点」处理，
+    // 随后才落成 `Image`（v28）
     const raw = {
       formatVersion: DOCUMENT_FORMAT_VERSION,
-      objects: [{ ...scene.objects[0], position: null }],
+      objects: [
+        {
+          id: "map-1",
+          name: "地图",
+          kind: "Map",
+          active: true,
+          locked: false,
+          rotation: 0,
+          scale: 1,
+          components: [],
+        },
+      ],
     };
 
     const parsed = parseSceneFile(raw);
     expect(parsed.needsRewrite).toBe(true);
     expect(parsed.file.objects[0]?.position).toEqual({ x: 0, y: 0 });
+    expect(parsed.file.objects[0]?.kind).toBe("Image");
   });
 
   it("当前版本：地图本来就有位置时不动它，也不要求回写", () => {
@@ -2087,7 +2137,7 @@ describe("场景文件 schema", () => {
 
   it("拒绝非 bottom-up 行序（避免坐标约定被悄悄改掉）", () => {
     // 行序住在 GridMap 组件的 data 里（v19）：写错值时必须直接读不开
-    const map = createMapObject({ id: "m1", name: "地图", image: IMAGE, grid: GRID });
+    const map = createGridMapObject({ id: "m1", name: "地图", image: IMAGE, grid: GRID });
     const raw = {
       formatVersion: DOCUMENT_FORMAT_VERSION,
       objects: [

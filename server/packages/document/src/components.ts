@@ -55,17 +55,19 @@ export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
   // 并由 presets.test.ts 保证创建模板与 templateKinds 一致。
   // `legacyField` 记着 v19 之前它住在对象的哪个扁平字段里。
   {
+    // 网格（v28 起是贴图上的**可选能力**，像「视频」）：加在贴图上 = 网格地图，可移除。
+    // 纯数据 + 网格编辑窗口，没有任何渲染实体（贴图本身由 `ImageLayer` 渲染）。
     type: "GridMap",
     displayName: "网格地图",
     gmEditable: true,
     slot: "map",
     legacyField: "map",
-    templateKinds: ["Map"],
-    repairKinds: ["Map"],
-    tooltip: "贴图 + 网格数据（列 / 行 / 行序 / 格子 RLE / 战争雾）；只有地图对象携带",
+    templateKinds: ["Image"],
+    optionalKinds: ["Image"],
+    tooltip: "网格数据（列 / 行 / 行序 / 格子 RLE）；加在贴图上 = 网格地图，可移除",
   },
   {
-    // 战争雾（v27 起是独立场景对象 `Fog` 的数据本体）：引用一张地图（雾区取自它的格子区域位）
+    // 战争雾（v27 起是独立场景对象 `Fog` 的数据本体）：引用一张带网格的贴图（雾区取自它的格子区域位）
     // + 总开关 + 雾区。zod schema 见 `schema.ts` 的 `mapFogSchema`。
     type: "FogOfWar",
     displayName: "战争雾",
@@ -73,7 +75,7 @@ export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
     slot: "fog",
     templateKinds: ["Fog"],
     repairKinds: ["Fog"],
-    tooltip: "引用哪张地图 + 总开关 + 把哪些「区域」当成雾区；只有战争雾对象携带，一张地图最多一个",
+    tooltip: "引用哪张贴图 + 总开关 + 把哪些「区域」当成雾区；只有战争雾对象携带，一张贴图最多一个",
   },
   {
     // 贴图对象的图片组件（精灵的那一份是下面的 `SpriteLayer`，两者共用同一份 `ImageRef` 形状）
@@ -82,9 +84,9 @@ export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
     gmEditable: true,
     slot: "image",
     legacyField: "image",
-    templateKinds: ["Map", "Image", "Player", "Item", "Event"],
+    templateKinds: ["Image", "Player", "Item", "Event"],
     repairKinds: ["Image", "Player", "Item", "Event"],
-    tooltip: "对象自己要显示的图片，整张铺在对象矩形上（贴图对象用它；地图的贴图在 GridMap 里）",
+    tooltip: "对象自己要显示的图片，整张铺在对象矩形上（贴图对象与带网格的贴图都用它）",
   },
   {
     // 精灵对象的图片组件：与 `ImageLayer` 同一份数据，差别是它**会取图集里的一格**
@@ -125,8 +127,8 @@ export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
     gmEditable: true,
     slot: "video",
     legacyField: "video",
-    templateKinds: ["Map", "Image"],
-    optionalKinds: ["Map", "Image"],
+    templateKinds: ["Image"],
+    optionalKinds: ["Image"],
     tooltip: "视频列表 + 选中的那条 + 循环 / 声音两个开关；画面盖在对象自己的矩形上",
   },
 ];

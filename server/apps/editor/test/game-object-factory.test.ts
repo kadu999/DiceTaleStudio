@@ -1,13 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   OBJECT_KINDS,
+  imageOf,
   mapDataOf,
   soundDataOf,
   teleportDataOf,
   type ObjectKind,
 } from "@dts/document";
 import { DEFAULT_MAP_IMAGE } from "../src/state/store-core";
-import { createGameObjectForKind } from "../src/state/game-object-factory";
+import { createEditorGridMapObject, createGameObjectForKind } from "../src/state/game-object-factory";
 
 const input = {
   project: "测试项目",
@@ -26,15 +27,20 @@ describe("场景对象工厂", () => {
     }
   });
 
-  it("地图工厂按场景图片约定生成地图贴图与网格", () => {
-    const object = createGameObjectForKind("Map", input);
-    const map = mapDataOf(object);
+  it("网格地图工厂按场景图片约定生成贴图与网格（v28：贴图在图片层）", () => {
+    const object = createEditorGridMapObject({
+      project: input.project,
+      sceneName: input.sceneName,
+      name: input.name,
+      position: input.position,
+    });
 
-    expect(map?.image).toEqual({
+    expect(object.kind).toBe("Image");
+    expect(imageOf(object)).toEqual({
       id: "project:测试项目/Assets/images/场景1.png",
       ...DEFAULT_MAP_IMAGE,
     });
-    expect(map?.grid).toEqual({ width: 64, height: 36 });
+    expect(mapDataOf(object)?.grid).toEqual({ width: 64, height: 36 });
   });
 
   it.each(["PlaySound", "Teleport"] as const)("%s 工厂保留专属组件", (kind: ObjectKind) => {

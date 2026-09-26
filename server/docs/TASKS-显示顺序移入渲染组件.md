@@ -40,7 +40,7 @@
 - `commands/object.ts` 的 `objectsInDrawOrder` 改用 `sortingOrderOf`。
 - **object-spec.ts**：`OBJECT_SPEC.fields` 清空（机制保留给下一个无专属语义的标量字段），
   类注释更新；`setObjectField` 对 sortingOrder 随之不再接（测试改）。
-- **factory.ts**：`createMapObject` 的对象级 `sortingOrder: -10` 挪进 GridMap data
+- **factory.ts**：`createGridMapObject` 的对象级 `sortingOrder: -10` 挪进 GridMap data
   （`MAP_DEFAULT_SORTING_ORDER` 不变）；声音 / 传送阵工厂直接删这个字段。
 - `DEFAULT_SORTING_ORDER`（0）语义变为「缺省」，仍留在 shared.ts（新建无渲染层对象不再写它）。
 

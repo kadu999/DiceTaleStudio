@@ -86,14 +86,21 @@ namespace DiceTale
         /// 两条命令 `erase_mask` / `reveal_fog_region` 的 `objectId` 从此是**雾对象 id**（不再是地图 id）。
         /// 老前端（v14）眼里「雾设置」整个消失（没开雾），雾层不工作，属于「行为丢」，所以照旧 +1；
         /// 这类不兼容由握手 close `4002` 挡住，别指望老前端自己看出来。
+        ///
+        /// v16（2026-09-26）：**取消 `Map` 对象类型，网格变成贴图上的可选组件**。`GridMap` 的 data
+        /// 去掉 `image` 与 `sortingOrder`，只剩 `grid` / `rowOrder` / `cells`；贴图 + 显示顺序改由
+        /// 对象自己的 **`ImageLayer`** 组件承载（`kind` 是 `Image`）。老前端（v15）按 `map.image`
+        /// 取图 → 取不到，地图对象会退成占位色（不是崩，是画面错），照旧 +1；
+        /// 这类不兼容由握手 close `4002` 挡住。
         /// </summary>
-        public const int Version = 15;
+        public const int Version = 16;
 
         /// <summary>对象特性组件的类型名（v9 起）。与服务端 `@dts/protocol` 的 `COMPONENT_TYPE` 逐字一致。</summary>
         public static class ComponentType
         {
+            /// <summary>网格（v16 起是贴图上的**可选组件**，纯数据；贴图在 `ImageLayer` 里）。</summary>
             public const string Map = "GridMap";
-            /// <summary>「显示一张图」：**贴图对象**用它（`kind: "Image"`），整张铺满。</summary>
+            /// <summary>「显示一张图」：**贴图对象**与**带网格的贴图**都用它，整张铺满。</summary>
             public const string Image = "ImageLayer";
             /// <summary>「显示一张图」：**精灵对象**用它（`kind: "Sprite"`），会取图集里的一格。</summary>
             public const string Sprite = "SpriteLayer";

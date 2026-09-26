@@ -12,7 +12,6 @@ import {
   carriesComponent,
   componentForSlot,
   createGameObject,
-  displayImageField,
   featureComponent,
   isAbstractKind,
   parseSceneFile,
@@ -29,7 +28,8 @@ import {
  * 1. **`OBJECT_PRESETS` 与 `OBJECT_KINDS` 一一对应**——文档 schema 的枚举就是
  *    `OBJECT_KINDS`，加一个预设只动 `presets.ts`；
  * 2. **槽位路由直接写在每个预设上**：Sprite 的 image 槽位是 `SpriteLayer`，
- *    其余可贴图预设是 `ImageLayer`（原 `componentsByKind` 按 kind 路由）；
+ *    其余可贴图预设是 `ImageLayer`；`Image` 还声明了 `map`（网格）与 `video` 两个**可选**槽位
+ *    （v28 起网格就是「贴图 + `GridMap` 组件」，不是独立类型）；
  * 3. **抽象基类不落进文档**：`CONCRETE_KINDS` 里没有它，手写文件写了会被迁移改成 Sprite。
  */
 describe("对象预设表（presets.ts）", () => {
@@ -47,8 +47,9 @@ describe("对象预设表（presets.ts）", () => {
       expect(OBJECT_PRESETS[kind].slots.image, kind).toBe("ImageLayer");
     }
 
-    // map / sound / teleport 各归一个预设
-    expect(OBJECT_PRESETS.Map.slots.map).toBe("GridMap");
+    // 网格与视频是贴图上的两个可选槽位；sound / teleport 各归一个预设
+    expect(OBJECT_PRESETS.Image.slots.map).toBe("GridMap");
+    expect(OBJECT_PRESETS.Image.slots.video).toBe("VideoOverlay");
     expect(OBJECT_PRESETS.PlaySound.slots.sound).toBe("PlaySound");
     expect(OBJECT_PRESETS.Teleport.slots.teleport).toBe("Teleport");
   });
@@ -58,10 +59,7 @@ describe("对象预设表（presets.ts）", () => {
       for (const component of Object.values(preset.slots)) {
         const definition = COMPONENT_TYPES.find((item) => item.type === component);
         expect(definition?.templateKinds, `${preset.kind}.${component}`).toContain(preset.kind);
-        if (
-          definition?.optionalKinds?.includes(preset.kind) !== true &&
-          !(component === DEFAULT_SLOT_COMPONENT.image && preset.kind === "Map")
-        ) {
+        if (definition?.optionalKinds?.includes(preset.kind) !== true) {
           expect(definition?.repairKinds, `${preset.kind}.${component}`).toContain(preset.kind);
         }
       }
@@ -75,9 +73,7 @@ describe("对象预设表（presets.ts）", () => {
 
       const optionalKinds = definition.optionalKinds ?? [];
       const repairKinds = definition.repairKinds ?? [];
-      const repairableKinds = presetKinds.filter(
-        (kind) => !optionalKinds.includes(kind) && !(definition.type === DEFAULT_SLOT_COMPONENT.image && kind === "Map"),
-      );
+      const repairableKinds = presetKinds.filter((kind) => !optionalKinds.includes(kind));
       expect([...repairKinds].sort(), `${definition.type} repair`).toEqual(repairableKinds.sort());
       expect(optionalKinds.every((kind) => presetKinds.includes(kind)), `${definition.type} optional`).toBe(true);
       expect(repairKinds.every((kind) => presetKinds.includes(kind)), `${definition.type} repairable`).toBe(true);
@@ -85,26 +81,27 @@ describe("对象预设表（presets.ts）", () => {
     }
   });
 
-  it("VideoOverlay 是地图与贴图可显式添加的可选组件", () => {
+  it("VideoOverlay 是贴图可显式添加的可选组件（v28 起只有贴图）", () => {
     const video = COMPONENT_TYPES.find((item) => item.type === DEFAULT_SLOT_COMPONENT.video);
-    expect(video?.templateKinds).toEqual(["Map", "Image"]);
-    expect(video?.optionalKinds).toEqual(["Map", "Image"]);
+    expect(video?.templateKinds).toEqual(["Image"]);
+    expect(video?.optionalKinds).toEqual(["Image"]);
 
-    const map = createGameObject({ id: "map", name: "地图", kind: "Map" });
     const image = createGameObject({ id: "image", name: "贴图", kind: "Image" });
     const sprite = createGameObject({ id: "sprite", name: "精灵", kind: "Sprite" });
-    expect(canAddOptionalObjectComponent(map, DEFAULT_SLOT_COMPONENT.video)).toBe(true);
     expect(canAddOptionalObjectComponent(image, DEFAULT_SLOT_COMPONENT.video)).toBe(true);
     expect(canAddOptionalObjectComponent(sprite, DEFAULT_SLOT_COMPONENT.video)).toBe(false);
   });
 
-  it("GridMap 缺失时只提供显式修复，不允许普通写入补建", () => {
+  it("GridMap 是贴图上的可选组件：能加、没有「缺失修复」一说", () => {
     const definition = COMPONENT_TYPES.find((item) => item.type === DEFAULT_SLOT_COMPONENT.map);
-    expect(definition?.repairKinds).toEqual(["Map"]);
+    expect(definition?.optionalKinds).toEqual(["Image"]);
+    expect(definition?.repairKinds).toBeUndefined();
 
-    const object = createGameObject({ id: "map", name: "坏地图", kind: "Map" });
-    expect(canRepairObjectComponent(object, DEFAULT_SLOT_COMPONENT.map)).toBe(true);
-    expect(canRepairObjectComponent(object, DEFAULT_SLOT_COMPONENT.image)).toBe(false);
+    const image = createGameObject({ id: "image", name: "贴图", kind: "Image" });
+    const sprite = createGameObject({ id: "sprite", name: "精灵", kind: "Sprite" });
+    expect(canAddOptionalObjectComponent(image, DEFAULT_SLOT_COMPONENT.map)).toBe(true);
+    expect(canAddOptionalObjectComponent(sprite, DEFAULT_SLOT_COMPONENT.map)).toBe(false);
+    expect(canRepairObjectComponent(image, DEFAULT_SLOT_COMPONENT.map)).toBe(false);
   });
 
   it("ImageLayer 与 SpriteLayer 只允许按对象模板显式添加", () => {
@@ -119,14 +116,15 @@ describe("对象预设表（presets.ts）", () => {
   });
 
   it("组件 kind mismatch 时，不会以可选准入或显式修复补建缺失组件", () => {
-    const map = createGameObject({ id: "map", name: "地图", kind: "Map" });
+    const image = createGameObject({ id: "image", name: "贴图", kind: "Image" });
     const mismatched = {
-      ...map,
-      components: [featureComponent(map.id, DEFAULT_SLOT_COMPONENT.teleport, { targets: [] })],
+      ...image,
+      components: [featureComponent(image.id, DEFAULT_SLOT_COMPONENT.teleport, { targets: [] })],
     };
 
+    expect(canAddOptionalObjectComponent(mismatched, DEFAULT_SLOT_COMPONENT.map)).toBe(false);
     expect(canAddOptionalObjectComponent(mismatched, DEFAULT_SLOT_COMPONENT.video)).toBe(false);
-    expect(canRepairObjectComponent(mismatched, DEFAULT_SLOT_COMPONENT.map)).toBe(false);
+    expect(canRepairObjectComponent(mismatched, DEFAULT_SLOT_COMPONENT.image)).toBe(false);
   });
 
   it("kind mismatch 不会再为缺失组件提供视频或子图 fallback", () => {
@@ -140,8 +138,7 @@ describe("对象预设表（presets.ts）", () => {
     expect(supportsSpriteSheet(object)).toBe(false);
   });
 
-  it("video 槽位只给地图与贴图（精灵刻意不给）", () => {
-    expect(OBJECT_PRESETS.Map.slots.video).toBe("VideoOverlay");
+  it("video 槽位只给贴图（精灵刻意不给）", () => {
     expect(OBJECT_PRESETS.Image.slots.video).toBe("VideoOverlay");
     expect(OBJECT_PRESETS.Sprite.slots.video).toBeUndefined();
     expect(OBJECT_PRESETS.Player.slots.video).toBeUndefined();
@@ -162,7 +159,6 @@ describe("对象预设表（presets.ts）", () => {
     for (const kind of [
       "Sprite",
       "Image",
-      "Map",
       "Player",
       "Item",
       "Event",
@@ -181,8 +177,8 @@ describe("对象预设表（presets.ts）", () => {
     expect(componentForSlot("image", "Player")).toBe(DEFAULT_SLOT_COMPONENT.image);
     // 抽象基类没有槽位表 → 缺省承载（与旧 `componentForKind` 同一个兜底）
     expect(componentForSlot("image", "GameObject")).toBe(DEFAULT_SLOT_COMPONENT.image);
-    // 预设没写 image 槽位的（地图 / 声音 / …）也落缺省承载
-    expect(componentForSlot("image", "Map")).toBe(DEFAULT_SLOT_COMPONENT.image);
+    // 预设没写 image 槽位的（战争雾 / 声音 / …）也落缺省承载
+    expect(componentForSlot("image", "Fog")).toBe(DEFAULT_SLOT_COMPONENT.image);
     expect(componentForSlot("sound", "Sprite")).toBe(DEFAULT_SLOT_COMPONENT.sound);
     // 认不出的 kind 同样落缺省承载，不替它猜
     expect(componentForSlot("image", "Portal" as ObjectKind)).toBe(DEFAULT_SLOT_COMPONENT.image);
@@ -192,7 +188,8 @@ describe("对象预设表（presets.ts）", () => {
     expect(carriesComponent("SpriteLayer", "Sprite")).toBe(true);
     expect(carriesComponent("ImageLayer", "Sprite")).toBe(false);
     expect(carriesComponent("ImageLayer", "Image")).toBe(true);
-    expect(carriesComponent("GridMap", "Map")).toBe(true);
+    // 网格是贴图的可选槽位 → 算「这个 kind 能承载它」
+    expect(carriesComponent("GridMap", "Image")).toBe(true);
     expect(carriesComponent("PlaySound", "PlaySound")).toBe(true);
     // 抽象基类与认不出的 kind 都是空槽位表 → false（与旧 `carriesKind` 一致）
     expect(carriesComponent("ImageLayer", "GameObject")).toBe(false);
@@ -204,19 +201,10 @@ describe("对象预设表（presets.ts）", () => {
     expect(supportsSpriteSheet("Image")).toBe(false);
     // 基类本身没有子图能力（它没有 image 槽位）
     expect(supportsSpriteSheet("GameObject")).toBe(false);
-    expect(supportsSpriteSheet("Map")).toBe(false);
 
     expect(supportsVideo("Image")).toBe(true);
-    expect(supportsVideo("Map")).toBe(true);
     expect(supportsVideo("Sprite")).toBe(false);
     expect(supportsVideo("GameObject")).toBe(false);
-  });
-
-  it("displayImageField：地图类取 map 槽位，其余对象取 image", () => {
-    expect(displayImageField("Map")).toBe("map");
-    for (const kind of ["Sprite", "Image", "Player", "Item", "Event", "PlaySound", "Teleport"] as const) {
-      expect(displayImageField(kind), kind).toBe("image");
-    }
   });
 
   it("文档 schema 的枚举就是 OBJECT_KINDS：每个值都读得开，表外的值仍然被挡住", () => {
@@ -226,9 +214,9 @@ describe("对象预设表（presets.ts）", () => {
       kind,
       active: true,
       locked: false,
-      // 地图没有位置时迁移会补上世界原点（另一条既有规矩），这里给它一个位置，
+      // 没有位置的对象迁移会补上世界原点（另一条既有规矩），这里给一个位置，
       // 于是「要不要回写」这一个断言只反映 kind 改名这一件事
-      position: kind === "Map" ? { x: 0, y: 0 } : null,
+      position: { x: 0, y: 0 },
       rotation: 0,
       scale: 1,
       components: [],

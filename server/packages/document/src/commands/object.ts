@@ -2,7 +2,7 @@
 import type { Draft } from "immer";
 import { gridSizeFromImage } from "@dts/grid";
 // 特性的读写一律走访问器（「数据存在哪个组件里」只有 access.ts 知道）
-import { canRepairObjectComponent, componentTypeForObjectSlot, imageLayerDataOf, mapDataOf, objectImage, objectImageSlot, objectSupportsSpriteSheet, sortingOrderOf, writeFeature } from "../access";
+import { canAddOptionalObjectComponent, canRepairObjectComponent, componentTypeForObjectSlot, imageLayerDataOf, mapDataOf, objectImage, objectSupportsSpriteSheet, removeFeature, sortingOrderOf, writeFeature } from "../access";
 import { componentForSlot, DEFAULT_SLOT_COMPONENT, DEFAULT_SOUND_LAYER, SPRITE_COMPONENT } from "../presets";
 import { DEFAULT_OBJECT_SCALE, clampObjectScale, collapseScale } from "../scale";
 import {
@@ -23,6 +23,12 @@ import type {
 
 // ---------------------------------------------------------------- 对象
 
+/**
+ * 还没挑图时给网格的**兜底规格**（8×6）：加网格那一刻没有图可推尺寸时用它，
+ * 用户随后在「网格地图」组里改列 / 行。与编辑器「新建网格地图」的默认图比例一致。
+ */
+const FALLBACK_GRID = { width: 8, height: 6 } as const;
+
 export interface CreateObjectInput {
   readonly name: string;
   readonly kind?: ObjectKind;
@@ -31,7 +37,7 @@ export interface CreateObjectInput {
 }
 
 /**
- * 新建普通对象（地图对象请用工厂的 `createMapObject`，它要带地图数据）。
+ * 新建普通对象（「网格地图」请用工厂的 `createGridMapObject`，它是贴图 + 网格组件）。
  *
  * 缺省 `kind` 是**精灵** `Sprite`：`GameObject` 是抽象基类（不落进文档），
  * 而「一个还没细看的场景对象」最接近的就是它——能挂一张图、能取图集里的一格。
@@ -74,30 +80,37 @@ export function repairObjectComponent(
   return true;
 }
 
-/** Explicitly restore a missing map component from the image selected by the user. */
-export function repairMapObjectComponent(
-  scene: Draft<SceneDoc>,
-  objectId: string,
-  image: ImageRef,
-): boolean {
+/**
+ * 给贴图**加上网格**（v28：网格是可选能力）——加完它就是「网格地图」。
+ *
+ * 网格规格按对象当前那张图的尺寸推（`gridSizeFromImage`，与新建网格地图同一套）；
+ * 还没挑图时用 `FALLBACK_GRID`（与文档里手写空网格同一口径）。已经带网格 / 这个 kind
+ * 不允许加（只有贴图允许）时返回 `false`。
+ */
+export function addObjectGridMap(scene: Draft<SceneDoc>, objectId: string): boolean {
   const object = findObject(scene, objectId);
-  if (object === undefined || !canRepairObjectComponent(object, DEFAULT_SLOT_COMPONENT.map)) return false;
+  if (object === undefined || !canAddOptionalObjectComponent(object, DEFAULT_SLOT_COMPONENT.map)) {
+    return false;
+  }
 
-  const grid = gridSizeFromImage(image);
+  const image = objectImage(object);
+  const grid = image === undefined ? FALLBACK_GRID : gridSizeFromImage(image);
   writeFeature(object, DEFAULT_SLOT_COMPONENT.map, {
-    image: {
-      id: image.id,
-      width: image.width,
-      height: image.height,
-      ...(image.guid === undefined ? {} : { guid: image.guid }),
-    },
     grid,
     rowOrder: "bottom-up",
     cells: { encoding: "rle", runs: [[0, grid.width * grid.height]] },
-    // 修复出来的地图组件补上默认显示顺序（v26 起它住在渲染组件里，地图垫底）
-    sortingOrder: MAP_DEFAULT_SORTING_ORDER,
   });
   return true;
+}
+
+/** 把贴图上的**网格摘掉**（对象回到普通贴图）。没有网格时返回 `false`。 */
+export function removeObjectGridMap(scene: Draft<SceneDoc>, objectId: string): boolean {
+  const object = findObject(scene, objectId);
+  if (object === undefined || mapDataOf(object) === undefined) {
+    return false;
+  }
+
+  return removeFeature(object, DEFAULT_SLOT_COMPONENT.map);
 }
 
 /** Explicitly attach a missing image renderer to an empty object from its selected image. */
@@ -109,7 +122,6 @@ export function repairImageObjectComponent(
   const object = findObject(scene, objectId);
   if (object === undefined) return false;
 
-  if (objectImageSlot(object) === "map") return false;
   const component = componentForSlot("image", object.kind);
   if (!canRepairObjectComponent(object, component)) return false;
 
@@ -122,10 +134,12 @@ export function repairImageObjectComponent(
     },
     component === SPRITE_COMPONENT ? image.sprite : undefined,
   );
-  // 修复出来的图片层补上显示顺序（v26 起它住在渲染组件里；对象原本没有就按缺省 0）
+  // 修复出来的图片层补上显示顺序（v26 起它住在渲染组件里）：带网格的贴图垫底、其余缺省 0
+  const fallback =
+    mapDataOf(object) !== undefined ? MAP_DEFAULT_SORTING_ORDER : DEFAULT_SORTING_ORDER;
   writeFeature(object, component, {
     ...next,
-    sortingOrder: imageLayerDataOf(object)?.sortingOrder ?? DEFAULT_SORTING_ORDER,
+    sortingOrder: imageLayerDataOf(object)?.sortingOrder ?? fallback,
   });
   return true;
 }
@@ -236,12 +250,9 @@ export function setObjectActive(
  * 取整并夹在 `±SORTING_ORDER_LIMIT` 内：顺序只是个层号，允许输入框里敲出小数 / 极大值，
  * 但落到文档里必须是规规矩矩的整数。
  *
- * 按「先地图、后图片层」路由到承载它的那个渲染组件（`GridMap` 的 data / 图片层的 data）；
- * **没有渲染层就返回 `false`**——没渲染层 = 没这个参数（动作对象、还没挑图的实体）。
- * `NaN` / `Infinity` 同样拒绝、不写文档。
- *
- * 刻意**不走** `setComponentField` 泛型路：GridMap / 图片层还没搬进组件规格注册表，
- * 且一条命令要按槽位路由到两个不同组件，泛型写入表达不了。
+ * 写在**图片层**（`ImageLayer` / `SpriteLayer`）的 data 里；v28 起带网格的贴图也在图片层，
+ * 所以不再有「先看地图」的分支。**没有图片层就返回 `false`**——没渲染层 = 没这个参数
+ * （动作对象、还没挑图的实体）。`NaN` / `Infinity` 同样拒绝、不写文档。
  */
 export function setRenderSortingOrder(
   scene: Draft<SceneDoc>,
@@ -261,21 +272,6 @@ export function setRenderSortingOrder(
     SORTING_ORDER_LIMIT,
     Math.max(-SORTING_ORDER_LIMIT, Math.round(sortingOrder)),
   );
-
-  const map = mapDataOf(object);
-  if (map !== undefined) {
-    if (map.sortingOrder === value) {
-      return false;
-    }
-
-    const component = componentTypeForObjectSlot(object, "map");
-    if (component === undefined) {
-      return false;
-    }
-
-    writeFeature(object, component, { ...map, sortingOrder: value });
-    return true;
-  }
 
   const image = imageLayerDataOf(object);
   if (image === undefined) {
@@ -460,25 +456,14 @@ export function setObjectImage(
     },
     sprite,
   );
-  if (objectImageSlot(object) === "map") {
-    const map = mapDataOf(object);
-    if (map === undefined) {
-      return false;
-    }
-
-    // 地图的贴图住在它自己的地图数据里：整份写回（组件实例不变，只换 data）
-    const mapComponent = componentTypeForObjectSlot(object, "map");
-    if (mapComponent === undefined) return false;
-    writeFeature(object, mapComponent, { ...map, image: next });
-  } else {
-    const imageComponent = componentTypeForObjectSlot(object, "image");
-    if (imageComponent === undefined) return false;
-    // 显示顺序属于渲染组件数据（v26），换图是整份替换——必须展开带上，否则会被抹掉
-    writeFeature(object, imageComponent, {
-      ...next,
-      sortingOrder: imageLayerDataOf(object)?.sortingOrder ?? DEFAULT_SORTING_ORDER,
-    });
-  }
+  const imageComponent = componentTypeForObjectSlot(object, "image");
+  if (imageComponent === undefined) return false;
+  // 显示顺序属于渲染组件数据（v26），换图是整份替换——必须展开带上，否则会被抹掉。
+  // v28 起带网格的贴图的图也在图片层，所以不再有「写进 map.image」的分支。
+  writeFeature(object, imageComponent, {
+    ...next,
+    sortingOrder: imageLayerDataOf(object)?.sortingOrder ?? DEFAULT_SORTING_ORDER,
+  });
 
   return true;
 }

@@ -28,12 +28,16 @@ namespace DiceTale.Tests
                 "{\"id\":\"image\",\"kind\":\"PlaySound\",\"components\":[" +
                 "{\"type\":\"ImageLayer\",\"data\":{\"id\":\"asset.png\",\"width\":32,\"height\":16}}]}");
             var map = ParseObject(
-                "{\"id\":\"map\",\"kind\":\"Sprite\",\"components\":[" +
-                "{\"type\":\"GridMap\",\"data\":{\"image\":{\"id\":\"map.png\",\"width\":64,\"height\":32}}}]}");
+                "{\"id\":\"map\",\"kind\":\"Image\",\"components\":[" +
+                "{\"type\":\"ImageLayer\",\"data\":{\"id\":\"map.png\",\"width\":64,\"height\":32}}," +
+                "{\"type\":\"GridMap\",\"data\":{\"grid\":{\"width\":8,\"height\":6},\"rowOrder\":\"bottom-up\"," +
+                "\"cells\":{\"encoding\":\"rle\",\"runs\":[[0,48]]}}}]}");
 
             Assert.That(image.image, Is.Not.Null);
             Assert.That(image.image.width, Is.EqualTo(32));
             Assert.That(map.map, Is.Not.Null);
+            Assert.That(map.map.gridWidth, Is.EqualTo(8));
+            Assert.That(map.image, Is.Not.Null);
             Assert.That(SceneObjectView.NeedsView(image), Is.True);
             Assert.That(SceneObjectView.NeedsView(map), Is.True);
         }
@@ -129,11 +133,11 @@ namespace DiceTale.Tests
         [Test]
         public void MissingFogOfWarComponentMeansNoFog()
         {
-            // 没有 `FogOfWar` 组件 = 没开战争雾；地图数据里那个老 `fog` 字段（v13 前）一律忽略
+            // 没有 `FogOfWar` 组件 = 没开战争雾；网格数据里那个老 `fog` 字段（v13 前）一律忽略
             var obj = ParseObject(
-                "{\"id\":\"map\",\"kind\":\"Map\",\"components\":[" +
-                "{\"type\":\"GridMap\",\"data\":{\"image\":{\"id\":\"map.png\",\"width\":64,\"height\":32}," +
-                "\"fog\":{\"enabled\":true,\"regions\":[1]}}}]}");
+                "{\"id\":\"map\",\"kind\":\"Image\",\"components\":[" +
+                "{\"type\":\"GridMap\",\"data\":{\"grid\":{\"width\":8,\"height\":6},\"rowOrder\":\"bottom-up\"," +
+                "\"cells\":{\"encoding\":\"rle\",\"runs\":[[0,48]]},\"fog\":{\"enabled\":true,\"regions\":[1]}}}]}");
 
             Assert.That(obj.map, Is.Not.Null);
             Assert.That(obj.fog, Is.Null);
@@ -143,12 +147,13 @@ namespace DiceTale.Tests
         [Test]
         public void SortingOrderComesFromRenderComponents()
         {
-            // v14 起显示顺序住在渲染组件的数据里（对象级那一项没了）：地图 → 图片层 → 精灵层，
-            // 没有渲染层的对象兜底 0
+            // v14 起显示顺序住在渲染组件的数据里（对象级那一项没了）：一律取图片层（v16 起带网格的贴图也一样），
+            // 没有图片层的对象兜底 0
             var map = ParseObject(
-                "{\"id\":\"map\",\"kind\":\"Map\",\"components\":[" +
-                "{\"type\":\"GridMap\",\"data\":{\"image\":{\"id\":\"map.png\",\"width\":64,\"height\":32}," +
-                "\"sortingOrder\":-10}}]}");
+                "{\"id\":\"map\",\"kind\":\"Image\",\"components\":[" +
+                "{\"type\":\"ImageLayer\",\"data\":{\"id\":\"map.png\",\"width\":64,\"height\":32,\"sortingOrder\":-10}}," +
+                "{\"type\":\"GridMap\",\"data\":{\"grid\":{\"width\":8,\"height\":6},\"rowOrder\":\"bottom-up\"," +
+                "\"cells\":{\"encoding\":\"rle\",\"runs\":[[0,48]]}}}]}");
             var image = ParseObject(
                 "{\"id\":\"image\",\"kind\":\"Image\",\"components\":[" +
                 "{\"type\":\"ImageLayer\",\"data\":{\"id\":\"a.png\",\"width\":32,\"height\":16,\"sortingOrder\":7}}]}");
@@ -198,14 +203,14 @@ namespace DiceTale.Tests
                 // v15：被引用地图的数据由调用方（SceneObjectView）解析好后直接传进来
                 var map = new MirrorMap { gridWidth = 2, gridHeight = 2, cells = new int[4] };
 
-                fog.Apply(map, new MirrorFog { enabled = true, regions = new[] { 1 } }, 1f, 1f, 0.01f);
+                fog.Apply(map, null, new MirrorFog { enabled = true, regions = new[] { 1 } }, 1f, 1f, 0.01f);
 
                 var overlay = go.transform.Find("FogOverlay");
                 Assert.That(overlay, Is.Not.Null);
                 Assert.That(overlay.GetComponent<ImageLayer>(), Is.Not.Null);
 
                 // 总开关关掉：渲染子物体被拆掉（EditMode 下走 DestroyImmediate，立即生效）
-                fog.Apply(map, new MirrorFog { enabled = false, regions = new[] { 1 } }, 1f, 1f, 0.01f);
+                fog.Apply(map, null, new MirrorFog { enabled = false, regions = new[] { 1 } }, 1f, 1f, 0.01f);
 
                 Assert.That(go.transform.Find("FogOverlay"), Is.Null);
             }
@@ -225,7 +230,7 @@ namespace DiceTale.Tests
                 var fog = go.AddComponent<FogOfWar>();
                 var map = new MirrorMap { gridWidth = 2, gridHeight = 2, cells = new int[4] };
 
-                fog.Apply(map, new MirrorFog { enabled = true, regions = new int[0] }, 1f, 1f, 0.01f);
+                fog.Apply(map, null, new MirrorFog { enabled = true, regions = new int[0] }, 1f, 1f, 0.01f);
 
                 Assert.That(go.transform.Find("FogOverlay"), Is.Null);
             }

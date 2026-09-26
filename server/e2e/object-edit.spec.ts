@@ -114,7 +114,7 @@ test.describe("创建与编辑场景对象", () => {
 
       // 二级：实体下有 网格地图 / 精灵 / 贴图，默认选中第一个（网格地图），名字按类型预填
       // （基类 `GameObject` 那一项不可创建，所以弹框里看不到它——它只参与归类）
-      await expect(page.getByTestId("object-type-Map")).toHaveAttribute("data-selected", "true");
+      await expect(page.getByTestId("object-type-GridMap")).toHaveAttribute("data-selected", "true");
       await expect(page.getByTestId("object-type-Sprite")).toBeVisible();
       // 贴图（v21 起，v22 改叫 `Image`）：实体下的第三个类型
       await expect(page.getByTestId("object-type-Image")).toBeVisible();
@@ -123,9 +123,9 @@ test.describe("创建与编辑场景对象", () => {
       // 贴图按**它自己的**展示名预填（精灵与贴图是两个类型，名字不跟着 kind 走）
       await page.getByTestId("object-type-Image").click();
       await expect(page.getByTestId("object-type-Image")).toHaveAttribute("data-selected", "true");
-      await expect(page.getByTestId("object-type-Map")).toHaveAttribute("data-selected", "false");
+      await expect(page.getByTestId("object-type-GridMap")).toHaveAttribute("data-selected", "false");
       await expect(page.getByTestId("object-name-input")).toHaveValue("贴图");
-      await page.getByTestId("object-type-Map").click();
+      await page.getByTestId("object-type-GridMap").click();
 
       // 动作种类下有「播放声音」（动作对象）；事件种类还没做出来 → 给提示、创建按钮不可用
       await page.getByTestId("object-category-action").click();
@@ -335,7 +335,7 @@ test.describe("创建与编辑场景对象", () => {
       await expect
         .poll(async () => {
           const file = await readSceneFile(request, project, SCENE_A);
-          return componentDataOf(file, { kind: "Map" }, COMPONENT.gridMap)?.["image"];
+          return componentDataOf(file, { kind: "Image" }, COMPONENT.imageLayer);
         })
         .toMatchObject({ width: 4, height: 4, guid: expect.stringMatching(/^[0-9a-f]{32}$/) });
 
@@ -383,7 +383,7 @@ test.describe("创建与编辑场景对象", () => {
       // 默认「全部」：三个对象都在，而且**不分组**
       await expect(page.getByTestId("object-row")).toHaveCount(3);
 
-      // 实体 = 精灵（kind=Sprite）+ 网格地图（kind=Map）
+      // 实体 = 精灵（kind=Sprite）+ 网格地图（v28 起 kind=Image，靠网格组件区分）
       await page.getByTestId("category-filter-entity").click();
       await expect(page.getByTestId("object-row")).toHaveCount(2);
       await expect(page.getByTestId("object-row").filter({ hasText: "机关" })).toHaveCount(0);
@@ -726,7 +726,7 @@ test.describe("创建与编辑场景对象", () => {
       await expect
         .poll(async () => {
           const file = await readSceneFile(request, project, SCENE_A);
-          return componentDataOf(file, { kind: "Map" }, COMPONENT.gridMap)?.["grid"] ?? null;
+          return componentDataOf(file, { kind: "Image" }, COMPONENT.gridMap)?.["grid"] ?? null;
         })
         .toEqual({ width: 32, height: 36 });
 
@@ -901,7 +901,7 @@ test.describe("创建与编辑场景对象", () => {
       await expect
         .poll(async () => {
           const map = (await readGameObjects(request, project, SCENE_A)).find(
-            (object) => object.kind === "Map",
+            (object) => object.kind === "Image",
           );
           return map?.position ?? null;
         })

@@ -47,29 +47,33 @@ test.describe("属性分组", () => {
       await openProject(page, project);
       await openLeftTab(page, "hierarchy");
 
-      // 选中地图（列表第一行）→ 属性面板应有三个分组（战争雾自 v27 起是独立对象）
+      // 选中网格地图（列表第一行）→ 属性面板应有四个分组（图片层 / 网格 / 视频 + 基础）
       await selectObject(page, 0);
 
       const basic = page.locator('[data-group="basic"]');
+      const image = page.locator('[data-group="image"]');
       const map = page.locator('[data-group="map"]');
       const video = page.locator('[data-group="video"]');
       await expect(basic).toBeVisible();
+      await expect(image).toBeVisible();
       await expect(map).toBeVisible();
       await expect(video).toBeVisible();
-      // 地图上不再有「战争雾」组
+      // 网格地图上不再有「战争雾」组（v27 起是独立对象）
       await expect(page.locator('[data-group="fog"]')).toHaveCount(0);
       // 默认都展开
       await expect(basic).toHaveAttribute("data-open", "true");
+      await expect(image).toHaveAttribute("data-open", "true");
       await expect(map).toHaveAttribute("data-open", "true");
       await expect(video).toHaveAttribute("data-open", "true");
       await expect(basic).toContainText("名称");
-      // 贴图行与网格规格都在「网格地图」组里（一个组件一个组）
-      await expect(map).toContainText("贴图");
+      // 贴图行在「图片层」组里；网格规格在「网格地图」组里（一个组件一个组）
+      await expect(image).toContainText("贴图");
       await expect(map).toContainText("每格");
       await expect(map).toContainText("行序");
       await expect(map).toContainText("网格标注");
       // 「基础」是实体属性组：挂「实体」角标；组件组不挂
       await expect(basic.locator('[data-testid="field-group-badge"]')).toHaveAttribute("data-kind", "entity");
+      await expect(image.locator('[data-testid="field-group-badge"]')).toHaveCount(0);
       await expect(map.locator('[data-testid="field-group-badge"]')).toHaveCount(0);
       // 视频那一组还没开时只剩「启用」那一个开关（打开之后的样子见 video-object.spec.ts）
       await expect(video).toContainText("视频");
@@ -79,10 +83,10 @@ test.describe("属性分组", () => {
       const mapHeader = map.getByTestId("field-group-header");
       await expect(mapHeader).toHaveAttribute("aria-expanded", "true");
 
-      // 贴图那一行在「网格地图」组里：基础组里不再有它
-      await expect(map.getByTestId("pick-texture")).toBeVisible();
+      // 贴图那一行在「图片层」组里：基础组里不再有它
+      await expect(image.getByTestId("pick-texture")).toBeVisible();
       await expect(basic.getByTestId("pick-texture")).toHaveCount(0);
-      // 网格规格（列 · 行 / 每格 / 行序）也在「网格地图」组里：基础组里不再有它
+      // 网格规格（列 · 行 / 每格 / 行序）在「网格地图」组里：基础组里不再有它
       await expect(map.getByTestId("inspector-grid-columns")).toBeVisible();
       await expect(map.getByTestId("inspector-grid-rows")).toBeVisible();
       await expect(basic.getByTestId("inspector-grid-columns")).toHaveCount(0);
@@ -92,20 +96,20 @@ test.describe("属性分组", () => {
       const order = await page
         .locator('[data-testid="object-properties"] [data-group]')
         .evaluateAll((sections) => sections.map((section) => section.getAttribute("data-group")));
-      expect(order).toEqual(["basic", "map", "video"]);
+      expect(order).toEqual(["basic", "image", "map", "video"]);
 
       // 收起「网格地图」：内容整块消失，但分组标题还在（还能再展开）
       await mapHeader.click();
       await expect(map).toHaveAttribute("data-open", "false");
       await expect(map).toContainText("网格地图");
-      await expect(map.getByTestId("pick-texture")).toHaveCount(0);
+      await expect(map.getByTestId("inspector-grid-columns")).toHaveCount(0);
       // 其它分组不受影响
       await expect(basic).toHaveAttribute("data-open", "true");
 
       // 再点一下展开
       await mapHeader.click();
       await expect(map).toHaveAttribute("data-open", "true");
-      await expect(map.getByTestId("pick-texture")).toBeVisible();
+      await expect(map.getByTestId("inspector-grid-columns")).toBeVisible();
 
       // 收起「视频」：那一个开关也消失，标题还在
       const videoHeader = video.getByTestId("field-group-header");
@@ -150,12 +154,12 @@ test.describe("属性分组", () => {
       await expect(page.locator('[data-group="map"]')).toHaveCount(0);
       await expect(page.locator('[data-group="fog"]')).toHaveCount(0);
 
-      // 贴图：「基础 / 图片层 / 视频」（图片组件是 `ImageLayer`），同样没有地图那两组
+      // 贴图：「基础 / 图片层 / 网格 / 视频」（网格是可选能力，入口照常出现），没有战争雾
       await selectObject(page, 2);
       await expect(page.locator('[data-group="basic"]')).toBeVisible();
       await expect(page.locator('[data-group="image"]')).toBeVisible();
+      await expect(page.locator('[data-group="map"]')).toBeVisible();
       await expect(page.locator('[data-group="video"]')).toBeVisible();
-      await expect(page.locator('[data-group="map"]')).toHaveCount(0);
       await expect(page.locator('[data-group="fog"]')).toHaveCount(0);
     } finally {
       await dropProject(request, project);

@@ -78,21 +78,21 @@ describe("对象类型表（object-kinds.ts）", () => {
     }
   });
 
-  it("实体下可创建的就是三个具体类型，顺序为 网格地图 / 精灵 / 贴图", () => {
+  it("实体下可创建的是 网格地图 / 精灵 / 贴图（网格地图 = 贴图 + 网格组件）", () => {
     const entity = OBJECT_CATEGORIES.find((category) => category.id === "entity");
     expect(entity).toBeDefined();
-    expect(creatableObjects(entity!).map((object) => object.kind)).toEqual([
-      "Map",
+    expect(creatableObjects(entity!).map((object) => object.id)).toEqual([
+      "GridMap",
       "Sprite",
       "Image",
     ]);
-    // 三个都是具体类型（没有一个是抽象基类）
-    for (const kind of creatableObjects(entity!).map((object) => object.kind)) {
-      expect(CONCRETE_KINDS, kind).toContain(kind);
+    // 它们的 kind 都是具体类型（没有一个是抽象基类），且都声明了贴图槽位
+    for (const type of creatableObjects(entity!)) {
+      expect(CONCRETE_KINDS, type.id).toContain(type.kind);
+      expect(presetOf(type.kind)?.slots.image, type.id).toBeDefined();
     }
-    // 它们三个在预设表里都声明了贴图槽位（「能显示一张图」是实体这条线的共同能力）
-    for (const kind of creatableObjects(entity!).map((object) => object.kind)) {
-      expect(presetOf(kind)?.slots.image, kind).toBeDefined();
-    }
+    // 「网格地图」与「贴图」共用 kind `Image`，靠 `id` 区分瓦片；网格地图创建时加网格
+    expect(creatableObjects(entity!)[0]?.kind).toBe("Image");
+    expect(creatableObjects(entity!)[0]?.withGrid).toBe(true);
   });
 });

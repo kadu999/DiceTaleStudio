@@ -44,39 +44,48 @@ export function createEmptyScene(name: string): SceneDoc {
   };
 }
 
-/** 新建地图对象：携带贴图与网格（整张空白格）。 */
-export function createMapObject(input: {
+/**
+ * 新建**网格地图**：v28 起它就是「一张贴图 + 一个 `GridMap` 组件」——贴图走普通图片层，
+ * 网格只存数据（`grid` / `rowOrder` / `cells`，整张空白格）。**没有「地图」这种对象类型。**
+ */
+export function createGridMapObject(input: {
   readonly name: string;
   readonly image: ImageRef;
   readonly grid: GridSpec;
   readonly id?: string;
-  /** 地图中心的世界坐标；不传就是世界原点。 */
+  /** 中心的世界坐标；不传就是世界原点。 */
   readonly position?: WorldPosition;
 }): GameObjectDoc {
   const id = input.id ?? createId("map");
   const map: MapDataDoc = {
-    image: input.image,
     grid: { ...input.grid },
     rowOrder: "bottom-up",
     // 显式写出「整张图都是空格子」，而不是留空数组：
     // 校验时 runs 的展开格数必须等于 width*height，留空会被判为数据不完整。
     cells: { encoding: "rle", runs: [[0, input.grid.width * input.grid.height]] },
-    // 地图默认是「垫在所有东西下面」的那一层：显示顺序 v26 起住在渲染组件（GridMap）里
-    sortingOrder: MAP_DEFAULT_SORTING_ORDER,
   };
 
   return {
     id,
     name: input.name,
-    kind: "Map",
+    kind: "Image",
     active: true,
     position: input.position ?? { x: 0, y: 0 },
     rotation: 0,
     scale: DEFAULT_OBJECT_SCALE,
     // 新建出来的对象都不锁：锁是「摆好之后别再被拖走」，不是默认状态
     locked: false,
-    // 贴图与网格就是它的 `GridMap` 组件（v19 起）
-    components: [featureComponent(id, DEFAULT_SLOT_COMPONENT.map, map)],
+    // 贴图在图片层（垫在所有东西下面的那一层），网格数据在 GridMap
+    components: [
+      featureComponent(id, DEFAULT_SLOT_COMPONENT.image, {
+        id: input.image.id,
+        ...(input.image.guid === undefined ? {} : { guid: input.image.guid }),
+        width: input.image.width,
+        height: input.image.height,
+        sortingOrder: MAP_DEFAULT_SORTING_ORDER,
+      }),
+      featureComponent(id, DEFAULT_SLOT_COMPONENT.map, map),
+    ],
   };
 }
 

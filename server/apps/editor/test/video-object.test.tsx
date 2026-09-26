@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import {
   DEFAULT_SLOT_COMPONENT,
-  createMapObject,
+  createGridMapObject,
   createGameObject,
   createSoundObject,
   createTeleportObject,
@@ -60,7 +60,7 @@ const TREE: ResourceTreeNode[] = [
 ];
 
 function mapWith(video?: VideoDataDoc, id = "map-1"): GameObjectDoc {
-  const object = createMapObject({ id, name: "网格地图", image: IMAGE, grid: GRID });
+  const object = createGridMapObject({ id, name: "网格地图", image: IMAGE, grid: GRID });
   // 视频是它的 `VideoOverlay` 组件（v19 起）
   return video === undefined ? object : withFeature(object, DEFAULT_SLOT_COMPONENT.video, video);
 }

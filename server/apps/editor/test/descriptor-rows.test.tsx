@@ -3,8 +3,8 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import {
   DEFAULT_SLOT_COMPONENT,
   MAP_DEFAULT_SORTING_ORDER,
-  createMapObject,
-  mapDataOf,
+  createGridMapObject,
+  sortingOrderOf,
   videoDataOf,
   withFeature,
   type GameObjectDoc,
@@ -53,7 +53,7 @@ const TREE: ResourceTreeNode[] = [
 
 /** 一张开着视频、加了一条视频的地图（三个描述符行都会露出来）。 */
 function mapWithVideo(): GameObjectDoc {
-  const object = createMapObject({ id: "map-1", name: "网格地图", image: IMAGE, grid: GRID });
+  const object = createGridMapObject({ id: "map-1", name: "网格地图", image: IMAGE, grid: GRID });
   const video: VideoDataDoc = {
     enabled: true,
     autoPlay: false,
@@ -154,7 +154,7 @@ describe("描述符行：与手写版逐字等价", () => {
 
   it("组件缺失时按规格补壳再写（手写文件里没写 `video` 也能打开开关）", () => {
     // 工厂建出来的地图只有 `GridMap`：没有 `VideoOverlay` 实例
-    seedScene([createMapObject({ id: "map-1", name: "网格地图", image: IMAGE, grid: GRID })], ["map-1"]);
+    seedScene([createGridMapObject({ id: "map-1", name: "网格地图", image: IMAGE, grid: GRID })], ["map-1"]);
     render(<InspectorPanel />);
 
     // 关着时整组只剩「启用」那一个开关（早返回），打开它才露出三个描述符行
@@ -185,19 +185,19 @@ function groupRowTestIds(group: string): string[] {
  * **显示顺序移入渲染组**（v26）。
  *
  * 过去 `sortingOrder` 是「基础」组里按描述符自动出的行；现在它住在渲染组件里，出现在
- * **网格地图 / 图片层 / 精灵层**那一组，由手写的 `SortingOrderField` 渲染、经 store 的
+ * **图片层 / 精灵层**那一组，由手写的 `SortingOrderField` 渲染、经 store 的
  * `setRenderSortingOrder` 写回。这里钉三件事：
- * 1. 「基础」组里不再有它，网格地图组里有；
- * 2. 写回落进渲染组件数据（`mapDataOf`），并且是一次可撤销的文档编辑；
+ * 1. 「基础」组里不再有它，图片层组里有（v28 起网格地图的贴图也在图片层）；
+ * 2. 写回落进渲染组件数据（`sortingOrderOf`），并且是一次可撤销的文档编辑；
  * 3. 越界仍按 `±9999` 夹取。
  */
 describe("显示顺序：渲染组里的手写行（v26）", () => {
-  it("「基础」组里没有它；网格地图组里有，读的是 GridMap 的 sortingOrder", () => {
+  it("「基础」组里没有它；图片层组里有，读的是图片层的 sortingOrder", () => {
     seedScene([mapWithVideo()], ["map-1"]);
     render(<InspectorPanel />);
 
     expect(groupRowTestIds("basic")).not.toContain("inspector-object-sorting");
-    expect(groupRowTestIds("map")).toContain("inspector-object-sorting");
+    expect(groupRowTestIds("image")).toContain("inspector-object-sorting");
 
     const sorting = screen.getByTestId("inspector-object-sorting") as HTMLInputElement;
     expect(sorting.value).toBe(String(MAP_DEFAULT_SORTING_ORDER));
@@ -206,7 +206,7 @@ describe("显示顺序：渲染组里的手写行（v26）", () => {
     expect(screen.getByText("显示顺序")).toBeDefined();
   });
 
-  it("改动写进地图数据（走 setRenderSortingOrder）并可撤销", () => {
+  it("改动写进图片层数据（走 setRenderSortingOrder）并可撤销", () => {
     seedScene([mapWithVideo()], ["map-1"]);
     render(<InspectorPanel />);
 
@@ -214,12 +214,12 @@ describe("显示顺序：渲染组里的手写行（v26）", () => {
     fireEvent.change(sorting, { target: { value: "9" } });
     fireEvent.blur(sorting);
 
-    expect(mapDataOf(useEditorStore.getState().scenes[0]!.objects[0]!)?.sortingOrder).toBe(9);
+    expect(sortingOrderOf(useEditorStore.getState().scenes[0]!.objects[0]!)).toBe(9);
     // 与迁移前那条手写控件写的说明逐字一致
     expect(useEditorStore.getState().undoLabel).toBe("修改显示顺序");
 
     act(() => useEditorStore.getState().undo());
-    expect(mapDataOf(useEditorStore.getState().scenes[0]!.objects[0]!)?.sortingOrder).toBe(
+    expect(sortingOrderOf(useEditorStore.getState().scenes[0]!.objects[0]!)).toBe(
       MAP_DEFAULT_SORTING_ORDER,
     );
   });
@@ -232,6 +232,6 @@ describe("显示顺序：渲染组里的手写行（v26）", () => {
     fireEvent.change(sorting, { target: { value: "99999" } });
     fireEvent.blur(sorting);
 
-    expect(mapDataOf(useEditorStore.getState().scenes[0]!.objects[0]!)?.sortingOrder).toBe(9999);
+    expect(sortingOrderOf(useEditorStore.getState().scenes[0]!.objects[0]!)).toBe(9999);
   });
 });

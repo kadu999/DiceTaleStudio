@@ -521,12 +521,14 @@ export interface EditorStoreState {
 
   /**
    * 在当前场景新建对象；不传 position 就放在世界原点（= 场景正中）。
+   * `withGrid` = 顺手加一个 `GridMap` 组件（「网格地图」= 贴图 + 网格，v28）。
    * 成功返回 undefined，失败返回原因。
    */
   createObject(
     kind: ObjectKind,
     name: string,
     position?: WorldPosition,
+    withGrid?: boolean,
   ): Promise<string | undefined>;
   /** 改对象名（trim 后为空则拒绝）。 */
   renameObject(id: string, name: string): boolean;
@@ -670,8 +672,15 @@ export interface EditorStoreState {
    * 还没选（或选的那个已经不在候选里）/ 目标场景不存在（改名或删掉了）或就是当前场景。
    */
   teleport(objectId: string): boolean;
-  /** 改地图网格的列数 / 行数（格子按新尺寸重建，重叠部分保留）。 */
+  /** 改网格的列数 / 行数（格子按新尺寸重建，重叠部分保留）。 */
   setMapGrid(mapObjectId: string, grid: GridSize): boolean;
+  /**
+   * 给贴图**加上网格**（v28：网格是可选能力）——加完它就是「网格地图」。
+   * 网格规格按对象当前那张图的尺寸推；已经带网格 / 不是贴图时返回 `false`。
+   */
+  addObjectGridMap(objectId: string): boolean;
+  /** 把贴图上的**网格摘掉**（对象回到普通贴图）。没有网格时返回 `false`。 */
+  removeObjectGridMap(objectId: string): boolean;
   /**
    * **泛型组件字段写入**：按组件规格改一个简单字段（布尔 / 数字 / 枚举 / 字符串）。
    *

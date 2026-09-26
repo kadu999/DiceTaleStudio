@@ -23,7 +23,7 @@ export type LeftTab = "assets" | "hierarchy";
  * 要有意制造「旧版本文件」时别用它：自己写那个版本号（`formatVersion: 4` 之类），
  * 并预期编辑器会把它升上来回写一次。
  */
-export const CURRENT_SCENE_FORMAT_VERSION = 26;
+export const CURRENT_SCENE_FORMAT_VERSION = 28;
 
 /**
  * **承载对象特性的组件类型名**（v19 起特性住在 `object.components[]` 里）。
@@ -368,13 +368,12 @@ export function gameObjectDoc(
 }
 
 /**
- * 造一个地图对象（地图只是场景里的对象；贴图与场景同名，放 `Assets/images/`）。
+ * 造一个**网格地图**（v28 起 = 贴图 + 网格组件，不是独立类型；贴图与场景同名，放 `Assets/images/`）。
  *
- * 地图**有世界坐标**（贴图中心，默认世界原点），`size` 是贴图里声明的尺寸——
+ * **有世界坐标**（贴图中心，默认世界原点），`size` 是贴图里声明的尺寸——
  * 声明得比视口小就能在画布上看到这块棋盘的边界。
- * 显示顺序用编辑器建地图时的默认值（`MAP_DEFAULT_SORTING_ORDER = -10`，垫在最下面）。
- *
- * 贴图与网格是它的 **`GridMap` 组件**（v19 起；v18 及更早写在 `object.map` 里）。
+ * 显示顺序用编辑器建网格地图时的默认值（`MAP_DEFAULT_SORTING_ORDER = -10`，垫在最下面），
+ * v28 起住在**图片层**的 data 里。
  */
 export function mapObjectDoc(
   project: string,
@@ -383,22 +382,20 @@ export function mapObjectDoc(
   size: { width: number; height: number } = { width: 1920, height: 1080 },
   grid: { width: number; height: number } = { width: 64, height: 36 },
 ): Record<string, unknown> {
-  return withComponent(
-    gameObjectDoc(name, "Map", { x: 0, y: 0 }),
-    COMPONENT.gridMap,
-    {
-      image: {
-        id: `project:${project}/Assets/images/${sceneName}.png`,
-        width: size.width,
-        height: size.height,
-      },
-      grid,
-      rowOrder: "bottom-up",
-      cells: { encoding: "rle", runs: [[0, grid.width * grid.height]] },
-      // 地图垫在最下面：显示顺序 v26 起住在 GridMap 的 data 里
-      sortingOrder: -10,
-    },
-  );
+  const base = gameObjectDoc(name, "Image", { x: 0, y: 0 });
+  const withLayer = withComponent(base, COMPONENT.imageLayer, {
+    id: `project:${project}/Assets/images/${sceneName}.png`,
+    width: size.width,
+    height: size.height,
+    // 网格地图垫在最下面：显示顺序 v26 起住在渲染组件里，v28 起是图片层
+    sortingOrder: -10,
+  });
+
+  return withComponent(withLayer, COMPONENT.gridMap, {
+    grid,
+    rowOrder: "bottom-up",
+    cells: { encoding: "rle", runs: [[0, grid.width * grid.height]] },
+  });
 }
 
 /**
@@ -707,7 +704,7 @@ export async function readSceneMap(
   sceneName: string,
 ): Promise<SceneMapData | undefined> {
   const file = await readSceneFile(request, project, sceneName);
-  const data = componentDataOf(file, { kind: "Map" }, COMPONENT.gridMap);
+  const data = componentDataOf(file, { kind: "Image" }, COMPONENT.gridMap);
   const grid = data?.["grid"] as SceneMapData["grid"] | undefined;
   const runs = (data?.["cells"] as { runs?: SceneMapData["runs"] } | undefined)?.runs;
   if (grid === undefined || runs === undefined) {
@@ -752,8 +749,8 @@ export async function readSceneFogRegions(
  * 读场景文件里**某个对象**的视频配置（**地图 / 贴图**上的 `VideoOverlay`），按 `kind` 找——
  * 不按数组下标：用例里对象顺序不是契约，`readSceneFog` 也是这么做的。
  *
- * 缺省找 `Map`（大多数用例是给地图配视频）。v21 起视频那一组的宿主是**地图与贴图**
- * （精灵不再带），一个场景里两种宿主可以同时有视频——所以想读哪一个必须由调用方说清。
+ * 缺省找 `Image`（视频的宿主自 v21 起是贴图，v28 起网格地图也是 `Image`）——一个场景里
+ * 可以有多个 `Image` 对象，想读哪一个必须由调用方说清（`kind` 只能区分到这）。
  *
  * 没加过视频就是 `undefined`——「没加」在文件里是**没有这个组件**（v18 及更早是没有
  * `video` 这个字段；见 `setVideoClips`）。
@@ -762,7 +759,7 @@ export async function readSceneVideo(
   request: APIRequestContext,
   project: string,
   sceneName: string,
-  kind: "Map" | "Image" = "Map",
+  kind: "Image" = "Image",
 ): Promise<
   | {
       clips?: readonly string[];

@@ -194,7 +194,7 @@ namespace DiceTale
         /// 雾层在它的基础上再加 <see cref="OverlayLift"/>。雾层**恒定取最前面**（<see cref="SortingOrder"/>，
         /// 未探索要连排得比地图还高的对象一起盖住），不再需要调用方交代对象的显示顺序。
         /// </summary>
-        public void Apply(MirrorMap map, MirrorFog fogData, float worldWidth, float worldHeight, float mapLift)
+        public void Apply(MirrorMap map, MirrorImage mapImage, MirrorFog fogData, float worldWidth, float worldHeight, float mapLift)
         {
             var wantsOverlay =
                 map != null
@@ -209,7 +209,7 @@ namespace DiceTale
                 return;
             }
 
-            if (!Adopt(map, fogData.regions))
+            if (!Adopt(map, mapImage, fogData.regions))
             {
                 // 没绑有效雾区（掩码算出来是 0）/ 格子数据不全：同样不画
                 TearDownOverlay();
@@ -320,7 +320,7 @@ namespace DiceTale
         /// 重建 = 重填初始态（雾格盖满）+ 按顺序重放操作，所以已揭示的部分不会丢；
         /// 数据没变时只是把引用换成最新那份（同一份内容，抓着旧数组没意义）。
         /// </summary>
-        private bool Adopt(MirrorMap mapData, int[] regions)
+        private bool Adopt(MirrorMap mapData, MirrorImage mapImage, int[] regions)
         {
             if (mapData == null)
             {
@@ -341,7 +341,7 @@ namespace DiceTale
                 return false;
             }
 
-            var size = MaskSizeFor(mapData.image);
+            var size = MaskSizeFor(mapImage);
             var next = string.Format(
                 "{0}x{1}|{2}|{3}x{4}|{5}",
                 mapData.gridWidth,

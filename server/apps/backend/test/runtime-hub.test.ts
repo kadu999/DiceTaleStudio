@@ -120,18 +120,22 @@ function sampleScene(name: string, spriteActive: boolean): ScenePayload {
       {
         id: "map_01",
         name: "地图",
-        kind: "Map",
+        kind: "Image",
         active: true,
         position: { x: 0, y: 0 },
         rotation: 0,
         scale: 1,
         components: [
+          feature(COMPONENT_TYPE.image, {
+            id: "project:P/Assets/images/map.png",
+            width: 1920,
+            height: 1080,
+            sortingOrder: -10,
+          }),
           feature(COMPONENT_TYPE.map, {
-            image: { id: "project:P/Assets/images/map.png", width: 1920, height: 1080 },
             grid: { width: 64, height: 36 },
             rowOrder: "bottom-up",
             cells: { encoding: "rle", runs: [[0, 2304]] },
-            sortingOrder: -10,
           }),
         ],
       },
@@ -745,8 +749,13 @@ describe("运行态：门控 + 场景镜像中继", () => {
     // 换成另一个项目的场景（同样的对象结构，只换资源 ID 里的项目名）
     const other = sampleScene("场景1", true);
     other.objects[0]!.components = [
+      feature(COMPONENT_TYPE.image, {
+        id: "project:Q/Assets/images/map.png",
+        width: 1920,
+        height: 1080,
+        sortingOrder: -10,
+      }),
       feature(COMPONENT_TYPE.map, {
-        image: { id: "project:Q/Assets/images/map.png", width: 1920, height: 1080 },
         grid: { width: 64, height: 36 },
         rowOrder: "bottom-up",
         cells: { encoding: "rle", runs: [[0, 2304]] },

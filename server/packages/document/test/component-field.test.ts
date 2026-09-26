@@ -6,7 +6,7 @@ import { componentSpecOf, defaultDataOf } from "../src/component-specs";
 import { OBJECT_SPEC, objectFieldOf } from "../src/object-spec";
 import { videoDataOf } from "../src/access";
 import { DEFAULT_SLOT_COMPONENT } from "../src/presets";
-import { createEmptyScene, createMapObject, createSoundObject } from "../src/factory";
+import { createEmptyScene, createGridMapObject, createSoundObject } from "../src/factory";
 import type { GameObjectDoc, SceneDoc } from "../src/types";
 
 /**
@@ -38,7 +38,7 @@ function objectOf(scene: SceneDoc, id: string): GameObjectDoc | undefined {
 
 /** 地图：工厂建出来的只有 `GridMap`，**没有**可选的 `VideoOverlay`。 */
 function mapObject(id = "map-1"): GameObjectDoc {
-  return createMapObject({ id, name: "网格地图", image: IMAGE, grid: GRID });
+  return createGridMapObject({ id, name: "网格地图", image: IMAGE, grid: GRID });
 }
 
 describe("组件规格：VideoOverlay", () => {

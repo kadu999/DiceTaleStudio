@@ -53,7 +53,7 @@ export interface SceneValidationOptions {
  *
  * 越界**不算错**：切分可能先被改小（改的是素材的 `.meta`，对象留在场景文件里没动），
  * 而渲染与推送会统一夹到最后一格——所以这里只提醒「你看到的不是你要的那一格」。
- * 地图对象走的是 `map.image`，由 `validateObject` 里那条「不支持子图」管。
+ * 带网格的贴图那一份由 `validateObject` 里「带网格的贴图不支持子图」管。
  */
 function validateObjectSprite(
   object: GameObjectDoc,
@@ -136,11 +136,8 @@ function validateObject(
     }
   }
 
-  // 地图对象：数据必须完整（没有数据的「地图对象」在场景里就是个空壳）
+  // 网格（v28 起是贴图上的可选组件）：有网格就校验格子数据；没有 = 普通贴图，不报错
   const map = mapDataOf(object);
-  if (map === undefined && canRepairObjectComponent(object, DEFAULT_SLOT_COMPONENT.map)) {
-    issues.push({ level: "error", path, message: "地图对象缺少地图数据（贴图 / 网格）" });
-  }
   if (map !== undefined) {
     try {
       decodeRle(map.cells.runs, map.grid.width * map.grid.height);
@@ -152,18 +149,15 @@ function validateObject(
       });
     }
 
-    if (map.image.id.trim().length === 0) {
-      issues.push({ level: "warning", path: `${path}/map/image`, message: "地图贴图未指定" });
-    }
-
-    // 地图贴图不支持子图（v20）：网格的格子是按**整张**贴图算好的，取一块会让已经画好的
+    // 带网格的贴图不支持子图（v20）：网格的格子是按**整张**贴图算好的，取一块会让已经画好的
     // 格子标注含义静默改变。编辑器与前端都按整图渲染（见 `sprites.ts` 的 `displaySpriteOf`），
     // 所以这里要说出来——不然「明明切了却不生效」无从排查
-    if (map.image.sprite !== undefined) {
+    const gridImage = imageOf(object);
+    if (gridImage?.sprite !== undefined) {
       issues.push({
         level: "warning",
-        path: `${path}/map/image/sprite`,
-        message: "地图贴图不支持子图（取一块会让已有格子错位），这一项会被忽略",
+        path: `${path}/components/ImageLayer/sprite`,
+        message: "带网格的贴图不支持子图（取一块会让已有格子错位），这一项会被忽略",
       });
     }
   }
@@ -382,7 +376,7 @@ export function validateScene(
     validateObjectSprite(object, path, options.metas, issues);
   }
 
-  // 战争雾对象：引用的地图必须真实存在、且一张地图最多一个雾对象
+  // 战争雾对象：引用的「带网格的贴图」必须真实存在、且一个最多一个雾对象
   const fogByMap = new Map<string, string>();
   for (const object of scene.objects) {
     if (fogOf(object) === undefined) {
@@ -398,8 +392,8 @@ export function validateScene(
         path: `${path}/components/FogOfWar/mapId`,
         message:
           mapId.length === 0
-            ? "战争雾还没选引用的地图"
-            : `战争雾引用的地图不存在或不是地图：${mapId}`,
+            ? "战争雾还没选引用的网格"
+            : `战争雾引用的对象不存在或没有网格：${mapId}`,
       });
       continue;
     }
@@ -408,7 +402,7 @@ export function validateScene(
       issues.push({
         level: "error",
         path: `${path}/components/FogOfWar/mapId`,
-        message: `这张地图已经有战争雾了（一张地图最多一个）`,
+        message: `这个网格已经有战争雾了（一个网格最多一个）`,
       });
       continue;
     }

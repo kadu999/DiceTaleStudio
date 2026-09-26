@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   createEmptyProject,
-  createMapObject,
+  createGridMapObject,
   createGameObject,
   type SceneDoc,
   type GameObjectDoc,
@@ -28,7 +28,7 @@ const VIEW = { width: 800, height: 600 };
 
 /** 一张 400×300 的地图对象，摆在世界原点（激活的、已落位的才参与「适配」）。 */
 function mapOf(id: string): GameObjectDoc {
-  return createMapObject({
+  return createGridMapObject({
     id,
     name: `地图 ${id}`,
     image: { id: `project:测试/Assets/images/${id}.png`, width: 400, height: 300 },

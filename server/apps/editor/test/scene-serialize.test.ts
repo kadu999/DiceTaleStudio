@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createMapObject, createGameObject, type SceneDoc } from "@dts/document";
+import { createGridMapObject, createGameObject, type SceneDoc } from "@dts/document";
 import { serializeSceneFile } from "../src/state/editor-store";
 
 /**
@@ -14,7 +14,7 @@ import { serializeSceneFile } from "../src/state/editor-store";
  */
 
 function scene(name: string): SceneDoc {
-  const map = createMapObject({
+  const map = createGridMapObject({
     id: "map-1",
     name: "地图",
     image: { id: "project:测试/Assets/images/Map001.png", width: 400, height: 300 },

@@ -244,13 +244,13 @@ test.describe("精灵：把图集切成子图", () => {
       await expect(page.getByTestId("image-picker-confirm")).toContainText("使用整图");
       await page.getByTestId("image-picker-cancel").click();
 
-      // 场景文件里的地图贴图引用照旧只有 id / 宽高（没有子图字段）
+      // 场景文件里的网格地图贴图引用照旧只有 id / 宽高（没有子图字段），另带显示顺序
       const file = await readSceneFile(request, project, SCENE);
-      const data = componentDataOf(file, { kind: "Map" }, COMPONENT.gridMap) as
-        | { image?: Record<string, unknown> }
+      const data = componentDataOf(file, { kind: "Image" }, COMPONENT.imageLayer) as
+        | Record<string, unknown>
         | undefined;
-      expect(Object.keys(data?.image ?? {}).sort()).toEqual(["height", "id", "width"]);
-      expect(findGameObject(file, { kind: "Map" })).toBeDefined();
+      expect(Object.keys(data ?? {}).sort()).toEqual(["height", "id", "sortingOrder", "width"]);
+      expect(findGameObject(file, { kind: "Image" })).toBeDefined();
     } finally {
       await dropProject(request, project);
     }

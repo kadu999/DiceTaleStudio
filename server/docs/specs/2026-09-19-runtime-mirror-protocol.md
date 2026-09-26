@@ -22,8 +22,11 @@
 > 同一天再升到 **协议 v10**：**精灵（子图）**——贴图引用多了 `sprite`（取第几格）与 `spriteGrid`
 > （这张图几列几行）两项（与文档格式 v20 同一批），前端据此只画那一块矩形。两项都是可选的，
 > 老前端（v9）会静默把整张图集铺出来——不是崩，是画面错，所以照旧 +1：服务端与前端必须同批更新。
-> **命令那一组仍然一个字节都没动**（子图是数据，不是新动作）。取代
-> [`2026-09-18-frontend-integration-contract.md`](2026-09-18-frontend-integration-contract.md)
+> **命令那一组仍然一个字节都没动**（子图是数据，不是新动作）。
+> 其后 **v11–v16** 的每一次都是**与文档格式同一批**的不兼容改动（kind 改名、显示顺序搬进渲染组件、
+> 战争雾拆组件 / 变成独立对象、取消 `Map` 类型把网格变成贴图上的可选组件等），照旧靠版本握手挡住；
+> 逐条见 `CODE-STRUCTURE.md` §6.1 与 `packages/protocol/src/messages.ts` 的版本注释。
+> 取代 [`2026-09-18-frontend-integration-contract.md`](2026-09-18-frontend-integration-contract.md)
 > （那份写的是「前端上报数据、后台按 id 寻址动作」的老模型，已整层删除）。
 
 ## 一句话
@@ -121,15 +124,15 @@
 `position` / `rotation` / `scale`（+ 可选 `scaleX` / `scaleY`）留在对象上，**其余全在 `components[]` 里**
 （`{ id, type, data }`）。`kind` 只是**创建原型**标签，**行为看组件**：
 前端按 `type` 分派，不认识的类型安静忽略即可（数据留在镜像里）。
-**显示顺序 `sortingOrder`（v14 起）住在渲染组件的 data 里**（`GridMap` / 图片层），
+**显示顺序 `sortingOrder`（v14 起）住在渲染组件的 data 里**（图片层；v16 起带网格的贴图也在图片层），
 对象上不再有这一项；客户端解析时取出来填进 `MirrorObject.sortingOrder` 供表现层使用。
 
 | 组件 `type` | 前端行为 |
 |---|---|
-| `GridMap` | 地图面片 + 网格（`data` = `{image, grid, rowOrder, cells, sortingOrder}`） |
-| `FogOfWar` | **战争雾**（v15 起挂在独立的 `Fog` 对象上）：`data` = `{ mapId, enabled, regions }`。`mapId` 引用被罩住的地图；`enabled` 总开关（缺省算开）；`regions` 哪几个「区域位」算雾区。**只有 `mapId` 有效、`enabled && regions.length > 0` 前端才建那一层雾**；**哪里被揭示了不在数据里**——那是运行态，由 `erase_mask` / `reveal_fog_region` 驱动，不写文档、也不随 `scene_sync` 回来 |
-| `ImageLayer` | **贴图对象**自己那张图（`data` = `{id, width, height}`——整张铺满） |
-| `SpriteLayer` | **精灵对象**自己那张图（`data` = `{id, width, height, sprite?, spriteGrid?}`；后两项是 **v10 的子图**） |
+| `GridMap` | **网格数据**（v16 起是贴图上的可选组件）：`data` = `{grid, rowOrder, cells}`。贴图在对象的 `ImageLayer` 里，网格线以后画在这里 |
+| `FogOfWar` | **战争雾**（v15 起挂在独立的 `Fog` 对象上）：`data` = `{ mapId, enabled, regions }`。`mapId` 引用被罩住的**带网格的贴图**；`enabled` 总开关（缺省算开）；`regions` 哪几个「区域位」算雾区。**只有 `mapId` 有效、`enabled && regions.length > 0` 前端才建那一层雾**；**哪里被揭示了不在数据里**——那是运行态，由 `erase_mask` / `reveal_fog_region` 驱动，不写文档、也不随 `scene_sync` 回来 |
+| `ImageLayer` | **贴图对象 / 网格地图**自己那张图（`data` = `{id, width, height, sortingOrder}`——整张铺满） |
+| `SpriteLayer` | **精灵对象**自己那张图（`data` = `{id, width, height, sprite?, spriteGrid?, sortingOrder}`；后两项是 **v10 的子图**） |
 | `PlaySound` | **不建可见物**：数据留在镜像里（`play_sound` 时从 `data.picked` 取播哪一条） |
 | `Teleport` | **不建可见物**：数据留在镜像里（触发传送 = 编辑器换场景，整份 `scene_push`） |
 | `VideoOverlay` | 运行时在**对象自己的矩形**上建视频层（见下） |
@@ -183,12 +186,12 @@ v12 起叫 `Image`）——**只显示整张图**，与精灵的差别只有「�
 | `components` | **决定这个对象有什么**：`map` / `image` 这两个强类型字段由 `GridMap` / `ImageLayer` / `SpriteLayer` 填（后两个都是「对象自己那张图」，v11 起按对象类型分开）；`sound` / `video` 由 `PlaySound` / `VideoOverlay` 填 |
 | `position {x,y}` | `(x, 0, y)`：文档 y 向上 → 客户端 +Z（与 `GridMap.WorldToGrid` 同口径）；`null` = 未落位 → 不建视图 |
 | `active` | 是否显示（编辑器那个勾选框一改，前端就出现 / 消失） |
-| `scale` | 面片尺寸 = 声明尺寸（`image` / `map.image`）× `scale` |
+| `scale` | 面片尺寸 = 声明尺寸（对象自己的 `image`）× `scale` |
 | `rotation` | 绕 +Y（按 `-rotation`） |
-| `sortingOrder` | v14 起在渲染组件的 data 里（`GridMap` / 图片层）；客户端解析时填进 `MirrorObject.sortingOrder`，再映射到 `MeshRenderer.sortingOrder` + 按序微小离地（避免共面闪烁） |
-| `GridMap.data.image` | 资源逻辑 ID → `GET /api/resources/raw?id=…` 取纹理；没图时按 `kind` 上色占位 |
+| `sortingOrder` | v14 起在渲染组件的 data 里（图片层；v16 起带网格的贴图也一样）；客户端解析时填进 `MirrorObject.sortingOrder`，再映射到 `MeshRenderer.sortingOrder` + 按序微小离地（避免共面闪烁） |
+| `ImageLayer.data.id` | 资源逻辑 ID → `GET /api/resources/raw?id=…` 取纹理；没图时按 `kind` 上色占位 |
 | `GridMap.data.cells` | RLE（`[[掩码, 格数], …]`）——掩码值与 `@dts/grid` 的 `CellMask` / Unity 的 `GridCellType` 完全一致 |
-| `GridMap.data.fog`（v15 起改为独立的 `FogOfWar` 组件） | **战争雾**已从地图 data 拆出：v13 拆成组件、v15 又搬成独立的 `Fog` 对象（见上表 `FogOfWar`）。**老版本地图 data 里的 `fog` 前端已不再认识**；`mapId` 无效或没指定雾区时**不建那一层雾** |
+| `GridMap.data.fog`（v15 起改为独立的 `FogOfWar` 组件） | **战争雾**已从网格 data 拆出：v13 拆成组件、v15 又搬成独立的 `Fog` 对象（见上表 `FogOfWar`）。**老版本网格 data 里的 `fog` 前端已不再认识**；`mapId` 无效或没指定雾区时**不建那一层雾** |
 | `PlaySound.data` | `{ clips, picked, layer }`：前端播的就是 `picked` 那条；`layer` ∈ `bgm/sfx/voice`（三档），同层同时只响一条。`layer: "bgm"` 的老对象前端会**明确拒掉**（背景音乐走 `play_bgm` 那一组） |
 | `VideoOverlay.data` | `{ enabled, clips, picked, loop, audio }`——总开关、加进来的视频、放哪一条、循不循环、出不出视频自带的声音。收到 `play_video` 时前端在**这个对象自己的矩形**上建一层视频（`Presentation/VideoOverlay.cs`）；**关掉 `enabled` 时连那一层都不建**。`names`（显示名）**不进协议** |
 | `Teleport.data` | `{ targets, picked }`。**前端不用它**：触发传送阵 = 编辑器切换当前场景 → 整份 `scene_push` 下来，前端只管换镜像 |
@@ -246,6 +249,7 @@ v12 起叫 `Image`）——**只显示整张图**，与精灵的差别只有「�
 | `Presentation/AudioPlayerManager.cs` | 三条音频通道（背景音乐恒循环 / 音效一次性 / 旁白+字幕），音量来自全局设置；`StopAll` 在会话结束时停掉一切 |
 | `Presentation/AudioClipLoader.cs` | 按逻辑 ID 取音频（本地资源包优先、回落服务端；带缓存 / 去重 / 失败记忆） |
 | `Presentation/SceneObjectView.cs` | 一个对象一块贴地面片（位置 / 缩放 / 激活 / 显示顺序 / 取图）；**战争雾对象（v15）不建面片**，只挂 `FogOfWar`（它的雾面片是 `FogOverlay` 子物体） |
-| `Presentation/FogOfWar.cs` | 战争雾层：挂在**独立的雾对象**上，按 `mapId` 找到被引用地图，用它 `regions` + 地图 `cells` 生成像素遮罩（与编辑器预览同一张尺寸），按 `erase_mask` / `reveal_fog_region` 揭示；揭示状态留在组件里，数据变了「重填 + 重放」 |
-| `Presentation/VideoOverlay.cs` | 视频层：按 URL 放（本地资源包优先、否则服务端原始字节），与地图共享位置 / 尺寸 / sortingOrder；首帧就绪后隐藏地图 Renderer，停止或解码失败时恢复 |
+| `Presentation/GridMapView.cs` | `GridMap` 组件的数据座位（v28 起网格是贴图上的可选组件）：只存 `MirrorMap`，网格线以后画在这里 |
+| `Presentation/FogOfWar.cs` | 战争雾层：挂在**独立的雾对象**上，按 `mapId` 找到被引用的**带网格的贴图**，用它 `regions` + 那个对象的 `cells` 生成像素遮罩（与编辑器预览同一张尺寸），按 `erase_mask` / `reveal_fog_region` 揭示；揭示状态留在组件里，数据变了「重填 + 重放」 |
+| `Presentation/VideoOverlay.cs` | 视频层：按 URL 放（本地资源包优先、否则服务端原始字节），与宿主对象共享位置 / 尺寸 / sortingOrder；首帧就绪后隐藏宿主 Renderer，停止或解码失败时恢复 |
 | `Presentation/ResourceImageLoader.cs` | 按逻辑 ID 取图（带缓存 / 去重 / 失败记忆） |
