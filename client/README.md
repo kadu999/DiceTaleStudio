@@ -47,6 +47,8 @@ Assets/
 │  │                    ResourceImageLoader.cs   按资源逻辑 ID 取图（缓存 / 去重 / 失败记忆）
 │  │                    FogOfWar.cs              战争雾（组件袋一员：按 enabled/regions 自建/自拆自己的 FogOverlay 子物体，建遮罩、GPU 羽化、按后台轨迹揭示）
 │  │                    VideoOverlay.cs          视频层（按 URL 放；本地资源包优先，盖在那个对象自己的矩形上）
+│  │                    VideoBlend.cs          视频混合层（两条 VideoPlayer → 两张 RenderTexture，用 Mask 混合；遮罩纯运行态，按 erase_video_mask 擦、按序重放）
+│  │                    VideoBlendLayer.cs     上面那层的渲染器（GroundLayer 的第三个子类，shader 换成 DiceTale/VideoBlend）
 │  │                    ImageLayer.cs     贴图对象的显示层：**整张图**铺在对象那块矩形上（只认运行时纹理）
 │  │                    SpriteLayer.cs    精灵对象的显示层：只取纹理里**一格**（v10 的子图 UV）
 │  │                    GroundLayer.cs    上面两个的公共实现（面片网格 / 材质 / 尺寸 / UV / 离地）
@@ -283,6 +285,15 @@ Assets/
     露出对象原来的贴图。**能不能解码看运行平台**：Windows 上稳的是 H.264 的 `.mp4`，`.webm` 多半不行。
     （老项目搬来的 `SmartVideoPlayer`——按 Inspector `VideoClip[]` 播那套——已于 2026-09-22 删除，
     文档驱动这条一直走的是 `VideoOverlay`。）
+- **视频混合：贴图上的「两条视频 + Mask」层（2026-09-26，协议 v17）**：贴图上还可能带 `VideoBlend`
+  （两条通道 `a` / `b`，各是 `{ clips, picked }`；另有 `loop` 与 `audio: none|a|b`）。
+  收到 `play_video` 时 `SceneObjectView` 给它挂一个 `VideoBlend`（`Presentation/VideoBlend.cs`）：
+  两条 `VideoPlayer` → **各一张 `RenderTexture`**，用自建 shader `DiceTale/VideoBlend`
+  （`lerp(B, A, mask.a)`）合成到一块面片上（`VideoBlendLayer`，`GroundLayer` 的第三个子类）。
+  **遮罩是纯运行态**：初始**整张不透明**（A 盖住、B 完全看不见），编辑器 Mask 窗口擦一笔就发一条
+  `erase_video_mask`，组件按**同一顺序**重放（与 `FogOfWar` 同一套；重开 Unity 回到初始）。
+  遮罩尺寸按**视频像素尺寸**推（与编辑器 `mask-math.ts` 的 `previewMaskSizeFor` 同式）。
+  与 `VideoOverlay` **语义互斥**（同一对象最多其一），前端按组件分派。
 - **缩放：`scale` 是等比，单轴字段可选（2026-09-20）**：文档 v11 起，对象上可能多出
   **可选**的 `scaleX` / `scaleY`（编辑器里拖缩放手柄的**边**、或关掉属性面板的等比锁后改单轴时会写）。
   客户端目前**按 `scale` 等比渲染**——`SceneObjectView` 把它们忽略掉是**正确**的（协议里它们是可选字段，

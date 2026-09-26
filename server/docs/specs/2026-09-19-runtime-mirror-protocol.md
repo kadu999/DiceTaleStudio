@@ -25,7 +25,10 @@
 > **命令那一组仍然一个字节都没动**（子图是数据，不是新动作）。
 > 其后 **v11–v16** 的每一次都是**与文档格式同一批**的不兼容改动（kind 改名、显示顺序搬进渲染组件、
 > 战争雾拆组件 / 变成独立对象、取消 `Map` 类型把网格变成贴图上的可选组件等），照旧靠版本握手挡住；
-> 逐条见 `CODE-STRUCTURE.md` §6.1 与 `packages/protocol/src/messages.ts` 的版本注释。
+> **v17（2026-09-26）**新增**视频混合组件 `VideoBlend`**（两条视频叠在同一矩形上用 Mask 混合：
+> A 盖住、擦开露 B）与命令 `erase_video_mask`——**文档格式不动**（纯加法），但老前端不认这个组件 /
+> 这条命令，所以协议照旧 +1。逐条见 `CODE-STRUCTURE.md` §6.1 与 `packages/protocol/src/messages.ts`
+> 的版本注释。
 > 取代 [`2026-09-18-frontend-integration-contract.md`](2026-09-18-frontend-integration-contract.md)
 > （那份写的是「前端上报数据、后台按 id 寻址动作」的老模型，已整层删除）。
 
@@ -136,6 +139,7 @@
 | `PlaySound` | **不建可见物**：数据留在镜像里（`play_sound` 时从 `data.picked` 取播哪一条） |
 | `Teleport` | **不建可见物**：数据留在镜像里（触发传送 = 编辑器换场景，整份 `scene_push`） |
 | `VideoOverlay` | 运行时在**对象自己的矩形**上建视频层（见下） |
+| `VideoBlend` | 运行时在**对象自己的矩形**上建**混合层**：两条视频（A 盖住 / B 擦开露出）各渲一张 `RenderTexture`，用一张**纯运行态**的 Mask 混合（见下）；**遮罩不随场景下发**，由 `erase_video_mask` 驱动 |
 | 其余（未知类型 / 将来的新组件） | 忽略 |
 
 **精灵（子图，v10）**：一张图可以按「行 × 列」切成格子，对象只显示其中一格。
@@ -194,6 +198,7 @@ v12 起叫 `Image`）——**只显示整张图**，与精灵的差别只有「�
 | `GridMap.data.fog`（v15 起改为独立的 `FogOfWar` 组件） | **战争雾**已从网格 data 拆出：v13 拆成组件、v15 又搬成独立的 `Fog` 对象（见上表 `FogOfWar`）。**老版本网格 data 里的 `fog` 前端已不再认识**；`mapId` 无效或没指定雾区时**不建那一层雾** |
 | `PlaySound.data` | `{ clips, picked, layer }`：前端播的就是 `picked` 那条；`layer` ∈ `bgm/sfx/voice`（三档），同层同时只响一条。`layer: "bgm"` 的老对象前端会**明确拒掉**（背景音乐走 `play_bgm` 那一组） |
 | `VideoOverlay.data` | `{ enabled, clips, picked, loop, audio }`——总开关、加进来的视频、放哪一条、循不循环、出不出视频自带的声音。收到 `play_video` 时前端在**这个对象自己的矩形**上建一层视频（`Presentation/VideoOverlay.cs`）；**关掉 `enabled` 时连那一层都不建**。`names`（显示名）**不进协议** |
+| `VideoBlend.data` | `{ a: { clips, picked }, b: { clips, picked }, loop, audio }`——两条通道各自「列表 + 选中」+ 循环 + 声音来源（`none` / `a` / `b`）；**没有 `enabled`**（组件在 = 在用）。收到 `play_video` 时前端在对象矩形上建**混合层**（`Presentation/VideoBlend.cs`）；**遮罩是运行态**，由 `erase_video_mask` 驱动，不随场景下发 |
 | `Teleport.data` | `{ targets, picked }`。**前端不用它**：触发传送阵 = 编辑器切换当前场景 → 整份 `scene_push` 下来，前端只管换镜像 |
 | `project_settings` | **项目级全局设置**（v7 起，**不在场景里**）。v8 起只有三档音量：`{ audio: { bgm: { volume }, sfx: { volume }, voice: { volume } } }`。前端**收到即生效**，不需要命令；背景音乐**恒循环** |
 
@@ -208,6 +213,7 @@ v12 起叫 `Image`）——**只显示整张图**，与精灵的差别只有「�
 | `play_bgm` | `{ clip }` | **放 / 切换到指定的那一首**（v7 起）。唯一带数据的一条命令：曲目清单不在任何对象上、也不在项目设置里——它就是项目 `Assets/audio/` 下的音频，编辑器弹框里点哪一首就说哪一首。重复放同一首 = 从头重播 |
 | `pause_bgm` / `resume_bgm` / `stop_bgm` | — | 背景音乐的暂停 / 继续 / 停止（v7 起）。`pause_bgm` 赶在取音频完成之前到时，前端记下意图、加载落地后立刻补一次暂停（编辑器补发暂停态是「先放再暂停」两条连发） |
 | `erase_mask` | `{ objectId, stroke: { points, radius, softness } }` | 在**镜像里那张地图**的雾层上，沿这笔**轨迹**擦出一条软边（见下） |
+| `erase_video_mask` | `{ objectId, stroke: { points, radius, softness } }` | 在**贴图对象**的 `VideoBlend` 混合遮罩上，沿这笔**轨迹**擦出一条软边（与 `erase_mask` 同一套 `stroke` 口径；`objectId` = 贴图对象 id，遮罩纯运行态、不随场景回来） |
 | `reveal_fog_region` | `{ objectId, region, revealed }`（**`objectId` = 雾对象 id**） | 含该区域位的格子**整片揭示**（`true`）/ **整片盖回**（`false`） |
 | `play_video` | `{ objectId }` | 在这个对象自己的矩形上放它 `video.picked` 那一条（**命令里不带数据**：放哪条 / 循环 / 声音都从镜像里读） |
 | `pause_video` | `{ objectId }` | 暂停在当前帧 |
@@ -252,4 +258,5 @@ v12 起叫 `Image`）——**只显示整张图**，与精灵的差别只有「�
 | `Presentation/GridMapView.cs` | `GridMap` 组件的数据座位（v28 起网格是贴图上的可选组件）：只存 `MirrorMap`，网格线以后画在这里 |
 | `Presentation/FogOfWar.cs` | 战争雾层：挂在**独立的雾对象**上，按 `mapId` 找到被引用的**带网格的贴图**，用它 `regions` + 那个对象的 `cells` 生成像素遮罩（与编辑器预览同一张尺寸），按 `erase_mask` / `reveal_fog_region` 揭示；揭示状态留在组件里，数据变了「重填 + 重放」 |
 | `Presentation/VideoOverlay.cs` | 视频层：按 URL 放（本地资源包优先、否则服务端原始字节），与宿主对象共享位置 / 尺寸 / sortingOrder；首帧就绪后隐藏宿主 Renderer，停止或解码失败时恢复 |
+| `Presentation/VideoBlend.cs` | 视频混合层：两条 `VideoPlayer` → 各一张 `RenderTexture`，用 `DiceTale/VideoBlend`（`lerp(B, A, mask.a)`）与一张 CPU 遮罩混合；遮罩初始**整张不透明**，按 `erase_video_mask` 擦、按序重放（尺寸按视频像素尺寸，与编辑器同式）；`Presentation/VideoBlendLayer.cs` 是它的渲染器（`GroundLayer` 的第三个子类） |
 | `Presentation/ResourceImageLoader.cs` | 按逻辑 ID 取图（带缓存 / 去重 / 失败记忆） |

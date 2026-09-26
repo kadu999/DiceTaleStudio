@@ -12,7 +12,7 @@
 | 语言 / 运行时 | TypeScript 5.9 + ESM，Node 22+（后端跑在 `tsx` 上，无编译产物） |
 | 包管理 | pnpm workspace（`apps/*` + `packages/*`，共 8 个包） |
 | 文档格式版本 | `DOCUMENT_FORMAT_VERSION = 28`（`packages/document/src/types.ts`） |
-| 协议版本 | `PROTOCOL_VERSION = 16`（`packages/protocol/src/messages.ts`；文档 v28 取消 `Map` 类型、网格变成贴图上的可选组件是配套的不兼容改动，见 §6.1） |
+| 协议版本 | `PROTOCOL_VERSION = 17`（`packages/protocol/src/messages.ts`；v17 新增视频混合组件 `VideoBlend` 与命令 `erase_video_mask`，见 §6.1） |
 | 后端默认地址 | `0.0.0.0:1420`（`resources/config/app.json`，可被 `HOST` / `PORT` 覆盖） |
 | 编辑器开发地址 | `http://localhost:5173`（Vite，`/api`、`/editor`、`/client` 反代到 1420） |
 | 编辑器生产地址 | `http://localhost:1420`（后端同源托管 `apps/editor/dist`） |
@@ -685,7 +685,7 @@ v23 起 `validateScene` 多了第二个参数：`validateScene(scene, { metas })
 
 | 名称 | 值 | 用途 |
 |---|---|---|
-| `PROTOCOL_VERSION` | `16` | 握手校验；不一致则关闭连接（`4002`）。最近一次配套改动是文档 v28 ↔ 协议 v16：取消 `Map` 类型、网格变成贴图上的**可选组件**——老前端不认这个 wire 形状，靠握手把它挡在连上的那一刻 |
+| `PROTOCOL_VERSION` | `17` | 握手校验；不一致则关闭连接（`4002`）。最近一次改动是**新增视频混合组件 `VideoBlend` + 命令 `erase_video_mask`**：老前端不认这个组件 / 这条命令（混合层不建、命令回「不认识」），靠握手把它挡在连上的那一刻 |
 | `SPRITE_SHEET_MAX` | `64` | 子图切分的**列 / 行上限**（与 `@dts/document` 的 `SPRITE_SHEET_MAX` 同值，契约测试盯着） |
 | `RUNTIME_INACTIVE_STATUS` | `503` | 未开闸时拒绝 `/client` 升级的 HTTP 状态 |
 | `RUNTIME_INACTIVE_REASON` | `"runtime-inactive"` | 写在 `x-dts-reason` 头里 |
@@ -711,6 +711,7 @@ v23 起 `validateScene` 多了第二个参数：`validateScene(scene, { metas })
 | `play_bgm` | **`clip`** | 唯一带路径的命令（歌单不在任何对象上，就是项目 `Assets/audio/`） |
 | `pause_bgm` / `resume_bgm` / `stop_bgm` | — | — |
 | `erase_mask` | `objectId`, `stroke{points[],radius,softness}` | 只发**轨迹**，`objectId` = **雾对象 id**，雾层在推下去的雾对象里 |
+| `erase_video_mask` | `objectId`, `stroke{points[],radius,softness}` | 只发**轨迹**，`objectId` = **贴图对象 id**，遮罩在推下去的那个对象的 `VideoBlend` 里（纯运行态，不随场景回来） |
 | `reveal_fog_region` | `objectId`, `region`, `revealed` | `objectId` = **雾对象 id**；区域位取自它 `FogOfWar` 组件的 `regions`（v27 起；之前是地图） |
 
 载荷 schema（与 `@dts/document` **有意重复**，两处同步维护）：
