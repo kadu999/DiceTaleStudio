@@ -4,6 +4,7 @@ import type { ComponentType } from "../components";
 import type { SceneDoc } from "../types";
 import { addObjectGridMap, removeObjectGridMap } from "./object";
 import { removeObjectVideo, setVideoEnabled } from "./video";
+import { addObjectVideoBlend, removeObjectVideoBlend } from "./video-blend";
 
 /**
  * 「添加组件 / 移除组件」的**统一入口**（属性面板底部的 `Add Component` 与组件头上的「移除」）。
@@ -25,6 +26,8 @@ export function addObjectComponent(
       return addObjectGridMap(scene, objectId);
     case "VideoOverlay":
       return setVideoEnabled(scene, objectId, true);
+    case "VideoBlend":
+      return addObjectVideoBlend(scene, objectId);
     default:
       return false;
   }
@@ -41,6 +44,8 @@ export function removeObjectComponent(
       return removeObjectGridMap(scene, objectId);
     case "VideoOverlay":
       return removeObjectVideo(scene, objectId);
+    case "VideoBlend":
+      return removeObjectVideoBlend(scene, objectId);
     default:
       return false;
   }

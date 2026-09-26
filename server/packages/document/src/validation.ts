@@ -8,6 +8,7 @@ import {
   mapDataOf,
   soundDataOf,
   teleportDataOf,
+  videoBlendDataOf,
   videoDataOf,
 } from "./access";
 import type { AssetMetaDoc, AssetMetas } from "./asset-meta";
@@ -313,6 +314,44 @@ function validateObject(
         path: `${path}/video/picked`,
         message: "选中的那条视频不在视频列表里（按还没选处理）",
       });
+    }
+  }
+
+  /*
+    视频混合（新，可选）：两条通道各自「列表 + 选中」，与视频同一套口径。
+    遮罩不在文档里（纯运行态），所以这里没有可校验的遮罩；「同时挂了视频与视频混合」
+    是数据上的歧义（两条流同时想盖同一个矩形）——只提醒，按组件处理、不拦。
+  */
+  const videoBlend = videoBlendDataOf(object);
+  if (videoBlend !== undefined) {
+    if (video !== undefined) {
+      issues.push({
+        level: "warning",
+        path: `${path}/components`,
+        message: "同时挂了「视频」与「视频混合」：前端只按视频混合处理（建议摘掉一个）",
+      });
+    }
+
+    const channels = [
+      { label: "A", clips: videoBlend.a.clips, picked: videoBlend.a.picked },
+      { label: "B", clips: videoBlend.b.clips, picked: videoBlend.b.picked },
+    ];
+    for (const { label, clips, picked } of channels) {
+      if (clips.some((clip) => clip.trim().length === 0)) {
+        issues.push({
+          level: "warning",
+          path: `${path}/videoBlend/${label}/clips`,
+          message: `视频混合通道 ${label} 里有空条目（会被忽略）`,
+        });
+      }
+
+      if (picked !== undefined && !clips.includes(picked)) {
+        issues.push({
+          level: "warning",
+          path: `${path}/videoBlend/${label}/picked`,
+          message: `通道 ${label} 选中的那条视频不在它的列表里（按还没选处理）`,
+        });
+      }
     }
   }
 

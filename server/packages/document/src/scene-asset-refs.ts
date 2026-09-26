@@ -47,13 +47,47 @@ function mapComponentData(
   // 声音 / 视频：只有「列表 + 选中」是资源 ID。
   // v28 起 `GridMap` 的 data 里没有 `image`、按项记的 `names` 也已退役——那两段是
   // **永远匹配不到**的旧分支，已经删掉（手写文件里的 `names` 由 schema 当未知键丢弃）。
-  if (type !== "PlaySound" && type !== "VideoOverlay") {
-    return data;
+  if (type === "PlaySound" || type === "VideoOverlay") {
+    return mapMediaFields(data, ["clips", "picked"], metas, mode);
   }
 
+  // 视频混合：两条通道各是一份「列表 + 选中」（与声音 / 视频同形）。
+  if (type === "VideoBlend") {
+    let changed = false;
+    const mapped: Record<string, unknown> = { ...data };
+    for (const key of ["a", "b"] as const) {
+      const channel = data[key];
+      if (typeof channel !== "object" || channel === null || Array.isArray(channel)) {
+        continue;
+      }
+
+      const next = mapMediaFields(channel as Record<string, unknown>, ["clips", "picked"], metas, mode);
+      if (next !== channel) {
+        changed = true;
+        mapped[key] = next;
+      }
+    }
+
+    return changed ? mapped : data;
+  }
+
+  return data;
+}
+
+/**
+ * 把「列表 + 选中」那份数据里的资源 ID 换算一遍（`clips` / `picked`）。
+ *
+ * 声音 / 视频的整份 data、视频混合的一条通道，都是同一个形状——所以只写这一份。
+ */
+function mapMediaFields(
+  data: Record<string, unknown>,
+  keys: readonly string[],
+  metas: AssetMetas,
+  mode: "guid" | "id",
+): Record<string, unknown> {
   let changed = false;
   const mapped: Record<string, unknown> = { ...data };
-  for (const key of ["clips", "picked"] as const) {
+  for (const key of keys) {
     const value = data[key];
     const next = mapResourceValue(value, metas, mode);
     if (next !== value) {

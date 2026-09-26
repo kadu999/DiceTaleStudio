@@ -101,6 +101,7 @@ export function setVideoClips(
     scene,
     objectId,
     ensureVideoData,
+    (video) => video,
     (video) => video.clips,
     (video, next) => {
       video.clips = next;
@@ -129,5 +130,5 @@ export function setVideoPicked(
   objectId: string,
   clipId: string | null,
 ): boolean {
-  return setMediaPicked(scene, objectId, ensureVideoData, (video) => video.clips, clipId);
+  return setMediaPicked(scene, objectId, ensureVideoData, (video) => video, (video) => video.clips, clipId);
 }

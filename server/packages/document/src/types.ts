@@ -235,7 +235,7 @@ export interface WorldPosition {
 
 export interface ComponentDoc {
   readonly id: string;
-  /** 组件类型 ID，与前端组件类名一致（`GridMap` / `FogOfWar` / `ImageLayer` / `SpriteLayer` / `PlaySound` / `Teleport` / `VideoOverlay`）。 */
+  /** 组件类型 ID，与前端组件类名一致（`GridMap` / `FogOfWar` / `ImageLayer` / `SpriteLayer` / `PlaySound` / `Teleport` / `VideoOverlay` / `VideoBlend`）。 */
   readonly type: string;
   readonly displayName?: string;
   readonly data: Record<string, unknown>;
@@ -436,6 +436,49 @@ export interface VideoDataDoc {
   readonly audio: boolean;
 }
 
+/**
+ * 视频混合里**一条通道**的数据：加进来的视频列表 + 当前选中的那条。
+ *
+ * 形状与「声音 / 视频」的 `{ clips, picked? }` 逐字一致——所以列表命令的公共骨架
+ * （`commands/shared.ts` 的 `setMediaList` / `setMediaPicked`）原样复用，不必再抄一份。
+ */
+export interface VideoBlendChannelDoc {
+  /** 加进来的视频（资源逻辑 ID）；顺序 = 加进来的先后。 */
+  readonly clips: string[];
+  /** 加进来的里当前选中的那条（必须是 `clips` 里的一个）；缺省 = 还没选。 */
+  readonly picked?: string;
+}
+
+/**
+ * 视频混合的声音来源：`none`（缺省，静音）/ `a`（出通道 A 的声音）/ `b`（出通道 B 的声音）。
+ *
+ * 两条同时放、声音至多出一路：现场同时轰两条比听不到更糟——与视频的「缺省静音」同一口径。
+ */
+export const VIDEO_BLEND_AUDIO = ["none", "a", "b"] as const;
+
+export type VideoBlendAudio = (typeof VIDEO_BLEND_AUDIO)[number];
+
+/**
+ * 视频混合组件（`VideoBlend`）的数据：**两条视频通道 + 循环 + 声音来源**。
+ *
+ * A 是**盖在上面**的那条、B 是**被盖住**的那条：运行时遮罩整张不透明（只看见 A），
+ * 在 Mask 窗口里擦开的地方露出底下的 B——揭示形状与战争雾完全同构（纯运行态、不写文档）。
+ *
+ * **没有 `enabled`**：与 `GridMap` 一样走「组件在 = 在用」（可选组件由属性面板底部的
+ * Add Component 添加、组头移除），不像 `VideoDataDoc.enabled` 那样是 v19 迁移留下的兼容字段。
+ * **遮罩也不在这里**：它是运行态（新命令 `erase_video_mask` 驱动），组件只声明「放什么」。
+ */
+export interface VideoBlendDataDoc {
+  /** 通道 A（盖在上面）：视频列表 + 选中的那条。 */
+  readonly a: VideoBlendChannelDoc;
+  /** 通道 B（擦开露出）：视频列表 + 选中的那条。 */
+  readonly b: VideoBlendChannelDoc;
+  /** 两条一起循环。 */
+  readonly loop: boolean;
+  /** 出哪条的声音。 */
+  readonly audio: VideoBlendAudio;
+}
+
 export interface GameObjectDoc {
   readonly id: string;
   readonly name: string;
@@ -484,8 +527,8 @@ export interface GameObjectDoc {
   /**
    * **实体身上挂的组件**（v19 起，对象特性也在这里）。
    *
-   * 「对象是什么、画成什么样、运行时能做什么」全由这里声明：7 种对象能力组件
-   * （`GridMap` / `FogOfWar` / `ImageLayer` / `SpriteLayer` / `PlaySound` / `Teleport` / `VideoOverlay`）——
+   * 「对象是什么、画成什么样、运行时能做什么」全由这里声明：8 种对象能力组件
+   * （`GridMap` / `FogOfWar` / `ImageLayer` / `SpriteLayer` / `PlaySound` / `Teleport` / `VideoOverlay` / `VideoBlend`）——
    * v18 及更早它们住在对象的扁平字段里（`map` / `image` / `sound` / `teleport` / `video`），
    * 由 `migrateFeaturesToComponents` 搬进来。
    *

@@ -10,6 +10,7 @@ import {
   sceneSchema,
   soundDataSchema as protocolSoundDataSchema,
   teleportDataSchema as protocolTeleportDataSchema,
+  videoBlendDataSchema as protocolVideoBlendDataSchema,
   videoDataSchema as protocolVideoDataSchema,
   type GameObjectPayload,
 } from "@dts/protocol";
@@ -39,6 +40,7 @@ import {
   soundDataSchema,
   teleportDataSchema,
   validateScene,
+  videoBlendDataSchema,
   videoDataSchema,
   withFeature,
   type ImageRef,
@@ -63,6 +65,7 @@ describe("契约：协议与文档的组件口径一致", () => {
     expect(COMPONENT_TYPE.sound).toBe(DEFAULT_SLOT_COMPONENT.sound);
     expect(COMPONENT_TYPE.teleport).toBe(DEFAULT_SLOT_COMPONENT.teleport);
     expect(COMPONENT_TYPE.video).toBe(DEFAULT_SLOT_COMPONENT.video);
+    expect(COMPONENT_TYPE.videoBlend).toBe(DEFAULT_SLOT_COMPONENT.videoBlend);
   });
 
   it("每个槽位承载组件都在注册表里有定义，且 slot 与 legacyField 一一对应", () => {
@@ -89,12 +92,14 @@ describe("契约：协议与文档的组件口径一致", () => {
       expect(SLOT_COMPONENT_TYPES).toContain(def);
     }
 
-    // 有 slot、没 legacyField 的只许是 `FogOfWar`（v25 从 `GridMap` data 里拆出来的
-    // 从属组件）：它的迁移是 `migrateMapFogToComponent`，不走 v19 那套扁平字段搬迁
+    // 有 slot、没 legacyField 的只许是「不来自 v19 扁平字段迁移」的两种：
+    // v25 从 `GridMap` data 里拆出来的 `FogOfWar`，与后加的 `VideoBlend`
+    const slotOnlyNoLegacy = ["FogOfWar", "VideoBlend"];
     for (const def of SLOT_COMPONENT_TYPES) {
       if (legacyTypes.includes(def.type)) continue;
+      expect(slotOnlyNoLegacy, def.type).toContain(def.type);
       expect({ component: def.type, legacyField: def.legacyField }).toEqual({
-        component: "FogOfWar",
+        component: def.type,
         legacyField: undefined,
       });
     }
@@ -257,6 +262,7 @@ describe("契约：协议与文档的组件口径一致", () => {
       { name: "PlaySound", doc: soundDataSchema, proto: protocolSoundDataSchema },
       { name: "Teleport", doc: teleportDataSchema, proto: protocolTeleportDataSchema },
       { name: "VideoOverlay", doc: videoDataSchema, proto: protocolVideoDataSchema },
+      { name: "VideoBlend", doc: videoBlendDataSchema, proto: protocolVideoBlendDataSchema },
     ];
     for (const { name, doc, proto } of defaultPairs) {
       expect({ name, parsed: proto.parse({}) }, `${name} 的缺省值与文档不一致`).toEqual({
@@ -273,6 +279,18 @@ describe("契约：协议与文档的组件口径一致", () => {
       { name: "layer 未知", doc: soundDataSchema, proto: protocolSoundDataSchema, sample: { layer: "bogus" } },
       { name: "targets 含空串", doc: teleportDataSchema, proto: protocolTeleportDataSchema, sample: { targets: [""] } },
       { name: "video clips 含空串", doc: videoDataSchema, proto: protocolVideoDataSchema, sample: { clips: [""] } },
+      {
+        name: "videoBlend 声音来源未知",
+        doc: videoBlendDataSchema,
+        proto: protocolVideoBlendDataSchema,
+        sample: { audio: "bogus" },
+      },
+      {
+        name: "videoBlend 通道 clips 含空串",
+        doc: videoBlendDataSchema,
+        proto: protocolVideoBlendDataSchema,
+        sample: { a: { clips: [""] } },
+      },
     ];
     for (const { name, doc, proto, sample } of invalid) {
       expect({ name, doc: doc.safeParse(sample).success }, `${name}：文档侧应当拒`).toEqual({ name, doc: false });

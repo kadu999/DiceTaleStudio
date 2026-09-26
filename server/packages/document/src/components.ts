@@ -6,7 +6,7 @@ import type { ComponentDoc } from "./types";
  *
  * **v19 起，对象身上那些「可插拔特性」是组件**：地图 / 贴图 / 声音 / 传送 / 视频
  * （见 `presets.ts` 的 `OBJECT_PRESETS`），战争雾（`FogOfWar`）是 v25 从 `GridMap`
- * 拆出来的第 7 种。这些组件多两项：
+ * 拆出来的第 7 种，视频混合（`VideoBlend`）是后加的第 8 种。这些组件多两项：
  * - `slot`：它承担对象哪种能力（**组件自报**；访问器按 slot 找对象上的组件，不看 kind）；
  * - `templateKinds`：对象创建模板中会预置/路由到该组件的 kind；
  * - `repairKinds`：组件缺失时，编辑器提供显式修复入口的 kind；
@@ -14,7 +14,7 @@ import type { ComponentDoc } from "./types";
  * - `legacyField`：v19 之前它住在对象的哪个扁平字段里——迁移函数靠它把老字段搬成组件实例。
  */
 
-/** 组件类型 ID：7 种对象能力组件（6 种 v19 从对象特性提升上来，`FogOfWar` 是 v25 从 GridMap 拆出来的），逐字对齐前端组件类名。 */
+/** 组件类型 ID：8 种对象能力组件（6 种 v19 从对象特性提升上来，`FogOfWar` 是 v25 从 GridMap 拆出来的），逐字对齐前端组件类名。 */
 export type ComponentType =
   | "GridMap"
   | "FogOfWar"
@@ -22,7 +22,8 @@ export type ComponentType =
   | "SpriteLayer"
   | "PlaySound"
   | "Teleport"
-  | "VideoOverlay";
+  | "VideoOverlay"
+  | "VideoBlend";
 
 export interface ComponentTypeDef {
   /** 组件类型 ID（= 前端组件类名）。 */
@@ -130,6 +131,20 @@ export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
     templateKinds: ["Image"],
     optionalKinds: ["Image"],
     tooltip: "视频列表 + 选中的那条 + 循环 / 声音两个开关；画面盖在对象自己的矩形上",
+  },
+  {
+    // 视频混合（对象特性之外新加的第 8 种）：两条视频叠在**同一个矩形**上用 Mask 混合
+    // （A 盖住、擦开露 B）。遮罩是**纯运行态**（新命令 `erase_video_mask` 驱动，不写文档），
+    // 组件只声明「放什么」。
+    // 与「视频」各占一个槽位、机制上可并存，但语义互斥（两条流同时想盖同一矩形）——
+    // `validateScene` 给一条 warning，前端取 `VideoBlend` 优先。
+    type: "VideoBlend",
+    displayName: "视频混合",
+    gmEditable: true,
+    slot: "videoBlend",
+    templateKinds: ["Image"],
+    optionalKinds: ["Image"],
+    tooltip: "两条视频通道（A 盖住 / B 擦开露出）+ 循环 + 声音来源；遮罩在 Mask 窗口里擦",
   },
 ];
 

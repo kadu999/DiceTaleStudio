@@ -17,6 +17,7 @@ import type {
   GameObjectDoc,
   SoundDataDoc,
   TeleportDataDoc,
+  VideoBlendDataDoc,
   VideoDataDoc,
 } from "./types";
 
@@ -24,7 +25,8 @@ import type {
  * 对象特性的**唯一访问路径**。
  *
  * v19 起特性住在 `components[]` 里（`GridMap` / `ImageLayer` / `SpriteLayer` / `PlaySound` /
- * `Teleport` / `VideoOverlay`，`FogOfWar` 是 v25 从 `GridMap` 拆出来的第 7 种），
+ * `Teleport` / `VideoOverlay`，`FogOfWar` 是 v25 从 `GridMap` 拆出来的第 7 种，
+ * `VideoBlend` 是后加的第 8 种），
  * 而**「数据存在哪」只有这个文件知道**：调用方一律写
  * `mapDataOf(object)` / `ensureSoundData(draft)`，不写 `object.components.find(...)`。
  * 于是「把特性从扁平字段搬进组件」这件事的改动面被压在这个文件里（迁移那一次）。
@@ -245,6 +247,15 @@ export function isVideoEnabled(object: GameObjectDoc): boolean {
   return video !== undefined && video.enabled !== false;
 }
 
+/**
+ * 视频混合数据（两条通道 + 循环 + 声音来源）。
+ *
+ * **组件不在 = 没开**：与 `GridMap` 同一条口径（组件在 = 在用），没有 `enabled` 字段。
+ */
+export function videoBlendDataOf(object: GameObjectDoc): VideoBlendDataDoc | undefined {
+  return componentDataOfSlot<VideoBlendDataDoc>(object, "videoBlend");
+}
+
 // ---------------------------------------------------------------- 写（draft）
 
 /**
@@ -402,6 +413,20 @@ export function ensureTeleportData(object: Draft<GameObjectDoc>): Draft<Teleport
 export function ensureVideoData(object: Draft<GameObjectDoc>): Draft<VideoDataDoc> | undefined {
   return ensureSlotData<VideoDataDoc>(object, "video", () =>
     defaultDataOf(DEFAULT_SLOT_COMPONENT.video) as unknown as VideoDataDoc,
+  );
+}
+
+/**
+ * 视频混合数据的 draft；缺实例时，只有具备该可选能力的对象才创建默认组件。
+ *
+ * 只有贴图能带（预设表 `OBJECT_PRESETS.Image` 声明了 `videoBlend` 槽位）。
+ * 默认数据住在 `component-specs/video-blend.ts`（与属性面板、泛型写入同一份规格）。
+ */
+export function ensureVideoBlendData(
+  object: Draft<GameObjectDoc>,
+): Draft<VideoBlendDataDoc> | undefined {
+  return ensureSlotData<VideoBlendDataDoc>(object, "videoBlend", () =>
+    defaultDataOf(DEFAULT_SLOT_COMPONENT.videoBlend) as unknown as VideoBlendDataDoc,
   );
 }
 

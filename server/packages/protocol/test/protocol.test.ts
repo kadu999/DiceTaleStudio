@@ -10,6 +10,7 @@ import {
   parseJsonMessage,
   parseServerToClient,
   parseServerToEditor,
+  resourceIdsOfObject,
   sceneSchema,
   serverToClientSchema,
   type GameObjectPayload,
@@ -333,6 +334,64 @@ describe("协议：场景（镜像的那份对象数据）", () => {
     expect(featureData(parsed.objects[0], "将来的新组件")?.whatever).toBe(1);
   });
 
+  it("视频混合（v17）：组件收得下，两条通道的资源 ID 都进资源清单", () => {
+    const sprite = sampleScene().objects[1] as unknown as Record<string, unknown>;
+    const object = {
+      ...sprite,
+      components: [
+        feature(COMPONENT_TYPE.image, {
+          id: "project:P/Assets/images/x.png",
+          width: 32,
+          height: 32,
+          sortingOrder: 0,
+        }),
+        feature(COMPONENT_TYPE.videoBlend, {
+          a: { clips: ["project:P/Assets/video/a.mp4"], picked: "project:P/Assets/video/a.mp4" },
+          b: { clips: ["project:P/Assets/video/b.mp4"] },
+          loop: true,
+          audio: "b",
+        }),
+      ],
+    };
+
+    const parsed = sceneSchema.parse({ name: "场景1", objects: [object] });
+    expect(featureData(parsed.objects[0], COMPONENT_TYPE.videoBlend)).toEqual({
+      a: { clips: ["project:P/Assets/video/a.mp4"], picked: "project:P/Assets/video/a.mp4" },
+      b: { clips: ["project:P/Assets/video/b.mp4"] },
+      loop: true,
+      audio: "b",
+    });
+
+    // 两条通道引用的视频都要进资源包（否则混合层里那条不在包里）
+    expect(resourceIdsOfObject(parsed.objects[0]!)).toEqual([
+      "project:P/Assets/images/x.png",
+      "project:P/Assets/video/a.mp4",
+      "project:P/Assets/video/b.mp4",
+    ]);
+
+    // 与「视频」同一套：声音只认三档；空通道给默认值
+    expect(
+      sceneSchema.parse({
+        name: "场景1",
+        objects: [{ ...sprite, components: [feature(COMPONENT_TYPE.videoBlend, {})] }],
+      }).objects[0]?.components[0]?.data,
+    ).toEqual({ a: { clips: [] }, b: { clips: [] }, loop: false, audio: "none" });
+
+    expect(() =>
+      sceneSchema.parse({
+        name: "场景1",
+        objects: [
+          {
+            ...sprite,
+            components: [
+              feature(COMPONENT_TYPE.videoBlend, { a: { clips: [] }, b: { clips: [] }, loop: false, audio: "bogus" }),
+            ],
+          },
+        ],
+      }),
+    ).toThrow();
+  });
+
   it("网格尺寸必须是正整数、rowOrder 只认 bottom-up", () => {
     // zod 的 `parse` 抛的是 issue 列表（消息是 JSON），所以这里只要求「确实被拒了」
     const rejected = /校验失败|Invalid|too_small|custom/;
@@ -508,6 +567,35 @@ describe("协议：编辑器 → 服务端", () => {
         region: 8,
         revealed: false,
       });
+    }
+  });
+
+  it("视频混合：erase_video_mask 也只发轨迹（宿主是贴图对象）；空轨迹 / 缺整笔都拒", () => {
+    const stroke = {
+      points: [{ x: 0.2, y: 0.4 }],
+      radius: 0.05,
+      softness: 1,
+    };
+
+    const parsed = parseEditorToServer({
+      type: "editor_command",
+      requestId: "blend-1",
+      command: { kind: "erase_video_mask", objectId: "img_01", stroke },
+    });
+    expect(parsed.type).toBe("editor_command");
+    if (parsed.type === "editor_command") {
+      expect(parsed.command).toEqual({ kind: "erase_video_mask", objectId: "img_01", stroke });
+      // 命令里**没有数据**：没有两条通道的 clips / picked、也没有遮罩位图
+      const wire = JSON.stringify(parsed.command);
+      expect(wire).not.toContain("clips");
+      expect(wire).not.toContain("picked");
+    }
+
+    for (const command of [
+      { kind: "erase_video_mask", objectId: "img_01", stroke: { points: [], radius: 0.05, softness: 1 } },
+      { kind: "erase_video_mask", objectId: "img_01" },
+    ]) {
+      expect(() => parseEditorToServer({ type: "editor_command", requestId: "blend-2", command })).toThrow();
     }
   });
 

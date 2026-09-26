@@ -146,33 +146,38 @@ export function syncMediaSideData(data: { picked?: string }, list: readonly stri
 }
 
 /**
- * 替换「列表 + 选中」那份数据的列表（声音 / 视频 / 传送阵同一套）：
+ * 替换「列表 + 选中」那份数据的列表（声音 / 视频 / 传送阵 / 视频混合的每条通道同一套）：
  * 去空去重 → 没变返回 false → 赋值 → 收拾选中。
+ *
+ * `mediaOf` 是「从组件数据里取出那条**媒体**」的选择器：多数组件本身就是那条媒体（传自身），
+ * 视频混合的两条通道则是 `data.a` / `data.b`——于是骨架只此一份，通道不必再抄一遍。
  *
  * `onClear` 给视频那种「清空且开关关着 → 组件整个摘掉」的额外收尾留一个口子：
  * 它在**列表变空**时被调一次，返回 true 表示这次变更已被它处理（此处不再赋值 / 收拾选中）。
  */
-export function setMediaList<T extends { picked?: string }>(
+export function setMediaList<TData, TMedia extends { picked?: string }>(
   scene: Draft<SceneDoc>,
   objectId: string,
-  ensure: (object: Draft<GameObjectDoc>) => T | undefined,
-  listOf: (data: T) => readonly string[],
-  setList: (data: T, items: string[]) => void,
+  ensure: (object: Draft<GameObjectDoc>) => TData | undefined,
+  mediaOf: (data: TData) => TMedia,
+  listOf: (media: TMedia) => readonly string[],
+  setList: (media: TMedia, items: string[]) => void,
   items: readonly string[],
-  onClear?: (data: T, object: Draft<GameObjectDoc>) => boolean,
+  onClear?: (media: TMedia, object: Draft<GameObjectDoc>) => boolean,
 ): boolean {
   return withMediaData(scene, objectId, ensure, (data, object) => {
+    const media = mediaOf(data);
     const next = dedupeItems(items);
-    if (sameItemList(next, listOf(data))) {
+    if (sameItemList(next, listOf(media))) {
       return false;
     }
 
-    if (next.length === 0 && onClear !== undefined && onClear(data, object)) {
+    if (next.length === 0 && onClear !== undefined && onClear(media, object)) {
       return true;
     }
 
-    setList(data, next);
-    syncMediaSideData(data, next);
+    setList(media, next);
+    syncMediaSideData(media, next);
     return true;
   });
 }
@@ -181,30 +186,32 @@ export function setMediaList<T extends { picked?: string }>(
  * 选中 / 取消选中「加进来的里用哪一条」（`null` = 取消选中）。
  *
  * 只能选列表里的（不在列表里 = 数据对不上，直接拒掉，不悄悄把它加进去）；
- * 值没变返回 false，于是连点同一条不会往撤销栈里塞空记录。
+ * 值没变返回 false，于是连点同一条不会往撤销栈里塞空记录。`mediaOf` 同 `setMediaList`。
  */
-export function setMediaPicked<T extends { picked?: string }>(
+export function setMediaPicked<TData, TMedia extends { picked?: string }>(
   scene: Draft<SceneDoc>,
   objectId: string,
-  ensure: (object: Draft<GameObjectDoc>) => T | undefined,
-  listOf: (data: T) => readonly string[],
+  ensure: (object: Draft<GameObjectDoc>) => TData | undefined,
+  mediaOf: (data: TData) => TMedia,
+  listOf: (media: TMedia) => readonly string[],
   value: string | null,
 ): boolean {
   return withMediaData(scene, objectId, ensure, (data) => {
+    const media = mediaOf(data);
     if (value === null) {
-      if (data.picked === undefined) {
+      if (media.picked === undefined) {
         return false;
       }
 
-      delete data.picked;
+      delete media.picked;
       return true;
     }
 
-    if (!listOf(data).includes(value) || data.picked === value) {
+    if (!listOf(media).includes(value) || media.picked === value) {
       return false;
     }
 
-    data.picked = value;
+    media.picked = value;
     return true;
   });
 }

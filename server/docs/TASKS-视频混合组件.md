@@ -40,30 +40,38 @@
 ## 数据模型
 
 ```ts
+/** 一条通道：与声音 / 视频同形（公共骨架原样复用）。 */
+export interface VideoBlendChannelDoc {
+  readonly clips: string[];
+  readonly picked?: string;
+}
+
+export const VIDEO_BLEND_AUDIO = ["none", "a", "b"] as const;
+export type VideoBlendAudio = (typeof VIDEO_BLEND_AUDIO)[number];
+
 /**
  * 视频混合组件的数据：两条视频通道（A 盖住 / B 露出）+ 循环 + 声音来源。
  * 遮罩**不在数据里**——它是纯运行态（见目标第 3 条），组件只声明「放什么」。
+ * **没有 `enabled`**：与 `GridMap` 同一条「组件在 = 在用」（Add Component 添加 / 组头移除）。
  */
 export interface VideoBlendDataDoc {
-  /** 总开关（与 `VideoDataDoc.enabled` 同口径：只有开着前端才建混合层）。 */
-  readonly enabled: boolean;
-  /** 通道 A（盖在上面的那条）：加进来的视频列表 + 选中的那条。 */
-  readonly clipsA: string[];
-  readonly pickedA?: string;
-  /** 通道 B（擦开露出的那条）：同上。 */
-  readonly clipsB: string[];
-  readonly pickedB?: string;
-  /** 两条一起循环（先共用；两条节奏确实不同时再拆成 per-channel）。 */
+  readonly a: VideoBlendChannelDoc;
+  readonly b: VideoBlendChannelDoc;
   readonly loop: boolean;
-  /** 出哪条的声音：`none`（缺省，与视频的「缺省静音」同一口径）/ `a` / `b`。 */
-  readonly audio: "none" | "a" | "b";
+  readonly audio: VideoBlendAudio;
 }
 ```
 
 - **文档格式版本不动（28）**：纯加法——旧文件不含它、照常解析；新文件里的新组件由
   `sceneComponentSchema` 的 `permissiveComponentSchema` 宽松分支兜底老编辑器（保留、不删、不崩）。
   无迁移（新组件没有历史扁平字段，不属于 `FEATURE_COMPONENT_TYPES`）。
-- 默认值：`enabled: true`、`clipsA/clipsB: []`、`loop: false`、`audio: "none"`。
+- 默认值：`a/b = { clips: [] }`、`loop: false`、`audio: "none"`。
+- **实现与最初设计的差异（已落地）**：
+  - 两条通道用**嵌套对象** `a` / `b`（而不是扁平的 `clipsA` / `pickedA`）——它们与声音 / 视频
+    是**同一个形状** `{ clips, picked? }`，于是 `commands/shared.ts` 的 `setMediaList` /
+    `setMediaPicked` 骨架原样复用（只多传一个 `mediaOf` 选择器取通道），不必再抄一份；
+  - **去掉 `enabled`**：新组件走「组件在 = 在用」（`GridMap` 那套），不再背 `VideoOverlay.enabled`
+    那份 v19 遗留的兼容字段。
 
 ## 协议（16 → 17）
 
@@ -85,7 +93,7 @@ export interface VideoBlendDataDoc {
 | `schema.ts` | `videoBlendDataSchema` + `sceneComponentSchema` union 分支 |
 | `validation.ts` | 校验块：`picked` ∈ `clips`、空 clip 报错；`VideoOverlay` 与 `VideoBlend` 并存报 warning |
 | `commands/video-blend.ts` | `setVideoBlendClips(channel, clips)` / `setVideoBlendPicked(channel, clipId)` / `removeObjectVideoBlend`；`commands/component.ts` 两条 `case` |
-| `scene-asset-refs.ts` | `clipsA/pickedA/clipsB/pickedB` 的 guid ↔ id 换算 |
+| `scene-asset-refs.ts` | 两条通道的 `clips` / `picked` 的 guid ↔ id 换算（`mapMediaFields` 与声音 / 视频共用） |
 | 面板 | `VideoBlendFields.tsx`：两组通道（各「加列表 + 选一条」）+ `loop` + `audio` + 「打开 Mask 窗口」+ 播放三键；`registry.tsx` 注册组（`removable`） |
 | Mask 窗口 | `VideoBlendMaskDialog.tsx`：复用 `MapDialogShell` 外壳 + `mask-math` 的像素运算；底图 = A/B 首帧缩略图；运行态按批下发 `erase_video_mask`；编辑态纯预览 |
 | store | `video-blend-slice` + `store-types` + `initialState` + `history-slice`/`project-slice` 重置 + `store-context` 的 target / 下发 / 补发（照 `fog-reveal` 那套） |
@@ -104,8 +112,8 @@ export interface VideoBlendDataDoc {
 
 ## 任务清单
 
-- [ ] **D1 文档**：类型 + schema + 注册表 + presets + 校验 + 命令 + 资源换算 + 单测（`video-blend.test.ts`）
-- [ ] **D2 协议**：v17 + 组件 schema + `erase_video_mask` + 契约测试（`protocol-document-contract.test.ts` 加一条）
+- [x] **D1 文档**：类型 + schema + 注册表 + presets + 校验 + 命令 + 资源换算 + 单测（`video-blend.test.ts`）
+- [x] **D2 协议**：v17 + 组件 schema + `erase_video_mask` + 契约测试（`protocol-document-contract.test.ts` 加一条）
 - [ ] **D3 后端**：`?info=1` 视频探测 + 测试
 - [ ] **D4 编辑器**：store 切片 + 面板 + Add Component 入口 + Mask 窗口 + 单测 / e2e
 - [ ] **D5 Unity**：`VideoBlend.cs` + `VideoBlend.shader` + 镜像 / 命令接线

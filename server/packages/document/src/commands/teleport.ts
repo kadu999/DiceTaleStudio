@@ -25,6 +25,7 @@ export function setTeleportTargets(
     scene,
     objectId,
     ensureTeleportData,
+    (teleport) => teleport,
     (teleport) => teleport.targets,
     (teleport, next) => {
       teleport.targets = next;
@@ -44,5 +45,5 @@ export function setTeleportPicked(
   objectId: string,
   target: string | null,
 ): boolean {
-  return setMediaPicked(scene, objectId, ensureTeleportData, (teleport) => teleport.targets, target);
+  return setMediaPicked(scene, objectId, ensureTeleportData, (teleport) => teleport, (teleport) => teleport.targets, target);
 }

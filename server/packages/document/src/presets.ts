@@ -1,6 +1,6 @@
 import { componentKindMismatchOf, findComponentType, type ComponentType } from "./components";
 import type { GameObjectDoc } from "./types";
-import type { SoundLayer } from "./types";
+import type { SoundLayer, VideoBlendAudio } from "./types";
 
 /**
  * 对象预设（原 `ObjectKind` 的落地形态）与**能力槽位**。
@@ -23,7 +23,7 @@ import type { SoundLayer } from "./types";
 /**
  * 能力槽位：组件自报「我承担对象哪种能力」，access.ts 按它找对象上的组件。
  */
-export type ComponentSlot = "map" | "fog" | "image" | "sound" | "teleport" | "video";
+export type ComponentSlot = "map" | "fog" | "image" | "sound" | "teleport" | "video" | "videoBlend";
 
 /**
  * 全部对象类型（= 预设 id 的取值）。**顺序就是规范顺序**（文档枚举、编辑器类型表都按它排）。
@@ -104,6 +104,7 @@ export const DEFAULT_SLOT_COMPONENT: Readonly<Record<ComponentSlot, ComponentTyp
   sound: "PlaySound",
   teleport: "Teleport",
   video: "VideoOverlay",
+  videoBlend: "VideoBlend",
 };
 
 /** 精灵对象显示的图住在它自己的组件里（与贴图的 `ImageLayer` 分开，见 `OBJECT_PRESETS.Sprite`）。 */
@@ -123,7 +124,7 @@ export const SPRITE_COMPONENT: ComponentType = "SpriteLayer";
 export const OBJECT_PRESETS: Readonly<Record<ObjectKind, GameObjectPreset>> = {
   GameObject: { kind: "GameObject", abstract: true, slots: {} },
   Sprite: { kind: "Sprite", slots: { image: "SpriteLayer" } },
-  Image: { kind: "Image", slots: { image: "ImageLayer", map: "GridMap", video: "VideoOverlay" } },
+  Image: { kind: "Image", slots: { image: "ImageLayer", map: "GridMap", video: "VideoOverlay", videoBlend: "VideoBlend" } },
   // 战争雾（v27 起是独立的场景对象）：它自己的数据就是 `FogOfWar` 组件（引用一张带网格的贴图 +
   // 开关 + 雾区）。可摆放（对象照常有位置 / 旋转 / 缩放），但画布上只画一枚图标。
   Fog: { kind: "Fog", slots: { fog: "FogOfWar" } },
@@ -192,6 +193,26 @@ export function supportsVideo(target: ObjectKind | GameObjectDoc): boolean {
 }
 
 /**
+ * 哪些对象能带视频混合（`VideoBlend`）：已挂组件的对象；缺组件时按组件定义的可选准入 kind 添加。
+ *
+ * 与 `supportsVideo` 同一套：`videoBlend` 槽位**只给贴图**（`OBJECT_PRESETS.Image`）——
+ * 混合结果盖在对象自己的矩形上，与「视频」是同一种用法。
+ *
+ * 与 `VideoOverlay` 的关系：两者各占一个槽位，机制上可以并存，但语义上互斥
+ * （两条视频流同时想盖同一个矩形）——校验会给一条 warning，前端取 `VideoBlend` 优先。
+ */
+export function supportsVideoBlend(target: ObjectKind | GameObjectDoc): boolean {
+  if (typeof target !== "string") {
+    if (target.components.some((component) => component.type === DEFAULT_SLOT_COMPONENT.videoBlend)) return true;
+    if (target.components.some((component) => findComponentType(component.type)?.slot === "videoBlend")) return false;
+    if (componentKindMismatchOf(target.components, target.kind)) return false;
+    return findComponentType(DEFAULT_SLOT_COMPONENT.videoBlend)?.optionalKinds?.includes(target.kind) === true;
+  }
+
+  return presetOf(target)?.slots.videoBlend !== undefined;
+}
+
+/**
  * 哪些对象能带战争雾：**只有 `Fog` 对象**（v27 起雾是独立的场景对象，自己就是它的数据本体）。
  *
  * 已挂 `FogOfWar` 组件的对象照旧算数（损坏的手写文件）；组件定义里的 `templateKinds`
@@ -249,3 +270,10 @@ export const DEFAULT_VIDEO_ENABLED = true;
 export const DEFAULT_VIDEO_AUTO_PLAY = false;
 export const DEFAULT_VIDEO_LOOP = false;
 export const DEFAULT_VIDEO_AUDIO = false;
+
+/**
+ * 视频混合的默认声音来源：**静音**（与视频同一条口径）。
+ *
+ * 两条视频同时放时，声音只能出一路——默认哪条都不出，要出声才在面板上选。
+ */
+export const DEFAULT_VIDEO_BLEND_AUDIO: VideoBlendAudio = "none";

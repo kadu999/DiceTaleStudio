@@ -24,6 +24,7 @@ export function setSoundClips(
     scene,
     objectId,
     ensureSoundData,
+    (sound) => sound,
     (sound) => sound.clips,
     (sound, next) => {
       sound.clips = next;
@@ -43,7 +44,7 @@ export function setSoundPicked(
   objectId: string,
   clipId: string | null,
 ): boolean {
-  return setMediaPicked(scene, objectId, ensureSoundData, (sound) => sound.clips, clipId);
+  return setMediaPicked(scene, objectId, ensureSoundData, (sound) => sound, (sound) => sound.clips, clipId);
 }
 
 /** 改声音层级（同层同时只响一条的那「一层」）。 */

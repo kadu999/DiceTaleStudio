@@ -106,8 +106,14 @@ import { z } from "zod";
  * 承载贴图 + 显示顺序；`GridMap` 的 data 只剩网格。老前端（v15）按 `map.image` 取图 → 取不到，
  * 地图对象会退成占位色（不是崩，是画面错），按同一条纪律 +1：服务端与 Unity 客户端必须同批更新。
  * **命令那一组仍然一个字节都没动。**
+ *
+ * v17（2026-09-26）：**新增「视频混合」组件 `VideoBlend`**（两条视频叠在同一矩形上用 Mask
+ * 混合：A 盖住、擦开露 B）。同时新增一条命令 `erase_video_mask`（擦运行时遮罩，与 `erase_mask`
+ * 同一套轨迹口径，但寻址的是**贴图对象**上的 `VideoBlend`）。老前端（v16）不认这个组件 →
+ * 混合层不建（不是崩，是那一层没有），且收到 `erase_video_mask` 会因未知命令被拒——
+ * 按同一条纪律 +1：服务端与 Unity 客户端必须同批更新。**其余消息与命令一个字节都没动。**
  */
-export const PROTOCOL_VERSION = 16;
+export const PROTOCOL_VERSION = 17;
 
 /** 未进入运行态时拒绝 `/client` 升级的 HTTP 状态与原因头。 */
 export const RUNTIME_INACTIVE_STATUS = 503;
@@ -285,6 +291,30 @@ export const videoDataSchema = z.object({
 });
 
 /**
+ * 视频混合组件（v17 起，可选，只有贴图能带）：两条视频通道（A 盖住 / B 擦开露出）
+ * + 循环 + 声音来源。
+ *
+ * 与文档 schema 同一口径：两条通道各是 `{ clips, picked? }`（列表给默认值、`picked` 不给）；
+ * **没有 `enabled`**——与 `GridMap` 一样「组件在 = 在用」（编辑器 Add Component 添加 / 移除）。
+ *
+ * **遮罩不在数据里**：它是纯运行态，由 `erase_video_mask` 命令驱动，不随场景下发。
+ * 前端据此建混合层（两条 `VideoPlayer` → 两张 `RenderTexture`，用一个 Mask 混合）；
+ * 命令里只有 `objectId`，放哪两条 / 循环 / 声音都从这里读（与 `play_video` 同一条触发器纪律）。
+ */
+const videoBlendChannelSchema = z.object({
+  clips: z.array(z.string().min(1)).default([]),
+  picked: z.string().min(1).optional(),
+});
+
+export const videoBlendDataSchema = z.object({
+  a: videoBlendChannelSchema.default(() => ({ clips: [] })),
+  b: videoBlendChannelSchema.default(() => ({ clips: [] })),
+  loop: z.boolean().default(false),
+  // 与文档的 `VIDEO_BLEND_AUDIO` 同值（protocol 不能依赖文档包，这里复刻一份）
+  audio: z.enum(["none", "a", "b"]).default("none"),
+});
+
+/**
  * 传送阵（动作对象）的数据：候选目标场景 + 当前选中的那一个。
  *
  * **前端不需要它**：触发传送阵 = 编辑器切换当前场景 → 整份 `scene_push` 下来，
@@ -355,12 +385,14 @@ export const COMPONENT_TYPE = {
   sound: "PlaySound",
   teleport: "Teleport",
   video: "VideoOverlay",
+  /** 视频混合（v17 起）：两条视频叠在同一矩形上用 Mask 混合（A 盖住、擦开露 B）；遮罩纯运行态。 */
+  videoBlend: "VideoBlend",
 } as const;
 
 /**
  * 一个组件实例（v9）。
  *
- * 从对象特性提升上来的 6 种按各自 schema 校验（`image` 那一份有 `ImageLayer` / `SpriteLayer`
+ * 从对象特性提升上来的 8 种按各自 schema 校验（`image` 那一份有 `ImageLayer` / `SpriteLayer`
  * 两个名字，形状一样）；其余类型（将来的自定义组件）走宽松分支：
  * `data` 是任意记录。未知类型**不报错**是有意的——
  * 编辑器加一个新组件时，老前端应当照常镜像其余数据，而不是整条场景消息被判非法。
@@ -396,7 +428,7 @@ function featureComponentSchema<T extends z.ZodTypeAny>(
   });
 }
 
-/** 场景对象上的组件：7 种特性组件按各自形状校验，其余宽松。 */
+/** 场景对象上的组件：8 种特性组件按各自形状校验，其余宽松。 */
 export const sceneComponentSchema = z.union([
   featureComponentSchema(COMPONENT_TYPE.map, mapDataSchema),
   // 战争雾（v13 起）从 GridMap 拆出来：形状不变，还是 `mapFogSchema`
@@ -408,6 +440,7 @@ export const sceneComponentSchema = z.union([
   featureComponentSchema(COMPONENT_TYPE.sound, soundDataSchema),
   featureComponentSchema(COMPONENT_TYPE.teleport, teleportDataSchema),
   featureComponentSchema(COMPONENT_TYPE.video, videoDataSchema),
+  featureComponentSchema(COMPONENT_TYPE.videoBlend, videoBlendDataSchema),
   componentSchema,
 ]);
 
@@ -441,7 +474,8 @@ export const gameObjectSchema = z.object({
    *
    * 前端按 `type` 分派：`GridMap` → 地图面片 + 网格 + 战争雾；`ImageLayer`（贴图对象）/
    * `SpriteLayer`（精灵对象）→ 那张图的显示层；`PlaySound` / `Teleport` → **不建可见物**
-   * （数据留在镜像里，命令要用）；`VideoOverlay` → 运行时建视频层。
+   * （数据留在镜像里，命令要用）；`VideoOverlay` → 运行时建视频层；`VideoBlend` → 运行时建
+   * 混合层（两条视频 → 两张 `RenderTexture` → 一个 Mask）。
    * 不认识的类型忽略即可（数据仍留在镜像里）。
    *
    * 缺省给 `[]`：一份「什么都没有的对象」是合法状态，而**缺字段**在老编辑器 / 手写载荷里
@@ -492,6 +526,15 @@ export function resourceIdsOfObject(object: GameObjectPayload): readonly string[
   for (const type of [COMPONENT_TYPE.sound, COMPONENT_TYPE.video]) {
     const media = componentDataOf<{ clips?: readonly string[] }>(object, type);
     ids.push(...(media?.clips ?? []));
+  }
+
+  // 视频混合：两条通道各是一份「列表」，都要进资源包（否则混合层里那条不在包里）
+  const blend = componentDataOf<{
+    a?: { clips?: readonly string[] };
+    b?: { clips?: readonly string[] };
+  }>(object, COMPONENT_TYPE.videoBlend);
+  if (blend !== undefined) {
+    ids.push(...(blend.a?.clips ?? []), ...(blend.b?.clips ?? []));
   }
 
   return ids;
@@ -639,6 +682,21 @@ export const commandRequestSchema = z.discriminatedUnion("kind", [
     objectId: z.string().min(1),
     region: z.number().int(),
     revealed: z.boolean(),
+  }),
+  /**
+   * 视频混合：沿这笔轨迹擦掉**贴图对象**上的混合遮罩（`objectId` = 贴图对象 id）。
+   *
+   * 与 `erase_mask` 逐字同一套轨迹口径（`eraseStrokeSchema`：归一化点 + 归一化半径 + 软边），
+   * 但寻址与宿主不同：遮罩在推下去的那个对象的 `VideoBlend` 里，**纯运行态**、不随场景回来。
+   *
+   * **单列一条命令而不是复用 `erase_mask`**：后者的契约写死「`objectId` = 雾对象 id、
+   * 雾层在 `FogOfWar` 里」——两张遮罩的宿主、语义与前端落点都不一样，混用会让两边互相污染
+   * （也躲不开「雾对象 vs 贴图对象」的寻址差异）。
+   */
+  z.object({
+    kind: z.literal("erase_video_mask"),
+    objectId: z.string().min(1),
+    stroke: eraseStrokeSchema,
   }),
 ]);
 

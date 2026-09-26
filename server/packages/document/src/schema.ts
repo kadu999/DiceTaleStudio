@@ -13,6 +13,7 @@ import {
   DEFAULT_SOUND_LAYER,
   DEFAULT_VIDEO_AUDIO,
   DEFAULT_VIDEO_AUTO_PLAY,
+  DEFAULT_VIDEO_BLEND_AUDIO,
   DEFAULT_VIDEO_ENABLED,
   DEFAULT_VIDEO_LOOP,
   SPRITE_COMPONENT,
@@ -23,6 +24,7 @@ import { OBJECT_KINDS, type ObjectKind } from "./presets";
 import {
   DOCUMENT_FORMAT_VERSION,
   SOUND_LAYERS,
+  VIDEO_BLEND_AUDIO,
   type BgmSettingsDoc,
   type ProjectDoc,
   type ProjectSettingsDoc,
@@ -178,13 +180,36 @@ export const videoDataSchema = z.object({
 });
 
 /**
+ * 视频混合（可选，只有贴图能带）：两条视频通道（A 盖住 / B 擦开露出）+ 循环 + 声音来源。
+ *
+ * 与 `soundDataSchema` 同一套口径：两条通道各自是 `{ clips, picked? }`——列表给默认值
+ * （手写文件少写一项时语义只能是「还没加视频」），`picked` **不给**（「没写」= 还没选，
+ * 播放按钮点不了）。**遮罩不在这里**：它是纯运行态（`erase_video_mask` 命令驱动），
+ * 不落盘，所以组件数据里没有任何遮罩字段。
+ *
+ * **组件在 = 在用**（与 `GridMap` 同一条口径）：不像 `videoDataSchema` 那样有个兼容性的
+ * `enabled`——那是 v19 迁移留下来的；新组件由属性面板底部的 Add Component 添加、组头移除。
+ */
+const videoBlendChannelSchema = z.object({
+  clips: z.array(z.string().min(1)).default([]),
+  picked: z.string().min(1).optional(),
+});
+
+export const videoBlendDataSchema = z.object({
+  a: videoBlendChannelSchema.default(() => ({ clips: [] })),
+  b: videoBlendChannelSchema.default(() => ({ clips: [] })),
+  loop: z.boolean().default(DEFAULT_VIDEO_LOOP),
+  audio: z.enum(VIDEO_BLEND_AUDIO).default(DEFAULT_VIDEO_BLEND_AUDIO),
+});
+
+/**
  * 组件实例（v19）。
  *
- * 从对象特性提升上来的那 7 种**按各自的 schema 硬校验**（`GridMap` 的 RLE、`PlaySound` 的层级…），
+ * 从对象特性提升上来的那 8 种**按各自的 schema 硬校验**（`GridMap` 的 RLE、`PlaySound` 的层级…），
  * 未知类型走宽松分支（`data` 是任意记录）——这样手写文件里的自定义组件
- * 照样读得回来，而**已知的 7 种写坏了会直接读不开**（与 v18 之前扁平字段的严格程度一致）。
+ * 照样读得回来，而**已知的 8 种写坏了会直接读不开**（与 v18 之前扁平字段的严格程度一致）。
  *
- * 「未知类型」分支把已知的 7 个名字排除掉：否则一个 data 坏掉的 `GridMap` 会掉进宽松分支，
+ * 「未知类型」分支把已知的 8 个名字排除掉：否则一个 data 坏掉的 `GridMap` 会掉进宽松分支，
  * 严格校验就形同虚设。
  */
 const KNOWN_COMPONENT_TYPE_NAMES: readonly string[] = COMPONENT_TYPES.map((def) => def.type);
@@ -226,6 +251,7 @@ export const sceneComponentSchema = z.union([
   componentSchemaOf(DEFAULT_SLOT_COMPONENT.sound, soundDataSchema),
   componentSchemaOf(DEFAULT_SLOT_COMPONENT.teleport, teleportDataSchema),
   componentSchemaOf(DEFAULT_SLOT_COMPONENT.video, videoDataSchema),
+  componentSchemaOf(DEFAULT_SLOT_COMPONENT.videoBlend, videoBlendDataSchema),
   permissiveComponentSchema,
 ]);
 

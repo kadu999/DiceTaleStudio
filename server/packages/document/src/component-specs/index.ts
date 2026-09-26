@@ -1,8 +1,10 @@
 import { type ComponentSpec } from "../component-spec";
 import { defaultDataFromFields } from "../fields";
+import { videoBlendSpec } from "./video-blend";
 import { videoSpec } from "./video";
 
 // 各组件自己的规格也原样再导出：属性面板要拿某一份具体的规格去出行
+export { videoBlendSpec } from "./video-blend";
 export { videoSpec } from "./video";
 
 /**
@@ -17,6 +19,7 @@ export { videoSpec } from "./video";
  */
 export const COMPONENT_SPECS: Readonly<Partial<Record<string, ComponentSpec>>> = {
   [videoSpec.type]: videoSpec,
+  [videoBlendSpec.type]: videoBlendSpec,
 };
 
 /** 查组件规格；没登记（还没搬过来）的组件返回 `undefined`。 */
