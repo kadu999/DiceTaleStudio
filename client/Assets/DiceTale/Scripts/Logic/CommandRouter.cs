@@ -781,16 +781,83 @@ namespace DiceTale
             return null;
         }
 
-        /// <summary>两条通道选中的视频；都没有就返回 false（「都没选」与「坏数据」同一条处理）。</summary>
-        private static bool PickedVideoBlendChannels(
+        /// <summary>视频混合的一路：**是图片还是视频** + 素材 ID（还没解析成 URL / 贴图）。</summary>
+        private readonly struct BlendChannel
+        {
+            public readonly bool IsVideo;
+            public readonly string Id;
+
+            public BlendChannel(bool isVideo, string id)
+            {
+                IsVideo = isVideo;
+                Id = id;
+            }
+
+            public bool IsEmpty => string.IsNullOrEmpty(Id);
+        }
+
+        /// <summary>
+        /// 读 `VideoBlend` 的两路（走 `ComponentData` 的泛型读取，**不**加强类型镜像字段）。
+        /// 两路都空返回 false（「都没选」与「坏数据」同一条处理）。
+        /// </summary>
+        private static bool ReadVideoBlendChannels(
             MirrorObject obj,
-            out string clipA,
-            out string clipB)
+            out BlendChannel channelA,
+            out BlendChannel channelB)
         {
             var data = obj.ComponentData(Protocol.ComponentType.VideoBlend);
-            clipA = JsonParser.GetString(JsonParser.GetObject(data, "a"), "picked");
-            clipB = JsonParser.GetString(JsonParser.GetObject(data, "b"), "picked");
-            return !string.IsNullOrEmpty(clipA) || !string.IsNullOrEmpty(clipB);
+            channelA = ReadBlendChannel(data, "a");
+            channelB = ReadBlendChannel(data, "b");
+            return !channelA.IsEmpty || !channelB.IsEmpty;
+        }
+
+        /// <summary>读一路：`kind` 缺省按**视频**算（与文档 / 协议 schema 的默认值同一口径）。</summary>
+        private static BlendChannel ReadBlendChannel(Dictionary<string, object> data, string key)
+        {
+            var channel = JsonParser.GetObject(data, key);
+            var kind = JsonParser.GetString(channel, "kind");
+            var isVideo = string.IsNullOrEmpty(kind) || kind == "video";
+            return new BlendChannel(isVideo, JsonParser.GetString(channel, "id"));
+        }
+
+        /// <summary>一路的日志描述（图片 / 视频 + 素材 ID）；空的那一路是 `-`。</summary>
+        private static string DescribeBlendChannel(BlendChannel channel)
+        {
+            return channel.IsEmpty ? "-" : $"{channel.Id}（{(channel.IsVideo ? "视频" : "图片")}）";
+        }
+
+        /// <summary>
+        /// 把一路素材解析成 <see cref="VideoBlend.Source"/>：视频那一路解析 URL（本地包优先）；
+        /// 图片那一路原样把资源逻辑 ID 交给取图加载器。空的那一路按黑场（返回 true、Source 为空）。
+        /// </summary>
+        private bool TryResolveBlendSource(
+            MirrorObject obj,
+            BlendChannel channel,
+            out VideoBlend.Source source,
+            out string problem)
+        {
+            source = default;
+            problem = null;
+            if (channel.IsEmpty)
+            {
+                return true;
+            }
+
+            if (!channel.IsVideo)
+            {
+                source = new VideoBlend.Source(false, channel.Id);
+                return true;
+            }
+
+            var url = VideoUrlOf(channel.Id);
+            if (string.IsNullOrEmpty(url))
+            {
+                problem = $"「{obj.name}」的视频拿不到：本地资源包里没有，而且还不知道服务端地址（{channel.Id}）";
+                return false;
+            }
+
+            source = new VideoBlend.Source(true, url);
+            return true;
         }
 
         /// <summary>
@@ -809,27 +876,31 @@ namespace DiceTale
                 return;
             }
 
-            if (!PickedVideoBlendChannels(obj, out var clipA, out var clipB))
+            if (!ReadVideoBlendChannels(obj, out var channelA, out var channelB))
             {
-                var reason = $"「{obj.name}」两条通道都还没选要放的视频（编辑器：属性面板 → 视频混合）";
+                var reason = $"「{obj.name}」两路都还没选素材（编辑器：属性面板 → 视频混合）";
                 Debug.LogWarning($"[命令] 播放混合视频失败：{reason}");
                 session.SendCommandResult(command, false, reason);
                 return;
             }
 
-            var urlA = string.IsNullOrEmpty(clipA) ? null : VideoUrlOf(clipA);
-            var urlB = string.IsNullOrEmpty(clipB) ? null : VideoUrlOf(clipB);
-            if ((!string.IsNullOrEmpty(clipA) && urlA == null) || (!string.IsNullOrEmpty(clipB) && urlB == null))
+            if (!TryResolveBlendSource(obj, channelA, out var sourceA, out var problemA))
             {
-                var reason = $"「{obj.name}」的视频拿不到：本地资源包里没有，而且还不知道服务端地址";
-                Debug.LogWarning($"[命令] 播放混合视频失败：{reason}");
-                session.SendCommandResult(command, false, reason);
+                Debug.LogWarning($"[命令] 播放混合视频失败：{problemA}");
+                session.SendCommandResult(command, false, problemA);
                 return;
             }
 
-            view.VideoBlendLayer.Play(urlA, urlB);
+            if (!TryResolveBlendSource(obj, channelB, out var sourceB, out var problemB))
+            {
+                Debug.LogWarning($"[命令] 播放混合视频失败：{problemB}");
+                session.SendCommandResult(command, false, problemB);
+                return;
+            }
 
-            var effect = $"开始混合播放（A={clipA ?? "-"}，B={clipB ?? "-"}）";
+            view.VideoBlendLayer.Play(sourceA, sourceB);
+
+            var effect = $"开始混合播放（A={DescribeBlendChannel(channelA)}，B={DescribeBlendChannel(channelB)}）";
             Debug.Log($"[命令] 播放混合视频：{command.objectId} {effect}");
             session.SendCommandResult(command, true, effects: new[] { effect });
         }
@@ -847,17 +918,21 @@ namespace DiceTale
                 return;
             }
 
-            if (!PickedVideoBlendChannels(obj, out var clipA, out var clipB))
+            if (!ReadVideoBlendChannels(obj, out var channelA, out var channelB))
             {
-                Debug.LogWarning($"[视频混合] 自动播放跳过：对象「{obj.name}」两条通道都没选视频");
+                Debug.LogWarning($"[视频混合] 自动播放跳过：对象「{obj.name}」两路都没选素材");
                 return;
             }
 
-            var urlA = string.IsNullOrEmpty(clipA) ? null : VideoUrlOf(clipA);
-            var urlB = string.IsNullOrEmpty(clipB) ? null : VideoUrlOf(clipB);
-            if ((!string.IsNullOrEmpty(clipA) && urlA == null) || (!string.IsNullOrEmpty(clipB) && urlB == null))
+            if (!TryResolveBlendSource(obj, channelA, out var sourceA, out var problemA))
             {
-                Debug.LogWarning($"[视频混合] 自动播放无法解析资源地址：A={clipA ?? "-"}，B={clipB ?? "-"}");
+                Debug.LogWarning($"[视频混合] 自动播放无法解析素材：{problemA}");
+                return;
+            }
+
+            if (!TryResolveBlendSource(obj, channelB, out var sourceB, out var problemB))
+            {
+                Debug.LogWarning($"[视频混合] 自动播放无法解析素材：{problemB}");
                 return;
             }
 
@@ -867,7 +942,7 @@ namespace DiceTale
                 return;
             }
 
-            blend.Play(urlA, urlB);
+            blend.Play(sourceA, sourceB);
         }
 
         private void HandlePauseVideoBlend(CommandRequest command)

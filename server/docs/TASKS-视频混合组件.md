@@ -46,17 +46,20 @@
 ## 数据模型
 
 ```ts
-/** 一条通道：与声音 / 视频同形（公共骨架原样复用）。 */
+/** 视频混合的一路：**图片或视频**（面板上的开关）+ **一个**素材。 */
+export const VIDEO_BLEND_KINDS = ["image", "video"] as const;
+export type VideoBlendKind = (typeof VIDEO_BLEND_KINDS)[number];
+
 export interface VideoBlendChannelDoc {
-  readonly clips: string[];
-  readonly picked?: string;
+  readonly kind: VideoBlendKind;
+  readonly id?: string;
 }
 
 export const VIDEO_BLEND_AUDIO = ["none", "a", "b"] as const;
 export type VideoBlendAudio = (typeof VIDEO_BLEND_AUDIO)[number];
 
 /**
- * 视频混合组件的数据：两条视频通道（A 盖住 / B 露出）+ 循环 + 声音来源。
+ * 视频混合组件的数据：两路素材（A 盖住 / B 露出）+ 循环 + 自动播放 + 声音来源。
  * 遮罩**不在数据里**——它是纯运行态（见目标第 3 条），组件只声明「放什么」。
  * **没有 `enabled`**：与 `GridMap` 同一条「组件在 = 在用」（Add Component 添加 / 组头移除）。
  */
@@ -69,21 +72,24 @@ export interface VideoBlendDataDoc {
 }
 ```
 
-- **文档格式版本不动（28）**：纯加法——旧文件不含它、照常解析；新文件里的新组件由
-  `sceneComponentSchema` 的 `permissiveComponentSchema` 宽松分支兜底老编辑器（保留、不删、不崩）。
-  无迁移（新组件没有历史扁平字段，不属于 `FEATURE_COMPONENT_TYPES`）。
-- 默认值：`a/b = { clips: [] }`、`loop: false`、`autoPlay: false`、`audio: "none"`。
+- **文档格式 28 → 29（一次配套发布）**：每路从「列表 + 选中」收成**一个素材**（`{ kind, id? }`）。
+  迁移函数 `migrateVideoBlendChannels` 取选中那条（没选取第一条）、`kind` 记 `video`（老数据只可能是视频）；
+  协议同批 18 → **19**。
+- 默认值：`a/b = { kind: "video" }`、`loop: false`、`autoPlay: false`、`audio: "none"`。
 - **实现与最初设计的差异（已落地）**：
-  - 两条通道用**嵌套对象** `a` / `b`（而不是扁平的 `clipsA` / `pickedA`）——它们与声音 / 视频
-    是**同一个形状** `{ clips, picked? }`，于是 `commands/shared.ts` 的 `setMediaList` /
-    `setMediaPicked` 骨架原样复用（只多传一个 `mediaOf` 选择器取通道），不必再抄一份；
+  - 两路用**嵌套对象** `a` / `b`（而不是扁平的 `clipsA` / `pickedA`）——它们是同一路的两个字段
+    （放哪种 / 放哪个），收在一个对象里读起来才是「一路」；
   - **去掉 `enabled`**：新组件走「组件在 = 在用」（`GridMap` 那套），不再背 `VideoOverlay.enabled`
     那份 v19 遗留的兼容字段；
   - **后续追加了 `autoPlay`**（协议 v18）：与「视频」的 `autoPlay` 同义——场景激活 / 前端刚连上时
-    不用 GM 点「播放」，前端自己把两条起起来。它是个简单无副作用的开关，进组件规格、走泛型
-    `setComponentField`（和 `loop` / `audio` 同一条路）。
+    不用 GM 点「播放」，前端自己把两路起起来。它是个简单无副作用的开关，进组件规格、走泛型
+    `setComponentField`（和 `loop` / `audio` 同一条路）；
+  - **后续改了形状（协议 v19）：一路只放一个素材，且可以是图片或视频**（`kind`）。原来是「列表 + 选中」，
+    但一个混合层只显示一路，列表给不了额外能力；图片那一档让「静图盖住视频、擦开露出视频」这类用法也能做。
+    面板上每路是「图片 / 视频开关 + 选择按钮」（选择按钮弹现有通用选择框）；换种类会**清掉这一路已选的素材**
+    （旧素材属于另一种类型）。
 
-## 协议（16 → 17 → 18）
+## 协议（16 → 17 → 18 → 19）
 
 - `COMPONENT_TYPE.videoBlend = "VideoBlend"` + `videoBlendDataSchema` 进 `sceneComponentSchema` 的**严格分支**
   （若不进，写坏的 data 会掉进宽松分支被静默收下）；`PROTOCOL_VERSION` 16 → **17**。
@@ -95,33 +101,36 @@ export interface VideoBlendDataDoc {
   （与 v13 加 `FogOfWar` 同一条规矩）。
 - **v18**：`videoBlendDataSchema` 多一项 `autoPlay`（缺省 `false`）。老前端（v17）不认它 →
   不会自动播（行为丢），照旧靠握手 4002 挡；命令那一组一个字节都没动。
+- **v19**：两路从 `{ clips, picked }` 收成 `{ kind, id }`（每路一个素材、图片 / 视频）。老前端（v18）
+  按 `clips` / `picked` 读 → 两路都读不到（混合层放不出来），照旧靠握手 4002 挡；命令那一组仍未动。
 
 ## 编辑器
 
 | 层 | 要加什么 |
 |---|---|
 | `components.ts` | `ComponentType` union 加 `"VideoBlend"`；`COMPONENT_TYPES` 加一条（`slot: "videoBlend"`、`templateKinds: ["Image"]`、`optionalKinds: ["Image"]`、displayName「视频混合」） |
-| `presets.ts` | `ComponentSlot` 加 `"videoBlend"`；`DEFAULT_SLOT_COMPONENT` 加一行；`OBJECT_PRESETS.Image.slots` 加一行；`supportsVideoBlend`（照 `supportsVideo` 写） |
-| `schema.ts` | `videoBlendDataSchema` + `sceneComponentSchema` union 分支 |
-| `validation.ts` | 校验块：`picked` ∈ `clips`、空 clip 报错；`VideoOverlay` 与 `VideoBlend` 并存报 **error**（互斥） |
-| `commands/video-blend.ts` | `setVideoBlendClips(channel, clips)` / `setVideoBlendPicked(channel, clipId)` / `removeObjectVideoBlend`；`commands/component.ts` 两条 `case` |
-| `scene-asset-refs.ts` | 两条通道的 `clips` / `picked` 的 guid ↔ id 换算（`mapMediaFields` 与声音 / 视频共用） |
-| 面板 | `VideoBlendFields.tsx`：两组通道（各「加列表 + 选一条」）+ `loop` + `audio` + 「打开 Mask 窗口」+ 播放三键；`registry.tsx` 注册组（`removable`） |
-| Mask 窗口 | `VideoBlendMaskDialog.tsx`：复用 `MapDialogShell` 外壳 + `mask-math` 的像素运算；底图 = A/B 首帧缩略图；运行态按批下发 `erase_video_mask`；编辑态纯预览 |
+| `presets.ts` | `ComponentSlot` 加 `"videoBlend"`；`DEFAULT_SLOT_COMPONENT` 加一行；`OBJECT_PRESETS.Image.slots` 加一行；`supportsVideoBlend`（照 `supportsVideo` 写）；`DEFAULT_VIDEO_BLEND_KIND`（v29 起：每路默认视频） |
+| `schema.ts` | `videoBlendDataSchema` + `sceneComponentSchema` union 分支；`migrateVideoBlendChannels`（v29） |
+| `validation.ts` | 校验块：`VideoOverlay` 与 `VideoBlend` 并存报 **error**（互斥）；素材引用（存不存在 / 对不对得上 `kind`）查不了——那要素材表 |
+| `commands/video-blend.ts` | `setVideoBlendChannelKind(channel, kind)` / `setVideoBlendChannelId(channel, id \| null)` / `removeObjectVideoBlend`；`commands/component.ts` 两条 `case` |
+| `scene-asset-refs.ts` | 两路的素材 `id` 的 guid ↔ id 换算（图片与视频同一个字段，`mapMediaFields`） |
+| 面板 | `VideoBlendFields.tsx`：两路各「图片 / 视频开关 + 选择按钮 + 当前素材 + ×」+ `loop` / `audio` / `autoPlay` + 「打开 Mask 窗口」+ 播放三键；选择按当前种类弹 `ResourcePickerDialog`（`image` / `video`）；`registry.tsx` 注册组（`removable`） |
+| Mask 窗口 | `VideoBlendMaskDialog.tsx`：复用 `MapDialogShell` 外壳 + `mask-math` 的像素运算；底图 = B 的缩略图（图片即它自己、视频是首帧）；运行态按批下发 `erase_video_mask`；编辑态纯预览 |
 | store | `video-blend-slice` + `store-types` + `initialState` + `history-slice`/`project-slice` 重置 + `store-context` 的 target / 下发 / 补发（照 `fog-reveal` 那套） |
 | 后端 | `?info=1` 支持视频探测宽高（`routes/resources.ts`） |
 
 ## Unity
 
-- `Presentation/VideoBlend.cs`（新）：两个 `VideoPlayer`（各一个子物体）→ 两个 `RenderTexture`；
-  CPU 遮罩（初始全不透明）+ `Texture2D`；按 `erase_video_mask` 擦、按序重放（数据变了「重填 + 重放」，与 `FogOfWar` 同构）；
-  建一块面片用 `DiceTale/VideoBlend` shader，隐藏对象自身 Renderer（沿用 `VideoOverlay` 的「首帧前不显示」「失败恢复」）。
+- `Presentation/VideoBlend.cs`（新）：**每路按 `kind` 出画面**——视频那一路一个 `VideoPlayer`（各一个子物体）
+  → 一张 `RenderTexture`；图片那一路用 `ResourceImageLoader`（与对象自己的贴图同一条路）取一张贴图直接绑材质。
+  CPU 遮罩（初始全不透明）+ `Texture2D`；按 `erase_video_mask` 擦、按序重放（素材尺寸变了「重填 + 重放」，与 `FogOfWar` 同构）；
+  建一块面片用 `DiceTale/VideoBlend` shader，在**第一路就绪**时显出来（另一路随后上来）。
 - `Resources/Shaders/VideoBlend.shader`（新）：`fixed4 a = tex2D(_TexA, uv); fixed4 b = tex2D(_TexB, uv); return lerp(b, a, mask.a) * vertexColor;`
-  羽化复用 `DiceTale/FogBlur` 链（遮罩是白的，模糊只作用于 alpha）。
-- 遮罩尺寸 = `VideoPlayer.width/height` → `previewMaskSizeFor`（与编辑器同式；`Prepare` 后才知道尺寸，先不建、`prepareCompleted` 再建）。
-- 接线：`Network/Protocol.cs`（组件名 + 命令 + 协议版本）、`Logic/SceneMirror.cs`（挂载 + **自动播放**：
-  `AutoplayStateOf` / `ShouldAutoplayVideo` 也认 `VideoBlend`，`autoPlay` 走泛型读取器）、
-  `Logic/CommandRouter.cs`（路由四条播放命令 + `erase_video_mask` + `PlayVideoBlendAutomatically`）。
+  **不做羽化**：遮罩是软边圆刷画的（核内全擦），双线性过滤已经够柔。
+- 遮罩尺寸 = 第一路就绪的素材像素尺寸（视频 `VideoPlayer.width/height`、图片贴图宽高）→ `previewMaskSizeFor`（与编辑器同式）。
+- 接线：`Network/Protocol.cs`（组件名 + 命令 + 协议版本）、`Presentation/SceneObjectView.cs`（建视图时把取图加载器交给 `VideoBlend`）、
+  `Logic/SceneMirror.cs`（挂载 + **自动播放**：`AutoplayStateOf` / `ShouldAutoplayVideo` 也认 `VideoBlend`，`autoPlay` 走泛型读取器）、
+  `Logic/CommandRouter.cs`（路由四条播放命令 + `erase_video_mask` + `PlayVideoBlendAutomatically`；按 `kind` 把一路解析成 URL / 逻辑 ID）。
   **不加镜像强类型字段**（`SceneModel.cs` / `SceneParser.cs` 不动）——按那两处的规矩走泛型读取器。
 
 ## 任务清单
@@ -140,6 +149,9 @@ export interface VideoBlendDataDoc {
 - [x] **D8 自动播放**（后续追加，与「视频」的 `autoPlay` 对齐）：文档字段 + 规格行 + 协议 **v18** +
       Unity（`SceneMirror` 自动播放表认 `VideoBlend`、`CommandRouter.PlayVideoBlendAutomatically`）+
       单测 / e2e（`video-blend.spec.ts` 加一行断言）/ Unity EditMode（泛型读取器）
+- [x] **D9 一路一个素材 + 图片**（后续追加）：通道从「列表 + 选中」收成 `{ kind, id? }`（图片 / 视频），
+      文档格式 **29** + `migrateVideoBlendChannels` + 协议 **v19**；面板改成「种类开关 + 选择按钮」；
+      Unity 图片那一路走 `ResourceImageLoader`（不再只认 `VideoPlayer`）；样例工程抬到 v29
 
 ## 验收标准
 

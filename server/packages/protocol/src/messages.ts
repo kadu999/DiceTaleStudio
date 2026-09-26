@@ -117,8 +117,13 @@ import { z } from "zod";
  * 与 `VideoOverlay` 的 `autoPlay` 同义）。组件的 data 里多一个布尔，命令那一组一个字节都没动。
  * 老前端（v17）不认这一项 → 不会自动播（不是崩，是行为丢），按同一条纪律 +1：
  * 服务端与 Unity 客户端必须同批更新。
+ *
+ * v19（2026-09-27）：**视频混合的两路从「列表 + 选中」收成单个素材**（`{ kind, id? }`），
+ * 且每路多了 `kind`（`image` / `video`）——这一路可以是**图片**也可以视频。老前端（v18）
+ * 按 `clips` / `picked` 读 → 两条通道都读不到（混合层放不出来），按同一条纪律 +1。
+ * 命令那一组一个字节都没动（`erase_video_mask` 的载荷还是轨迹）。
  */
-export const PROTOCOL_VERSION = 18;
+export const PROTOCOL_VERSION = 19;
 
 /** 未进入运行态时拒绝 `/client` 升级的 HTTP 状态与原因头。 */
 export const RUNTIME_INACTIVE_STATUS = 503;
@@ -296,24 +301,26 @@ export const videoDataSchema = z.object({
 });
 
 /**
- * 视频混合组件（v17 起，可选，只有贴图能带）：两条视频通道（A 盖住 / B 擦开露出）
+ * 视频混合组件（v17 起，可选，只有贴图能带）：**两路素材**（A 盖住 / B 擦开露出）
  * + 循环 + 自动播放（v18）+ 声音来源。
  *
- * 与文档 schema 同一口径：两条通道各是 `{ clips, picked? }`（列表给默认值、`picked` 不给）；
+ * 与文档 schema 同一口径：每路是**一个素材**（`{ kind: "image" | "video", id? }`，v19 起）——
+ * `kind` 给默认值（老文件缺它就按视频算），`id` 不给（「没写」= 这一路空着）；
  * **没有 `enabled`**——与 `GridMap` 一样「组件在 = 在用」（编辑器 Add Component 添加 / 移除）。
  *
  * **遮罩不在数据里**：它是纯运行态，由 `erase_video_mask` 命令驱动，不随场景下发。
- * 前端据此建混合层（两条 `VideoPlayer` → 两张 `RenderTexture`，用一个 Mask 混合）；
- * 命令里只有 `objectId`，放哪两条 / 循环 / 声音都从这里读（与 `play_video` 同一条触发器纪律）。
+ * 前端据此建混合层（**视频**那一路 `VideoPlayer` → `RenderTexture`、**图片**那一路取一张贴图，
+ * 用一个 Mask 混合）；命令里只有 `objectId`，放哪两路 / 循环 / 声音都从这里读。
  */
 const videoBlendChannelSchema = z.object({
-  clips: z.array(z.string().min(1)).default([]),
-  picked: z.string().min(1).optional(),
+  // 与文档的 `VIDEO_BLEND_KINDS` 同值（protocol 不能依赖文档包，这里复刻一份）
+  kind: z.enum(["image", "video"]).default("video"),
+  id: z.string().min(1).optional(),
 });
 
 export const videoBlendDataSchema = z.object({
-  a: videoBlendChannelSchema.default(() => ({ clips: [] })),
-  b: videoBlendChannelSchema.default(() => ({ clips: [] })),
+  a: videoBlendChannelSchema.default(() => ({ kind: "video" as const })),
+  b: videoBlendChannelSchema.default(() => ({ kind: "video" as const })),
   loop: z.boolean().default(false),
   // 场景激活时自动混合播放（v18；与 `videoDataSchema` 的 `autoPlay` 同一口径）
   autoPlay: z.boolean().default(false),
@@ -535,13 +542,18 @@ export function resourceIdsOfObject(object: GameObjectPayload): readonly string[
     ids.push(...(media?.clips ?? []));
   }
 
-  // 视频混合：两条通道各是一份「列表」，都要进资源包（否则混合层里那条不在包里）
+  // 视频混合：两路各是**一个素材**（v19 起；之前是「列表 + 选中」），都要进资源包
   const blend = componentDataOf<{
-    a?: { clips?: readonly string[] };
-    b?: { clips?: readonly string[] };
+    a?: { id?: string };
+    b?: { id?: string };
   }>(object, COMPONENT_TYPE.videoBlend);
   if (blend !== undefined) {
-    ids.push(...(blend.a?.clips ?? []), ...(blend.b?.clips ?? []));
+    if (blend.a?.id !== undefined) {
+      ids.push(blend.a.id);
+    }
+    if (blend.b?.id !== undefined) {
+      ids.push(blend.b.id);
+    }
   }
 
   return ids;

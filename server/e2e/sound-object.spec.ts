@@ -530,7 +530,7 @@ async function connectFakeSoundClient(page: Page, port: number): Promise<void> {
           type: "client_hello",
           // 与 `@dts/protocol` 的 `PROTOCOL_VERSION` 一致（这里写死：e2e 不是 workspace 包，
           // 拿不到那个常量；版本一升这里会连不上、用例会当场失败，提醒同步改）
-          protocolVersion: 18,
+          protocolVersion: 19,
           name: "e2e 假前端",
           version: "0.0.0",
         }),

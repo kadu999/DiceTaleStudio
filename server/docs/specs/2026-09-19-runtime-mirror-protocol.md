@@ -30,6 +30,9 @@
 > 这条命令，所以协议照旧 +1。
 > **v18（2026-09-26）**给 `VideoBlend` 的 data 加了 `autoPlay`（场景激活时自动混合播放选中的两条，
 > 与 `VideoOverlay.autoPlay` 同义）——老前端（v17）不认这一项、不会自动播，照旧 +1。
+> **v19（2026-09-27）**把 `VideoBlend` 的两路从「列表 + 选中」收成**一个素材**（`{ kind, id? }`），
+> 且每路多了 `kind`（`image` / `video`）——这一路可以是**图片**也可以视频；老前端（v18）按
+> `clips` / `picked` 读 → 两路都读不到（混合层放不出来），照旧 +1。
 > 逐条见 `CODE-STRUCTURE.md` §6.1 与 `packages/protocol/src/messages.ts` 的版本注释。
 > 取代 [`2026-09-18-frontend-integration-contract.md`](2026-09-18-frontend-integration-contract.md)
 > （那份写的是「前端上报数据、后台按 id 寻址动作」的老模型，已整层删除）。
@@ -200,7 +203,7 @@ v12 起叫 `Image`）——**只显示整张图**，与精灵的差别只有「�
 | `GridMap.data.fog`（v15 起改为独立的 `FogOfWar` 组件） | **战争雾**已从网格 data 拆出：v13 拆成组件、v15 又搬成独立的 `Fog` 对象（见上表 `FogOfWar`）。**老版本网格 data 里的 `fog` 前端已不再认识**；`mapId` 无效或没指定雾区时**不建那一层雾** |
 | `PlaySound.data` | `{ clips, picked, layer }`：前端播的就是 `picked` 那条；`layer` ∈ `bgm/sfx/voice`（三档），同层同时只响一条。`layer: "bgm"` 的老对象前端会**明确拒掉**（背景音乐走 `play_bgm` 那一组） |
 | `VideoOverlay.data` | `{ enabled, autoPlay, clips, picked, loop, audio }`——总开关、**场景激活时自动播放**、加进来的视频、放哪一条、循不循环、出不出视频自带的声音。收到 `play_video` 时前端在**这个对象自己的矩形**上建一层视频（`Presentation/VideoOverlay.cs`）；**关掉 `enabled` 时连那一层都不建**。`names`（显示名）**不进协议** |
-| `VideoBlend.data` | `{ a: { clips, picked }, b: { clips, picked }, loop, autoPlay（v18）, audio }`——两条通道各自「列表 + 选中」+ 循环 + **自动播放** + 声音来源（`none` / `a` / `b`）；**没有 `enabled`**（组件在 = 在用）。收到 `play_video` 时前端在对象矩形上建**混合层**（`Presentation/VideoBlend.cs`）；**遮罩是运行态**，由 `erase_video_mask` 驱动，不随场景下发。`autoPlay` 打开时**场景激活即自动混合播放**（前端自己触发，不走命令） |
+| `VideoBlend.data` | `{ a: { kind: "image" \| "video", id? }, b: { ... }, loop, autoPlay, audio }`——**两路素材**，每路是**一个**素材（图片或视频，v19 起；之前是「列表 + 选中」）+ 循环 + **自动播放** + 声音来源（`none` / `a` / `b`）；**没有 `enabled`**（组件在 = 在用）。收到 `play_video` 时前端在对象矩形上建**混合层**（`Presentation/VideoBlend.cs`）：视频那一路 `VideoPlayer` → `RenderTexture`、图片那一路取一张贴图；**遮罩是运行态**，由 `erase_video_mask` 驱动，不随场景下发。`autoPlay` 打开时**场景激活即自动混合播放**（前端自己触发，不走命令） |
 | `Teleport.data` | `{ targets, picked }`。**前端不用它**：触发传送阵 = 编辑器切换当前场景 → 整份 `scene_push` 下来，前端只管换镜像 |
 | `project_settings` | **项目级全局设置**（v7 起，**不在场景里**）。v8 起只有三档音量：`{ audio: { bgm: { volume }, sfx: { volume }, voice: { volume } } }`。前端**收到即生效**，不需要命令；背景音乐**恒循环** |
 

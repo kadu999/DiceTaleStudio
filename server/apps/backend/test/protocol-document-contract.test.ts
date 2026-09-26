@@ -286,10 +286,16 @@ describe("契约：协议与文档的组件口径一致", () => {
         sample: { audio: "bogus" },
       },
       {
-        name: "videoBlend 通道 clips 含空串",
+        name: "videoBlend 通道种类未知",
         doc: videoBlendDataSchema,
         proto: protocolVideoBlendDataSchema,
-        sample: { a: { clips: [""] } },
+        sample: { a: { kind: "bogus" } },
+      },
+      {
+        name: "videoBlend 通道素材空串",
+        doc: videoBlendDataSchema,
+        proto: protocolVideoBlendDataSchema,
+        sample: { a: { kind: "image", id: "" } },
       },
     ];
     for (const { name, doc, proto, sample } of invalid) {

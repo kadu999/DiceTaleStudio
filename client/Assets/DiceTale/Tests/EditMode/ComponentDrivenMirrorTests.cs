@@ -243,21 +243,26 @@ namespace DiceTale.Tests
         [Test]
         public void VideoBlendFieldsAreReadableThroughGenericReaders()
         {
-            // v17/v18：视频混合**不加强类型镜像字段**——两条通道与 `autoPlay` 一律走泛型读取器
-            // （见 MirrorObject 的「加新字段的规矩」）。`SceneMirror` / `CommandRouter` 的自动播放靠这条路。
+            // v17/v19：视频混合**不加强类型镜像字段**——两路的 `kind` / `id` 一律走泛型读取器
+            // （见 MirrorObject 的「加新字段的规矩」）。`SceneMirror` / `CommandRouter` 靠这条路。
             var obj = ParseObject(
                 "{\"id\":\"blend\",\"kind\":\"Image\",\"components\":[" +
-                "{\"type\":\"VideoBlend\",\"data\":{\"a\":{\"clips\":[\"a.mp4\"],\"picked\":\"a.mp4\"}," +
-                "\"b\":{\"clips\":[\"b.mp4\"],\"picked\":\"b.mp4\"},\"loop\":false,\"autoPlay\":true," +
+                "{\"type\":\"VideoBlend\",\"data\":{\"a\":{\"kind\":\"video\",\"id\":\"a.mp4\"}," +
+                "\"b\":{\"kind\":\"image\",\"id\":\"b.png\"},\"loop\":false,\"autoPlay\":true," +
                 "\"audio\":\"none\"}}]}");
 
             Assert.That(obj.HasComponent("VideoBlend"), Is.True);
             Assert.That(obj.ComponentBool("VideoBlend", "autoPlay"), Is.True);
             Assert.That(obj.ComponentBool("VideoBlend", "loop"), Is.False);
             Assert.That(obj.ComponentString("VideoBlend", "audio"), Is.EqualTo("none"));
-            Assert.That(
-                JsonParser.GetString(JsonParser.GetObject(obj.ComponentData("VideoBlend"), "a"), "picked"),
-                Is.EqualTo("a.mp4"));
+
+            var data = obj.ComponentData("VideoBlend");
+            var a = JsonParser.GetObject(data, "a");
+            var b = JsonParser.GetObject(data, "b");
+            Assert.That(JsonParser.GetString(a, "kind"), Is.EqualTo("video"));
+            Assert.That(JsonParser.GetString(a, "id"), Is.EqualTo("a.mp4"));
+            Assert.That(JsonParser.GetString(b, "kind"), Is.EqualTo("image"));
+            Assert.That(JsonParser.GetString(b, "id"), Is.EqualTo("b.png"));
             Assert.That(obj.video, Is.Null); // 混合不是「视频」：不带强类型字段
         }
 

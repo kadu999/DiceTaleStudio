@@ -55,8 +55,8 @@ async function uploadVideo(
   return id;
 }
 
-/** 一张贴图 + `VideoBlend`（A / B 各一条视频，**A 故意不选**——留给「点小方块选上」那一步）。 */
-function blendTextureDoc(project: string, clipA: string, clipB: string): Record<string, unknown> {
+/** 一张贴图 + `VideoBlend`（A / B 各一路，**A 故意不选**——留给「选素材」那一步；B 选了）。 */
+function blendTextureDoc(project: string, clipB: string): Record<string, unknown> {
   const base = gameObjectDoc("视频混合贴图", "Image", { x: 0, y: 0 });
   const withImage = withComponent(base, COMPONENT.imageLayer, {
     id: `project:${project}/Assets/images/${SCENE}.png`,
@@ -66,8 +66,8 @@ function blendTextureDoc(project: string, clipA: string, clipB: string): Record<
   });
 
   return withComponent(withImage, COMPONENT.videoBlend, {
-    a: { clips: [clipA] },
-    b: { clips: [clipB], picked: clipB },
+    a: { kind: "video" },
+    b: { kind: "video", id: clipB },
     loop: false,
     audio: "none",
   });
@@ -122,43 +122,45 @@ async function openBlendObject(page: Page, project: string): Promise<void> {
 // ---------------------------------------------------------------- 编辑态：面板与 Mask 窗口
 
 test.describe("视频混合：属性面板与 Mask 窗口", () => {
-  test("两条通道 / 循环 / 声音 / 自动播放落进场景文件；Mask 窗口擦了不落盘", async ({ page, request }) => {
+  test("两路素材 / 循环 / 声音 / 自动播放落进场景文件；Mask 窗口擦了不落盘", async ({ page, request }) => {
     const project = await newProject(request);
     try {
       const clipA = await uploadVideo(request, project, "a.mp4");
       const clipB = await uploadVideo(request, project, "b.mp4");
-      const doc = blendTextureDoc(project, clipA, clipB);
+      const doc = blendTextureDoc(project, clipB);
       const objectId = String(doc["id"]);
       await seedProjectDoc(request, project, [sceneDoc(SCENE, [doc])]);
       await uploadSceneImage(request, project, SCENE, solidPng(8, 8, [40, 80, 120]));
       await openBlendObject(page, project);
 
       const group = page.locator('[data-group="videoBlend"]');
-      // 两条通道各一个小方块（A 还没选、B 已选）+ 循环 / 声音 / 自动播放三行 + Mask 入口
-      await expect(group.getByTestId("video-blend-a-clip")).toHaveCount(1);
-      await expect(group.getByTestId("video-blend-b-clip")).toHaveCount(1);
+      // 两路各是「种类开关 + 选择按钮 + 当前素材」：B 已选（fixture 给的）、A 还空着；
+      // 再加循环 / 声音 / 自动播放三行 + Mask 入口
+      await expect(group.getByTestId("video-blend-a-kind-video")).toHaveAttribute("data-active", "true");
+      await expect(group.getByTestId("video-blend-a-kind-image")).toHaveAttribute("data-active", "false");
+      await expect(group.getByTestId("video-blend-a-empty")).toBeVisible();
+      await expect(group.getByTestId("video-blend-b-current")).toContainText("b");
       await expect(group.getByTestId("video-blend-loop")).toBeVisible();
       await expect(group.getByTestId("video-blend-audio")).toBeVisible();
       await expect(group.getByTestId("video-blend-auto-play")).toBeVisible();
       await expect(group.getByTestId("video-blend-mask-open")).toBeVisible();
       await expect(group.getByTestId("video-blend-play")).toBeEnabled();
 
-      // A 还没选 → 面板上点它一下 = 选上（写文档、可撤销）。
+      // A 还没选 → 点「选择视频…」弹通用选择框，挑一条「添加」（写文档、可撤销）。
       // 落盘的是**素材 GUID** 而不是逻辑路径，所以断言形状（32 位十六进制）
-      await expect(group.getByTestId("video-blend-a-clip")).toHaveAttribute("data-selected", "false");
-      await group.getByTestId("video-blend-a-clip").locator("button").first().click();
+      await group.getByTestId("video-blend-a-pick").click();
+      const picker = page.getByTestId("video-picker-dialog");
+      await picker.locator(`[data-testid="video-picker-item"][data-asset-id="${clipA}"]`).click();
+      await picker.getByTestId("video-picker-add").click();
       await expect
         .poll(async () => {
           const a = (await blendData(request, project, objectId))["a"] as {
-            readonly clips?: readonly string[];
-            readonly picked?: string;
+            readonly kind?: string;
+            readonly id?: string;
           };
-          return {
-            clipsAreGuids: a.clips?.every((id) => GUID.test(id)) === true,
-            pickedIsGuid: typeof a.picked === "string" && GUID.test(a.picked),
-          };
+          return { kind: a.kind, idIsGuid: typeof a.id === "string" && GUID.test(a.id) };
         })
-        .toEqual({ clipsAreGuids: true, pickedIsGuid: true });
+        .toEqual({ kind: "video", idIsGuid: true });
 
       // 循环打开：也是文档数据
       await group.getByTestId("video-blend-loop").check();
@@ -237,7 +239,7 @@ async function connectFakeClient(page: Page, port: number): Promise<void> {
           type: "client_hello",
           // 与 `@dts/protocol` 的 `PROTOCOL_VERSION` 一致（这里写死：e2e 不是 workspace 包，
           // 拿不到那个常量；版本一升这里会连不上、用例会当场失败，提醒同步改）
-          protocolVersion: 18,
+          protocolVersion: 19,
           name: "e2e 假前端",
           version: "0.0.0",
         }),
@@ -290,11 +292,11 @@ test.describe("视频混合：轨迹下发给前端", { tag: "@runtime" }, () =>
     try {
       const clipA = await uploadVideo(request, project, "a.mp4");
       const clipB = await uploadVideo(request, project, "b.mp4");
-      const doc = blendTextureDoc(project, clipA, clipB);
+      const doc = blendTextureDoc(project, clipB);
       const objectId = String(doc["id"]);
       // A 也选上，这样「播放」才点得动
       const blend = objectComponentData(doc, COMPONENT.videoBlend)!;
-      blend["a"] = { clips: [clipA], picked: clipA };
+      blend["a"] = { kind: "video", id: clipA };
 
       await seedProjectDoc(request, project, [sceneDoc(SCENE, [doc])]);
       await uploadSceneImage(request, project, SCENE, solidPng(8, 8, [40, 80, 120]));
@@ -309,7 +311,7 @@ test.describe("视频混合：轨迹下发给前端", { tag: "@runtime" }, () =>
       await page.waitForFunction(() => (window as unknown as FakeClientWindow).__blendScene === true);
       await expect(page.getByTestId("client-badge")).toHaveAttribute("data-connected", "yes");
 
-      // 播放：命令只带 objectId（放哪两条 / 循环 / 声音都在推下去的那个对象里）
+      // 播放：命令只带 objectId（放哪两路 / 循环 / 声音都在推下去的那个对象里）
       await group.getByTestId("video-blend-play").click();
       await expect
         .poll(async () => (await fakeCommands(page)).filter((item) => item.kind === "play_video").length)

@@ -56,10 +56,10 @@ describe("组件规格：VideoBlend", () => {
     expect(new Set(orders).size).toBe(orders.length);
   });
 
-  it("`defaultData` 是完整形状：两条空通道 + 三个开关，`autoPlay` 默认关", () => {
+  it("`defaultData` 是完整形状：两路空素材 + 三个开关，`autoPlay` 默认关", () => {
     expect(defaultDataOf(DEFAULT_SLOT_COMPONENT.videoBlend)).toEqual({
-      a: { clips: [] },
-      b: { clips: [] },
+      a: { kind: "video" },
+      b: { kind: "video" },
       loop: false,
       autoPlay: false,
       audio: "none",

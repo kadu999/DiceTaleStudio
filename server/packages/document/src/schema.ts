@@ -14,6 +14,7 @@ import {
   DEFAULT_VIDEO_AUDIO,
   DEFAULT_VIDEO_AUTO_PLAY,
   DEFAULT_VIDEO_BLEND_AUDIO,
+  DEFAULT_VIDEO_BLEND_KIND,
   DEFAULT_VIDEO_ENABLED,
   DEFAULT_VIDEO_LOOP,
   SPRITE_COMPONENT,
@@ -25,6 +26,7 @@ import {
   DOCUMENT_FORMAT_VERSION,
   SOUND_LAYERS,
   VIDEO_BLEND_AUDIO,
+  VIDEO_BLEND_KINDS,
   type BgmSettingsDoc,
   type ProjectDoc,
   type ProjectSettingsDoc,
@@ -180,24 +182,24 @@ export const videoDataSchema = z.object({
 });
 
 /**
- * 视频混合（可选，只有贴图能带）：两条视频通道（A 盖住 / B 擦开露出）+ 循环 + 自动播放 + 声音来源。
+ * 视频混合（可选，只有贴图能带）：**两路素材**（A 盖住 / B 擦开露出）+ 循环 + 自动播放 + 声音来源。
  *
- * 与 `soundDataSchema` 同一套口径：两条通道各自是 `{ clips, picked? }`——列表给默认值
- * （手写文件少写一项时语义只能是「还没加视频」），`picked` **不给**（「没写」= 还没选，
- * 播放按钮点不了）。**遮罩不在这里**：它是纯运行态（`erase_video_mask` 命令驱动），
- * 不落盘，所以组件数据里没有任何遮罩字段。
+ * 每路是**一个素材**（图片或视频，见 `VideoBlendChannelDoc`）：`kind` 给默认值（老文件缺它就
+ * 按视频算），`id` **不给**（「没写」= 这一路空着，播放按钮点不了）。
+ * **遮罩不在这里**：它是纯运行态（`erase_video_mask` 命令驱动），不落盘，组件数据里没有任何遮罩字段。
  *
  * **组件在 = 在用**（与 `GridMap` 同一条口径）：不像 `videoDataSchema` 那样有个兼容性的
  * `enabled`——那是 v19 迁移留下来的；新组件由属性面板底部的 Add Component 添加、组头移除。
  */
 const videoBlendChannelSchema = z.object({
-  clips: z.array(z.string().min(1)).default([]),
-  picked: z.string().min(1).optional(),
+  // 老文件（v28 及更早）没有 `kind`：按**视频**兜底（那时通道只能是视频）
+  kind: z.enum(VIDEO_BLEND_KINDS).default(DEFAULT_VIDEO_BLEND_KIND),
+  id: z.string().min(1).optional(),
 });
 
 export const videoBlendDataSchema = z.object({
-  a: videoBlendChannelSchema.default(() => ({ clips: [] })),
-  b: videoBlendChannelSchema.default(() => ({ clips: [] })),
+  a: videoBlendChannelSchema.default(() => ({ kind: DEFAULT_VIDEO_BLEND_KIND })),
+  b: videoBlendChannelSchema.default(() => ({ kind: DEFAULT_VIDEO_BLEND_KIND })),
   loop: z.boolean().default(DEFAULT_VIDEO_LOOP),
   // 场景激活时自动播放（与视频同一口径；缺省关）
   autoPlay: z.boolean().default(DEFAULT_VIDEO_AUTO_PLAY),
@@ -1424,6 +1426,70 @@ function migrateGridMapImageToLayer(raw: Record<string, unknown>): {
 }
 
 /**
+ * v29：视频混合的两路从「列表 + 选中」（`{ clips, picked }`）收成**一个素材**（`{ kind, id }`）。
+ *
+ * 一个混合层只显示一路，列表给不了额外能力。取选中那条，没选就取列表第一条；`kind` 一律记
+ * `video`（v28 及更早的通道只能是视频）。幂等：已经是 `{ kind, id }` 的通道原样返回。
+ */
+function migrateVideoBlendChannels(raw: Record<string, unknown>): {
+  readonly raw: Record<string, unknown>;
+  readonly changed: boolean;
+} {
+  const objects = Array.isArray(raw.objects) ? raw.objects : [];
+  let changed = false;
+  const next = objects.map((object) => {
+    if (!isRecord(object) || !Array.isArray(object.components)) {
+      return object;
+    }
+
+    const blend = object.components.find(
+      (component) => isRecord(component) && component.type === DEFAULT_SLOT_COMPONENT.videoBlend,
+    );
+    if (blend === undefined || !isRecord(blend.data)) {
+      return object;
+    }
+
+    const data = blend.data;
+    const converted: Record<string, unknown> = { ...data };
+    let touched = false;
+    for (const key of ["a", "b"] as const) {
+      const channel = data[key];
+      // 只认老形状（有 `clips` 数组的）；新形状 / 手写的怪东西原样留着，交给 schema 判
+      if (!isRecord(channel) || !Array.isArray(channel.clips)) {
+        continue;
+      }
+
+      touched = true;
+      const clips = channel.clips.filter(
+        (clip): clip is string => typeof clip === "string" && clip.length > 0,
+      );
+      const picked =
+        typeof channel.picked === "string" && clips.includes(channel.picked)
+          ? channel.picked
+          : clips[0];
+      converted[key] =
+        picked === undefined
+          ? { kind: DEFAULT_VIDEO_BLEND_KIND }
+          : { kind: DEFAULT_VIDEO_BLEND_KIND, id: picked };
+    }
+
+    if (!touched) {
+      return object;
+    }
+
+    changed = true;
+    return {
+      ...object,
+      components: object.components.map((component) =>
+        component === blend ? { ...(component as Record<string, unknown>), data: converted } : component,
+      ),
+    };
+  });
+
+  return changed ? { raw: { ...raw, objects: next }, changed } : { raw, changed };
+}
+
+/**
  * 读一个（还没过 schema 的）对象的 `kind`；认不出来时按**精灵** `Sprite` 算
  * （`MirrorObject` 同一个兜底）。
  *
@@ -1639,6 +1705,8 @@ export function parseSceneFile(raw: unknown, size?: SceneSizeHint): SceneFileLoa
     // v28：把带网格对象（老地图）的贴图与显示顺序从 `GridMap` 搬进 `ImageLayer`（`Map` kind 已在
     // `kinds` 那一趟落到 `Image`）。排在 `sorting` 之后（那时显示顺序才在 GridMap 里）
     const gridImage = migrateGridMapImageToLayer(fogObjects.raw);
+    // v29：视频混合的两路从「列表 + 选中」收成单个素材（`{ kind, id }`）
+    const blendChannels = migrateVideoBlendChannels(gridImage.raw);
     // v13：战争雾的总开关（`fog.enabled`）**不用单独迁移**——schema 给它默认值 `true`
     // （v10–v12 的文件里「有 fog」就等于「开着」），而版本号一升就会回写一次，
     // 于是磁盘上的文件重新变得自描述。
@@ -1653,8 +1721,10 @@ export function parseSceneFile(raw: unknown, size?: SceneSizeHint): SceneFileLoa
     // （同样排在 `features` 后面：先搬组件，才找得到承载它的渲染组件）。
     // v27：战争雾从地图搬成独立的 `Fog` 对象，已在上面的 `fogObjects` 那一趟做完。
     // v28：`Map` kind 落到 `Image`（`kinds` 那一趟）、贴图从 `GridMap` 搬进 `ImageLayer`
-    // （`gridImage` 那一趟）。读出来的文档一律是当前版本（v6 起网格里不再存 `cellSize`，顺手被 schema 丢掉）
-    normalized = { ...gridImage.raw, formatVersion: DOCUMENT_FORMAT_VERSION };
+    // （`gridImage` 那一趟）。
+    // v29：视频混合的两路从「列表 + 选中」收成单个素材（`blendChannels` 那一趟）。
+    // 读出来的文档一律是当前版本（v6 起网格里不再存 `cellSize`，顺手被 schema 丢掉）
+    normalized = { ...blendChannels.raw, formatVersion: DOCUMENT_FORMAT_VERSION };
     needsRewrite =
       version < DOCUMENT_FORMAT_VERSION ||
       filled.changed ||
@@ -1666,7 +1736,8 @@ export function parseSceneFile(raw: unknown, size?: SceneSizeHint): SceneFileLoa
       fogSplit.changed ||
       sorting.changed ||
       fogObjects.changed ||
-      gridImage.changed;
+      gridImage.changed ||
+      blendChannels.changed;
   }
 
   const result = sceneFileSchema.safeParse(normalized);

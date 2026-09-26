@@ -1,5 +1,10 @@
 import { defineComponent } from "../component-spec";
-import { DEFAULT_VIDEO_BLEND_AUDIO, DEFAULT_VIDEO_AUTO_PLAY, DEFAULT_VIDEO_LOOP } from "../presets";
+import {
+  DEFAULT_VIDEO_AUTO_PLAY,
+  DEFAULT_VIDEO_BLEND_AUDIO,
+  DEFAULT_VIDEO_BLEND_KIND,
+  DEFAULT_VIDEO_LOOP,
+} from "../presets";
 import { VIDEO_BLEND_AUDIO, type VideoBlendAudio, type VideoBlendDataDoc } from "../types";
 
 /** 声音来源的中文名（只有这里写中文；取值顺序由 `VIDEO_BLEND_AUDIO` 定）。 */
@@ -12,14 +17,14 @@ const AUDIO_LABELS: Record<VideoBlendAudio, string> = {
 /**
  * `VideoBlend` 的组件规格。
  *
- * **只有两个标量进规格**（循环 / 声音来源）：它们是无条件简单行、写入没有副作用。
+ * **只有三个标量进规格**（循环 / 声音来源 / 自动播放）：它们是无条件简单行、写入没有副作用。
  *
  * 刻意**不进来**的字段，以及各自留在哪条路径上：
- * - 两条通道的 `clips` / `picked`：写入要同步副作用（`setVideoBlendClips` 会顺手收拾
- *   `picked`），与 `VideoOverlay` 同一套理由，继续走 `commands/video-blend.ts`；
+ * - 两路素材的 `kind` / `id`：它们是「一路一个素材」的引用（`VideoBlendChannelDoc`），
+ *   写入要按「换种类顺手清素材」的规矩来，继续走 `commands/video-blend.ts`；
  * - **遮罩**：根本不在文档里（纯运行态，由 `erase_video_mask` 命令驱动），没有字段可登记。
  *
- * `defaultData` 给的是**完整**形状（含那两条不归规格管的通道）：补壳出来的组件必须与
+ * `defaultData` 给的是**完整**形状（含那两路不归规格管的素材）：补壳出来的组件必须与
  * `validateScene` 的预期一致，少一个字段就会在别处露出来。
  */
 export const videoBlendSpec = defineComponent<VideoBlendDataDoc>({
@@ -56,8 +61,8 @@ export const videoBlendSpec = defineComponent<VideoBlendDataDoc>({
     },
   ],
   defaultData: () => ({
-    a: { clips: [] },
-    b: { clips: [] },
+    a: { kind: DEFAULT_VIDEO_BLEND_KIND },
+    b: { kind: DEFAULT_VIDEO_BLEND_KIND },
     loop: DEFAULT_VIDEO_LOOP,
     autoPlay: DEFAULT_VIDEO_AUTO_PLAY,
     audio: DEFAULT_VIDEO_BLEND_AUDIO,

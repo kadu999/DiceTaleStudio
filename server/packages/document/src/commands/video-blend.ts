@@ -1,11 +1,11 @@
-// 本文件从属于 `commands/`：视频混合（`VideoBlend`）命令——两条通道的「列表 + 选中」。
+// 本文件从属于 `commands/`：视频混合（`VideoBlend`）命令——两路素材的「种类 + 素材」。
 import type { Draft } from "immer";
 import { ensureVideoBlendData, removeFeature, videoBlendDataOf } from "../access";
 import { DEFAULT_SLOT_COMPONENT } from "../presets";
-import { setMediaList, setMediaPicked, withObject } from "./shared";
-import type { SceneDoc } from "../types";
+import { withObject } from "./shared";
+import type { SceneDoc, VideoBlendChannelDoc, VideoBlendKind } from "../types";
 
-/** 两条通道：`a` = 盖在上面的那条，`b` = 被盖住（擦开露出）的那条。 */
+/** 两路：`a` = 盖在上面的那一路，`b` = 被盖住（擦开露出）的那一路。 */
 export type VideoBlendChannel = "a" | "b";
 
 /**
@@ -41,45 +41,72 @@ export function removeObjectVideoBlend(scene: Draft<SceneDoc>, objectId: string)
 }
 
 /**
- * 替换某条通道的视频列表（资源逻辑 ID）。
+ * 改某一路的**素材种类**（面板上的「图片 / 视频」开关）。
  *
- * 与 `setVideoClips` 同一套（同一份 `setMediaList` 骨架）：去空去重、不排序；列表一变，
- * 那条通道的 `picked` 跟着走（`syncMediaSideData`）。
+ * 换种类会把这一路**已选的素材清掉**——旧素材的 ID 属于另一种类型，留着只会得到一个解不出来的
+ * 引用（「图片」那一路指着一段视频）。换回原来那一档也要重新选，这是有意的：种类与素材是一体的，
+ * 宁可多一次点击，也不要留下一个看着选好了、实际放不出来的状态。
  */
-export function setVideoBlendClips(
+export function setVideoBlendChannelKind(
   scene: Draft<SceneDoc>,
   objectId: string,
   channel: VideoBlendChannel,
-  clips: readonly string[],
+  kind: VideoBlendKind,
 ): boolean {
-  return setMediaList(
-    scene,
-    objectId,
-    ensureVideoBlendData,
-    (data) => (channel === "a" ? data.a : data.b),
-    (media) => media.clips,
-    (media, next) => {
-      media.clips = next;
-    },
-    clips,
-  );
+  return withObject(scene, objectId, (object) => {
+    const data = ensureVideoBlendData(object);
+    if (data === undefined) {
+      return false;
+    }
+
+    const target = channel === "a" ? data.a : data.b;
+    if (target.kind === kind) {
+      return false;
+    }
+
+    const next: VideoBlendChannelDoc = { kind };
+    if (channel === "a") {
+      data.a = next;
+    } else {
+      data.b = next;
+    }
+
+    return true;
+  });
 }
 
 /**
- * 选中 / 取消选中某条通道里放哪一条（`null` = 取消选中）。只认那条通道 `clips` 里的。
+ * 选 / 取消选某一路要放的**素材**（`null` = 清掉）。
+ *
+ * 素材是图片还是视频由那一路的 `kind` 说了算，这里只认资源逻辑 ID；面板保证弹出来的是
+ * 对的那一种选择框（见 `VideoBlendFields`）。
  */
-export function setVideoBlendPicked(
+export function setVideoBlendChannelId(
   scene: Draft<SceneDoc>,
   objectId: string,
   channel: VideoBlendChannel,
-  clipId: string | null,
+  id: string | null,
 ): boolean {
-  return setMediaPicked(
-    scene,
-    objectId,
-    ensureVideoBlendData,
-    (data) => (channel === "a" ? data.a : data.b),
-    (media) => media.clips,
-    clipId,
-  );
+  return withObject(scene, objectId, (object) => {
+    const data = ensureVideoBlendData(object);
+    if (data === undefined) {
+      return false;
+    }
+
+    const target = channel === "a" ? data.a : data.b;
+    const next = id === null || id.length === 0 ? undefined : id;
+    if (target.id === next) {
+      return false;
+    }
+
+    const updated: VideoBlendChannelDoc =
+      next === undefined ? { kind: target.kind } : { kind: target.kind, id: next };
+    if (channel === "a") {
+      data.a = updated;
+    } else {
+      data.b = updated;
+    }
+
+    return true;
+  });
 }

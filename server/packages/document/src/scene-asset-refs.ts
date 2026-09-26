@@ -51,7 +51,7 @@ function mapComponentData(
     return mapMediaFields(data, ["clips", "picked"], metas, mode);
   }
 
-  // 视频混合：两条通道各是一份「列表 + 选中」（与声音 / 视频同形）。
+  // 视频混合：两路各是**一个素材**（`{ kind, id? }`），只有 `id` 是资源 ID
   if (type === "VideoBlend") {
     let changed = false;
     const mapped: Record<string, unknown> = { ...data };
@@ -61,7 +61,7 @@ function mapComponentData(
         continue;
       }
 
-      const next = mapMediaFields(channel as Record<string, unknown>, ["clips", "picked"], metas, mode);
+      const next = mapMediaFields(channel as Record<string, unknown>, ["id"], metas, mode);
       if (next !== channel) {
         changed = true;
         mapped[key] = next;

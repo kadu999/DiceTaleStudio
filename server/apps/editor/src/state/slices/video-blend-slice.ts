@@ -5,12 +5,10 @@
  */
 import {
   DEFAULT_SLOT_COMPONENT,
-  setVideoBlendClips as setSceneVideoBlendClips,
-  setVideoBlendPicked as setSceneVideoBlendPicked,
+  setVideoBlendChannelId as setSceneVideoBlendChannelId,
+  setVideoBlendChannelKind as setSceneVideoBlendChannelKind,
   videoBlendDataOf,
   type GameObjectDoc,
-  type VideoBlendChannel,
-  type VideoBlendChannelDoc,
 } from "@dts/document";
 import {
   withVideoBlendPaused,
@@ -27,19 +25,10 @@ import { type StoreSet, type StoreGet, type EditorStoreState } from "../store-ty
 import { makeLog, findSceneByName } from "../store-core";
 import { type StoreContext } from "../store-context";
 
-/** 手写文件里可能整份 data 都没有：按空通道显示。 */
-const EMPTY_CHANNEL: VideoBlendChannelDoc = { clips: [] };
-
-/** 取对象上某条通道（读口；对象没有这个组件也返回空通道）。 */
-function channelOf(object: GameObjectDoc, channel: VideoBlendChannel): VideoBlendChannelDoc {
+/** 两路当前选中的素材（没选的就不列进来）——下发记账的快照与日志都用它。 */
+function pickedIdsOf(object: GameObjectDoc): string[] {
   const data = videoBlendDataOf(object);
-  return (channel === "a" ? data?.a : data?.b) ?? EMPTY_CHANNEL;
-}
-
-/** 两条通道当前选中的视频（没选的就不列进来）——下发记账的快照与日志都用它。 */
-function pickedClipsOf(object: GameObjectDoc): string[] {
-  const data = videoBlendDataOf(object);
-  return [data?.a.picked, data?.b.picked].filter((clip): clip is string => clip !== undefined);
+  return [data?.a.id, data?.b.id].filter((id): id is string => id !== undefined);
 }
 
 export function createVideoBlendSlice(
@@ -56,10 +45,8 @@ export function createVideoBlendSlice(
   | "openVideoBlendMask"
   | "eraseVideoBlendMask"
   | "flushVideoBlendReveal"
-  | "addVideoBlendClip"
-  | "removeVideoBlendClip"
-  | "selectVideoBlendClip"
-  | "clearVideoBlendClips"
+  | "setVideoBlendChannelKind"
+  | "setVideoBlendChannelId"
 > {
   // 共享的闭包状态与局部工具都在 ctx 里：这里解构一次，方法体与拆分前逐字一致
   const {
@@ -83,10 +70,10 @@ export function createVideoBlendSlice(
         return undefined;
       }
 
-      const clips = pickedClipsOf(object);
-      if (clips.length === 0) {
+      const sources = pickedIdsOf(object);
+      if (sources.length === 0) {
         // `videoBlendTargetOf` 已经拦过这种情况，这里只是把类型收窄（同时兜住手写文件的坏数据）
-        pushLog(makeLog("warn", `播放混合视频失败：「${object.name}」还没选要放哪一条视频`));
+        pushLog(makeLog("warn", `播放混合视频失败：「${object.name}」还没选要放的素材（图片 / 视频）`));
         return undefined;
       }
 
@@ -95,13 +82,13 @@ export function createVideoBlendSlice(
       const blend = videoBlendDataOf(object);
       const entry: Omit<VideoBlendPlaybackEntry, "paused"> = {
         objectId,
-        clips,
+        sources,
         loop: blend?.loop ?? false,
         audio: blend?.audio ?? "none",
       };
       set({ videoBlendPlayback: withVideoBlendPlaying(get().videoBlendPlayback, entry) });
 
-      return deliverVideo("play_video", objectId, `播放混合视频（${clips.join(" + ")}）`);
+      return deliverVideo("play_video", objectId, `播放混合视频（${sources.join(" + ")}）`);
     },
 
     pauseVideoBlend(objectId) {
@@ -282,72 +269,24 @@ export function createVideoBlendSlice(
 
     // ------------------------------------------------------------ 视频混合（贴图）
 
-    addVideoBlendClip(objectId, channel, clipId) {
-      const object = objectWithFeature(objectId, DEFAULT_SLOT_COMPONENT.videoBlend);
-      if (object === undefined) {
-        return false;
-      }
-
-      const channelData = channelOf(object, channel);
-      const already = channelData.clips.includes(clipId);
-      // 原来选中的那条要是还在，就不抢（正放着 A 加一条 B，选择不该被顶掉）
-      const hadPicked = channelData.picked;
-
-      return applyActiveScene("添加混合视频", (scene) => {
-        if (!already) {
-          setSceneVideoBlendClips(scene, objectId, channel, [...channelData.clips, clipId]);
-        }
-
-        if (hadPicked === undefined) {
-          // 之前一条都没选（或这条通道本来是空的）：加进来的这条就是现在要放的
-          setSceneVideoBlendPicked(scene, objectId, channel, clipId);
-        }
-      });
-    },
-
-    removeVideoBlendClip(objectId, channel, clipId) {
-      const sceneName = get().activeSceneName;
-      if (sceneName === null) {
-        return false;
-      }
-
-      const object = findSceneByName(get().scenes, sceneName)?.objects.find(
-        (item) => item.id === objectId,
-      );
-      if (object === undefined) {
-        return false;
-      }
-
-      const clips = channelOf(object, channel).clips;
-      if (!clips.includes(clipId)) {
-        return false;
-      }
-
-      // 「选中的那条」由 `setVideoBlendClips` 一起收拾（见 `shared.ts` 的 `syncMediaSideData`）
-      return applyActiveScene("移除混合视频", (scene) => {
-        setSceneVideoBlendClips(
-          scene,
-          objectId,
-          channel,
-          clips.filter((id) => id !== clipId),
-        );
-      });
-    },
-
-    selectVideoBlendClip(objectId, channel, clip) {
+    setVideoBlendChannelKind(objectId, channel, kind) {
       if (objectWithFeature(objectId, DEFAULT_SLOT_COMPONENT.videoBlend) === undefined) {
         return false;
       }
 
-      // 单选：只能选**这条通道加进来的**那几条（`setVideoBlendPicked` 会把不在列表里的拒掉）
-      return applyActiveScene("选择混合视频", (scene) => {
-        setSceneVideoBlendPicked(scene, objectId, channel, clip);
+      // 换种类会把这一路已选的素材清掉（见 `commands/video-blend.ts` 的说明）
+      return applyActiveScene("切换混合素材种类", (scene) => {
+        setSceneVideoBlendChannelKind(scene, objectId, channel, kind);
       });
     },
 
-    clearVideoBlendClips(objectId, channel) {
-      return applyActiveScene("清空混合视频列表", (scene) => {
-        setSceneVideoBlendClips(scene, objectId, channel, []);
+    setVideoBlendChannelId(objectId, channel, id) {
+      if (objectWithFeature(objectId, DEFAULT_SLOT_COMPONENT.videoBlend) === undefined) {
+        return false;
+      }
+
+      return applyActiveScene(id === null ? "清除混合素材" : "选择混合素材", (scene) => {
+        setSceneVideoBlendChannelId(scene, objectId, channel, id);
       });
     },
   };

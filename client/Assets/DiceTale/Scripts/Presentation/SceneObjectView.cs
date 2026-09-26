@@ -244,6 +244,12 @@ namespace DiceTale
             view.gridMap = go.GetComponent<GridMapView>();
             view.fog = go.GetComponent<FogOfWar>();
             view.videoBlend = go.GetComponent<VideoBlend>();
+            if (view.videoBlend != null)
+            {
+                // 视频混合的**图片那一路**要取图（与对象自己的贴图同一条路：本地包优先、缓存复用）
+                view.videoBlend.SetImageLoader(loader);
+            }
+
             return view;
         }
 

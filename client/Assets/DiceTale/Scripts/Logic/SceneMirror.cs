@@ -513,11 +513,11 @@ namespace DiceTale
         }
 
         /// <summary>
-        /// 「该不该自动播」与「播的是哪两条」——**视频与视频混合互斥**，最多命中一种。
+        /// 「该不该自动播」与「播的是哪两路」——**视频与视频混合互斥**，最多命中一种。
         ///
         /// 视频混合（v18 起）没有 `enabled`（组件在 = 在用），`autoPlay` 用泛型读取器读
-        /// （见 <see cref="MirrorObject"/> 的「加新字段的规矩」）；两条通道至少一条选中就能播
-        /// （与命令 `play_video` 同一条口径，少的那条按黑场）。
+        /// （见 <see cref="MirrorObject"/> 的「加新字段的规矩」）；两路至少一路选了素材就能播
+        /// （与命令 `play_video` 同一条口径，空的那一路按黑场）。
         /// </summary>
         private static AutoplayState AutoplayStateOf(MirrorObject obj)
         {
@@ -543,13 +543,14 @@ namespace DiceTale
         }
 
         /// <summary>
-        /// 视频混合选中的两条合成一个「变化检测键」（A / B 任一变了就重播）；两条都没选返回 null。
+        /// 视频混合两路选中的素材合成一个「变化检测键」（A / B 任一变了就重播）；两路都空返回 null。
+        /// `id` 用泛型读取器读（见 <see cref="MirrorObject"/> 的「加新字段的规矩」）。
         /// </summary>
         private static string BlendPickedKey(MirrorObject obj)
         {
             var data = obj.ComponentData(Protocol.ComponentType.VideoBlend);
-            var a = JsonParser.GetString(JsonParser.GetObject(data, "a"), "picked");
-            var b = JsonParser.GetString(JsonParser.GetObject(data, "b"), "picked");
+            var a = JsonParser.GetString(JsonParser.GetObject(data, "a"), "id");
+            var b = JsonParser.GetString(JsonParser.GetObject(data, "b"), "id");
             return string.IsNullOrEmpty(a) && string.IsNullOrEmpty(b) ? null : a + "\u0000" + b;
         }
 

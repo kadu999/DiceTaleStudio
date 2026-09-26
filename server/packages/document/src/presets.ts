@@ -1,6 +1,6 @@
 import { componentKindMismatchOf, findComponentType, type ComponentType } from "./components";
 import type { GameObjectDoc } from "./types";
-import type { SoundLayer, VideoBlendAudio } from "./types";
+import type { SoundLayer, VideoBlendAudio, VideoBlendKind } from "./types";
 
 /**
  * 对象预设（原 `ObjectKind` 的落地形态）与**能力槽位**。
@@ -278,3 +278,10 @@ export const DEFAULT_VIDEO_AUDIO = false;
  * 两条视频同时放时，声音只能出一路——默认哪条都不出，要出声才在面板上选。
  */
 export const DEFAULT_VIDEO_BLEND_AUDIO: VideoBlendAudio = "none";
+
+/**
+ * 视频混合每一路的默认素材种类：**视频**。
+ *
+ * 这组件最早就是「两条视频用 Mask 混合」，图片是后加的一档；老数据迁移过来也一律是视频。
+ */
+export const DEFAULT_VIDEO_BLEND_KIND: VideoBlendKind = "video";

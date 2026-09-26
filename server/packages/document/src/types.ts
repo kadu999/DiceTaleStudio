@@ -126,7 +126,7 @@ import type { ObjectKind } from "./presets";
  * 都不再给地图开分支，网格数据只有「数据 + 网格编辑窗口」，没有任何渲染实体。
  * 协议侧同步升到 v16：`mapDataSchema` 去掉这两项，地图对象改为下发 `ImageLayer` 组件。
  */
-export const DOCUMENT_FORMAT_VERSION = 28;
+export const DOCUMENT_FORMAT_VERSION = 29;
 
 /** 网格行序：`bottom-up` 表示 cells 第 0 行是图片最下面一行（与 Unity GridMap 一致）。 */
 export type RowOrder = "bottom-up";
@@ -437,16 +437,32 @@ export interface VideoDataDoc {
 }
 
 /**
- * 视频混合里**一条通道**的数据：加进来的视频列表 + 当前选中的那条。
+ * 视频混合里**一路素材**的种类：图片（`image`）或视频（`video`）。
  *
- * 形状与「声音 / 视频」的 `{ clips, picked? }` 逐字一致——所以列表命令的公共骨架
- * （`commands/shared.ts` 的 `setMediaList` / `setMediaPicked`）原样复用，不必再抄一份。
+ * 面板上每一路都有一个「图片 / 视频」开关，这两档就是它的取值。存进文档是为了：
+ * 1. 面板重开后开关还停在用户选的那一档；
+ * 2. 前端据此决定这一路怎么显示（视频 → `VideoPlayer` → `RenderTexture`；图片 → 取一张贴图），
+ *    不必去猜文件后缀。
+ */
+export const VIDEO_BLEND_KINDS = ["image", "video"] as const;
+
+export type VideoBlendKind = (typeof VIDEO_BLEND_KINDS)[number];
+
+/**
+ * 视频混合里**一路素材**的数据：**一个**素材（图片或视频）+ 它是哪种。
+ *
+ * v29 起是**单素材**——之前是「列表 + 选中」（`{ clips, picked }`），一个对象上挂的
+ * 混合层只显示一路，列表给不了任何额外能力。迁移（`migrateVideoBlendChannels`）把老数据
+ * 收成一个：取选中那条，没选就取列表第一条，`kind` 记成 `video`（老数据只可能是视频）。
+ *
+ * 形状故意**不像**「声音 / 视频」那份列表骨架：那两份要「加进来一堆、挑一条放」，
+ * 混合的两路是「左边放什么、右边放什么」，各只有一个。
  */
 export interface VideoBlendChannelDoc {
-  /** 加进来的视频（资源逻辑 ID）；顺序 = 加进来的先后。 */
-  readonly clips: string[];
-  /** 加进来的里当前选中的那条（必须是 `clips` 里的一个）；缺省 = 还没选。 */
-  readonly picked?: string;
+  /** 这一路放的是图片还是视频（面板上的开关）。 */
+  readonly kind: VideoBlendKind;
+  /** 素材的资源逻辑 ID；没选 = 这一路空着（按黑场处理）。 */
+  readonly id?: string;
 }
 
 /**
@@ -459,19 +475,20 @@ export const VIDEO_BLEND_AUDIO = ["none", "a", "b"] as const;
 export type VideoBlendAudio = (typeof VIDEO_BLEND_AUDIO)[number];
 
 /**
- * 视频混合组件（`VideoBlend`）的数据：**两条视频通道 + 循环 + 声音来源**。
+ * 视频混合组件（`VideoBlend`）的数据：**两路素材（图片 / 视频各一路）+ 循环 + 声音来源**。
  *
- * A 是**盖在上面**的那条、B 是**被盖住**的那条：运行时遮罩整张不透明（只看见 A），
+ * A 是**盖在上面**的那一路、B 是**被盖住**的那一路：运行时遮罩整张不透明（只看见 A），
  * 在 Mask 窗口里擦开的地方露出底下的 B——揭示形状与战争雾完全同构（纯运行态、不写文档）。
  *
  * **没有 `enabled`**：与 `GridMap` 一样走「组件在 = 在用」（可选组件由属性面板底部的
  * Add Component 添加、组头移除），不像 `VideoDataDoc.enabled` 那样是 v19 迁移留下的兼容字段。
  * **遮罩也不在这里**：它是运行态（新命令 `erase_video_mask` 驱动），组件只声明「放什么」。
+ * `loop` / `autoPlay` / `audio` 只对**视频**那一路有意义（图片那一路是静的）。
  */
 export interface VideoBlendDataDoc {
-  /** 通道 A（盖在上面）：视频列表 + 选中的那条。 */
+  /** 通道 A（盖在上面）：一路素材（图片 / 视频）。 */
   readonly a: VideoBlendChannelDoc;
-  /** 通道 B（擦开露出）：视频列表 + 选中的那条。 */
+  /** 通道 B（擦开露出）：一路素材（图片 / 视频）。 */
   readonly b: VideoBlendChannelDoc;
   /** 两条一起循环。 */
   readonly loop: boolean;

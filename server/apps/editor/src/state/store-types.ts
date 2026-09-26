@@ -17,6 +17,7 @@ import {
   type SpriteImportSettingsDoc,
   type SpriteSheetDoc,
   type VideoBlendChannel,
+  type VideoBlendKind,
   type WorldPosition,
 } from "@dts/document";
 import { type GridPoint, type GridSize } from "@dts/grid";
@@ -409,14 +410,10 @@ export interface EditorStoreState {
   clearVideoClips(objectId: string): boolean;
   /** 视频：循环播放开关（文档数据）。 */
   setVideoLoop(objectId: string, loop: boolean): boolean;
-  /** 视频混合：往 A / B 某条通道里加一条（已在列表里就不重复加；原来没选过就把它选上）。 */
-  addVideoBlendClip(objectId: string, channel: VideoBlendChannel, clipId: string): boolean;
-  /** 视频混合：从某条通道移出一条（名字与「选中的那条」由文档命令一起收拾）。 */
-  removeVideoBlendClip(objectId: string, channel: VideoBlendChannel, clipId: string): boolean;
-  /** 视频混合：选中 / 取消选中某条通道放哪一条（`null` = 取消选中）。 */
-  selectVideoBlendClip(objectId: string, channel: VideoBlendChannel, clip: string | null): boolean;
-  /** 视频混合：一次移出某条通道的全部（列表与选中一起清空；素材文件不会被删）。 */
-  clearVideoBlendClips(objectId: string, channel: VideoBlendChannel): boolean;
+  /** 视频混合：改 A / B 某一路的**素材种类**（图片 / 视频）。换种类会清掉这一路已选的素材。 */
+  setVideoBlendChannelKind(objectId: string, channel: VideoBlendChannel, kind: VideoBlendKind): boolean;
+  /** 视频混合：选 / 取消选某一路要放的**素材**（`null` = 清掉）。 */
+  setVideoBlendChannelId(objectId: string, channel: VideoBlendChannel, id: string | null): boolean;
   /**
    * 视频混合：让前端在某个贴图上**混合放**它两条通道选中的视频（编辑器只**记账** + 尽力下发）。
    *

@@ -7,8 +7,8 @@ import {
   removeObjectComponent,
   removeObjectVideoBlend,
   setComponentField,
-  setVideoBlendClips,
-  setVideoBlendPicked,
+  setVideoBlendChannelId,
+  setVideoBlendChannelKind,
   setVideoEnabled,
 } from "../src/commands";
 import { videoBlendDataOf, videoDataOf } from "../src/access";
@@ -19,31 +19,39 @@ import {
   DEFAULT_SLOT_COMPONENT,
   DEFAULT_VIDEO_AUTO_PLAY,
   DEFAULT_VIDEO_BLEND_AUDIO,
+  DEFAULT_VIDEO_BLEND_KIND,
   DEFAULT_VIDEO_LOOP,
   supportsVideoBlend,
 } from "../src/presets";
 import { createEmptyScene, createSoundObject } from "../src/factory";
 import { parseSceneFile, videoBlendDataSchema } from "../src/schema";
 import { validateScene } from "../src/validation";
-import { DOCUMENT_FORMAT_VERSION, VIDEO_BLEND_AUDIO, type GameObjectDoc, type SceneDoc } from "../src/types";
+import {
+  DOCUMENT_FORMAT_VERSION,
+  VIDEO_BLEND_AUDIO,
+  VIDEO_BLEND_KINDS,
+  type GameObjectDoc,
+  type SceneDoc,
+} from "../src/types";
 
 /**
- * 视频混合（`VideoBlend`，新增）：**两条视频通道叠在同一个矩形上用 Mask 混合**——
+ * 视频混合（`VideoBlend`）：**两路素材叠在同一个矩形上用 Mask 混合**——
  * A 盖住、擦开露 B。
  *
  * 它与「视频」（`VideoOverlay`）是**两个组件**，别混：
  * - 视频：一个对象一条流，整块盖在对象自己的矩形上；
- * - 视频混合：两条流 + 一张**纯运行态**的遮罩（不写文档，由 `erase_video_mask` 驱动），
- *   文档里只声明「放哪两条 / 循环 / 声音从哪来」。
+ * - 视频混合：两路 + 一张**纯运行态**的遮罩（不写文档，由 `erase_video_mask` 驱动），
+ *   文档里只声明「每路放什么 / 循环 / 自动播放 / 声音从哪来」。
  *
- * 一条贯穿全篇的规矩（照抄声音 / 视频那套）：每条通道是 `{ clips, picked? }`，
- * **选中的那条挂在「加进来的列表」上**，列表一变它跟着走；`loop` / `audio` 是**组件自己的设置**，
- * 清空列表也不该被抹掉。
+ * 一条贯穿全篇的规矩（v29 起）：**每路只放一个素材**（`{ kind, id? }`），
+ * `kind` 是图片还是视频；`loop` / `autoPlay` / `audio` 是**组件自己的设置**，
+ * 清掉素材也不该被抹掉。遮罩不在文档里（纯运行态）。
  */
 
 const CLIP_A = "project:C/Assets/video/a.mp4";
 const CLIP_B = "project:C/Assets/video/b.mp4";
 const CLIP_C = "project:C/Assets/video/c.mp4";
+const IMG_A = "project:C/Assets/images/a.png";
 
 function sceneWith(objects: readonly GameObjectDoc[]): SceneDoc {
   return { ...createEmptyScene("场景1"), objects: [...objects] };
@@ -65,7 +73,7 @@ function blendedTexture(): SceneDoc {
   });
 }
 
-function channelsOf(scene: { readonly objects: readonly GameObjectDoc[] }, id = "tex-1") {
+function blendOf(scene: { readonly objects: readonly GameObjectDoc[] }, id = "tex-1") {
   const object = scene.objects.find((item) => item.id === id);
   return object === undefined ? undefined : videoBlendDataOf(object);
 }
@@ -80,15 +88,15 @@ describe("视频混合：哪些对象能带", () => {
 });
 
 describe("视频混合：添加与移除", () => {
-  it("贴图能加：写一份默认组件（两条空通道 + 不循环 + 不自动播 + 静音）", () => {
+  it("贴图能加：写一份默认组件（两路空素材 + 不循环 + 不自动播 + 静音）", () => {
     const scene = sceneWith([textureObject()]);
     const added = mutate(scene, (draft) => {
       expect(addObjectVideoBlend(draft, "tex-1")).toBe(true);
     });
 
-    expect(channelsOf(added)).toEqual({
-      a: { clips: [] },
-      b: { clips: [] },
+    expect(blendOf(added)).toEqual({
+      a: { kind: DEFAULT_VIDEO_BLEND_KIND },
+      b: { kind: DEFAULT_VIDEO_BLEND_KIND },
       loop: DEFAULT_VIDEO_LOOP,
       autoPlay: DEFAULT_VIDEO_AUTO_PLAY,
       audio: DEFAULT_VIDEO_BLEND_AUDIO,
@@ -127,7 +135,7 @@ describe("视频混合：添加与移除", () => {
     const removed = mutate(blendedTexture(), (draft) => {
       expect(removeObjectVideoBlend(draft, "tex-1")).toBe(true);
     });
-    expect(channelsOf(removed)).toBeUndefined();
+    expect(blendOf(removed)).toBeUndefined();
   });
 
   it("Add Component 统一入口也按类型分派到视频混合", () => {
@@ -135,95 +143,98 @@ describe("视频混合：添加与移除", () => {
     const added = mutate(scene, (draft) => {
       expect(addObjectComponent(draft, "tex-1", "VideoBlend")).toBe(true);
     });
-    expect(channelsOf(added)).toBeDefined();
+    expect(blendOf(added)).toBeDefined();
 
     const removed = mutate(added, (draft) => {
       expect(removeObjectComponent(draft, "tex-1", "VideoBlend")).toBe(true);
     });
-    expect(channelsOf(removed)).toBeUndefined();
+    expect(blendOf(removed)).toBeUndefined();
   });
 });
 
-describe("视频混合：两条通道的列表与选中", () => {
-  it("加列表：去空去重、默认选中第一条；两条通道互不影响", () => {
+describe("视频混合：两路素材（种类 + 素材）", () => {
+  it("选 / 清某一路的素材；两路互不影响；值没变 = 不变更", () => {
     const one = mutate(blendedTexture(), (draft) => {
-      expect(setVideoBlendClips(draft, "tex-1", "a", [CLIP_A, CLIP_A, "  ", CLIP_B])).toBe(true);
+      expect(setVideoBlendChannelId(draft, "tex-1", "a", CLIP_A)).toBe(true);
     });
-    expect(channelsOf(one)?.a).toEqual({ clips: [CLIP_A, CLIP_B], picked: CLIP_A });
-    expect(channelsOf(one)?.b).toEqual({ clips: [] });
+    expect(blendOf(one)?.a).toEqual({ kind: "video", id: CLIP_A });
+    expect(blendOf(one)?.b).toEqual({ kind: "video" });
 
     const two = mutate(one, (draft) => {
-      expect(setVideoBlendClips(draft, "tex-1", "b", [CLIP_C])).toBe(true);
+      expect(setVideoBlendChannelId(draft, "tex-1", "b", IMG_A)).toBe(true);
     });
-    expect(channelsOf(two)?.a).toEqual({ clips: [CLIP_A, CLIP_B], picked: CLIP_A });
-    expect(channelsOf(two)?.b).toEqual({ clips: [CLIP_C], picked: CLIP_C });
+    expect(blendOf(two)?.a).toEqual({ kind: "video", id: CLIP_A });
+    expect(blendOf(two)?.b).toEqual({ kind: "video", id: IMG_A });
 
     // 值没变 = 不变更
     expect(
       mutate(two, (draft) => {
-        expect(setVideoBlendClips(draft, "tex-1", "a", [CLIP_A, CLIP_B])).toBe(false);
+        expect(setVideoBlendChannelId(draft, "tex-1", "a", CLIP_A)).toBe(false);
       }),
     ).toBe(two);
-  });
 
-  it("移出选中的那条 → 顺到第一条；清空 → 删掉 picked", () => {
-    const added = mutate(blendedTexture(), (draft) => {
-      setVideoBlendClips(draft, "tex-1", "a", [CLIP_A, CLIP_B]);
+    // 清除：`null` 把素材清掉，`kind` 留着
+    const cleared = mutate(two, (draft) => {
+      expect(setVideoBlendChannelId(draft, "tex-1", "a", null)).toBe(true);
     });
-    const pickedB = mutate(added, (draft) => {
-      expect(setVideoBlendPicked(draft, "tex-1", "a", CLIP_B)).toBe(true);
-    });
-    expect(channelsOf(pickedB)?.a.picked).toBe(CLIP_B);
+    expect(blendOf(cleared)?.a).toEqual({ kind: "video" });
 
-    const removedB = mutate(pickedB, (draft) => {
-      setVideoBlendClips(draft, "tex-1", "a", [CLIP_A]);
-    });
-    expect(channelsOf(removedB)?.a.picked).toBe(CLIP_A);
-
-    const cleared = mutate(removedB, (draft) => {
-      setVideoBlendClips(draft, "tex-1", "a", []);
-    });
-    expect(channelsOf(cleared)?.a).toEqual({ clips: [] });
-  });
-
-  it("选中只能选本通道 clips 里的；取消选中可空", () => {
-    const scene = mutate(blendedTexture(), (draft) => {
-      setVideoBlendClips(draft, "tex-1", "a", [CLIP_A]);
-    });
-
-    // CLIP_C 不在 A 的列表里（哪怕以后加到 B 里也不行）
+    // 本来就没选：再清一次 = 不变更
     expect(
-      mutate(scene, (draft) => {
-        expect(setVideoBlendPicked(draft, "tex-1", "a", CLIP_C)).toBe(false);
+      mutate(cleared, (draft) => {
+        expect(setVideoBlendChannelId(draft, "tex-1", "a", null)).toBe(false);
       }),
-    ).toBe(scene);
+    ).toBe(cleared);
+  });
 
-    const unset = mutate(scene, (draft) => {
-      expect(setVideoBlendPicked(draft, "tex-1", "a", null)).toBe(true);
+  it("换种类：写进文档，并**清掉**这一路已选的素材（旧素材属于另一种类型）", () => {
+    const picked = mutate(blendedTexture(), (draft) => {
+      setVideoBlendChannelId(draft, "tex-1", "a", CLIP_A);
     });
-    expect(channelsOf(unset)?.a.picked).toBeUndefined();
+
+    const asImage = mutate(picked, (draft) => {
+      expect(setVideoBlendChannelKind(draft, "tex-1", "a", "image")).toBe(true);
+    });
+    expect(blendOf(asImage)?.a).toEqual({ kind: "image" });
+
+    // 种类没变 = 不变更
+    expect(
+      mutate(asImage, (draft) => {
+        expect(setVideoBlendChannelKind(draft, "tex-1", "a", "image")).toBe(false);
+      }),
+    ).toBe(asImage);
+
+    // 另一路不受影响
+    const pickedB = mutate(asImage, (draft) => {
+      setVideoBlendChannelId(draft, "tex-1", "b", IMG_A);
+      setVideoBlendChannelKind(draft, "tex-1", "a", "video");
+    });
+    expect(blendOf(pickedB)?.a).toEqual({ kind: "video" });
+    expect(blendOf(pickedB)?.b).toEqual({ kind: "video", id: IMG_A });
   });
 
   it("非贴图对象上的命令一律不生效（返回 false，也不补组件）", () => {
     const scene = sceneWith([createSoundObject({ name: "脚步", id: "s1" })]);
     expect(
       mutate(scene, (draft) => {
-        expect(setVideoBlendClips(draft, "s1", "a", [CLIP_A])).toBe(false);
-        expect(setVideoBlendPicked(draft, "s1", "a", CLIP_A)).toBe(false);
+        expect(setVideoBlendChannelId(draft, "s1", "a", CLIP_A)).toBe(false);
+        expect(setVideoBlendChannelKind(draft, "s1", "a", "image")).toBe(false);
         expect(setComponentField(draft, "s1", DEFAULT_SLOT_COMPONENT.videoBlend, "loop", true)).toBe(false);
       }),
     ).toBe(scene);
   });
 });
 
-describe("视频混合：循环 / 声音走组件规格的泛型写入", () => {
-  it("setComponentField 能改 loop 与 audio；非法枚举值被拒（文档不变）", () => {
+describe("视频混合：循环 / 声音 / 自动播放走组件规格的泛型写入", () => {
+  it("setComponentField 能改 loop / audio / autoPlay；非法枚举值被拒（文档不变）", () => {
     const changed = mutate(blendedTexture(), (draft) => {
       expect(setComponentField(draft, "tex-1", DEFAULT_SLOT_COMPONENT.videoBlend, "loop", true)).toBe(true);
       expect(setComponentField(draft, "tex-1", DEFAULT_SLOT_COMPONENT.videoBlend, "audio", "b")).toBe(true);
+      expect(setComponentField(draft, "tex-1", DEFAULT_SLOT_COMPONENT.videoBlend, "autoPlay", true)).toBe(true);
     });
-    expect(channelsOf(changed)?.loop).toBe(true);
-    expect(channelsOf(changed)?.audio).toBe("b");
+    expect(blendOf(changed)?.loop).toBe(true);
+    expect(blendOf(changed)?.audio).toBe("b");
+    expect(blendOf(changed)?.autoPlay).toBe(true);
 
     expect(
       mutate(changed, (draft) => {
@@ -232,35 +243,37 @@ describe("视频混合：循环 / 声音走组件规格的泛型写入", () => {
     ).toBe(changed);
   });
 
-  it("清空列表不会抹掉 loop / audio（那是组件自己的设置）", () => {
+  it("清掉素材不会抹掉 loop / audio（那是组件自己的设置）", () => {
     const scene = mutate(blendedTexture(), (draft) => {
-      setVideoBlendClips(draft, "tex-1", "a", [CLIP_A]);
+      setVideoBlendChannelId(draft, "tex-1", "a", CLIP_A);
       setComponentField(draft, "tex-1", DEFAULT_SLOT_COMPONENT.videoBlend, "loop", true);
       setComponentField(draft, "tex-1", DEFAULT_SLOT_COMPONENT.videoBlend, "audio", "a");
     });
     const cleared = mutate(scene, (draft) => {
-      setVideoBlendClips(draft, "tex-1", "a", []);
+      setVideoBlendChannelId(draft, "tex-1", "a", null);
     });
-    expect(channelsOf(cleared)?.loop).toBe(true);
-    expect(channelsOf(cleared)?.audio).toBe("a");
+    expect(blendOf(cleared)?.loop).toBe(true);
+    expect(blendOf(cleared)?.audio).toBe("a");
   });
 });
 
 describe("视频混合：schema 与校验", () => {
-  it("默认值：两条空通道 + 不循环 + 不自动播 + 静音；声音枚举只有三档", () => {
+  it("默认值：两路空素材（默认视频）+ 不循环 + 不自动播 + 静音；枚举各只有合法几档", () => {
     expect(videoBlendDataSchema.parse({})).toEqual({
-      a: { clips: [] },
-      b: { clips: [] },
+      a: { kind: "video" },
+      b: { kind: "video" },
       loop: false,
       autoPlay: false,
       audio: "none",
     });
     expect([...VIDEO_BLEND_AUDIO]).toEqual(["none", "a", "b"]);
+    expect([...VIDEO_BLEND_KINDS]).toEqual(["image", "video"]);
     expect(videoBlendDataSchema.safeParse({ audio: "bogus" }).success).toBe(false);
-    expect(videoBlendDataSchema.safeParse({ a: { clips: [""] } }).success).toBe(false);
+    expect(videoBlendDataSchema.safeParse({ a: { kind: "bogus" } }).success).toBe(false);
+    expect(videoBlendDataSchema.safeParse({ a: { kind: "image", id: "" } }).success).toBe(false);
   });
 
-  it("落盘往返：整份读得出、不需要迁移", () => {
+  it("落盘往返：整份读得出、不需要迁移（v29 的单素材形状）", () => {
     const raw = {
       formatVersion: DOCUMENT_FORMAT_VERSION,
       objects: [
@@ -268,8 +281,8 @@ describe("视频混合：schema 与校验", () => {
           ...textureObject(),
           components: [
             featureComponent("tex-1", DEFAULT_SLOT_COMPONENT.videoBlend, {
-              a: { clips: [CLIP_A], picked: CLIP_A },
-              b: { clips: [CLIP_B] },
+              a: { kind: "video", id: CLIP_A },
+              b: { kind: "image", id: IMG_A },
               loop: true,
               autoPlay: true,
               audio: "a",
@@ -281,16 +294,48 @@ describe("视频混合：schema 与校验", () => {
 
     const loaded = parseSceneFile(raw);
     expect(loaded.needsRewrite).toBe(false);
-    expect(channelsOf(loaded.file)).toEqual({
-      a: { clips: [CLIP_A], picked: CLIP_A },
-      b: { clips: [CLIP_B] },
+    expect(blendOf(loaded.file)).toEqual({
+      a: { kind: "video", id: CLIP_A },
+      b: { kind: "image", id: IMG_A },
       loop: true,
       autoPlay: true,
       audio: "a",
     });
   });
 
-  it("校验：空条目 / 选中不在列表；与「视频」并存是 **error**（二者互斥）", () => {
+  it("v28 的「列表 + 选中」迁移成一个素材：取 picked、没选取第一条、`kind` 记视频", () => {
+    const raw = {
+      formatVersion: 28,
+      objects: [
+        {
+          ...textureObject(),
+          components: [
+            featureComponent("tex-1", DEFAULT_SLOT_COMPONENT.videoBlend, {
+              a: { clips: [CLIP_A, CLIP_B], picked: CLIP_B },
+              b: { clips: [CLIP_C] },
+              loop: true,
+              audio: "a",
+            }),
+          ],
+        },
+      ],
+    };
+
+    const loaded = parseSceneFile(raw);
+    expect(loaded.needsRewrite).toBe(true);
+    expect(blendOf(loaded.file)).toEqual({
+      a: { kind: "video", id: CLIP_B },
+      b: { kind: "video", id: CLIP_C },
+      loop: true,
+      autoPlay: false,
+      audio: "a",
+    });
+
+    // 再读一次不再回写（自描述）
+    expect(parseSceneFile(loaded.file).needsRewrite).toBe(false);
+  });
+
+  it("与「视频」并存是 **error**（二者互斥；读取不拦）", () => {
     const object = textureObject();
     const scene = sceneWith([
       {
@@ -303,8 +348,8 @@ describe("视频混合：schema 与校验", () => {
             audio: false,
           }),
           featureComponent(object.id, DEFAULT_SLOT_COMPONENT.videoBlend, {
-            a: { clips: [CLIP_A, "  "], picked: CLIP_B },
-            b: { clips: [] },
+            a: { kind: "video", id: CLIP_A },
+            b: { kind: "image" },
             loop: false,
             audio: "none",
           }),
@@ -313,10 +358,6 @@ describe("视频混合：schema 与校验", () => {
     ]);
 
     const issues = validateScene(scene);
-    const messages = issues.map((issue) => issue.message).join("\n");
-    expect(messages).toMatch(/视频混合通道 A 里有空条目/);
-    expect(messages).toMatch(/通道 A 选中的那条视频不在它的列表里/);
-    // 互斥：并存是损坏数据 → error（不是 warning）
     expect(issues.find((issue) => /同时挂了「视频」与「视频混合」/.test(issue.message))?.level).toBe(
       "error",
     );
@@ -366,25 +407,26 @@ describe("视频混合：与「视频」互斥", () => {
 });
 
 describe("视频混合：场景文件里存素材 GUID", () => {
-  it("两条通道的 clips / picked 都按 guid ↔ id 换算", () => {
-    const guidA = "a".repeat(32);
-    const guidB = "b".repeat(32);
+  it("两路的素材 ID 都按 guid ↔ id 换算（视频与图片同一路）", () => {
+    const guidVideo = "a".repeat(32);
+    const guidImage = "b".repeat(32);
     const metas = createAssetMetas([
-      { id: CLIP_A, meta: { formatVersion: ASSET_META_FORMAT_VERSION, guid: guidA, importer: "video" } },
-      { id: CLIP_B, meta: { formatVersion: ASSET_META_FORMAT_VERSION, guid: guidB, importer: "video" } },
+      { id: CLIP_A, meta: { formatVersion: ASSET_META_FORMAT_VERSION, guid: guidVideo, importer: "video" } },
+      { id: IMG_A, meta: { formatVersion: ASSET_META_FORMAT_VERSION, guid: guidImage, importer: "texture" } },
     ]);
 
     const scene = mutate(blendedTexture(), (draft) => {
-      setVideoBlendClips(draft, "tex-1", "a", [CLIP_A]);
-      setVideoBlendClips(draft, "tex-1", "b", [CLIP_B]);
+      setVideoBlendChannelId(draft, "tex-1", "a", CLIP_A);
+      setVideoBlendChannelKind(draft, "tex-1", "b", "image");
+      setVideoBlendChannelId(draft, "tex-1", "b", IMG_A);
     });
 
     const persisted = sceneAssetRefsToGuids(scene, metas);
-    expect(channelsOf(persisted)?.a).toEqual({ clips: [guidA], picked: guidA });
-    expect(channelsOf(persisted)?.b).toEqual({ clips: [guidB], picked: guidB });
+    expect(blendOf(persisted)?.a).toEqual({ kind: "video", id: guidVideo });
+    expect(blendOf(persisted)?.b).toEqual({ kind: "image", id: guidImage });
 
     const restored = sceneAssetRefsToIds(persisted, metas);
-    expect(channelsOf(restored)?.a).toEqual({ clips: [CLIP_A], picked: CLIP_A });
-    expect(channelsOf(restored)?.b).toEqual({ clips: [CLIP_B], picked: CLIP_B });
+    expect(blendOf(restored)?.a).toEqual({ kind: "video", id: CLIP_A });
+    expect(blendOf(restored)?.b).toEqual({ kind: "image", id: IMG_A });
   });
 });

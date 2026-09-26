@@ -1,5 +1,5 @@
 {
-  "formatVersion": 28,
+  "formatVersion": 29,
   "objects": [
     {
       "id": "map_mu7t4t731b222",
@@ -30,18 +30,15 @@
           "type": "VideoBlend",
           "data": {
             "a": {
-              "clips": [
-                "90460513527bd5ab8725851ec775ca36"
-              ],
-              "picked": "90460513527bd5ab8725851ec775ca36"
+              "kind": "video",
+              "id": "90460513527bd5ab8725851ec775ca36"
             },
             "b": {
-              "clips": [
-                "516e9ff5adaa681edcdfe5f126253185"
-              ],
-              "picked": "516e9ff5adaa681edcdfe5f126253185"
+              "kind": "video",
+              "id": "516e9ff5adaa681edcdfe5f126253185"
             },
             "loop": true,
+            "autoPlay": false,
             "audio": "none"
           }
         }

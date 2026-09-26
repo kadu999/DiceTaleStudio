@@ -334,7 +334,7 @@ describe("协议：场景（镜像的那份对象数据）", () => {
     expect(featureData(parsed.objects[0], "将来的新组件")?.whatever).toBe(1);
   });
 
-  it("视频混合（v17）：组件收得下，两条通道的资源 ID 都进资源清单", () => {
+  it("视频混合（v17/v19）：组件收得下，两路的资源 ID（视频 / 图片）都进资源清单", () => {
     const sprite = sampleScene().objects[1] as unknown as Record<string, unknown>;
     const object = {
       ...sprite,
@@ -346,8 +346,8 @@ describe("协议：场景（镜像的那份对象数据）", () => {
           sortingOrder: 0,
         }),
         feature(COMPONENT_TYPE.videoBlend, {
-          a: { clips: ["project:P/Assets/video/a.mp4"], picked: "project:P/Assets/video/a.mp4" },
-          b: { clips: ["project:P/Assets/video/b.mp4"] },
+          a: { kind: "video", id: "project:P/Assets/video/a.mp4" },
+          b: { kind: "image", id: "project:P/Assets/images/b.png" },
           loop: true,
           audio: "b",
         }),
@@ -356,27 +356,27 @@ describe("协议：场景（镜像的那份对象数据）", () => {
 
     const parsed = sceneSchema.parse({ name: "场景1", objects: [object] });
     expect(featureData(parsed.objects[0], COMPONENT_TYPE.videoBlend)).toEqual({
-      a: { clips: ["project:P/Assets/video/a.mp4"], picked: "project:P/Assets/video/a.mp4" },
-      b: { clips: ["project:P/Assets/video/b.mp4"] },
+      a: { kind: "video", id: "project:P/Assets/video/a.mp4" },
+      b: { kind: "image", id: "project:P/Assets/images/b.png" },
       loop: true,
       autoPlay: false,
       audio: "b",
     });
 
-    // 两条通道引用的视频都要进资源包（否则混合层里那条不在包里）
+    // 两路引用的素材都要进资源包（视频与图片同一路，否则混合层里那一路不在包里）
     expect(resourceIdsOfObject(parsed.objects[0]!)).toEqual([
       "project:P/Assets/images/x.png",
       "project:P/Assets/video/a.mp4",
-      "project:P/Assets/video/b.mp4",
+      "project:P/Assets/images/b.png",
     ]);
 
-    // 与「视频」同一套：声音只认三档；空通道给默认值
+    // 与「视频」同一套：声音只认三档；空通道给默认值（种类默认视频）
     expect(
       sceneSchema.parse({
         name: "场景1",
         objects: [{ ...sprite, components: [feature(COMPONENT_TYPE.videoBlend, {})] }],
       }).objects[0]?.components[0]?.data,
-    ).toEqual({ a: { clips: [] }, b: { clips: [] }, loop: false, autoPlay: false, audio: "none" });
+    ).toEqual({ a: { kind: "video" }, b: { kind: "video" }, loop: false, autoPlay: false, audio: "none" });
 
     expect(() =>
       sceneSchema.parse({
@@ -385,7 +385,7 @@ describe("协议：场景（镜像的那份对象数据）", () => {
           {
             ...sprite,
             components: [
-              feature(COMPONENT_TYPE.videoBlend, { a: { clips: [] }, b: { clips: [] }, loop: false, audio: "bogus" }),
+              feature(COMPONENT_TYPE.videoBlend, { a: { kind: "video" }, b: { kind: "video" }, loop: false, audio: "bogus" }),
             ],
           },
         ],

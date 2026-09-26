@@ -98,10 +98,10 @@ export function VideoBlendMaskDialog({
   // 目标对象（**贴图**）现查一次：它可能已经被删掉（删了窗口就该关，这里只是兜底不崩）
   const object = useSceneObject(objectId);
   const blend = object === undefined ? undefined : videoBlendDataOf(object);
-  const pickedA = blend?.a.picked;
-  const pickedB = blend?.b.picked;
+  const pickedA = blend?.a.id;
+  const pickedB = blend?.b.id;
 
-  // 遮罩尺寸按**视频像素尺寸**推（A 优先，其次 B；都没有用 16:9）
+  // 遮罩尺寸按**素材像素尺寸**推（A 优先，其次 B；都没有用 16:9）——图片与视频同一路（`?info=1` 两种都认）
   const size = useVideoSize(pickedA ?? pickedB);
   const maskSize = useMemo(
     () => previewMaskSizeFor(size ?? FALLBACK_SIZE),
@@ -306,12 +306,12 @@ export function VideoBlendMaskDialog({
           >
             {pickedB === undefined ? (
               <div className="absolute left-0 top-0 flex h-full w-full items-center justify-center border border-dashed border-[var(--color-editor-border)] text-[11px] text-[var(--color-editor-text-dim)]">
-                B 还没选视频（擦开要露出的是它）
+                B 还没选素材（擦开要露出的是它）
               </div>
             ) : (
               <img
                 src={assetThumbnailUrl(pickedB)}
-                alt="视频 B 首帧"
+                alt="B 素材缩略图"
                 className="absolute left-0 top-0 h-full w-full object-contain"
               />
             )}
@@ -335,11 +335,11 @@ export function VideoBlendMaskDialog({
           <span className="text-[var(--color-editor-text)]">两层</span>
           <span>
             <span className="text-[var(--color-editor-text)]">A</span>（盖住）：
-            {pickedA === undefined ? "还没选视频" : lastSegment(pickedA)}
+            {pickedA === undefined ? "还没选素材" : lastSegment(pickedA)}
           </span>
           <span>
             <span className="text-[var(--color-editor-text)]">B</span>（擦开露出）：
-            {pickedB === undefined ? "还没选视频" : lastSegment(pickedB)}
+            {pickedB === undefined ? "还没选素材" : lastSegment(pickedB)}
           </span>
           <span className="mt-auto">
             遮罩初始整张盖住 A；用软边圆刷擦开的地方露出 B。擦除只改遮罩、不写文档。

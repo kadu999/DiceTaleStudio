@@ -13,20 +13,20 @@ import { sceneHistory, useEditorStore } from "../src/state/editor-store";
 import type { ResourceTreeNode } from "../src/services/project-api";
 
 /**
- * **贴图上的视频混合**（`VideoBlend`）：两条通道（A 盖住 / B 擦开露出）+ 循环 + 声音来源。
+ * **贴图上的视频混合**（`VideoBlend`）：两路素材（A 盖住 / B 擦开露出）+ 循环 / 声音 / 自动播放。
  *
  * 与「视频」那一组的关键区别：
- * - 两条通道**各自**是一份「列表 + 选中」，互不影响；
- * - 遮罩是纯运行态（Mask 窗口，下一批接上），文档里只声明「放哪两条 / 循环 / 声音」。
+ * - 每路只放**一个素材**，可以是**图片或视频**（面板上先选种类再「选择」）；
+ * - 遮罩是纯运行态（Mask 窗口），文档里只声明「每路放什么 / 循环 / 声音 / 自动播放」。
  *
  * 这一份钉属性面板与 store 的**文档数据**那一半；Mask 窗口与运行态下发给 e2e。
  */
 
 const CLIP = "project:测试/Assets/video/opening.mp4";
 const CLIP2 = "project:测试/Assets/video/rain.webm";
-const CLIP3 = "project:测试/Assets/video/loop.mp4";
+const IMG = "project:测试/Assets/images/bg.png";
 
-/** 资源树：三条视频（含一条 webm）。 */
+/** 资源树：两条视频（含一条 webm）+ 一张图片。 */
 const TREE: ResourceTreeNode[] = [
   {
     name: "Assets",
@@ -42,8 +42,14 @@ const TREE: ResourceTreeNode[] = [
         children: [
           { name: "opening.mp4", path: "Assets/video/opening.mp4", id: CLIP, type: "file" },
           { name: "rain.webm", path: "Assets/video/rain.webm", id: CLIP2, type: "file" },
-          { name: "loop.mp4", path: "Assets/video/loop.mp4", id: CLIP3, type: "file" },
         ],
+      },
+      {
+        name: "images",
+        path: "Assets/images",
+        id: "project:测试/Assets/images",
+        type: "folder",
+        children: [{ name: "bg.png", path: "Assets/images/bg.png", id: IMG, type: "file" }],
       },
     ],
   },
@@ -120,14 +126,6 @@ function blended(): void {
 
 const logs = (): string[] => useEditorStore.getState().runtime.logs.map((entry) => entry.message);
 
-/** 某条通道的小方块（顺序 = 加进来的先后）。 */
-const chips = (channel: "a" | "b"): HTMLElement[] =>
-  screen.queryAllByTestId(`video-blend-${channel}-clip`);
-
-/** 小方块里「选它」的那枚按钮（第一个是选择区，第二个是 × 移出）。 */
-const chipSelect = (channel: "a" | "b", index: number): HTMLElement =>
-  chips(channel)[index]!.querySelector("button") as HTMLElement;
-
 afterEach(() => {
   cleanup();
   sceneHistory.reset([]);
@@ -176,37 +174,37 @@ describe("视频混合：哪些对象能加", () => {
 });
 
 describe("视频混合：添加与移除", () => {
-  it("从菜单加上：两条空通道 + 循环 / 声音 / 自动播放；组头移除整个摘掉（可撤销）", () => {
+  it("从菜单加上：两路空素材 + 循环 / 声音 / 自动播放；组头移除整个摘掉（可撤销）", () => {
     seedScene([texture()], ["tex-1"]);
     render(<InspectorPanel />);
 
     expect(hasGroup("videoBlend")).toBe(false);
     addComponentFromMenu("VideoBlend");
     expect(blendOf("tex-1")).toEqual({
-      a: { clips: [] },
-      b: { clips: [] },
+      a: { kind: "video" },
+      b: { kind: "video" },
       loop: false,
       autoPlay: false,
       audio: "none",
     });
     expect(hasGroup("videoBlend")).toBe(true);
-    expect(screen.getByTestId("video-blend-a-empty").textContent).toBe("还没加视频");
-    expect(screen.getByTestId("video-blend-b-empty").textContent).toBe("还没加视频");
+    expect(screen.getByTestId("video-blend-a-empty").textContent).toBe("还没选");
+    expect(screen.getByTestId("video-blend-b-empty").textContent).toBe("还没选");
     expect(screen.getByTestId("video-blend-loop")).toBeDefined();
     expect(screen.getByTestId("video-blend-audio")).toBeDefined();
     expect(screen.getByTestId("video-blend-auto-play")).toBeDefined();
 
-    act(() => useEditorStore.getState().addVideoBlendClip("tex-1", "a", CLIP));
-    act(() => useEditorStore.getState().addVideoBlendClip("tex-1", "b", CLIP2));
+    act(() => useEditorStore.getState().setVideoBlendChannelId("tex-1", "a", CLIP));
+    act(() => useEditorStore.getState().setVideoBlendChannelId("tex-1", "b", CLIP2));
     fireEvent.click(within(groupOf("videoBlend")).getByTestId("remove-component"));
     expect(blendOf("tex-1")).toBeUndefined();
     expect(hasGroup("videoBlend")).toBe(false);
 
-    // 移除也是一次文档编辑：撤销把两条通道（含选中）原样带回来
+    // 移除也是一次文档编辑：撤销把两路（含素材）原样带回来
     act(() => useEditorStore.getState().undo());
     expect(blendOf("tex-1")).toEqual({
-      a: { clips: [CLIP], picked: CLIP },
-      b: { clips: [CLIP2], picked: CLIP2 },
+      a: { kind: "video", id: CLIP },
+      b: { kind: "video", id: CLIP2 },
       loop: false,
       autoPlay: false,
       audio: "none",
@@ -230,79 +228,90 @@ describe("视频混合：自动播放开关（规格自动出行）", () => {
   });
 });
 
-describe("视频混合：两条通道", () => {
-  it("两条通道各自列小方块、名字用素材文件名，互不影响", () => {
+describe("视频混合：两路素材（种类开关 + 选择 + 清除）", () => {
+  it("面板：默认「视频」；种类开关写进文档并清掉这一路已选的素材；一次撤销全回来", () => {
     blended();
-    act(() => useEditorStore.getState().addVideoBlendClip("tex-1", "a", CLIP));
-    act(() => useEditorStore.getState().addVideoBlendClip("tex-1", "a", CLIP3));
-    act(() => useEditorStore.getState().addVideoBlendClip("tex-1", "b", CLIP2));
 
-    const a = chips("a");
-    const b = chips("b");
-    expect(a.map((chip) => chip.textContent)).toEqual(["opening", "loop"]);
-    expect(b.map((chip) => chip.textContent)).toEqual(["rain"]);
-    // 每条通道第一次加进来的那条默认被选上
-    expect(a[0]?.getAttribute("data-selected")).toBe("true");
-    expect(b[0]?.getAttribute("data-selected")).toBe("true");
-    // webm 那条的 tooltip 里带着提醒
-    expect(b[0]?.getAttribute("title")).toMatch(/WebM：Windows 上多半解不了/);
-  });
+    // 默认是视频：开关上「视频」亮着、按钮写着「选择视频…」
+    expect(screen.getByTestId("video-blend-a-kind-video").getAttribute("data-active")).toBe("true");
+    expect(screen.getByTestId("video-blend-a-kind-image").getAttribute("data-active")).toBe("false");
+    expect(screen.getByTestId("video-blend-a-pick").textContent).toBe("选择视频…");
+    expect(screen.getByTestId("video-blend-a-empty").textContent).toBe("还没选");
 
-  it("点小方块换选中 / 再点取消；写进文档、可撤销", () => {
-    blended();
-    act(() => useEditorStore.getState().addVideoBlendClip("tex-1", "a", CLIP));
-    act(() => useEditorStore.getState().addVideoBlendClip("tex-1", "a", CLIP3));
+    // 选了视频 → 面板上显示素材名（webm 会带格式提醒）
+    act(() => useEditorStore.getState().setVideoBlendChannelId("tex-1", "a", CLIP));
+    expect(screen.getByTestId("video-blend-a-current").textContent).toBe("opening");
+    expect(blendOf("tex-1")?.a).toEqual({ kind: "video", id: CLIP });
 
-    fireEvent.click(chipSelect("a", 1));
-    expect(blendOf("tex-1")?.a.picked).toBe(CLIP3);
+    // 切到图片：写文档、清素材、按钮与提示换文案
+    fireEvent.click(screen.getByTestId("video-blend-a-kind-image"));
+    expect(blendOf("tex-1")?.a).toEqual({ kind: "image" });
+    expect(screen.getByTestId("video-blend-a-pick").textContent).toBe("选择图片…");
+    expect(screen.getByTestId("video-blend-a-empty").textContent).toBe("还没选");
+
+    // 撤销把「视频 + 素材」一起带回来（换种类 + 清素材是同一次文档编辑）
     act(() => useEditorStore.getState().undo());
-    expect(blendOf("tex-1")?.a.picked).toBe(CLIP);
-
-    // 现在 chips[0] 又是选中的那条：再点它 = 取消选中
-    expect(chips("a")[0]?.getAttribute("data-selected")).toBe("true");
-    fireEvent.click(chipSelect("a", 0));
-    expect(blendOf("tex-1")?.a.picked).toBeUndefined();
+    expect(blendOf("tex-1")?.a).toEqual({ kind: "video", id: CLIP });
   });
 
-  it("清空某条通道不动另一条", () => {
+  it("两路互不影响：图片那一路不会碰视频那一路", () => {
     blended();
-    act(() => useEditorStore.getState().addVideoBlendClip("tex-1", "a", CLIP));
-    act(() => useEditorStore.getState().addVideoBlendClip("tex-1", "b", CLIP2));
+    act(() => useEditorStore.getState().setVideoBlendChannelId("tex-1", "a", CLIP));
+    act(() => useEditorStore.getState().setVideoBlendChannelKind("tex-1", "b", "image"));
+    act(() => useEditorStore.getState().setVideoBlendChannelId("tex-1", "b", IMG));
+
+    expect(blendOf("tex-1")?.a).toEqual({ kind: "video", id: CLIP });
+    expect(blendOf("tex-1")?.b).toEqual({ kind: "image", id: IMG });
+    expect(screen.getByTestId("video-blend-a-current").textContent).toBe("opening");
+    expect(screen.getByTestId("video-blend-b-current").textContent).toBe("bg");
+  });
+
+  it("选择按钮按当前种类弹对应的通用选择框", () => {
+    blended();
+
+    // 视频那一路 → 视频选择框
+    fireEvent.click(screen.getByTestId("video-blend-b-pick"));
+    expect(screen.getByTestId("video-picker-dialog")).toBeDefined();
+  });
+
+  it("图片那一路 → 图片选择框", () => {
+    blended();
+    act(() => useEditorStore.getState().setVideoBlendChannelKind("tex-1", "a", "image"));
+
+    fireEvent.click(screen.getByTestId("video-blend-a-pick"));
+    expect(screen.getByTestId("image-picker-dialog")).toBeDefined();
+  });
+
+  it("「×」清掉这一路选的素材、不动另一路；kind 留着", () => {
+    blended();
+    act(() => useEditorStore.getState().setVideoBlendChannelId("tex-1", "a", CLIP));
+    act(() => useEditorStore.getState().setVideoBlendChannelKind("tex-1", "b", "image"));
+    act(() => useEditorStore.getState().setVideoBlendChannelId("tex-1", "b", IMG));
 
     fireEvent.click(screen.getByTestId("video-blend-a-clear"));
-    expect(blendOf("tex-1")?.a).toEqual({ clips: [] });
-    expect(blendOf("tex-1")?.b).toEqual({ clips: [CLIP2], picked: CLIP2 });
-  });
-
-  it("从某条通道移出一条：移出的正好是选中的那条就顺到第一条", () => {
-    blended();
-    act(() => useEditorStore.getState().addVideoBlendClip("tex-1", "a", CLIP));
-    act(() => useEditorStore.getState().addVideoBlendClip("tex-1", "a", CLIP3));
-
-    // 移出选中的第一条（CLIP）→ 顺到 CLIP3
-    fireEvent.click(within(groupOf("videoBlend")).getAllByTestId("video-blend-a-remove")[0]!);
-    expect(blendOf("tex-1")?.a).toEqual({ clips: [CLIP3], picked: CLIP3 });
+    expect(blendOf("tex-1")?.a).toEqual({ kind: "video" });
+    expect(blendOf("tex-1")?.b).toEqual({ kind: "image", id: IMG });
   });
 });
 
 describe("视频混合：播放记账", () => {
-  it("两条通道都没选时播放被拒（写日志、不记账）", () => {
+  it("两路都没选时播放被拒（写日志、不记账）", () => {
     blended();
 
     act(() => {
       expect(useEditorStore.getState().playVideoBlend("tex-1")).toBeUndefined();
     });
     expect(useEditorStore.getState().videoBlendPlayback.objects["tex-1"]).toBeUndefined();
-    expect(logs().some((message) => message.includes("两条通道都还没选"))).toBe(true);
+    expect(logs().some((message) => message.includes("两路都还没选素材"))).toBe(true);
   });
 
-  it("选了之后播放 → 记账两条通道；暂停 / 继续 / 停止", () => {
+  it("选了之后播放 → 记账两路；暂停 / 继续 / 停止", () => {
     blended();
-    act(() => useEditorStore.getState().addVideoBlendClip("tex-1", "a", CLIP));
-    act(() => useEditorStore.getState().addVideoBlendClip("tex-1", "b", CLIP2));
+    act(() => useEditorStore.getState().setVideoBlendChannelId("tex-1", "a", CLIP));
+    act(() => useEditorStore.getState().setVideoBlendChannelId("tex-1", "b", CLIP2));
 
     act(() => useEditorStore.getState().playVideoBlend("tex-1"));
-    expect(useEditorStore.getState().videoBlendPlayback.objects["tex-1"]?.clips).toEqual([CLIP, CLIP2]);
+    expect(useEditorStore.getState().videoBlendPlayback.objects["tex-1"]?.sources).toEqual([CLIP, CLIP2]);
     expect(useEditorStore.getState().videoBlendPlayback.objects["tex-1"]?.paused).toBe(false);
 
     act(() => useEditorStore.getState().pauseVideoBlend("tex-1"));
@@ -318,7 +327,7 @@ describe("视频混合：播放记账", () => {
     blended();
     expect((screen.getByTestId("video-blend-play") as HTMLButtonElement).disabled).toBe(true);
 
-    act(() => useEditorStore.getState().addVideoBlendClip("tex-1", "a", CLIP));
+    act(() => useEditorStore.getState().setVideoBlendChannelId("tex-1", "a", IMG));
     expect((screen.getByTestId("video-blend-play") as HTMLButtonElement).disabled).toBe(false);
 
     fireEvent.click(screen.getByTestId("video-blend-play"));

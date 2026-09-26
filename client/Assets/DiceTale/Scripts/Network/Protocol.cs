@@ -102,8 +102,13 @@ namespace DiceTale
         /// 与 `VideoOverlay` 的 `autoPlay` 同义）。组件 data 里多一个布尔，命令那一组一个字节都没动。
         /// 老前端（v17）不认这一项 → 不会自动播（不是崩，是行为丢），照旧 +1；
         /// 这类不兼容由握手 close `4002` 挡住。
+        ///
+        /// v19（2026-09-27）：**视频混合的两路从「列表 + 选中」收成单个素材**（`{ kind, id? }`），
+        /// 且每路多了 `kind`（`image` / `video`）——这一路可以是**图片**也可以视频。老前端（v18）
+        /// 按 `clips` / `picked` 读 → 两路都读不到（混合层放不出来），照旧 +1；
+        /// 这类不兼容由握手 close `4002` 挡住。命令那一组一个字节都没动。
         /// </summary>
-        public const int Version = 18;
+        public const int Version = 19;
 
         /// <summary>对象特性组件的类型名（v9 起）。与服务端 `@dts/protocol` 的 `COMPONENT_TYPE` 逐字一致。</summary>
         public static class ComponentType
@@ -118,8 +123,9 @@ namespace DiceTale
             public const string Teleport = "Teleport";
             public const string Video = "VideoOverlay";
             /// <summary>
-            /// 视频混合（v17 起）：两条视频叠在**同一个矩形**上用 Mask 混合（A 盖住、擦开露 B）。
-            /// `{ a: { clips, picked }, b: { clips, picked }, loop, autoPlay（v18 起）, audio }`；
+            /// 视频混合（v17 起）：**两路素材**叠在**同一个矩形**上用 Mask 混合（A 盖住、擦开露 B）。
+            /// `{ a: { kind（image / video）, id }, b: { ... }, loop, autoPlay（v18 起）, audio }`——
+            /// 每路只放**一个**素材（v19 起，之前是「列表 + 选中」），可以是图片或视频；
             /// **遮罩是纯运行态**（由 `erase_video_mask` 驱动），不随场景下发。与 `VideoOverlay` 语义互斥
             /// （同一对象最多其一），前端取 `VideoBlend` 优先。
             /// </summary>

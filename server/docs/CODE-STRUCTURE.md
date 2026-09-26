@@ -11,13 +11,13 @@
 |---|---|
 | 语言 / 运行时 | TypeScript 5.9 + ESM，Node 22+（后端跑在 `tsx` 上，无编译产物） |
 | 包管理 | pnpm workspace（`apps/*` + `packages/*`，共 8 个包） |
-| 文档格式版本 | `DOCUMENT_FORMAT_VERSION = 28`（`packages/document/src/types.ts`） |
-| 协议版本 | `PROTOCOL_VERSION = 18`（`packages/protocol/src/messages.ts`；v17 新增视频混合组件 `VideoBlend` 与命令 `erase_video_mask`，v18 给 `VideoBlend` 加 `autoPlay`，见 §6.1） |
+| 文档格式版本 | `DOCUMENT_FORMAT_VERSION = 29`（`packages/document/src/types.ts`） |
+| 协议版本 | `PROTOCOL_VERSION = 19`（`packages/protocol/src/messages.ts`；v17 新增视频混合组件 `VideoBlend` 与命令 `erase_video_mask`，v18 加 `autoPlay`，v19 把两路收成「一个素材（图片 / 视频）」，见 §6.1） |
 | 后端默认地址 | `0.0.0.0:1420`（`resources/config/app.json`，可被 `HOST` / `PORT` 覆盖） |
 | 编辑器开发地址 | `http://localhost:5173`（Vite，`/api`、`/editor`、`/client` 反代到 1420） |
 | 编辑器生产地址 | `http://localhost:1420`（后端同源托管 `apps/editor/dist`） |
-| 源码规模（不含测试） | 168 个文件 / 37,999 行（packages 12,777 · backend 3,493 · editor 21,729） |
-| 测试规模 | 34,035 行（单测 24,349 · E2E 9,403 · 架构测试 283） |
+| 源码规模（不含测试） | 168 个文件 / 38,054 行（packages 12,894 · backend 3,493 · editor 21,667） |
+| 测试规模 | 34,094 行（单测 24,406 · E2E 9,405 · 架构测试 283） |
 
 > 上表两行与 §0.1 表格里加粗的文件行数、§3.x 节标题里的包规模由
 > `scripts/check-code-structure-stats.mjs` **机器校验**（`pnpm check` 的一环）：
@@ -429,11 +429,11 @@ build: { outDir: "dist", sourcemap: true },
 - 画笔半径 `floor((brushSize-1)/2)`（1/2→1×1、3/4→3×3、5→5×5，含偶数尺寸的刻意保真），与 Unity `ApplyBrush` 完全一致；
 - 坐标系只有一个：**世界坐标**（x 右、y 上、像素、无限大）；`grid(0,0)` 在地图矩形左下角 = 图片最下面一行，grid.y 与世界 y 同向、不翻转；唯一的翻转发生在贴图绘制（`worldRectTopLeft`）。
 
-### 3.2 `@dts/document` — 文档模型、命令与历史（8,092 行）
+### 3.2 `@dts/document` — 文档模型、命令与历史（8,197 行）
 
 | 文件 | 行数 | 职责 | 关键导出 |
 |---|---|---|---|
-| `types.ts` | 585 | 全部文档类型与格式版本常量（**`ObjectKind` 不在这里：v22 起住在 `presets.ts`，层级已移除、kind 只是预设 id**） | `DOCUMENT_FORMAT_VERSION`(=27)、`ProjectDoc`、`SceneDoc`、`SceneFileDoc`、`GameObjectDoc`、`ComponentDoc`、`MapDataDoc`（含 v26 的 `sortingOrder`）、`ImageLayerDataDoc`（`ImageRef & { sortingOrder }`）、`FogOfWarDataDoc`（v27：`mapId` + `enabled` + `regions`）、`SoundDataDoc`、`TeleportDataDoc`、`VideoDataDoc`、`ImageRef`、`GridSpec`、`CellRuns`、`ItemLibraryDoc`、`AudioTagTableDoc`、`SOUND_LAYERS`、`OBJECT_SOUND_LAYERS`、`ImageSpriteRef`、`SpriteSheetDoc`、`SpriteImportSettingsDoc`、`ResolvedSprite`、`SOUND_LAYER_LABELS` |
+| `types.ts` | 671 | 全部文档类型与格式版本常量（**`ObjectKind` 不在这里：v22 起住在 `presets.ts`，层级已移除、kind 只是预设 id**） | `DOCUMENT_FORMAT_VERSION`(=29)、`ProjectDoc`、`SceneDoc`、`SceneFileDoc`、`GameObjectDoc`、`ComponentDoc`、`MapDataDoc`（含 v26 的 `sortingOrder`）、`ImageLayerDataDoc`（`ImageRef & { sortingOrder }`）、`FogOfWarDataDoc`（v27：`mapId` + `enabled` + `regions`）、`SoundDataDoc`、`TeleportDataDoc`、`VideoDataDoc`、`VideoBlendDataDoc`（v17 / v19：两路 `{ kind, id? }` + `loop` / `autoPlay` / `audio`）、`ImageRef`、`GridSpec`、`CellRuns`、`ItemLibraryDoc`、`AudioTagTableDoc`、`SOUND_LAYERS`、`OBJECT_SOUND_LAYERS`、`ImageSpriteRef`、`SpriteSheetDoc`、`SpriteImportSettingsDoc`、`ResolvedSprite`、`SOUND_LAYER_LABELS` |
 | `presets.ts` | 256 | **对象预设表 + 能力槽位**（kinds.ts / features.ts 合并而来）：kind 只是预设 id，`GameObject` 仍是抽象基类（不落进文档）；每个预设声明允许的能力槽位 → 承载组件 + 缺省承载兜底 + 特性缺省值 | `ComponentSlot`、`OBJECT_KINDS`、`ObjectKind`、`GameObjectPreset`、`OBJECT_PRESETS`、`DEFAULT_SLOT_COMPONENT`、`SPRITE_COMPONENT`、`presetOf`、`isAbstractKind`、`CONCRETE_KINDS`、`componentForSlot`、`carriesComponent`、`supportsVideo`、`supportsFog`、`supportsSpriteSheet`、`displayImageField`、`DEFAULT_SOUND_LAYER`、`DEFAULT_VIDEO_*` |
 | `access.ts` | 429 | **对象特性的唯一访问路径**（数据存在哪只有这里知道；v22 层级移除后一律按组件自报的 slot 查找） | 读：`componentOf`、`componentOfSlot`、`componentDataOf`、`componentDataOfSlot`、`mapDataOf`、`fogOf`、`imageOf`（按 slot 直接找，**只挑回 `ImageRef` 那几个字段**）、`imageLayerDataOf`、`objectImage`、`sortingOrderOf`（v26：地图 → 图片层 → 0）、`soundDataOf`、`teleportDataOf`、`videoDataOf`、`isFogEnabled`、`isVideoEnabled`；写：`mapDraftOf`、`writeFeature`、`removeFeature`、`ensureSoundData`、`ensureTeleportData`、`ensureVideoData`、`ensureFogData`、`withFeature` |
 | `schema.ts` | 1,487 | zod schema + **版本迁移链**（v23 / v24 的素材 meta 迁移、v25 的 `migrateMapFogToComponent`、v26 的 `migrateSortingOrderToRenderComponents` 也在这一段里）+ 文件解析 | `sceneFileSchema`、`projectDocSchema`、`imageSpriteRefSchema`、`mapDataSchema`、`imageLayerDataSchema`、`upgradeRawDocument`、`migrateProjectDoc`、`parseProjectFile`、`parseProjectDoc`、`parseSceneFile`、`defaultProjectSettings`、`defaultAudioSettings`、`defaultBgmSettings`、`DEFAULT_BGM_VOLUME`(0.6)、`DEFAULT_SFX_VOLUME`(0.8)、`DEFAULT_VOICE_VOLUME`(1)；类型 `SceneSizeHint`、`ProjectFileLoad`、`SceneFileLoad` |
@@ -545,6 +545,7 @@ kind 只是预设 id，没有层级——「允许哪些能力槽位」看 `OBJE
 | `play-sound.ts` | 63 | 声音对象（音频列表 / 选中 / 层级） |
 | `teleport.ts` | 48 | 传送阵（候选场景 / 选中） |
 | `video.ts` | 133 | 视频（开关 / 列表 / 选中 / 移除组件；循环 / 声音 / 自动播放走泛型 `setComponentField`） |
+| `video-blend.ts` | 112 | 视频混合（两路素材的「种类 + 素材」；换种类顺手清素材；循环 / 声音 / 自动播放走泛型 `setComponentField`） |
 | `component.ts` | 47 | 可选组件的**添加 / 移除统一入口**（属性面板底部的 Add Component 与组件头的移除）：按组件类型分派到 `object` / `video` 的初始化命令；加第三种可选组件只在这里加一条 `case` |
 | `project.ts` | 247 | **只剩项目级数据**：三档音量 + 音频**标签表**（`addAudioTag` / `renameAudioTag` / `setAudioTagName` / `deleteAudioTag`）。音频文件的显示名 / 标签（旧的 `setAudioMetaName` / `setAudioMetaTags`）v24 已删、图片切分（旧的 `setSpriteSheet` / `setSpriteImportSettings`）v23 已删——它们现在写在各自素材的 `.meta` 里，写入口径是 `asset-meta.ts` 的纯函数 |
 
@@ -675,7 +676,7 @@ v23 起 `validateScene` 多了第二个参数：`validateScene(scene, { metas })
 > **历史**：`@dts/actions`（动作类型注册表、条件求值、动作图校验）曾是独立的一个包，
 > 随「动作挂在组件上」那套旧模型一起整包删除了；动作编辑的数据面落地时重新设计。
 
-### 3.3 `@dts/protocol` — WS 消息契约（941 行）
+### 3.3 `@dts/protocol` — WS 消息契约（953 行）
 
 单文件 `src/messages.ts`（874 行）+ `index.ts` barrel（1 行）。
 **编辑器、服务端、Unity 前端共用同一份 zod schema。**
@@ -687,7 +688,7 @@ v23 起 `validateScene` 多了第二个参数：`validateScene(scene, { metas })
 
 | 名称 | 值 | 用途 |
 |---|---|---|
-| `PROTOCOL_VERSION` | `18` | 握手校验；不一致则关闭连接（`4002`）。最近一次改动是**给视频混合组件 `VideoBlend` 加 `autoPlay`**（场景激活时自动混合播放选中的两条）：老前端（v17）不认这一项 → 不会自动播（行为丢），靠握手把它挡在连上的那一刻 |
+| `PROTOCOL_VERSION` | `19` | 握手校验；不一致则关闭连接（`4002`）。最近一次改动是**视频混合的两路从「列表 + 选中」收成单个素材**（`{ kind, id? }`，这一路可以是图片或视频）：老前端（v18）按 `clips` / `picked` 读 → 两路都读不到（混合层放不出来），靠握手把它挡在连上的那一刻 |
 | `SPRITE_SHEET_MAX` | `64` | 子图切分的**列 / 行上限**（与 `@dts/document` 的 `SPRITE_SHEET_MAX` 同值，契约测试盯着） |
 | `RUNTIME_INACTIVE_STATUS` | `503` | 未开闸时拒绝 `/client` 升级的 HTTP 状态 |
 | `RUNTIME_INACTIVE_REASON` | `"runtime-inactive"` | 写在 `x-dts-reason` 头里 |
@@ -1605,7 +1606,7 @@ edit：取消去抖、`lastPushedSceneText=null`、发 `runtime_stop`）、`push
 
 ### 6.1 版本演进
 
-`DOCUMENT_FORMAT_VERSION = 28`，`PROTOCOL_VERSION = 18`。两者**独立编号**，只有不兼容的 wire 改动才会让协议 +1：
+`DOCUMENT_FORMAT_VERSION = 29`，`PROTOCOL_VERSION = 19`。两者**独立编号**，只有不兼容的 wire 改动才会让协议 +1：
 文档 v22 ↔ 协议 v12 是**最后一次配套发布**（`kind` 改名：贴图 `Texture`→`Image`、精灵 `SceneObject`→`Sprite`，
 协议 v11 的老客户端不认这两个值——占位色退回灰色（图照常显示，显示走组件名），
 按「不是崩、是画面错」的同一条纪律靠握手 `4002` 挡住）。
@@ -1622,10 +1623,13 @@ edit：取消去抖、`lastPushedSceneText=null`、发 `runtime_stop`）、`push
 **v28 ↔ v16 是又一次配套发布**：取消 `Map` 类型，`GridMap` 的 data 去掉 `image` / `sortingOrder`
 （改由对象的 `ImageLayer` 承载）。老前端（v15）按 `map.image` 取图 → 取不到，网格地图退成占位色
 （不是崩，是画面错），按同一条纪律靠握手挡住；命令那一组仍然一个字节都没动。
-**v28 ↔ v17 / v18 是协议侧的两次追加**（文档格式停在 v28，没有配套的文档改动）：v17 新增视频混合组件
+**v28 ↔ v17 / v18 是协议侧的两次追加**（文档格式当时停在 v28，没有配套的文档改动）：v17 新增视频混合组件
 `VideoBlend` + 命令 `erase_video_mask`（老前端 v16 不认 → 混合层不建、命令回「不认识」）；v18 给
 `VideoBlend` 的 data 加 `autoPlay`（老前端 v17 不认 → 不会自动播）。都属于「行为丢」，按同一条纪律
 靠握手 `4002` 挡住；命令那一组 v18 一个字节都没动。
+**v29 ↔ v19 是一次配套发布**：视频混合的两路从「列表 + 选中」收成**一个素材**（`{ kind, id? }`），
+且每路多了 `kind`（`image` / `video`）——这一路可以是图片也可以视频。老前端（v18）按 `clips` / `picked`
+读 → 两路都读不到（混合层放不出来），协议照旧 +1；文档侧靠迁移函数读得回来（见下）。命令那一组仍旧没动。
 规则：文档格式**任何结构不兼容的改动 +1**；协议**任何不兼容改动 +1**。
 
 | 文档版本 | 内容 | 迁移方式 |
@@ -1657,6 +1661,7 @@ edit：取消去抖、`lastPushedSceneText=null`、发 `runtime_stop`）、`push
 | **v26** | **显示顺序搬进渲染组件**：对象级 `sortingOrder` 删除——网格地图进 `MapDataDoc`、图片层（`ImageLayer` / `SpriteLayer`）进各自的 data（`ImageRef & { sortingOrder }`）；动作对象与没有渲染层的实体不再有这个参数 | `migrateSortingOrderToRenderComponents`（先 `GridMap`、后图片层；都没有就丢弃；幂等）。协议同批 +1 到 **v14** |
 | **v27** | **战争雾变成独立的场景对象**：地图上的 `FogOfWar` 组件搬到新的 `Fog` 对象（可摆放，摆位复制原地图），组件 data 多 `mapId`（引用哪张地图）；一张地图最多一个雾对象 | `migrateFogToSceneObject`（id 确定性 `<地图 id>__Fog`；复制 position/rotation/scale；幂等）。协议同批 +1 到 **v15**：`erase_mask` / `reveal_fog_region` 改按**雾对象 id** 寻址 |
 | **v28** | **取消 `Map` 类型，网格变成贴图上的可选组件**：`Map` → `Image`；`MapDataDoc` 去掉 `image` / `sortingOrder`（改由 `ImageLayer` 承载），`GridMap` 只剩 `grid` / `rowOrder` / `cells`；`GridMap` 组件改为可选能力（`optionalKinds: ["Image"]`） | `renameObjectKinds`（Map → Image）+ `migrateGridMapImageToLayer`（GridMap 的 image/sortingOrder → `ImageLayer`，幂等）。协议同批 +1 到 **v16**：`mapDataSchema` 去掉这两项，地图对象改为下发 `ImageLayer` 组件 |
+| **v29** | **视频混合的两路从「列表 + 选中」收成单个素材**：`VideoBlendChannelDoc` 由 `{ clips, picked? }` 变成 `{ kind, id? }`——每路只放一个素材，且可以是**图片**或**视频**（`kind`） | `migrateVideoBlendChannels`（取 `picked`，没选取 `clips[0]`，`kind` 记 `video`；幂等）。协议同批 +1 到 **v19** |
 
 **版本判断纪律**（`schema.ts` 里专门写了注释）：**不能拿文件里的 `formatVersion` 跟 `DOCUMENT_FORMAT_VERSION` 比**
 来判断「要不要做位置换算」——版本号一涨，所有旧文件都会被判成「需要换算」，那会把已经是世界坐标的 v5 文件
@@ -1698,6 +1703,7 @@ upgradeRawDocument
  → migrateSortingOrderToRenderComponents  # v26：对象级 sortingOrder → 渲染组件 data（无渲染层丢弃）
  → migrateFogToSceneObject     # v27：地图上的 FogOfWar 组件 → 独立 Fog 对象（引用地图）
  → migrateGridMapImageToLayer  # v28：GridMap 的 image/sortingOrder → ImageLayer 组件
+ → migrateVideoBlendChannels   # v29：VideoBlend 两路的「列表 + 选中」→ 单个素材（{kind, id}）
  → sceneFileSchema.safeParse
 ```
 
@@ -2026,8 +2032,8 @@ resources/
 - 后端不依赖资源根存在：`loadConfig` 读不到 `config/app.json` 就用内置默认值，目录由首次写入时按需创建
   （E2E 依赖这一点）。
 
-**`测试项目` 的实际内容**（磁盘上已经是 `formatVersion: 28`——v22 改了 kind 的名字，v23 / v24 把图片切分与
-音频标注搬进各素材的 `.meta`，v25 拆出 `FogOfWar`，v26 把显示顺序搬进渲染组件，v27 战争雾变成独立对象，v28 取消 `Map` 类型（网格变成贴图上的可选组件）；历史文件由**编辑器打开时自动迁移并回写一次**，见 §6.2；下表按**迁移后**的样子写）：
+**`测试项目` 的实际内容**（磁盘上已经是 `formatVersion: 29`——v22 改了 kind 的名字，v23 / v24 把图片切分与
+音频标注搬进各素材的 `.meta`，v25 拆出 `FogOfWar`，v26 把显示顺序搬进渲染组件，v27 战争雾变成独立对象，v28 取消 `Map` 类型（网格变成贴图上的可选组件），v29 视频混合的两路收成单个素材（图片 / 视频）；历史文件由**编辑器打开时自动迁移并回写一次**，见 §6.2；下表按**迁移后**的样子写）：
 
 | 文件 | 内容 |
 |---|---|

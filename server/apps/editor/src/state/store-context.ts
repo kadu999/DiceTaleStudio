@@ -795,12 +795,10 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
     }
 
     const blend = videoBlendDataOf(object);
-    const picks = [blend?.a.picked, blend?.b.picked].filter(
-      (clip): clip is string => clip !== undefined,
-    );
+    const picks = [blend?.a.id, blend?.b.id].filter((id): id is string => id !== undefined);
     if (picks.length === 0) {
       pushLog(
-        makeLog("warn", `${what}失败：「${object.name}」两条通道都还没选要放的视频（属性面板 → 视频混合）`),
+        makeLog("warn", `${what}失败：「${object.name}」两路都还没选素材（属性面板 → 视频混合）`),
       );
       return null;
     }
