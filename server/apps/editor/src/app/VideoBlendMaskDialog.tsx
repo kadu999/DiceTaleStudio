@@ -47,6 +47,18 @@ interface VideoBlendMaskDialogProps {
 /** 盖层颜色（代表「A 还盖着」）：深色压住底下的 B；擦除只降 alpha。 */
 const COVER_RGBA = [16, 18, 24, 235] as const;
 
+/**
+ * 「整张」两个按钮的样子：**一眼要看出能按**。
+ *
+ * 右侧那一栏的底是 `panel-alt`，而 `toolbar-button` 是「透明底 + 透明边」、只在 hover 时才浮出
+ * 同样是 `panel-alt` 的底——放在这一栏上就等于两行纯文字（截图确认过，hover 也几乎没变化）。
+ * 所以这里走**播放键那一档**（`fields.tsx` 的 `PLAYBACK_BUTTON_CLASS`）：常态就有边框 +
+ * 比栏底亮两档的底（`bar` 色），hover 再亮一档并描上强调色边框；尺寸也按「现场真的在按的键」
+ * 放大到 30px。按钮里那个小方块是**遮罩状态**的提示（实心 = 1、空心 = 0）。
+ */
+const FILL_BUTTON_CLASS =
+  "inline-flex min-h-[30px] w-full flex-none items-center justify-center gap-1.5 rounded border border-[var(--color-editor-border)] bg-[var(--color-editor-bar)] px-2 text-[12px] text-[var(--color-editor-text)] hover:border-[var(--color-editor-accent)] hover:bg-[var(--color-editor-bar-hover)] hover:text-white";
+
 /** 视频尺寸还没探到时的兜底长宽比（16:9）。 */
 const FALLBACK_SIZE = { width: 16, height: 9 } as const;
 
@@ -358,25 +370,35 @@ export function VideoBlendMaskDialog({
         {/* 右侧：**整张遮罩**——一次填满（1）或清空（0）。原来那几行说明写的都是同一件事，删了 */}
         <div
           data-testid="video-blend-mask-panel"
-          className="flex w-36 flex-none flex-col gap-1 overflow-auto rounded border border-[var(--color-editor-border)] bg-[var(--color-editor-panel-alt)] p-2"
+          className="flex w-36 flex-none flex-col gap-1.5 overflow-auto rounded border border-[var(--color-editor-border)] bg-[var(--color-editor-panel-alt)] p-2"
         >
           <span className="text-[10px] text-[var(--color-editor-text-dim)]">整张遮罩</span>
           <button
             type="button"
             data-testid="video-blend-mask-fill-covered"
             title="整张填成 1：A 重新盖满（连之前擦开的一起盖回去）"
-            className="toolbar-button justify-center hover:toolbar-button-hover"
+            className={FILL_BUTTON_CLASS}
             onClick={() => fillAll(true)}
           >
+            {/* 实心方块 = 遮罩 1（整张盖住） */}
+            <span
+              aria-hidden="true"
+              className="h-2.5 w-2.5 flex-none rounded-[2px] border border-[var(--color-editor-text)] bg-[var(--color-editor-text)]"
+            />
             整张盖住（1）
           </button>
           <button
             type="button"
             data-testid="video-blend-mask-fill-revealed"
             title="整张填成 0：完全露出 B（连还没擦的地方一起露出来）"
-            className="toolbar-button justify-center hover:toolbar-button-hover"
+            className={FILL_BUTTON_CLASS}
             onClick={() => fillAll(false)}
           >
+            {/* 空心方块 = 遮罩 0（整张擦开） */}
+            <span
+              aria-hidden="true"
+              className="h-2.5 w-2.5 flex-none rounded-[2px] border border-[var(--color-editor-text)]"
+            />
             整张擦开（0）
           </button>
         </div>
