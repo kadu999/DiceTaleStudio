@@ -18,7 +18,7 @@ import {
   type ResourceProvider,
 } from "@dts/resources";
 import { bodyString, bodyTrimmed, queryRaw, queryTrimmed, readJsonBody } from "../requests";
-import { HttpError, badRequest, sendJson } from "../responses";
+import { HttpError, badRequest, rethrowProviderError, sendJson } from "../responses";
 import type { RouteContext } from "../router";
 
 interface ProjectAssetMatch {
@@ -66,9 +66,17 @@ async function findProjectAssetsByGuid(
     if (entry.type !== "file") continue;
 
     const metaId = assetMetaIdOf(entry.id);
-    if (metaId === undefined || !(await provider.exists(metaId))) continue;
+    if (!(await provider.exists(metaId))) continue;
 
-    if (guidFromAssetMetaText(await provider.readText(metaId)) === guid) {
+    let text: string;
+    try {
+      text = await provider.readText(metaId);
+    } catch {
+      // meta 在 exists 与 read 之间被改名 / 删除：跳过即可（下一次请求自然看到新状态）
+      continue;
+    }
+
+    if (guidFromAssetMetaText(text) === guid) {
       matches.push({ id: entry.id, path: entry.path.slice(project.length + 1) });
     }
   }
@@ -90,7 +98,7 @@ export async function listProjectsRoute(ctx: RouteContext): Promise<void> {
 
 /** `POST /api/projects`：新建项目（写项目文件 + 建标准子目录）。重名 / 非法名 → 400。 */
 export async function createProjectRoute(ctx: RouteContext): Promise<void> {
-  const body = await readJsonBody(ctx.request);
+  const body = await readJsonBody(ctx.request, ctx.config.app.http.maxBodyBytes);
   const name = bodyTrimmed(body, "name");
 
   try {
@@ -99,7 +107,7 @@ export async function createProjectRoute(ctx: RouteContext): Promise<void> {
       project: createEmptyProject(name),
     });
   } catch (error) {
-    throw badRequest(error instanceof Error ? error.message : String(error));
+    rethrowProviderError(error);
   }
 
   ctx.log("info", `已创建项目: ${name}`);
@@ -114,7 +122,7 @@ export async function deleteProjectRoute(ctx: RouteContext): Promise<void> {
   try {
     ({ removed } = await deleteProject(ctx.provider, name));
   } catch (error) {
-    throw badRequest(error instanceof Error ? error.message : String(error));
+    rethrowProviderError(error);
   }
 
   ctx.log("info", `已删除项目: ${name}（清理 ${removed} 个文件）`);
@@ -204,7 +212,7 @@ export async function getProjectAssetByGuidRoute(ctx: RouteContext): Promise<voi
 }
 
 /** `POST /api/projects/folder`：在项目里建一个目录（路径必须过项目内相对路径校验）。 */export async function createProjectFolderRoute(ctx: RouteContext): Promise<void> {
-  const body = await readJsonBody(ctx.request);
+  const body = await readJsonBody(ctx.request, ctx.config.app.http.maxBodyBytes);
   const project = bodyString(body, "project");
   const folderPath = bodyString(body, "path");
   const reason = validateProjectRelativePath(folderPath);
@@ -233,7 +241,7 @@ export async function getProjectAssetByGuidRoute(ctx: RouteContext): Promise<voi
  *   （Linux 没有统一的「选中文件」接口，会退回打开父目录）。
  */
 export async function revealProjectPathRoute(ctx: RouteContext): Promise<void> {
-  const body = await readJsonBody(ctx.request);
+  const body = await readJsonBody(ctx.request, ctx.config.app.http.maxBodyBytes);
 
   const name = bodyTrimmed(body, "name");
   const nameReason = validateProjectName(name);

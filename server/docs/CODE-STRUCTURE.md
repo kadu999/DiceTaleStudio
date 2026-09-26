@@ -16,8 +16,8 @@
 | 后端默认地址 | `0.0.0.0:1420`（`resources/config/app.json`，可被 `HOST` / `PORT` 覆盖） |
 | 编辑器开发地址 | `http://localhost:5173`（Vite，`/api`、`/editor`、`/client` 反代到 1420） |
 | 编辑器生产地址 | `http://localhost:1420`（后端同源托管 `apps/editor/dist`） |
-| 源码规模（不含测试） | 159 个文件 / 36,077 行（packages 12,363 · backend 3,343 · editor 20,371） |
-| 测试规模 | 32,489 行（单测 23,169 · E2E 9,037 · 架构测试 283） |
+| 源码规模（不含测试） | 159 个文件 / 36,260 行（packages 12,393 · backend 3,456 · editor 20,411） |
+| 测试规模 | 32,755 行（单测 23,435 · E2E 9,037 · 架构测试 283） |
 
 > 上表两行与 §0.1 表格里加粗的文件行数、§3.x 节标题里的包规模由
 > `scripts/check-code-structure-stats.mjs` **机器校验**（`pnpm check` 的一环）：
@@ -30,7 +30,7 @@
 | 改动 | 之前 | 之后 | 加一个功能要改几处 |
 |---|---|---|---|
 | **HTTP 一条协议一个函数** | `http/server.ts` 633 行、一条 `switch` | 13 个文件，`server.ts` **74 行** + `routes/*` | 加一个接口 = 加一个函数 + 路由表一行 |
-| **WS 一条消息一个函数** | `ws/hub.ts` 621 行、两条 `switch` | 8 个文件，`hub.ts` **476 行**（只管传输）+ `handlers/*` | 加一条消息 = 加一个函数（表的键完整性由类型保证） |
+| **WS 一条消息一个函数** | `ws/hub.ts` 621 行、两条 `switch` | 8 个文件，`hub.ts` **480 行**（只管传输）+ `handlers/*` | 加一条消息 = 加一个函数（表的键完整性由类型保证） |
 | **Unity 式实体+组件（GameObject + Component）** | 对象上 5 个特性扁平字段 + 各处 `kind === "…"` | `components[]`（模拟 Unity GameObject 挂组件）+ 能力槽位（slot）/访问器；文档 v19 / 协议 v9 / Unity 客户端同步（子图改动后为 **v20 / v10**，见 §0） | 加一个特性 = 加一个组件 + 注册表一行 + 预设表一行（见 §1.6） |
 | **文档命令分模块** | `commands.ts` 2,069 行 | `commands/` 10 个文件（按特性） | 加一个特性的命令 = 加一个文件 |
 | **编辑器 store 分片** | `editor-store.ts` 4,493 行 | 组装点 **94 行** + 17 个切片 + 上下文（见 §5.2） | 加一个功能 = 加一个 `slices/<功能>-slice.ts` + 组装点一行（**简单字段连切片都不用加**：`setComponentField` 已经在 `component-slice.ts` 里） |
@@ -428,7 +428,7 @@ build: { outDir: "dist", sourcemap: true },
 - 画笔半径 `floor((brushSize-1)/2)`（1/2→1×1、3/4→3×3、5→5×5，含偶数尺寸的刻意保真），与 Unity `ApplyBrush` 完全一致；
 - 坐标系只有一个：**世界坐标**（x 右、y 上、像素、无限大）；`grid(0,0)` 在地图矩形左下角 = 图片最下面一行，grid.y 与世界 y 同向、不翻转；唯一的翻转发生在贴图绘制（`worldRectTopLeft`）。
 
-### 3.2 `@dts/document` — 文档模型、命令与历史（7,768 行）
+### 3.2 `@dts/document` — 文档模型、命令与历史（7,782 行）
 
 | 文件 | 行数 | 职责 | 关键导出 |
 |---|---|---|---|
@@ -672,7 +672,7 @@ v23 起 `validateScene` 多了第二个参数：`validateScene(scene, { metas })
 > **历史**：`@dts/actions`（动作类型注册表、条件求值、动作图校验）曾是独立的一个包，
 > 随「动作挂在组件上」那套旧模型一起整包删除了；动作编辑的数据面落地时重新设计。
 
-### 3.3 `@dts/protocol` — WS 消息契约（874 行）
+### 3.3 `@dts/protocol` — WS 消息契约（875 行）
 
 单文件 `src/messages.ts`（823 行）+ `index.ts` barrel（1 行）。
 **编辑器、服务端、Unity 前端共用同一份 zod schema。**
@@ -733,7 +733,7 @@ v23 起 `validateScene` 多了第二个参数：`validateScene(scene, { metas })
 解析助手：`parseClientToServer`、`parseServerToClient`、`parseEditorToServer`、`parseServerToEditor`
 （失败信息形如 `"<通道> 消息校验失败: <path>: <message>"`）、`parseJsonMessage`、`createRequestId(prefix)`。
 
-### 3.4 `@dts/resources` — 资源 ID 与 Provider 抽象（1,166 行）
+### 3.4 `@dts/resources` — 资源 ID 与 Provider 抽象（1,181 行）
 
 | 文件 | 行数 | 职责 | 关键导出 |
 |---|---|---|---|

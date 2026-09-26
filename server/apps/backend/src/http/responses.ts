@@ -35,6 +35,22 @@ export function methodNotAllowed(method: string | undefined): HttpError {
   return new HttpError(405, `不支持的方法: ${method}`);
 }
 
+/**
+ * provider 抛出的错误：**业务错误 → 400，系统错误 → 原样冒泡（500「内部错误」）**。
+ *
+ * 区分靠 Node 的 `error.code`：我们主动 throw 的业务错误（项目重名 / 资源不存在…）不带它，
+ * 而文件系统错误（EACCES / ENOSPC / ENOENT…）带。少了这一步，磁盘故障会被说成「你请求错了」，
+ * 还会把服务端的绝对路径原样回显给客户端。
+ */
+export function rethrowProviderError(error: unknown): never {
+  const code = (error as NodeJS.ErrnoException | null | undefined)?.code;
+  if (typeof code === "string") {
+    throw error;
+  }
+
+  throw badRequest(error instanceof Error ? error.message : String(error));
+}
+
 /** JSON 响应：所有接口的成功体都是 JSON，且一律 `no-store`（接口数据没有可缓存性）。 */
 export function sendJson(response: ServerResponse, status: number, payload: unknown): void {
   response.writeHead(status, {

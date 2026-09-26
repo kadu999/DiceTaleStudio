@@ -325,6 +325,30 @@ export function AssetsPanel(): React.JSX.Element {
     };
   }, [toggle, selectAsset]);
 
+  /**
+   * 右列每行的「展开 / 收起精灵」回调。
+   *
+   * 与 `enterCallbacks` / `folderCallbacks` 同一套缓存：`ContentRow` 是 `memo` 的，
+   * 每次渲染新建箭头函数会让它整个失效（「一次点击不重建已展开子树」的性能收益就没了）。
+   */
+  const spriteToggleCallbacks = useMemo(() => {
+    const cache = new Map<string, () => void>();
+    return (id: string): (() => void) => {
+      const existing = cache.get(id);
+      if (existing !== undefined) {
+        return existing;
+      }
+
+      const handler = (): void => {
+        setExpandedSprites((previous) =>
+          previous.includes(id) ? previous.filter((current) => current !== id) : [...previous, id],
+        );
+      };
+      cache.set(id, handler);
+      return handler;
+    };
+  }, []);
+
   if (project.current === null) {
     return (
       <div className="flex h-full min-h-0 flex-col panel">
@@ -447,13 +471,7 @@ export function AssetsPanel(): React.JSX.Element {
                       selected={selectedParent || (sceneName !== undefined && sceneName === activeSceneName)}
                       spriteCount={spriteCount}
                       spriteExpanded={spriteExpanded}
-                      onToggleSprites={() =>
-                        setExpandedSprites((previous) =>
-                          previous.includes(node.id)
-                            ? previous.filter((id) => id !== node.id)
-                            : [...previous, node.id],
-                        )
-                      }
+                      onToggleSprites={spriteToggleCallbacks(node.id)}
                       onEnter={enterCallbacks(node.path)}
                       onSelect={selectAsset}
                       onOpenScene={openScene}

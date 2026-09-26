@@ -269,12 +269,13 @@ async function writeAtomically(path: string, data: string | Buffer): Promise<voi
   const temp = `${path}.${process.pid.toString(36)}-${(tempSeq += 1).toString(36)}-${Math.random()
     .toString(36)
     .slice(2, 6)}${TEMP_SUFFIX}`;
-  await writeFile(temp, data);
 
+  // 写入本身失败（磁盘满 / 权限）也会留下那个临时文件：清理要把它一起包进来，
+  // 不能只包住 rename（注释里承诺的「失败就别留垃圾」要覆盖整段）。
   try {
+    await writeFile(temp, data);
     await renameWithRetry(temp, path);
   } catch (error) {
-    // 失败就别留垃圾（临时文件本来也不会被列进资源树，但磁盘上干净点好）
     await rm(temp, { force: true });
     throw error;
   }

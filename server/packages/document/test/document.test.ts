@@ -523,6 +523,22 @@ describe("对象命令（都在场景上操作）", () => {
     expect(decodeRle(mapDataOf(tiny.objects[0]!)?.cells.runs ?? [], 1)).toEqual(new Uint8Array([0]));
   });
 
+  it("改网格尺寸：非有限数（NaN / Infinity）直接拒绝，不写坏网格也不抛异常", () => {
+    const scene = withMapObject(makeScene());
+    let changed = true;
+    const next = mutate(scene, (draft) => {
+      changed = setMapGrid(draft, "map-1", { width: Number.NaN, height: 4 });
+    });
+    expect(changed).toBe(false);
+    expect(mapDataOf(next.objects[0]!)?.grid).toEqual(GRID);
+
+    expect(() =>
+      mutate(scene, (draft) => {
+        setMapGrid(draft, "map-1", { width: Number.POSITIVE_INFINITY, height: 4 });
+      }),
+    ).not.toThrow();
+  });
+
   it("改过尺寸的网格仍然通过校验（格数与网格一致）", () => {
     const scene = mutate(withMapObject(makeScene()), (draft) => {
       setMapGrid(draft, "map-1", { width: 10, height: 8 });

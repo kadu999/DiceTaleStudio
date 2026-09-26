@@ -2,10 +2,15 @@ import { describe, expect, it } from "vitest";
 import {
   COMPONENT_TYPE,
   SPRITE_SHEET_MAX as PROTOCOL_SPRITE_SHEET_MAX,
+  cellRunsSchema as protocolCellRunsSchema,
   componentDataOf,
   componentSchema,
+  mapFogSchema as protocolMapFogSchema,
   sceneComponentSchema,
   sceneSchema,
+  soundDataSchema as protocolSoundDataSchema,
+  teleportDataSchema as protocolTeleportDataSchema,
+  videoDataSchema as protocolVideoDataSchema,
   type GameObjectPayload,
 } from "@dts/protocol";
 import {
@@ -18,6 +23,7 @@ import {
   SLOT_COMPONENT_TYPES,
   SPRITE_COMPONENT,
   SPRITE_SHEET_MAX,
+  cellRunsSchema,
   componentId,
   createAssetMetas,
   createEmptyScene,
@@ -27,9 +33,13 @@ import {
   createTeleportObject,
   hasErrors,
   imageOf,
+  mapFogSchema,
   parseSceneFile,
   resolveSceneSprites,
+  soundDataSchema,
+  teleportDataSchema,
   validateScene,
+  videoDataSchema,
   withFeature,
   type ImageRef,
   type GameObjectDoc,
@@ -234,5 +244,48 @@ describe("契约：协议与文档的组件口径一致", () => {
       width: 64,
       height: 64,
     });
+  });
+
+  it("复刻 schema 的默认值与约束不漂移（缺省一致 / 非法两边都拒）", () => {
+    type LooseParse = { parse: (value: unknown) => unknown };
+    type LooseSchema = { safeParse: (value: unknown) => { success: boolean } };
+
+    // 缺省值：一个空 data 在两侧补出来的默认必须相同。这是复刻最容易悄悄漂移的地方——
+    // 之前协议少了 `regions` / `layer` / `targets` 的 default，缺字段的载荷一边收一边拒。
+    const defaultPairs: Array<{ name: string; doc: LooseParse; proto: LooseParse }> = [
+      { name: "FogOfWar", doc: mapFogSchema, proto: protocolMapFogSchema },
+      { name: "PlaySound", doc: soundDataSchema, proto: protocolSoundDataSchema },
+      { name: "Teleport", doc: teleportDataSchema, proto: protocolTeleportDataSchema },
+      { name: "VideoOverlay", doc: videoDataSchema, proto: protocolVideoDataSchema },
+    ];
+    for (const { name, doc, proto } of defaultPairs) {
+      expect({ name, parsed: proto.parse({}) }, `${name} 的缺省值与文档不一致`).toEqual({
+        name,
+        parsed: doc.parse({}),
+      });
+    }
+
+    // 非法样本：文档拒的，协议也必须拒（掩码范围 / 空资源 ID / 未知层级）。
+    const invalid: Array<{ name: string; doc: LooseSchema; proto: LooseSchema; sample: unknown }> = [
+      { name: "regions 含 0", doc: mapFogSchema, proto: protocolMapFogSchema, sample: { regions: [0] } },
+      { name: "regions 超 255", doc: mapFogSchema, proto: protocolMapFogSchema, sample: { regions: [300] } },
+      { name: "clips 含空串", doc: soundDataSchema, proto: protocolSoundDataSchema, sample: { clips: [""] } },
+      { name: "layer 未知", doc: soundDataSchema, proto: protocolSoundDataSchema, sample: { layer: "bogus" } },
+      { name: "targets 含空串", doc: teleportDataSchema, proto: protocolTeleportDataSchema, sample: { targets: [""] } },
+      { name: "video clips 含空串", doc: videoDataSchema, proto: protocolVideoDataSchema, sample: { clips: [""] } },
+    ];
+    for (const { name, doc, proto, sample } of invalid) {
+      expect({ name, doc: doc.safeParse(sample).success }, `${name}：文档侧应当拒`).toEqual({ name, doc: false });
+      expect({ name, proto: proto.safeParse(sample).success }, `${name}：协议侧应当拒`).toEqual({ name, proto: false });
+    }
+
+    // RLE（格子掩码 0–255 + 格数非负）：两条解码路径的口径必须一致
+    for (const sample of [
+      { encoding: "rle", runs: [[999, 1]] },
+      { encoding: "rle", runs: [[1, -1]] },
+    ]) {
+      expect(cellRunsSchema.safeParse(sample).success).toBe(false);
+      expect(protocolCellRunsSchema.safeParse(sample).success).toBe(false);
+    }
   });
 });

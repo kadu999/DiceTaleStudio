@@ -169,12 +169,20 @@ export function renameAudioTag(project: Draft<ProjectDoc>, tagId: number, name: 
  *
  * 名字为空 / 没变 / 指向洞 / 下标非法 → `false`（不进撤销栈）。
  */
+/**
+ * `setAudioTagName` 允许补出来的**最大槽位序号**（安全上限，不是产品策略）。
+ *
+ * 界面只铺到 32 个槽（`AudioTagEditorDialog` 的 `MAX_SLOTS`），但这条命令是公开 API：
+ * 传进来一个 `1e9` 会靠下面「补中间空槽」那个 `while` 把内存吃光——挡下明显越界的输入。
+ */
+const MAX_AUDIO_TAG_ID = 1024;
+
 export function setAudioTagName(
   project: Draft<ProjectDoc>,
   tagId: number,
   name: string,
 ): boolean {
-  if (!Number.isInteger(tagId) || tagId < 0) {
+  if (!Number.isInteger(tagId) || tagId < 0 || tagId > MAX_AUDIO_TAG_ID) {
     return false;
   }
 

@@ -437,4 +437,26 @@ describe("运行中的文件操作与断线", () => {
     await flushTimers();
     expect(writes(calls)).toEqual([]);
   });
+
+  it("服务端重启后重连：场景内容没变，再点运行也要重推（不吃去重，否则前端拿到空场景）", async () => {
+    await seedScene([door()]);
+    const socket = connect();
+
+    // 第一次运行：服务端开闸 → 推一份
+    useEditorStore.getState().setMode("run");
+    socket.receive(editorState({ runtimeActive: true }));
+    expect(scenePushes(socket).map((scene) => scene?.name)).toEqual([SCENE]);
+
+    // 服务端重启：连接断掉，重连后回一份「没在运行」。本地关闸并还原文档，
+    // 场景内容与第一次推的那一份一模一样（这正是会被去重跳过的情况）。
+    socket.close();
+    const reconnected = connect();
+    reconnected.receive(editorState({ runtimeActive: false }));
+    expect(useEditorStore.getState().mode).toBe("edit");
+
+    // 再点运行：必须真的重推——重启后的服务端缓存是空的，跳过就等于给前端一份空场景
+    useEditorStore.getState().setMode("run");
+    reconnected.receive(editorState({ runtimeActive: true }));
+    expect(scenePushes(reconnected).map((scene) => scene?.name)).toEqual([SCENE]);
+  });
 });

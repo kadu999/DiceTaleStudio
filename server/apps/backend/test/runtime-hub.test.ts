@@ -892,6 +892,58 @@ describe("后端 HTTP 接口", () => {
       entries: Array<{ kind: string }>;
     };
     expect(configOnly.entries.every((entry) => entry.kind === "config")).toBe(true);
+
+    // 空串与「不传」同义（列全部）；未知类别明确 400，而不是让 provider 抛 500
+    const emptyKind = (await (await fetch(`${baseUrl}/api/resources/index?kind=`)).json()) as {
+      entries: Array<{ id: string }>;
+    };
+    expect(emptyKind.entries.some((entry) => entry.id === "config:app.json")).toBe(true);
+
+    const unknownKind = await fetch(`${baseUrl}/api/resources/index?kind=bogus`);
+    expect(unknownKind.status).toBe(400);
+  });
+
+  it("非法资源 id 的写 / 删返回 400（不是冒泡成 500）", async () => {
+    for (const method of ["PUT", "DELETE"]) {
+      const response = await fetch(`${baseUrl}/api/resources/raw?id=${encodeURIComponent("bogus:x")}`, {
+        method,
+      });
+      expect({ method, status: response.status }).toEqual({ method, status: 400 });
+    }
+
+    // 缺路径（`project:`）同样 400
+    const missingPath = await fetch(`${baseUrl}/api/resources/text?id=${encodeURIComponent("project:")}`, {
+      method: "PUT",
+      body: "x",
+    });
+    expect(missingPath.status).toBe(400);
+  });
+
+  it("请求体超过上限：回 413（不把整个 body 收进内存）", async () => {
+    const config = await loadConfig();
+    const provider = new FsResourceProvider(config.resourceRoot, config.dirs);
+    const limitedHub = new RuntimeHub(() => {});
+    const limitedServer = createHttpServer({
+      config: { ...config, app: { ...config.app, http: { maxBodyBytes: 16 } } },
+      provider,
+      hub: limitedHub,
+      log: () => {},
+    });
+    limitedHub.attach(limitedServer);
+    await new Promise<void>((resolve) => limitedServer.listen(0, "127.0.0.1", resolve));
+    const address = limitedServer.address() as AddressInfo;
+
+    try {
+      // 打一个「只读 body、不落盘」的接口：超限必须回 413（不是 500、也不是把 1KB 收下）
+      const response = await fetch(`http://127.0.0.1:${address.port}/api/resources/rename`, {
+        method: "POST",
+        body: "x".repeat(1024),
+      });
+      expect(response.status).toBe(413);
+    } finally {
+      limitedHub.close();
+      await new Promise<void>((resolve) => limitedServer.close(() => resolve()));
+    }
   });
 
   it("/api/resources/raw 可读配置文件，未知 id 返回 404", async () => {

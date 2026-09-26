@@ -15,7 +15,13 @@ const EDITOR_DIST = fileURLToPath(new URL("../../../editor/dist", import.meta.ur
  * 二分一次，静态这边一个函数到底。
  */
 export async function serveStatic(response: ServerResponse, path: string): Promise<void> {
-  const relative = path === "/" ? "index.html" : decodeURIComponent(path).replace(/^\/+/, "");
+  let relative: string;
+  try {
+    relative = path === "/" ? "index.html" : decodeURIComponent(path).replace(/^\/+/, "");
+  } catch {
+    // 畸形的百分号编码（`/%ZZ`）：请求本身不合法，回 400；别让它冒泡成 500「内部错误」
+    throw new HttpError(400, "非法路径");
+  }
   const target = resolve(join(EDITOR_DIST, relative));
   const prefix = EDITOR_DIST.endsWith(sep) ? EDITOR_DIST : `${EDITOR_DIST}${sep}`;
 

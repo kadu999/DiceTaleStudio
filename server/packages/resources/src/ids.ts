@@ -155,13 +155,16 @@ export function parseResourceId(id: string): ResourceId {
   }
 
   const normalized = normalizePath(path);
-  if (
-    normalized.startsWith("../") ||
-    normalized.includes("/../") ||
-    normalized.startsWith("/") ||
-    normalized === ".."
-  ) {
+  if (normalized.startsWith("/")) {
     throw new Error(`资源路径不允许越出资源根: ${id}`);
+  }
+
+  // `.` / `..` **逐段拒绝**（与 `validateProjectRelativePath` 同口径）：
+  // 只查 `includes("/../")` 会漏掉结尾那一段，`project:a/..` 这种能绕过去。
+  for (const segment of normalized.split("/")) {
+    if (segment === "." || segment === "..") {
+      throw new Error(`资源路径不允许越出资源根: ${id}`);
+    }
   }
 
   return { kind, path: normalized };

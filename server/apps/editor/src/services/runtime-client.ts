@@ -179,6 +179,12 @@ export class RuntimeClient {
     });
 
     socket.addEventListener("close", (event: CloseEvent | undefined) => {
+      // 只有**当前这只** socket 断开才算数：旧连接的 close 可能在 `connect()` 已建好新连接
+      // 之后才派发（旧 socket 处于 CLOSING 时又调了 connect），无脑处理会把新连接一起置空。
+      if (this.socket !== socket) {
+        return;
+      }
+
       this.socket = null;
       this.clearStableTimer();
 

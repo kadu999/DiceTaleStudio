@@ -209,8 +209,8 @@ function spriteFitsSheet(image: {
   );
 }
 
-/** RLE 一段：`[掩码, 连续格数]`（掩码值与 `@dts/grid` 的 `CellMask` 一致）。 */
-export const rleRunSchema = z.tuple([z.number().int(), z.number().int()]);
+/** RLE 一段：`[掩码, 连续格数]`（掩码 0–255、格数非负，与 `@dts/document` 的 `cellRunsSchema` 同口径）。 */
+export const rleRunSchema = z.tuple([z.number().int().min(0).max(255), z.number().int().nonnegative()]);
 
 export const gridSpecSchema = z.object({
   width: z.number().int().positive(),
@@ -234,7 +234,8 @@ export const cellRunsSchema = z.object({
 export const mapFogSchema = z.object({
   mapId: z.string().default(""),
   enabled: z.boolean().default(true),
-  regions: z.array(z.number().int()),
+  // 与文档同口径：区域位只到 1–255、缺省空数组（越界的「已知位」由语义校验报 warning）
+  regions: z.array(z.number().int().min(1).max(255)).default([]),
 });
 /** `GridMap` 组件携带的**网格数据**（`rowOrder` 固定 bottom-up）。贴图与显示顺序自 v16 起在 `ImageLayer` 组件里，战争雾在独立的 `FogOfWar` 组件里。 */
 export const mapDataSchema = z.object({
@@ -257,9 +258,9 @@ export const soundLayerSchema = z.enum(["bgm", "sfx", "voice"]);
 
 /** 声音对象的数据：加进来的音频 + 当前选中的那条 + 层级（前端播的就是 `picked`）。 */
 export const soundDataSchema = z.object({
-  clips: z.array(z.string()),
-  picked: z.string().optional(),
-  layer: soundLayerSchema,
+  clips: z.array(z.string().min(1)).default([]),
+  picked: z.string().min(1).optional(),
+  layer: soundLayerSchema.default("sfx"),
 });
 
 /**
@@ -277,8 +278,8 @@ export const videoDataSchema = z.object({
   // 加过视频才写出来，「字段在」本来就等于「在用」（与 `map.fog.enabled` 同一个口径）
   enabled: z.boolean().default(true),
   autoPlay: z.boolean().default(false),
-  clips: z.array(z.string()).default([]),
-  picked: z.string().optional(),
+  clips: z.array(z.string().min(1)).default([]),
+  picked: z.string().min(1).optional(),
   loop: z.boolean().default(false),
   audio: z.boolean().default(false),
 });
@@ -291,8 +292,8 @@ export const videoDataSchema = z.object({
  * `GameObjectDoc` 的一部分——这份 schema 是文档形状的只读复刻，少了字段等于悄悄丢数据。
  */
 export const teleportDataSchema = z.object({
-  targets: z.array(z.string()),
-  picked: z.string().optional(),
+  targets: z.array(z.string().min(1)).default([]),
+  picked: z.string().min(1).optional(),
 });
 
 /**

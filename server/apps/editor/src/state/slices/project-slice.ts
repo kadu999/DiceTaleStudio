@@ -156,6 +156,16 @@ export function createProjectSlice(
       }
     }
 
+    // 盘上「内容旧了、需要回写」的那几份也回写一次。**同样容错**：一份写不进去只报出来，
+    // 绝不让它把后面的 `metaHistory.reset` 跳过——那会让本次会话所有素材的 meta 全丢。
+    for (const { id, meta } of rewrites) {
+      try {
+        await projectApi.writeText(assetMetaIdOf(id), serializeAssetMetaFile(meta));
+      } catch (error) {
+        failed.push({ id, message: `${id}（${error instanceof Error ? error.message : String(error)}）` });
+      }
+    }
+
     // 写失败的那几份**不记进 `savedMetas`**：于是它们在订阅里算「有未保存改动」，
     // 由那条去抖落盘再试一次（磁盘只读时它只试一次，不会反复刷）
     const failedIds = new Set(failed.map((item) => item.id));
@@ -164,10 +174,6 @@ export function createProjectSlice(
       if (!failedIds.has(id)) {
         savedMetas.set(id, serializeAssetMetaFile(meta));
       }
-    }
-
-    for (const { id, meta } of rewrites) {
-      await projectApi.writeText(assetMetaIdOf(id), serializeAssetMetaFile(meta));
     }
 
     metaHistory.reset(table);

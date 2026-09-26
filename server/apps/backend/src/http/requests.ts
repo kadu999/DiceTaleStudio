@@ -1,4 +1,5 @@
 import type { IncomingMessage } from "node:http";
+import { HttpError } from "./responses";
 
 /**
  * 请求体 / 查询参数的读取助手。
@@ -7,21 +8,68 @@ import type { IncomingMessage } from "node:http";
  * 包括那两条容易被“顺手改掉”的细节：
  * - 空体视为 `{}`（前端 `fetch` 不带 body 的 POST 不会因此报错）；
  * - 非法 JSON 抛的是**普通 Error**（→ 500），不是 400。调用方本来就都会自己校验字段。
+ *
+ * 唯一的收紧：请求体**必须有上限**（`maxBodyBytes`，来自 app 配置）。整个 body 是先进内存
+ * 再解析的，没有上限时一个超大请求就能把进程内存吃光——超限回 **413**。
  */
 
-/** 读完整个请求体（原始字节）。 */
-export async function readBody(request: IncomingMessage): Promise<Buffer> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of request) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+/** 读完整个请求体（原始字节）；超过 `maxBytes` 抛 413（读取途中就断，不只信 `content-length`）。 */
+export function readBody(request: IncomingMessage, maxBytes: number): Promise<Buffer> {
+  const declared = Number(request.headers["content-length"]);
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    return Promise.reject(new HttpError(413, bodyTooLargeMessage(maxBytes)));
   }
 
-  return Buffer.concat(chunks);
+  return new Promise<Buffer>((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let total = 0;
+
+    const cleanup = (): void => {
+      request.off("data", onData);
+      request.off("end", onEnd);
+      request.off("error", onError);
+    };
+
+    const onData = (chunk: Buffer): void => {
+      total += chunk.byteLength;
+      if (total > maxBytes) {
+        // **暂停而不是销毁**：`for await` 提前 return 会销毁 socket，413 就送不到客户端了。
+        // 这里停下不读，让服务端把 413 写回去，连接随后由 Node 关闭。
+        request.pause();
+        cleanup();
+        reject(new HttpError(413, bodyTooLargeMessage(maxBytes)));
+        return;
+      }
+
+      chunks.push(chunk);
+    };
+
+    const onEnd = (): void => {
+      cleanup();
+      resolve(Buffer.concat(chunks));
+    };
+
+    const onError = (error: Error): void => {
+      cleanup();
+      reject(error);
+    };
+
+    request.on("data", onData);
+    request.on("end", onEnd);
+    request.on("error", onError);
+  });
+}
+
+function bodyTooLargeMessage(maxBytes: number): string {
+  return `请求体超过上限（${maxBytes} 字节）`;
 }
 
 /** 读并解析 JSON 请求体；空体视为 `{}`。 */
-export async function readJsonBody(request: IncomingMessage): Promise<Record<string, unknown>> {
-  const raw = (await readBody(request)).toString("utf8").trim();
+export async function readJsonBody(
+  request: IncomingMessage,
+  maxBytes: number,
+): Promise<Record<string, unknown>> {
+  const raw = (await readBody(request, maxBytes)).toString("utf8").trim();
   if (raw.length === 0) {
     return {};
   }

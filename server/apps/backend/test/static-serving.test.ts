@@ -63,4 +63,10 @@ describe("静态托管", () => {
 
     expect([403, 404]).toContain(response.status);
   });
+
+  it("畸形的百分号编码回 400，而不是 500", async () => {
+    const response = await fetch(`${baseUrl}/%ZZ`);
+
+    expect(response.status).toBe(400);
+  });
 });

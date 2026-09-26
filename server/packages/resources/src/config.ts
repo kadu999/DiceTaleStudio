@@ -40,6 +40,18 @@ export const appConfigSchema = z.object({
       maxTotalBytes: z.number().int().positive().default(256 * 1024 * 1024),
     })
     .default({ maxTotalBytes: 256 * 1024 * 1024 }),
+  /**
+   * HTTP 请求体上限（字节）。
+   *
+   * 所有读写接口（`/api/resources/raw` / `/api/resources/text` 与各 JSON 接口）都会把
+   * **整个 body 读进内存**（`http/requests.ts` 的 `readBody`），不设上限时一个超大请求就能
+   * 把服务端内存吃光。超限的请求回 **413**，且在流式读取途中就提前中断（不只信 `content-length`）。
+   */
+  http: z
+    .object({
+      maxBodyBytes: z.number().int().positive().default(64 * 1024 * 1024),
+    })
+    .default({ maxBodyBytes: 64 * 1024 * 1024 }),
 });
 
 export type AppConfig = z.infer<typeof appConfigSchema>;

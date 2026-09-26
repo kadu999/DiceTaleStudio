@@ -47,6 +47,11 @@ describe("资源逻辑 ID（只有两类：编辑器配置 / 项目）", () => {
     expect(() => parseResourceId("project:../secret")).toThrow(/不允许越出资源根/);
     expect(() => parseResourceId("project:a/../../b")).toThrow(/不允许越出资源根/);
     expect(() => parseResourceId("project:/etc/passwd")).toThrow(/不允许越出资源根/);
+    // 结尾那一段的 `..` / `.`（只查 `includes("/../")` 会漏掉）
+    expect(() => parseResourceId("project:a/..")).toThrow(/不允许越出资源根/);
+    expect(() => parseResourceId("project:a/./..")).toThrow(/不允许越出资源根/);
+    expect(() => parseResourceId("project:Assets/images/..")).toThrow(/不允许越出资源根/);
+    expect(() => parseResourceId("project:a/b/.")).toThrow(/不允许越出资源根/);
   });
 
   it("项目文件是固定名：一个项目一个文件夹 + 一个 project.json", () => {

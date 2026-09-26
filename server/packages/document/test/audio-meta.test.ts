@@ -248,6 +248,15 @@ describe("项目轨：按序号命名（序号预先定好，只填名字）", (
     expect(after).toBe(start);
   });
 
+  it("序号大到离谱（1e9）：直接拒绝，不靠补空槽把内存吃光", () => {
+    const start = taggedProject();
+    const after = produce(start, (draft) => {
+      expect(setAudioTagName(draft, 1_000_000_000, "爆炸")).toBe(false);
+    });
+
+    expect(after).toBe(start);
+  });
+
   it("指向洞的序号不写（洞是「曾经删过」的记号，不能拿名字去顶它）", () => {
     const holed = produce(taggedProject(), (draft) => {
       deleteAudioTag(draft, 0);

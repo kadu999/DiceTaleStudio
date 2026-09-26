@@ -1,4 +1,4 @@
-import { parseResourceId, type ResourceKind } from "@dts/resources";
+import { RESOURCE_KINDS, parseResourceId, type ResourceKind } from "@dts/resources";
 import sharp from "sharp";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -9,7 +9,7 @@ import {
 } from "../../resources/bundle";
 import { contentTypeFor } from "../mime";
 import { bodyTrimmed, queryRaw, queryTrimmed, readBody, readJsonBody } from "../requests";
-import { HttpError, badRequest, sendBytes, sendEmpty, sendJson, sendText } from "../responses";
+import { HttpError, badRequest, rethrowProviderError, sendBytes, sendEmpty, sendJson, sendText } from "../responses";
 import type { RouteContext } from "../router";
 
 const THUMBNAIL_MAX_EDGE = 192;
@@ -33,10 +33,23 @@ const thumbnailJobs = new Map<string, Promise<CachedThumbnail>>();
 
 /** `GET /api/resources/index?kind=`：扁平资源列表（编辑器资源面板与素材清单用）。 */
 export async function listResourcesRoute(ctx: RouteContext): Promise<void> {
-  // 不传 kind = 列全部；传了空串仍按「按该类别列」处理（保持与拆分前一致的行为）
-  const kind = ctx.url.searchParams.get("kind") ?? undefined;
-  const entries = await ctx.provider.list(kind as ResourceKind | undefined);
+  // 不传 / 空串 = 列全部；传了必须是已知类别（未知值明确报 400，而不是让 provider 抛 500）
+  const kind = parseResourceKind(ctx.url.searchParams.get("kind"));
+  const entries = await ctx.provider.list(kind);
   sendJson(ctx.response, 200, { entries });
+}
+
+/** `?kind=` → 资源类别：空（不传 / 空串）= 全部；未知值抛 400。 */
+function parseResourceKind(raw: string | null): ResourceKind | undefined {
+  if (raw === null || raw.length === 0) {
+    return undefined;
+  }
+
+  if (!RESOURCE_KINDS.includes(raw as ResourceKind)) {
+    throw badRequest(`未知资源类别: ${raw}（合法值：${RESOURCE_KINDS.join(", ")}）`);
+  }
+
+  return raw as ResourceKind;
 }
 
 /** 取 `?id=`；缺失或空串时抛 400（三个 raw/text 处理器共用的第一道校验）。 */
@@ -47,6 +60,20 @@ function requireId(ctx: RouteContext): string {
   }
 
   return id;
+}
+
+/** 校验逻辑 ID 合法（非法 → 400）：写 / 删路径不经过 `exists` 的容错，不能冒泡成 500。 */
+function assertResourceId(id: string): void {
+  try {
+    parseResourceId(id);
+  } catch (error) {
+    throw badRequest(error instanceof Error ? error.message : String(error));
+  }
+}
+
+/** 请求体上限（字节），来自 app 配置；读 body 之前先取好。 */
+function maxBodyBytes(ctx: RouteContext): number {
+  return ctx.config.app.http.maxBodyBytes;
 }
 
 /** `GET /api/resources/raw?id=`：读原始字节，Content-Type 按扩展名给。 */
@@ -174,8 +201,9 @@ function extractVideoFrame(source: Buffer): Promise<Buffer> {
 /** `PUT|POST /api/resources/raw?id=`：写原始字节（请求体就是文件内容，不解析 JSON）。 */
 export async function writeResourceRoute(ctx: RouteContext): Promise<void> {
   const id = requireId(ctx);
+  assertResourceId(id);
 
-  const body = await readBody(ctx.request);
+  const body = await readBody(ctx.request, maxBodyBytes(ctx));
   const payload = body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength) as ArrayBuffer;
   await ctx.provider.writeBinary(id, payload);
   ctx.log("info", `资源已写入: ${id}（${body.byteLength} 字节）`);
@@ -185,6 +213,7 @@ export async function writeResourceRoute(ctx: RouteContext): Promise<void> {
 /** `DELETE /api/resources/raw?id=`：删资源（对目录是递归语义）。 */
 export async function deleteResourceRoute(ctx: RouteContext): Promise<void> {
   const id = requireId(ctx);
+  assertResourceId(id);
 
   await ctx.provider.remove(id);
   ctx.log("info", `资源已删除: ${id}`);
@@ -205,8 +234,9 @@ export async function readResourceTextRoute(ctx: RouteContext): Promise<void> {
 /** `PUT|POST /api/resources/text?id=`：写文本（UTF-8，内容原样落盘）。 */
 export async function writeResourceTextRoute(ctx: RouteContext): Promise<void> {
   const id = requireId(ctx);
+  assertResourceId(id);
 
-  const body = await readBody(ctx.request);
+  const body = await readBody(ctx.request, maxBodyBytes(ctx));
   await ctx.provider.writeText(id, body.toString("utf8"));
   sendJson(ctx.response, 200, { ok: true, id });
 }
@@ -286,7 +316,7 @@ export async function getBundleRoute(ctx: RouteContext): Promise<void> {
 
 /** `POST /api/resources/rename`：重命名资源（两侧同类别；**绝不覆盖**已有目标）。 */
 export async function renameResourceRoute(ctx: RouteContext): Promise<void> {
-  const body = await readJsonBody(ctx.request);
+  const body = await readJsonBody(ctx.request, maxBodyBytes(ctx));
   const from = bodyTrimmed(body, "from");
   const to = bodyTrimmed(body, "to");
   if (from.length === 0 || to.length === 0) {
@@ -294,10 +324,10 @@ export async function renameResourceRoute(ctx: RouteContext): Promise<void> {
   }
 
   try {
-    // 类别不同 / 源不存在 / 目标已存在都由 provider 抛错，原样转成 400
+    // 类别不同 / 源不存在 / 目标已存在都由 provider 抛错：业务错误转 400，系统错误冒泡成 500
     await ctx.provider.rename(from, to);
   } catch (error) {
-    throw badRequest(error instanceof Error ? error.message : String(error));
+    rethrowProviderError(error);
   }
 
   ctx.log("info", `资源已重命名: ${from} → ${to}`);

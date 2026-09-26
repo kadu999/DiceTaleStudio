@@ -271,6 +271,13 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
       } else if (status === "error") {
         pushLog(makeLog("error", detail ?? "连接出错"));
       }
+
+      // 断开服务端 = 手上这份「上次推出去的是什么」不再可信（服务端可能重启过、场景缓存已空）。
+      // 清掉它，重连后即便场景内容一个字没变也会真的重推一次，而不是被去重跳过、
+      // 让前端停在 `scene_sync: null`（空场景）。
+      if (status !== "open") {
+        lastPushedSceneText = null;
+      }
     },
 
     onState: (snapshot: RuntimeStateSnapshot) => {
@@ -309,6 +316,9 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
       // 关闸 → 还原到进入运行前的样子（对齐 Unity：退出播放模式丢掉运行期间的改动）
       if (!snapshot.runtimeActive && wasRuntimeActive) {
         restoreRunBaseline();
+        // 服务端侧的「上次推出去的场景」也跟着没了（它重启过 / 清过缓存）：清掉基线文本，
+        // 用户再点「运行」时一定会重推一份，不会被 `shouldPushScene` 的去重跳过。
+        lastPushedSceneText = null;
         // 揭示记账也是运行态：关闸就清掉（前端已经被踢下线，下次运行重新开始）
         set({ fogReveal: emptyFogReveal(), videoPlayback: emptyVideoPlayback() });
         // 背景音乐同理：回到「什么都没放」（下次进运行态**不会自动出声**，由 DM 点一首）

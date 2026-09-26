@@ -199,6 +199,12 @@ export function setMapGrid(
     return false;
   }
 
+  // 非有限数（NaN / Infinity）直接拒绝：`Math.round` 会把 NaN 一路带下去写坏网格、
+  // `new Uint8Array(Infinity)` 直接抛。与 `setObjectScale` / `setObjectRotation` 同一条规矩。
+  if (!Number.isFinite(grid.width) || !Number.isFinite(grid.height)) {
+    return false;
+  }
+
   const width = Math.max(1, Math.round(grid.width));
   const height = Math.max(1, Math.round(grid.height));
   if (width === map.grid.width && height === map.grid.height) {

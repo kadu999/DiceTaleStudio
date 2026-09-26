@@ -351,6 +351,10 @@ export class RuntimeHub implements HubContext {
         this.log("warn", "前端心跳超时（连续两拍没有 pong），断开连接");
         this.logToEditors("warn", "前端心跳超时，已断开");
         this.kickClient("心跳超时");
+        // `kickClient` 会先把 `this.client` 清空、再 `close`，于是 close 回调里那道
+        // `this.client === session` 的守卫不成立、不会广播——这里必须自己补一次，
+        // 否则编辑器会一直停在「前端已连接」。
+        this.broadcastEditorState();
         return;
       }
 

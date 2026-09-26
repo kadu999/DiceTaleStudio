@@ -18,5 +18,8 @@
   "defaultCellPixels": 30,
   "bundle": {
     "maxTotalBytes": 268435456
+  },
+  "http": {
+    "maxBodyBytes": 67108864
   }
 }
