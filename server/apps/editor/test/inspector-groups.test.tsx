@@ -211,12 +211,13 @@ describe("属性分组：基础 + 一一对应的组件组", () => {
     expect(headerOf("basic")).toBeDefined();
     expect(headerOf("image")).toBeDefined();
     expect(headerOf("map")).toBeDefined();
-    // 视频还没挂上：不出组，入口在底部「添加组件」
+    // 视频 / 视频混合还没挂上：不出组，入口在底部「添加组件」（顺序 = 注册表顺序）
     expect(hasGroup("video")).toBe(false);
+    expect(hasGroup("videoBlend")).toBe(false);
     expect(isOpen("basic")).toBe(true);
     expect(isOpen("image")).toBe(true);
     expect(isOpen("map")).toBe(true);
-    expect(addableLabels()).toEqual(["视频"]);
+    expect(addableLabels()).toEqual(["视频", "视频混合"]);
 
     // 组序 = 基础 + 组件组（注册表顺序）：图片层 → 网格地图
     // （战争雾自 v27 起是**独立对象**；网格自 v28 起是贴图上的可选组件）
@@ -273,13 +274,14 @@ describe("属性分组：基础 + 一一对应的组件组", () => {
     seedScene([mapObject(), textureObject()], ["tex-1"]);
     render(<InspectorPanel />);
 
-    // 贴图：「基础 / 图片层」；网格与视频都是可选能力，入口在底部「添加组件」，没有战争雾
+    // 贴图：「基础 / 图片层」；网格 / 视频 / 视频混合都是可选能力，入口在底部「添加组件」，没有战争雾
     expect(headerOf("basic")).toBeDefined();
     expect(headerOf("image")).toBeDefined();
     expect(groupSlugs()).toEqual(["basic", "image"]);
-    expect(addableLabels()).toEqual(["网格地图", "视频"]);
+    expect(addableLabels()).toEqual(["网格地图", "视频", "视频混合"]);
     expect(hasGroup("map")).toBe(false);
     expect(hasGroup("video")).toBe(false);
+    expect(hasGroup("videoBlend")).toBe(false);
     expect(hasGroup("fog")).toBe(false);
   });
 

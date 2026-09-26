@@ -15,6 +15,7 @@ import { GridAnnotationFields } from "./GridAnnotationFields";
 import { SoundFields } from "./SoundFields";
 import { TeleportFields } from "./TeleportFields";
 import { VideoFields } from "./VideoFields";
+import { VideoBlendFields } from "./VideoBlendFields";
 import {
   ActiveField,
   CellSizeField,
@@ -193,6 +194,13 @@ export const COMPONENT_EDITORS: readonly ComponentEditorDef[] = [
     type: COMPONENT_TYPE.video,
     removable: true,
     panels: [panel("video", "视频", (object) => <VideoFields object={object} />)],
+  },
+  {
+    // 视频混合也是**可选能力**：两条视频叠在同一矩形上用 Mask 混合（A 盖住、擦开露 B）。
+    // 与「视频」各占一个槽位、可并存（校验会提醒）；可移除（组头那枚按钮）。
+    type: COMPONENT_TYPE.videoBlend,
+    removable: true,
+    panels: [panel("videoBlend", "视频混合", (object) => <VideoBlendFields object={object} />)],
   },
 ];
 

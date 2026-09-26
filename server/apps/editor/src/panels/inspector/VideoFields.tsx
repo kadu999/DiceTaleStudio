@@ -1,5 +1,13 @@
 import { useState } from "react";
-import { assetNameOfMeta, videoDataOf, videoSpec, type GameObjectDoc } from "@dts/document";
+import {
+  assetNameOfMeta,
+  videoDataOf,
+  videoSpec,
+  type AssetMetaDoc,
+  type AssetMetas,
+  type GameObjectDoc,
+} from "@dts/document";
+import type { ResourceTreeNode } from "@dts/resources";
 import { assetDisplayName } from "../asset-info";
 import { assetDisplayPath, findAssetByReference } from "../asset-picker";
 import { ResourcePickerDialog } from "../../app/ResourcePickerDialog";
@@ -65,10 +73,30 @@ export function videoDeliveryHint(input: {
 }
 
 /** `.webm` 在 Windows 上多半解不了（Unity 走系统的解码器）：选择器与面板都提一句。 */
-function formatHint(path: string): string | undefined {
+export function videoFormatHint(path: string): string | undefined {
   return path.toLowerCase().endsWith(".webm")
     ? "WebM：Windows 上多半解不了，建议改用 H.264 的 .mp4"
     : undefined;
+}
+
+/**
+ * 一条视频小方块显示什么名字：素材 `.meta` 的显示名（在文件属性上改），没有 = 素材文件名。
+ *
+ * 视频与视频混合（两条通道）**共用这一份**——两处若各写一遍，改名规则的漂移只会表现为
+ * 「同一个素材在两个面板上叫法不同」。
+ */
+export function mediaClipName(
+  tree: readonly ResourceTreeNode[],
+  assetMetas: AssetMetas,
+  metaTable: Readonly<Record<string, AssetMetaDoc>>,
+  clip: string,
+): string {
+  const asset = findAssetByReference(tree, clip, assetMetas);
+  const currentId = asset?.id ?? clip;
+  const customName = assetNameOfMeta(metaTable[currentId])?.trim() ?? "";
+  return customName.length > 0
+    ? customName
+    : assetDisplayName(asset?.name ?? currentId.slice(currentId.lastIndexOf("/") + 1));
 }
 
 export function VideoFields({ object }: { readonly object: GameObjectDoc }): React.JSX.Element {
@@ -97,14 +125,7 @@ export function VideoFields({ object }: { readonly object: GameObjectDoc }): Rea
   const picked = video?.picked;
 
   /** 面板上显示什么名字：素材 meta 里的**显示名**（在文件属性上改），没有 = 素材文件名。 */
-  const nameOf = (clip: string): string => {
-    const asset = findAssetByReference(tree, clip, assetMetas);
-    const currentId = asset?.id ?? clip;
-    const customName = assetNameOfMeta(metaTable[currentId])?.trim() ?? "";
-    return customName.length > 0
-      ? customName
-      : assetDisplayName(asset?.name ?? currentId.slice(currentId.lastIndexOf("/") + 1));
-  };
+  const nameOf = (clip: string): string => mediaClipName(tree, assetMetas, metaTable, clip);
 
   const pickedName = picked === undefined ? "" : nameOf(picked);
   const playBlocked = videoPlayBlockedReason({ clips: clips.length, picked });
@@ -161,7 +182,7 @@ export function VideoFields({ object }: { readonly object: GameObjectDoc }): Rea
           ) : (
             clips.map((clip) => {
               const selected = clip === picked;
-              const hint = formatHint(clip);
+              const hint = videoFormatHint(clip);
               const name = nameOf(clip);
               return (
                 <span
