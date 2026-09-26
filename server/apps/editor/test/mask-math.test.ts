@@ -5,6 +5,7 @@ import {
   MASK_BRUSH_RATIO,
   MASK_BRUSH_SOFTNESS,
   MASK_PREVIEW_WIDTH,
+  VIDEO_BLEND_MASK_SOFTNESS,
   applyEraseToPixels,
   brushRadiusFor,
   fillFogMaskPixels,
@@ -140,6 +141,32 @@ describe("applyEraseToPixels（与 MaskEraseStamp.shader 同式）", () => {
     expect([...negative]).toEqual([...exactlyZero]);
   });
 
+  it("视频混合的笔刷有实心核：密排落点能整片擦到 0；雾那档 1 擦不到底（这就是「擦完还混着」的原因）", () => {
+    // 落点间距 = 半径的一半（`strokeStampCenters` 的 step）；擦一片区域就是这个样子
+    const radius = 4;
+    const sweep = (softness: number): Uint8ClampedArray => {
+      const pixels = opaquePixels(32, 16);
+      for (let x = 4; x <= 20; x += 2) {
+        applyEraseToPixels(pixels, 32, 16, { x, y: 8 }, radius, softness);
+      }
+
+      return pixels;
+    };
+    const worstInside = (pixels: Uint8ClampedArray): number => {
+      let max = 0;
+      for (let x = 6; x <= 18; x += 1) {
+        max = Math.max(max, alphaAt(pixels, 32, x, 8));
+      }
+
+      return max;
+    };
+
+    // 0.5：core = 半径的一半 = 2 > 落点之间最远的距离（~1.12）→ 整片都是 0（干净的 B）
+    expect(worstInside(sweep(VIDEO_BLEND_MASK_SOFTNESS))).toBe(0);
+    // 1：core = 0 → 只有落点正中心是 0，落点之间永远留一层 alpha（混合就永远糊着 A）
+    expect(worstInside(sweep(MASK_BRUSH_SOFTNESS))).toBeGreaterThan(0);
+  });
+
   it("越界的圆不会写坏数组（边缘落笔不崩）", () => {
     const pixels = opaquePixels(8, 8);
     applyEraseToPixels(pixels, 8, 8, { x: -4, y: 4 }, 3, 1);
@@ -162,6 +189,8 @@ describe("applyEraseToPixels（与 MaskEraseStamp.shader 同式）", () => {
     expect(MASK_BRUSH_RADIUS).toBe(48);
     expect(MASK_PREVIEW_WIDTH).toBe(960);
     expect(MASK_BRUSH_SOFTNESS).toBe(1);
+    // 视频混合**不是** 1：要实心核，擦到的地方才真的到 0（否则擦完还糊着一层 A）
+    expect(VIDEO_BLEND_MASK_SOFTNESS).toBe(0.5);
     expect(MASK_BRUSH_RATIO).toBeCloseTo(0.05, 10);
 
     // 前端 `radiusTex = max(1, 归一化半径 × 遮罩宽)` 同式：遮罩宽变了，纹素半径跟着变

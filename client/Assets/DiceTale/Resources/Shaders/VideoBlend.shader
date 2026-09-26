@@ -3,8 +3,8 @@
 // 与 ImageLayer.shader 同一套：顶点色染色、straight alpha 混合、Cull Off / ZWrite Off，
 // 只多两张贴图。mask.a = 1 → A；mask.a = 0 → B（擦开的地方露出 B）。
 //
-// Mask 由 C# 侧（VideoBlend）按**与编辑器 Mask 窗口同一张尺寸**画出来（软边圆刷，只改 alpha），
-// 所以投影上擦出来的范围与编辑器预览一致。
+// Mask 由 C# 侧（VideoBlend）按**与编辑器 Mask 窗口同一张尺寸**画出来（软边圆刷、核内全擦，只改 alpha），
+// 所以投影上擦出来的范围与编辑器预览一致：擦到的地方 mask.a = 0 → 完全露出 B。
 //
 // 这里 **不做羽化**：Mask 是软边圆刷画的（不像战争雾那样按格子填方块），
 // 双线性过滤已经够柔，不需要再跑一条模糊链。

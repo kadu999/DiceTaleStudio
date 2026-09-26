@@ -26,7 +26,8 @@ import { canvasColorAt } from "./helpers/canvas";
  *    循环 / 声音来源落进场景文件；Mask 窗口初始整张盖住、擦开露出、**场景文件一个字节都不动**；
  * 2. **命令怎么下发**（`@runtime`）：浏览器里再开一条**假前端** WebSocket（`/client`），
  *    点播放 → 前端收到 `play_video`（**只带 `objectId`**）；Mask 窗口擦一笔 → 收到
- *    `erase_video_mask`（载荷是**轨迹**：归一化点 + 半径 `0.05` + 软边 1）。
+ *    `erase_video_mask`（载荷是**轨迹**：归一化点 + 半径 `0.05` + 软边 `0.5`——不是雾那档 `1`，
+ *    要实心核，擦到的地方才真的到 0）。
  *
  * 编辑器**不播放视频**（不接解码）：这里钉的全是「面板 / 窗口 / 命令」。
  */
@@ -311,7 +312,7 @@ test.describe("视频混合：轨迹下发给前端", { tag: "@runtime" }, () =>
       expect(play?.objectId).toBe(objectId);
       expect(play?.stroke).toBeUndefined();
 
-      // Mask 窗口擦一笔 → erase_video_mask：只有轨迹（归一化点 + 半径 0.05 + 软边 1）
+      // Mask 窗口擦一笔 → erase_video_mask：只有轨迹（归一化点 + 半径 0.05 + 软边 0.5）
       await group.getByTestId("video-blend-mask-open").click();
       await expect(page.getByTestId("video-blend-mask-dialog")).toBeVisible();
       await eraseAcross(page);
@@ -324,7 +325,7 @@ test.describe("视频混合：轨迹下发给前端", { tag: "@runtime" }, () =>
       for (const command of eraseCommands) {
         expect(command.objectId).toBe(objectId);
         expect(command.stroke?.radius).toBeCloseTo(BRUSH_RATIO, 5);
-        expect(command.stroke?.softness).toBe(1);
+        expect(command.stroke?.softness).toBe(0.5);
         expect(command.stroke?.points?.length ?? 0).toBeGreaterThan(0);
         for (const point of command.stroke?.points ?? []) {
           expect(point.x).toBeGreaterThanOrEqual(0);

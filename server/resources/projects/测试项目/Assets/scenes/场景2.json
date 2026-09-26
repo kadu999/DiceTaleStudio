@@ -15,34 +15,34 @@
       "scale": 1,
       "components": [
         {
-          "id": "map_mu7t4t731b222__GridMap",
-          "type": "GridMap",
-          "data": {
-            "grid": {
-              "width": 64,
-              "height": 36
-            },
-            "rowOrder": "bottom-up",
-            "cells": {
-              "encoding": "rle",
-              "runs": [
-                [
-                  0,
-                  2304
-                ]
-              ]
-            }
-          }
-        },
-        {
           "id": "map_mu7t4t731b222__ImageLayer",
           "type": "ImageLayer",
           "data": {
             "id": "894e85be220a607ac7a51dd26c623a18",
+            "guid": "894e85be220a607ac7a51dd26c623a18",
             "width": 1920,
             "height": 1080,
-            "guid": "894e85be220a607ac7a51dd26c623a18",
             "sortingOrder": -10
+          }
+        },
+        {
+          "id": "map_mu7t4t731b222__VideoBlend",
+          "type": "VideoBlend",
+          "data": {
+            "a": {
+              "clips": [
+                "516e9ff5adaa681edcdfe5f126253185"
+              ],
+              "picked": "516e9ff5adaa681edcdfe5f126253185"
+            },
+            "b": {
+              "clips": [
+                "9772aabbfb9e3379954a61a2519342a6"
+              ],
+              "picked": "9772aabbfb9e3379954a61a2519342a6"
+            },
+            "loop": true,
+            "audio": "none"
           }
         }
       ]

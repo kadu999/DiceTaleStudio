@@ -218,7 +218,9 @@ namespace DiceTale
         }
 
         /// <summary>
-        /// 擦一笔（`erase_video_mask`）：沿轨迹打软边擦除圆（与编辑器 Mask 窗口 / 战争雾逐字同式）。
+        /// 擦一笔（`erase_video_mask`）：沿轨迹打软边擦除圆（与编辑器 Mask 窗口 / 战争雾同一套公式）。
+        /// `softness` 由编辑器给：视频混合是 `0.5`（**要实心核**，擦到的地方才真的到 0、完全露出 B）——
+        /// 雾那档 `1` 没有平顶核，擦得再密也到不了 0，擦完的区域会永远糊着一层 A。
         /// 遮罩还没建好（视频还没 prepare）时也收下——记录会重放上去。
         /// </summary>
         public bool EraseStroke(IReadOnlyList<Vector2> points, float radius, float softness)

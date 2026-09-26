@@ -16,8 +16,8 @@
 | 后端默认地址 | `0.0.0.0:1420`（`resources/config/app.json`，可被 `HOST` / `PORT` 覆盖） |
 | 编辑器开发地址 | `http://localhost:5173`（Vite，`/api`、`/editor`、`/client` 反代到 1420） |
 | 编辑器生产地址 | `http://localhost:1420`（后端同源托管 `apps/editor/dist`） |
-| 源码规模（不含测试） | 168 个文件 / 37,945 行（packages 12,752 · backend 3,493 · editor 21,700） |
-| 测试规模 | 33,942 行（单测 24,264 · E2E 9,395 · 架构测试 283） |
+| 源码规模（不含测试） | 168 个文件 / 37,975 行（packages 12,753 · backend 3,493 · editor 21,729） |
+| 测试规模 | 33,972 行（单测 24,293 · E2E 9,396 · 架构测试 283） |
 
 > 上表两行与 §0.1 表格里加粗的文件行数、§3.x 节标题里的包规模由
 > `scripts/check-code-structure-stats.mjs` **机器校验**（`pnpm check` 的一环）：
@@ -675,7 +675,7 @@ v23 起 `validateScene` 多了第二个参数：`validateScene(scene, { metas })
 > **历史**：`@dts/actions`（动作类型注册表、条件求值、动作图校验）曾是独立的一个包，
 > 随「动作挂在组件上」那套旧模型一起整包删除了；动作编辑的数据面落地时重新设计。
 
-### 3.3 `@dts/protocol` — WS 消息契约（933 行）
+### 3.3 `@dts/protocol` — WS 消息契约（934 行）
 
 单文件 `src/messages.ts`（874 行）+ `index.ts` barrel（1 行）。
 **编辑器、服务端、Unity 前端共用同一份 zod schema。**
@@ -1207,7 +1207,7 @@ export function createSoundSlice(
 | `video-playback.ts` | 92 | 视频的期望播放记账（按对象，每个对象一条）。 | `emptyVideoPlayback`、`withVideoPlaying`、`withVideoPaused`、`withVideoStopped`、`videoPlaybackResendPlan`；类型 `VideoPlaybackEntry`、`VideoPlaybackState` | — |
 | `bgm-playback.ts` | 99 | 全局背景音乐记账（全局一条；v16 起不属于项目设置），状态只有 `{clip, paused}`。 | `emptyBgmPlayback`、`withBgmPlaying`、`withBgmPaused`、`withBgmStopped`、`bgmResendPlan`、`bgmResendActions`；类型 `BgmPlaybackState`、`BgmAction`、`BgmResend` | — |
 | `fog-reveal.ts` | 204 | 战争雾的**揭示记账**：记有序操作（擦除笔画 / 整区开合）而不是位图；提供分批下发判定、批次切分、补发计划、按当前文档剪枝。 | `FOG_ERASE_BATCH_POINTS`(4)、`FOG_ERASE_BATCH_MS`(150)、`emptyFogReveal`、`entryOf`、`withEraseBatch`、`withRegion`、`shouldFlushBatch`、`splitStrokeBatch`、`fogRevealResendPlan`、`pruneFogReveal`；类型 `FogRevealPoint`、`FogRevealStroke`、`FogRevealOp`、`FogRevealEntry`、`FogRevealState` | — |
-| `mask-math.ts` | 360 | 遮罩擦除的**像素运算**，逐字对齐 Unity 侧（`FogOfWar.cs` / `MaskImage.ApplyEraseStroke` / `MaskEraseStamp.shader`）。 | `MASK_PREVIEW_WIDTH`(960)、`MASK_BRUSH_RADIUS`(48)、`MASK_BRUSH_SOFTNESS`(1)、`MASK_BRUSH_RATIO`(0.05)、`previewMaskSizeFor`、`brushRadiusFor`、`applyEraseToPixels`、`strokeStampCenters`、`fillFogMaskPixels`、`paintRegionPixels`；类型 `MaskPoint`、`MaskPixelColor`、`MaskColorOf` | — |
+| `mask-math.ts` | 397 | 遮罩擦除的**像素运算**，逐字对齐 Unity 侧（`FogOfWar.cs` / `MaskImage.ApplyEraseStroke` / `MaskEraseStamp.shader`）。 | `MASK_PREVIEW_WIDTH`(960)、`MASK_BRUSH_RADIUS`(48)、`MASK_BRUSH_SOFTNESS`(1)、`MASK_BRUSH_RATIO`(0.05)、`VIDEO_BLEND_MASK_SOFTNESS`(0.5，视频混合要实心核才能真的擦到 0)、`previewMaskSizeFor`、`brushRadiusFor`、`applyEraseToPixels`、`strokeStampCenters`、`fillFogMaskPixels`、`paintRegionPixels`；类型 `MaskPoint`、`MaskPixelColor`、`MaskColorOf` | — |
 | `grid-paint-prefs.ts` | 104 | 网格标注偏好持久化（画笔类型/大小、每类显示开关与颜色、两个总开关）；逐项规范化。 | `defaultGridPaintPrefs`、`readGridPaintPrefs`、`writeGridPaintPrefs`、`parseGridPaintPrefs`；类型 `GridPaintPrefs` | localStorage `dts.editor.gridPaint` |
 | `editor-prefs.ts` | 74 | 界面偏好持久化：当前变换工具 + BGM 弹框是否显示路径；认不出的工具名退回 `"none"`。 | `defaultEditorPrefs`、`readEditorPrefs`、`writeEditorPrefs`、`parseEditorPrefs`、`isTransformTool`；类型 `EditorPrefs` | localStorage `dts.editor.ui` |
 | `local-prefs.ts` | 30 | 浏览器本地偏好读写的公共骨架（读：没有记录 / 内容损坏 / 存储不可用一律退回默认值；写：吞异常）——上面两份 prefs 的读写薄壳共用这一份。 | `readPrefs`、`writePrefs` | localStorage |
@@ -1585,7 +1585,7 @@ edit：取消去抖、`lastPushedSceneText=null`、发 `runtime_stop`）、`push
   `FOG_ERASE_BATCH_MS` 150、`ROTATION_SNAP_DEGREES` 15、`COPY_OFFSET` 24、`CLICK_SLOP` 4、`MAX_DPR` 2、
   `VIEW_PADDING` 12、`MAX_LOGS` 200、`STABLE_CONNECTION_MS` 3000、`MAX_RECONNECT_DELAY_MS` 10000、
   `CLOSE_PROTOCOL_MISMATCH` 4002、`MASK_PREVIEW_WIDTH` 960、`MASK_BRUSH_RADIUS` 48、`MASK_BRUSH_RATIO` 0.05、
-  `SLOTS_PER_PAGE` 16、`MAX_SLOTS` 32、`SPRITE_SHEET_MAX` 64、历史 `limit` 200；
+  `VIDEO_BLEND_MASK_SOFTNESS` 0.5、`SLOTS_PER_PAGE` 16、`MAX_SLOTS` 32、`SPRITE_SHEET_MAX` 64、历史 `limit` 200；
 - **编辑器不导入素材**：`src` 下没有任何 `<input type="file">`；素材由外部提交到 `Assets/`，编辑器只读、只引用；
   `uploadFiles` 是唯一写入资源的入口且只在 store 里（当前无 UI 调用点）；
 - **E2E 可见性契约**：`data-viewport-scale/-tx/-ty` 暴露在 `scene-viewport` 上（用例要精确点手柄就必须知道
@@ -1902,7 +1902,7 @@ upgradeRawDocument
 | `run-mode.test.ts` | 440 | **运行中的改动不保存、退出即还原**；切场景 = 换台（运行态下立刻推）；运行基线跟着文档走；运行中的文件操作与断线 |
 | `bgm-settings.test.ts` | 340 | 推设置只剩三档音量；播放命令与补发；退出运行态音量还原、记账清零；音量编辑与场景编辑**共用一个撤销入口** |
 | `grid-annotate.test.tsx` | 392 | 属性面板编辑窗口入口；画笔偏好写进 store 也写进浏览器本地；涂抹写进 RLE 且**整笔可撤销**；网格线与网格标注两个总开关；格子颜色只画可见位且按低位在上叠加 |
-| `mask-math.test.ts` | 369 | `strokeStampCenters`；`applyEraseToPixels`（与 `MaskEraseStamp.shader` 同式）；`paintRegionPixels`（整区开/关）；`previewMaskSizeFor`/`brushRadiusFor`；`fillFogMaskPixels` |
+| `mask-math.test.ts` | 398 | `strokeStampCenters`；`applyEraseToPixels`（与 `MaskEraseStamp.shader` 同式，含「视频混合 0.5 有实心核 / 雾 1 擦不到 0」）；`paintRegionPixels`（整区开/关）；`previewMaskSizeFor`/`brushRadiusFor`；`fillFogMaskPixels` |
 | `teleport-object.test.tsx` | 324 | 种类表；创建；属性面板（候选小方块 + ＋ + 传送）；「传送目标」窗口勾选；触发传送（**不改文档**） |
 | `audio-catalog.test.ts` | 321 | 清单 = 项目音频 + 标注（名字与标签 ID 经**素材 meta 表**读）；标签表与文件上的标签；名字兜底链；搜索与标签筛选 |
 | `transform.test.ts` | 305 | 移动（相对按下时的指针）；旋转（相对按下时的方位角，**屏幕上跟手**）；缩放（相对按下时的指针偏移） |

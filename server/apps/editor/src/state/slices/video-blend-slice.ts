@@ -22,6 +22,7 @@ import {
   pruneVideoBlendReveal,
   withVideoBlendEraseBatch,
 } from "../../services/video-blend-reveal";
+import { MASK_BRUSH_RATIO, VIDEO_BLEND_MASK_SOFTNESS } from "../../services/mask-math";
 import { type StoreSet, type StoreGet, type EditorStoreState } from "../store-types";
 import { makeLog, findSceneByName } from "../store-core";
 import { type StoreContext } from "../store-context";
@@ -202,7 +203,16 @@ export function createVideoBlendSlice(
       }
 
       // 逐批记账：拖动中的相邻批次在记账里并成**一条完整轨迹**（补发时要的是整笔）
-      set({ videoBlendReveal: withVideoBlendEraseBatch(get().videoBlendReveal, objectId, points) });
+      // 笔刷参数与 `deliverVideoMaskErase` 下发的那份一致（半径同雾、软边 0.5 有实心核）
+      set({
+        videoBlendReveal: withVideoBlendEraseBatch(
+          get().videoBlendReveal,
+          objectId,
+          points,
+          MASK_BRUSH_RATIO,
+          VIDEO_BLEND_MASK_SOFTNESS,
+        ),
+      });
 
       const requestId = deliverVideoMaskErase(objectId, points);
       if (!done) {

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { videoBlendDataOf } from "@dts/document";
 import { assetImageInfoUrl, assetThumbnailUrl } from "../panels/asset-picker";
 import {
-  MASK_BRUSH_SOFTNESS,
+  VIDEO_BLEND_MASK_SOFTNESS,
   applyEraseToPixels,
   brushRadiusFor,
   fillOpaqueMaskPixels,
@@ -28,6 +28,9 @@ import { fitBox } from "./dialog-size";
  *   关掉再打开就回到初始（整张盖住）；
  * - 遮罩纹理宽度与运行时**同一张**（`previewMaskSizeFor`：960 宽、高度按**视频像素尺寸**推，
  *   尺寸经后端 `?info=1` 探测），笔刷 48 texel —— 于是归一化半径 = 宽度 5%，两端擦出同一片纹素；
+ * - **软边比例是 0.5**（雾是 1）：得留一个**实心核**，擦到的地方才是真的 0（完全露出 B）。
+ *   用雾那档 `1` 会擦不到底，擦完的区域永远糊着一层 A 的残影（看着还是「两条视频混合」）——
+ *   见 `VIDEO_BLEND_MASK_SOFTNESS`；
  * - **运行态下顺手下发**：拖动中按批把**轨迹**发给前端（`erase_video_mask`），抬手补最后一批。
  *   编辑态什么都不发——那时这一窗口就是纯粹的预览。
  */
@@ -222,7 +225,7 @@ export function VideoBlendMaskDialog({
       return;
     }
 
-    applyEraseToPixels(imageData.data, maskSize.width, maskSize.height, point, radius, MASK_BRUSH_SOFTNESS);
+    applyEraseToPixels(imageData.data, maskSize.width, maskSize.height, point, radius, VIDEO_BLEND_MASK_SOFTNESS);
     context.putImageData(imageData, 0, 0);
   };
 

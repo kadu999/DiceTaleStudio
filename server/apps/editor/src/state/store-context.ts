@@ -64,7 +64,7 @@ import {
   emptyVideoBlendReveal,
   videoBlendRevealResendPlan,
 } from "../services/video-blend-reveal";
-import { MASK_BRUSH_RATIO, MASK_BRUSH_SOFTNESS } from "../services/mask-math";
+import { MASK_BRUSH_RATIO, MASK_BRUSH_SOFTNESS, VIDEO_BLEND_MASK_SOFTNESS } from "../services/mask-math";
 import { type StoreSet, type StoreGet, type AssetMetaTable, type GridPaintState, type EditorStoreState } from "./store-types";
 import {
   sceneHistory,
@@ -912,7 +912,8 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
     const requestId = runtimeClient.sendCommand({
       kind: "erase_video_mask",
       objectId,
-      stroke: { points: [...points], radius: MASK_BRUSH_RATIO, softness: MASK_BRUSH_SOFTNESS },
+      // 软边 0.5（不是雾的 1）：混合遮罩要**实心核**，擦到的地方才会真的变成 0（完全 B）
+      stroke: { points: [...points], radius: MASK_BRUSH_RATIO, softness: VIDEO_BLEND_MASK_SOFTNESS },
     });
 
     quietCommandIds.add(requestId);
