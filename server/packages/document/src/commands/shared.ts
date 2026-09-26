@@ -53,15 +53,8 @@ export function listMapObjects(scene: SceneDoc): GameObjectDoc[] {
 
 // ---------------------------------------------------------------- 媒体列表命令的公共骨架
 //
-// 声音 / 视频 / 传送阵是**同一套形状**（「加进来的列表 + 当前选中的那一个（+ 按项记的名字）」），
+// 声音 / 视频 / 传送阵是**同一套形状**（「加进来的列表 + 当前选中的那一个」），
 // 命令的逐字段语义逐字一致，只有数据类型与列表字段名不同——那一部分归这里，唯一一份。
-
-/** 「列表 + 选中」那份数据的公共形状（声音 / 视频逐字一致的那部分）。 */
-export interface MediaListSideData {
-  readonly clips: readonly string[];
-  /** 取消选中是 `delete` 语义（optional 字段整个摘掉，不留空壳）。 */
-  picked?: string;
-}
 
 /**
  * 找到对象就交给 `fn`；找不到对象返回 false（数据对不上：静默拒绝、不入撤销栈）。
@@ -121,13 +114,17 @@ export function sameItemList(a: readonly string[], b: readonly string[]): boolea
 }
 
 /**
- * 列表变更后收拾副作用：选中的那条还在列表里就行。
+ * 列表变更后收拾「选中的那个」：还在列表里就别动；被移出去了就顺到第一条；
+ * 一条不剩就把 `picked` 删掉（不留空壳）。
+ *
+ * 「加进来的那些」由调用方取出来传进来（声音 / 视频是 `clips`、传送阵是 `targets`）——
+ * 判据只有这一份，三种数据共用。
  *
  * 兜底「没选就默认选第一条」是**故意的**：加进来一条却没被选上时，面板上看着有东西、
  * 「播放 / 传送」却是灰的，很容易以为是坏的。
  */
-export function syncMediaSideData(data: MediaListSideData): void {
-  const fallback = data.clips[0];
+export function syncMediaSideData(data: { picked?: string }, list: readonly string[]): void {
+  const fallback = list[0];
   if (data.picked === undefined) {
     if (fallback !== undefined) {
       data.picked = fallback;
@@ -136,7 +133,7 @@ export function syncMediaSideData(data: MediaListSideData): void {
     return;
   }
 
-  if (!data.clips.includes(data.picked)) {
+  if (!list.includes(data.picked)) {
     // 移出去的正好是选中的那条：顺到剩下的第一条；一条不剩就不留这个字段
     if (fallback === undefined) {
       delete data.picked;
@@ -144,6 +141,38 @@ export function syncMediaSideData(data: MediaListSideData): void {
       data.picked = fallback;
     }
   }
+}
+
+/**
+ * 替换「列表 + 选中」那份数据的列表（声音 / 视频 / 传送阵同一套）：
+ * 去空去重 → 没变返回 false → 赋值 → 收拾选中。
+ *
+ * `onClear` 给视频那种「清空且开关关着 → 组件整个摘掉」的额外收尾留一个口子：
+ * 它在**列表变空**时被调一次，返回 true 表示这次变更已被它处理（此处不再赋值 / 收拾选中）。
+ */
+export function setMediaList<T extends { picked?: string }>(
+  scene: Draft<SceneDoc>,
+  objectId: string,
+  ensure: (object: Draft<GameObjectDoc>) => T | undefined,
+  listOf: (data: T) => readonly string[],
+  setList: (data: T, items: string[]) => void,
+  items: readonly string[],
+  onClear?: (data: T, object: Draft<GameObjectDoc>) => boolean,
+): boolean {
+  return withMediaData(scene, objectId, ensure, (data, object) => {
+    const next = dedupeItems(items);
+    if (sameItemList(next, listOf(data))) {
+      return false;
+    }
+
+    if (next.length === 0 && onClear !== undefined && onClear(data, object)) {
+      return true;
+    }
+
+    setList(data, next);
+    syncMediaSideData(data, next);
+    return true;
+  });
 }
 
 /**

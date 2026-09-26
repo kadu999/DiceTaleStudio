@@ -16,8 +16,8 @@
 | 后端默认地址 | `0.0.0.0:1420`（`resources/config/app.json`，可被 `HOST` / `PORT` 覆盖） |
 | 编辑器开发地址 | `http://localhost:5173`（Vite，`/api`、`/editor`、`/client` 反代到 1420） |
 | 编辑器生产地址 | `http://localhost:1420`（后端同源托管 `apps/editor/dist`） |
-| 源码规模（不含测试） | 160 个文件 / 36,175 行（packages 12,350 · backend 3,447 · editor 20,378） |
-| 测试规模 | 32,751 行（单测 23,431 · E2E 9,037 · 架构测试 283） |
+| 源码规模（不含测试） | 160 个文件 / 36,115 行（packages 12,290 · backend 3,447 · editor 20,378） |
+| 测试规模 | 32,749 行（单测 23,429 · E2E 9,037 · 架构测试 283） |
 
 > 上表两行与 §0.1 表格里加粗的文件行数、§3.x 节标题里的包规模由
 > `scripts/check-code-structure-stats.mjs` **机器校验**（`pnpm check` 的一环）：
@@ -428,7 +428,7 @@ build: { outDir: "dist", sourcemap: true },
 - 画笔半径 `floor((brushSize-1)/2)`（1/2→1×1、3/4→3×3、5→5×5，含偶数尺寸的刻意保真），与 Unity `ApplyBrush` 完全一致；
 - 坐标系只有一个：**世界坐标**（x 右、y 上、像素、无限大）；`grid(0,0)` 在地图矩形左下角 = 图片最下面一行，grid.y 与世界 y 同向、不翻转；唯一的翻转发生在贴图绘制（`worldRectTopLeft`）。
 
-### 3.2 `@dts/document` — 文档模型、命令与历史（7,740 行）
+### 3.2 `@dts/document` — 文档模型、命令与历史（7,680 行）
 
 | 文件 | 行数 | 职责 | 关键导出 |
 |---|---|---|---|
@@ -436,7 +436,7 @@ build: { outDir: "dist", sourcemap: true },
 | `presets.ts` | 256 | **对象预设表 + 能力槽位**（kinds.ts / features.ts 合并而来）：kind 只是预设 id，`GameObject` 仍是抽象基类（不落进文档）；每个预设声明允许的能力槽位 → 承载组件 + 缺省承载兜底 + 特性缺省值 | `ComponentSlot`、`OBJECT_KINDS`、`ObjectKind`、`GameObjectPreset`、`OBJECT_PRESETS`、`DEFAULT_SLOT_COMPONENT`、`SPRITE_COMPONENT`、`presetOf`、`isAbstractKind`、`CONCRETE_KINDS`、`componentForSlot`、`carriesComponent`、`supportsVideo`、`supportsFog`、`supportsSpriteSheet`、`displayImageField`、`DEFAULT_SOUND_LAYER`、`DEFAULT_VIDEO_*` |
 | `access.ts` | 429 | **对象特性的唯一访问路径**（数据存在哪只有这里知道；v22 层级移除后一律按组件自报的 slot 查找） | 读：`componentOf`、`componentOfSlot`、`componentDataOf`、`componentDataOfSlot`、`mapDataOf`、`fogOf`、`imageOf`（按 slot 直接找，**只挑回 `ImageRef` 那几个字段**）、`imageLayerDataOf`、`objectImage`、`sortingOrderOf`（v26：地图 → 图片层 → 0）、`soundDataOf`、`teleportDataOf`、`videoDataOf`、`isFogEnabled`、`isVideoEnabled`；写：`mapDraftOf`、`writeFeature`、`removeFeature`、`ensureSoundData`、`ensureTeleportData`、`ensureVideoData`、`ensureFogData`、`withFeature` |
 | `schema.ts` | 1,487 | zod schema + **版本迁移链**（v23 / v24 的素材 meta 迁移、v25 的 `migrateMapFogToComponent`、v26 的 `migrateSortingOrderToRenderComponents` 也在这一段里）+ 文件解析 | `sceneFileSchema`、`projectDocSchema`、`imageSpriteRefSchema`、`mapDataSchema`、`imageLayerDataSchema`、`upgradeRawDocument`、`migrateProjectDoc`、`parseProjectFile`、`parseProjectDoc`、`parseSceneFile`、`defaultProjectSettings`、`defaultAudioSettings`、`defaultBgmSettings`、`DEFAULT_BGM_VOLUME`(0.6)、`DEFAULT_SFX_VOLUME`(0.8)、`DEFAULT_VOICE_VOLUME`(1)；类型 `SceneSizeHint`、`ProjectFileLoad`、`SceneFileLoad` |
-| `commands/` | 1,750 | **60 个文档变换命令**（`commands/*.ts` 里 `export function` 的条数；分组表里另有 3 个读/判据由 `access.ts` / `presets.ts` 提供），按特性拆成 9 个模块 | 见 §3.2.2 |
+| `commands/` | 1,858 | **65 个文档变换命令**（`commands/*.ts` 里 `export function` 的条数；分组表里另有 3 个读/判据由 `access.ts` / `presets.ts` 提供），按特性拆成 9 个模块 | 见 §3.2.2 |
 | `validation.ts` | 567 | 文档语义校验（跨字段、跨场景 + **子图的越界格子**（切分按素材 meta 查）+ **视频只给地图与贴图** + **素材 meta 里的标签引用**（顶层 `tags` 与音频旧段同一套规矩）） | `IssueLevel`、`ValidationIssue`、`SceneValidationOptions`、`hasErrors`、`formatIssues`、`validateScene`、`validateAssetMetas`、`validateProject` |
 | `sprites.ts` | 350 | **精灵（子图）的全部知识**（v20 新增）：一张图怎么切、对象取哪一格、那一格在图片里的哪块矩形、画多大；「地图贴图不支持子图」的**唯一判据**也在这里。切分从 v23 起**按素材 meta 查**（参数是 `AssetMetas` 索引，**guid 优先、路径兜底**） | `SPRITE_SHEET_MAX`(64)、`DEFAULT_SPRITE_SHEET`(1×1)、`normalizeSpriteSheet`、`isTrivialSpriteSheet`、`spriteSheetOf`（meta 里没 `sheet` = 整图）、`clampSpriteCell`、`resolvedSpriteOf`、`displaySpriteOf`、`spriteUvRectOf`、`spritePixelRectOf`、`spriteCellSizeOf`、`spriteCellAtFraction`、`resolveSceneSprites`（推送用的解析：夹格子 + 摘掉地图上的误写 + **把 guid 换算回当前路径 ID** + 保留 `sortingOrder`） |
 | `asset-meta.ts` | 629 | **素材 meta 的全部知识**（v23 新增；v24 起覆盖**每一种素材**）：`<素材>.meta` 的形状（GUID + 导入器 + 精灵设置 / 切分 + 音频标注 + **顶层 `name` / `tags`**）、schema、解析、序列化、GUID 生成，以及「meta ↔ 文档词汇」的访问器与纯函数写入。显示名与标签**任何素材**都能写：一律落顶层，音频旧数据（`audio.name` / `audio.tags`）由 `assetNameOfMeta` / `assetTagsOfMeta` 兼容读、写入时一并摘掉（不需要迁移） | `ASSET_META_FORMAT_VERSION`(1)、`ASSET_IMPORTERS`、`AssetImporter`、`AssetMetaDoc`、`AssetMetaSpriteDoc`、`AssetMetaAudioDoc`、`AssetMetaFileLoad`、`assetMetaSchema`、`newAssetGuid`、`createAssetMeta`、`parseAssetMetaFile`（只容错"缺 guid"，补上并 `needsRewrite`）、`serializeAssetMetaFile`、`isSpriteMeta`、`spriteSettingsOfMeta`、`spriteSheetOfMeta`、`withMetaSpriteSettings`、`withMetaSpriteSheet`、`audioNameOfMeta`（旧段）、`assetNameOfMeta`（统一读）、`withMetaAudioName`（旧段）、`withMetaAssetName`（统一写）、`audioTagsOfMeta`（旧段）、`assetTagsOfMeta`（统一读）、`withMetaAudioTags`（旧段）、`withMetaAssetTags`（统一写）、`withoutMetaAudioTag`（两处都摘）、`AssetMetas`（guid ↔ 路径双向索引）、`emptyAssetMetas`、`createAssetMetas`、`metaOfImage` |
@@ -526,24 +526,24 @@ kind 只是预设 id，没有层级——「允许哪些能力槽位」看 `OBJE
 `settings`(v15) 是**补默认值**的（老文件读出来就有可用值）；显示顺序自 v26 起住渲染组件的 data，
 缺项由 schema 默认 0。
 
-#### 3.2.2 文档命令（`commands/`，62 个）
+#### 3.2.2 文档命令（`commands/`，65 个）
 
 `commands/` 是个目录（原来是一个 2,069 行的 `commands.ts`），**按特性分模块**——
 加一个特性的命令 = 加一个文件，而不是往一个巨型文件里插一段：
 
 | 文件 | 行数 | 内容 |
 |---|---|---|
-| `index.ts` | 26 | barrel（`export *` 11 个模块）+ 模块级说明 |
-| `shared.ts` | 179 | 命令共用的常量、查找工具与媒体列表骨架（声音 / 视频 / 传送阵同一套「列表 + 选中」的公共部分）：`DEFAULT_SORTING_ORDER` / `MAP_DEFAULT_SORTING_ORDER` / `SORTING_ORDER_LIMIT` / `createId` / `findObject` / `findMapObject` / `listMapObjects` / `withObject` / `withMediaData` / `dedupeItems` / `sameItemList` / `syncMediaSideData` / `setMediaPicked`；类型 `MediaListSideData` |
-| `object.ts` | 555 | 对象增删改 + 变换 + 排序（`setRenderSortingOrder`，v26 起按「先地图、后图片层」路由）+ 缩放 + `setObjectImage`（**换 id 丢掉旧的子图引用**，v20）+ `setObjectSprite`（取图集里哪一格，`null` = 整图） |
+| `index.ts` | 27 | barrel（`export *` 11 个模块）+ 模块级说明 |
+| `shared.ts` | 208 | 命令共用的常量、查找工具与媒体列表骨架（声音 / 视频 / 传送阵同一套「列表 + 选中」的公共部分）：`DEFAULT_SORTING_ORDER` / `MAP_DEFAULT_SORTING_ORDER` / `SORTING_ORDER_LIMIT` / `createId` / `findObject` / `findMapObject` / `listMapObjects` / `withObject` / `withMediaData` / `dedupeItems` / `sameItemList` / `syncMediaSideData` / `setMediaList` / `setMediaPicked` |
+| `object.ts` | 546 | 对象增删改 + 变换 + 排序（`setRenderSortingOrder`，v26 起按「先地图、后图片层」路由）+ 缩放 + `setObjectImage`（**换 id 丢掉旧的子图引用**，v20）+ `setObjectSprite`（取图集里哪一格，`null` = 整图） |
 | `scene.ts` | 52 | 场景名校验 / 查找 / 重名判定（纯函数） |
-| `grid-map.ts` | 224 | 地图数据 + 网格与标注（`clearMapFog` 也在这里：它动的是格子数据，只从 `fogMaskOf` 读绑定） |
-| `fog.ts` | 150 | 战争雾（v27 起是独立的 `Fog` 对象的数据）：`setFogMap` / 总开关 / 指定雾区 / `fogMaskOf` / `fogMapOf`——组件总在，雾引用一张地图 |
-| `play-sound.ts` | 69 | 声音对象（音频列表 / 选中 / 层级） |
-| `teleport.ts` | 79 | 传送阵（候选场景 / 选中） |
-| `video.ts` | 185 | 视频（开关 / 列表 / 选中 / 循环 / 声音 / 移除组件） |
+| `grid-map.ts` | 238 | 地图数据 + 网格与标注（`clearMapFog` 也在这里：它动的是格子数据，只从 `fogMaskOf` 读绑定） |
+| `fog.ts` | 151 | 战争雾（v27 起是独立的 `Fog` 对象的数据）：`setFogMap` / 总开关 / 指定雾区 / `fogMaskOf` / `fogMapOf`——组件总在，雾引用一张地图 |
+| `play-sound.ts` | 63 | 声音对象（音频列表 / 选中 / 层级） |
+| `teleport.ts` | 48 | 传送阵（候选场景 / 选中） |
+| `video.ts` | 133 | 视频（开关 / 列表 / 选中 / 移除组件；循环 / 声音 / 自动播放走泛型 `setComponentField`） |
 | `component.ts` | 47 | 可选组件的**添加 / 移除统一入口**（属性面板底部的 Add Component 与组件头的移除）：按组件类型分派到 `object` / `video` 的初始化命令；加第三种可选组件只在这里加一条 `case` |
-| `project.ts` | 239 | **只剩项目级数据**：三档音量 + 音频**标签表**（`addAudioTag` / `renameAudioTag` / `setAudioTagName` / `deleteAudioTag`）。音频文件的显示名 / 标签（旧的 `setAudioMetaName` / `setAudioMetaTags`）v24 已删、图片切分（旧的 `setSpriteSheet` / `setSpriteImportSettings`）v23 已删——它们现在写在各自素材的 `.meta` 里，写入口径是 `asset-meta.ts` 的纯函数 |
+| `project.ts` | 247 | **只剩项目级数据**：三档音量 + 音频**标签表**（`addAudioTag` / `renameAudioTag` / `setAudioTagName` / `deleteAudioTag`）。音频文件的显示名 / 标签（旧的 `setAudioMetaName` / `setAudioMetaTags`）v24 已删、图片切分（旧的 `setSpriteSheet` / `setSpriteImportSettings`）v23 已删——它们现在写在各自素材的 `.meta` 里，写入口径是 `asset-meta.ts` 的纯函数 |
 
 **依赖方向严格单向**：`shared` → `../presets`/`../types`（不 import 任何命令模块）；
 `object`/`scene` → `./shared`；`grid-map`/`fog`/`play-sound`/`teleport`/`video` → `./shared` + `../access` + `../presets`；
@@ -555,14 +555,14 @@ kind 只是预设 id，没有层级——「允许哪些能力槽位」看 `OBJE
 | 分组 | 函数 |
 |---|---|
 | 查找 | `findObject`、`findMapObject`、`listMapObjects`、`findScene` |
-| 媒体列表骨架（声音 / 视频 / 传送共用） | `withObject`、`withMediaData`、`dedupeItems`、`sameItemList`、`syncMediaSideData`、`setMediaPicked`、`setMediaClipName`；类型 `MediaListSideData` |
+| 媒体列表骨架（声音 / 视频 / 传送共用） | `withObject`、`withMediaData`、`dedupeItems`、`sameItemList`、`syncMediaSideData`、`setMediaList`、`setMediaPicked`、`setMediaClipName` |
 | 对象增删改 | `createGameObject`、`addObject`、`removeObject`、`renameObject`、`nextObjectName`、`setObjectPosition`、`setObjectActive`、`setObjectLocked`、`setRenderSortingOrder`、`setObjectRotation`、`setObjectImage`、`setObjectSprite`、`objectImage` |
 | 缩放 | `setObjectScale`、`setObjectScaleAxes`、`normalizeDegrees`、`objectsInDrawOrder` |
 | 地图网格 | `setMapCells`、`clearMapCells`、`paintMapCells`、`setMapGrid` |
 | 战争雾 | `fogMaskOf`、`fogMapOf`、`setFogMap`、`setFogEnabled`、`setFogRegions`、`clearMapFog`（后者在 `grid-map.ts`：按雾对象 → 被引用地图，动格子数据） |
 | 声音对象 | `setSoundClips`、`setSoundPicked`、`setSoundLayer` |
 | 传送阵 | `setTeleportTargets`、`setTeleportPicked` |
-| 视频 | `supportsVideo`、`isVideoEnabled`、`setVideoEnabled`、`removeObjectVideo`、`setVideoClips`、`setVideoPicked`、`setVideoLoop`、`setVideoAudio` |
+| 视频 | `supportsVideo`、`isVideoEnabled`、`setVideoEnabled`、`removeObjectVideo`、`setVideoClips`、`setVideoPicked`（循环 / 声音 / 自动播放走泛型 `setComponentField`） |
 | 组件（可选能力） | `addObjectComponent`、`removeObjectComponent`（网格 / 视频的统一添加 / 移除入口，属性面板底部的 Add Component） |
 | 全局设置 | `setBgmVolume`、`setSfxVolume`、`setVoiceVolume` |
 | 音频标签表（项目级） | `addAudioTag`、`renameAudioTag`、`setAudioTagName`、`deleteAudioTag`（**只动工程文件里那张表**；「哪个文件用了哪个标签」v24 起住各素材的 `.meta`，删标签摘引用是 `withoutMetaAudioTag`，见 §3.2.6 与 §5.3.2） |

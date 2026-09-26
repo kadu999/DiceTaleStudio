@@ -2,13 +2,8 @@
 import type { Draft } from "immer";
 // 特性的读写一律走访问器（「数据存在哪个组件里」只有 access.ts 知道）
 import { ensureTeleportData } from "../access";
-import {
-  dedupeItems,
-  sameItemList,
-  setMediaPicked,
-  withMediaData,
-} from "./shared";
-import type { SceneDoc, TeleportDataDoc } from "../types";
+import { setMediaList, setMediaPicked } from "./shared";
+import type { SceneDoc } from "../types";
 
 // ---------------------------------------------------------------- 传送阵（动作对象）
 
@@ -18,7 +13,7 @@ import type { SceneDoc, TeleportDataDoc } from "../types";
  * 只保证内容是**去空、去重**后的场景名，不排序——顺序是用户勾进来的顺序，没有别的语义
  * （与 `setSoundClips` 同一个口径）。
  *
- * 列表一变，**选中的那一个跟着走**（见 `syncTeleportSideData`）：移出去的正好是选中的，
+ * 列表一变，**选中的那一个跟着走**（见 `shared.ts` 的 `syncMediaSideData`）：移出去的正好是选中的，
  * 就顺到剩下的第一条；一条不剩就把 `picked` 整个删掉。
  */
 export function setTeleportTargets(
@@ -26,42 +21,16 @@ export function setTeleportTargets(
   objectId: string,
   targets: readonly string[],
 ): boolean {
-  return withMediaData(scene, objectId, ensureTeleportData, (teleport) => {
-    const next = dedupeItems(targets);
-    if (sameItemList(next, teleport.targets)) {
-      return false;
-    }
-
-    teleport.targets = next;
-    syncTeleportSideData(teleport);
-    return true;
-  });
-}
-
-/**
- * 列表变更后收拾「选中的那一个」：还在列表里就别动；被移出去了就顺到第一条；
- * 一条不剩就把 `picked` 删掉（不留空壳）。
- *
- * 兜底「没选就默认选第一条」是**故意的**（与 `syncMediaSideData` 同一条理由）：
- * 勾进来一个场景却没被选上时，面板上看着有东西、「传送」却是灰的，很容易以为是坏的。
- */
-function syncTeleportSideData(teleport: Draft<TeleportDataDoc>): void {
-  const fallback = teleport.targets[0];
-  if (teleport.picked === undefined) {
-    if (fallback !== undefined) {
-      teleport.picked = fallback;
-    }
-
-    return;
-  }
-
-  if (!teleport.targets.includes(teleport.picked)) {
-    if (fallback === undefined) {
-      delete teleport.picked;
-    } else {
-      teleport.picked = fallback;
-    }
-  }
+  return setMediaList(
+    scene,
+    objectId,
+    ensureTeleportData,
+    (teleport) => teleport.targets,
+    (teleport, next) => {
+      teleport.targets = next;
+    },
+    targets,
+  );
 }
 
 /**

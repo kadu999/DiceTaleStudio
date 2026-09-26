@@ -3,14 +3,7 @@ import type { Draft } from "immer";
 import { DEFAULT_SLOT_COMPONENT } from "../presets";
 // 特性的读写一律走访问器（「数据存在哪个组件里」只有 access.ts 知道）
 import { ensureVideoData, removeFeature, videoDataOf, writeFeature } from "../access";
-import {
-  dedupeItems,
-  sameItemList,
-  setMediaPicked,
-  syncMediaSideData,
-  withMediaData,
-  withObject,
-} from "./shared";
+import { setMediaList, setMediaPicked, withObject } from "./shared";
 import type { SceneDoc } from "../types";
 
 // ---------------------------------------------------------------- 视频（地图 / 精灵）
@@ -104,22 +97,25 @@ export function setVideoClips(
   objectId: string,
   clips: readonly string[],
 ): boolean {
-  return withMediaData(scene, objectId, ensureVideoData, (video, object) => {
-    const next = dedupeItems(clips);
-    if (sameItemList(next, video.clips)) {
+  return setMediaList(
+    scene,
+    objectId,
+    ensureVideoData,
+    (video) => video.clips,
+    (video, next) => {
+      video.clips = next;
+    },
+    clips,
+    // 清空且开关关着：没有内容要记了，**组件整个摘掉**（与「从没开过」同义）
+    (video, object) => {
+      if (video.enabled === false) {
+        removeFeature(object, DEFAULT_SLOT_COMPONENT.video);
+        return true;
+      }
+
       return false;
-    }
-
-    if (next.length === 0 && video.enabled === false) {
-      // 关着且一个都不剩：没有内容要记了，**组件整个摘掉**（与「从没开过」同义）
-      removeFeature(object, DEFAULT_SLOT_COMPONENT.video);
-      return true;
-    }
-
-    video.clips = next;
-    syncMediaSideData(video);
-    return true;
-  });
+    },
+  );
 }
 
 /**
@@ -134,52 +130,4 @@ export function setVideoPicked(
   clipId: string | null,
 ): boolean {
   return setMediaPicked(scene, objectId, ensureVideoData, (video) => video.clips, clipId);
-}
-
-/** 循环播放开关（前端 `VideoPlayer.isLooping`）；值没变返回 false。 */
-export function setVideoLoop(
-  scene: Draft<SceneDoc>,
-  objectId: string,
-  loop: boolean,
-): boolean {
-  return withMediaData(scene, objectId, ensureVideoData, (video) => {
-    if (video.loop === loop) {
-      return false;
-    }
-
-    video.loop = loop;
-    return true;
-  });
-}
-
-/** 视频自带声音的开关（前端 `VideoPlayer.audioOutputMode`）；值没变返回 false。 */
-export function setVideoAudio(
-  scene: Draft<SceneDoc>,
-  objectId: string,
-  audio: boolean,
-): boolean {
-  return withMediaData(scene, objectId, ensureVideoData, (video) => {
-    if (video.audio === audio) {
-      return false;
-    }
-
-    video.audio = audio;
-    return true;
-  });
-}
-
-/** Set whether this object's selected video starts when its scene activates. */
-export function setVideoAutoPlay(
-  scene: Draft<SceneDoc>,
-  objectId: string,
-  autoPlay: boolean,
-): boolean {
-  return withMediaData(scene, objectId, ensureVideoData, (video) => {
-    if (video.autoPlay === autoPlay) {
-      return false;
-    }
-
-    video.autoPlay = autoPlay;
-    return true;
-  });
 }

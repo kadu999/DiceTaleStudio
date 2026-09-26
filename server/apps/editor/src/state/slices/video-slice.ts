@@ -6,8 +6,8 @@
 import {
   DEFAULT_SLOT_COMPONENT,
   videoDataOf,
+  setComponentField as setSceneComponentField,
   setVideoClips as setSceneVideoClips,
-  setVideoLoop as setSceneVideoLoop,
   setVideoPicked as setSceneVideoPicked,
 } from "@dts/document";
 import {
@@ -221,7 +221,7 @@ export function createVideoSlice(
 
     setVideoLoop(objectId, loop) {
       return applyActiveScene("修改视频循环", (scene) => {
-        setSceneVideoLoop(scene, objectId, loop);
+        setSceneComponentField(scene, objectId, DEFAULT_SLOT_COMPONENT.video, "loop", loop);
       });
     },
   };

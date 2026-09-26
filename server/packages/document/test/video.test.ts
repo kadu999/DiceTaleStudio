@@ -3,11 +3,9 @@ import { produce, type Draft } from "immer";
 import {
   createGameObject,
   removeObjectVideo,
-  setVideoAudio,
-  setVideoAutoPlay,
+  setComponentField,
   setVideoClips,
   setVideoEnabled,
-  setVideoLoop,
   setVideoPicked,
 } from "../src/commands";
 import { isVideoEnabled, videoDataOf } from "../src/access";
@@ -103,7 +101,7 @@ describe("视频：哪些对象能带", () => {
       setVideoClips(draft, "map-1", [CLIP_A]);
     });
     const autoplay = mutate(withClip, (draft) => {
-      expect(setVideoAutoPlay(draft, "map-1", true)).toBe(true);
+      expect(setComponentField(draft, "map-1", DEFAULT_SLOT_COMPONENT.video, "autoPlay", true)).toBe(true);
     });
     expect(videoDataOf(objectOf(autoplay, "map-1")!)?.autoPlay).toBe(true);
 
@@ -126,8 +124,8 @@ describe("视频：哪些对象能带", () => {
       mutate(scene, (draft) => {
         expect(setVideoClips(draft, "s1", [CLIP_A])).toBe(false);
         expect(setVideoEnabled(draft, "s1", true)).toBe(false);
-        expect(setVideoLoop(draft, "s1", true)).toBe(false);
-        expect(setVideoAudio(draft, "s1", true)).toBe(false);
+        expect(setComponentField(draft, "s1", DEFAULT_SLOT_COMPONENT.video, "loop", true)).toBe(false);
+        expect(setComponentField(draft, "s1", DEFAULT_SLOT_COMPONENT.video, "audio", true)).toBe(false);
         expect(setVideoPicked(draft, "s1", CLIP_A)).toBe(false);
       }),
     ).toBe(scene);
@@ -153,8 +151,8 @@ describe("视频命令：列表", () => {
   it("列表清空**不删字段**：循环 / 声音是对象自己的设置，还得留着", () => {
     const start = mutate(sceneWith([mapObject()]), (draft) => {
       setVideoClips(draft, "map-1", [CLIP_A]);
-      setVideoLoop(draft, "map-1", true);
-      setVideoAudio(draft, "map-1", true);
+      setComponentField(draft, "map-1", DEFAULT_SLOT_COMPONENT.video, "loop", true);
+      setComponentField(draft, "map-1", DEFAULT_SLOT_COMPONENT.video, "audio", true);
     });
 
     const cleared = mutate(start, (draft) => {
@@ -256,8 +254,8 @@ describe("视频命令：循环与声音开关", () => {
   it("两个开关都写进文档；值没变返回 false", () => {
     const scene = mutate(sceneWith([mapObject()]), (draft) => {
       setVideoClips(draft, "map-1", [CLIP_A]);
-      expect(setVideoLoop(draft, "map-1", true)).toBe(true);
-      expect(setVideoAudio(draft, "map-1", true)).toBe(true);
+      expect(setComponentField(draft, "map-1", DEFAULT_SLOT_COMPONENT.video, "loop", true)).toBe(true);
+      expect(setComponentField(draft, "map-1", DEFAULT_SLOT_COMPONENT.video, "audio", true)).toBe(true);
     });
 
     expect(videoDataOf(objectOf(scene, "map-1")!)?.loop).toBe(true);
@@ -265,8 +263,8 @@ describe("视频命令：循环与声音开关", () => {
 
     expect(
       mutate(scene, (draft) => {
-        setVideoLoop(draft, "map-1", true);
-        setVideoAudio(draft, "map-1", true);
+        setComponentField(draft, "map-1", DEFAULT_SLOT_COMPONENT.video, "loop", true);
+        setComponentField(draft, "map-1", DEFAULT_SLOT_COMPONENT.video, "audio", true);
       }),
     ).toBe(scene);
   });
@@ -316,7 +314,7 @@ describe("视频命令：总开关（启用）", () => {
     // 加视频 + 拨开关：开关原样不动
     scene = mutate(scene, (draft) => {
       setVideoClips(draft, "map-1", [CLIP_A]);
-      setVideoLoop(draft, "map-1", true);
+      setComponentField(draft, "map-1", DEFAULT_SLOT_COMPONENT.video, "loop", true);
     });
     expect(videoDataOf(objectOf(scene, "map-1")!)).toEqual({
       enabled: true,
@@ -366,7 +364,7 @@ describe("视频命令：总开关（启用）", () => {
   it("重新打开：列表 / 循环 / 声音都原样回来", () => {
     const scene = mutate(sceneWith([textureObject()]), (draft) => {
       setVideoClips(draft, "tex-1", [CLIP_B]);
-      setVideoAudio(draft, "tex-1", true);
+      setComponentField(draft, "tex-1", DEFAULT_SLOT_COMPONENT.video, "audio", true);
       setVideoEnabled(draft, "tex-1", false);
     });
 
@@ -474,8 +472,8 @@ describe("视频：文档校验", () => {
     const scene = mutate(sceneWith([mapObject(), textureObject()]), (draft) => {
       setVideoClips(draft, "map-1", [CLIP_A]);
       setVideoClips(draft, "tex-1", [CLIP_B]);
-      setVideoLoop(draft, "tex-1", true);
-      setVideoAudio(draft, "tex-1", true);
+      setComponentField(draft, "tex-1", DEFAULT_SLOT_COMPONENT.video, "loop", true);
+      setComponentField(draft, "tex-1", DEFAULT_SLOT_COMPONENT.video, "audio", true);
     });
 
     expect(formatIssues(validateScene(scene))).not.toMatch(/视频/);

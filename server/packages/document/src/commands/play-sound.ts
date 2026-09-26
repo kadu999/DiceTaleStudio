@@ -2,13 +2,7 @@
 import type { Draft } from "immer";
 // 特性的读写一律走访问器（「数据存在哪个组件里」只有 access.ts 知道）
 import { ensureSoundData } from "../access";
-import {
-  dedupeItems,
-  sameItemList,
-  setMediaPicked,
-  syncMediaSideData,
-  withMediaData,
-} from "./shared";
+import { setMediaList, setMediaPicked, withMediaData } from "./shared";
 import type { SceneDoc, SoundLayer } from "../types";
 
 // ---------------------------------------------------------------- 声音对象（动作对象）
@@ -26,16 +20,16 @@ export function setSoundClips(
   objectId: string,
   clips: readonly string[],
 ): boolean {
-  return withMediaData(scene, objectId, ensureSoundData, (sound) => {
-    const next = dedupeItems(clips);
-    if (sameItemList(next, sound.clips)) {
-      return false;
-    }
-
-    sound.clips = next;
-    syncMediaSideData(sound);
-    return true;
-  });
+  return setMediaList(
+    scene,
+    objectId,
+    ensureSoundData,
+    (sound) => sound.clips,
+    (sound, next) => {
+      sound.clips = next;
+    },
+    clips,
+  );
 }
 
 /**

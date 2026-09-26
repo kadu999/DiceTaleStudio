@@ -110,7 +110,7 @@ describe("setComponentField：能改的", () => {
 });
 
 describe("setComponentField：不改的（都返回 false 且文档不动）", () => {
-  it("值没变：不进撤销栈（与 `setVideoLoop` 等专用命令同一个布尔约定）", () => {
+  it("值没变：不进撤销栈（与其它专用命令同一个布尔约定）", () => {
     const scene = sceneWith([mapObject()]);
     const seeded = mutate(scene, (draft) => {
       setComponentField(draft, "map-1", VIDEO, "loop", false);
