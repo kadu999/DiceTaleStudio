@@ -349,9 +349,10 @@ describe("项目 API", () => {
     const fixture = readFileSync(fileURLToPath(new URL("./fixtures/clip.mp4", import.meta.url)));
     await provider.writeBinary(id, fixture.buffer.slice(fixture.byteOffset, fixture.byteOffset + fixture.byteLength) as ArrayBuffer);
 
-    // info=1 对视频明确拒绝（尺寸头只在抽帧后才有，前端不需要）
+    // info=1 也支持视频：用 ffmpeg 抽首帧探出宽高（夹具是 64×48）——
+    // 视频混合的 Mask 窗口靠它给遮罩定长宽比
     const infoResponse = await fetch(`${baseUrl}/api/resources/thumbnail?id=${encodeURIComponent(id)}&info=1`);
-    expect(infoResponse.status).toBe(400);
+    expect(await infoResponse.json()).toEqual({ width: 64, height: 48 });
 
     const thumbnailResponse = await fetch(`${baseUrl}/api/resources/thumbnail?id=${encodeURIComponent(id)}`);
     expect(thumbnailResponse.status).toBe(200);
@@ -386,6 +387,9 @@ describe("项目 API", () => {
 
       const response = await fetch(`${baseUrl}/api/resources/thumbnail?id=${encodeURIComponent(id)}`);
       expect(response.status).toBe(400);
+      // info=1 也走抽帧：失败同样如实回 400（多一条路不能把进程打崩）
+      const infoResponse = await fetch(`${baseUrl}/api/resources/thumbnail?id=${encodeURIComponent(id)}&info=1`);
+      expect(infoResponse.status).toBe(400);
       // 等一拍：那枚写错误是异步冒出来的，给进程一个「被打崩」的机会
       await new Promise((resolve) => setTimeout(resolve, 500));
       // 期间没有未处理异常 + 进程还活着（下一个请求照常响应）

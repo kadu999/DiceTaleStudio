@@ -102,8 +102,21 @@ export async function readResourceThumbnailRoute(ctx: RouteContext): Promise<voi
   const isVideo = contentTypeFor(parseResourceId(id).path).startsWith("video/");
   const source = Buffer.from(await ctx.provider.readBinary(id));
   if (ctx.url.searchParams.get("info") === "1") {
+    // 视频：用已有的 ffmpeg 抽首帧能力探测宽高。视频混合的 Mask 窗口要给遮罩定长宽比，
+    // 而编辑器又不解码视频——这是它拿到「视频像素尺寸」的正路（与缩略图同一份抽帧实现）。
     if (isVideo) {
-      throw badRequest("视频不支持 info=1");
+      try {
+        const frame = await extractVideoFrame(source);
+        const metadata = await sharp(frame, { limitInputPixels: 100_000_000 }).metadata();
+        if (metadata.width === undefined || metadata.height === undefined) {
+          throw new Error("Video dimensions are missing");
+        }
+        const dimensions = metadata.autoOrient ?? { width: metadata.width, height: metadata.height };
+        sendJson(ctx.response, 200, { width: dimensions.width, height: dimensions.height });
+        return;
+      } catch {
+        throw badRequest("无法读取视频尺寸（需要 ffmpeg 在 PATH 里）");
+      }
     }
 
     try {
