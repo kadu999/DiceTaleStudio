@@ -7,6 +7,8 @@ import {
   DEFAULT_SLOT_COMPONENT,
   supportsObjectComponent,
   createAssetMetas,
+  magnifierDataOf,
+  magnifierImageOf,
   mapDataOf,
   serializeAssetMetaFile,
   videoBlendDataOf,
@@ -60,6 +62,7 @@ import {
   videoBlendPlaybackResendPlan,
 } from "../services/video-blend-playback";
 import { emptyFogReveal, fogRevealResendPlan, type FogRevealPoint } from "../services/fog-reveal";
+import { magnifierWindowResendPlan } from "../services/magnifier-window";
 import {
   emptyVideoBlendReveal,
   videoBlendRevealResendPlan,
@@ -126,6 +129,10 @@ export interface StoreContext {
   videoTargetOf(objectId: string, what: string): GameObjectDoc | null;
   /** 找出「能混合放视频」的对象（找不到就写日志并返回 null）。 */
   videoBlendTargetOf(objectId: string, what: string): GameObjectDoc | null;
+  /** 找出「能弹放大镜窗口」的对象（找不到就写日志并返回 null）。 */
+  magnifierTargetOf(objectId: string, what: string): GameObjectDoc | null;
+  /** 这个对象**现在**还能弹放大镜窗口吗（与 `magnifierTargetOf` 同口径，但不写日志）。 */
+  canShowMagnifier(objectId: string): boolean;
   /** 按 id 找当前场景里的对象。 */
   findObjectById(objectId: string): GameObjectDoc | undefined;
   /**
@@ -149,6 +156,13 @@ export interface StoreContext {
   /** 把一条视频命令**尽力**发给前端。 */
   deliverVideo(
     kind: "play_video" | "pause_video" | "resume_video" | "stop_video",
+    objectId: string,
+    label: string,
+    quiet?: boolean,
+  ): string | undefined;
+  /** 把一条**放大镜窗口**的命令尽力发给前端（开 / 关那扇窗）。 */
+  deliverMagnifierWindow(
+    kind: "open_magnifier" | "close_magnifier",
     objectId: string,
     label: string,
     quiet?: boolean,
@@ -339,6 +353,8 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
           videoBlendReveal: emptyVideoBlendReveal(),
           videoPlayback: emptyVideoPlayback(),
           videoBlendPlayback: emptyVideoBlendPlayback(),
+          // 放大镜那扇窗同理：前端已经被踢下线（它自己那扇窗随进程没了），记账跟着回到「没开」
+          magnifierShown: null,
         });
         // 背景音乐同理：回到「什么都没放」（下次进运行态**不会自动出声**，由 DM 点一首）
         set({ bgmPlayback: emptyBgmPlayback() });
@@ -412,6 +428,16 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
           playback: get().bgmPlayback,
         }) !== null,
         () => get().flushBgmPlayback(),
+      );
+
+      // 放大镜：把它还没看到的那扇窗补开一次（记账里那个对象还展示得了的话）
+      resendOnReconnect(
+        magnifierWindowResendPlan({
+          wasClientConnected,
+          isClientConnected: clientConnected,
+          shown: get().magnifierShown,
+        }).length > 0,
+        () => get().flushMagnifierWindow(),
       );
     },
 
@@ -807,6 +833,50 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
   };
 
   /**
+   * 找出「能弹放大镜窗口」的对象：当前场景里挂着 `Magnifier` 组件、且**选了一张展示得了的图**
+   * 的对象（下标落在列表里）。
+   *
+   * 与 `videoTargetOf` 同一个口径：找不到就写一条**说明原因**的运行日志并返回 null（不静默失败）。
+   * 「能展示」的判据只有 `supportsMagnifier` + `magnifierImageOf` 两处。
+   */
+  const magnifierTargetOf = (objectId: string, what: string): GameObjectDoc | null => {
+    const object = findObjectById(objectId);
+
+    if (object === undefined) {
+      pushLog(makeLog("warn", `${what}失败：找不到这个对象（${objectId}）`));
+      return null;
+    }
+
+    if (!supportsObjectComponent(object, DEFAULT_SLOT_COMPONENT.magnifier)) {
+      pushLog(makeLog("warn", `${what}失败：「${object.name}」没有放大镜组件`));
+      return null;
+    }
+
+    const magnifier = magnifierDataOf(object);
+    if (magnifier === undefined || magnifier.images.length === 0) {
+      pushLog(makeLog("warn", `${what}失败：「${object.name}」还没加图片（属性面板 → 放大镜）`));
+      return null;
+    }
+
+    if (magnifierImageOf(object) === undefined) {
+      pushLog(makeLog("warn", `${what}失败：「${object.name}」还没选要展示哪一张（面板上点一下小图）`));
+      return null;
+    }
+
+    return object;
+  };
+
+  /** 这个对象**现在**还能弹放大镜窗口吗？补发前筛掉没意义的记录用——同口径，但不写日志。 */
+  const canShowMagnifier = (objectId: string): boolean => {
+    const object = findObjectById(objectId);
+    return (
+      object !== undefined &&
+      supportsObjectComponent(object, DEFAULT_SLOT_COMPONENT.magnifier) &&
+      magnifierImageOf(object) !== undefined
+    );
+  };
+
+  /**
    * 找一个**实际挂有或按旧 kind 预设可补建某个特性组件**的对象；不写日志。
    *
    * 已有组件实例优先；缺失必需组件兼容与可选组件准入由组件定义分别声明。
@@ -854,6 +924,32 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
    */
   const deliverVideo = (
     kind: "play_video" | "pause_video" | "resume_video" | "stop_video",
+    objectId: string,
+    label: string,
+    quiet = false,
+  ): string | undefined => {
+    if (!guardDeliver((reason) => `${label}：已记录（${reason}）`, quiet)) {
+      return undefined;
+    }
+
+    const requestId = runtimeClient.sendCommand({ kind, objectId });
+    if (!quiet) {
+      pushLog(makeLog("info", `下发${label}：${objectId}`));
+    }
+
+    return requestId;
+  };
+
+  /**
+   * 把一条**放大镜窗口**的命令尽力发给前端（`open_magnifier` / `close_magnifier`）。
+   *
+   * 与 `deliverVideo` 逐字同一套骨架：编辑器没连服务端 / 前端不在时**不发**（记账已经记下），
+   * 只写明白原因——等前端连上由 `flushMagnifierWindow()` 补发。
+   * 命令里只有 `objectId`：那扇窗放哪一张图由前端从镜像里那个对象读
+   * （`picked` 是文档数据，换图靠整份 `scene_push`，没有第二条命令）。
+   */
+  const deliverMagnifierWindow = (
+    kind: "open_magnifier" | "close_magnifier",
     objectId: string,
     label: string,
     quiet = false,
@@ -1320,6 +1416,13 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
       for (const entry of Object.values(get().videoBlendPlayback.objects)) {
         deliverVideo("stop_video", entry.objectId, "停止混合视频", true);
       }
+
+      // 放大镜那扇窗也是上一个场景的东西：换了台就关掉（它盯着的对象可能已经不在新场景里）。
+      // 调用方不写日志（补发汇总一条），与上面两条 stop 同一档
+      const shownMagnifier = get().magnifierShown;
+      if (shownMagnifier !== null) {
+        deliverMagnifierWindow("close_magnifier", shownMagnifier, "关掉放大镜窗口", true);
+      }
     }
 
     // 清选中 / 关窗口 / 清记账这一套**照旧无条件执行**（切到同一个场景时也一样）：
@@ -1334,6 +1437,10 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
       videoBlendMaskTarget: null,
       gridEditor: false,
       gridEditorTarget: null,
+      // 放大镜：编辑器那扇窗与前端那扇窗都盯的是上一个场景的对象
+      magnifierEditor: false,
+      magnifierEditorTarget: null,
+      magnifierShown: null,
       // 切场景：记账里的对象属于上一个场景，清掉（前端那边由使用方自己按新场景重播）
       soundPlayback: emptySoundPlayback(),
       videoPlayback: emptyVideoPlayback(),
@@ -1381,6 +1488,8 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
     canRevealVideoBlend,
     videoTargetOf,
     videoBlendTargetOf,
+    magnifierTargetOf,
+    canShowMagnifier,
     findObjectById,
     applyActiveScene,
     objectWithFeature,
@@ -1389,6 +1498,7 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
     deliverVideo,
     deliverFogErase,
     deliverVideoMaskErase,
+    deliverMagnifierWindow,
     frontendReady,
     bgmActionLabel,
     sendBgmAction,

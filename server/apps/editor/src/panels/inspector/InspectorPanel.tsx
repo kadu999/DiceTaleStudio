@@ -17,7 +17,11 @@ import type { ResourceTreeNode } from "../../services/project-api";
 import { findResourceNode, useEditorStore } from "../../state/editor-store";
 import { tagsOfClip, type AudioTagRef } from "../audio-catalog";
 import { assetKindLabel, assetPreviewKind, formatSize } from "../asset-info";
-import { assetRawUrl, parseSpriteAssetId } from "../asset-picker";
+import {
+  assetRawUrl,
+  parseSpriteAssetId,
+  spriteCellBackgroundPosition,
+} from "../asset-picker";
 import { EmptyState } from "../EmptyState";
 import { AudioTagDialog } from "../../app/AudioTagDialog";
 import { SpriteEditorDialog } from "../../app/SpriteEditorDialog";
@@ -405,11 +409,7 @@ function AssetProperties({
 }
 
 function spriteBackgroundPosition(index: number, columns: number, rows: number): string {
-  const column = index % columns;
-  const row = Math.floor(index / columns);
-  const x = columns <= 1 ? 0 : (column * 100) / (columns - 1);
-  const y = rows <= 1 ? 0 : (row * 100) / (rows - 1);
-  return `${x}% ${y}%`;
+  return spriteCellBackgroundPosition(index, columns, rows);
 }
 
 /**

@@ -4,12 +4,13 @@ import { useEditorStore } from "../state/editor-store";
 import { useDialogSize } from "./dialog-size";
 
 /**
- * 「地图类编辑窗口」的公共外壳：战争雾 Mask（`FogMaskDialog`）与网格编辑
- * （`GridEditDialog`）两扇窗口共用。
+ * 「地图类编辑窗口」的公共外壳：战争雾 Mask（`FogMaskDialog`）、网格编辑（`GridEditDialog`）、
+ * 视频混合 Mask（`VideoBlendMaskDialog`）与放大镜（`MagnifierDialog`）共用。
  *
- * 两扇窗的结构完全同构：Root / Portal / Overlay / Content + 标题 +
- * 「找不到这张地图」兜底 + 底栏（关闭按钮固定，左侧是**插槽**——网格编辑塞「全部清除」、
- * 战争雾塞运行态提示）。画布内部并不同构（像素擦除 vs 格子渲染），那是各窗口自己的 children。
+ * 几扇窗的结构完全同构：Root / Portal / Overlay / Content + 标题 +
+ * 「找不到这个对象」兜底（`missing` 可换成各自的说法）+ 底栏（关闭按钮固定，左侧是**插槽**——
+ * 网格编辑塞「全部清除」、战争雾塞运行态提示、放大镜塞「在画面上打开 / 关闭画面」）。
+ * 画布内部并不同构（像素擦除 vs 格子渲染 vs 一张图），那是各窗口自己的 children。
  *
  * `data-testid` 一律由 `prefix` 派生：`<prefix>-dialog` / `<prefix>-missing` /
  * `<prefix>-close`，测试钉的就是这三枚。
@@ -32,8 +33,10 @@ interface MapDialogShellProps {
   /** testid 前缀：三枚 id 由它派生（见文件头）。 */
   readonly prefix: string;
   readonly title: string;
-  /** 目标对象还在不在：false 时主体不渲染，换成「找不到这张地图」占位。 */
+  /** 目标对象还在不在：false 时主体不渲染，换成「找不到」占位。 */
   readonly found: boolean;
+  /** 「找不到」占位里写什么（缺省是地图类窗口的那句话；放大镜这类自己给一句）。 */
+  readonly missing?: React.ReactNode;
   /** 底栏左侧的差异化内容（关闭按钮由外壳统一给）。 */
   readonly footer?: React.ReactNode;
   /** 主体：左侧画布区 + 右侧工具栏。 */
@@ -46,6 +49,7 @@ export function MapDialogShell({
   prefix,
   title,
   found,
+  missing,
   footer,
   children,
 }: MapDialogShellProps): React.JSX.Element {
@@ -85,7 +89,7 @@ export function MapDialogShell({
               data-testid={`${prefix}-missing`}
               className="flex min-h-0 flex-1 items-center justify-center rounded border border-dashed border-[var(--color-editor-border)] text-[11px] text-[var(--color-editor-text-dim)]"
             >
-              找不到这张地图（可能已经被删掉了）
+              {missing ?? "找不到这张地图（可能已经被删掉了）"}
             </div>
           )}
         </Dialog.Content>

@@ -136,6 +136,10 @@ export function createHistorySlice(
         audioTags: false,
         // 战争雾的揭示记账同理：瞄准的对象已经不存在了
         fogReveal: emptyFogReveal(),
+        // 放大镜：编辑器那扇窗盯的对象与前端那扇窗都跟着上一个文档没了
+        magnifierEditor: false,
+        magnifierEditorTarget: null,
+        magnifierShown: null,
       });
 
       // 文档整份换掉了（关项目 / 换文档）：运行中的话基线要跟着换，否则退出运行会把

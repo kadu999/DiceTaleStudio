@@ -769,10 +769,11 @@ export function ScenePanel(): React.JSX.Element {
     };
 
     /**
-     * **双击传送阵的徽标 = 传送**（鼠标上的快路径；平板没有可靠的双击，走属性面板的按钮）。
+     * **双击动作对象的徽标 = 触发那个动作**（鼠标上的快路径；平板没有可靠的双击，走属性面板的按钮）。
      *
      * 命中用的是同一个 `hitTestObject`（与单击选中同一条逻辑），所以「双击到的就是你看见的
-     * 那一个」。只认传送阵：双击别的对象仍然什么都不做。
+     * 那一个」。只认两种动作对象：传送阵（= 传送，换台）与放大镜（v30，= 打开窗口）；
+     * 双击别的对象仍然什么都不做。
      *
      * 两个容易踩的点：
      * 1. **target 未必是 `<canvas>`**：`pointerdown` 里对容器调了 `setPointerCapture`，
@@ -793,12 +794,22 @@ export function ScenePanel(): React.JSX.Element {
       }
 
       const object = currentScene()?.objects.find((item) => item.id === id);
-      if (object === undefined || !supportsObjectComponent(object, DEFAULT_SLOT_COMPONENT.teleport)) {
+      if (object === undefined) {
         return;
       }
 
-      event.preventDefault();
-      useEditorStore.getState().teleport(id);
+      // 传送阵：双击徽标 = 传送（对 DM 就是「换台」）
+      if (supportsObjectComponent(object, DEFAULT_SLOT_COMPONENT.teleport)) {
+        event.preventDefault();
+        useEditorStore.getState().teleport(id);
+        return;
+      }
+
+      // 放大镜：双击徽标 = 打开那扇窗（运行态下同时投到前端）；与上面同一套快路径
+      if (supportsObjectComponent(object, DEFAULT_SLOT_COMPONENT.magnifier)) {
+        event.preventDefault();
+        useEditorStore.getState().showMagnifier(id);
+      }
     };
 
     container.addEventListener("pointerdown", onPointerDown);

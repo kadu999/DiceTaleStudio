@@ -262,6 +262,23 @@ export function magnifierDataOf(object: GameObjectDoc): MagnifierDataDoc | undef
   return componentDataOfSlot<MagnifierDataDoc>(object, "magnifier");
 }
 
+/**
+ * 放大镜**当前展示的那一张**（`undefined` = 还没选 / 下标越界 / 根本没这个组件）。
+ *
+ * 全仓唯一读口：前端那扇窗放的就是它，编辑器的面板 / 窗口 / 「能不能打开」也走它——
+ * 免得三处各写一遍「下标落在列表里吗」。「越界按还没选处理」这条口径也只在这里判
+ * （与 `validateScene` 的 warning 一致）。
+ */
+export function magnifierImageOf(object: GameObjectDoc): ImageRef | undefined {
+  const magnifier = magnifierDataOf(object);
+  const picked = magnifier?.picked;
+  if (magnifier === undefined || picked === undefined) {
+    return undefined;
+  }
+
+  return magnifier.images[picked];
+}
+
 /** 视频数据（列表 + 选中的那条 + 循环 / 声音）。 */
 export function videoDataOf(object: GameObjectDoc): VideoDataDoc | undefined {
   return componentDataOfSlot<VideoDataDoc>(object, "video");

@@ -151,3 +151,19 @@ export function assetThumbnailUrl(id: string): string {
 export function assetImageInfoUrl(id: string): string {
   return `/api/resources/thumbnail?id=${encodeURIComponent(id)}&info=1`;
 }
+
+/**
+ * 一张图集里**某一格**的 CSS `background-position`（配 `background-size: 列数×100% 行数×100%` 用）。
+ *
+ * `index` = `row * columns + column`（**从左往右、从上往下**数，与 `ImageSpriteRef` 同一个读法）。
+ * 单列 / 单行时百分比会除零，所以直接给 `0%`（那时这一格本来就是整条）。
+ * 三处（素材面板的精灵预览、放大镜的小图、选择框里的格子网格）共用这一份，免得各写一遍
+ * 除出不同的偏移。
+ */
+export function spriteCellBackgroundPosition(index: number, columns: number, rows: number): string {
+  const column = index % Math.max(1, columns);
+  const row = Math.floor(index / Math.max(1, columns));
+  const x = columns <= 1 ? 0 : (column * 100) / (columns - 1);
+  const y = rows <= 1 ? 0 : (row * 100) / (rows - 1);
+  return `${x}% ${y}%`;
+}

@@ -16,8 +16,8 @@
 | 后端默认地址 | `0.0.0.0:1420`（`resources/config/app.json`，可被 `HOST` / `PORT` 覆盖） |
 | 编辑器开发地址 | `http://localhost:5173`（Vite，`/api`、`/editor`、`/client` 反代到 1420） |
 | 编辑器生产地址 | `http://localhost:1420`（后端同源托管 `apps/editor/dist`） |
-| 源码规模（不含测试） | 170 个文件 / 39,107 行（packages 13,543 · backend 3,721 · editor 21,843） |
-| 测试规模 | 35,006 行（单测 25,287 · E2E 9,436 · 架构测试 283） |
+| 源码规模（不含测试） | 175 个文件 / 39,947 行（packages 13,560 · backend 3,721 · editor 22,666） |
+| 测试规模 | 35,331 行（单测 25,612 · E2E 9,436 · 架构测试 283） |
 
 > 上表两行与 §0.1 表格里加粗的文件行数、§3.x 节标题里的包规模由
 > `scripts/check-code-structure-stats.mjs` **机器校验**（`pnpm check` 的一环）：
@@ -429,7 +429,7 @@ build: { outDir: "dist", sourcemap: true },
 - 画笔半径 `floor((brushSize-1)/2)`（1/2→1×1、3/4→3×3、5→5×5，含偶数尺寸的刻意保真），与 Unity `ApplyBrush` 完全一致；
 - 坐标系只有一个：**世界坐标**（x 右、y 上、像素、无限大）；`grid(0,0)` 在地图矩形左下角 = 图片最下面一行，grid.y 与世界 y 同向、不翻转；唯一的翻转发生在贴图绘制（`worldRectTopLeft`）。
 
-### 3.2 `@dts/document` — 文档模型、命令与历史（8,687 行）
+### 3.2 `@dts/document` — 文档模型、命令与历史（8,704 行）
 
 | 文件 | 行数 | 职责 | 关键导出 |
 |---|---|---|---|
@@ -1179,6 +1179,7 @@ store 用 **zustand 切片**模式拆开了：原来是一个 4,493 行的 `edit
 | `slices/bgm-slice.ts` | 83 | 全局背景音乐（播放 / 暂停 / 继续 / 停止 / 补发） | — |
 | `slices/audio-meta-slice.ts` | 169 | 素材**显示名与标签**（任何素材：图 / 声 / 视频；写在**素材 meta 那条轨道**上：走 `applyMetas` + `withMetaAssetName` / `withMetaAssetTags`）+ 项目级标签表（`applyProject`）+ 三档音量 | — |
 | `slices/teleport-slice.ts` | 89 | 传送阵：候选、选中、触发换台 | — |
+| `slices/magnifier-slice.ts` | 133 | 放大镜（v30）：图片列表的加 / 移出 / 换展示第几张（**文档数据**），以及前端那扇窗的开 / 关记账与补发（**运行态**；编辑态只开编辑器那扇窗的预览） | — |
 | `slices/grid-paint-slice.ts` | 134 | 网格标注：画笔偏好、涂抹、清空 | — |
 | `slices/fog-slice.ts` | 208 | 战争雾：开关、雾区、擦除记账、补发 | — |
 | `slices/sprite-slice.ts` | 199 | 精灵（子图）：`setObjectImageSprite`（图 + 格子**一条撤销记录**；对象取哪一格只有这一条写入路径）、`setSpriteSheet` / `setSpriteImportSettings`（切分与导入设置落在**素材 meta**那条轨道：走 `applyMetas`）、`ensureAssetMeta`（挑图那一刻把 guid 定下来） | — |
@@ -1213,6 +1214,7 @@ export function createSoundSlice(
 | `video-playback.ts` | 92 | 视频的期望播放记账（按对象，每个对象一条）。 | `emptyVideoPlayback`、`withVideoPlaying`、`withVideoPaused`、`withVideoStopped`、`videoPlaybackResendPlan`；类型 `VideoPlaybackEntry`、`VideoPlaybackState` | — |
 | `video-blend-playback.ts` | 40 | 视频混合的期望播放记账（按对象；比视频多一项**两路素材快照**与声音来源 `none/a/b`）。 | `emptyVideoBlendPlayback`、`withVideoBlendPlaying`、`withVideoBlendPaused`、`withVideoBlendStopped`、`videoBlendPlaybackResendPlan`；类型 `VideoBlendPlaybackEntry`、`VideoBlendPlaybackState` | — |
 | `bgm-playback.ts` | 99 | 全局背景音乐记账（全局一条；v16 起不属于项目设置），状态只有 `{clip, paused}`。 | `emptyBgmPlayback`、`withBgmPlaying`、`withBgmPaused`、`withBgmStopped`、`bgmResendPlan`、`bgmResendActions`；类型 `BgmPlaybackState`、`BgmAction`、`BgmResend` | — |
+| `magnifier-window.ts` | 30 | 放大镜那扇前端窗的**记账**（全局一个对象 id；开 / 关各一条命令），只提供「前端刚连上时补发哪些」的判定——换图**不在**这里（那是文档数据，靠整份 `scene_push` 同步）。 | `magnifierWindowResendPlan` | — |
 | `fog-reveal.ts` | 210 | 战争雾的**揭示记账**：记有序操作（擦除笔画 / 整区开合）而不是位图；提供分批下发判定、批次切分、补发计划、按当前文档剪枝。**视频混合借的是同一份**（操作那一档换成 `fill`：整张填 1 / 0，见 `video-blend-reveal.ts`）。 | `FOG_ERASE_BATCH_POINTS`(4)、`FOG_ERASE_BATCH_MS`(150)、`emptyFogReveal`、`entryOf`、`withEraseBatch`、`withRegion`、`shouldFlushBatch`、`splitStrokeBatch`、`fogRevealResendPlan`、`pruneFogReveal`；类型 `FogRevealPoint`、`FogRevealStroke`、`FogRevealOp`（`stroke` / `region` / `fill` 三档）、`FogRevealEntry`、`FogRevealState` | — |
 | `video-blend-reveal.ts` | 46 | 视频混合的**擦除记账**：状态与批处理从 `fog-reveal.ts` **原样借**（同一套有序操作），自己只多一个「整张填」的构造器。 | `withVideoBlendFill`；并转出 `VideoBlendRevealPoint`、`VideoBlendRevealState`、`emptyVideoBlendReveal`、`withVideoBlendEraseBatch`、`videoBlendRevealResendPlan`、`pruneVideoBlendReveal` | — |
 | `mask-math.ts` | 416 | 遮罩擦除的**像素运算**，逐字对齐 Unity 侧（`FogOfWar.cs` / `VideoBlend.cs` / `MaskImage.ApplyEraseStroke` / `MaskEraseStamp.shader`）。 | `MASK_PREVIEW_WIDTH`(960)、`MASK_BRUSH_RADIUS`(48)、`MASK_BRUSH_SOFTNESS`(1)、`MASK_BRUSH_RATIO`(0.05)、`VIDEO_BLEND_MASK_SOFTNESS`(0.5，视频混合要实心核才能真的擦到 0)、`previewMaskSizeFor`、`brushRadiusFor`、`applyEraseToPixels`、`strokeStampCenters`、`fillOpaqueMaskPixels`、`fillMaskAlpha`（整张填 1 / 0）、`fillFogMaskPixels`、`paintRegionPixels`；类型 `MaskPoint`、`MaskPixelColor`、`MaskColorOf` | — |
@@ -1229,7 +1231,7 @@ export function createSoundSlice(
 | `EditorShell.tsx` | 358 | 四区外壳（桌面三栏 / 紧凑抽屉）、启动引导 `bootstrapEditor`、**全局快捷键注册**、跨断点重置面板开合、按 store 开关渲染 11 个对话框；内部 `Drawer`。 | `EditorShell` |
 | `MenuBar.tsx` | 385 | 顶部菜单（工程/场景/编辑/视图/运行）+ 顶栏右侧（紧凑开关、`BgmControl`、`ModeSwitch`、`ClientBadge`）。原则：**所有命令都必须能从菜单触发**。 | `MenuBar` |
 | `StatusBar.tsx` | 98 | 底栏八个状态格：工程名、场景数、场景保存状态、工程保存状态、当前场景、已选数、当前工具、运行态与连接状态点；内部 `SAVE_STATE_LABELS`（含 `runtime: "运行中（不保存）"`）、`TOOL_LABELS`。 | `StatusBar` |
-| `dialog-size.ts` | 96 | 弹窗尺寸计算（比例 0.8×0.86，夹 720×520 ~ 1680×1200，且不超过窗口 92%）与「按长宽比等比装进可用区域」；`useViewportSize` 订阅 resize。 | `dialogSizeFor`、`fitBox`、`useViewportSize`、`useDialogSize` |
+| `dialog-size.ts` | 131 | 弹窗尺寸计算（比例 0.8×0.86，夹 720×520 ~ 1680×1200，且不超过窗口 92%）与「按长宽比等比装进可用区域」（`fitBox` 的 React 版 `useFittedBox`：量实测尺寸、挂 ResizeObserver，三扇 Mask / 放大镜窗口共用）；`useViewportSize` 订阅 resize。 | `dialogSizeFor`、`fitBox`、`useFittedBox`、`useViewportSize`、`useDialogSize` |
 | `ProjectDialog.tsx` | 177 | 新建/打开项目：列表带「N 个文件」与删除（`confirm`），创建成功即关闭，失败把 `project.error` 摆在框里。 | `ProjectDialog` |
 | `SceneDialog.tsx` | 104 | 新建/重命名场景：场景名 = 文件名，失败原因就地显示。 | `SceneDialog` |
 | `ObjectDialog.tsx` | 206 | 「新建对象」弹框：先选种类（实体/动作/事件）再选类型（正方形瓦片 + `kindMarkerColor` 色点），名字用 `nextObjectName` 预填去重。 | `ObjectDialog` |
@@ -1244,6 +1246,7 @@ export function createSoundSlice(
 | `FogMaskDialog.tsx` | 435 | 「战争雾 Mask 窗口」：贴图底 + canvas 遮罩（960 宽、按贴图比例定高），软边圆刷擦除，右侧「整区开关」（雾区绑定 v25 起读独立的 `FogOfWar` 组件）；运行态下按批下发 `erase_mask` 轨迹、整区开关下发 `reveal_fog_region`；编辑态纯预览、不写文档不落盘。 | `FogMaskDialog` |
 | `VideoBlendMaskDialog.tsx` | 408 | 「视频混合 Mask 窗口」：底图是 B 的缩略图（编辑器不解码视频）+ canvas 遮罩（同一张 960 宽、按素材像素尺寸定高），软边圆刷擦除（软边 0.5 有实心核）；右侧两个**「整张盖住（1）/ 整张擦开（0）」**按钮（走播放键那一档的样式：常态就有边框与底、hover 描强调色边框；按钮里那个**实心 / 空心小方块**是遮罩状态的提示）一次填满或清空；运行态下按批下发 `erase_video_mask`、整张按钮下发 `fill_video_mask`；编辑态纯预览、不写文档不落盘。 | `VideoBlendMaskDialog` |
 | `GridEditDialog.tsx` | 459 | 「网格编辑窗口」：**唯一**的格子涂/擦入口，用同一渲染器 + `fitViewport` 把地图铺满窗口；指针捕获 + 补齐两事件点之间的格子（不断线）；「全部清除」可撤销。 | `GridEditDialog` |
+| `MagnifierDialog.tsx` | 182 | 「放大镜窗口」：中间一张大图（`useFittedBox` 等比装进可视区）+ 下面一排**可以选的图**（点一张 = 换成展示它，写文档、可撤销）+ 底栏「在画面上打开 / 关闭画面」（只在运行态可用）；与前端那扇窗长得一样，差别就是「多这排小图 / 多这两个按钮」。关掉这扇窗**不**连带关前端那扇。 | `MagnifierDialog` |
 
 #### `panels/`（6）
 
@@ -1253,7 +1256,8 @@ export function createSoundSlice(
 | `EmptyState.tsx` | 39 | 空状态占位：没项目时指路菜单；没场景时**占位本身是入口**（点一下弹新建场景）。 | `EmptyState` |
 | `object-kinds.ts` | 133 | 对象类型表（实体/动作/事件）+ 可创建标记 + 中文展示名 + 「画内置徽标」判定；`kind` 是前端也认的字段，不造新值（v22 起精灵写 `Sprite`、贴图写 `Image`，基类 `GameObject` 只作**不可创建**的归类项留在表里，保证每个 kind 都有归属）。 | `OBJECT_CATEGORIES`、`DEFAULT_CATEGORY`、`KIND_LABELS`、`creatableObjects`、`categoryOfKind`、`badgeIconOf`；类型 `ObjectTypeDef`、`ObjectCategoryDef` |
 | `asset-info.ts` | 149 | 按扩展名判断资源怎么显示：图标种类、可预览种类、人类可读类型名、去扩展名的显示名、字节可读化；**扩展名判断只此一处**；还给素材定 `<素材>.meta` 的导入器（`assetImporterKind`：图片 / 音频 / 视频 / 场景，`Assets/scenes/` 之外的 `.json` 不算素材）。 | `assetSuffix`、`assetIconKind`、`assetImporterKind`、`assetPreviewKind`、`assetKindLabel`、`assetDisplayName`、`formatSize`；类型 `AssetIconKind` |
-| `asset-picker.ts` | 153 | 资源显示路径（剥掉 `project:`/项目名/`Assets/`）、按 id 查资源、按类别收图片/音频/视频、原始字节 URL。 | `assetDisplayPath`、`findAssetById`、`listImageAssets`、`listAudioAssets`、`listVideoAssets`、`assetRawUrl` |
+| `asset-picker.ts` | 171 | 资源显示路径（剥掉 `project:`/项目名/`Assets/`）、按 id 查资源、按类别收图片/音频/视频、原始 / 缩略图 URL、（图集里某一格的 CSS `background-position`）。 | `assetDisplayPath`、`findAssetById`、`listImageAssets`、`listAudioAssets`、`listVideoAssets`、`assetRawUrl`、`assetThumbnailUrl`、`assetImageInfoUrl`、`spriteCellBackgroundPosition`、`spriteAssetId`、`parseSpriteAssetId` |
+| `asset-image.tsx` | 53 | `<AssetImage image>`：把一份**图片引用**画出来——整张图（`background-size: contain`）或它图集里的**一格**（按几行几列放大 + `background-position` 挪过去）；长宽比取引用里声明的宽高，所以不必先加载图片量像素。与素材面板的精灵预览同一套算式。 | `AssetImage` |
 | `audio-catalog.ts` | 289 | 音频清单 + 标注 + 标签表的**纯函数层**（BGM 弹框 / 选择音频 / 选择标签三处共用）：tag 是整数、名字住工程文件的表里，**显示名与标签 ID 从各素材自己的 `.meta`（`assetMetaTable`）读**（统一走 `assetNameOfMeta` / `assetTagsOfMeta`，任何素材都能起名打标签）；`taggableAssets` = 全部可打标签素材（图 / 声 / 视频）带解析好的标签，给「选择标签」框的跨类用量计数用；名字兜底链（文件显示名 → 文件名）、搜索、按标签 AND 筛、按名排序、标签用量与勾选项。 | `tagEntriesOf`、`tagNameOf`、`tagsOfClip`、`audioCatalog`、`taggableAssets`、`audioNameOf`、`audioDisplayName`、`matchesAudioQuery`、`filterAudioRows`、`sortAudioRowsByName`、`allTagsOf`、`tagOptionsOf`；类型 `AudioTagRef`、`AudioTagEntry`、`AudioCatalogRow`、`TaggableAssetRow` |
 
 #### `panels/assets/`（2）
@@ -1285,6 +1289,7 @@ export function createSoundSlice(
 | `TeleportFields.tsx` | 105 | 传送阵的「传送」组：候选目标小方块 + `＋` 开「传送目标」窗口 + 「传送」按钮（不能传时按钮上写原因）。 | `TeleportFields` |
 | `FogFields.tsx` | 150 | 战争雾编辑区（挂在独立的 `Fog` 对象上）：读写在它 `FogOfWar` 组件（`fogOf(object)`），第一行「引用地图」选择器，接着总开关（闸住整组），打开后给「指定雾区」小方块与「雾格子 → 编辑」入口。 | `FogFields` |
 | `GridAnnotationFields.tsx` | 36 | 「区域」组里的一行入口：只留一个按钮打开 `GridEditDialog`。 | `GridAnnotationFields` |
+| `MagnifierFields.tsx` | 182 | 放大镜的「放大镜」组：**图片**那一行（小方块单选 + 每个带 `×` 移出 + `＋` 弹 `ResourcePickerDialog kind="image" allowSprite`：只列精灵素材、可整张也可取一格）+ **窗口**那一行（「打开窗口」= 开编辑器那扇、运行态下同时投到前端；「关闭画面」只在这个对象正被投影时出现——前端那扇窗没有关闭按钮）。 | `MagnifierFields` |
 
 > **加一个对象特性 = 在 `registry.tsx` 加一行 + 写一个字段组件**，不必回到面板 JSX 里插
 > `kind === …` 判断。`InspectorPanel.tsx` 从 1,195 行降到 341 行就是这么来的。
@@ -1928,6 +1933,7 @@ upgradeRawDocument
 | `grid-annotate.test.tsx` | 392 | 属性面板编辑窗口入口；画笔偏好写进 store 也写进浏览器本地；涂抹写进 RLE 且**整笔可撤销**；网格线与网格标注两个总开关；格子颜色只画可见位且按低位在上叠加 |
 | `mask-math.test.ts` | 433 | `strokeStampCenters`；`applyEraseToPixels`（与 `MaskEraseStamp.shader` 同式，含「视频混合 0.5 有实心核 / 雾 1 擦不到 0」）；`paintRegionPixels`（整区开/关）；`fillMaskAlpha`（整张填 1 / 0，只动 alpha、越界值收敛）；`previewMaskSizeFor`/`brushRadiusFor`；`fillFogMaskPixels` |
 | `teleport-object.test.tsx` | 324 | 种类表；创建；属性面板（候选小方块 + ＋ + 传送）；「传送目标」窗口勾选；触发传送（**不改文档**） |
+| `magnifier-object.test.tsx` | 308 | 放大镜（v30）：种类表；创建（固定徽标 64×64）；属性面板（图片小方块单选 / `×` 移出 / 空列表提示 / 缺组件修复 / 编辑态只预览、运行态记账）；窗口（中间舞台 + 下面那排选图、底栏两个按钮的可用状态、对象被删的兜底）；`magnifierImageOf`（下标越界按没选处理） |
 | `audio-catalog.test.ts` | 321 | 清单 = 项目音频 + 标注（名字与标签 ID 经**素材 meta 表**读）；标签表与文件上的标签；名字兜底链；搜索与标签筛选 |
 | `transform.test.ts` | 305 | 移动（相对按下时的指针）；旋转（相对按下时的方位角，**屏幕上跟手**）；缩放（相对按下时的指针偏移） |
 | `fog-mask.test.tsx` | 313 | 属性面板战争雾开关与雾区；揭示记账（**运行态才下发**给前端） |

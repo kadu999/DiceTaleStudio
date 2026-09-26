@@ -10,6 +10,7 @@ import { ScenePanel } from "../panels/scene/ScenePanel";
 import { FogMaskDialog } from "./FogMaskDialog";
 import { VideoBlendMaskDialog } from "./VideoBlendMaskDialog";
 import { GridEditDialog } from "./GridEditDialog";
+import { MagnifierDialog } from "./MagnifierDialog";
 import { ResourcePickerDialog } from "./ResourcePickerDialog";
 import { TeleportEditDialog } from "./TeleportEditDialog";
 import { AudioTagEditorDialog } from "./AudioTagEditorDialog";
@@ -54,6 +55,9 @@ export function EditorShell(): React.JSX.Element {
   const gridEditor = useEditorStore((state) => state.gridEditor);
   const gridEditorTarget = useEditorStore((state) => state.gridEditorTarget);
   const openGridEditor = useEditorStore((state) => state.openGridEditor);
+  const magnifierEditor = useEditorStore((state) => state.magnifierEditor);
+  const magnifierEditorTarget = useEditorStore((state) => state.magnifierEditorTarget);
+  const openMagnifierEditor = useEditorStore((state) => state.openMagnifierEditor);
   const setObjectImageSprite = useEditorStore((state) => state.setObjectImageSprite);
   const setTool = useEditorStore((state) => state.setTool);
   const cancelObjectTransform = useEditorStore((state) => state.cancelObjectTransform);
@@ -323,6 +327,13 @@ export function EditorShell(): React.JSX.Element {
         open={gridEditor && gridEditorTarget !== null}
         objectId={gridEditorTarget}
         onClose={() => openGridEditor(null)}
+      />
+
+      {/* 放大镜窗口：中间一张大图 + 下面一排可以选的图（前端那扇窗只有中间那张，没有按钮） */}
+      <MagnifierDialog
+        open={magnifierEditor && magnifierEditorTarget !== null}
+        objectId={magnifierEditorTarget}
+        onClose={() => openMagnifierEditor(null)}
       />
     </div>
   );

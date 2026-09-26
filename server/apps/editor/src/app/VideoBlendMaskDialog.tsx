@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { videoBlendDataOf } from "@dts/document";
 import { assetImageInfoUrl, assetThumbnailUrl } from "../panels/asset-picker";
 import {
@@ -15,7 +15,7 @@ import { useEditorStore } from "../state/editor-store";
 import { shouldFlushBatch, splitStrokeBatch } from "../services/fog-reveal";
 import type { VideoBlendRevealPoint } from "../services/video-blend-reveal";
 import { MapDialogShell, useSceneObject } from "./map-dialog-shell";
-import { fitBox } from "./dialog-size";
+import { useFittedBox } from "./dialog-size";
 
 /**
  * 「视频混合 Mask 窗口」：**只有擦除**，擦的是**混合遮罩这张图**。
@@ -124,7 +124,6 @@ export function VideoBlendMaskDialog({
   );
 
   const imageDataRef = useRef<ImageData | null>(null);
-  const stageObserverRef = useRef<ResizeObserver | null>(null);
   const lastPointRef = useRef<MaskPoint | null>(null);
 
   /** 这一笔还没下发的落点（归一化坐标，与画布预览用的纹理像素分开两份）。 */
@@ -139,8 +138,6 @@ export function VideoBlendMaskDialog({
    * 挂载 / 卸载都会重跑初始化，于是「关掉再打开就回到初始」也就是同一件事。
    */
   const [canvas, setCanvas] = useState<HTMLCanvasElement | null>(null);
-  /** 左侧画布区的实测尺寸：贴图那块长宽比盒子按它等比装（见 `fitBox`）。 */
-  const [stage, setStage] = useState({ width: 0, height: 0 });
 
   // 初始化遮罩像素：**整张不透明**（A 全盖住；擦开露出 B）
   useEffect(() => {
@@ -164,32 +161,11 @@ export function VideoBlendMaskDialog({
   }, [open, canvas, maskSize]);
 
   const aspect = (size ?? FALLBACK_SIZE).width / Math.max(1, (size ?? FALLBACK_SIZE).height);
-  const stageBox = fitBox(stage, aspect);
+  const [stageBox, setStageNode] = useFittedBox(aspect);
 
   const ready = open && object !== undefined;
   // 笔刷半径（纹理像素）：与前端 `ApplyEraseStroke` 的 `radiusTex` 同式（归一化半径 × 遮罩宽）
   const radius = brushRadiusFor(maskSize.width);
-
-  /** 左侧画布区的节点（callback ref 存 state：窗口一挂上 / 变尺寸就重新量，见 `fitBox`）。 */
-  const setStageNode = useCallback((node: HTMLDivElement | null) => {
-    stageObserverRef.current?.disconnect();
-    stageObserverRef.current = null;
-    if (node === null) {
-      setStage({ width: 0, height: 0 });
-      return;
-    }
-
-    const apply = (width: number, height: number): void => setStage({ width, height });
-    const observer = new ResizeObserver((entries) => {
-      const entry = entries[0];
-      if (entry !== undefined) {
-        apply(entry.contentRect.width, entry.contentRect.height);
-      }
-    });
-    observer.observe(node);
-    stageObserverRef.current = observer;
-    apply(node.clientWidth, node.clientHeight);
-  }, []);
 
   /** 指针位置 → 遮罩的**纹理像素坐标**（左上原点、y 向下；前端收到后再翻转 y）。 */
   const toTexelPoint = (event: React.PointerEvent<HTMLCanvasElement>): MaskPoint => {

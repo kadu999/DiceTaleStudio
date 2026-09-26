@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 /**
  * 窗口尺寸与弹窗尺寸计算。
@@ -64,6 +64,48 @@ export function fitBox(
 
   const width = Math.min(available.width, available.height * aspect);
   return { width: Math.floor(width), height: Math.floor(width / aspect) };
+}
+
+/**
+ * 量一块**可用区域**，并按给定长宽比算出一块等比盒子（`fitBox` 的 React 版）。
+ *
+ * 返回 `[box, setNode]`：`setNode` 是给舞台容器的 callback ref——容器挂上 / 变尺寸就重新量。
+ * 为什么不交给 CSS 的 `aspect-ratio` + 百分比：那块内容**高度先不够**时会被挤出可视区
+ * （Mask 窗口的画布被挤出去就既看不见也点不到了），所以直接按实测尺寸算。
+ *
+ * 三个窗口（雾 / 视频混合 / 放大镜）都要这块盒子 —— 量法只留这一份。
+ */
+export function useFittedBox(aspect: number): readonly [
+  { readonly width: number; readonly height: number },
+  (node: HTMLElement | null) => void,
+] {
+  const [available, setAvailable] = useState({ width: 0, height: 0 });
+  const observerRef = useRef<ResizeObserver | null>(null);
+
+  const setNode = useCallback((node: HTMLElement | null) => {
+    observerRef.current?.disconnect();
+    observerRef.current = null;
+    if (node === null) {
+      setAvailable({ width: 0, height: 0 });
+      return;
+    }
+
+    const apply = (width: number, height: number): void => setAvailable({ width, height });
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry !== undefined) {
+        apply(entry.contentRect.width, entry.contentRect.height);
+      }
+    });
+    observer.observe(node);
+    observerRef.current = observer;
+    apply(node.clientWidth, node.clientHeight);
+  }, []);
+
+  // 窗口关掉时别留下观察者（容器被卸载了，observer 会一直指着已经不在的那个节点）
+  useEffect(() => () => observerRef.current?.disconnect(), []);
+
+  return [fitBox(available, aspect), setNode] as const;
 }
 
 /** 当前主窗口（视口）尺寸；随窗口缩放更新。 */

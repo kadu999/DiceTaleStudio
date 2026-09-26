@@ -12,6 +12,7 @@ import {
 import { Field } from "./fields";
 import { FogFields } from "./FogFields";
 import { GridAnnotationFields } from "./GridAnnotationFields";
+import { MagnifierFields } from "./MagnifierFields";
 import { SoundFields } from "./SoundFields";
 import { TeleportFields } from "./TeleportFields";
 import { VideoFields } from "./VideoFields";
@@ -79,10 +80,17 @@ function ComponentRepairAction({
   type,
 }: {
   readonly object: GameObjectDoc;
-  readonly type: "PlaySound" | "Teleport" | "FogOfWar";
+  readonly type: "PlaySound" | "Teleport" | "Magnifier" | "FogOfWar";
 }): React.JSX.Element {
   const repair = useEditorStore((state) => state.repairObjectComponent);
-  const name = type === "PlaySound" ? "声音" : type === "Teleport" ? "传送" : "战争雾";
+  const name =
+    type === "PlaySound"
+      ? "声音"
+      : type === "Teleport"
+        ? "传送"
+        : type === "Magnifier"
+          ? "放大镜"
+          : "战争雾";
   return (
     <div className="flex items-center gap-2 px-2 py-2">
       <span className="min-w-0 flex-1 text-[11px] text-[var(--color-editor-warn)]">组件数据缺失</span>
@@ -183,6 +191,20 @@ export const COMPONENT_EDITORS: readonly ComponentEditorDef[] = [
           <ComponentRepairAction object={object} type="Teleport" />
         ) : (
           <TeleportFields object={object} />
+        ),
+      ),
+    ],
+  },
+  {
+    // 放大镜（v30 的第三个动作对象）：组件就是它的数据本体（图片列表 + 当前展示的那一张），
+    // 所以组照常出现；缺组件（损坏的手写文件）时给显式修复入口。与「传送阵」同一档。
+    type: COMPONENT_TYPE.magnifier,
+    panels: [
+      panel("magnifier", "放大镜", (object) =>
+        componentOf(object, COMPONENT_TYPE.magnifier) === undefined ? (
+          <ComponentRepairAction object={object} type="Magnifier" />
+        ) : (
+          <MagnifierFields object={object} />
         ),
       ),
     ],

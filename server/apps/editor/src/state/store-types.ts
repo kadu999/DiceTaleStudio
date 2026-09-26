@@ -192,6 +192,17 @@ export interface EditorStoreState {
   readonly teleportEditor: boolean;
   /** 正在编辑哪个传送阵的候选目标；null 表示窗口没打开 */
   readonly teleportEditorTarget: string | null;
+  /** 「放大镜窗口」是否打开（属性面板的按钮 / 画布上双击徽标唤出；中间一张大图 + 下面一排小图） */
+  readonly magnifierEditor: boolean;
+  /** 窗口正在看哪个放大镜；null 表示窗口没打开 */
+  readonly magnifierEditorTarget: string | null;
+  /**
+   * **前端那扇放大镜窗**正为哪个对象开着（编辑器记账，见 `services/magnifier-window`）。
+   *
+   * 与 `soundPlayback` / `bgmPlayback` 同一档：运行态、不写文档、不进撤销栈；前端（重）连上时补发。
+   * `null` = 前端那扇窗现在没开（进运行态时是它，退出运行态 / 切场景会清回来）。
+   */
+  readonly magnifierShown: string | null;
   /** 「全局设置」窗口是否打开（「工程」菜单唤出；里面只有三档音量） */
   readonly globalSettings: boolean;
   /** 「背景音乐」弹框是否打开（顶栏「音乐」按钮唤出） */
@@ -730,6 +741,37 @@ export interface EditorStoreState {
    * 还没选（或选的那个已经不在候选里）/ 目标场景不存在（改名或删掉了）或就是当前场景。
    */
   teleport(objectId: string): boolean;
+  /**
+   * 打开 / 关闭「放大镜窗口」（编辑器的预览 + 挑图窗口；传 null 关闭）。
+   *
+   * 纯界面状态：窗口里点下面那排小图换的是**文档数据**（`picked`），与前端那扇窗是两条线
+   * （关掉编辑器这扇窗**不**连带关前端那扇——DM 要能关掉窗口继续编辑）。
+   */
+  openMagnifierEditor(objectId: string | null): void;
+  /**
+   * **触发放大镜这个动作**：开编辑器那扇窗，运行态下再让前端也弹一扇。
+   *
+   * 画布上双击徽标与面板上的「窗口」按钮都走它（与传送阵「双击徽标 = 传送」同一套快路径）。
+   * 编辑态只有编辑器这扇窗（预览）——那时连前端都没有，一条命令都不发。
+   */
+  showMagnifier(objectId: string): string | undefined;
+  /** 放大镜：往图片列表里**加一条**（已经在列表里就不重复加，改成展示它）。 */
+  addMagnifierImage(objectId: string, image: ImageRef): boolean;
+  /** 放大镜：**移出一条**（列表缩短，展示项由文档命令一起收拾）。 */
+  removeMagnifierImage(objectId: string, index: number): boolean;
+  /** 放大镜：换成**展示第几条**（`null` = 取消展示）；越界拒掉。 */
+  selectMagnifierImage(objectId: string, index: number | null): boolean;
+  /**
+   * 放大镜：让前端**弹那扇窗**（记账 + 尽力下发 `open_magnifier`）。
+   *
+   * 与 `playVideo` 同一套规矩：命令里只有 `objectId`（放哪一张由前端从镜像读），
+   * 前端没连时照样能点、等它连上补发。**编辑态不发**（与 Mask 窗口「编辑态只是预览」同一档）。
+   */
+  openMagnifierWindow(objectId: string): string | undefined;
+  /** 放大镜：让前端**关掉那扇窗**（记账清空 + 尽力下发 `close_magnifier`）。 */
+  closeMagnifierWindow(): string | undefined;
+  /** 把记着的「前端那扇窗为谁开着」补发一遍（前端刚连上时调用）。 */
+  flushMagnifierWindow(): number;
   /** 改网格的列数 / 行数（格子按新尺寸重建，重叠部分保留）。 */
   setMapGrid(mapObjectId: string, grid: GridSize): boolean;
   /**
@@ -754,7 +796,7 @@ export interface EditorStoreState {
    */
   setComponentField(objectId: string, type: string, key: string, value: unknown): boolean;
   /** Explicitly restore the default data for a missing required component. */
-  repairObjectComponent(objectId: string, type: "PlaySound" | "Teleport" | "FogOfWar"): boolean;
+  repairObjectComponent(objectId: string, type: "PlaySound" | "Teleport" | "Magnifier" | "FogOfWar"): boolean;
   /**
    * **泛型对象字段写入**：按对象字段规格（`@dts/document` 的 `OBJECT_SPEC`）改 `object` 自己的
    * 一个简单字段——与 `setComponentField` 的分工只有「写在哪」。返回 `false` 表示没有变更。
