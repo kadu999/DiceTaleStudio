@@ -92,8 +92,13 @@ namespace DiceTale
         private int maskWidth;
         private int maskHeight;
 
-        /// <summary>有序的擦除记录：素材尺寸一变就「重填初始态 + 重放」（与 `FogOfWar` 同一套）。</summary>
-        private readonly List<Stroke> ops = new List<Stroke>();
+        /// <summary>
+        /// 有序的操作记录：素材尺寸一变就「重填初始态 + 重放」（与 `FogOfWar` 同一套）。
+        ///
+        /// 一笔轨迹与「整张填 1 / 0」记在**同一条序列**里——顺序不能丢：整张盖住要抹掉它**之前**
+        /// 擦开的部分，重放出来才和当初看到的一致。
+        /// </summary>
+        private readonly List<MaskOp> ops = new List<MaskOp>();
 
         private bool warnedNoShader;
         private bool warnedNoPrepare;
@@ -104,11 +109,24 @@ namespace DiceTale
 
         public bool IsPaused { get; private set; }
 
-        private struct Stroke
+        /// <summary>一次遮罩操作：擦一笔，或整张填成 1 / 0（与 `FogOfWar.MaskOp` 同一个形状）。</summary>
+        private struct MaskOp
         {
+            public MaskOpKind kind;
+
+            /// <summary>`Fill`：`true` = 整张盖住（alpha 1）、`false` = 整张擦开（alpha 0）。</summary>
+            public bool covered;
+
+            /// <summary>`Stroke`：归一化半径 / 软边比例 / 归一化轨迹点（y 向下）。</summary>
             public float radius;
             public float softness;
             public List<Vector2> points;
+        }
+
+        private enum MaskOpKind
+        {
+            Stroke,
+            Fill,
         }
 
         private void OnDestroy()
@@ -310,8 +328,9 @@ namespace DiceTale
                 return false;
             }
 
-            var op = new Stroke
+            var op = new MaskOp
             {
+                kind = MaskOpKind.Stroke,
                 radius = Mathf.Max(0f, radius),
                 softness = Mathf.Clamp01(softness),
                 points = new List<Vector2>(points),
@@ -321,7 +340,27 @@ namespace DiceTale
 
             if (maskTexture != null)
             {
-                ApplyStroke(op);
+                ApplyOp(op);
+                Upload();
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// 整张遮罩填成 1 / 0（`fill_video_mask`；Mask 窗口右边那两个「整张」按钮）。
+        ///
+        /// 与擦一笔记在**同一条操作序列**里：盖住会连带抹掉它之前擦开的部分（重放时也一致）。
+        /// 遮罩还没建好（素材还没就绪）时也收下——记录会重放上去。
+        /// </summary>
+        public bool FillMask(bool covered)
+        {
+            var op = new MaskOp { kind = MaskOpKind.Fill, covered = covered };
+            ops.Add(op);
+
+            if (maskTexture != null)
+            {
+                ApplyOp(op);
                 Upload();
             }
 
@@ -654,7 +693,7 @@ namespace DiceTale
             FillInitial();
             for (var i = 0; i < ops.Count; i++)
             {
-                ApplyStroke(ops[i]);
+                ApplyOp(ops[i]);
             }
 
             Upload();
@@ -668,8 +707,17 @@ namespace DiceTale
             }
         }
 
-        private void ApplyStroke(Stroke op)
+        /// <summary>
+        /// 应用一次操作——**刚收到**与**重放**走的是同一条路，所以两边永远一致。
+        /// </summary>
+        private void ApplyOp(MaskOp op)
         {
+            if (op.kind == MaskOpKind.Fill)
+            {
+                FillMaskPixels(op.covered);
+                return;
+            }
+
             var points = op.points;
             if (points == null || points.Count == 0)
             {
@@ -694,6 +742,20 @@ namespace DiceTale
                 {
                     Stamp(Vector2.Lerp(from, to, s / (float)samples), radiusTex, op.softness);
                 }
+            }
+        }
+
+        /// <summary>
+        /// 整张填成**同一个 alpha**（编辑器 `fillMaskAlpha` 的移植）：只动 alpha、RGB 留着
+        /// ——shader 只看 `mask.a`。
+        /// </summary>
+        private void FillMaskPixels(bool covered)
+        {
+            var alpha = covered ? (byte)255 : (byte)0;
+            for (var i = 0; i < pixels.Length; i++)
+            {
+                var current = pixels[i];
+                pixels[i] = new Color32(current.r, current.g, current.b, alpha);
             }
         }
 

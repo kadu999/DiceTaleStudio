@@ -157,6 +157,10 @@ namespace DiceTale
                     HandleEraseVideoMask(command);
                     return;
 
+                case Protocol.CommandFillVideoMask:
+                    HandleFillVideoMask(command);
+                    return;
+
                 case Protocol.CommandPlayVideo:
                     HandlePlayVideo(command);
                     return;
@@ -1040,6 +1044,39 @@ namespace DiceTale
 
             var effect = $"沿轨迹擦掉 1 笔（{command.points.Count} 个落点）";
             Debug.Log($"[命令] 擦除视频混合遮罩：{command.objectId} {effect}");
+            session.SendCommandResult(command, true, effects: new[] { effect });
+        }
+
+        /// <summary>
+        /// 视频混合：把**整张**遮罩填成 1 / 0（Mask 窗口那两个「整张」按钮）。
+        ///
+        /// 目标检查与擦一笔同一套（对象在不在、有没有混合层）；与笔画的先后关系由组件那边
+        /// 记着的**有序操作序列**保证——盖住会连带抹掉它之前擦开的部分。
+        /// </summary>
+        private void HandleFillVideoMask(CommandRequest command)
+        {
+            var obj = mirror != null ? mirror.Find(command.objectId) : null;
+            var view = mirror != null ? mirror.FindView(command.objectId) : null;
+            var blend = view != null ? view.VideoBlendLayer : null;
+            if (obj == null || blend == null)
+            {
+                var reason = obj == null
+                    ? $"镜像里没有这个对象：{command.objectId}（场景可能还没同步到）"
+                    : $"「{obj.name}」没有视频混合层可填";
+                Debug.LogWarning($"[命令] 整张填混合遮罩失败：{reason}");
+                session.SendCommandResult(command, false, reason);
+                return;
+            }
+
+            if (!blend.FillMask(command.covered))
+            {
+                Debug.LogWarning("[命令] 整张填混合遮罩失败：组件拒绝了这一次");
+                session.SendCommandResult(command, false, "组件拒绝了这一次");
+                return;
+            }
+
+            var effect = command.covered ? "整张盖住（遮罩 = 1）" : "整张擦开（遮罩 = 0）";
+            Debug.Log($"[命令] 整张填混合遮罩：{command.objectId} {effect}");
             session.SendCommandResult(command, true, effects: new[] { effect });
         }
 

@@ -19,6 +19,7 @@ import {
 import {
   pruneVideoBlendReveal,
   withVideoBlendEraseBatch,
+  withVideoBlendFill,
 } from "../../services/video-blend-reveal";
 import { MASK_BRUSH_RATIO, VIDEO_BLEND_MASK_SOFTNESS } from "../../services/mask-math";
 import { type StoreSet, type StoreGet, type EditorStoreState } from "../store-types";
@@ -44,6 +45,7 @@ export function createVideoBlendSlice(
   | "flushVideoBlendPlayback"
   | "openVideoBlendMask"
   | "eraseVideoBlendMask"
+  | "fillVideoBlendMask"
   | "flushVideoBlendReveal"
   | "setVideoBlendChannelKind"
   | "setVideoBlendChannelId"
@@ -230,6 +232,47 @@ export function createVideoBlendSlice(
       return requestId;
     },
 
+    fillVideoBlendMask(objectId, covered) {
+      // 编辑态：Mask 窗口只是预览（不写文档、也不下发），与擦一笔同一条规矩
+      if (get().mode !== "run") {
+        return undefined;
+      }
+
+      // 与擦一笔同一档：只要求「挂着视频混合组件」（选没选素材是**播放**的事，与遮罩无关）
+      const object = objectWithFeature(objectId, DEFAULT_SLOT_COMPONENT.videoBlend);
+      if (object === undefined) {
+        pushLog(
+          makeLog(
+            "warn",
+            `整张${covered ? "盖住" : "擦开"}视频混合遮罩失败：「${objectId}」没有视频混合组件`,
+          ),
+        );
+        return undefined;
+      }
+
+      // 与擦一笔记在**同一条有序序列**里：盖住要抹掉它之前擦开的，顺序不能丢
+      set({ videoBlendReveal: withVideoBlendFill(get().videoBlendReveal, objectId, covered) });
+
+      const what = `「${object.name}」整张${covered ? "盖住（遮罩 = 1）" : "擦开（遮罩 = 0）"}`;
+      if (!frontendReady()) {
+        pushLog(
+          makeLog(
+            "info",
+            `已记录整张${covered ? "盖住" : "擦开"}：${what}（${
+              runtimeClient.connected
+                ? "前端未连接，等它连上后自动补发"
+                : "编辑器还没连上服务端，连上后自动补发"
+            }）`,
+          ),
+        );
+        return undefined;
+      }
+
+      const requestId = runtimeClient.sendCommand({ kind: "fill_video_mask", objectId, covered });
+      pushLog(makeLog("info", `下发整张${covered ? "盖住" : "擦开"}：${what}`));
+      return requestId;
+    },
+
     flushVideoBlendReveal() {
       const { videoBlendReveal } = get();
       if (!frontendReady()) {
@@ -245,8 +288,15 @@ export function createVideoBlendSlice(
         for (const op of entry.ops) {
           if (op.kind === "stroke") {
             deliverVideoMaskErase(objectId, op.stroke.points);
-            steps += 1;
+          } else if (op.kind === "fill") {
+            // 整张盖住 / 擦开（Mask 窗口右边那两个「整张」按钮）
+            runtimeClient.sendCommand({ kind: "fill_video_mask", objectId, covered: op.covered });
+          } else {
+            // 雾的「整区」那一档不该出现在视频混合的记账里：跳过，宁可不发也别发错命令
+            continue;
           }
+
+          steps += 1;
         }
       }
 

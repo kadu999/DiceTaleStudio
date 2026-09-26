@@ -107,8 +107,13 @@ namespace DiceTale
         /// 且每路多了 `kind`（`image` / `video`）——这一路可以是**图片**也可以视频。老前端（v18）
         /// 按 `clips` / `picked` 读 → 两路都读不到（混合层放不出来），照旧 +1；
         /// 这类不兼容由握手 close `4002` 挡住。命令那一组一个字节都没动。
+        ///
+        /// v20（2026-09-27）：视频混合多一条命令 **`fill_video_mask`**（整张遮罩填成 1 / 0，
+        /// Mask 窗口那两个「整张」按钮用）。老前端（v19）不认它 → 回一条未知命令
+        /// （那两个按钮点了没反应），照旧 +1；这类不兼容由握手 close `4002` 挡住。
+        /// 组件 data 一个字节都没动。
         /// </summary>
-        public const int Version = 19;
+        public const int Version = 20;
 
         /// <summary>对象特性组件的类型名（v9 起）。与服务端 `@dts/protocol` 的 `COMPONENT_TYPE` 逐字一致。</summary>
         public static class ComponentType
@@ -173,6 +178,8 @@ namespace DiceTale
         public const string CommandRevealFogRegion = "reveal_fog_region";
         /// <summary>视频混合：沿一笔轨迹擦掉**贴图对象**上的混合遮罩（载荷与 `erase_mask` 同一套 `stroke`）。</summary>
         public const string CommandEraseVideoMask = "erase_video_mask";
+        /// <summary>视频混合：把**整张**混合遮罩填成 1 / 0（`covered` = true 是盖住、false 是擦开）。</summary>
+        public const string CommandFillVideoMask = "fill_video_mask";
         /// <summary>视频：在对象自己的矩形上放它 `video.picked` 那一条（命令里不带数据）。</summary>
         public const string CommandPlayVideo = "play_video";
         /// <summary>视频：暂停在当前帧。</summary>
@@ -268,7 +275,7 @@ namespace DiceTale
     ///
     /// 字段是**扁平的多用途**：一条命令只填自己那几个（`play_sound` 用 `objectId + layer`；
     /// `erase_mask` 用 `objectId + stroke`；`reveal_fog_region` 用 `objectId + region + revealed`；
-    /// `play_bgm` 用 `clip`）。
+    /// `fill_video_mask` 用 `objectId + covered`；`play_bgm` 用 `clip`）。
     /// </summary>
     public class CommandRequest
     {
@@ -300,5 +307,8 @@ namespace DiceTale
 
         /// <summary>`reveal_fog_region`：`true` = 整片揭示、`false` = 整片盖回。</summary>
         public bool revealed;
+
+        /// <summary>`fill_video_mask`：`true` = 整张盖住（遮罩 = 1），`false` = 整张擦开（遮罩 = 0）。</summary>
+        public bool covered;
     }
 }

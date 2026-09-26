@@ -5,6 +5,7 @@ import {
   VIDEO_BLEND_MASK_SOFTNESS,
   applyEraseToPixels,
   brushRadiusFor,
+  fillMaskAlpha,
   fillOpaqueMaskPixels,
   previewMaskSizeFor,
   strokeStampCenters,
@@ -31,8 +32,10 @@ import { fitBox } from "./dialog-size";
  * - **软边比例是 0.5**（雾是 1）：得留一个**实心核**，擦到的地方才是真的 0（完全露出 B）。
  *   用雾那档 `1` 会擦不到底，擦完的区域永远糊着一层 A 的残影（看着还是「两条视频混合」）——
  *   见 `VIDEO_BLEND_MASK_SOFTNESS`；
- * - **运行态下顺手下发**：拖动中按批把**轨迹**发给前端（`erase_video_mask`），抬手补最后一批。
- *   编辑态什么都不发——那时这一窗口就是纯粹的预览。
+ * - 右边两个「整张」按钮：一次把整张遮罩填成 **1**（A 重新盖满，连之前擦开的一起盖回去）
+ *   或 **0**（完全露出 B）——对应命令 `fill_video_mask`，与擦一笔共用**同一条有序操作序列**。
+ * - **运行态下顺手下发**：拖动中按批把**轨迹**发给前端（`erase_video_mask`），抬手补最后一批；
+ *   整张按钮各发一条 `fill_video_mask`。编辑态什么都不发——那时这一窗口就是纯粹的预览。
  */
 interface VideoBlendMaskDialogProps {
   readonly open: boolean;
@@ -270,6 +273,31 @@ export function VideoBlendMaskDialog({
     flushStroke(true);
   };
 
+  /**
+   * 右边两个「整张」按钮：一次把整张遮罩填成 1 / 0。
+   *
+   * 预览这边只改 alpha（RGB 留着盖层本色）：`1` = 盖层不透明（与初始态一模一样）、
+   * `0` = 整张透明（完全露出 B）。运行态下顺手下发一条 `fill_video_mask`——
+   * 前端按**同一顺序**重放（盖住会连带抹掉之前擦开的），与这里看到的一致。
+   */
+  const fillAll = (covered: boolean): void => {
+    // 预览能画就画；画布没就绪也不挡下发——两者互不依赖
+    const imageData = imageDataRef.current;
+    const context = canvas?.getContext("2d") ?? null;
+    if (imageData !== null && context !== null) {
+      fillMaskAlpha(imageData.data, maskSize.width, maskSize.height, covered ? COVER_RGBA[3] : 0);
+      context.putImageData(imageData, 0, 0);
+    }
+
+    // 攒着还没发出去的那半笔不要了：它属于「填之前」的那一版
+    pendingStrokeRef.current = [];
+    lastPointRef.current = null;
+
+    if (objectId !== null) {
+      useEditorStore.getState().fillVideoBlendMask(objectId, covered);
+    }
+  };
+
   // 目标对象缺了（不是贴图 / 没这个组件）：交给外壳渲染「找不到」占位
   if (object === undefined || blend === undefined) {
     return (
@@ -289,7 +317,7 @@ export function VideoBlendMaskDialog({
       footer={
         <span>
           {running
-            ? "擦了会下发给前端（拖动中分批发）"
+            ? "擦了 / 整张填了都会下发给前端（拖动中分批发）"
             : "擦了不写文档：关掉重开就回到初始（A 整张盖住）"}
         </span>
       }
@@ -327,33 +355,32 @@ export function VideoBlendMaskDialog({
           </div>
         </div>
 
-        {/* 右侧：两条通道的说明（混合语义一眼看懂；没有区域开关——视频混合没有区域位） */}
+        {/* 右侧：**整张遮罩**——一次填满（1）或清空（0）。原来那几行说明写的都是同一件事，删了 */}
         <div
           data-testid="video-blend-mask-panel"
-          className="flex w-40 flex-none flex-col gap-2 overflow-auto rounded border border-[var(--color-editor-border)] bg-[var(--color-editor-panel-alt)] p-2 text-[10px] leading-relaxed text-[var(--color-editor-text-dim)]"
+          className="flex w-36 flex-none flex-col gap-1 overflow-auto rounded border border-[var(--color-editor-border)] bg-[var(--color-editor-panel-alt)] p-2"
         >
-          <span className="text-[var(--color-editor-text)]">两层</span>
-          <span>
-            <span className="text-[var(--color-editor-text)]">A</span>（盖住）：
-            {pickedA === undefined ? "还没选素材" : lastSegment(pickedA)}
-          </span>
-          <span>
-            <span className="text-[var(--color-editor-text)]">B</span>（擦开露出）：
-            {pickedB === undefined ? "还没选素材" : lastSegment(pickedB)}
-          </span>
-          <span className="mt-auto">
-            遮罩初始整张盖住 A；用软边圆刷擦开的地方露出 B。擦除只改遮罩、不写文档。
-          </span>
-          <span>
-            遮罩 {maskSize.width}×{maskSize.height}（按视频像素尺寸）
-          </span>
+          <span className="text-[10px] text-[var(--color-editor-text-dim)]">整张遮罩</span>
+          <button
+            type="button"
+            data-testid="video-blend-mask-fill-covered"
+            title="整张填成 1：A 重新盖满（连之前擦开的一起盖回去）"
+            className="toolbar-button justify-center hover:toolbar-button-hover"
+            onClick={() => fillAll(true)}
+          >
+            整张盖住（1）
+          </button>
+          <button
+            type="button"
+            data-testid="video-blend-mask-fill-revealed"
+            title="整张填成 0：完全露出 B（连还没擦的地方一起露出来）"
+            className="toolbar-button justify-center hover:toolbar-button-hover"
+            onClick={() => fillAll(false)}
+          >
+            整张擦开（0）
+          </button>
         </div>
       </div>
     </MapDialogShell>
   );
-}
-
-/** 路径的最后一段（面板上显示用；完整路径在属性面板里看）。 */
-function lastSegment(id: string): string {
-  return id.slice(id.lastIndexOf("/") + 1);
 }

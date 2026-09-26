@@ -122,8 +122,12 @@ import { z } from "zod";
  * 且每路多了 `kind`（`image` / `video`）——这一路可以是**图片**也可以视频。老前端（v18）
  * 按 `clips` / `picked` 读 → 两条通道都读不到（混合层放不出来），按同一条纪律 +1。
  * 命令那一组一个字节都没动（`erase_video_mask` 的载荷还是轨迹）。
+ *
+ * v20（2026-09-27）：视频混合多一条命令 **`fill_video_mask`**（把整张遮罩填成 1 / 0，
+ * Mask 窗口那两个「整张」按钮用）。老前端（v19）不认它 → 回一条未知命令（那两个按钮点了没反应），
+ * 按同一条纪律 +1。组件数据一个字节都没动。
  */
-export const PROTOCOL_VERSION = 19;
+export const PROTOCOL_VERSION = 20;
 
 /** 未进入运行态时拒绝 `/client` 升级的 HTTP 状态与原因头。 */
 export const RUNTIME_INACTIVE_STATUS = 503;
@@ -717,6 +721,22 @@ export const commandRequestSchema = z.discriminatedUnion("kind", [
     kind: z.literal("erase_video_mask"),
     objectId: z.string().min(1),
     stroke: eraseStrokeSchema,
+  }),
+  /**
+   * 视频混合：把**整张**混合遮罩一次填成 1 / 0。
+   *
+   * `covered: true` = 整张盖住（遮罩 = 1，只看见 A，连之前擦开的一起盖回去）；
+   * `false` = 整张擦开（遮罩 = 0，只看见 B）。
+   *
+   * 与 `erase_video_mask` 分成**两条命令**（照 `erase_mask` / `reveal_fog_region` 的先例）：
+   * 这个操作跟位置无关、只有一个布尔，塞进轨迹那条反而要把 `stroke` 变可选。
+   * 两者在编辑器那一侧是**同一条有序的操作序列**，前端按收到的先后依次应用
+   * （于是「先擦一笔、再整张盖住」= 那一笔也被盖掉）。
+   */
+  z.object({
+    kind: z.literal("fill_video_mask"),
+    objectId: z.string().min(1),
+    covered: z.boolean(),
   }),
 ]);
 

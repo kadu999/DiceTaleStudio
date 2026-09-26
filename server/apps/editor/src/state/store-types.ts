@@ -442,6 +442,14 @@ export interface EditorStoreState {
     points: readonly VideoBlendRevealPoint[],
     done: boolean,
   ): string | undefined;
+  /**
+   * 视频混合：把**整张**遮罩一次填成 1 / 0（Mask 窗口右边那两个「整张」按钮）。
+   *
+   * `covered = true` = 整张盖住（遮罩 = 1，A 重新盖满，连之前擦开的一起盖回去）；
+   * `false` = 整张擦开（遮罩 = 0，完全露出 B）。与擦一笔同一条规矩：运行态才下发，
+   * 编辑态只是预览；前端不在就记账、等它连上补发。
+   */
+  fillVideoBlendMask(objectId: string, covered: boolean): string | undefined;
   /** 把记着的擦除轨迹补发一遍（前端刚连上时调用）。 */
   flushVideoBlendReveal(): number;
   /**

@@ -600,6 +600,32 @@ describe("协议：编辑器 → 服务端", () => {
     }
   });
 
+  it("视频混合（v20）：fill_video_mask 只发「盖住 / 擦开」一个布尔，不带轨迹；缺字段拒", () => {
+    for (const covered of [true, false]) {
+      const parsed = parseEditorToServer({
+        type: "editor_command",
+        requestId: "blend-fill",
+        command: { kind: "fill_video_mask", objectId: "img_01", covered },
+      });
+
+      expect(parsed.type).toBe("editor_command");
+      if (parsed.type === "editor_command") {
+        expect(parsed.command).toEqual({ kind: "fill_video_mask", objectId: "img_01", covered });
+        // 整张填跟位置无关：命令里没有轨迹（省掉几 MB 的位图，也省掉一圈用不上的字段）
+        const wire = JSON.stringify(parsed.command);
+        expect(wire).not.toContain("stroke");
+        expect(wire).not.toContain("points");
+      }
+    }
+
+    for (const command of [
+      { kind: "fill_video_mask", objectId: "img_01" },
+      { kind: "fill_video_mask", covered: true },
+    ]) {
+      expect(() => parseEditorToServer({ type: "editor_command", requestId: "blend-fill-2", command })).toThrow();
+    }
+  });
+
   it("声音（v6）：暂停 / 继续按**层级**给（同层只响一条，所以暂停这一层 = 暂停当前那条）", () => {
     for (const kind of ["pause_sound", "resume_sound"] as const) {
       const parsed = parseEditorToServer({

@@ -229,8 +229,8 @@ namespace DiceTale
         /// <summary>
         /// 把 `command` 节点解析成 <see cref="CommandRequest"/>。
         ///
-        /// 只认**协议里写过**的那几个字段（`objectId` / `layer` / `stroke` / `region` / `revealed`），
-        /// 缺的留空值——再由 <see cref="CommandRouter"/> 判断这条命令能不能执行
+        /// 只认**协议里写过**的那几个字段（`objectId` / `layer` / `stroke` / `region` / `revealed` /
+        /// `covered`），缺的留空值——再由 <see cref="CommandRouter"/> 判断这条命令能不能执行
         /// （读不出来的东西一律如实回失败，不假装成功）。
         /// </summary>
         private static CommandRequest ParseCommand(Dictionary<string, object> message)
@@ -253,6 +253,7 @@ namespace DiceTale
             command.clip = JsonParser.GetString(node, "clip") ?? "";
             command.region = (int)JsonParser.GetNumber(node, "region");
             command.revealed = JsonParser.GetBool(node, "revealed");
+            command.covered = JsonParser.GetBool(node, "covered");
 
             var stroke = JsonParser.GetObject(node, "stroke");
             if (stroke != null)

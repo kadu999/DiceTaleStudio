@@ -347,6 +347,49 @@ describe("视频混合：Mask 窗口与擦除记账", () => {
     expect(useEditorStore.getState().videoBlendReveal.objects["tex-1"]).toBeUndefined();
   });
 
+  it("编辑态整张填 1 / 0 也不记账（那是一整张遮罩，和擦一笔同一条规矩）", () => {
+    blended();
+
+    act(() => {
+      expect(useEditorStore.getState().fillVideoBlendMask("tex-1", false)).toBeUndefined();
+    });
+    expect(useEditorStore.getState().videoBlendReveal.objects["tex-1"]).toBeUndefined();
+  });
+
+  it("运行态：整张填与擦一笔记进**同一条有序序列**；连着点同一个状态不重复记", () => {
+    blended();
+    act(() => useEditorStore.setState({ mode: "run" }));
+
+    // 先擦一笔、再整张盖住；盖住要排在那一笔**之后**（重放时它才盖得掉那一笔）
+    act(() => useEditorStore.getState().eraseVideoBlendMask("tex-1", [{ x: 0.4, y: 0.6 }], true));
+    act(() => useEditorStore.getState().fillVideoBlendMask("tex-1", true));
+    act(() => useEditorStore.getState().fillVideoBlendMask("tex-1", true));
+
+    const ops = useEditorStore.getState().videoBlendReveal.objects["tex-1"]?.ops ?? [];
+    expect(ops.map((op) => op.kind)).toEqual(["stroke", "fill"]);
+    expect(ops[1]).toMatchObject({ kind: "fill", covered: true });
+
+    // 再整张擦开：追加成第三步（不是覆盖前两步）
+    act(() => useEditorStore.getState().fillVideoBlendMask("tex-1", false));
+    const after = useEditorStore.getState().videoBlendReveal.objects["tex-1"]?.ops ?? [];
+    expect(after.map((op) => op.kind)).toEqual(["stroke", "fill", "fill"]);
+    expect(after[2]).toMatchObject({ kind: "fill", covered: false });
+
+    // 前端不在：只记账，日志里说明白「等连上补发」
+    expect(logs().some((message) => message.includes("已记录整张擦开"))).toBe(true);
+  });
+
+  it("不能挂混合层的对象（声音 / 精灵）：整张填被拒（写日志、不记账）", () => {
+    seedScene([createSoundObject({ id: "s1", name: "脚步" })], ["s1"]);
+    act(() => useEditorStore.setState({ mode: "run" }));
+
+    act(() => {
+      expect(useEditorStore.getState().fillVideoBlendMask("s1", true)).toBeUndefined();
+    });
+    expect(useEditorStore.getState().videoBlendReveal.objects["s1"]).toBeUndefined();
+    expect(logs().some((message) => message.includes("没有视频混合组件"))).toBe(true);
+  });
+
   it("运行态：擦一笔记进轨迹（前端不在也只记账）；补发未连上返回 0", () => {
     blended();
     act(() => useEditorStore.setState({ mode: "run" }));

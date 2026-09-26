@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Page, type TestInfo } from "@playwright/test";
+﻿import { expect, test, type APIRequestContext, type Page, type TestInfo } from "@playwright/test";
 import {
   COMPONENT,
   dropProject,
@@ -19,15 +19,16 @@ import {
 import { canvasColorAt } from "./helpers/canvas";
 
 /**
- * 贴图上的**视频混合**（v17）：两条视频（A 盖住 / B 擦开露出）+ 一张**纯运行态**的 Mask。
+ * 贴图上的**视频混合**（v17）：两路素材（图片 / 视频，A 盖住 / B 擦开露出）+ 一张**纯运行态**的 Mask。
  *
  * 两半：
- * 1. **编辑器怎么配 / Mask 窗口怎么擦**（不需要运行态）：两条通道各自「小方块单选」、
- *    循环 / 声音来源落进场景文件；Mask 窗口初始整张盖住、擦开露出、**场景文件一个字节都不动**；
+ * 1. **编辑器怎么配 / Mask 窗口怎么擦**（不需要运行态）：两路各自「种类开关 + 选择按钮」、
+ *    循环 / 声音来源落进场景文件；Mask 窗口初始整张盖住、擦开露出、右边两个「整张」按钮
+ *    一次填 0 / 1，**场景文件一个字节都不动**；
  * 2. **命令怎么下发**（`@runtime`）：浏览器里再开一条**假前端** WebSocket（`/client`），
  *    点播放 → 前端收到 `play_video`（**只带 `objectId`**）；Mask 窗口擦一笔 → 收到
  *    `erase_video_mask`（载荷是**轨迹**：归一化点 + 半径 `0.05` + 软边 `0.5`——不是雾那档 `1`，
- *    要实心核，擦到的地方才真的到 0）。
+ *    要实心核，擦到的地方才真的到 0）；整张按钮 → 收到 `fill_video_mask`（只有 `covered`）。
  *
  * 编辑器**不播放视频**（不接解码）：这里钉的全是「面板 / 窗口 / 命令」。
  */
@@ -122,7 +123,10 @@ async function openBlendObject(page: Page, project: string): Promise<void> {
 // ---------------------------------------------------------------- 编辑态：面板与 Mask 窗口
 
 test.describe("视频混合：属性面板与 Mask 窗口", () => {
-  test("两路素材 / 循环 / 声音 / 自动播放落进场景文件；Mask 窗口擦了不落盘", async ({ page, request }) => {
+  test("两路素材 / 循环 / 声音 / 自动播放落进场景文件；Mask 窗口擦了 / 整张填了都不落盘", async ({
+    page,
+    request,
+  }) => {
     const project = await newProject(request);
     try {
       const clipA = await uploadVideo(request, project, "a.mp4");
@@ -185,6 +189,14 @@ test.describe("视频混合：属性面板与 Mask 窗口", () => {
       await eraseAcross(page);
       await expect.poll(async () => (await maskCenter(page)).a).toBeLessThan(50);
 
+      // 右边两个「整张」按钮：0 = 整张清空（完全露出 B，alpha 归零）；
+      // 1 = 整张盖回（恢复成初始那块盖层，alpha 回到 235）。都不落盘。
+      await page.getByTestId("video-blend-mask-fill-revealed").click();
+      await expect.poll(async () => (await maskCenter(page)).a).toBe(0);
+
+      await page.getByTestId("video-blend-mask-fill-covered").click();
+      await expect.poll(async () => (await maskCenter(page)).a).toBeGreaterThan(200);
+
       // **擦了不落盘**：场景文件里那份 VideoBlend 与擦之前逐字一致（没有遮罩字段）
       expect(await blendData(request, project, objectId)).toEqual(before);
 
@@ -202,6 +214,8 @@ test.describe("视频混合：属性面板与 Mask 窗口", () => {
 interface FakeCommand {
   readonly kind?: string;
   readonly objectId?: string;
+  /** `fill_video_mask`：`true` = 整张盖住、`false` = 整张擦开。 */
+  readonly covered?: boolean;
   readonly stroke?: {
     readonly points?: ReadonlyArray<{ readonly x: number; readonly y: number }>;
     readonly radius?: number;
@@ -239,7 +253,7 @@ async function connectFakeClient(page: Page, port: number): Promise<void> {
           type: "client_hello",
           // 与 `@dts/protocol` 的 `PROTOCOL_VERSION` 一致（这里写死：e2e 不是 workspace 包，
           // 拿不到那个常量；版本一升这里会连不上、用例会当场失败，提醒同步改）
-          protocolVersion: 19,
+          protocolVersion: 20,
           name: "e2e 假前端",
           version: "0.0.0",
         }),
@@ -280,7 +294,7 @@ async function fakeCommands(page: Page): Promise<readonly FakeCommand[]> {
 test.describe("视频混合：轨迹下发给前端", { tag: "@runtime" }, () => {
   test.describe.configure({ mode: "serial" });
 
-  test("播放 / 停止 → play_video / stop_video；Mask 窗口擦一笔 → erase_video_mask", async ({
+  test("播放 / 停止 → play_video / stop_video；Mask 窗口擦一笔 / 整张填 → erase_video_mask / fill_video_mask", async ({
     page,
     request,
   }, testInfo) => {
@@ -343,6 +357,23 @@ test.describe("视频混合：轨迹下发给前端", { tag: "@runtime" }, () =>
           expect(point.y).toBeLessThanOrEqual(1);
         }
       }
+
+      // 右边两个「整张」按钮 → fill_video_mask：只有 objectId + covered，**不带轨迹**
+      await page.getByTestId("video-blend-mask-fill-revealed").click();
+      await expect
+        .poll(async () => (await fakeCommands(page)).filter((item) => item.kind === "fill_video_mask").length)
+        .toBe(1);
+      expect(
+        (await fakeCommands(page)).find((item) => item.kind === "fill_video_mask"),
+      ).toMatchObject({ objectId, covered: false });
+
+      await page.getByTestId("video-blend-mask-fill-covered").click();
+      await expect
+        .poll(async () => (await fakeCommands(page)).filter((item) => item.kind === "fill_video_mask").length)
+        .toBe(2);
+      const fills = (await fakeCommands(page)).filter((item) => item.kind === "fill_video_mask");
+      expect(fills[1]).toMatchObject({ objectId, covered: true });
+      expect(fills[1]?.stroke).toBeUndefined();
 
       // 假前端回执 ok:true → 编辑器日志里看得见「命令 执行成功」
       await expect(page.getByText(/命令\s*执行成功/).first()).toBeVisible();

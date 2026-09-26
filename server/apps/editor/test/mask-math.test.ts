@@ -9,6 +9,8 @@ import {
   applyEraseToPixels,
   brushRadiusFor,
   fillFogMaskPixels,
+  fillMaskAlpha,
+  fillOpaqueMaskPixels,
   paintRegionPixels,
   previewMaskSizeFor,
   strokeStampCenters,
@@ -306,6 +308,39 @@ describe("previewMaskSizeFor / brushRadiusFor", () => {
     // 缩过的遮罩（极端长宽比）也保持「宽度的 5%」这个归一化半径
     expect(brushRadiusFor(480)).toBe(24);
     expect(brushRadiusFor(960) / 960).toBeCloseTo(brushRadiusFor(480) / 480, 10);
+  });
+});
+
+describe("fillMaskAlpha（视频混合那两个「整张」按钮）", () => {
+  /** 逐像素读 alpha。 */
+  const alphasOf = (pixels: Uint8ClampedArray): number[] => {
+    const values: number[] = [];
+    for (let index = 3; index < pixels.length; index += 4) {
+      values.push(pixels[index] ?? -1);
+    }
+    return values;
+  };
+
+  it("只改 alpha：0 = 整张透明、255 = 整张不透明，RGB 原样不动", () => {
+    const pixels = new Uint8ClampedArray(4 * 4 * 4);
+    fillOpaqueMaskPixels(pixels, 4, 4, [16, 18, 24, 235]);
+    expect(alphasOf(pixels)).toEqual(new Array(16).fill(235));
+
+    fillMaskAlpha(pixels, 4, 4, 0);
+    expect(alphasOf(pixels)).toEqual(new Array(16).fill(0));
+    // RGB 还是盖层本色（shader 只看 alpha，预览那块颜色不该被抹掉）
+    expect([pixels[0], pixels[1], pixels[2]]).toEqual([16, 18, 24]);
+
+    fillMaskAlpha(pixels, 4, 4, 255);
+    expect(alphasOf(pixels)).toEqual(new Array(16).fill(255));
+  });
+
+  it("越界值收敛到 0..255（负数 / 超过 255 都不算出乱码）", () => {
+    const pixels = new Uint8ClampedArray(2 * 2 * 4);
+    fillMaskAlpha(pixels, 2, 2, -5);
+    expect(alphasOf(pixels)).toEqual([0, 0, 0, 0]);
+    fillMaskAlpha(pixels, 2, 2, 999);
+    expect(alphasOf(pixels)).toEqual([255, 255, 255, 255]);
   });
 });
 

@@ -33,6 +33,8 @@
 > **v19（2026-09-27）**把 `VideoBlend` 的两路从「列表 + 选中」收成**一个素材**（`{ kind, id? }`），
 > 且每路多了 `kind`（`image` / `video`）——这一路可以是**图片**也可以视频；老前端（v18）按
 > `clips` / `picked` 读 → 两路都读不到（混合层放不出来），照旧 +1。
+> **v20（2026-09-27）**给视频混合加了命令 `fill_video_mask`（把整张遮罩填成 1 / 0，Mask 窗口
+> 右边那两个「整张」按钮用）——**文档格式不动**，老前端（v19）不认这条命令，所以协议照旧 +1。
 > 逐条见 `CODE-STRUCTURE.md` §6.1 与 `packages/protocol/src/messages.ts` 的版本注释。
 > 取代 [`2026-09-18-frontend-integration-contract.md`](2026-09-18-frontend-integration-contract.md)
 > （那份写的是「前端上报数据、后台按 id 寻址动作」的老模型，已整层删除）。
@@ -219,6 +221,7 @@ v12 起叫 `Image`）——**只显示整张图**，与精灵的差别只有「�
 | `pause_bgm` / `resume_bgm` / `stop_bgm` | — | 背景音乐的暂停 / 继续 / 停止（v7 起）。`pause_bgm` 赶在取音频完成之前到时，前端记下意图、加载落地后立刻补一次暂停（编辑器补发暂停态是「先放再暂停」两条连发） |
 | `erase_mask` | `{ objectId, stroke: { points, radius, softness } }` | 在**镜像里那张地图**的雾层上，沿这笔**轨迹**擦出一条软边（见下） |
 | `erase_video_mask` | `{ objectId, stroke: { points, radius, softness } }` | 在**贴图对象**的 `VideoBlend` 混合遮罩上，沿这笔**轨迹**擦出一条软边（与 `erase_mask` 同一套 `stroke` 口径；`objectId` = 贴图对象 id，遮罩纯运行态、不随场景回来） |
+| `fill_video_mask` | `{ objectId, covered }` | 把**整张**混合遮罩填成 1 / 0（`covered: true` = 整张盖住、`false` = 整张擦开；Mask 窗口右边那两个「整张」按钮）。与 `erase_video_mask` 共用**同一条有序操作序列**：前端按收到的先后依次应用，盖住会连带抹掉它之前擦开的部分 |
 | `reveal_fog_region` | `{ objectId, region, revealed }`（**`objectId` = 雾对象 id**） | 含该区域位的格子**整片揭示**（`true`）/ **整片盖回**（`false`） |
 | `play_video` | `{ objectId }` | 在这个对象自己的矩形上放它 `video.picked` 那一条（**命令里不带数据**：放哪条 / 循环 / 声音都从镜像里读） |
 | `pause_video` | `{ objectId }` | 暂停在当前帧 |
@@ -265,5 +268,5 @@ v12 起叫 `Image`）——**只显示整张图**，与精灵的差别只有「�
 | `Presentation/GridMapView.cs` | `GridMap` 组件的数据座位（v28 起网格是贴图上的可选组件）：只存 `MirrorMap`，网格线以后画在这里 |
 | `Presentation/FogOfWar.cs` | 战争雾层：挂在**独立的雾对象**上，按 `mapId` 找到被引用的**带网格的贴图**，用它 `regions` + 那个对象的 `cells` 生成像素遮罩（与编辑器预览同一张尺寸），按 `erase_mask` / `reveal_fog_region` 揭示；揭示状态留在组件里，数据变了「重填 + 重放」 |
 | `Presentation/VideoOverlay.cs` | 视频层：按 URL 放（本地资源包优先、否则服务端原始字节），与宿主对象共享位置 / 尺寸 / sortingOrder；首帧就绪后隐藏宿主 Renderer，停止或解码失败时恢复 |
-| `Presentation/VideoBlend.cs` | 视频混合层：两条 `VideoPlayer` → 各一张 `RenderTexture`，用 `DiceTale/VideoBlend`（`lerp(B, A, mask.a)`）与一张 CPU 遮罩混合；遮罩初始**整张不透明**，按 `erase_video_mask` 擦、按序重放（尺寸按视频像素尺寸，与编辑器同式）；`Presentation/VideoBlendLayer.cs` 是它的渲染器（`GroundLayer` 的第三个子类） |
+| `Presentation/VideoBlend.cs` | 视频混合层：视频那一路 `VideoPlayer` → `RenderTexture`（图片那一路走 `ResourceImageLoader` 取贴图），用 `DiceTale/VideoBlend`（`lerp(B, A, mask.a)`）与一张 CPU 遮罩混合；遮罩初始**整张不透明**，按 `erase_video_mask` 擦、按 `fill_video_mask` 整张填 1 / 0，**两者按收到的先后重放**（尺寸按素材像素尺寸，与编辑器同式）；`Presentation/VideoBlendLayer.cs` 是它的渲染器（`GroundLayer` 的第三个子类） |
 | `Presentation/ResourceImageLoader.cs` | 按逻辑 ID 取图（带缓存 / 去重 / 失败记忆） |

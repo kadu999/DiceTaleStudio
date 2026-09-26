@@ -310,6 +310,25 @@ export function fillOpaqueMaskPixels(
 }
 
 /**
+ * 把整张遮罩填成**同一个 alpha**（视频混合 Mask 窗口那两个「整张」按钮：
+ * 1 = 整张盖住、0 = 整张擦开）。
+ *
+ * 只动 alpha，RGB 留着——shader 只看 `mask.a`，画布上那块颜色就是盖层本色。
+ * 前端 `VideoBlend.FillMask` 是这份的移植（两边口径必须一致）。
+ */
+export function fillMaskAlpha(
+  pixels: Uint8ClampedArray,
+  width: number,
+  height: number,
+  alpha: number,
+): void {
+  const value = Math.max(0, Math.min(255, Math.round(alpha)));
+  for (let index = 0; index < width * height; index += 1) {
+    pixels[index * 4 + 3] = value;
+  }
+}
+
+/**
  * 「**整区开 / 关**」：把含指定位的格子那几块纹素一次性**揭示**（清成透明）或**盖回去**
  * （按区域配色重画）。
  *

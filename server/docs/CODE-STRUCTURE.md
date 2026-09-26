@@ -12,12 +12,12 @@
 | 语言 / 运行时 | TypeScript 5.9 + ESM，Node 22+（后端跑在 `tsx` 上，无编译产物） |
 | 包管理 | pnpm workspace（`apps/*` + `packages/*`，共 8 个包） |
 | 文档格式版本 | `DOCUMENT_FORMAT_VERSION = 29`（`packages/document/src/types.ts`） |
-| 协议版本 | `PROTOCOL_VERSION = 19`（`packages/protocol/src/messages.ts`；v17 新增视频混合组件 `VideoBlend` 与命令 `erase_video_mask`，v18 加 `autoPlay`，v19 把两路收成「一个素材（图片 / 视频）」，见 §6.1） |
+| 协议版本 | `PROTOCOL_VERSION = 20`（`packages/protocol/src/messages.ts`；v17 新增视频混合组件 `VideoBlend` 与命令 `erase_video_mask`，v18 加 `autoPlay`，v19 把两路收成「一个素材（图片 / 视频）」，v20 加 `fill_video_mask`（整张填 1 / 0），见 §6.1） |
 | 后端默认地址 | `0.0.0.0:1420`（`resources/config/app.json`，可被 `HOST` / `PORT` 覆盖） |
 | 编辑器开发地址 | `http://localhost:5173`（Vite，`/api`、`/editor`、`/client` 反代到 1420） |
 | 编辑器生产地址 | `http://localhost:1420`（后端同源托管 `apps/editor/dist`） |
-| 源码规模（不含测试） | 169 个文件 / 38,282 行（packages 12,894 · backend 3,721 · editor 21,667） |
-| 测试规模 | 34,333 行（单测 24,645 · E2E 9,405 · 架构测试 283） |
+| 源码规模（不含测试） | 169 个文件 / 38,443 行（packages 12,914 · backend 3,721 · editor 21,808） |
+| 测试规模 | 34,468 行（单测 24,749 · E2E 9,436 · 架构测试 283） |
 
 > 上表两行与 §0.1 表格里加粗的文件行数、§3.x 节标题里的包规模由
 > `scripts/check-code-structure-stats.mjs` **机器校验**（`pnpm check` 的一环）：
@@ -676,7 +676,7 @@ v23 起 `validateScene` 多了第二个参数：`validateScene(scene, { metas })
 > **历史**：`@dts/actions`（动作类型注册表、条件求值、动作图校验）曾是独立的一个包，
 > 随「动作挂在组件上」那套旧模型一起整包删除了；动作编辑的数据面落地时重新设计。
 
-### 3.3 `@dts/protocol` — WS 消息契约（953 行）
+### 3.3 `@dts/protocol` — WS 消息契约（973 行）
 
 单文件 `src/messages.ts`（874 行）+ `index.ts` barrel（1 行）。
 **编辑器、服务端、Unity 前端共用同一份 zod schema。**
@@ -688,7 +688,7 @@ v23 起 `validateScene` 多了第二个参数：`validateScene(scene, { metas })
 
 | 名称 | 值 | 用途 |
 |---|---|---|
-| `PROTOCOL_VERSION` | `19` | 握手校验；不一致则关闭连接（`4002`）。最近一次改动是**视频混合的两路从「列表 + 选中」收成单个素材**（`{ kind, id? }`，这一路可以是图片或视频）：老前端（v18）按 `clips` / `picked` 读 → 两路都读不到（混合层放不出来），靠握手把它挡在连上的那一刻 |
+| `PROTOCOL_VERSION` | `20` | 握手校验；不一致则关闭连接（`4002`）。最近一次改动是**视频混合多一条命令 `fill_video_mask`**（整张遮罩填成 1 / 0，Mask 窗口那两个「整张」按钮用）：老前端（v19）不认它 → 回一条未知命令，靠握手把它挡在连上的那一刻 |
 | `SPRITE_SHEET_MAX` | `64` | 子图切分的**列 / 行上限**（与 `@dts/document` 的 `SPRITE_SHEET_MAX` 同值，契约测试盯着） |
 | `RUNTIME_INACTIVE_STATUS` | `503` | 未开闸时拒绝 `/client` 升级的 HTTP 状态 |
 | `RUNTIME_INACTIVE_REASON` | `"runtime-inactive"` | 写在 `x-dts-reason` 头里 |
@@ -715,6 +715,7 @@ v23 起 `validateScene` 多了第二个参数：`validateScene(scene, { metas })
 | `pause_bgm` / `resume_bgm` / `stop_bgm` | — | — |
 | `erase_mask` | `objectId`, `stroke{points[],radius,softness}` | 只发**轨迹**，`objectId` = **雾对象 id**，雾层在推下去的雾对象里 |
 | `erase_video_mask` | `objectId`, `stroke{points[],radius,softness}` | 只发**轨迹**，`objectId` = **贴图对象 id**，遮罩在推下去的那个对象的 `VideoBlend` 里（纯运行态，不随场景回来） |
+| `fill_video_mask` | `objectId`, `covered` | 视频混合：整张遮罩填成 1 / 0（`covered: true` = 整张盖住、`false` = 整张擦开）。与 `erase_video_mask` 共用**同一条有序操作序列**（后到的按后到的算，盖住会抹掉它之前擦开的） |
 | `reveal_fog_region` | `objectId`, `region`, `revealed` | `objectId` = **雾对象 id**；区域位取自它 `FogOfWar` 组件的 `regions`（v27 起；之前是地图） |
 
 载荷 schema（与 `@dts/document` **有意重复**，两处同步维护）：
@@ -1172,6 +1173,7 @@ store 用 **zustand 切片**模式拆开了：原来是一个 4,493 行的 `edit
 | `slices/runtime-slice.ts` | 67 | `setMode` / `connectRuntime` / 推场景 / 清日志 | — |
 | `slices/sound-slice.ts` | 276 | 声音对象：选中、层级、名字、播放下发（列表的加 / 删在窗口里完成，不经 store 整体替换） | — |
 | `slices/video-slice.ts` | 228 | 视频：列表、选中、循环、播放下发（组件的添加 / 移除在 `component-slice`；声音 / 自动播放开关走组件规格的 `setComponentField`） | — |
+| `slices/video-blend-slice.ts` | 343 | 视频混合：两路素材的「种类 + 素材」（组件添加 / 移除在 `component-slice`）、播放三键的记账与补发、Mask 窗口的**擦一笔 + 整张填 1 / 0**（都记进同一条有序操作序列并尽力下发；编辑态只预览） | — |
 | `slices/bgm-slice.ts` | 83 | 全局背景音乐（播放 / 暂停 / 继续 / 停止 / 补发） | — |
 | `slices/audio-meta-slice.ts` | 169 | 素材**显示名与标签**（任何素材：图 / 声 / 视频；写在**素材 meta 那条轨道**上：走 `applyMetas` + `withMetaAssetName` / `withMetaAssetTags`）+ 项目级标签表（`applyProject`）+ 三档音量 | — |
 | `slices/teleport-slice.ts` | 89 | 传送阵：候选、选中、触发换台 | — |
@@ -1207,9 +1209,11 @@ export function createSoundSlice(
 | `runtime-push.ts` | 115 | 运行态推送的**纯判定 + 去抖**：只在 run 且 WS open 且内容变了才推；子图的切分在解析时随载荷走（读 `AssetMetas` 索引，缺省空索引）。 | `RUNTIME_PUSH_DEBOUNCE_MS`(200)、`shouldPushScene`、`scenePayloadText(scene, metas?)`、`scenePayloadOf(scene, metas?)`、`projectSettingsPayloadText`、`ScenePushScheduler`；类型 `ScenePushDecision` | —（纯逻辑） |
 | `sound-playback.ts` | 97 | 声音的**期望播放记账**（按层级，同层顶替）：不写文档、不进撤销。 | `emptySoundPlayback`、`withPlaying`、`withSoundPaused`、`withStopped`、`soundPlaybackResendPlan`；类型 `SoundPlaybackEntry`、`SoundPlaybackState` | — |
 | `video-playback.ts` | 92 | 视频的期望播放记账（按对象，每个对象一条）。 | `emptyVideoPlayback`、`withVideoPlaying`、`withVideoPaused`、`withVideoStopped`、`videoPlaybackResendPlan`；类型 `VideoPlaybackEntry`、`VideoPlaybackState` | — |
+| `video-blend-playback.ts` | 40 | 视频混合的期望播放记账（按对象；比视频多一项**两路素材快照**与声音来源 `none/a/b`）。 | `emptyVideoBlendPlayback`、`withVideoBlendPlaying`、`withVideoBlendPaused`、`withVideoBlendStopped`、`videoBlendPlaybackResendPlan`；类型 `VideoBlendPlaybackEntry`、`VideoBlendPlaybackState` | — |
 | `bgm-playback.ts` | 99 | 全局背景音乐记账（全局一条；v16 起不属于项目设置），状态只有 `{clip, paused}`。 | `emptyBgmPlayback`、`withBgmPlaying`、`withBgmPaused`、`withBgmStopped`、`bgmResendPlan`、`bgmResendActions`；类型 `BgmPlaybackState`、`BgmAction`、`BgmResend` | — |
-| `fog-reveal.ts` | 204 | 战争雾的**揭示记账**：记有序操作（擦除笔画 / 整区开合）而不是位图；提供分批下发判定、批次切分、补发计划、按当前文档剪枝。 | `FOG_ERASE_BATCH_POINTS`(4)、`FOG_ERASE_BATCH_MS`(150)、`emptyFogReveal`、`entryOf`、`withEraseBatch`、`withRegion`、`shouldFlushBatch`、`splitStrokeBatch`、`fogRevealResendPlan`、`pruneFogReveal`；类型 `FogRevealPoint`、`FogRevealStroke`、`FogRevealOp`、`FogRevealEntry`、`FogRevealState` | — |
-| `mask-math.ts` | 397 | 遮罩擦除的**像素运算**，逐字对齐 Unity 侧（`FogOfWar.cs` / `MaskImage.ApplyEraseStroke` / `MaskEraseStamp.shader`）。 | `MASK_PREVIEW_WIDTH`(960)、`MASK_BRUSH_RADIUS`(48)、`MASK_BRUSH_SOFTNESS`(1)、`MASK_BRUSH_RATIO`(0.05)、`VIDEO_BLEND_MASK_SOFTNESS`(0.5，视频混合要实心核才能真的擦到 0)、`previewMaskSizeFor`、`brushRadiusFor`、`applyEraseToPixels`、`strokeStampCenters`、`fillFogMaskPixels`、`paintRegionPixels`；类型 `MaskPoint`、`MaskPixelColor`、`MaskColorOf` | — |
+| `fog-reveal.ts` | 210 | 战争雾的**揭示记账**：记有序操作（擦除笔画 / 整区开合）而不是位图；提供分批下发判定、批次切分、补发计划、按当前文档剪枝。**视频混合借的是同一份**（操作那一档换成 `fill`：整张填 1 / 0，见 `video-blend-reveal.ts`）。 | `FOG_ERASE_BATCH_POINTS`(4)、`FOG_ERASE_BATCH_MS`(150)、`emptyFogReveal`、`entryOf`、`withEraseBatch`、`withRegion`、`shouldFlushBatch`、`splitStrokeBatch`、`fogRevealResendPlan`、`pruneFogReveal`；类型 `FogRevealPoint`、`FogRevealStroke`、`FogRevealOp`（`stroke` / `region` / `fill` 三档）、`FogRevealEntry`、`FogRevealState` | — |
+| `video-blend-reveal.ts` | 46 | 视频混合的**擦除记账**：状态与批处理从 `fog-reveal.ts` **原样借**（同一套有序操作），自己只多一个「整张填」的构造器。 | `withVideoBlendFill`；并转出 `VideoBlendRevealPoint`、`VideoBlendRevealState`、`emptyVideoBlendReveal`、`withVideoBlendEraseBatch`、`videoBlendRevealResendPlan`、`pruneVideoBlendReveal` | — |
+| `mask-math.ts` | 416 | 遮罩擦除的**像素运算**，逐字对齐 Unity 侧（`FogOfWar.cs` / `VideoBlend.cs` / `MaskImage.ApplyEraseStroke` / `MaskEraseStamp.shader`）。 | `MASK_PREVIEW_WIDTH`(960)、`MASK_BRUSH_RADIUS`(48)、`MASK_BRUSH_SOFTNESS`(1)、`MASK_BRUSH_RATIO`(0.05)、`VIDEO_BLEND_MASK_SOFTNESS`(0.5，视频混合要实心核才能真的擦到 0)、`previewMaskSizeFor`、`brushRadiusFor`、`applyEraseToPixels`、`strokeStampCenters`、`fillOpaqueMaskPixels`、`fillMaskAlpha`（整张填 1 / 0）、`fillFogMaskPixels`、`paintRegionPixels`；类型 `MaskPoint`、`MaskPixelColor`、`MaskColorOf` | — |
 | `grid-paint-prefs.ts` | 104 | 网格标注偏好持久化（画笔类型/大小、每类显示开关与颜色、两个总开关）；逐项规范化。 | `defaultGridPaintPrefs`、`readGridPaintPrefs`、`writeGridPaintPrefs`、`parseGridPaintPrefs`；类型 `GridPaintPrefs` | localStorage `dts.editor.gridPaint` |
 | `editor-prefs.ts` | 74 | 界面偏好持久化：当前变换工具 + BGM 弹框是否显示路径；认不出的工具名退回 `"none"`。 | `defaultEditorPrefs`、`readEditorPrefs`、`writeEditorPrefs`、`parseEditorPrefs`、`isTransformTool`；类型 `EditorPrefs` | localStorage `dts.editor.ui` |
 | `local-prefs.ts` | 30 | 浏览器本地偏好读写的公共骨架（读：没有记录 / 内容损坏 / 存储不可用一律退回默认值；写：吞异常）——上面两份 prefs 的读写薄壳共用这一份。 | `readPrefs`、`writePrefs` | localStorage |
@@ -1236,6 +1240,7 @@ export function createSoundSlice(
 | `BgmControl.tsx` | 79 | 顶栏「音乐」按钮：显示当前在放什么/暂停标记/播放中高亮；导出 `bgmDeliveryHint`（与声音/视频**同一套措辞**的「已记录，等连上补发」提示）。 | `BgmControl`、`bgmDeliveryHint` |
 | `BgmDialog.tsx` | 353 | 「背景音乐」弹框：项目音频清单（按显示名排序）+ 只搜名字/路径 + 标签勾选（AND）+ 路径显示开关 + 行选中跟随播放态 + 打开时滚到当前曲 + 底部播放/暂停·继续/停止。 | `BgmDialog` |
 | `FogMaskDialog.tsx` | 435 | 「战争雾 Mask 窗口」：贴图底 + canvas 遮罩（960 宽、按贴图比例定高），软边圆刷擦除，右侧「整区开关」（雾区绑定 v25 起读独立的 `FogOfWar` 组件）；运行态下按批下发 `erase_mask` 轨迹、整区开关下发 `reveal_fog_region`；编辑态纯预览、不写文档不落盘。 | `FogMaskDialog` |
+| `VideoBlendMaskDialog.tsx` | 386 | 「视频混合 Mask 窗口」：底图是 B 的缩略图（编辑器不解码视频）+ canvas 遮罩（同一张 960 宽、按素材像素尺寸定高），软边圆刷擦除（软边 0.5 有实心核）；右侧两个**「整张盖住（1）/ 整张擦开（0）」**按钮一次填满或清空；运行态下按批下发 `erase_video_mask`、整张按钮下发 `fill_video_mask`；编辑态纯预览、不写文档不落盘。 | `VideoBlendMaskDialog` |
 | `GridEditDialog.tsx` | 459 | 「网格编辑窗口」：**唯一**的格子涂/擦入口，用同一渲染器 + `fitViewport` 把地图铺满窗口；指针捕获 + 补齐两事件点之间的格子（不断线）；「全部清除」可撤销。 | `GridEditDialog` |
 
 #### `panels/`（6）
@@ -1272,6 +1277,7 @@ export function createSoundSlice(
 | `fields.tsx` | 252 | 属性面板的行/分组外壳与**播放类控件**：可折叠 `FieldGroup`（`data-group` 英文 slug；可选能力组件在组头多一枚「移除组件」= `onRemove`）、只读 `Field`、`FieldRow`（标签定宽 `w-20`，必须是行内第一个子元素）、`PlaybackRow`、`PlaybackStatus`、`PLAYBACK_BUTTON_CLASS` / `PLAYBACK_BUTTON_ACTIVE_CLASS`（高 34px、13px 字）。 | `FieldGroup`、`Field`、`FieldRow`、`PlaybackRow`、`PlaybackStatus`、`PLAYBACK_BUTTON_CLASS`、`PLAYBACK_BUTTON_ACTIVE_CLASS`；类型 `PlaybackState` |
 | `SoundFields.tsx` | 360 | 声音对象的「声音」组：层级下拉（对象只给 `OBJECT_SOUND_LAYERS`，老文件的 `bgm` 照显并提示改）、音频小方块单选（每个带 `×` 移出）+ `＋` 添加（弹 `ResourcePickerDialog kind="audio"`：选中一条 → 点「添加」加入，一次一条）+ 「清空」、播放三键 + 状态行（多一档 `busy` = 本层被别的对象占着）；每条音频的显示名经 `audioDisplayName` 读（素材 `.meta` 顶层 `name`，唯一入口在文件属性）。 | `SoundFields`、`soundPlayBlockedReason`、`soundDeliveryHint` |
 | `VideoFields.tsx` | 305 | 地图/贴图的「视频」组（**组件已挂上时才渲染**；没挂上时入口在面板底部的「添加组件」、移除在组头）、**循环 / 声音 / 自动播放三行由组件规格自动出行**（`descriptorRows(object, videoSpec, componentFields(...))`，见 `DescriptorRows.tsx`）、视频小方块单选（每个带 `×` 移出）+ `＋` 添加（弹 `ResourcePickerDialog kind="video"`：选中 → 「添加」，一次一条）+ 「清空」、播放三键 + 状态行；小方块的显示名同样读素材 `.meta` 顶层 `name`。 | `VideoFields`、`videoPlayBlockedReason`、`videoDeliveryHint` |
+| `VideoBlendFields.tsx` | 317 | 贴图的「视频混合」组（同样**挂上才渲染**）：循环 / 声音 / 自动播放走规格自动出行；每路一行 = **「图片 / 视频」种类开关 + 「选择图片… / 选择视频…」（弹 `ResourcePickerDialog` 的 `image` / `video`）+ 当前素材 + `×` 清除**（换种类会清掉这一路已选的素材）；再加 Mask 入口与播放三键。 | `VideoBlendFields`、`blendPlayBlockedReason`、`blendDeliveryHint` |
 | `registry.tsx` | 237 | **组件编辑器的注册表**：**一个组件一个组**（组 slug 跟着组件走、标题 = 组件 displayName），各组件的 `render` 与 `removable`（**可选组件**才在组头给「移除组件」，必需组件摘掉会把对象弄坏）；**数组顺序就是界面顺序**（e2e 断言它）。「基础」组（`OBJECT_EDITOR`）是实体属性组，另外声明；`componentEditorsFor` 只收「已挂上的组件 + 缺**必需**组件时的修复入口」——可选的（网格 / 视频）没挂上时**不出组**，由 `addableComponentsFor` 供面板底部的「添加组件」（Unity 式） | `EditorPanelDef`、`ComponentEditorDef`、`AddableComponentDef`、`OBJECT_EDITOR`、`COMPONENT_EDITORS`、`componentEditorsFor`、`addableComponentsFor` |
 | `DescriptorRows.tsx` | 316 | **规格驱动的行渲染器**：按 `FieldDef.kind` 出行（布尔 / 数字 / 整数 / 字符串 / 多行文本 / 枚举），`FieldTarget` 抽象把「写哪份数据」与「这一行长什么样」分开——`componentFields(type)` 写组件 `data`、`objectFields` 写对象自身，**两种规格共用同一个渲染器**。`order` 排序、`testId` 直取描述符、`FieldRow` 外壳与「不被 store 回灌 / 非法值退回 / Esc 还原」三条约定与手写控件逐字一致。加一个简单字段 = 规格里加一行，这里不用动。 | `InspectorRow`、`FieldTarget`、`componentFields`、`objectFields`、`descriptorRows`、`sortInspectorRows` |
 | `TeleportFields.tsx` | 105 | 传送阵的「传送」组：候选目标小方块 + `＋` 开「传送目标」窗口 + 「传送」按钮（不能传时按钮上写原因）。 | `TeleportFields` |
@@ -1631,6 +1637,9 @@ edit：取消去抖、`lastPushedSceneText=null`、发 `runtime_stop`）、`push
 **v29 ↔ v19 是一次配套发布**：视频混合的两路从「列表 + 选中」收成**一个素材**（`{ kind, id? }`），
 且每路多了 `kind`（`image` / `video`）——这一路可以是图片也可以视频。老前端（v18）按 `clips` / `picked`
 读 → 两路都读不到（混合层放不出来），协议照旧 +1；文档侧靠迁移函数读得回来（见下）。命令那一组仍旧没动。
+**v20 是又一次协议侧的追加**（文档格式不动）：视频混合多一条命令 `fill_video_mask`（把整张遮罩
+填成 1 / 0，Mask 窗口右边那两个「整张」按钮用）。老前端（v19）不认它 → 回一条未知命令（按钮点了没
+反应），同样靠握手 `4002` 挡住；组件 data 一个字节都没动。
 规则：文档格式**任何结构不兼容的改动 +1**；协议**任何不兼容改动 +1**。
 
 | 文档版本 | 内容 | 迁移方式 |
@@ -1914,11 +1923,12 @@ upgradeRawDocument
 | `run-mode.test.ts` | 440 | **运行中的改动不保存、退出即还原**；切场景 = 换台（运行态下立刻推）；运行基线跟着文档走；运行中的文件操作与断线 |
 | `bgm-settings.test.ts` | 340 | 推设置只剩三档音量；播放命令与补发；退出运行态音量还原、记账清零；音量编辑与场景编辑**共用一个撤销入口** |
 | `grid-annotate.test.tsx` | 392 | 属性面板编辑窗口入口；画笔偏好写进 store 也写进浏览器本地；涂抹写进 RLE 且**整笔可撤销**；网格线与网格标注两个总开关；格子颜色只画可见位且按低位在上叠加 |
-| `mask-math.test.ts` | 398 | `strokeStampCenters`；`applyEraseToPixels`（与 `MaskEraseStamp.shader` 同式，含「视频混合 0.5 有实心核 / 雾 1 擦不到 0」）；`paintRegionPixels`（整区开/关）；`previewMaskSizeFor`/`brushRadiusFor`；`fillFogMaskPixels` |
+| `mask-math.test.ts` | 433 | `strokeStampCenters`；`applyEraseToPixels`（与 `MaskEraseStamp.shader` 同式，含「视频混合 0.5 有实心核 / 雾 1 擦不到 0」）；`paintRegionPixels`（整区开/关）；`fillMaskAlpha`（整张填 1 / 0，只动 alpha、越界值收敛）；`previewMaskSizeFor`/`brushRadiusFor`；`fillFogMaskPixels` |
 | `teleport-object.test.tsx` | 324 | 种类表；创建；属性面板（候选小方块 + ＋ + 传送）；「传送目标」窗口勾选；触发传送（**不改文档**） |
 | `audio-catalog.test.ts` | 321 | 清单 = 项目音频 + 标注（名字与标签 ID 经**素材 meta 表**读）；标签表与文件上的标签；名字兜底链；搜索与标签筛选 |
 | `transform.test.ts` | 305 | 移动（相对按下时的指针）；旋转（相对按下时的方位角，**屏幕上跟手**）；缩放（相对按下时的指针偏移） |
 | `fog-mask.test.tsx` | 313 | 属性面板战争雾开关与雾区；揭示记账（**运行态才下发**给前端） |
+| `video-blend-object.test.tsx` | 412 | 视频混合：准入（只有贴图、与「视频」互斥）、两路素材（种类开关 / 选择 / 清除）、循环 / 声音 / 自动播放、播放记账、Mask 窗口（编辑态只预览；运行态把擦一笔与**整张填 1 / 0** 记进同一条有序序列、幂等、不能挂的对象被拒） |
 | `assets-panel.test.tsx` | 389 | 资源面板图标；展开三角；定位选中的文件 |
 | `sprite-sheet.test.tsx` | 407 | **v20 新增**。属性面板那一行：整图时不显示子图信息、有子图时写清「第X行第Y列（列×行）」、切分改小后越界格有提示、「改回整图」清掉引用（切分留着——别的对象还在用）；选择窗口：改行 / 列落进**那个素材的 `.meta`**、点预览选一格、确定时图 + 格子一起写进对象、「使用整图」报 `null`、地图对象没有切分面板；**两条轨道**：窗口确定那一下 = **一条撤销记录**（整件事一起退回去），撤销切分**不动**场景里的对象 |
 | `audio-tag-editor.test.tsx` | 254 | 列出标签表；只填名字（没有新建/删除）；改名只改表（文件上的引用一个字节不动）；关闭 |
@@ -1959,6 +1969,7 @@ upgradeRawDocument
 | `hierarchy.spec.ts` | 498 | 场景数据（对象列表、种类/关键字过滤）+ 场景对象行操作；**含 4 条迁移用例**：旧版工程文件 v2、旧版场景文件 v3 / v4、以及 **v18 扁平字段 → v19 组件**（断言 `formatVersion` 19、组件 id/type/data 精确、5 个扁平字段消失、网格与声音层级仍然渲染出来） | 否 |
 | `smoke.spec.ts` | 354 | 编辑器外壳、画布视口交互、**平板紧凑布局**、编辑态/运行态 | **是**（第四部分） |
 | `video-object.spec.ts` | 367 | 地图/贴图（`kind: "Image"`）的视频列表 + 视频命令下发给前端 | **是**（第二部分） |
+| `video-blend.spec.ts` | 397 | 贴图的视频混合：两路素材（种类开关 / 选择）/ 循环 / 声音 / 自动播放落进场景文件，Mask 窗口擦了与**整张填 1 / 0** 都不落盘；命令下发 `play_video` / `stop_video` / `erase_video_mask` / `fill_video_mask` | **是** |
 | `fog-mask.spec.ts` | 307 | 战争雾 Mask 窗口 | 否 |
 | `teleport.spec.ts` | 261 | 动作对象「传送阵」（候选、窗口、按一下换台） | 否 |
 | `sprite-sheet.spec.ts` | 261 | **v20 新增**（三条）：① 选一格 → 只画那一格（画布采样四象限都成了那一格的颜色），并落进**两份文件**（场景文件只记「第几格」、切分在那个图的 `.meta` 里）；② 改切分 → 同一份引用换一块像素（对象侧一个字节都不改）；③ 地图对象的选择窗口**没有**切分面板（贴图不支持子图） | 否 |
@@ -1994,7 +2005,7 @@ upgradeRawDocument
 **helper 的两处「复述常量」**（升级时必须同步改，注释里都写明了）：
 `e2e/helpers/editor.ts` 的 `CURRENT_SCENE_FORMAT_VERSION = 24` 复述 `@dts/document` 的
 `DOCUMENT_FORMAT_VERSION`；`fog-reveal.spec.ts` / `global-bgm.spec.ts` / `video-object.spec.ts` /
-`video-blend.spec.ts` / `sound-object.spec.ts` 里写死的 `protocolVersion: 18` 复述 `@dts/protocol` 的
+`video-blend.spec.ts` / `sound-object.spec.ts` 里写死的 `protocolVersion: 20` 复述 `@dts/protocol` 的
 `PROTOCOL_VERSION`。
 E2E **不引用内部包**（根上没有 workspace 链接），所以这些常量不会被类型检查兜住。
 

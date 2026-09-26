@@ -190,13 +190,16 @@ export function createFogSlice(
         for (const op of entry.ops) {
           if (op.kind === "stroke") {
             deliverFogErase(objectId, op.stroke.points);
-          } else {
+          } else if (op.kind === "region") {
             runtimeClient.sendCommand({
               kind: "reveal_fog_region",
               objectId,
               region: op.region,
               revealed: op.revealed,
             });
+          } else {
+            // 视频混合的「整张」那一档不该出现在雾的记账里：跳过，宁可不发也别发错命令
+            continue;
           }
 
           steps += 1;

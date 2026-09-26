@@ -30,11 +30,17 @@ export interface FogRevealStroke {
 
 /**
  * 一次操作。**有序**：
- * 「整区盖回」要盖掉它**之前**擦掉的部分，所以不能只记「最后是什么样」。
+ * 「整区盖回」/「整张盖住」要盖掉它**之前**擦掉的部分，所以不能只记「最后是什么样」。
+ *
+ * 三个变体分属两个宿主（共用这一份是因为骨架完全一样）：
+ * - `stroke`：两边都用——擦一笔；
+ * - `region`：只有**战争雾**用——按区域位整片开合；
+ * - `fill`：只有**视频混合**用——整张填成 1 / 0（它没有区域位，整张就两个状态）。
  */
 export type FogRevealOp =
   | { readonly kind: "stroke"; readonly stroke: FogRevealStroke }
-  | { readonly kind: "region"; readonly region: number; readonly revealed: boolean };
+  | { readonly kind: "region"; readonly region: number; readonly revealed: boolean }
+  | { readonly kind: "fill"; readonly covered: boolean };
 
 /** 一个地图对象的揭示记录（按对象 id 记：一张地图一层雾，互不影响）。 */
 export interface FogRevealEntry {

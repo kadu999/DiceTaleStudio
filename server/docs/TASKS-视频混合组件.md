@@ -89,7 +89,7 @@ export interface VideoBlendDataDoc {
     面板上每路是「图片 / 视频开关 + 选择按钮」（选择按钮弹现有通用选择框）；换种类会**清掉这一路已选的素材**
     （旧素材属于另一种类型）。
 
-## 协议（16 → 17 → 18 → 19）
+## 协议（16 → 17 → 18 → 19 → 20）
 
 - `COMPONENT_TYPE.videoBlend = "VideoBlend"` + `videoBlendDataSchema` 进 `sceneComponentSchema` 的**严格分支**
   （若不进，写坏的 data 会掉进宽松分支被静默收下）；`PROTOCOL_VERSION` 16 → **17**。
@@ -103,6 +103,8 @@ export interface VideoBlendDataDoc {
   不会自动播（行为丢），照旧靠握手 4002 挡；命令那一组一个字节都没动。
 - **v19**：两路从 `{ clips, picked }` 收成 `{ kind, id }`（每路一个素材、图片 / 视频）。老前端（v18）
   按 `clips` / `picked` 读 → 两路都读不到（混合层放不出来），照旧靠握手 4002 挡；命令那一组仍未动。
+- **v20**：多一条命令 `fill_video_mask`（`{ objectId, covered }`：整张遮罩填成 1 / 0，Mask 窗口那两个
+  「整张」按钮用）。**文档格式不动**；老前端（v19）不认这条命令 → 回一条未知命令，照旧靠握手 4002 挡。
 
 ## 编辑器
 
@@ -115,7 +117,7 @@ export interface VideoBlendDataDoc {
 | `commands/video-blend.ts` | `setVideoBlendChannelKind(channel, kind)` / `setVideoBlendChannelId(channel, id \| null)` / `removeObjectVideoBlend`；`commands/component.ts` 两条 `case` |
 | `scene-asset-refs.ts` | 两路的素材 `id` 的 guid ↔ id 换算（图片与视频同一个字段，`mapMediaFields`） |
 | 面板 | `VideoBlendFields.tsx`：两路各「图片 / 视频开关 + 选择按钮 + 当前素材 + ×」+ `loop` / `audio` / `autoPlay` + 「打开 Mask 窗口」+ 播放三键；选择按当前种类弹 `ResourcePickerDialog`（`image` / `video`）；`registry.tsx` 注册组（`removable`） |
-| Mask 窗口 | `VideoBlendMaskDialog.tsx`：复用 `MapDialogShell` 外壳 + `mask-math` 的像素运算；底图 = B 的缩略图（图片即它自己、视频是首帧）；运行态按批下发 `erase_video_mask`；编辑态纯预览 |
+| Mask 窗口 | `VideoBlendMaskDialog.tsx`：复用 `MapDialogShell` 外壳 + `mask-math` 的像素运算；底图 = B 的缩略图（图片即它自己、视频是首帧）；软边圆刷擦除（软边 **0.5**，有实心核）；右侧两个「**整张盖住（1）/ 整张擦开（0）**」按钮；运行态按批下发 `erase_video_mask`、整张按钮下发 `fill_video_mask`；编辑态纯预览 |
 | store | `video-blend-slice` + `store-types` + `initialState` + `history-slice`/`project-slice` 重置 + `store-context` 的 target / 下发 / 补发（照 `fog-reveal` 那套） |
 | 后端 | `?info=1` 支持视频探测宽高（`routes/resources.ts`） |
 
@@ -152,12 +154,18 @@ export interface VideoBlendDataDoc {
 - [x] **D9 一路一个素材 + 图片**（后续追加）：通道从「列表 + 选中」收成 `{ kind, id? }`（图片 / 视频），
       文档格式 **29** + `migrateVideoBlendChannels` + 协议 **v19**；面板改成「种类开关 + 选择按钮」；
       Unity 图片那一路走 `ResourceImageLoader`（不再只认 `VideoPlayer`）；样例工程抬到 v29
+- [x] **D10 Mask 窗口的「整张」两个按钮**（后续追加）：右边原来那几行说明删掉，换成
+      「整张盖住（1）/ 整张擦开（0）」——一次把整张遮罩填成 1 / 0。协议 **v20** 加命令
+      `fill_video_mask`（`{ objectId, covered }`，与擦一笔共用**同一条有序操作序列**）；
+      `mask-math` 加 `fillMaskAlpha`（只动 alpha，Unity 侧 `VideoBlend.FillMask` 是它的移植）；
+      Unity 的操作记录从「只有笔画」扩成 `Stroke | Fill` 两档（重放同一套）
 
 ## 验收标准
 
 - `pnpm check` 全绿（typecheck + 单测 + lint + 文档统计）；
 - 契约测试：协议与文档的 `VideoBlend` 组件名逐字一致、两边都能解析、坏 data 两边都拒；
-- e2e：属性面板能加 / 移除「视频混合」组、能编辑两条通道、Mask 窗口能开、擦一笔在运行态下发出 `erase_video_mask`；
+- e2e：属性面板能加 / 移除「视频混合」组、能编辑两条通道、Mask 窗口能开、擦一笔在运行态下发出 `erase_video_mask`、
+  「整张」按钮发出 `fill_video_mask`；
 - Unity MCP：脚本刷新后控制台 0 error / 0 warning；`VideoBlend` 视图建立、两个 `VideoPlayer` prepare、遮罩擦除后像素变化有断言；Game 视图截图存证。
 
 ## 风险与遗留
