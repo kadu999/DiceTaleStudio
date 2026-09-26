@@ -691,9 +691,9 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
       return null;
     }
 
-    // 与战争雾那条一模一样的第三种拒绝：开关关着（不是没加视频，也不是没选）
+    // 与战争雾那条一模一样的第三种拒绝：没启用（不是没加视频，也不是没选）
     if (!isVideoEnabled(object)) {
-      pushLog(makeLog("warn", `${what}失败：「${object.name}」的视频开关关着（属性面板 → 视频 → 启用）`));
+      pushLog(makeLog("warn", `${what}失败：「${object.name}」的视频没启用（属性面板 → 添加组件 → 视频）`));
       return null;
     }
 

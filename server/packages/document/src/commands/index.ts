@@ -23,4 +23,5 @@ export * from "./fog";
 export * from "./play-sound";
 export * from "./teleport";
 export * from "./video";
+export * from "./component";
 export * from "./project";

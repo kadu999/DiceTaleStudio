@@ -66,6 +66,28 @@ export function setVideoEnabled(
 }
 
 /**
+ * 把对象上的**视频组件摘掉**（属性面板「视频」那一组的「移除视频」）。
+ *
+ * 与「移除网格」（`removeObjectGridMap`）同一套规矩：视频是可选能力，**组件在 = 在用**，
+ * 摘掉 = 这个对象不再放视频；**加进来的列表随组件一起删掉**（数据就是组件本体）。
+ * 素材文件不受影响。
+ *
+ * 与 `setVideoEnabled(false)` 的区别：后者在**已经加过视频**时会留着列表、只把开关关掉
+ * （等着再打开）；「移除」是明确的「不要这个能力了」，所以列表一并清掉。
+ *
+ * 没有视频组件（或对象不认了）时返回 `false`（无变更，不入撤销栈）。
+ */
+export function removeObjectVideo(scene: Draft<SceneDoc>, objectId: string): boolean {
+  return withObject(scene, objectId, (object) => {
+    if (videoDataOf(object) === undefined) {
+      return false;
+    }
+
+    return removeFeature(object, DEFAULT_SLOT_COMPONENT.video);
+  });
+}
+
+/**
  * 替换视频列表（资源逻辑 ID）。
  *
  * 这是「**加进来 / 移出去**」那件事（界面上在「编辑视频」窗口里做）：只保证内容是去空、

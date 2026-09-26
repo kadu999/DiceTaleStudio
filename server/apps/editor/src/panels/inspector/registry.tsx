@@ -2,17 +2,14 @@ import type { ReactNode } from "react";
 import { COMPONENT_TYPE } from "@dts/protocol";
 import {
   OBJECT_SPEC,
-  componentOf,
+  canAddOptionalObjectComponent,
   canRepairObjectComponent,
-  hasComponentKindMismatch,
+  componentOf,
   mapDataOf,
-  supportsFog,
-  supportsObjectComponent,
-  supportsVideo,
   type ComponentType,
   type GameObjectDoc,
 } from "@dts/document";
-import { Field, FieldRow } from "./fields";
+import { Field } from "./fields";
 import { FogFields } from "./FogFields";
 import { GridAnnotationFields } from "./GridAnnotationFields";
 import { SoundFields } from "./SoundFields";
@@ -43,7 +40,13 @@ export interface EditorPanelDef {
 export interface ComponentEditorDef {
   readonly type: ComponentType;
   readonly panels: readonly EditorPanelDef[];
-  readonly availableWithoutComponent: (object: GameObjectDoc) => boolean;
+  /**
+   * **可选能力组件**（网格 / 视频）：挂在对象上时，组头给一个「移除组件」。
+   *
+   * 必需组件（图片层 / 精灵层 / 声音 / 传送 / 战争雾）不给——摘掉会把那个对象弄坏。
+   * 未挂上的可选组件**不出现组**，改由面板底部的「添加组件」列出（见 `addableComponentsFor`）。
+   */
+  readonly removable?: boolean;
 }
 
 export const OBJECT_EDITOR: EditorPanelDef = {
@@ -65,16 +68,6 @@ export const OBJECT_EDITOR: EditorPanelDef = {
 
 const hasComponent = (object: GameObjectDoc, type: ComponentType): boolean =>
   componentOf(object, type) !== undefined;
-
-/**
- * 缺图片组件时是否给「图片层 / 精灵层」能力入口。
- *
- * 判据就是「这个对象能不能显式修复出这个组件」：精灵 / 贴图 / 玩家 / 道具 / 事件都在各自的
- * `repairKinds` 里。已经挂着图片组件的对象不走这里（组由 `hasComponent` 直接命中）。
- */
-function imageFallback(object: GameObjectDoc, type: ComponentType): boolean {
-  return canRepairObjectComponent(object, type);
-}
 
 function panel(group: string, title: string, render: EditorPanelDef["render"]): EditorPanelDef {
   return { group, title, render };
@@ -105,58 +98,19 @@ function ComponentRepairAction({
 }
 
 /**
- * 「网格」是 v28 起的**可选能力**（像「视频」）：没加时给一个「添加网格」入口，
- * 加完它就是「网格地图」（贴图 + 网格数据，没有独立的对象类型）。
- */
-function AddGridAction({ object }: { readonly object: GameObjectDoc }): React.JSX.Element {
-  const addGrid = useEditorStore((state) => state.addObjectGridMap);
-  return (
-    <div className="flex items-center gap-2 px-2 py-2">
-      <span className="min-w-0 flex-1 text-[11px] text-[var(--color-editor-text-dim)]">
-        还没有网格
-      </span>
-      <button
-        type="button"
-        data-testid="add-grid-map"
-        title="按这张贴图的尺寸建一份网格；加完就能在网格编辑窗口里涂格子"
-        className="flex-none rounded bg-[var(--color-editor-accent)] px-2 py-0.5 text-[11px] text-black hover:opacity-90"
-        onClick={() => addGrid(object.id)}
-      >
-        添加网格
-      </button>
-    </div>
-  );
-}
-
-/** 把贴图上的网格摘掉（对象回到普通贴图）。 */
-function RemoveGridAction({ object }: { readonly object: GameObjectDoc }): React.JSX.Element {
-  const removeGrid = useEditorStore((state) => state.removeObjectGridMap);
-  return (
-    <FieldRow label="网格">
-      <button
-        type="button"
-        data-testid="remove-grid-map"
-        title="移除网格数据（对象回到普通贴图）；格子数据会一起删掉"
-        className="flex-none rounded border border-[var(--color-editor-border)] px-2 py-0.5 text-[11px] hover:bg-[var(--color-editor-panel-alt)]"
-        onClick={() => removeGrid(object.id)}
-      >
-        移除网格
-      </button>
-    </FieldRow>
-  );
-}
-
-/**
  * 组件编辑器表：**一个组件一个组**（组 slug = 组件槽位语义、标题 = 组件 displayName）。
  *
  * 「基础」组（`OBJECT_EDITOR`）是**实体属性**（不进组件）；每个组件编辑器的 `panels`
- * 只剩一个面板。`availableWithoutComponent` 命中的组是**能力入口**（未添加时的开关 /
- * 选图 / 添加 / 修复），InspectorPanel 会给它们挂「未添加」角标。
+ * 只剩一个面板。**可选能力**（网格 / 视频）标 `removable`：
+ * - 没挂上时**不出组**——入口在面板底部的「添加组件」（`addableComponentsFor`）；
+ * - 挂上后是正式组，组头给「移除组件」。
+ *
+ * 缺**必需**组件的修复入口是另一条路（`componentEditorsFor` 里的 `canRepairObjectComponent`），
+ * 那些组由 InspectorPanel 挂「未添加」角标。
  */
 export const COMPONENT_EDITORS: readonly ComponentEditorDef[] = [
   {
     type: COMPONENT_TYPE.image,
-    availableWithoutComponent: (object) => imageFallback(object, COMPONENT_TYPE.image),
     panels: [
       panel("image", "图片层", (object) => (
         <>
@@ -168,7 +122,6 @@ export const COMPONENT_EDITORS: readonly ComponentEditorDef[] = [
   },
   {
     type: COMPONENT_TYPE.sprite,
-    availableWithoutComponent: (object) => imageFallback(object, COMPONENT_TYPE.sprite),
     panels: [
       panel("sprite", "精灵层", (object) => (
         <>
@@ -179,31 +132,26 @@ export const COMPONENT_EDITORS: readonly ComponentEditorDef[] = [
     ],
   },
   {
+    // 网格是可选的**能力组件**（v28）：挂上 = 网格地图。没挂时不出现组，
+    // 改由面板底部的「添加组件」列出（可移除）。
     type: COMPONENT_TYPE.map,
-    availableWithoutComponent: (object) => supportsObjectComponent(object, COMPONENT_TYPE.map),
+    removable: true,
     panels: [
-      panel("map", "网格地图", (object) =>
-        mapDataOf(object) === undefined ? (
-          // 网格是可选能力（v28）：没加时只给「添加网格」入口
-          <AddGridAction object={object} />
-        ) : (
-          <>
-            <GridFields object={object} />
-            <CellSizeField object={object} />
-            <Field label="行序" value={mapDataOf(object)?.rowOrder ?? ""} mono />
-            <GridDisplayField />
-            <GridAnnotationFields object={object} />
-            <RemoveGridAction object={object} />
-          </>
-        ),
-      ),
+      panel("map", "网格地图", (object) => (
+        <>
+          <GridFields object={object} />
+          <CellSizeField object={object} />
+          <Field label="行序" value={mapDataOf(object)?.rowOrder ?? ""} mono />
+          <GridDisplayField />
+          <GridAnnotationFields object={object} />
+        </>
+      )),
     ],
   },
   {
     // 战争雾（v27 起是独立的 `Fog` 对象）：组件就是它的数据本体，组照常出现；
     // 缺组件（损坏的手写文件）时给显式修复入口。
     type: COMPONENT_TYPE.fog,
-    availableWithoutComponent: (object) => supportsFog(object),
     panels: [
       panel("fog", "战争雾", (object) =>
         componentOf(object, COMPONENT_TYPE.fog) === undefined ? (
@@ -216,9 +164,6 @@ export const COMPONENT_EDITORS: readonly ComponentEditorDef[] = [
   },
   {
     type: COMPONENT_TYPE.sound,
-    availableWithoutComponent: (object) =>
-      supportsObjectComponent(object, COMPONENT_TYPE.sound) ||
-      canRepairObjectComponent(object, COMPONENT_TYPE.sound),
     panels: [
       panel("sound", "播放声音", (object) =>
         componentOf(object, COMPONENT_TYPE.sound) === undefined ? (
@@ -231,9 +176,6 @@ export const COMPONENT_EDITORS: readonly ComponentEditorDef[] = [
   },
   {
     type: COMPONENT_TYPE.teleport,
-    availableWithoutComponent: (object) =>
-      supportsObjectComponent(object, COMPONENT_TYPE.teleport) ||
-      canRepairObjectComponent(object, COMPONENT_TYPE.teleport),
     panels: [
       panel("teleport", "传送阵", (object) =>
         componentOf(object, COMPONENT_TYPE.teleport) === undefined ? (
@@ -245,24 +187,51 @@ export const COMPONENT_EDITORS: readonly ComponentEditorDef[] = [
     ],
   },
   {
+    // 视频是**可选能力**（像「网格」）：挂上才有这一组；没挂时不出现组，改由面板底部的
+    // 「添加组件」列出。可移除（组头那枚按钮）。`enabled` 字段仍在数据里（添加时写 `true`），
+    // 界面不再暴露开关。
     type: COMPONENT_TYPE.video,
-    availableWithoutComponent: (object) => supportsVideo(object),
+    removable: true,
     panels: [panel("video", "视频", (object) => <VideoFields object={object} />)],
   },
 ];
 
 /**
- * Attached components drive editing; explicit repair and optional capability paths expose missing-instance entry points.
+ * 返回该对象**该显示哪些组件组**：已挂上的组件 + 缺失**必需**组件时的**修复入口**。
  *
- * 返回的每个编辑器只带**一个**面板（「一个组件一个组」）；组件缺失时的过滤只看
- * 「实例在不在 / 准入允不允许」。v28 起带网格的贴图也用图片层，所以不再为它屏蔽图片组
- * （精灵组对它本来就不会命中：`SpriteLayer.repairKinds` 里没有 `Image`）。
+ * 「一个组件一个组」，每个编辑器只带一个面板。
+ *
+ * 两类分工：
+ * - **必需组件**（图片层 / 精灵层 / 声音 / 传送 / 战争雾）挂上就是正式组；坏文件里缺了它，
+ *   由 `canRepairObjectComponent` 命中，给一个「修复」入口（挂「未添加」角标）；
+ * - **可选能力**（网格 / 视频）**没挂上时不出现组**——它们改由面板底部的「添加组件」列出
+ *   （与 Unity 的 Add Component 同一套）。挂上之后就是正式组，组头有「移除组件」。
  */
 export function componentEditorsFor(object: GameObjectDoc): readonly ComponentEditorDef[] {
-  const missingComponentEntryAllowed = !hasComponentKindMismatch(object);
   return COMPONENT_EDITORS.filter(
     (editor) =>
-      hasComponent(object, editor.type) ||
-      (missingComponentEntryAllowed && editor.availableWithoutComponent(object)),
+      hasComponent(object, editor.type) || canRepairObjectComponent(object, editor.type),
   );
+}
+
+/** 「添加组件」菜单里的一项：组件类型 + 显示名。 */
+export interface AddableComponentDef {
+  readonly type: ComponentType;
+  readonly label: string;
+}
+
+/**
+ * 面板底部「添加组件」能加哪些：**可选能力组件、且这个对象还没挂**（判据走
+ * `canAddOptionalObjectComponent`，与文档命令同一套）。顺序 = 注册表顺序（网格 → 视频）。
+ *
+ * 返回空表示这个对象没有可添加的组件——面板就不显示那个按钮。
+ */
+export function addableComponentsFor(object: GameObjectDoc): readonly AddableComponentDef[] {
+  return COMPONENT_EDITORS.filter(
+    (editor) =>
+      !hasComponent(object, editor.type) && canAddOptionalObjectComponent(object, editor.type),
+  ).map((editor) => ({
+    type: editor.type,
+    label: editor.panels[0]?.title ?? editor.type,
+  }));
 }

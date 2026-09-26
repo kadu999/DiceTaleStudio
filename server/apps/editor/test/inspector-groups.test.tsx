@@ -91,6 +91,29 @@ function headerOf(slug: string): HTMLElement {
 const hasGroup = (slug: string): boolean =>
   document.querySelector(`[data-group="${slug}"]`) !== null;
 
+/** 打开底部「添加组件」菜单，返回里面列出的组件名（读完收起）。没有那个按钮就返回空。 */
+function addableLabels(): string[] {
+  const trigger = screen.queryByTestId("add-component");
+  if (trigger === null) {
+    return [];
+  }
+
+  fireEvent.click(trigger);
+  const labels = Array.from(
+    document.querySelectorAll<HTMLButtonElement>('[data-testid^="add-component-"]'),
+  )
+    .filter((element) => element.tagName === "BUTTON")
+    .map((element) => element.textContent ?? "");
+  fireEvent.click(trigger);
+  return labels;
+}
+
+/** 从底部「添加组件」里加一个组件（按 `data-testid` 尾部的组件类型，如 `GridMap`）。 */
+function addComponentFromMenu(type: string): void {
+  fireEvent.click(screen.getByTestId("add-component"));
+  fireEvent.click(screen.getByTestId(`add-component-${type}`));
+}
+
 afterEach(() => {
   cleanup();
   sceneHistory.reset([]);
@@ -142,7 +165,7 @@ describe("属性分组：基础 + 一一对应的组件组", () => {
     });
   });
 
-  it("没有网格的贴图：网格组给「添加网格」入口，加完按图片尺寸建网格（一次撤销可还原）", () => {
+  it("没有网格的贴图：底部「添加组件」能加网格，加完按图片尺寸建网格（一次撤销可还原）", () => {
     const broken = {
       ...createGameObject({ id: "broken-map", name: "贴图", kind: "Image" }),
       components: [
@@ -157,12 +180,13 @@ describe("属性分组：基础 + 一一对应的组件组", () => {
     seedScene([broken], ["broken-map"]);
     render(<InspectorPanel />);
 
-    const gridGroup = groupOf("map");
-    expect(within(gridGroup).getByTestId("add-grid-map")).toBeDefined();
+    // 没加网格：不出现网格组；入口在底部「添加组件」
+    expect(hasGroup("map")).toBe(false);
+    expect(addableLabels()).toContain("网格地图");
     // 战争雾自 v27 起是独立对象，这里没有它那一组
     expect(groupSlugs()).not.toContain("fog");
 
-    fireEvent.click(within(gridGroup).getByTestId("add-grid-map"));
+    addComponentFromMenu("GridMap");
 
     const withGrid = useEditorStore.getState().scenes[0]?.objects[0];
     expect(mapDataOf(withGrid!)).toMatchObject({
@@ -177,7 +201,7 @@ describe("属性分组：基础 + 一一对应的组件组", () => {
     expect(useEditorStore.getState().canUndo).toBe(false);
   });
 
-  it("网格地图分四组（基础 + 图片层 + 网格 + 视频）；精灵 / 贴图各两组、三组", () => {
+  it("网格地图分三组（基础 + 图片层 + 网格）；精灵一组、贴图一组，视频 / 网格在「添加组件」里", () => {
     seedScene(
       [mapObject(), createGameObject({ id: "sprite", name: "精灵" }), fogObject()],
       ["map-1"],
@@ -187,15 +211,16 @@ describe("属性分组：基础 + 一一对应的组件组", () => {
     expect(headerOf("basic")).toBeDefined();
     expect(headerOf("image")).toBeDefined();
     expect(headerOf("map")).toBeDefined();
-    expect(headerOf("video")).toBeDefined();
+    // 视频还没挂上：不出组，入口在底部「添加组件」
+    expect(hasGroup("video")).toBe(false);
     expect(isOpen("basic")).toBe(true);
     expect(isOpen("image")).toBe(true);
     expect(isOpen("map")).toBe(true);
-    expect(isOpen("video")).toBe(true);
+    expect(addableLabels()).toEqual(["视频"]);
 
-    // 组序 = 基础 + 组件组（注册表顺序）：图片层 → 网格地图 → 视频
+    // 组序 = 基础 + 组件组（注册表顺序）：图片层 → 网格地图
     // （战争雾自 v27 起是**独立对象**；网格自 v28 起是贴图上的可选组件）
-    expect(groupSlugs()).toEqual(["basic", "image", "map", "video"]);
+    expect(groupSlugs()).toEqual(["basic", "image", "map"]);
     expect(hasGroup("fog")).toBe(false);
 
     // 「基础」是实体属性组：挂「实体」角标，组件组不挂角标
@@ -206,11 +231,6 @@ describe("属性分组：基础 + 一一对应的组件组", () => {
     // 贴图那一行在「图片层」组里（v28 起网格地图的贴图也在图片层）：基础组里不再有它
     expect(within(groupOf("image")).getByTestId("pick-texture")).toBeDefined();
     expect(within(groupOf("basic")).queryByTestId("pick-texture")).toBeNull();
-
-    // 视频那一组对贴图（含网格地图）出现；还没开时整组只剩「启用」那一个开关（也是能力入口）
-    expect(within(groupOf("video")).getByTestId("video-enable")).toBeDefined();
-    expect(within(groupOf("video")).queryByTestId("video-edit")).toBeNull();
-    expect(groupOf("video").querySelector('[data-testid="field-group-badge"]')?.getAttribute("data-kind")).toBe("capability");
 
     // 网格规格（列 · 行 / 每格 / 行序）跟标注一起归「网格地图」组，基础组里不再有它
     expect(within(groupOf("map")).getByTestId("inspector-grid-columns")).toBeDefined();
@@ -231,6 +251,8 @@ describe("属性分组：基础 + 一一对应的组件组", () => {
     expect(groupOf("fog").querySelector('[data-testid="field-group-badge"]')).toBeNull();
     expect(hasGroup("map")).toBe(false);
     expect(hasGroup("video")).toBe(false);
+    // 战争雾对象没有可选组件可加：底部没有「添加组件」
+    expect(screen.queryByTestId("add-component")).toBeNull();
 
     unmount();
     seedScene([mapObject(), createGameObject({ id: "sprite", name: "精灵" })], ["sprite"]);
@@ -244,19 +266,20 @@ describe("属性分组：基础 + 一一对应的组件组", () => {
     expect(hasGroup("video")).toBe(false);
     expect(hasGroup("map")).toBe(false);
     expect(hasGroup("fog")).toBe(false);
+    // 精灵没有可选组件可加
+    expect(screen.queryByTestId("add-component")).toBeNull();
 
     spritePanel.unmount();
     seedScene([mapObject(), textureObject()], ["tex-1"]);
     render(<InspectorPanel />);
 
-    // 贴图：「基础 / 图片层 / 网格 / 视频」（网格是可选能力，入口照常出现），没有战争雾
+    // 贴图：「基础 / 图片层」；网格与视频都是可选能力，入口在底部「添加组件」，没有战争雾
     expect(headerOf("basic")).toBeDefined();
     expect(headerOf("image")).toBeDefined();
-    expect(headerOf("map")).toBeDefined();
-    expect(headerOf("video")).toBeDefined();
-    expect(groupSlugs()).toEqual(["basic", "image", "map", "video"]);
-    expect(within(groupOf("video")).getByTestId("video-enable")).toBeDefined();
-    expect(within(groupOf("map")).getByTestId("add-grid-map")).toBeDefined();
+    expect(groupSlugs()).toEqual(["basic", "image"]);
+    expect(addableLabels()).toEqual(["网格地图", "视频"]);
+    expect(hasGroup("map")).toBe(false);
+    expect(hasGroup("video")).toBe(false);
     expect(hasGroup("fog")).toBe(false);
   });
 
@@ -325,23 +348,23 @@ describe("属性分组：基础 + 一一对应的组件组", () => {
     render(<InspectorPanel />);
 
     fireEvent.click(headerOf("map"));
-    fireEvent.click(headerOf("video"));
+    fireEvent.click(headerOf("image"));
     expect(isOpen("map")).toBe(false);
-    expect(isOpen("video")).toBe(false);
+    expect(isOpen("image")).toBe(false);
 
-    // 换到雾对象：它是另一套（基础 + 战争雾），地图 / 视频不跟过来
+    // 换到雾对象：它是另一套（基础 + 战争雾），图片层 / 网格不跟过来
     act(() => useEditorStore.getState().setSelection(["fog-1"]));
     expect(headerOf("basic")).toBeDefined();
     expect(headerOf("fog")).toBeDefined();
     expect(isOpen("fog")).toBe(true);
     expect(hasGroup("map")).toBe(false);
-    expect(hasGroup("video")).toBe(false);
+    expect(hasGroup("image")).toBe(false);
 
     // 再回到地图：那些组都是**展开**的
     act(() => useEditorStore.getState().setSelection(["map-1"]));
     expect(isOpen("basic")).toBe(true);
     expect(isOpen("map")).toBe(true);
-    expect(isOpen("video")).toBe(true);
+    expect(isOpen("image")).toBe(true);
   });
 
   it("场景 / 资源 / 项目视图也走同一套可折叠分组", () => {
@@ -372,7 +395,8 @@ describe("属性分组：基础 + 一一对应的组件组", () => {
     render(<InspectorPanel />);
 
     expect(groupSlugs()).toEqual(["basic", "video"]);
-    expect(within(groupOf("video")).getByTestId("video-enable")).toBeDefined();
+    expect(within(groupOf("video")).getByTestId("video-loop")).toBeDefined();
+    expect(within(groupOf("video")).getByTestId("remove-component")).toBeDefined();
     expect(hasGroup("sound")).toBe(false);
   });
 

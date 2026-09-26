@@ -746,11 +746,11 @@ export async function readSceneFogRegions(
 }
 
 /**
- * 读场景文件里**某个对象**的视频配置（**地图 / 贴图**上的 `VideoOverlay`），按 `kind` 找——
- * 不按数组下标：用例里对象顺序不是契约，`readSceneFog` 也是这么做的。
+ * 读场景文件里**某个对象**的视频配置（**地图 / 贴图**上的 `VideoOverlay`）。
  *
- * 缺省找 `Image`（视频的宿主自 v21 起是贴图，v28 起网格地图也是 `Image`）——一个场景里
- * 可以有多个 `Image` 对象，想读哪一个必须由调用方说清（`kind` 只能区分到这）。
+ * 缺省按 `kind: "Image"` 找（视频的宿主自 v21 起是贴图）——但 v28 起**网格地图也是 `Image`**，
+ * 一个场景里会有多个 `Image` 对象，`kind` 已经分不清它们；要读其中一个必须传 `objectId`
+ * （地图 / 贴图谁是谁只有 id 说得清）。
  *
  * 没加过视频就是 `undefined`——「没加」在文件里是**没有这个组件**（v18 及更早是没有
  * `video` 这个字段；见 `setVideoClips`）。
@@ -759,7 +759,7 @@ export async function readSceneVideo(
   request: APIRequestContext,
   project: string,
   sceneName: string,
-  kind: "Image" = "Image",
+  target: { readonly kind?: string; readonly objectId?: string } = { kind: "Image" },
 ): Promise<
   | {
       clips?: readonly string[];
@@ -778,7 +778,7 @@ export async function readSceneVideo(
   }
 
   const file = JSON.parse(await response.text()) as SceneFileLike;
-  const data = componentDataOf(file, { kind }, COMPONENT.videoOverlay);
+  const data = componentDataOf(file, target, COMPONENT.videoOverlay);
   if (data === undefined) {
     return undefined;
   }

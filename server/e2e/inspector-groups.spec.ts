@@ -47,24 +47,23 @@ test.describe("属性分组", () => {
       await openProject(page, project);
       await openLeftTab(page, "hierarchy");
 
-      // 选中网格地图（列表第一行）→ 属性面板应有四个分组（图片层 / 网格 / 视频 + 基础）
+      // 选中网格地图（列表第一行）→ 属性面板三组：基础 + 图片层 + 网格
+      // （视频还没挂上，入口在底部的「添加组件」，不出组）
       await selectObject(page, 0);
 
       const basic = page.locator('[data-group="basic"]');
       const image = page.locator('[data-group="image"]');
       const map = page.locator('[data-group="map"]');
-      const video = page.locator('[data-group="video"]');
       await expect(basic).toBeVisible();
       await expect(image).toBeVisible();
       await expect(map).toBeVisible();
-      await expect(video).toBeVisible();
-      // 网格地图上不再有「战争雾」组（v27 起是独立对象）
+      // 视频还没挂上：不出组；网格地图上也没有「战争雾」组（v27 起是独立对象）
+      await expect(page.locator('[data-group="video"]')).toHaveCount(0);
       await expect(page.locator('[data-group="fog"]')).toHaveCount(0);
       // 默认都展开
       await expect(basic).toHaveAttribute("data-open", "true");
       await expect(image).toHaveAttribute("data-open", "true");
       await expect(map).toHaveAttribute("data-open", "true");
-      await expect(video).toHaveAttribute("data-open", "true");
       await expect(basic).toContainText("名称");
       // 贴图行在「图片层」组里；网格规格在「网格地图」组里（一个组件一个组）
       await expect(image).toContainText("贴图");
@@ -75,10 +74,14 @@ test.describe("属性分组", () => {
       await expect(basic.locator('[data-testid="field-group-badge"]')).toHaveAttribute("data-kind", "entity");
       await expect(image.locator('[data-testid="field-group-badge"]')).toHaveCount(0);
       await expect(map.locator('[data-testid="field-group-badge"]')).toHaveCount(0);
-      // 视频那一组还没开时只剩「启用」那一个开关（打开之后的样子见 video-object.spec.ts）
-      await expect(video).toContainText("视频");
-      await expect(video.getByTestId("video-enable")).toBeVisible();
-      await expect(video.getByTestId("video-clips")).toHaveCount(0);
+
+      // 底部「添加组件」（Unity 式）：网格已挂上，只剩「视频」可加；点开列出组件名
+      const addComponent = page.getByTestId("add-component");
+      await expect(addComponent).toBeVisible();
+      await addComponent.click();
+      await expect(page.getByTestId("add-component-VideoOverlay")).toBeVisible();
+      await expect(page.getByTestId("add-component-GridMap")).toHaveCount(0);
+      await addComponent.click();
 
       const mapHeader = map.getByTestId("field-group-header");
       await expect(mapHeader).toHaveAttribute("aria-expanded", "true");
@@ -96,7 +99,7 @@ test.describe("属性分组", () => {
       const order = await page
         .locator('[data-testid="object-properties"] [data-group]')
         .evaluateAll((sections) => sections.map((section) => section.getAttribute("data-group")));
-      expect(order).toEqual(["basic", "image", "map", "video"]);
+      expect(order).toEqual(["basic", "image", "map"]);
 
       // 收起「网格地图」：内容整块消失，但分组标题还在（还能再展开）
       await mapHeader.click();
@@ -110,15 +113,6 @@ test.describe("属性分组", () => {
       await mapHeader.click();
       await expect(map).toHaveAttribute("data-open", "true");
       await expect(map.getByTestId("inspector-grid-columns")).toBeVisible();
-
-      // 收起「视频」：那一个开关也消失，标题还在
-      const videoHeader = video.getByTestId("field-group-header");
-      await videoHeader.click();
-      await expect(video).toHaveAttribute("data-open", "false");
-      await expect(video.getByTestId("video-enable")).toHaveCount(0);
-      await videoHeader.click();
-      await expect(video).toHaveAttribute("data-open", "true");
-      await expect(video.getByTestId("video-enable")).toBeVisible();
 
       // 战争雾对象（列表第 4 个）：「基础 / 战争雾」
       await selectObject(page, 3);
@@ -146,21 +140,26 @@ test.describe("属性分组", () => {
       await expect(fog.getByTestId("fog-enable")).toBeVisible();
 
       // 精灵：「基础 / 精灵层」（图片组件是 `SpriteLayer`，组 slug 跟着组件走）。
-      // **没有视频**（v21 起那一组归贴图），也不是地图 → 没有网格地图 / 战争雾
+      // **没有视频**（v21 起那一组归贴图），也不是地图 → 没有网格地图 / 战争雾；也没有可加的组件
       await selectObject(page, 1);
       await expect(page.locator('[data-group="basic"]')).toBeVisible();
       await expect(page.locator('[data-group="sprite"]')).toBeVisible();
       await expect(page.locator('[data-group="video"]')).toHaveCount(0);
       await expect(page.locator('[data-group="map"]')).toHaveCount(0);
       await expect(page.locator('[data-group="fog"]')).toHaveCount(0);
+      await expect(page.getByTestId("add-component")).toHaveCount(0);
 
-      // 贴图：「基础 / 图片层 / 网格 / 视频」（网格是可选能力，入口照常出现），没有战争雾
+      // 贴图：「基础 / 图片层」；网格与视频都是**可选能力**，入口在底部「添加组件」，没有战争雾
       await selectObject(page, 2);
       await expect(page.locator('[data-group="basic"]')).toBeVisible();
       await expect(page.locator('[data-group="image"]')).toBeVisible();
-      await expect(page.locator('[data-group="map"]')).toBeVisible();
-      await expect(page.locator('[data-group="video"]')).toBeVisible();
+      await expect(page.locator('[data-group="map"]')).toHaveCount(0);
+      await expect(page.locator('[data-group="video"]')).toHaveCount(0);
       await expect(page.locator('[data-group="fog"]')).toHaveCount(0);
+      await page.getByTestId("add-component").click();
+      await expect(page.getByTestId("add-component-GridMap")).toBeVisible();
+      await expect(page.getByTestId("add-component-VideoOverlay")).toBeVisible();
+      await page.getByTestId("add-component").click();
     } finally {
       await dropProject(request, project);
     }

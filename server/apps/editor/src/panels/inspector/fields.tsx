@@ -24,6 +24,8 @@ export function FieldGroup({
   group,
   badge,
   defaultOpen = true,
+  onRemove,
+  removeLabel,
   children,
 }: {
   readonly title: string;
@@ -37,6 +39,13 @@ export function FieldGroup({
    */
   readonly badge?: "entity" | "capability";
   readonly defaultOpen?: boolean;
+  /**
+   * 组头的**「移除组件」**（可选能力组件才有，见 `registry.tsx` 的 `removable`）。
+   * 只有可选组件会传它；必需组件摘掉会把对象弄坏，所以不给。
+   */
+  readonly onRemove?: () => void;
+  /** 「移除组件」按钮的无障碍名与 `title`。不给就按标题拼一句。 */
+  readonly removeLabel?: string;
   readonly children: React.ReactNode;
 }): React.JSX.Element {
   const [open, setOpen] = useState(defaultOpen);
@@ -51,31 +60,48 @@ export function FieldGroup({
       {/*
         标题整条可点（箭头 + 文字）；箭头 `aria-hidden`，于是无障碍名字就是分组名，
         测试也能直接按名字点：`getByRole("button", { name: "区域" })`。
+
+        「移除组件」是**兄弟按钮**（不能嵌进标题那个 `<button>` 里）——外圈这一条负责底色，
+        标题按钮撑满剩下的宽度，于是没有移除键的组看起来与以前完全一样。
       */}
-      <button
-        type="button"
-        data-testid="field-group-header"
-        aria-expanded={open}
-        className="flex w-full cursor-pointer items-center gap-1.5 bg-[var(--color-editor-bar)] px-2 py-1 text-left text-[11px] font-semibold text-[var(--color-editor-text)] hover:bg-[var(--color-editor-bar-hover)]"
-        onClick={() => setOpen((previous) => !previous)}
-      >
-        <ChevronIcon open={open} />
-        <span className="truncate">{title}</span>
-        {badge === undefined ? null : (
-          <span
-            data-testid="field-group-badge"
-            data-kind={badge}
-            title={
-              badge === "entity"
-                ? "对象固有属性：不进组件的字段（名称 / 变换 / 可见性）"
-                : "能力入口：这个组件还没添加；用它建起来后就是正式的组件组"
-            }
-            className="flex-none rounded border border-[var(--color-editor-border)] px-1 text-[9px] font-normal text-[var(--color-editor-text-dim)]"
+      <div className="flex items-stretch bg-[var(--color-editor-bar)]">
+        <button
+          type="button"
+          data-testid="field-group-header"
+          aria-expanded={open}
+          className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 bg-[var(--color-editor-bar)] px-2 py-1 text-left text-[11px] font-semibold text-[var(--color-editor-text)] hover:bg-[var(--color-editor-bar-hover)]"
+          onClick={() => setOpen((previous) => !previous)}
+        >
+          <ChevronIcon open={open} />
+          <span className="truncate">{title}</span>
+          {badge === undefined ? null : (
+            <span
+              data-testid="field-group-badge"
+              data-kind={badge}
+              title={
+                badge === "entity"
+                  ? "对象固有属性：不进组件的字段（名称 / 变换 / 可见性）"
+                  : "能力入口：这个组件还没添加；用它建起来后就是正式的组件组"
+              }
+              className="flex-none rounded border border-[var(--color-editor-border)] px-1 text-[9px] font-normal text-[var(--color-editor-text-dim)]"
+            >
+              {badge === "entity" ? "实体" : "未添加"}
+            </span>
+          )}
+        </button>
+        {onRemove === undefined ? null : (
+          <button
+            type="button"
+            data-testid="remove-component"
+            aria-label={removeLabel ?? `移除「${title}」组件`}
+            title={removeLabel ?? `移除「${title}」组件`}
+            className="flex flex-none items-center bg-[var(--color-editor-bar)] px-2 text-[11px] text-[var(--color-editor-text-dim)] hover:bg-[var(--color-editor-bar-hover)] hover:text-[var(--color-editor-text)]"
+            onClick={onRemove}
           >
-            {badge === "entity" ? "实体" : "未添加"}
-          </span>
+            ✕
+          </button>
         )}
-      </button>
+      </div>
 
       {/* 收起时**不渲染**内容：只影响看见什么——数据、输入框的值都在 store / 文档里 */}
       {open ? (

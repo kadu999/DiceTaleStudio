@@ -95,13 +95,12 @@ function videoRowTestIds(): string[] {
 afterEach(cleanup);
 
 describe("描述符行：与手写版逐字等价", () => {
-  it("三个开关照旧出现，且行序是 启用 → 循环 → 声音 → 自动播放", () => {
+  it("三个开关照旧出现，且行序是 循环 → 声音 → 自动播放", () => {
     seedScene([mapWithVideo()], ["map-1"]);
     render(<InspectorPanel />);
 
-    // 前四行与手写版完全同序（「启用」是自定义行，三个开关由规格出行）
-    expect(videoRowTestIds().slice(0, 4)).toEqual([
-      "video-enable",
+    // 三个开关都在规格里、按 order 出行；「启用」不再是一个开关（组件在 = 在用）
+    expect(videoRowTestIds().slice(0, 3)).toEqual([
       "video-loop",
       "video-audio",
       "video-auto-play",
@@ -152,14 +151,15 @@ describe("描述符行：与手写版逐字等价", () => {
     expect(data?.autoPlay).toBe(false);
   });
 
-  it("组件缺失时按规格补壳再写（手写文件里没写 `video` 也能打开开关）", () => {
+  it("组件缺失时先用「添加组件」补壳，再按规格写（手写文件里没写 `video` 也能打开开关）", () => {
     // 工厂建出来的地图只有 `GridMap`：没有 `VideoOverlay` 实例
     seedScene([createGridMapObject({ id: "map-1", name: "网格地图", image: IMAGE, grid: GRID })], ["map-1"]);
     render(<InspectorPanel />);
 
-    // 关着时整组只剩「启用」那一个开关（早返回），打开它才露出三个描述符行
-    expect((screen.getByTestId("video-enable") as HTMLInputElement).checked).toBe(false);
-    fireEvent.click(screen.getByTestId("video-enable"));
+    // 没加视频时不出现那三个描述符行；从底部「添加组件」加上才露出来
+    expect(screen.queryByTestId("video-loop")).toBeNull();
+    fireEvent.click(screen.getByTestId("add-component"));
+    fireEvent.click(screen.getByTestId("add-component-VideoOverlay"));
 
     fireEvent.click(screen.getByTestId("video-loop"));
     const data = videoDataOf(useEditorStore.getState().scenes[0]!.objects[0]!);

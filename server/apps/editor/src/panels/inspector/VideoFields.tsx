@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { assetNameOfMeta, isVideoEnabled, videoDataOf, videoSpec, type GameObjectDoc } from "@dts/document";
+import { assetNameOfMeta, videoDataOf, videoSpec, type GameObjectDoc } from "@dts/document";
 import { assetDisplayName } from "../asset-info";
 import { assetDisplayPath, findAssetByReference } from "../asset-picker";
 import { ResourcePickerDialog } from "../../app/ResourcePickerDialog";
@@ -16,11 +16,13 @@ import {
 import { componentFields, descriptorRows, sortInspectorRows } from "./DescriptorRows";
 
 /**
- * 地图 / 贴图的「视频」组：**启用 → 循环 / 声音 / 自动播放 → 视频列表（小方块 + 添加 / 移出）→ 播放 / 暂停 / 停止**。
+ * 地图 / 贴图的「视频」组：**循环 / 声音 / 自动播放 → 视频列表（小方块 + 添加 / 移出）→ 播放 / 暂停 / 停止**。
  *
- * 整组由第一行的**「启用」开关**管着（与战争雾那一组同一套）：关着时只留那一个开关，
- * 加视频 / 选哪条 / 循环 / 声音 / 自动播放都收起来——没开视频的对象不该摆一排用不上的按钮。
- * 开关是**这个对象的文档数据**（`video.enabled`），关着时前端连视频层都不建。
+ * 视频是**可选能力，像「网格地图」一样可加可移除**：没挂上时属性面板不出现这一组，
+ * 入口在**底部的「添加组件」**（Unity 式，见 `InspectorPanel.tsx` 的 `AddComponentMenu`）；
+ * 挂上之后才进到这里，整个不要了用组头的「移除组件」。
+ * 所以这一组**不再有「启用」开关**——组件在 = 在用（`enabled` 字段仍在数据里，添加时写 `true`，
+ * 只为兼容旧文件与前端读口）。组件不在时前端连视频层都不建。
  *
  * 清单的**全部管理都在这一组里**（没有别的窗口，与「播放声音」同一套）：
  * 小方块 = 加进来的视频，点一下决定「放哪一条」；每个小方块上的 `×` = 移出那一条；
@@ -84,7 +86,6 @@ export function VideoFields({ object }: { readonly object: GameObjectDoc }): Rea
   const addVideoClip = useEditorStore((state) => state.addVideoClip);
   const removeVideoClip = useEditorStore((state) => state.removeVideoClip);
   const clearVideoClips = useEditorStore((state) => state.clearVideoClips);
-  const setVideoEnabled = useEditorStore((state) => state.setVideoEnabled);
   const selectVideoClip = useEditorStore((state) => state.selectVideoClip);
   const playVideo = useEditorStore((state) => state.playVideo);
   const pauseVideo = useEditorStore((state) => state.pauseVideo);
@@ -98,8 +99,7 @@ export function VideoFields({ object }: { readonly object: GameObjectDoc }): Rea
   const [picking, setPicking] = useState(false);
 
   const video = videoDataOf(object);
-  // 手写文件里可能整个 video 都没有：这里按「没开、还没加视频、不循环、静音」显示
-  const enabled = isVideoEnabled(object);
+  // 手写文件里可能整个 video 都没有：这里按「还没加视频、不循环、静音」显示
   const clips = video?.clips ?? [];
   const picked = video?.picked;
 
@@ -132,15 +132,8 @@ export function VideoFields({ object }: { readonly object: GameObjectDoc }): Rea
       ? `已暂停：${pickedName}`
       : "没在播放";
 
-  // 关着就只留开关：没开视频的对象不该摆一排用不上的按钮（与战争雾那一组同一套）
-  if (!enabled) {
-    return <VideoSwitch checked={false} onChange={(next) => setVideoEnabled(object.id, next)} />;
-  }
-
   return (
     <>
-      <VideoSwitch checked onChange={(next) => setVideoEnabled(object.id, next)} />
-
       {/*
         三个开关（循环 / 声音 / 自动播放）由**组件规格**自动出行（`component-specs/video.ts`）：
         它们是无条件简单行、写入没有副作用，正是那套机制要照顾的形状——加第四个这样的开关
@@ -150,8 +143,8 @@ export function VideoFields({ object }: { readonly object: GameObjectDoc }): Rea
         都是**这张对象的文档数据**（进撤销栈、随场景存盘下发），行名在左、右边只有勾选框
         （与「基础」组的激活 / 锁定同一套），说明收进 title。
 
-        「启用」那一个**不在这里**：关掉它要连带把整个组件摘掉（见 `setVideoEnabled`），
-        有副作用，所以它继续由下面的 `VideoSwitch` 手写渲染（且关着时整组早返回）。
+        「添加 / 移除视频组件」是**组件级的动作**，不住在这个文件里：加组件在面板底部的
+        「添加组件」、移除在组头的「移除组件」（见 `registry.tsx` / `InspectorPanel.tsx`）。
       */}
       {sortInspectorRows(descriptorRows(object, videoSpec, componentFields(videoSpec.type))).map(
         (row) => row.node,
@@ -308,35 +301,5 @@ export function VideoFields({ object }: { readonly object: GameObjectDoc }): Rea
 
       <PlaybackStatus testId="video-status" state={playbackState} note={playbackNote} />
     </>
-  );
-}
-
-/**
- * 「视频」开关：整组的闸门，也是**这个对象的文档数据**（`video.enabled`）。
- *
- * 行名在左、右边只有勾选框（与「基础」组的激活 / 锁定同一套）；关着时这一组只剩它，
- * 加视频 / 选哪条 / 循环 / 声音都收起来——**和战争雾那一组的行为完全一致**。
- *
- * 它决定的不只是显示：关着时前端不建视频层，播放类命令会被明确拒掉。
- */
-function VideoSwitch({
-  checked,
-  onChange,
-}: {
-  readonly checked: boolean;
-  readonly onChange: (next: boolean) => void;
-}): React.JSX.Element {
-  return (
-    <FieldRow label="启用">
-      <input
-        type="checkbox"
-        data-testid="video-enable"
-        aria-label="启用视频"
-        checked={checked}
-        title="这个对象放不放视频；关掉 = 前端不建视频层（已经加的视频留着，再打开就回来）"
-        className="h-3.5 w-3.5 flex-none accent-[var(--color-editor-accent)]"
-        onChange={(event) => onChange(event.target.checked)}
-      />
-    </FieldRow>
   );
 }

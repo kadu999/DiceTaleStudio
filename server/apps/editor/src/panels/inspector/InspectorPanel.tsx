@@ -10,6 +10,7 @@ import {
   spriteCellSizeOf,
   spriteSettingsOfMeta,
   spriteSheetOfMeta,
+  type GameObjectDoc,
 } from "@dts/document";
 import { PROJECT_FOLDERS, PROJECT_SCENE_FILE_EXTENSION } from "@dts/resources";
 import type { ResourceTreeNode } from "../../services/project-api";
@@ -21,7 +22,12 @@ import { EmptyState } from "../EmptyState";
 import { AudioTagDialog } from "../../app/AudioTagDialog";
 import { SpriteEditorDialog } from "../../app/SpriteEditorDialog";
 import { Field, FieldGroup, FieldRow } from "./fields";
-import { OBJECT_EDITOR, componentEditorsFor } from "./registry";
+import {
+  OBJECT_EDITOR,
+  addableComponentsFor,
+  componentEditorsFor,
+  type AddableComponentDef,
+} from "./registry";
 
 /**
  * 右侧属性面板：当前选中对象 / 场景 / **资源文件**的属性。
@@ -37,6 +43,7 @@ export function InspectorPanel(): React.JSX.Element {
   const selectedAssetId = useEditorStore((state) => state.selectedAssetId);
   const tree = useEditorStore((state) => state.project.tree);
   const projectOpen = useEditorStore((state) => state.project.current !== null);
+  const removeObjectComponent = useEditorStore((state) => state.removeObjectComponent);
 
   const activeScene = scenes.find((scene) => scene.name === activeSceneName);
   const selected =
@@ -77,8 +84,9 @@ export function InspectorPanel(): React.JSX.Element {
           // 分组 = 三类，一一对应的关系从这里能直接看出来：
           // - 「基础」（`OBJECT_EDITOR`）= **实体属性组**：名称 / 变换这些不进组件的字段（角标「实体」）；
           // - 组件编辑器表（`registry.tsx` 的 `COMPONENT_EDITORS`）**一个组件一个组**，
-          //   组标题 = 组件 displayName；
-          // - 组件还没添加时那一组是**能力入口**（开关 / 选图 / 修复），角标「未添加」。
+          //   组标题 = 组件 displayName；挂上的**可选组件**（网格 / 视频）组头带「移除组件」；
+          // - 缺失**必需**组件时那一组是**能力入口**（选图 / 修复），角标「未添加」；
+          //   可选的（网格 / 视频）没挂上时不出组——底部的「添加组件」才是它的入口（Unity 式）。
           //
           // `key` = 对象 id：**换对象时分组回到展开**（折叠状态是组件本地的，参考实现也在
           // 切换对象时重置，免得「上一个对象收起的分组」跟着跑到下一个对象身上）。
@@ -96,11 +104,20 @@ export function InspectorPanel(): React.JSX.Element {
                   title={panel.title}
                   group={panel.group}
                   badge={attached ? undefined : "capability"}
+                  // 可选能力组件（网格 / 视频）挂上后，组头给一枚「移除组件」
+                  onRemove={
+                    attached && editor.removable === true
+                      ? () => removeObjectComponent(selected.id, editor.type)
+                      : undefined
+                  }
+                  removeLabel={`移除「${panel.title}」组件`}
                 >
                   {panel.render(selected)}
                 </FieldGroup>
               ));
             })}
+            {/* 底部「添加组件」：可选组件（网格 / 视频）没挂上时只有这里能加（Unity 式） */}
+            <AddComponentMenu object={selected} addable={addableComponentsFor(selected)} />
           </div>
         ) : activeScene !== undefined ? (
           <FieldGroup title="场景" group="scene">
@@ -126,6 +143,64 @@ export function InspectorPanel(): React.JSX.Element {
   );
 }
 
+/**
+ * 面板底部的「**添加组件**」（Unity 的 Add Component）。
+ *
+ * 只在**还有可选组件可加**时出现；点开列出这个对象能加的组件（网格地图 / 视频），选一个就加上。
+ *
+ * 用内联展开而不是浮层：属性面板本身是滚动容器，浮层会被裁切；这里通常只有两三项，
+ * 展开也不占多少地方。换对象时整块 `object-properties` 按 id 重建，展开状态跟着回到收起。
+ */
+function AddComponentMenu({
+  object,
+  addable,
+}: {
+  readonly object: GameObjectDoc;
+  readonly addable: readonly AddableComponentDef[];
+}): React.JSX.Element | null {
+  const addComponent = useEditorStore((state) => state.addObjectComponent);
+  const [open, setOpen] = useState(false);
+
+  if (addable.length === 0) {
+    return null;
+  }
+
+  return (
+    <div data-testid="add-component-menu">
+      <button
+        type="button"
+        data-testid="add-component"
+        aria-expanded={open}
+        title="给这个对象加一个组件（网格地图 / 视频）"
+        className="flex w-full items-center justify-center gap-1.5 rounded border border-dashed border-[var(--color-editor-border)] px-2 py-1.5 text-[11px] text-[var(--color-editor-text-dim)] hover:bg-[var(--color-editor-panel-alt)] hover:text-[var(--color-editor-text)]"
+        onClick={() => setOpen((previous) => !previous)}
+      >
+        <span aria-hidden="true" className="text-[13px] leading-none">
+          ＋
+        </span>
+        添加组件
+      </button>
+      {open ? (
+        <div className="mt-1 overflow-hidden rounded border border-[var(--color-editor-border)]">
+          {addable.map((item) => (
+            <button
+              key={item.type}
+              type="button"
+              data-testid={`add-component-${item.type}`}
+              className="block w-full px-2 py-1 text-left text-[12px] text-[var(--color-editor-text)] hover:bg-[var(--color-editor-accent-dim)]"
+              onClick={() => {
+                addComponent(object.id, item.type);
+                setOpen(false);
+              }}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 /**
  * 选中资源文件时的属性视图。

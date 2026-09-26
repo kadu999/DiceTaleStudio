@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import {
   DEFAULT_SLOT_COMPONENT,
   createGridMapObject,
@@ -132,6 +132,39 @@ const chipSelect = (index: number): HTMLElement =>
 const hasGroup = (slug: string): boolean =>
   document.querySelector(`[data-group="${slug}"]`) !== null;
 
+/** 某个分组的 `<section>`（按 `data-group` slug 定位）。 */
+function groupOf(slug: string): HTMLElement {
+  const section = document.querySelector<HTMLElement>(`[data-group="${slug}"]`);
+  if (section === null) {
+    throw new Error(`没有找到分组 ${slug}`);
+  }
+
+  return section;
+}
+
+/** 打开底部「添加组件」菜单，返回里面列出的组件名（读完收起，不把展开状态留给后续断言）。 */
+function addableLabels(): string[] {
+  const trigger = screen.queryByTestId("add-component");
+  if (trigger === null) {
+    return [];
+  }
+
+  fireEvent.click(trigger);
+  const labels = Array.from(
+    document.querySelectorAll<HTMLButtonElement>('[data-testid^="add-component-"]'),
+  )
+    .filter((element) => element.tagName === "BUTTON")
+    .map((element) => element.textContent ?? "");
+  fireEvent.click(trigger);
+  return labels;
+}
+
+/** 从底部「添加组件」里加一个组件（按 `data-testid` 尾部的组件类型，如 `VideoOverlay`）。 */
+function addComponentFromMenu(type: string): void {
+  fireEvent.click(screen.getByTestId("add-component"));
+  fireEvent.click(screen.getByTestId(`add-component-${type}`));
+}
+
 afterEach(() => {
   cleanup();
   sceneHistory.reset([]);
@@ -145,7 +178,7 @@ afterEach(() => {
 });
 
 describe("属性面板：视频组", () => {
-  it("地图与贴图都有「视频」组（关着时只有「启用」）；精灵、声音对象与传送阵没有", () => {
+  it("地图与贴图都能加「视频」（在底部「添加组件」里）；精灵、声音对象与传送阵不能", () => {
     seedScene(
       [
         mapWith(),
@@ -158,26 +191,27 @@ describe("属性面板：视频组", () => {
     );
     const { unmount } = render(<InspectorPanel />);
 
-    // 没开视频：整组只剩「启用」那一个开关（与战争雾那一组同一套）
-    expect(hasGroup("video")).toBe(true);
-    expect(screen.getByTestId("video-enable")).toBeDefined();
+    // 没加视频：不出现视频组；入口在底部「添加组件」里（与「网格地图」同一套）
+    expect(hasGroup("video")).toBe(false);
     expect(screen.queryByTestId("video-empty")).toBeNull();
     expect(screen.queryByTestId("video-clips")).toBeNull();
+    expect(addableLabels()).toContain("视频");
 
-    // 贴图也有这一组（v21 起取代精灵）
+    // 贴图也能加（v21 起取代精灵）
     unmount();
     seedScene([textureWith()], ["tex-1"]);
     render(<InspectorPanel />);
-    expect(hasGroup("video")).toBe(true);
-    expect(screen.getByTestId("video-enable")).toBeDefined();
+    expect(hasGroup("video")).toBe(false);
+    expect(addableLabels()).toContain("视频");
 
-    // 精灵**没有**这一组：视频宿主从精灵换成了贴图
+    // 精灵**不能**：视频宿主从精灵换成了贴图
     unmount();
     seedScene([spriteWith()], ["sprite-1"]);
     render(<InspectorPanel />);
     expect(hasGroup("video")).toBe(false);
+    expect(addableLabels()).not.toContain("视频");
 
-    // 动作对象也没有：视频挂在对象自己的矩形上，声音对象 / 传送阵画的是固定徽标
+    // 动作对象也不能：视频挂在对象自己的矩形上，声音对象 / 传送阵画的是固定徽标
     unmount();
     seedScene(
       [createSoundObject({ id: "sound-1", name: "脚步" }), createTeleportObject({ id: "tp-1", name: "传送阵" })],
@@ -185,42 +219,41 @@ describe("属性面板：视频组", () => {
     );
     render(<InspectorPanel />);
     expect(hasGroup("video")).toBe(false);
+    expect(addableLabels()).not.toContain("视频");
   });
 
-  it("「启用」是整组的闸门：打开才露出列表 / 编辑入口 / 播放 / 循环 / 声音；关掉又收起来", () => {
+  it("底部「添加组件」加上视频：露出列表 / 播放 / 循环 / 声音；组头「移除组件」整个摘掉", () => {
     seedScene([mapWith()], ["map-1"]);
     render(<InspectorPanel />);
 
-    const enable = screen.getByTestId("video-enable") as HTMLInputElement;
-    expect(enable.checked).toBe(false);
-    expect(hasGroup("video")).toBe(true);
+    // 没加：没有视频组，底部菜单里有「视频」
+    expect(hasGroup("video")).toBe(false);
+    expect(screen.queryByTestId("video-clips")).toBeNull();
+    expect(addableLabels()).toContain("视频");
 
-    // 打开：写进文档（可撤销），整组露出来
-    fireEvent.click(enable);
+    // 从菜单加上：写进文档（可撤销），视频组出现
+    addComponentFromMenu("VideoOverlay");
     expect(videoOf("map-1")).toEqual({ enabled: true, autoPlay: false, clips: [], loop: false, audio: false });
+    expect(hasGroup("video")).toBe(true);
     expect(screen.getByTestId("video-empty").textContent).toBe("还没加视频");
     expect(screen.getByTestId("video-add")).toBeDefined();
     expect(screen.getByTestId("video-play")).toBeDefined();
     expect(screen.getByTestId("video-loop")).toBeDefined();
     expect(screen.getByTestId("video-audio")).toBeDefined();
 
-    // 关掉：整组只剩开关，但文档里那份配置留着（列表 + 两个开关）
+    // 加一条视频 + 打开循环，再点组头的「移除组件」：整个组件（含列表）一起摘掉
     act(() => useEditorStore.getState().addVideoClip("map-1", CLIP));
     act(() => useEditorStore.getState().setVideoLoop("map-1", true));
-    fireEvent.click(screen.getByTestId("video-enable"));
-    expect(videoOf("map-1")).toEqual({ enabled: false, autoPlay: false, clips: [CLIP], picked: CLIP, loop: true, audio: false });
-    expect(screen.queryByTestId("video-clips")).toBeNull();
+    fireEvent.click(within(groupOf("video")).getByTestId("remove-component"));
+    expect(videoOf("map-1")).toBeUndefined();
+    expect(hasGroup("video")).toBe(false);
     expect(screen.queryByTestId("video-play")).toBeNull();
-    expect((screen.getByTestId("video-enable") as HTMLInputElement).checked).toBe(false);
 
-    // 再打开：列表 / 循环都原样回来
-    fireEvent.click(screen.getByTestId("video-enable"));
+    // 移除也是一次文档编辑：撤销把配置（列表 + 循环）原样带回来
+    act(() => useEditorStore.getState().undo());
+    expect(videoOf("map-1")).toEqual({ enabled: true, autoPlay: false, clips: [CLIP], picked: CLIP, loop: true, audio: false });
     expect(chips()).toHaveLength(1);
     expect((screen.getByTestId("video-loop") as HTMLInputElement).checked).toBe(true);
-
-    // 开关本身也是一次文档编辑：撤销回到「关着」
-    act(() => useEditorStore.getState().undo());
-    expect(videoOf("map-1")?.enabled).toBe(false);
   });
 
   it("加进来的视频按顺序列成小方块，名字用素材文件名，选中的那条标出来", () => {
@@ -478,10 +511,10 @@ describe("播放 / 暂停 / 停止：面板上看得见的状态", () => {
 });
 
 describe("失败原因：都在运行日志里写明", () => {
-  it("开关关着 / 没加视频 / 没选 / 不是地图或贴图 / 对象不存在", () => {
+  it("没加视频 / 没启用 / 没选 / 不是地图或贴图 / 对象不存在", () => {
     seedScene(
       [
-        // 连 video 字段都没有 = 没开（前端/编辑器口径一致：就是「开关关着」）
+        // 连 video 组件都没有 = 这个对象还没加视频能力（可选能力，入口在面板底部「添加组件」）
         mapWith(),
         // 开着但一条都没加
         mapWith(video([]), "map-2"),
@@ -496,7 +529,7 @@ describe("失败原因：都在运行日志里写明", () => {
     );
 
     act(() => useEditorStore.getState().playVideo("map-1"));
-    expect(logs().at(-1)).toMatch(/视频开关关着/);
+    expect(logs().at(-1)).toMatch(/视频没启用/);
 
     act(() => useEditorStore.getState().playVideo("map-2"));
     expect(logs().at(-1)).toMatch(/还没加视频/);
@@ -598,30 +631,30 @@ describe("store：加 / 删（「编辑视频」窗口走的那几个入口）",
     });
   });
 
-  it("setVideoEnabled：写文档、可撤销；关着不影响列表命令", () => {
+  it("addObjectComponent / removeObjectComponent：写文档、可撤销；移除后前端不建层、播放被拒", () => {
     seedScene([mapWith()], ["map-1"]);
 
-    act(() => useEditorStore.getState().setVideoEnabled("map-1", true));
+    act(() => useEditorStore.getState().addObjectComponent("map-1", "VideoOverlay"));
     expect(videoOf("map-1")?.enabled).toBe(true);
 
     act(() => useEditorStore.getState().addVideoClip("map-1", CLIP));
-    act(() => useEditorStore.getState().setVideoEnabled("map-1", false));
+    act(() => useEditorStore.getState().removeObjectComponent("map-1", "VideoOverlay"));
+    expect(videoOf("map-1")).toBeUndefined();
+
+    // 组件不在 = 前端不建视频层：播放被明确拒掉（不是静默失败）
+    act(() => useEditorStore.getState().playVideo("map-1"));
+    expect(logs().at(-1)).toMatch(/视频/);
+    expect(useEditorStore.getState().videoPlayback.objects).toEqual({});
+
+    // 撤销回到「组件在、列表还在」
+    act(() => useEditorStore.getState().undo());
     expect(videoOf("map-1")).toEqual({
-      enabled: false,
+      enabled: true,
       autoPlay: false,
       clips: [CLIP],
       picked: CLIP,
       loop: false,
       audio: false,
     });
-
-    // 关着的时候前端不会放：播放被明确拒掉（不是静默失败）
-    act(() => useEditorStore.getState().playVideo("map-1"));
-    expect(logs().at(-1)).toMatch(/视频开关关着/);
-    expect(useEditorStore.getState().videoPlayback.objects).toEqual({});
-
-    // 撤销回到「开着」
-    act(() => useEditorStore.getState().undo());
-    expect(videoOf("map-1")?.enabled).toBe(true);
   });
 });

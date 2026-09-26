@@ -6,6 +6,7 @@
 import {
   type AssetMetaDoc,
   type AssetMetas,
+  type ComponentType,
   type ImageRef,
   type ImageSpriteRef,
   type ObjectKind,
@@ -377,13 +378,6 @@ export interface EditorStoreState {
    * 暂停态的对象会补「先放再暂停」，前端因此回到同一帧。
    */
   flushVideoPlayback(): number;
-  /**
-   * 视频：**启用 / 关掉**这个对象的视频（文档数据）。
-   *
-   * 关掉 = 前端不建视频层（播放类命令会被拒），但**已经加的视频留着**（再打开就回来）；
-   * 一个视频都没加时关掉会把 `video` 字段整个摘掉（与「从没开过」同义）。
-   */
-  setVideoEnabled(objectId: string, enabled: boolean): boolean;
   /** 视频：往里加一条（已经在列表里就不重复加；原来没选过就把它选上）。 */
   addVideoClip(objectId: string, clipId: string): boolean;
   /** 视频：移出一条（名字与「选中的那条」由文档命令一起收拾）。 */
@@ -675,12 +669,14 @@ export interface EditorStoreState {
   /** 改网格的列数 / 行数（格子按新尺寸重建，重叠部分保留）。 */
   setMapGrid(mapObjectId: string, grid: GridSize): boolean;
   /**
-   * 给贴图**加上网格**（v28：网格是可选能力）——加完它就是「网格地图」。
-   * 网格规格按对象当前那张图的尺寸推；已经带网格 / 不是贴图时返回 `false`。
+   * 给对象**加上一个可选组件**（属性面板底部的 `Add Component`）。
+   *
+   * 目前的可选组件是「网格地图」（贴图 + 网格）与「视频」；具体怎么初始化交给
+   * `@dts/document` 的 `addObjectComponent` 分派。已经挂上 / 这个对象不允许加时返回 `false`。
    */
-  addObjectGridMap(objectId: string): boolean;
-  /** 把贴图上的**网格摘掉**（对象回到普通贴图）。没有网格时返回 `false`。 */
-  removeObjectGridMap(objectId: string): boolean;
+  addObjectComponent(objectId: string, type: ComponentType): boolean;
+  /** 把对象上的一个可选组件**整个摘掉**（组件头上的「移除组件」）。没有 / 不可移除时返回 `false`。 */
+  removeObjectComponent(objectId: string, type: ComponentType): boolean;
   /**
    * **泛型组件字段写入**：按组件规格改一个简单字段（布尔 / 数字 / 枚举 / 字符串）。
    *

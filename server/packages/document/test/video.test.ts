@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { produce, type Draft } from "immer";
 import {
   createGameObject,
+  removeObjectVideo,
   setVideoAudio,
   setVideoAutoPlay,
   setVideoClips,
@@ -381,6 +382,33 @@ describe("视频命令：总开关（启用）", () => {
       loop: false,
       audio: true,
     });
+  });
+});
+
+describe("视频命令：移除组件（属性面板的「移除视频」）", () => {
+  it("摘掉整个组件（列表一起删）；没有组件 / 对象不在 / 不是视频宿主 = 没变更", () => {
+    const scene = mutate(
+      sceneWith([mapObject(), createSoundObject({ id: "sound-1", name: "脚步" })]),
+      (draft) => {
+        setVideoEnabled(draft, "map-1", true);
+        setVideoClips(draft, "map-1", [CLIP_A]);
+      },
+    );
+    expect(videoDataOf(objectOf(scene, "map-1")!)).toBeDefined();
+
+    const removed = mutate(scene, (draft) => {
+      expect(removeObjectVideo(draft, "map-1")).toBe(true);
+    });
+    expect(videoDataOf(objectOf(removed, "map-1")!)).toBeUndefined();
+
+    // 已经没有了 / 对象不在 / 声音对象不是视频宿主：都没变更（同一个引用）
+    expect(
+      mutate(removed, (draft) => {
+        expect(removeObjectVideo(draft, "map-1")).toBe(false);
+        expect(removeObjectVideo(draft, "nope")).toBe(false);
+        expect(removeObjectVideo(draft, "sound-1")).toBe(false);
+      }),
+    ).toBe(removed);
   });
 });
 

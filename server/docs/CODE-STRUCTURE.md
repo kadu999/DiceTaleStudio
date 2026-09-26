@@ -16,8 +16,8 @@
 | 后端默认地址 | `0.0.0.0:1420`（`resources/config/app.json`，可被 `HOST` / `PORT` 覆盖） |
 | 编辑器开发地址 | `http://localhost:5173`（Vite，`/api`、`/editor`、`/client` 反代到 1420） |
 | 编辑器生产地址 | `http://localhost:1420`（后端同源托管 `apps/editor/dist`） |
-| 源码规模（不含测试） | 158 个文件 / 35,974 行（packages 12,293 · backend 3,343 · editor 20,338） |
-| 测试规模 | 32,396 行（单测 23,084 · E2E 9,029 · 架构测试 283） |
+| 源码规模（不含测试） | 159 个文件 / 36,077 行（packages 12,363 · backend 3,343 · editor 20,371） |
+| 测试规模 | 32,489 行（单测 23,169 · E2E 9,037 · 架构测试 283） |
 
 > 上表两行与 §0.1 表格里加粗的文件行数、§3.x 节标题里的包规模由
 > `scripts/check-code-structure-stats.mjs` **机器校验**（`pnpm check` 的一环）：
@@ -34,7 +34,7 @@
 | **Unity 式实体+组件（GameObject + Component）** | 对象上 5 个特性扁平字段 + 各处 `kind === "…"` | `components[]`（模拟 Unity GameObject 挂组件）+ 能力槽位（slot）/访问器；文档 v19 / 协议 v9 / Unity 客户端同步（子图改动后为 **v20 / v10**，见 §0） | 加一个特性 = 加一个组件 + 注册表一行 + 预设表一行（见 §1.6） |
 | **文档命令分模块** | `commands.ts` 2,069 行 | `commands/` 10 个文件（按特性） | 加一个特性的命令 = 加一个文件 |
 | **编辑器 store 分片** | `editor-store.ts` 4,493 行 | 组装点 **94 行** + 17 个切片 + 上下文（见 §5.2） | 加一个功能 = 加一个 `slices/<功能>-slice.ts` + 组装点一行（**简单字段连切片都不用加**：`setComponentField` 已经在 `component-slice.ts` 里） |
-| **属性面板注册表** | `InspectorPanel.tsx` 1,195 行的 JSX 分支 | `InspectorPanel.tsx` **516 行** + `registry.tsx` + `object-fields.tsx` | 加一个特性分组 = 注册表一行 + 一个字段组件 |
+| **属性面板注册表** | `InspectorPanel.tsx` 1,195 行的 JSX 分支 | `InspectorPanel.tsx` **591 行** + `registry.tsx` + `object-fields.tsx` | 加一个特性分组 = 注册表一行 + 一个字段组件 |
 
 **代价是诚实的**：源码从 28,810 行长到 31,002 行（+7.6%；子图、kind、素材 meta 三次改动后全仓 34,624 行，见 §0）——多出来的是文件头注释、import/export
 与「显式列出 action 名」的类型。换来的是「改一个功能不必碰整个项目」。
@@ -428,7 +428,7 @@ build: { outDir: "dist", sourcemap: true },
 - 画笔半径 `floor((brushSize-1)/2)`（1/2→1×1、3/4→3×3、5→5×5，含偶数尺寸的刻意保真），与 Unity `ApplyBrush` 完全一致；
 - 坐标系只有一个：**世界坐标**（x 右、y 上、像素、无限大）；`grid(0,0)` 在地图矩形左下角 = 图片最下面一行，grid.y 与世界 y 同向、不翻转；唯一的翻转发生在贴图绘制（`worldRectTopLeft`）。
 
-### 3.2 `@dts/document` — 文档模型、命令与历史（7,698 行）
+### 3.2 `@dts/document` — 文档模型、命令与历史（7,768 行）
 
 | 文件 | 行数 | 职责 | 关键导出 |
 |---|---|---|---|
@@ -526,14 +526,14 @@ kind 只是预设 id，没有层级——「允许哪些能力槽位」看 `OBJE
 `settings`(v15) 是**补默认值**的（老文件读出来就有可用值）；显示顺序自 v26 起住渲染组件的 data，
 缺项由 schema 默认 0。
 
-#### 3.2.2 文档命令（`commands/`，60 个）
+#### 3.2.2 文档命令（`commands/`，62 个）
 
 `commands/` 是个目录（原来是一个 2,069 行的 `commands.ts`），**按特性分模块**——
 加一个特性的命令 = 加一个文件，而不是往一个巨型文件里插一段：
 
 | 文件 | 行数 | 内容 |
 |---|---|---|
-| `index.ts` | 25 | barrel（`export *` 10 个模块）+ 模块级说明 |
+| `index.ts` | 26 | barrel（`export *` 11 个模块）+ 模块级说明 |
 | `shared.ts` | 179 | 命令共用的常量、查找工具与媒体列表骨架（声音 / 视频 / 传送阵同一套「列表 + 选中」的公共部分）：`DEFAULT_SORTING_ORDER` / `MAP_DEFAULT_SORTING_ORDER` / `SORTING_ORDER_LIMIT` / `createId` / `findObject` / `findMapObject` / `listMapObjects` / `withObject` / `withMediaData` / `dedupeItems` / `sameItemList` / `syncMediaSideData` / `setMediaPicked`；类型 `MediaListSideData` |
 | `object.ts` | 555 | 对象增删改 + 变换 + 排序（`setRenderSortingOrder`，v26 起按「先地图、后图片层」路由）+ 缩放 + `setObjectImage`（**换 id 丢掉旧的子图引用**，v20）+ `setObjectSprite`（取图集里哪一格，`null` = 整图） |
 | `scene.ts` | 52 | 场景名校验 / 查找 / 重名判定（纯函数） |
@@ -541,11 +541,13 @@ kind 只是预设 id，没有层级——「允许哪些能力槽位」看 `OBJE
 | `fog.ts` | 150 | 战争雾（v27 起是独立的 `Fog` 对象的数据）：`setFogMap` / 总开关 / 指定雾区 / `fogMaskOf` / `fogMapOf`——组件总在，雾引用一张地图 |
 | `play-sound.ts` | 69 | 声音对象（音频列表 / 选中 / 层级） |
 | `teleport.ts` | 79 | 传送阵（候选场景 / 选中） |
-| `video.ts` | 195 | 视频（开关 / 列表 / 选中 / 循环 / 声音） |
+| `video.ts` | 185 | 视频（开关 / 列表 / 选中 / 循环 / 声音 / 移除组件） |
+| `component.ts` | 47 | 可选组件的**添加 / 移除统一入口**（属性面板底部的 Add Component 与组件头的移除）：按组件类型分派到 `object` / `video` 的初始化命令；加第三种可选组件只在这里加一条 `case` |
 | `project.ts` | 239 | **只剩项目级数据**：三档音量 + 音频**标签表**（`addAudioTag` / `renameAudioTag` / `setAudioTagName` / `deleteAudioTag`）。音频文件的显示名 / 标签（旧的 `setAudioMetaName` / `setAudioMetaTags`）v24 已删、图片切分（旧的 `setSpriteSheet` / `setSpriteImportSettings`）v23 已删——它们现在写在各自素材的 `.meta` 里，写入口径是 `asset-meta.ts` 的纯函数 |
 
 **依赖方向严格单向**：`shared` → `../presets`/`../types`（不 import 任何命令模块）；
 `object`/`scene` → `./shared`；`grid-map`/`fog`/`play-sound`/`teleport`/`video` → `./shared` + `../access` + `../presets`；
+`component` → `./object` + `./video`（只分派，不碰数据）；
 `project` → `../schema`/`../types`。**没有任何模块 import barrel**（barrel 只做 re-export），所以不存在环。
 
 命令分组一览（名字与语义都没变）：
@@ -560,7 +562,8 @@ kind 只是预设 id，没有层级——「允许哪些能力槽位」看 `OBJE
 | 战争雾 | `fogMaskOf`、`fogMapOf`、`setFogMap`、`setFogEnabled`、`setFogRegions`、`clearMapFog`（后者在 `grid-map.ts`：按雾对象 → 被引用地图，动格子数据） |
 | 声音对象 | `setSoundClips`、`setSoundPicked`、`setSoundLayer` |
 | 传送阵 | `setTeleportTargets`、`setTeleportPicked` |
-| 视频 | `supportsVideo`、`isVideoEnabled`、`setVideoEnabled`、`setVideoClips`、`setVideoPicked`、`setVideoLoop`、`setVideoAudio` |
+| 视频 | `supportsVideo`、`isVideoEnabled`、`setVideoEnabled`、`removeObjectVideo`、`setVideoClips`、`setVideoPicked`、`setVideoLoop`、`setVideoAudio` |
+| 组件（可选能力） | `addObjectComponent`、`removeObjectComponent`（网格 / 视频的统一添加 / 移除入口，属性面板底部的 Add Component） |
 | 全局设置 | `setBgmVolume`、`setSfxVolume`、`setVoiceVolume` |
 | 音频标签表（项目级） | `addAudioTag`、`renameAudioTag`、`setAudioTagName`、`deleteAudioTag`（**只动工程文件里那张表**；「哪个文件用了哪个标签」v24 起住各素材的 `.meta`，删标签摘引用是 `withoutMetaAudioTag`，见 §3.2.6 与 §5.3.2） |
 | 场景 | `isSceneNameTaken`、`validateSceneName`、`createId` |
@@ -1146,22 +1149,22 @@ store 用 **zustand 切片**模式拆开了：原来是一个 4,493 行的 `edit
 | 文件 | 行数 | 职责 | 对外导出 |
 |---|---|---|---|
 | `editor-store.ts` | **94** | **只剩组装与再导出**：`create<EditorStoreState>()` 里展开初始状态与 17 个切片，再导出只保留真正从这里取的名字（逐名核对过消费方） | `useEditorStore`、`sceneHistory`、`projectHistory`、`fitSceneViewport`、`serializeSceneFile`、`compareSceneNames`、`findResourceNode`、`withRenamedSceneImage`；类型 `EditorMode`、`ProjectDialogMode`、`SceneDialogMode`、`SceneSaveState` |
-| `store-types.ts` | 776 | 全部状态类型 + `EditorStoreState`（**130 个 action + 44 个状态字段**）+ `StoreSet` / `StoreGet` / `EditorStoreData`（由「全部 action 名」算出来的状态部分）；素材 meta 的 `AssetMetaTable`（真源表）、`AssetMetaDraft`（`applyMetas` 拿到的那份可写草稿）与 `assetMetas`（派生索引）也在这里 | 上表那些类型 |
+| `store-types.ts` | 789 | 全部状态类型 + `EditorStoreState`（**129 个 action + 44 个状态字段**）+ `StoreSet` / `StoreGet` / `EditorStoreData`（由「全部 action 名」算出来的状态部分）；素材 meta 的 `AssetMetaTable`（真源表）、`AssetMetaDraft`（`applyMetas` 拿到的那份可写草稿）与 `assetMetas`（派生索引）也在这里 | 上表那些类型 |
 | `store-core.ts` | 394 | **模块级**工具与状态：**三份** `DocumentHistory`（`sceneHistory` / `projectHistory` / `metaHistory`）、撤销轨（`lastEditTrack` / `activeTrack` / `historyOf` / `EDIT_TRACKS` = `scenes` / `project` / `metas`）、常量、`fitSceneViewport`、`serializeSceneFile` / `serializeProjectFile`、`withRenamedSceneImage`、`compareSceneNames`、`findResourceNode`、`makeLog` | 同 `editor-store` 的值导出 |
-| `store-context.ts` | 1,299 | **闭包状态与局部工具**（原 `create()` 里那段）：`StoreContext` 53 个成员——40 个函数（`pushLog` / `switchScene` / `deliverSoundPlay` / `applyActiveScene` / `scheduleSceneSave` / `scheduleMetaSave` / `metaDirtyIds` / `fogTargetOf` / `currentSceneDoc` / `findObjectById` …）、8 个稳定引用（`runtimeClient` / 两个 `ScenePushScheduler` / `savedScenes` / **`savedMetas`** / `sceneViewports` / `quietCommandIds` / `storedGridPaint`）、5 个可变标量走 get/set（`lastPushedSceneText` / `pendingRunRequest` / `viewportAdjusted` / `bootstrapping` / `savedProjectText`）；**`metaHistory.subscribe` 在这里重建 `assetMetas` 索引并安排 meta 落盘** | `StoreContext`、`createStoreContext` |
+| `store-context.ts` | 1,320 | **闭包状态与局部工具**（原 `create()` 里那段）：`StoreContext` 53 个成员——40 个函数（`pushLog` / `switchScene` / `deliverSoundPlay` / `applyActiveScene` / `scheduleSceneSave` / `scheduleMetaSave` / `metaDirtyIds` / `fogTargetOf` / `currentSceneDoc` / `findObjectById` …）、8 个稳定引用（`runtimeClient` / 两个 `ScenePushScheduler` / `savedScenes` / **`savedMetas`** / `sceneViewports` / `quietCommandIds` / `storedGridPaint`）、5 个可变标量走 get/set（`lastPushedSceneText` / `pendingRunRequest` / `viewportAdjusted` / `bootstrapping` / `savedProjectText`）；**`metaHistory.subscribe` 在这里重建 `assetMetas` 索引并安排 meta 落盘** | `StoreContext`、`createStoreContext` |
 | `initialState.ts` | 84 | 初始状态（返回类型是 `EditorStoreData`，所以**少一个状态字段就编译报错**；素材 meta 两份初始为空） | `createInitialState` |
 | `slices/history-slice.ts` | 148 | `applyScenes` `applyProject` `applyMetas` `undo` `redo` `resetDoc`（三条轨道各一个写入口，且**真的产生改动时**才 `setLastEditTrack`——撤销才会作用在「最近改过的那条」上；`resetDoc` 连 `metaHistory` 一起清） | — |
 | `slices/save-slice.ts` | 198 | `saveSceneNow` `flushSceneSave` `saveProjectNow` `saveMetasNow` `flushMetaSave`（meta 只写内容变过的那几份）；工程文件**没有 flush**——没有「关闭前 flush」的调用方，改动全走去抖定时器 | — |
 | `slices/project-slice.ts` | 513 | 项目 CRUD、资源树、建目录、打开目录、上传、删资源，以及**素材 meta 的装配与迁移**：`loadAssetMetas` 读回全部 `.meta`、给缺的素材补一份（`assetImporterKind` 定导入器；**盘上有但读不出来的那份不补**——`readMetas` 的 `unreadable` 就是给它留的，补一份新 GUID 会盖掉盘上那份）、把 `migratedMetas` 落盘、迁移新建了场景文件时**重取一次资源树**、重建索引 | — |
 | `slices/scene-slice.ts` | 316 | 场景增删改、切换、排序、载入（打开场景时的校验带 `{ metas }`） | — |
-| `slices/object-slice.ts` | 369 | 对象增删改、选区、变换属性、网格规格（换图走 `sprite-slice` 的 `setObjectImageSprite`） | — |
-| `slices/component-slice.ts` | 39 | **泛型组件字段写入**（只有 `setComponentField` 一条）：标签与撤销合并都从组件规格读，所以**加一个简单字段不必碰这个文件** | — |
+| `slices/object-slice.ts` | 445 | 对象增删改、选区、变换属性、网格规格（换图走 `sprite-slice` 的 `setObjectImageSprite`；组件的添加 / 移除走 `component-slice`） | — |
+| `slices/component-slice.ts` | 77 | **泛型组件写入**：`setComponentField`（字段，标签与撤销合并都从组件规格读）、`repairObjectComponent`（缺必需组件的修复）、`addObjectComponent` / `removeObjectComponent`（可选组件，属性面板底部的 Add Component）。加一个简单字段仍不必碰这个文件 | — |
 | `game-object-factory.ts` | — | 按 `ObjectKind` 注册新对象工厂；地图补同名贴图与网格，声音 / 传送阵使用文档专属工厂。 | `createGameObjectForKind` |
 | `slices/transform-slice.ts` | 160 | 变换工具与手柄拖拽（`begin/apply/end/cancelObjectTransform`） | — |
 | `slices/viewport-slice.ts` | 70 | 视口缩放 / 平移 / 适配 / 尺寸 | — |
 | `slices/runtime-slice.ts` | 67 | `setMode` / `connectRuntime` / 推场景 / 清日志 | — |
 | `slices/sound-slice.ts` | 276 | 声音对象：选中、层级、名字、播放下发（列表的加 / 删在窗口里完成，不经 store 整体替换） | — |
-| `slices/video-slice.ts` | 254 | 视频：开关、列表、选中、循环、播放下发（声音 / 自动播放开关走组件规格的 `setComponentField`） | — |
+| `slices/video-slice.ts` | 228 | 视频：列表、选中、循环、播放下发（组件的添加 / 移除在 `component-slice`；声音 / 自动播放开关走组件规格的 `setComponentField`） | — |
 | `slices/bgm-slice.ts` | 83 | 全局背景音乐（播放 / 暂停 / 继续 / 停止 / 补发） | — |
 | `slices/audio-meta-slice.ts` | 169 | 素材**显示名与标签**（任何素材：图 / 声 / 视频；写在**素材 meta 那条轨道**上：走 `applyMetas` + `withMetaAssetName` / `withMetaAssetTags`）+ 项目级标签表（`applyProject`）+ 三档音量 | — |
 | `slices/teleport-slice.ts` | 89 | 传送阵：候选、选中、触发换台 | — |
@@ -1256,13 +1259,13 @@ export function createSoundSlice(
 
 | 文件 | 行数 | 职责 | 对外导出 |
 |---|---|---|---|
-| `InspectorPanel.tsx` | 503 | 右侧属性面板**只剩「显示哪一屏」**：按「资源 > 对象 > 场景 > 项目」的优先级选择视图，对象那一屏按注册表渲染分组；资源那一屏顺手显示该素材的 `.meta` 摘要（导入设置、切分几格） | `InspectorPanel` |
-| `registry.tsx` | 203 | **组件编辑器的注册表**：**一个组件一个组**（组 slug 跟着组件走、标题 = 组件 displayName），各组件的 `availableWithoutComponent`（能力入口判据走预设表与访问器，不看 `kind` 字面量）与 `render`；**数组顺序就是界面顺序**（e2e 断言它）。「基础」组（`OBJECT_EDITOR`）是实体属性组，另外声明；map 组内按「有没有地图数据」条件渲染（修复态只留换贴图） | `EditorPanelDef`、`ComponentEditorDef`、`OBJECT_EDITOR`、`COMPONENT_EDITORS`、`componentEditorsFor` |
+| `InspectorPanel.tsx` | 591 | 右侧属性面板**只剩「显示哪一屏」**：按「资源 > 对象 > 场景 > 项目」的优先级选择视图，对象那一屏按注册表渲染分组，并渲染底部的「添加组件」（`AddComponentMenu`）；资源那一屏顺手显示该素材的 `.meta` 摘要（导入设置、切分几格） | `InspectorPanel` |
+| `registry.tsx` | 237 | **组件编辑器的注册表**：**一个组件一个组**（组 slug 跟着组件走、标题 = 组件 displayName），各组件的 `render` 与 `removable`（**可选组件**才在组头给「移除组件」，必需组件摘掉会把对象弄坏）；**数组顺序就是界面顺序**（e2e 断言它）。「基础」组（`OBJECT_EDITOR`）是实体属性组，另外声明；`componentEditorsFor` 只收「已挂上的组件 + 缺**必需**组件时的修复入口」——可选的（网格 / 视频）没挂上时**不出组**，由 `addableComponentsFor` 供面板底部的「添加组件」（Unity 式） | `EditorPanelDef`、`ComponentEditorDef`、`AddableComponentDef`、`OBJECT_EDITOR`、`COMPONENT_EDITORS`、`componentEditorsFor`、`addableComponentsFor` |
 | `object-fields.tsx` | 789 | 对象字段的控件本体（从 `InspectorPanel.tsx` 拆出，纯搬运）：名称 / 激活 / 锁定 / **位置** / 缩放 / 单轴缩放 / 旋转 / 贴图（含**子图那一行**：`子图 第2行第3列（4×4）` + 「改回整图」，越界时挂「格子越界」提示；testid `texture-sprite` / `texture-sprite-out-of-range` / `clear-sprite`）/ 网格规格 / 每格像素 / 网格显示开关 + 它们的格式化与解析助手。**「显示顺序」已搬去描述符**（`object-spec.ts`），所以这里没有它 | `NameField`、`ActiveField`、`LockedField`、`PositionFields`、`ScaleField`、`ScaleAxisField`、`RotationField`、`TextureField`、`GridFields`、`CellSizeField`、`GridDisplayField`、`WORLD_ORIGIN_FALLBACK` 等 |
-| `fields.tsx` | 204 | 属性面板的行/分组外壳与**播放类控件**：可折叠 `FieldGroup`（`data-group` 英文 slug）、只读 `Field`、`FieldRow`（标签定宽 `w-20`，必须是行内第一个子元素）、`PlaybackRow`、`PlaybackStatus`、`PLAYBACK_BUTTON_CLASS` / `PLAYBACK_BUTTON_ACTIVE_CLASS`（高 34px、13px 字）。 | `FieldGroup`、`Field`、`FieldRow`、`PlaybackRow`、`PlaybackStatus`、`PLAYBACK_BUTTON_CLASS`、`PLAYBACK_BUTTON_ACTIVE_CLASS`；类型 `PlaybackState` |
+| `fields.tsx` | 252 | 属性面板的行/分组外壳与**播放类控件**：可折叠 `FieldGroup`（`data-group` 英文 slug；可选能力组件在组头多一枚「移除组件」= `onRemove`）、只读 `Field`、`FieldRow`（标签定宽 `w-20`，必须是行内第一个子元素）、`PlaybackRow`、`PlaybackStatus`、`PLAYBACK_BUTTON_CLASS` / `PLAYBACK_BUTTON_ACTIVE_CLASS`（高 34px、13px 字）。 | `FieldGroup`、`Field`、`FieldRow`、`PlaybackRow`、`PlaybackStatus`、`PLAYBACK_BUTTON_CLASS`、`PLAYBACK_BUTTON_ACTIVE_CLASS`；类型 `PlaybackState` |
 | `SoundFields.tsx` | 360 | 声音对象的「声音」组：层级下拉（对象只给 `OBJECT_SOUND_LAYERS`，老文件的 `bgm` 照显并提示改）、音频小方块单选（每个带 `×` 移出）+ `＋` 添加（弹 `ResourcePickerDialog kind="audio"`：选中一条 → 点「添加」加入，一次一条）+ 「清空」、播放三键 + 状态行（多一档 `busy` = 本层被别的对象占着）；每条音频的显示名经 `audioDisplayName` 读（素材 `.meta` 顶层 `name`，唯一入口在文件属性）。 | `SoundFields`、`soundPlayBlockedReason`、`soundDeliveryHint` |
-| `VideoFields.tsx` | 342 | 地图/贴图/精灵的「视频」组：启用闸门（关着只留开关，**保留自定义渲染**——关掉它要连带摘掉整个组件）、**循环 / 声音 / 自动播放三行由组件规格自动出行**（`descriptorRows(object, videoSpec, componentFields(...))`，见 `DescriptorRows.tsx`）、视频小方块单选（每个带 `×` 移出）+ `＋` 添加（弹 `ResourcePickerDialog kind="video"`：选中 → 「添加」，一次一条）+ 「清空」、播放三键 + 状态行；小方块的显示名同样读素材 `.meta` 顶层 `name`。 | `VideoFields`、`videoPlayBlockedReason`、`videoDeliveryHint` |
-| `registry.tsx` | 203 | **组件编辑器的注册表**：**一个组件一个组**（组 slug 跟着组件走、标题 = 组件 displayName），各组件的 `availableWithoutComponent`（能力入口判据走预设表与访问器，不看 `kind` 字面量）与 `render`；**数组顺序就是界面顺序**（e2e 断言它）。「基础」组（`OBJECT_EDITOR`）是实体属性组，另外声明；map 组内按「有没有地图数据」条件渲染（修复态只留换贴图） | `EditorPanelDef`、`ComponentEditorDef`、`OBJECT_EDITOR`、`COMPONENT_EDITORS`、`componentEditorsFor` |
+| `VideoFields.tsx` | 305 | 地图/贴图的「视频」组（**组件已挂上时才渲染**；没挂上时入口在面板底部的「添加组件」、移除在组头）、**循环 / 声音 / 自动播放三行由组件规格自动出行**（`descriptorRows(object, videoSpec, componentFields(...))`，见 `DescriptorRows.tsx`）、视频小方块单选（每个带 `×` 移出）+ `＋` 添加（弹 `ResourcePickerDialog kind="video"`：选中 → 「添加」，一次一条）+ 「清空」、播放三键 + 状态行；小方块的显示名同样读素材 `.meta` 顶层 `name`。 | `VideoFields`、`videoPlayBlockedReason`、`videoDeliveryHint` |
+| `registry.tsx` | 237 | **组件编辑器的注册表**：**一个组件一个组**（组 slug 跟着组件走、标题 = 组件 displayName），各组件的 `render` 与 `removable`（**可选组件**才在组头给「移除组件」，必需组件摘掉会把对象弄坏）；**数组顺序就是界面顺序**（e2e 断言它）。「基础」组（`OBJECT_EDITOR`）是实体属性组，另外声明；`componentEditorsFor` 只收「已挂上的组件 + 缺**必需**组件时的修复入口」——可选的（网格 / 视频）没挂上时**不出组**，由 `addableComponentsFor` 供面板底部的「添加组件」（Unity 式） | `EditorPanelDef`、`ComponentEditorDef`、`AddableComponentDef`、`OBJECT_EDITOR`、`COMPONENT_EDITORS`、`componentEditorsFor`、`addableComponentsFor` |
 | `DescriptorRows.tsx` | 316 | **规格驱动的行渲染器**：按 `FieldDef.kind` 出行（布尔 / 数字 / 整数 / 字符串 / 多行文本 / 枚举），`FieldTarget` 抽象把「写哪份数据」与「这一行长什么样」分开——`componentFields(type)` 写组件 `data`、`objectFields` 写对象自身，**两种规格共用同一个渲染器**。`order` 排序、`testId` 直取描述符、`FieldRow` 外壳与「不被 store 回灌 / 非法值退回 / Esc 还原」三条约定与手写控件逐字一致。加一个简单字段 = 规格里加一行，这里不用动。 | `InspectorRow`、`FieldTarget`、`componentFields`、`objectFields`、`descriptorRows`、`sortInspectorRows` |
 | `TeleportFields.tsx` | 105 | 传送阵的「传送」组：候选目标小方块 + `＋` 开「传送目标」窗口 + 「传送」按钮（不能传时按钮上写原因）。 | `TeleportFields` |
 | `FogFields.tsx` | 150 | 战争雾编辑区（挂在独立的 `Fog` 对象上）：读写在它 `FogOfWar` 组件（`fogOf(object)`），第一行「引用地图」选择器，接着总开关（闸住整组），打开后给「指定雾区」小方块与「雾格子 → 编辑」入口。 | `FogFields` |
@@ -1352,8 +1355,10 @@ edit：取消去抖、`lastPushedSceneText=null`、发 `runtime_stop`）、`push
 `setSoundLayer`。
 
 **视频**：`playVideo`、`pauseVideo`、`resumeVideo`、`stopVideo`（停止**不要求**仍选中）、`flushVideoPlayback`、
-`setVideoEnabled`、`addVideoClip`、`removeVideoClip`、`selectVideoClip`、`clearVideoClips`、
-`setVideoLoop`。
+`addVideoClip`、`removeVideoClip`、`selectVideoClip`、`clearVideoClips`、`setVideoLoop`。
+
+**组件（可选能力的添加 / 移除）**：`addObjectComponent`、`removeObjectComponent`（面板底部的 Add Component
+与组件头的移除；按组件类型分派，网格 / 视频共用这一对）。
 
 **背景音乐**：`playBgm`（再点同一首 = 让前端从头重播）、`pauseBgm`、`resumeBgm`、`stopBgm`、
 `flushBgmPlayback`、`openBgmDialog`、`openGlobalSettings`。
@@ -1500,7 +1505,7 @@ edit：取消去抖、`lastPushedSceneText=null`、发 `runtime_stop`）、`push
 | `AssetsPanel` | `project`(current/tree/error/busy)、`selectedAssetId`、`activeSceneName` → `refreshTree`、`openProjectFolder`、`selectAsset`、`openScene` | Unity Project 式只读浏览器；点场景文件即打开场景；「打开目录」在**服务端机器**上开文件管理器 |
 | `InspectorPanel` | 见 §5.3.2 的字段动作 + `doc`/`project`/`scenes`/选区 | 一个窗口回答四种对象：资源 / 对象 / 场景 / 项目 |
 | `SoundFields` / `TeleportFields` / `FogFields` / `GridAnnotationFields` | `soundPlayback` + 各自字段动作 | 属性面板内的分组内容（声音、传送、战争雾、网格标注入口） |
-| `VideoFields` + `DescriptorRows` | `videoPlayback` + 播放三键与启用闸门走各自的字段动作；**循环 / 声音 / 自动播放走 `setComponentField`**（键与 testid 来自 `component-specs/video.ts`） | 视频组：自定义行 + 规格自动出行混排（按 `order`） |
+| `VideoFields` + `DescriptorRows` + `AddComponentMenu` | `videoPlayback` + 播放三键走各自的字段动作；**添加 / 移除组件走 `addObjectComponent` / `removeObjectComponent`**（底部 Add Component + 组头移除）；**循环 / 声音 / 自动播放走 `setComponentField`**（键与 testid 来自 `component-specs/video.ts`） | 视频组：自定义行 + 规格自动出行混排（按 `order`）；底部「添加组件」入口 |
 | `RuntimePanel` | `mode`、`runtime`、`scenes`/`activeSceneName` → `pushRuntimeScene`、`clearRuntimeLogs` | 运行态四行状态 + 可复制日志 |
 | `ScenePanel` | `activeSceneName`、`viewport`、`viewportSize`、`scenes`、`selectedObjectIds`、`gridPaint`、`soundPlayback`、`ui.tool`；动作见 §5.3.2 | 画布：绘制/拾取/多选/手柄变换/缩放平移/双击传送/工具开关/场景切换条 |
 | `MenuBar` / `StatusBar` | 见 §5.2 各行 | 全部命令的菜单入口（平板无键盘）/ 底栏八个状态格 |

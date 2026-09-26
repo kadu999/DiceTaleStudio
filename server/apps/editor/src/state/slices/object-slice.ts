@@ -5,11 +5,9 @@
  */
 import {
   addObject,
-  addObjectGridMap as addSceneGridMap,
   createId,
   nextObjectName,
   removeObject as removeGameObject,
-  removeObjectGridMap as removeSceneGridMap,
   renameObject as renameGameObject,
   setMapGrid as setSceneMapGrid,
   setObjectActive as setGameObjectActive,
@@ -61,8 +59,6 @@ export function createObjectSlice(
   | "moveObject"
   | "setObjectScaleAxes"
   | "setMapGrid"
-  | "addObjectGridMap"
-  | "removeObjectGridMap"
   | "openImagePicker"
 > {
   // 共享的闭包状态与局部工具都在 ctx 里：这里解构一次，方法体与拆分前逐字一致
@@ -435,18 +431,6 @@ export function createObjectSlice(
     setMapGrid(mapObjectId, grid) {
       return applyActiveScene("修改网格尺寸", (scene) => {
         setSceneMapGrid(scene, mapObjectId, grid);
-      });
-    },
-
-    addObjectGridMap(objectId) {
-      return applyActiveScene("添加网格", (scene) => {
-        addSceneGridMap(scene, objectId);
-      });
-    },
-
-    removeObjectGridMap(objectId) {
-      return applyActiveScene("移除网格", (scene) => {
-        removeSceneGridMap(scene, objectId);
       });
     },
 

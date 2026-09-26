@@ -87,7 +87,7 @@ async function connectFakeClient(page: Page, port: number): Promise<void> {
           type: "client_hello",
           // 与 `@dts/protocol` 的 `PROTOCOL_VERSION` 一致（这里写死：e2e 不是 workspace 包，
           // 拿不到那个常量；版本一升这里会连不上、用例会当场失败，提醒同步改）
-          protocolVersion: 14,
+          protocolVersion: 16,
           name: "e2e 假前端",
           version: "0.0.0",
         }),
@@ -162,18 +162,17 @@ test.describe("地图 / 贴图：视频列表", () => {
       const { a, b } = await seed(project, request);
       await openFirstObject(page, project, "网格地图");
 
-      const video = page.locator('[data-group="video"]');
-      await expect(video).toBeVisible();
-      // 没开视频：整组只剩「启用」那一个开关（与战争雾那一组同一套）
-      await expect(video.getByTestId("video-enable")).not.toBeChecked();
-      await expect(video.getByTestId("video-clips")).toHaveCount(0);
-      await expect(video.getByTestId("video-play")).toHaveCount(0);
+      // 没加视频：不出视频组；入口在底部的「添加组件」（与「网格地图」同一套）
+      await expect(page.locator('[data-group="video"]')).toHaveCount(0);
       // 编辑器**不播放**：页面上没有任何视频播放器
       await expect(page.locator("video")).toHaveCount(0);
       expect(await readSceneVideo(request, project, SCENE)).toBeUndefined();
 
-      // 打开「启用」：这才露出视频列表、＋ 添加与那几个按钮
-      await video.getByTestId("video-enable").check();
+      // 点「添加组件 → 视频」：这才露出视频列表、＋ 添加与那几个按钮
+      await page.getByTestId("add-component").click();
+      await page.getByTestId("add-component-VideoOverlay").click();
+      const video = page.locator('[data-group="video"]');
+      await expect(video).toBeVisible();
       await expect(video.getByTestId("video-empty")).toHaveText("还没加视频");
       await expect(video.getByTestId("video-add")).toBeVisible();
       await expect(video.getByTestId("video-play")).toBeDisabled();
@@ -271,15 +270,24 @@ test.describe("地图 / 贴图：视频列表", () => {
 
       // 第二个对象是**贴图**：v21 起视频那一组从精灵挪到了贴图
       await selectObject(page, 1);
-      await expect(page.locator('[data-group="video"]')).toBeVisible();
-      // 贴图没有地图专属那两组
+      // 贴图不是「地图对象」，但 v28 起网格与视频都是**可选组件**：没加时不出组，
+      // 入口在底部「添加组件」（网格地图 + 视频）；战争雾只属于独立的 `Fog` 对象，贴图没有
       await expect(page.locator('[data-group="map"]')).toHaveCount(0);
+      await expect(page.locator('[data-group="video"]')).toHaveCount(0);
       await expect(page.locator('[data-group="fog"]')).toHaveCount(0);
-      // **贴图**身上也能真的把视频存进去（不是「面板长出来了、数据写不进去」）
+      await page.getByTestId("add-component").click();
+      await expect(page.getByTestId("add-component-GridMap")).toBeVisible();
+      await expect(page.getByTestId("add-component-VideoOverlay")).toBeVisible();
+      // **贴图**身上也能真的把视频存进去（不是「面板长出来了、数据写不进去」）。
+      // v28 起网格地图也是 `Image`，所以要按 **id** 指名读这一张贴图（kind 分不清它俩；
+      // `gameObjectDoc` 把 id 拼成 `object_<name>`）
+      await page.getByTestId("add-component-VideoOverlay").click();
       const textureVideo = page.locator('[data-group="video"]');
-      await textureVideo.getByTestId("video-enable").check();
+      await expect(textureVideo).toBeVisible();
       await waitForSaved(page);
-      expect(await readSceneVideo(request, project, SCENE, "Image")).toMatchObject({
+      expect(
+        await readSceneVideo(request, project, SCENE, { objectId: `object_${SPRITE}` }),
+      ).toMatchObject({
         enabled: true,
         clips: [],
       });
@@ -319,8 +327,9 @@ test.describe("视频：命令下发给前端", { tag: "@runtime" }, () => {
 
       // 直接在面板上配好（这一条钉的是**命令链路**，配视频的交互在上一条用例里钉过了）
       await openFirstObject(page, project, "网格地图");
+      await page.getByTestId("add-component").click();
+      await page.getByTestId("add-component-VideoOverlay").click();
       const video = page.locator('[data-group="video"]');
-      await video.getByTestId("video-enable").check();
       await video.getByTestId("video-add").click();
       const picker = page.getByTestId("video-picker-dialog");
       await picker.locator(`[data-testid="video-picker-item"][data-asset-id="${a}"]`).click();

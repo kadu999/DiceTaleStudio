@@ -7,7 +7,6 @@ import {
   DEFAULT_SLOT_COMPONENT,
   videoDataOf,
   setVideoClips as setSceneVideoClips,
-  setVideoEnabled as setSceneVideoEnabled,
   setVideoLoop as setSceneVideoLoop,
   setVideoPicked as setSceneVideoPicked,
 } from "@dts/document";
@@ -32,7 +31,6 @@ export function createVideoSlice(
   | "resumeVideo"
   | "stopVideo"
   | "flushVideoPlayback"
-  | "setVideoEnabled"
   | "addVideoClip"
   | "removeVideoClip"
   | "selectVideoClip"
@@ -152,12 +150,6 @@ export function createVideoSlice(
     },
 
     // ------------------------------------------------------------ 视频（地图 / 贴图）
-
-    setVideoEnabled(objectId, enabled) {
-      return applyActiveScene(enabled ? "启用视频" : "关闭视频", (scene) => {
-        setSceneVideoEnabled(scene, objectId, enabled);
-      });
-    },
 
     addVideoClip(objectId, clipId) {
       const object = objectWithFeature(objectId, DEFAULT_SLOT_COMPONENT.video);
