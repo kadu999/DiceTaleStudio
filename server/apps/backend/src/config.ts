@@ -1,4 +1,4 @@
-import { dirname, isAbsolute, resolve } from "node:path";
+import { isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   DEFAULT_RESOURCE_DIRS,
@@ -88,5 +88,3 @@ export function describeConfig(config: LoadedConfig): string {
   const source = config.usingDefaults ? "内置默认值" : "config/app.json";
   return `资源根: ${config.resourceRoot}（配置来源: ${source}）`;
 }
-
-export { dirname };

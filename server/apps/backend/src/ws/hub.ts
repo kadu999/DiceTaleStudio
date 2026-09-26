@@ -6,7 +6,6 @@ import {
   RUNTIME_INACTIVE_REASON,
   RUNTIME_INACTIVE_STATUS,
   RUNTIME_STOPPED_CODE,
-  createRequestId,
   parseClientToServer,
   parseEditorToServer,
   parseJsonMessage,
@@ -417,11 +416,6 @@ export class RuntimeHub implements HubContext {
 
   resetInactiveRejectionLog(): void {
     this.rejectedWhileInactive = false;
-  }
-
-  /** 生成一个请求 id（编辑器与测试都用它，格式统一）。 */
-  newRequestId(): string {
-    return createRequestId("cmd");
   }
 
   // ------------------------------------------------------------ 发送

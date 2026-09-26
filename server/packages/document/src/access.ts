@@ -259,17 +259,6 @@ export function mapDraftOf(object: Draft<GameObjectDoc>): Draft<MapDataDoc> | un
 }
 
 /**
- * 战争雾组件数据的 draft（v25 起雾住在独立的 `FogOfWar` 组件里）。
- *
- * 与 `fogOf` 分开只是类型上的事：命令作用在 immer draft 上，写回时要是可变的那个类型。
- * **不会凭空造**：开关与雾区各有专用命令（带「关且空就摘组件」的不变量），
- * 要补壳走 `ensureFogData`（只有地图预设允许）。
- */
-export function fogDraftOf(object: Draft<GameObjectDoc>): Draft<FogOfWarDataDoc> | undefined {
-  return componentDataOfSlot<FogOfWarDataDoc>(object, "fog") as Draft<FogOfWarDataDoc> | undefined;
-}
-
-/**
  * 写入某个特性组件的**整份数据**（没有实例就补一个）。
  *
  * 组件实例 id 是确定性的（`<对象 id>__<组件类型>`），所以同一次编辑重复写、

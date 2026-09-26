@@ -26,14 +26,14 @@ export interface HttpContext {
   readonly bundles: BundleCache;
 }
 
-export interface HttpServerOptions {
-  readonly config: LoadedConfig;
-  readonly provider: ResourceProvider;
-  readonly hub: RuntimeHub;
-  readonly log: (level: LogLevel, message: string) => void;
+/**
+ * 组装服务器的输入：`HttpContext` 去掉「装配时才有」的 `bundles`，并把 `openFolder`
+ * 降成可选（缺省用真实实现）——**字段清单只此一处**，不给两个接口各维护一份。
+ */
+export type HttpServerOptions = Omit<HttpContext, "bundles" | "openFolder"> & {
   /** 覆盖默认的「打开目录 / 定位文件」实现（测试注入假实现）。 */
   readonly openFolder?: (path: string, selectFile?: string) => Promise<void>;
-}
+};
 
 /** 装配一次服务器上下文：把可选项补成默认实现，让路由函数拿到的都是必填项。 */
 export function createHttpContext(options: HttpServerOptions): HttpContext {

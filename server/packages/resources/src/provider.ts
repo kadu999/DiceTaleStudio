@@ -3,10 +3,11 @@ import type { ResourceKind } from "./ids";
 /**
  * 资源访问抽象。
  *
- * 三种实现（浏览器 / Node / 测试），业务代码只依赖本接口：
- * - `MemoryResourceProvider`（测试）
+ * 实现有两个（业务代码只依赖本接口）：
+ * - `MemoryResourceProvider`（包内，供测试与内存场景）
  * - `FsResourceProvider`（apps/backend，唯一碰磁盘的地方）
- * - `HttpResourceProvider`（apps/editor，走 /api/resources/*）
+ *
+ * 浏览器侧不实现本接口：编辑器走 `apps/editor/src/services/project-api.ts` 的 HTTP 函数。
  */
 export interface ResourceEntry {
   readonly id: string;

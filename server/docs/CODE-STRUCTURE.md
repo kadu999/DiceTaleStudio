@@ -16,8 +16,8 @@
 | 后端默认地址 | `0.0.0.0:1420`（`resources/config/app.json`，可被 `HOST` / `PORT` 覆盖） |
 | 编辑器开发地址 | `http://localhost:5173`（Vite，`/api`、`/editor`、`/client` 反代到 1420） |
 | 编辑器生产地址 | `http://localhost:1420`（后端同源托管 `apps/editor/dist`） |
-| 源码规模（不含测试） | 159 个文件 / 36,260 行（packages 12,393 · backend 3,456 · editor 20,411） |
-| 测试规模 | 32,755 行（单测 23,435 · E2E 9,037 · 架构测试 283） |
+| 源码规模（不含测试） | 159 个文件 / 36,194 行（packages 12,371 · backend 3,446 · editor 20,377） |
+| 测试规模 | 32,754 行（单测 23,434 · E2E 9,037 · 架构测试 283） |
 
 > 上表两行与 §0.1 表格里加粗的文件行数、§3.x 节标题里的包规模由
 > `scripts/check-code-structure-stats.mjs` **机器校验**（`pnpm check` 的一环）：
@@ -29,8 +29,8 @@
 
 | 改动 | 之前 | 之后 | 加一个功能要改几处 |
 |---|---|---|---|
-| **HTTP 一条协议一个函数** | `http/server.ts` 633 行、一条 `switch` | 13 个文件，`server.ts` **74 行** + `routes/*` | 加一个接口 = 加一个函数 + 路由表一行 |
-| **WS 一条消息一个函数** | `ws/hub.ts` 621 行、两条 `switch` | 8 个文件，`hub.ts` **480 行**（只管传输）+ `handlers/*` | 加一条消息 = 加一个函数（表的键完整性由类型保证） |
+| **HTTP 一条协议一个函数** | `http/server.ts` 633 行、一条 `switch` | 13 个文件，`server.ts` **72 行** + `routes/*` | 加一个接口 = 加一个函数 + 路由表一行 |
+| **WS 一条消息一个函数** | `ws/hub.ts` 621 行、两条 `switch` | 8 个文件，`hub.ts` **474 行**（只管传输）+ `handlers/*` | 加一条消息 = 加一个函数（表的键完整性由类型保证） |
 | **Unity 式实体+组件（GameObject + Component）** | 对象上 5 个特性扁平字段 + 各处 `kind === "…"` | `components[]`（模拟 Unity GameObject 挂组件）+ 能力槽位（slot）/访问器；文档 v19 / 协议 v9 / Unity 客户端同步（子图改动后为 **v20 / v10**，见 §0） | 加一个特性 = 加一个组件 + 注册表一行 + 预设表一行（见 §1.6） |
 | **文档命令分模块** | `commands.ts` 2,069 行 | `commands/` 10 个文件（按特性） | 加一个特性的命令 = 加一个文件 |
 | **编辑器 store 分片** | `editor-store.ts` 4,493 行 | 组装点 **94 行** + 17 个切片 + 上下文（见 §5.2） | 加一个功能 = 加一个 `slices/<功能>-slice.ts` + 组装点一行（**简单字段连切片都不用加**：`setComponentField` 已经在 `component-slice.ts` 里） |
@@ -413,7 +413,7 @@ build: { outDir: "dist", sourcemap: true },
 | `mask.ts` | 232 | 格子类型位掩码、显示标签与颜色 | `CellMask`（`Empty:0 / Obstacle:1 / Difficult:2 / Water:4 / Fog1:8 … Fog5:128`）、`PAINTABLE_MASKS`、`FOG_MASK`、`ALL_MASK`、`hasMask`、`addMask`、`removeMask`、`isEmptyMask`、`isFogMask`、`isBlocked`、`maskToLabel`（→ `区域1+区域4`）、`normalizeRegions`、`regionsToMask`、`defaultCellMaskStyle`、`defaultCellMaskColors`、`cellMaskRgba`、`cellMaskCss`、`isHexColor`、`visibleMaskBits`、`isValidMask`；类型 `CellMaskStyle{hex,alpha}` |
 | `coords.ts` | 60 | 坐标契约：世界 ↔ 网格 ↔ 贴图像素 | `isInsideGrid`、`cellPixelSize`、`gridSizeFromImage`；类型 `GridSize`、`ImageSize`、`WorldPoint`、`GridPoint` |
 | `world.ts` | 122 | 世界矩形与格子换算 | `worldRectOf`、`worldRectLeft`、`worldRectBottom`、`worldRectTopLeft`、`unionWorldRects`、`gridToWorld`、`worldToGridPoint`（不夹取）、`worldToGrid`（夹取）、`gridCornerToWorld`；类型 `WorldRect{center,size}` |
-| `bytes.ts` | 104 | DiceTale `.bytes` 网格二进制的读写（与 Unity 位精确兼容） | `BYTES_HEADER_SIZE`(8)、`BYTES_CELL_SIZE`(4)、`gridBytesLength`、`createGridData`、`encodeGridBytes`、`decodeGridBytes`、`encodeGridBytesToBase64`、`decodeGridBytesFromBase64`；类型 `GridData{size,cells}` |
+| `bytes.ts` | 77 | DiceTale `.bytes` 网格二进制的读写（与 Unity 位精确兼容） | `BYTES_HEADER_SIZE`(8)、`BYTES_CELL_SIZE`(4)、`gridBytesLength`、`encodeGridBytes`、`decodeGridBytes`；类型 `GridData{size,cells}` |
 | `rle.ts` | 64 | 行程编码 | `encodeRle`、`decodeRle`（传 `expectedCount` 时格数不符即抛错）；类型 `RleRun = readonly [mask, count]` |
 | `brush.ts` | 146 | 画笔尺寸 / 半径 / 覆盖格子 / 轨迹补格 | `MIN_BRUSH_SIZE`(1)、`MAX_BRUSH_SIZE`(5)、`clampBrushSize`、`brushRadius`、`brushEffectiveSize`、`brushCells`、`strokeCenters`（Bresenham，含两端）、`applyBrush`、`applyBrushStroke`；类型 `BrushOptions{mask,brushSize,erase?,eraseMask?}` |
 | `index.ts` | 6 | barrel 汇总导出 | — |
@@ -428,13 +428,13 @@ build: { outDir: "dist", sourcemap: true },
 - 画笔半径 `floor((brushSize-1)/2)`（1/2→1×1、3/4→3×3、5→5×5，含偶数尺寸的刻意保真），与 Unity `ApplyBrush` 完全一致；
 - 坐标系只有一个：**世界坐标**（x 右、y 上、像素、无限大）；`grid(0,0)` 在地图矩形左下角 = 图片最下面一行，grid.y 与世界 y 同向、不翻转；唯一的翻转发生在贴图绘制（`worldRectTopLeft`）。
 
-### 3.2 `@dts/document` — 文档模型、命令与历史（7,782 行）
+### 3.2 `@dts/document` — 文档模型、命令与历史（7,761 行）
 
 | 文件 | 行数 | 职责 | 关键导出 |
 |---|---|---|---|
 | `types.ts` | 585 | 全部文档类型与格式版本常量（**`ObjectKind` 不在这里：v22 起住在 `presets.ts`，层级已移除、kind 只是预设 id**） | `DOCUMENT_FORMAT_VERSION`(=27)、`ProjectDoc`、`SceneDoc`、`SceneFileDoc`、`GameObjectDoc`、`ComponentDoc`、`MapDataDoc`（含 v26 的 `sortingOrder`）、`ImageLayerDataDoc`（`ImageRef & { sortingOrder }`）、`FogOfWarDataDoc`（v27：`mapId` + `enabled` + `regions`）、`SoundDataDoc`、`TeleportDataDoc`、`VideoDataDoc`、`ImageRef`、`GridSpec`、`CellRuns`、`ItemLibraryDoc`、`AudioTagTableDoc`、`SOUND_LAYERS`、`OBJECT_SOUND_LAYERS`、`ImageSpriteRef`、`SpriteSheetDoc`、`SpriteImportSettingsDoc`、`ResolvedSprite`、`SOUND_LAYER_LABELS` |
 | `presets.ts` | 256 | **对象预设表 + 能力槽位**（kinds.ts / features.ts 合并而来）：kind 只是预设 id，`GameObject` 仍是抽象基类（不落进文档）；每个预设声明允许的能力槽位 → 承载组件 + 缺省承载兜底 + 特性缺省值 | `ComponentSlot`、`OBJECT_KINDS`、`ObjectKind`、`GameObjectPreset`、`OBJECT_PRESETS`、`DEFAULT_SLOT_COMPONENT`、`SPRITE_COMPONENT`、`presetOf`、`isAbstractKind`、`CONCRETE_KINDS`、`componentForSlot`、`carriesComponent`、`supportsVideo`、`supportsFog`、`supportsSpriteSheet`、`displayImageField`、`DEFAULT_SOUND_LAYER`、`DEFAULT_VIDEO_*` |
-| `access.ts` | 450 | **对象特性的唯一访问路径**（数据存在哪只有这里知道；v22 层级移除后一律按组件自报的 slot 查找） | 读：`componentOf`、`componentOfSlot`、`componentDataOf`、`componentDataOfSlot`、`mapDataOf`、`fogOf`、`imageOf`（按 slot 直接找，**只挑回 `ImageRef` 那几个字段**）、`imageLayerDataOf`、`objectImage`、`sortingOrderOf`（v26：地图 → 图片层 → 0）、`soundDataOf`、`teleportDataOf`、`videoDataOf`、`isFogEnabled`、`isVideoEnabled`；写：`mapDraftOf`、`fogDraftOf`、`writeFeature`、`removeFeature`、`ensureSoundData`、`ensureTeleportData`、`ensureVideoData`、`ensureFogData`、`withFeature` |
+| `access.ts` | 431 | **对象特性的唯一访问路径**（数据存在哪只有这里知道；v22 层级移除后一律按组件自报的 slot 查找） | 读：`componentOf`、`componentOfSlot`、`componentDataOf`、`componentDataOfSlot`、`mapDataOf`、`fogOf`、`imageOf`（按 slot 直接找，**只挑回 `ImageRef` 那几个字段**）、`imageLayerDataOf`、`objectImage`、`sortingOrderOf`（v26：地图 → 图片层 → 0）、`soundDataOf`、`teleportDataOf`、`videoDataOf`、`isFogEnabled`、`isVideoEnabled`；写：`mapDraftOf`、`writeFeature`、`removeFeature`、`ensureSoundData`、`ensureTeleportData`、`ensureVideoData`、`ensureFogData`、`withFeature` |
 | `schema.ts` | 1,487 | zod schema + **版本迁移链**（v23 / v24 的素材 meta 迁移、v25 的 `migrateMapFogToComponent`、v26 的 `migrateSortingOrderToRenderComponents` 也在这一段里）+ 文件解析 | `sceneFileSchema`、`projectDocSchema`、`imageSpriteRefSchema`、`mapDataSchema`、`imageLayerDataSchema`、`upgradeRawDocument`、`migrateProjectDoc`、`parseProjectFile`、`parseProjectDoc`、`parseSceneFile`、`defaultProjectSettings`、`defaultAudioSettings`、`defaultBgmSettings`、`DEFAULT_BGM_VOLUME`(0.6)、`DEFAULT_SFX_VOLUME`(0.8)、`DEFAULT_VOICE_VOLUME`(1)；类型 `SceneSizeHint`、`ProjectFileLoad`、`SceneFileLoad` |
 | `commands/` | 1,750 | **60 个文档变换命令**（`commands/*.ts` 里 `export function` 的条数；分组表里另有 3 个读/判据由 `access.ts` / `presets.ts` 提供），按特性拆成 9 个模块 | 见 §3.2.2 |
 | `validation.ts` | 567 | 文档语义校验（跨字段、跨场景 + **子图的越界格子**（切分按素材 meta 查）+ **视频只给地图与贴图** + **素材 meta 里的标签引用**（顶层 `tags` 与音频旧段同一套规矩）） | `IssueLevel`、`ValidationIssue`、`SceneValidationOptions`、`hasErrors`、`formatIssues`、`validateScene`、`validateAssetMetas`、`validateProject` |
@@ -455,7 +455,7 @@ build: { outDir: "dist", sourcemap: true },
 
 ```
 project.json（ProjectDoc）        ← v23 起**只剩项目级数据**（素材级数据跟着素材走）
-├─ formatVersion: 26
+├─ formatVersion: 28
 ├─ name
 ├─ items: ItemLibraryDoc            ← 道具库（source/updatedAt/count/items[]）
 ├─ settings: ProjectSettingsDoc     ← v15 起；audio: { bgm, sfx, voice } 各只有 volume
@@ -674,7 +674,7 @@ v23 起 `validateScene` 多了第二个参数：`validateScene(scene, { metas })
 
 ### 3.3 `@dts/protocol` — WS 消息契约（875 行）
 
-单文件 `src/messages.ts`（823 行）+ `index.ts` barrel（1 行）。
+单文件 `src/messages.ts`（874 行）+ `index.ts` barrel（1 行）。
 **编辑器、服务端、Unity 前端共用同一份 zod schema。**
 
 > **刻意不依赖 `@dts/document`**：`protocol` 是被三端共用的最底层包，不能反过来依赖文档包，
@@ -684,7 +684,7 @@ v23 起 `validateScene` 多了第二个参数：`validateScene(scene, { metas })
 
 | 名称 | 值 | 用途 |
 |---|---|---|
-| `PROTOCOL_VERSION` | `12` | 握手校验；不一致则关闭连接（`4002`）。**v23 / v24 都没有再动它**：素材级数据（切分 / 导入设置 / 音频标注）只在编辑器侧，wire 上仍然是路径 ID。上一次配套改动是文档 v22 ↔ 协议 v12：`kind` 改名（贴图 `Texture`→`Image`、精灵 `SceneObject`→`Sprite`），老客户端不认这两个值，占位色退回灰色（图照常显示，显示走组件名） |
+| `PROTOCOL_VERSION` | `16` | 握手校验；不一致则关闭连接（`4002`）。最近一次配套改动是文档 v28 ↔ 协议 v16：取消 `Map` 类型、网格变成贴图上的**可选组件**——老前端不认这个 wire 形状，靠握手把它挡在连上的那一刻 |
 | `SPRITE_SHEET_MAX` | `64` | 子图切分的**列 / 行上限**（与 `@dts/document` 的 `SPRITE_SHEET_MAX` 同值，契约测试盯着） |
 | `RUNTIME_INACTIVE_STATUS` | `503` | 未开闸时拒绝 `/client` 升级的 HTTP 状态 |
 | `RUNTIME_INACTIVE_REASON` | `"runtime-inactive"` | 写在 `x-dts-reason` 头里 |
@@ -733,12 +733,12 @@ v23 起 `validateScene` 多了第二个参数：`validateScene(scene, { metas })
 解析助手：`parseClientToServer`、`parseServerToClient`、`parseEditorToServer`、`parseServerToEditor`
 （失败信息形如 `"<通道> 消息校验失败: <path>: <message>"`）、`parseJsonMessage`、`createRequestId(prefix)`。
 
-### 3.4 `@dts/resources` — 资源 ID 与 Provider 抽象（1,181 行）
+### 3.4 `@dts/resources` — 资源 ID 与 Provider 抽象（1,182 行）
 
 | 文件 | 行数 | 职责 | 关键导出 |
 |---|---|---|---|
 | `ids.ts` | 262 | **目录约定的唯一归属地** + 逻辑 ID 编解码（含 `<素材>.meta` 的路径 / ID 换算） | `ResourceKind`、`RESOURCE_KINDS`、`PROJECT_FOLDERS`、`DEFAULT_PROJECT_FOLDERS`、`PROJECT_FILE_NAME`、`PROJECT_SPECIAL_FILES`、`PROJECT_SCENE_FILE_EXTENSION`、`ASSET_META_SUFFIX`、`isAssetMetaPath`、`assetMetaPathOf`、`assetMetaIdOf`、`assetIdOfMetaId`、`formatResourceId`、`parseResourceId`、`projectPath`、`projectFileId`、`projectAssetId`、`projectFolderId`、`projectSceneBytesId`、`projectSceneImageId`、`projectSceneFileId`、`projectNameFromId`、`projectRelativePathFromId`、`projectNameFromFileId`、`configId`、`normalizePath` |
-| `provider.ts` | 49 | 资源访问抽象（浏览器 / Node / 测试三实现共用） | `ResourceEntry`、`ResourceProvider`、`ResourceDirs`、`DEFAULT_RESOURCE_DIRS`、`assertCompleteDirs` |
+| `provider.ts` | 49 | 资源访问抽象（接口 + 内存 / 文件系统两实现共用） | `ResourceEntry`、`ResourceProvider`、`ResourceDirs`、`DEFAULT_RESOURCE_DIRS` |
 | `project.ts` | 370 | 项目级业务操作（与宿主无关） | `ProjectSummary`、`ResourceTreeNode`、`validateProjectName`、`validateProjectRelativePath`、`listProjects`、`projectExists`、`readProjectEntries`、`buildResourceTree`、`createProject`、`deleteProject`、`readProjectFile`、`belongsToProject`、`CreateProjectOptions` |
 | `memory.ts` | 238 | 内存实现（测试与联调） | `MemoryResourceProvider`、`createMemoryResourceProvider` |
 | `meta.ts` | 178 | `<素材>.meta` 的路径换算、导入器判定与缺省 meta 文本；rename 校验（`assertRenameAllowed`）与「确保有 meta」（`ensureAssetMetaCore`）的公共纯函数——内存 / 文件系统两个 provider 同一套口径，错误消息只有这一份 | `ownsAssetMeta`、`assetMetaPathFor`、`assetFolderPathsFor`、`AssetImporter`、`assetImporterForPath`、`assetMetaIdFor`、`assertRenameAllowed`、`ensureAssetMetaCore`、`newAssetMetaText`、`guidFromAssetMetaText` |
@@ -770,13 +770,13 @@ resources/
 `writeBinary`、`ensureFolder`、`remove`、`rename`。`rename` 的契约：两端类别必须一致、源必须存在、
 目标必须不存在（**绝不覆盖用户数据**）。
 
-### 3.5 `@dts/renderer` — Canvas 2D 渲染与手柄几何（1,848 行）
+### 3.5 `@dts/renderer` — Canvas 2D 渲染与手柄几何（1,846 行）
 
 | 文件 | 行数 | 职责 | 关键导出 |
 |---|---|---|---|
 | `viewport.ts` | 154 | 视口（缩放 + 平移）与坐标变换 | `Viewport`、`Point`、`MIN_SCALE`(0.05)、`MAX_SCALE`(16)、`createViewport`、`createCenteredViewport`、`clampScale`、`worldToScreen`、`screenToWorld`、`panBy`、`zoomAt`、`fitViewport`、`visibleWorldRect` |
 | `gizmo.ts` | 416 | 变换手柄（移动 / 旋转 / 缩放）的**世界几何 + 屏幕几何 + 命中判定** | `TransformTool`、`toolHasGizmo`、`GizmoHandle`、`SCALE_HANDLES`、尺寸常量（`GIZMO_HANDLE_SIZE` 9、`GIZMO_HANDLE_HIT_SIZE` 10、`GIZMO_AXIS_GAP` 45、`GIZMO_AXIS_LENGTH` 40、`GIZMO_RING_GAP` 22、`GIZMO_AXIS_HIT_WIDTH` 9、`GIZMO_RING_HIT_WIDTH` 10）、`isDrawableFrame`、`rectCorners`、`rotatePointAround`、`angleAround`、`scaleHandlePoints`、`scaleAnchorFor`、`isCornerScaleHandle`、`scaleAxisOf`、`gizmoScreenGeometry`、`hitTestGizmoHandles`、私有 `moveAxisEnd`（轴条根 / 末端同一条公式） |
-| `scene-renderer.ts` | 1,200 | 场景绘制主循环 + 命中测试 + 音频徽标动画 + 子图的九参数 `drawImage` | `SceneLayer`（含 `sprite?`：**图片像素、左上角原点、y 向下**）、`SceneRenderInput`、`SceneToolHandles`、`SceneRenderer`、`createCanvasSceneRenderer`、`kindMarkerColor`、`hitTestRect`、`AudioPulseRing`、`AudioBadgeAnimation`、`audioBadgeAnimation` |
+| `scene-renderer.ts` | 1,275 | 场景绘制主循环 + 命中测试 + 音频徽标动画 + 子图的九参数 `drawImage` | `SceneLayer`（含 `sprite?`：**图片像素、左上角原点、y 向下**）、`SceneRenderInput`、`SceneToolHandles`、`SceneRenderer`、`createCanvasSceneRenderer`、`kindMarkerColor`、`hitTestRect`、`AudioPulseRing`、`AudioBadgeAnimation`、`audioBadgeAnimation` |
 | `index.ts` | 3 | barrel | — |
 
 两条关键不变量：
@@ -792,7 +792,7 @@ resources/
 超 `MAX_CHECKER_TILES`(8192) 退回纯色；相位由 `checkerOrigin` 决定并锚在世界坐标上）→ 逐 layer
 （底纹 → 贴图 → 格子着色 → 网格线；旋转绕矩形中心、在裁剪之前施加；整块视口外早退用旋转后外接框）→
 选中框（画在所有图层之后；有工具在用时只留虚线框、不画 8 个装饰方块）→ 手柄（压在最后）→ 原点十字（可选）。
-`drawGridLines` 间距 < 4px 跳过、条数上限 4000。内置徽标（`icon: "audio" | "teleport"`）**不裁剪**
+`drawGridLines` 间距 < 4px 跳过、条数上限 4000。内置徽标（`icon: "audio" | "teleport" | "fog"`）**不裁剪**
 （正在播的声波要扩到矩形外）、全部用路径画（不占资产、不依赖字体）。
 `audioBadgeAnimation` 是**纯函数**（周期 1200ms、两圈错开半周期），因此可以脱离画布单测。
 
@@ -1036,7 +1036,7 @@ startServer()
 `editor_error{requestId?,reason}`。
 
 公开只读属性：`clientConnected`、`runtimeActive`、`editorCount`、`session`；
-公开方法：`attach`、`close`、`broadcastToEditors`、`newRequestId()`（生成 `cmd-…`）。
+公开方法：`attach`、`close`、`broadcastToEditors`。
 
 ### 4.9 运行态会话（`ws/runtime-session.ts`）
 
@@ -1433,7 +1433,6 @@ edit：取消去抖、`lastPushedSceneText=null`、发 `runtime_stop`）、`push
 | `projectApi.readMetas(name)` | `GET /api/projects/meta?name=`（一个项目**全部素材的 `.meta` 原文**，键是素材逻辑 ID；坏 JSON 的进 `unreadable`，两者都交回调用方） |
 | `projectApi.createFolder(project, path)` | `POST /api/projects/folder` |
 | `projectApi.reveal(name, target = "", selectFile = false)` | `POST /api/projects/reveal` |
-| `projectApi.listResources()` | `GET /api/resources/index` |
 | `projectApi.readText(id)` | `GET /api/resources/text?id=` |
 | `projectApi.writeText(id, text)` | `PUT /api/resources/text?id=` |
 | `projectApi.uploadBinary(id, data, contentType)` | `PUT /api/resources/raw?id=` |
@@ -1456,8 +1455,7 @@ edit：取消去抖、`lastPushedSceneText=null`、发 `runtime_stop`）、`push
   - `reconnectDelayMs(attempt, jumpToMax?)`：`500 * 2**attempt`，**封顶 10 000ms**；
     `jumpToMax` 只在 `close.code === 4002`（协议版本不一致）时给——「别拿 500ms 去捶一个注定拒绝你的服务端」。
   - **稳定连接判定**：`open` 时起 `STABLE_CONNECTION_MS = 3000` 定时器，**活满 3s 才把 `reconnectAttempt` 清零**；
-    否则会出现「连上 → 立刻被踢 → 500ms 再连」的死循环。`clearStableTimer()` 在断开/手动关闭/重连时都要清。
-  - `manualClose` 由 `disconnect()` 置真，阻断重连。
+    否则会出现「连上 → 立刻被踢 → 500ms 再连」的死循环。`clearStableTimer()` 在断开 / 重连时都要清。
   - `connect()` 幂等（OPEN/CONNECTING 直接返回）；`new WebSocket` 抛错 → `onStatus("error")` + 排重连。
   - `describeSocketClose(code, reason)` 把断开翻成人话（4002 → 「服务端要重启」；1006 → 「多半是服务端没在跑」；
     1005 → 「服务端关闭了连接」），**store 会把它整句写进运行日志**。
@@ -2018,12 +2016,12 @@ resources/
 - 后端不依赖资源根存在：`loadConfig` 读不到 `config/app.json` 就用内置默认值，目录由首次写入时按需创建
   （E2E 依赖这一点）。
 
-**`测试项目` 的实际内容**（磁盘上已经是 `formatVersion: 26`——v22 改了 kind 的名字，v23 / v24 把图片切分与
-音频标注搬进各素材的 `.meta`，v25 拆出 `FogOfWar`，v26 把显示顺序搬进渲染组件；历史文件由**编辑器打开时自动迁移并回写一次**，见 §6.2；下表按**迁移后**的样子写）：
+**`测试项目` 的实际内容**（磁盘上已经是 `formatVersion: 28`——v22 改了 kind 的名字，v23 / v24 把图片切分与
+音频标注搬进各素材的 `.meta`，v25 拆出 `FogOfWar`，v26 把显示顺序搬进渲染组件，v27 战争雾变成独立对象，v28 取消 `Map` 类型（网格变成贴图上的可选组件）；历史文件由**编辑器打开时自动迁移并回写一次**，见 §6.2；下表按**迁移后**的样子写）：
 
 | 文件 | 内容 |
 |---|---|
-| `project.json` | `formatVersion: 26`；`items = { source: "item.xlsx", updatedAt: "2026-09-18", count: 0, items: [] }`；`settings.audio` = `bgm 0.6 / sfx 0.8 / voice 1`（**只有音量**）；`audioTags = ["场景1","场景2","场景3"]`——**v24 起工程文件里没有 `audioMeta`**：两条标注住在各自音频的 `.meta` 里（`act-2-to-act-3/06-altar-transition.mp3.meta → {tags:[0,2]}`、`act-2/01-bird-capture-part-1.mp3.meta → {name:"声音1", tags:[0,1,2]}`） |
+| `project.json` | `formatVersion: 28`；`items = { source: "item.xlsx", updatedAt: "2026-09-18", count: 0, items: [] }`；`settings.audio` = `bgm 0.6 / sfx 0.8 / voice 1`（**只有音量**）；`audioTags = ["场景1","场景2","场景3"]`——**v24 起工程文件里没有 `audioMeta`**：两条标注住在各自音频的 `.meta` 里（`act-2-to-act-3/06-altar-transition.mp3.meta → {tags:[0,2]}`、`act-2/01-bird-capture-part-1.mp3.meta → {name:"声音1", tags:[0,1,2]}`） |
 | `Assets/scenes/场景1.json` | **5 个对象**：① `Map`「地图」（`GridMap` data 的 `sortingOrder -1`、`locked`、`Map001.png` 1920×1080、`grid 64×36`、RLE 72 段、独立 `FogOfWar {enabled:true, regions:[1,2,4]}`，另带一个 `VideoOverlay`：`Map001.mp4`、`loop` 与 `audio` 都 true）；② `Sprite`「精灵」（`scale 0.1`，`SpriteLayer` 带 `sortingOrder 1` 与 `sprite {column:0, row:1}`；引用上写的还是改名前的路径，而真正的图集是 `B.png`——它的 `.meta` 里 `sprite.mode:"Multiple"`、`sheet 2×2`）；③ `PlaySound`「播放声音」（3 条 clips、`picked` = `06-altar-transition.mp3`、`layer:"voice"`）；④ `Teleport`「传送阵」（`targets:["场景2","场景3"]`、`picked:"场景3"`）；⑤ `Image`「贴图」（`ImageLayer` data 的 `sortingOrder 1`、`Bridge.png` 256×256、`rotation ≈ -15°`、`locked`） |
 | `Assets/scenes/场景2.json` | 1 个 `Map`「网格地图」（`Map002.png`、`cells` 单个游程 `[[0, 2304]]` 即全空） |
 | `Assets/scenes/场景3.json` | 1 个 `Map`「网格地图」（`Map003.png`）+ `VideoOverlay { enabled:true, clips:[Map003_1..3.mp4], picked:"Map003_1.mp4", loop:false, audio:false }` |

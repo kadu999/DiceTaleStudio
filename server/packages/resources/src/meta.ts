@@ -1,6 +1,6 @@
 import { assetMetaPathOf, normalizePath, parseResourceId, type ResourceKind } from "./ids";
 
-export function ownsAssetMeta(kind: ResourceKind, path: string): boolean {
+function ownsAssetMeta(kind: ResourceKind, path: string): boolean {
   if (kind !== "project") {
     return false;
   }
@@ -9,7 +9,7 @@ export function ownsAssetMeta(kind: ResourceKind, path: string): boolean {
   return assetRelativePath(normalized) !== undefined && !normalized.endsWith(".meta");
 }
 
-export function assetMetaPathFor(kind: ResourceKind, path: string): string | undefined {
+function assetMetaPathFor(kind: ResourceKind, path: string): string | undefined {
   return ownsAssetMeta(kind, path) ? assetMetaPathOf(path) : undefined;
 }
 
@@ -29,7 +29,7 @@ export function assetFolderPathsFor(kind: ResourceKind, path: string): string[] 
 
 export type AssetImporter = "texture" | "audio" | "video" | "scene" | "prefab";
 
-export function assetImporterForPath(path: string): AssetImporter | undefined {
+function assetImporterForPath(path: string): AssetImporter | undefined {
   const normalized = assetRelativePath(path)?.toLowerCase();
   if (normalized === undefined) {
     return undefined;

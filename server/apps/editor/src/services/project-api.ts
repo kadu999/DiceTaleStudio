@@ -1,5 +1,3 @@
-import type { ResourceEntry } from "@dts/resources";
-
 /**
  * 项目 HTTP 客户端。
  *
@@ -98,12 +96,6 @@ export const projectApi = {
     return { metas: body.metas, unreadable: body.unreadable ?? [] };
   },
 
-  async assetByGuid(name: string, guid: string): Promise<{ guid: string; id: string; path: string }> {
-    return request<{ guid: string; id: string; path: string }>(
-      `/api/projects/asset?name=${encodeURIComponent(name)}&guid=${encodeURIComponent(guid)}`,
-    );
-  },
-
   async createFolder(project: string, path: string): Promise<void> {
     await request("/api/projects/folder", {
       method: "POST",
@@ -129,11 +121,6 @@ export const projectApi = {
       body: JSON.stringify({ name, path: target, selectFile }),
     });
     return body.path;
-  },
-
-  async listResources(): Promise<ResourceEntry[]> {
-    const body = await request<{ entries: ResourceEntry[] }>("/api/resources/index");
-    return body.entries;
   },
 
   async readText(id: string): Promise<string> {

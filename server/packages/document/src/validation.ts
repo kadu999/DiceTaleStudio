@@ -299,9 +299,6 @@ function validateObject(
   */
   const video = videoDataOf(object);
   if (video !== undefined) {
-    if (!object.components.some((component) => component.type === DEFAULT_SLOT_COMPONENT.video)) {
-      issues.push({ level: "warning", path: `${path}/video`, message: "视频数据未挂载 VideoOverlay 组件" });
-    }
     if (video.clips.some((clip) => clip.trim().length === 0)) {
       issues.push({
         level: "warning",

@@ -100,7 +100,6 @@ describe("对象命名（连续创建与复制共用）", () => {
         name,
         kind: "Sprite" as const,
         active: true,
-        sortingOrder: 0,
         position: null,
         rotation: 0,
         scale: 1,

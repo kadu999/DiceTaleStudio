@@ -172,13 +172,6 @@ export const videoDataSchema = z.object({
   audio: z.boolean().default(false),
 });
 
-export const componentSchema = z.object({
-  id: z.string().min(1),
-  type: z.string().min(1),
-  displayName: z.string().optional(),
-  data: z.record(z.string(), z.unknown()),
-});
-
 /**
  * 组件实例（v19）。
  *

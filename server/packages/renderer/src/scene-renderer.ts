@@ -1,4 +1,5 @@
 import {
+  cellMaskRgba,
   cellPixelSize,
   gridCornerToWorld,
   worldRectBottom,
@@ -536,15 +537,12 @@ export interface AudioBadgeAnimation {
 /**
  * `#rrggbb` → `rgba(r,g,b,a)`（半透明地画声波圈用）。
  *
- * 只认这一种输入：颜色都是本文件里的常量（`KIND_MARKER_COLORS`）。不做通用解析是为了
- * 不引一堆用不上的格式分支，也不用猜 `#abc` 这种缩写。
+ * 解析交给 `@dts/grid` 的 `cellMaskRgba`（hex → RGBA 分量只有那一份实现），
+ * 这里只管拼成 canvas 认的字符串。
  */
 function withAlpha(hex: string, alpha: number): string {
-  const value = hex.startsWith("#") ? hex.slice(1) : hex;
-  const red = Number.parseInt(value.slice(0, 2), 16);
-  const green = Number.parseInt(value.slice(2, 4), 16);
-  const blue = Number.parseInt(value.slice(4, 6), 16);
-  return `rgba(${red}, ${green}, ${blue}, ${alpha.toFixed(3)})`;
+  const { r, g, b } = cellMaskRgba(hex, alpha);
+  return `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(3)})`;
 }
 
 /**

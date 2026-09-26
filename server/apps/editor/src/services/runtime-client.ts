@@ -127,7 +127,6 @@ export class RuntimeClient {
   private reconnectTimer: number | null = null;
   /** 「这次连接已经稳定」的定时器：活到点才把退避清零（见 `STABLE_CONNECTION_MS`）。 */
   private stableTimer: number | null = null;
-  private manualClose = false;
   private url = "";
 
   constructor(private readonly handlers: RuntimeHandlers) {}
@@ -145,7 +144,6 @@ export class RuntimeClient {
     }
 
     this.url = url;
-    this.manualClose = false;
     this.handlers.onStatus("connecting", url);
 
     let socket: WebSocket;
@@ -192,28 +190,13 @@ export class RuntimeClient {
       const code = event?.code;
       this.handlers.onStatus("closed", describeSocketClose(code, event?.reason));
 
-      if (!this.manualClose) {
-        this.scheduleReconnect(code === CLOSE_PROTOCOL_MISMATCH);
-      }
+      this.scheduleReconnect(code === CLOSE_PROTOCOL_MISMATCH);
     });
 
     socket.addEventListener("error", () => {
       // 具体原因由 close 事件与后端日志给出，这里只标记状态
       this.handlers.onStatus("error", "连接出错");
     });
-  }
-
-  disconnect(): void {
-    this.manualClose = true;
-    if (this.reconnectTimer !== null) {
-      window.clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
-    }
-    this.clearStableTimer();
-
-    this.socket?.close();
-    this.socket = null;
-    this.handlers.onStatus("idle");
   }
 
   /** 进入运行态（服务端据此开闸：前端现在才连得上）。幂等。 */
@@ -239,10 +222,6 @@ export class RuntimeClient {
    */
   pushSettings(settings: ProjectSettingsPayload | null): void {
     this.send({ type: "settings_push", settings });
-  }
-
-  refresh(): void {
-    this.send({ type: "editor_refresh" });
   }
 
   /** 下发一条命令给前端（命令只是触发器，数据在推下去的场景里）。 */

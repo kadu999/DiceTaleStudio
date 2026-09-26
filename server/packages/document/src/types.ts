@@ -235,7 +235,7 @@ export interface WorldPosition {
 
 export interface ComponentDoc {
   readonly id: string;
-  /** 组件类型 ID，与前端组件类名一致（`GridMap` / `ImageLayer` / `SpriteLayer` / `PlaySound` / `Teleport` / `VideoOverlay`）。 */
+  /** 组件类型 ID，与前端组件类名一致（`GridMap` / `FogOfWar` / `ImageLayer` / `SpriteLayer` / `PlaySound` / `Teleport` / `VideoOverlay`）。 */
   readonly type: string;
   readonly displayName?: string;
   readonly data: Record<string, unknown>;
@@ -484,8 +484,8 @@ export interface GameObjectDoc {
   /**
    * **实体身上挂的组件**（v19 起，对象特性也在这里）。
    *
-   * 「对象是什么、画成什么样、运行时能做什么」全由这里声明：6 种对象能力组件
-   * （`GridMap` / `ImageLayer` / `SpriteLayer` / `PlaySound` / `Teleport` / `VideoOverlay`）——
+   * 「对象是什么、画成什么样、运行时能做什么」全由这里声明：7 种对象能力组件
+   * （`GridMap` / `FogOfWar` / `ImageLayer` / `SpriteLayer` / `PlaySound` / `Teleport` / `VideoOverlay`）——
    * v18 及更早它们住在对象的扁平字段里（`map` / `image` / `sound` / `teleport` / `video`），
    * 由 `migrateFeaturesToComponents` 搬进来。
    *
