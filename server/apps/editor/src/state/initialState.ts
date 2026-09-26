@@ -8,6 +8,7 @@ import { emptyBgmPlayback } from "../services/bgm-playback";
 import { type GridPaintPrefs } from "../services/grid-paint-prefs";
 import { emptySoundPlayback } from "../services/sound-playback";
 import { emptyVideoPlayback } from "../services/video-playback";
+import { emptyVideoBlendPlayback } from "../services/video-blend-playback";
 import { emptyFogReveal } from "../services/fog-reveal";
 import { type EditorStoreData } from "./store-types";
 import { initialUi } from "./store-core";
@@ -62,6 +63,7 @@ export function createInitialState(storedGridPaint: GridPaintPrefs): EditorStore
     },
     soundPlayback: emptySoundPlayback(),
     videoPlayback: emptyVideoPlayback(),
+    videoBlendPlayback: emptyVideoBlendPlayback(),
     bgmPlayback: emptyBgmPlayback(),
     fogReveal: emptyFogReveal(),
     transformStart: null,

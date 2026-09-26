@@ -9,6 +9,7 @@ import {
   createAssetMetas,
   mapDataOf,
   serializeAssetMetaFile,
+  videoBlendDataOf,
   videoDataOf,
   SOUND_LAYER_LABELS,
   fogOf,
@@ -54,6 +55,10 @@ import {
   type SoundPlaybackEntry,
 } from "../services/sound-playback";
 import { emptyVideoPlayback, videoPlaybackResendPlan } from "../services/video-playback";
+import {
+  emptyVideoBlendPlayback,
+  videoBlendPlaybackResendPlan,
+} from "../services/video-blend-playback";
 import { emptyFogReveal, fogRevealResendPlan, type FogRevealPoint } from "../services/fog-reveal";
 import { MASK_BRUSH_RATIO, MASK_BRUSH_SOFTNESS } from "../services/mask-math";
 import { type StoreSet, type StoreGet, type AssetMetaTable, type GridPaintState, type EditorStoreState } from "./store-types";
@@ -113,6 +118,8 @@ export interface StoreContext {
   canRevealFog(objectId: string): boolean;
   /** 找出「能放视频」的对象（找不到就写日志并返回 null）。 */
   videoTargetOf(objectId: string, what: string): GameObjectDoc | null;
+  /** 找出「能混合放视频」的对象（找不到就写日志并返回 null）。 */
+  videoBlendTargetOf(objectId: string, what: string): GameObjectDoc | null;
   /** 按 id 找当前场景里的对象。 */
   findObjectById(objectId: string): GameObjectDoc | undefined;
   /**
@@ -319,7 +326,11 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
         // 用户再点「运行」时一定会重推一份，不会被 `shouldPushScene` 的去重跳过。
         lastPushedSceneText = null;
         // 揭示记账也是运行态：关闸就清掉（前端已经被踢下线，下次运行重新开始）
-        set({ fogReveal: emptyFogReveal(), videoPlayback: emptyVideoPlayback() });
+        set({
+          fogReveal: emptyFogReveal(),
+          videoPlayback: emptyVideoPlayback(),
+          videoBlendPlayback: emptyVideoBlendPlayback(),
+        });
         // 背景音乐同理：回到「什么都没放」（下次进运行态**不会自动出声**，由 DM 点一首）
         set({ bgmPlayback: emptyBgmPlayback() });
       }
@@ -352,6 +363,16 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
           playback: get().videoPlayback,
         }).length > 0,
         () => get().flushVideoPlayback(),
+      );
+
+      // 视频混合：同一套（按对象补发；前端见 `VideoBlend` 就同时起停两条通道）
+      resendOnReconnect(
+        videoBlendPlaybackResendPlan({
+          wasClientConnected,
+          isClientConnected: clientConnected,
+          playback: get().videoBlendPlayback,
+        }).length > 0,
+        () => get().flushVideoBlendPlayback(),
       );
 
       // 战争雾：它还没看到的那些揭示轨迹
@@ -716,6 +737,39 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
     const picked = video?.picked;
     if (picked === undefined || !clips.includes(picked)) {
       pushLog(makeLog("warn", `${what}失败：「${object.name}」还没选要放哪一条视频`));
+      return null;
+    }
+
+    return object;
+  };
+
+  /**
+   * 找出「能混合放视频」的对象：当前场景里实际挂有 `VideoBlend` 组件、且**两条通道至少选了一条**的对象。
+   *
+   * 与 `videoTargetOf` 同一个口径：找不到就写一条**说明原因**的运行日志并返回 null（不静默失败）。
+   * 「能混合放」的判据只有 `supportsVideoBlend` 一处（文档命令与校验走的是同一个函数）。
+   */
+  const videoBlendTargetOf = (objectId: string, what: string): GameObjectDoc | null => {
+    const object = findObjectById(objectId);
+
+    if (object === undefined) {
+      pushLog(makeLog("warn", `${what}失败：找不到这个对象（${objectId}）`));
+      return null;
+    }
+
+    if (!supportsObjectComponent(object, DEFAULT_SLOT_COMPONENT.videoBlend)) {
+      pushLog(makeLog("warn", `${what}失败：「${object.name}」没有视频混合组件`));
+      return null;
+    }
+
+    const blend = videoBlendDataOf(object);
+    const picks = [blend?.a.picked, blend?.b.picked].filter(
+      (clip): clip is string => clip !== undefined,
+    );
+    if (picks.length === 0) {
+      pushLog(
+        makeLog("warn", `${what}失败：「${object.name}」两条通道都还没选要放的视频（属性面板 → 视频混合）`),
+      );
       return null;
     }
 
@@ -1206,6 +1260,11 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
       for (const entry of Object.values(get().videoPlayback.objects)) {
         deliverVideo("stop_video", entry.objectId, "停止视频", true);
       }
+
+      // 视频混合同理：换了台还「混着」的画面比看不见更糟
+      for (const entry of Object.values(get().videoBlendPlayback.objects)) {
+        deliverVideo("stop_video", entry.objectId, "停止混合视频", true);
+      }
     }
 
     // 清选中 / 关窗口 / 清记账这一套**照旧无条件执行**（切到同一个场景时也一样）：
@@ -1221,6 +1280,7 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
       // 切场景：记账里的对象属于上一个场景，清掉（前端那边由使用方自己按新场景重播）
       soundPlayback: emptySoundPlayback(),
       videoPlayback: emptyVideoPlayback(),
+      videoBlendPlayback: emptyVideoBlendPlayback(),
     });
 
     // **视口跟着场景走**：回到这个场景上次的样子；没来过就适配（整张地图铺满）。
@@ -1262,6 +1322,7 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
     fogTargetOf,
     canRevealFog,
     videoTargetOf,
+    videoBlendTargetOf,
     findObjectById,
     applyActiveScene,
     objectWithFeature,

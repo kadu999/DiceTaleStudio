@@ -1,9 +1,7 @@
 /**
  * 本文件从 `editor-store.ts` 拆出（纯搬运，行为不变）。
  *
- * 视频混合（贴图）：两条通道（A 盖住 / B 擦开露出）的列表与选中。
- *
- * 只管**文档数据**：播放记账、Mask 窗口与运行态下发的下一批（与 `video-slice` 同一分工）。
+ * 视频混合（贴图）：两条通道（A 盖住 / B 擦开露出）的列表与选中，以及**播放记账**。
  */
 import {
   DEFAULT_SLOT_COMPONENT,
@@ -14,8 +12,14 @@ import {
   type VideoBlendChannel,
   type VideoBlendChannelDoc,
 } from "@dts/document";
+import {
+  withVideoBlendPaused,
+  withVideoBlendPlaying,
+  withVideoBlendStopped,
+  type VideoBlendPlaybackEntry,
+} from "../../services/video-blend-playback";
 import { type StoreSet, type StoreGet, type EditorStoreState } from "../store-types";
-import { findSceneByName } from "../store-core";
+import { makeLog, findSceneByName } from "../store-core";
 import { type StoreContext } from "../store-context";
 
 /** 手写文件里可能整份 data 都没有：按空通道显示。 */
@@ -27,21 +31,141 @@ function channelOf(object: GameObjectDoc, channel: VideoBlendChannel): VideoBlen
   return (channel === "a" ? data?.a : data?.b) ?? EMPTY_CHANNEL;
 }
 
+/** 两条通道当前选中的视频（没选的就不列进来）——下发记账的快照与日志都用它。 */
+function pickedClipsOf(object: GameObjectDoc): string[] {
+  const data = videoBlendDataOf(object);
+  return [data?.a.picked, data?.b.picked].filter((clip): clip is string => clip !== undefined);
+}
+
 export function createVideoBlendSlice(
-  _set: StoreSet,
+  set: StoreSet,
   get: StoreGet,
   ctx: StoreContext,
 ): Pick<
   EditorStoreState,
+  | "playVideoBlend"
+  | "pauseVideoBlend"
+  | "resumeVideoBlend"
+  | "stopVideoBlend"
+  | "flushVideoBlendPlayback"
   | "addVideoBlendClip"
   | "removeVideoBlendClip"
   | "selectVideoBlendClip"
   | "clearVideoBlendClips"
 > {
   // 共享的闭包状态与局部工具都在 ctx 里：这里解构一次，方法体与拆分前逐字一致
-  const { applyActiveScene, objectWithFeature } = ctx;
+  const { pushLog, applyActiveScene, objectWithFeature, videoBlendTargetOf, deliverVideo, runtimeClient } =
+    ctx;
 
   return {
+    // ---------------------------------------------------------------- 视频混合（贴图）
+
+    playVideoBlend(objectId) {
+      const object = videoBlendTargetOf(objectId, "播放混合视频");
+      if (object === null) {
+        return undefined;
+      }
+
+      const clips = pickedClipsOf(object);
+      if (clips.length === 0) {
+        // `videoBlendTargetOf` 已经拦过这种情况，这里只是把类型收窄（同时兜住手写文件的坏数据）
+        pushLog(makeLog("warn", `播放混合视频失败：「${object.name}」还没选要放哪一条视频`));
+        return undefined;
+      }
+
+      // 先记账（「这个对象现在该混合放什么」），再尽力下发——所以编辑器没连服务端 / 前端不在
+      // 也点得动：状态记着，等前端连上补发
+      const blend = videoBlendDataOf(object);
+      const entry: Omit<VideoBlendPlaybackEntry, "paused"> = {
+        objectId,
+        clips,
+        loop: blend?.loop ?? false,
+        audio: blend?.audio ?? "none",
+      };
+      set({ videoBlendPlayback: withVideoBlendPlaying(get().videoBlendPlayback, entry) });
+
+      return deliverVideo("play_video", objectId, `播放混合视频（${clips.join(" + ")}）`);
+    },
+
+    pauseVideoBlend(objectId) {
+      const object = videoBlendTargetOf(objectId, "暂停混合视频");
+      if (object === null) {
+        return undefined;
+      }
+
+      // 没在记账里 = 这个对象没在放：写明白，别发一条注定被前端拒的命令
+      if (get().videoBlendPlayback.objects[objectId] === undefined) {
+        pushLog(makeLog("warn", `暂停混合视频失败：「${object.name}」没在放视频`));
+        return undefined;
+      }
+
+      set({ videoBlendPlayback: withVideoBlendPaused(get().videoBlendPlayback, objectId, true) });
+      return deliverVideo("pause_video", objectId, "暂停混合视频");
+    },
+
+    resumeVideoBlend(objectId) {
+      const object = videoBlendTargetOf(objectId, "继续播放混合视频");
+      if (object === null) {
+        return undefined;
+      }
+
+      if (get().videoBlendPlayback.objects[objectId] === undefined) {
+        pushLog(makeLog("warn", `继续播放混合视频失败：「${object.name}」没在放视频（先点「播放」）`));
+        return undefined;
+      }
+
+      set({ videoBlendPlayback: withVideoBlendPaused(get().videoBlendPlayback, objectId, false) });
+      return deliverVideo("resume_video", objectId, "继续播放混合视频");
+    },
+
+    stopVideoBlend(objectId) {
+      // 停**不要求**还选着视频 / 还是贴图：对象被改成别的类型之后，前端那一层还挂着，
+      // 「停止」得照样能拆掉它
+      const object = findSceneByName(get().scenes, get().activeSceneName)?.objects.find(
+        (item) => item.id === objectId,
+      );
+
+      const tracked = get().videoBlendPlayback.objects[objectId] !== undefined;
+      if (object === undefined && !tracked) {
+        pushLog(makeLog("warn", `停止混合视频失败：找不到这个对象（${objectId}）`));
+        return undefined;
+      }
+
+      set({ videoBlendPlayback: withVideoBlendStopped(get().videoBlendPlayback, objectId) });
+      return deliverVideo("stop_video", objectId, "停止混合视频");
+    },
+
+    flushVideoBlendPlayback() {
+      const { runtime, videoBlendPlayback } = get();
+      if (!runtimeClient.connected || runtime.client === null) {
+        return 0;
+      }
+
+      const entries = Object.values(videoBlendPlayback.objects);
+      for (const entry of entries) {
+        // 补发不发日志（逐条写会把运行日志刷屏），末尾汇总一条
+        deliverVideo("play_video", entry.objectId, "补发混合视频", true);
+
+        // 暂停态：先放再暂停，前端才回到同一帧（只发 pause 的话它根本没在放）
+        if (entry.paused) {
+          deliverVideo("pause_video", entry.objectId, "补发混合视频（暂停）", true);
+        }
+      }
+
+      if (entries.length > 0) {
+        const paused = entries.filter((entry) => entry.paused).length;
+        pushLog(
+          makeLog(
+            "info",
+            `补发混合视频：${entries.length} 个对象${paused === 0 ? "" : `（其中 ${paused} 个是暂停态）`}` +
+              "（前端刚连上，把它还没看到的那些放送补过去）",
+          ),
+        );
+      }
+
+      return entries.length;
+    },
+
     // ------------------------------------------------------------ 视频混合（贴图）
 
     addVideoBlendClip(objectId, channel, clipId) {

@@ -28,6 +28,7 @@ import { type ProjectSummary, type ResourceTreeNode } from "../services/project-
 import { type TransformStart } from "../panels/scene/transform";
 import { type SoundPlaybackState } from "../services/sound-playback";
 import { type VideoPlaybackState } from "../services/video-playback";
+import { type VideoBlendPlaybackState } from "../services/video-blend-playback";
 import { type FogRevealPoint, type FogRevealState } from "../services/fog-reveal";
 import type { StoreApi } from "zustand";
 
@@ -236,6 +237,13 @@ export interface EditorStoreState {
    */
   readonly videoPlayback: VideoPlaybackState;
   /**
+   * **视频混合**的期望播放状态（编辑器记账，见 `services/video-blend-playback`）。
+   *
+   * 与 `videoPlayback` 完全同一套规矩（运行态、按对象记、切场景清、前端连上补发），
+   * 只是条目记的是**两条通道**与三档声音来源。
+   */
+  readonly videoBlendPlayback: VideoBlendPlaybackState;
+  /**
    * **全局背景音乐**的期望播放状态（编辑器记账，见 `services/bgm-playback`）。
    *
    * 与 `soundPlayback` / `videoPlayback` 一样是运行态：不写文档、不进撤销栈。
@@ -396,6 +404,21 @@ export interface EditorStoreState {
   selectVideoBlendClip(objectId: string, channel: VideoBlendChannel, clip: string | null): boolean;
   /** 视频混合：一次移出某条通道的全部（列表与选中一起清空；素材文件不会被删）。 */
   clearVideoBlendClips(objectId: string, channel: VideoBlendChannel): boolean;
+  /**
+   * 视频混合：让前端在某个贴图上**混合放**它两条通道选中的视频（编辑器只**记账** + 尽力下发）。
+   *
+   * 与 `playVideo` 同一套规矩：命令里只有 `objectId`（放哪两条 / 循环 / 声音由前端从镜像读），
+   * 前端没连时照样能点、等它连上补发。两条通道**至少选一条**才放得动。
+   */
+  playVideoBlend(objectId: string): string | undefined;
+  /** 视频混合：暂停在当前帧（没在放就写一条说明原因的日志）。 */
+  pauseVideoBlend(objectId: string): string | undefined;
+  /** 视频混合：从暂停处续播。 */
+  resumeVideoBlend(objectId: string): string | undefined;
+  /** 视频混合：停止并拆掉混合层（露出对象自己原来的贴图）。 */
+  stopVideoBlend(objectId: string): string | undefined;
+  /** 把记着的混合播放状态补发一遍（前端刚连上时调用）。 */
+  flushVideoBlendPlayback(): number;
   /**
    * 全局背景音乐（v16 起）：让前端放 / **切换**到某一首。
    *
