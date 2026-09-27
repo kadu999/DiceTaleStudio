@@ -147,8 +147,13 @@ import { z } from "zod";
  * `magnifierStateSchema` 多 `video`（`{ id, loop, audio }`，与 `image` 二选一）与 `tween`
  * （媒体那块的动画预设）。老前端（v23）不认这两项 → 视频那一屏放不出来、动画不动
  * （不是崩，是功能丢），按同一条纪律 +1。**命令那一组一个字节都没动。**
+ *
+ * v25（2026-09-27）：**放大镜一屏的三块各带一个显示开关**（与文档格式 v34 同一批）——
+ * `magnifierStateSchema` 多 `showTitle` / `showMedia` / `showText`（可选布尔）。**显示与否由开关说**，
+ * 不再看那一项有没有值；老前端（v24）不认这三项 → 只窝在「有值才显示」的老口径（不是崩，
+ * 是显示不一致），按同一条纪律 +1。**命令那一组一个字节都没动。**
  */
-export const PROTOCOL_VERSION = 24;
+export const PROTOCOL_VERSION = 25;
 
 /** 未进入运行态时拒绝 `/client` 升级的 HTTP 状态与原因头。 */
 export const RUNTIME_INACTIVE_STATUS = 503;
@@ -396,6 +401,10 @@ export const teleportDataSchema = z.object({
  * `spriteGrid` 是编辑器推送时解析进去的，前端不能依赖「几行几列」在别处）。
  */
 export const magnifierStateSchema = z.object({
+  // v25：三块各带一个**显示开关**（开关管显示，不看有没有值）
+  showTitle: z.boolean().optional(),
+  showMedia: z.boolean().optional(),
+  showText: z.boolean().optional(),
   title: z.string().optional(),
   image: imageRefSchema.optional(),
   // v24：一屏的媒体还能是**视频**（与 `image` 二选一；`loop` / `audio` 给默认值）

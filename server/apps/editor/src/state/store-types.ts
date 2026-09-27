@@ -9,6 +9,7 @@ import {
   type ComponentType,
   type ImageRef,
   type ImageSpriteRef,
+  type MagnifierPart,
   type MagnifierTween,
   type ObjectKind,
   type ProjectDoc,
@@ -774,6 +775,13 @@ export interface EditorStoreState {
   ): boolean;
   /** 放大镜：改第 `index` 个状态**媒体那块的动画**（v33；`"none"` = 不动）。 */
   setMagnifierStateTween(objectId: string, index: number, tween: MagnifierTween): boolean;
+  /** 放大镜：改第 `index` 个状态**某一块的显示开关**（v34；关掉只不显示，值还留着）。 */
+  setMagnifierStateShow(
+    objectId: string,
+    index: number,
+    part: MagnifierPart,
+    shown: boolean,
+  ): boolean;
   /** 放大镜：改第 `index` 个状态的**标题**（空 = 没有标题）。 */
   setMagnifierStateTitle(objectId: string, index: number, title: string): boolean;
   /** 放大镜：改第 `index` 个状态的**文字描述**（多行纯文本；空 = 没有文字）。 */

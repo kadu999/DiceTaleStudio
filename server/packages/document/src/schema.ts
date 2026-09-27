@@ -177,6 +177,10 @@ export const teleportDataSchema = z.object({
  * 与贴图 / 精灵引用是同一个形状，所以这里连「格子从左上数、越界不算解析错误」都是同一套。
  */
 export const magnifierStateSchema = z.object({
+  // v34：三块各带一个**显示开关**（开关管显示，不看有没有值）
+  showTitle: z.boolean().optional(),
+  showMedia: z.boolean().optional(),
+  showText: z.boolean().optional(),
   title: z.string().optional(),
   image: imageRefSchema.optional(),
   // v33：一屏的媒体还能是**视频**（与 `image` 二选一；`loop` / `audio` 给默认值）
@@ -1586,6 +1590,77 @@ function migrateMagnifierImagesToStates(raw: Record<string, unknown>): {
 }
 
 /**
+ * v34：给放大镜每个状态补上**三块显示开关**（`showTitle` / `showMedia` / `showText`）。
+ *
+ * 按老文件里**有没有值**补：有标题 = 显示标题、有图或视频 = 显示媒体、有文字 = 显示描述——
+ * 于是老工程打开前后长得一模一样（行为不变）。只补**缺的**那一项：自己已经写了开关的状态
+ * （哪怕全 false）原样不动，所以可重复跑。开关只写 `true`（缺省即 false，文件自描述）。
+ */
+function migrateMagnifierVisibilityFlags(raw: Record<string, unknown>): {
+  readonly raw: Record<string, unknown>;
+  readonly changed: boolean;
+} {
+  const objects = Array.isArray(raw.objects) ? raw.objects : [];
+  let changed = false;
+  const next = objects.map((object) => {
+    if (!isRecord(object) || !Array.isArray(object.components)) {
+      return object;
+    }
+
+    const magnifier = object.components.find(
+      (component) => isRecord(component) && component.type === DEFAULT_SLOT_COMPONENT.magnifier,
+    );
+    if (magnifier === undefined || !isRecord(magnifier.data)) {
+      return object;
+    }
+
+    const data = magnifier.data;
+    const states = data.states;
+    if (!Array.isArray(states)) {
+      return object;
+    }
+
+    let localChanged = false;
+    const nextStates = states.map((state) => {
+      if (!isRecord(state)) {
+        return state;
+      }
+
+      const patched: Record<string, unknown> = { ...state };
+      if (patched.showTitle === undefined && typeof state.title === "string" && state.title.length > 0) {
+        patched.showTitle = true;
+        localChanged = true;
+      }
+      if (patched.showMedia === undefined && (isRecord(state.image) || isRecord(state.video))) {
+        patched.showMedia = true;
+        localChanged = true;
+      }
+      if (patched.showText === undefined && typeof state.text === "string" && state.text.length > 0) {
+        patched.showText = true;
+        localChanged = true;
+      }
+      return patched;
+    });
+
+    if (!localChanged) {
+      return object;
+    }
+
+    changed = true;
+    return {
+      ...object,
+      components: object.components.map((component) =>
+        component === magnifier
+          ? { ...(component as Record<string, unknown>), data: { ...data, states: nextStates } }
+          : component,
+      ),
+    };
+  });
+
+  return changed ? { raw: { ...raw, objects: next }, changed } : { raw, changed };
+}
+
+/**
  * 读一个（还没过 schema 的）对象的 `kind`；认不出来时按**精灵** `Sprite` 算
  * （`MirrorObject` 同一个兜底）。
  *
@@ -1806,6 +1881,8 @@ export function parseSceneFile(raw: unknown, size?: SceneSizeHint): SceneFileLoa
     // v31：放大镜的图片列表变成状态列表（每条图片 → `states[i].image`，`picked` 照旧是下标）。
     // 排在最后：放大镜是 v30 才有的东西，只有那之后写下的文件才有 `images` 要搬
     const magnifierStates = migrateMagnifierImagesToStates(blendChannels.raw);
+    // v34：给放大镜每个状态补三块显示开关（按老文件"有没有值"补，行为不变）
+    const magnifierFlags = migrateMagnifierVisibilityFlags(magnifierStates.raw);
     // v13：战争雾的总开关（`fog.enabled`）**不用单独迁移**——schema 给它默认值 `true`
     // （v10–v12 的文件里「有 fog」就等于「开着」），而版本号一升就会回写一次，
     // 于是磁盘上的文件重新变得自描述。
@@ -1823,8 +1900,9 @@ export function parseSceneFile(raw: unknown, size?: SceneSizeHint): SceneFileLoa
     // （`gridImage` 那一趟）。
     // v29：视频混合的两路从「列表 + 选中」收成单个素材（`blendChannels` 那一趟）。
     // v31：放大镜的图片列表变成状态列表（`magnifierStates` 那一趟）。
+    // v34：放大镜每个状态补三块显示开关（`magnifierFlags` 那一趟）。
     // 读出来的文档一律是当前版本（v6 起网格里不再存 `cellSize`，顺手被 schema 丢掉）
-    normalized = { ...magnifierStates.raw, formatVersion: DOCUMENT_FORMAT_VERSION };
+    normalized = { ...magnifierFlags.raw, formatVersion: DOCUMENT_FORMAT_VERSION };
     needsRewrite =
       version < DOCUMENT_FORMAT_VERSION ||
       filled.changed ||
@@ -1837,7 +1915,8 @@ export function parseSceneFile(raw: unknown, size?: SceneSizeHint): SceneFileLoa
       sorting.changed ||
       fogObjects.changed ||
       gridImage.changed ||
-      blendChannels.changed;
+      blendChannels.changed ||
+      magnifierFlags.changed;
   }
 
   const result = sceneFileSchema.safeParse(normalized);

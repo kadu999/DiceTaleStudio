@@ -308,22 +308,18 @@ export function magnifierVideoOf(object: GameObjectDoc): MagnifierVideoDoc | und
 }
 
 /**
- * 这个状态**是不是空的**（标题 / 图 / 文字三项都没有内容）。
+ * 这个状态**是不是空的**（v34 起：三块显示开关**全关**才算空）。
  *
- * 「能不能在画面上打开」的判据就是它（两端逐字一致）：纯文字的线索卡是常见用法（跑团时
- * 一句话就是一条线索），所以**没有图也能展示**；而三项全空的状态投上去只是一张空卡，
- * 那个仍然点不动——`validateScene` 也会为它报一条 warning。
- *
- * 「没写」与「写了空串」在这里同义（命令写空串时会把字段删掉，手写文件两种都收）。
+ * 「能不能在画面上打开」的判据就是它（两端逐字一致）：**开关管显示**——开着的那一块哪怕值是空的
+ * （一条空标题带 / 一块空媒体板）也算「有东西可展示」；三块全关就是一张空卡，点不动
+ * （`validateScene` 也会为它报一条 warning）。
  */
 export function magnifierStateIsEmpty(state: MagnifierState | undefined): boolean {
   if (state === undefined) {
     return true;
   }
 
-  const hasTitle = state.title !== undefined && state.title.length > 0;
-  const hasText = state.text !== undefined && state.text.length > 0;
-  return !hasTitle && state.image === undefined && state.video === undefined && !hasText;
+  return state.showTitle !== true && state.showMedia !== true && state.showText !== true;
 }
 
 /** 视频数据（列表 + 选中的那条 + 循环 / 声音）。 */

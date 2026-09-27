@@ -79,6 +79,7 @@ export function MagnifierDialog({
   const setStateVideo = useEditorStore((store) => store.setMagnifierStateVideo);
   const setStateVideoSwitch = useEditorStore((store) => store.setMagnifierStateVideoSwitch);
   const setStateTween = useEditorStore((store) => store.setMagnifierStateTween);
+  const setStateShow = useEditorStore((store) => store.setMagnifierStateShow);
   const setStateTitle = useEditorStore((store) => store.setMagnifierStateTitle);
   const setStateText = useEditorStore((store) => store.setMagnifierStateText);
   const metaTable = useEditorStore((store) => store.assetMetaTable);
@@ -99,6 +100,11 @@ export function MagnifierDialog({
   const video = state?.video;
   const hasVideo = video !== undefined;
   const videoName = video === undefined ? "" : mediaClipName(tree, assetMetas, metaTable, video.id);
+
+  // v34：三块的**显示开关**——管显示，不看有没有值（与前端 `MagnifierWindow` 同一口径）
+  const showTitle = state?.showTitle === true;
+  const showMedia = state?.showMedia === true;
+  const showText = state?.showText === true;
 
   /*
     舞台按**这一张图**的长宽比等比装进可视区（与两个 Mask 窗口同一套 `useFittedBox`）。
@@ -148,9 +154,10 @@ export function MagnifierDialog({
         ) : (
           <>
             {/*
-              标题带：**一块卡片**（与前端那扇窗同款）——左边一条**红蜡色**强调条，
+              标题带（**开关开着才出现**，v34）：与前端那扇窗同款——左边一条**红蜡色**强调条，
               整张卡是**羊皮纸**（暖米黄纸面 + 深棕字 + 棕描边）。
             */}
+            {showTitle ? (
             <div className="flex flex-none items-center gap-3 rounded-lg border border-[#bc9b60] bg-[#f1e5c6] px-3 py-2 focus-within:border-[#8c2f1e]">
               <span aria-hidden className="h-6 w-1 flex-none rounded-full bg-[#8c2f1e]" />
               <input
@@ -181,6 +188,7 @@ export function MagnifierDialog({
               {/* 右边留一块与强调条同宽的空位：这样标题是**整张卡**居中，不会被那条挤偏 */}
               <span aria-hidden className="h-6 w-1 flex-none" />
             </div>
+            ) : null}
 
             {/*
               媒体工具条（v33）：**媒体类型**（图片 / 视频，二选一）+ **媒体那块的动画**（下拉框）。
@@ -229,6 +237,32 @@ export function MagnifierDialog({
                   ))}
                 </select>
               </label>
+
+              {/* v34：三块的显示开关——管显示，不看有没有值（与前端同一口径） */}
+              <span className="flex items-center gap-2">
+                <span>显示</span>
+                {(
+                  [
+                    ["title", "标题", showTitle],
+                    ["media", "贴图", showMedia],
+                    ["text", "描述", showText],
+                  ] as const
+                ).map(([part, label, on]) => (
+                  <label key={part} className="flex items-center gap-1">
+                    <input
+                      type="checkbox"
+                      data-testid={`magnifier-show-${part}`}
+                      checked={on}
+                      onChange={(event) => {
+                        if (object !== undefined && picked !== undefined) {
+                          setStateShow(object.id, picked, part, event.target.checked);
+                        }
+                      }}
+                    />
+                    {label}
+                  </label>
+                ))}
+              </span>
             </div>
 
             <div className="flex min-h-0 flex-1 gap-2">
@@ -238,7 +272,7 @@ export function MagnifierDialog({
                 - 视频：编辑器**不预览**（不解码），显示素材名 + 循环 / 声音开关 + 换 / 清除。
                 媒体这块是**羊皮纸面**——与前端那扇窗同款。
               */}
-              {hasVideo ? (
+              {!showMedia ? null : hasVideo ? (
                 <div
                   data-testid="magnifier-video-stage"
                   className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 overflow-hidden rounded-lg border border-[#bc9b60] bg-[#e8d8b4] p-3 text-center"
@@ -356,9 +390,10 @@ export function MagnifierDialog({
               )}
 
               {/*
-                右边：**这个状态的文字描述**（多行纯文本，换行照原样）。
+                右边：**这个状态的文字描述**（**开关开着才出现**，v34）。多行纯文本，换行照原样。
                 与标题 / 图同款**羊皮纸面**，字是深棕——一眼分得清「图」与「文字」。
               */}
+              {showText ? (
               <div className="flex min-h-0 w-[38%] flex-none flex-col rounded-lg border border-[#bc9b60] bg-[#f1e5c6] focus-within:border-[#8c2f1e]">
                 <textarea
                   key={`text-${picked}`}
@@ -380,6 +415,7 @@ export function MagnifierDialog({
                   }}
                 />
               </div>
+              ) : null}
             </div>
           </>
         )}

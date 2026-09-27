@@ -18,9 +18,11 @@ import {
   setMagnifierStateText as setSceneMagnifierStateText,
   setMagnifierStateTitle as setSceneMagnifierStateTitle,
   setMagnifierStateTween as setSceneMagnifierStateTween,
+  setMagnifierStateShow as setSceneMagnifierStateShow,
   setMagnifierStateVideo as setSceneMagnifierStateVideo,
   setMagnifierStateVideoSwitch as setSceneMagnifierStateVideoSwitch,
   type ImageRef,
+  type MagnifierPart,
   type MagnifierTween,
 } from "@dts/document";
 import { type StoreSet, type StoreGet, type EditorStoreState } from "../store-types";
@@ -42,6 +44,7 @@ export function createMagnifierSlice(
   | "setMagnifierStateVideo"
   | "setMagnifierStateVideoSwitch"
   | "setMagnifierStateTween"
+  | "setMagnifierStateShow"
   | "setMagnifierStateTitle"
   | "setMagnifierStateText"
   | "openMagnifierWindow"
@@ -120,6 +123,12 @@ export function createMagnifierSlice(
     setMagnifierStateTween(objectId, index, tween: MagnifierTween) {
       return applyActiveScene("改放大镜媒体动画", (scene) => {
         setSceneMagnifierStateTween(scene, objectId, index, tween);
+      });
+    },
+
+    setMagnifierStateShow(objectId, index, part: MagnifierPart, shown: boolean) {
+      return applyActiveScene("改放大镜显示开关", (scene) => {
+        setSceneMagnifierStateShow(scene, objectId, index, part, shown);
       });
     },
 

@@ -45,6 +45,14 @@ namespace DiceTale
         /// <summary>媒体那块的动画（v33）；`None` = 不动。</summary>
         public MagnifierTween Tween = MagnifierTween.None;
 
+        /// <summary>
+        /// 三块**显不显示**（v25 起）：开关管显示——开着但值是空的，那一块照样占位；
+        /// 缺省 / false = 不显示（不再看「有没有值」）。三块全关 = 这一屏展示不出来。
+        /// </summary>
+        public bool ShowTitle;
+        public bool ShowMedia;
+        public bool ShowText;
+
         /// <summary>这一屏放的是不是**视频**（坏数据里图与视频都写了时按视频处理，与校验口径一致）。</summary>
         public bool IsVideo => Video != null;
     }
@@ -119,11 +127,11 @@ namespace DiceTale
                     Audio = JsonParser.GetBool(video, "audio", false),
                 };
 
-            // 三项全空 = 一张空卡：投上去什么也看不见，明确拒掉（有视频也算有东西）
-            if (string.IsNullOrEmpty(id)
-                && videoView == null
-                && string.IsNullOrEmpty(title)
-                && string.IsNullOrEmpty(text))
+            // v25 起：**显不显示由开关说**，不再看有没有值（三块全关 = 展示不出来）
+            var showTitle = JsonParser.GetBool(entry, "showTitle", false);
+            var showMedia = JsonParser.GetBool(entry, "showMedia", false);
+            var showText = JsonParser.GetBool(entry, "showText", false);
+            if (!showTitle && !showMedia && !showText)
             {
                 return false;
             }
@@ -137,6 +145,9 @@ namespace DiceTale
                 Sprite = videoView != null || image == null ? null : ReadSprite(image),
                 Video = videoView,
                 Tween = ParseTween(JsonParser.GetString(entry, "tween")),
+                ShowTitle = showTitle,
+                ShowMedia = showMedia,
+                ShowText = showText,
             };
             return true;
         }

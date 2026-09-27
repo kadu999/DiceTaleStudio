@@ -154,8 +154,13 @@ import type { ObjectKind } from "./presets";
  * `video`（`{ id, loop, audio }`，与 `image` **二选一**）与 `tween`（媒体那块的动画预设，
  * 见 `MAGNIFIER_TWEENS`）。**纯加法、没有迁移函数**：老状态只有 `image`，读出来照旧是图；
  * 格式 +1 触发一次回写、并让老编辑器撞上时提示升级。协议侧同步升到 v24。
+ *
+ * v34（2026-09-27）：**一屏的三块各带一个显示开关**（`showTitle` / `showMedia` / `showText`）——
+ * 「显不显示」由**开关**说，不再看那一项有没有值（开着但值是空的就是一条空标题带 / 空媒体块）。
+ * 由 `migrateMagnifierVisibilityFlags` 按**老文件里有没有值**补一次（有值 = 开），行为不变。
+ * 协议侧同步升到 v25。
  */
-export const DOCUMENT_FORMAT_VERSION = 33;
+export const DOCUMENT_FORMAT_VERSION = 34;
 
 /** 网格行序：`bottom-up` 表示 cells 第 0 行是图片最下面一行（与 Unity GridMap 一致）。 */
 export type RowOrder = "bottom-up";
@@ -458,6 +463,15 @@ export interface MagnifierVideoDoc {
  * v33 起媒体还多了 `video`（与 `image` **二选一**），以及媒体那块的动画 `tween`。
  */
 export interface MagnifierState {
+  /**
+   * 这一屏**显不显示标题那一行**（v34 起）。**开关管显示**——开着但 `title` 是空的，
+   * 那一行照样占位（一条空标题带）；关着就整个不出现。缺省 / `false` = 不显示。
+   */
+  readonly showTitle?: boolean;
+  /** 这一屏**显不显示媒体那一块**（图 / 视频，v34 起）。语义同 `showTitle`。 */
+  readonly showMedia?: boolean;
+  /** 这一屏**显不显示描述那一块**（v34 起）。语义同 `showTitle`。 */
+  readonly showText?: boolean;
   /** 上面那行标题；没写 = 没有标题（前端也不留那一行）。 */
   readonly title?: string;
   /** 左边那张图；没写 = 这个状态没有图。与 `video` **二选一**。 */

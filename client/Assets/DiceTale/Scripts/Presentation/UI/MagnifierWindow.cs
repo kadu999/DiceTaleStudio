@@ -259,7 +259,7 @@ namespace DiceTale
             StopVideo();
 
             var hasImage = !string.IsNullOrEmpty(state.Id);
-            ApplyContent(state.Title, state.Text, hasImage);
+            ApplyContent(state);
             ApplyTween(state.Tween);
 
             if (!hasImage)
@@ -303,8 +303,15 @@ namespace DiceTale
                 image.enabled = false;
             }
 
-            ApplyContent(state.Title, state.Text, true);
+            ApplyContent(state);
             ApplyTween(state.Tween);
+
+            // 媒体那块关着：这一屏不放视频（标题 / 描述照上面的开关走）
+            if (!state.ShowMedia)
+            {
+                StopVideo();
+                return;
+            }
 
             if (videoPlayer == null || videoImage == null)
             {
@@ -558,27 +565,25 @@ namespace DiceTale
         }
 
         /// <summary>
-        /// 把标题与文字铺上去，并按「这一屏有什么」重排（**媒体** = 图或视频，v33 起两选一）：
-        /// - **没有标题** → 标题带整条不占位，内容区顶上去；
-        /// - **没有媒体** → 媒体那一格整块收起来（纯文字 / 只有标题的线索卡），文字铺满整行；
-        /// - **没有文字** → 文字那块不占位，媒体铺满整行。
+        /// 把标题与描述铺上去，并按「三块开关」重排（v25 起：**开关管显示**，不看有没有值）：
+        /// - 标题关着 → 标题带整条不占位，内容区顶上去；
+        /// - 媒体关着 → 媒体那一格整块收起来，描述铺满整行；
+        /// - 描述关着 → 描述那块不占位，媒体铺满整行。
         /// </summary>
-        private void ApplyContent(string title, string body, bool hasMedia)
+        private void ApplyContent(MagnifierStateView state)
         {
-            var hasTitle = !string.IsNullOrEmpty(title);
-            titleBar.gameObject.SetActive(hasTitle);
-            titleText.text = hasTitle ? title : "";
+            titleBar.gameObject.SetActive(state.ShowTitle);
+            titleText.text = state.ShowTitle ? state.Title : "";
 
-            var hasBody = !string.IsNullOrEmpty(body);
-            bodyCard.gameObject.SetActive(hasBody);
-            bodyText.text = hasBody ? body : "";
+            bodyCard.gameObject.SetActive(state.ShowText);
+            bodyText.text = state.ShowText ? state.Text : "";
 
-            frame.gameObject.SetActive(hasMedia);
+            frame.gameObject.SetActive(state.ShowMedia);
 
-            content.offsetMax = new Vector2(0f, hasTitle ? -(TitleHeight + Gap) : 0f);
+            content.offsetMax = new Vector2(0f, state.ShowTitle ? -(TitleHeight + Gap) : 0f);
 
-            // 媒体与文字各占一边；只有一边时它铺满整行（另一边不占位）
-            var split = hasMedia && hasBody;
+            // 媒体与描述各占一边；只有一边时它铺满整行（另一边不占位）
+            var split = state.ShowMedia && state.ShowText;
             frame.anchorMax = new Vector2(split ? ImageWidthRatio : 1f, 1f);
             frame.offsetMax = new Vector2(split ? -Gap : 0f, 0f);
             bodyCard.anchorMin = new Vector2(split ? ImageWidthRatio : 0f, 0f);

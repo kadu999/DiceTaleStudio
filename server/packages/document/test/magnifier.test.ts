@@ -8,6 +8,7 @@ import {
   setMagnifierStateImage,
   setMagnifierStateText,
   setMagnifierStateTitle,
+  setMagnifierStateShow,
 } from "../src/commands";
 import {
   imageOf,
@@ -59,9 +60,9 @@ function imageOf_(overrides: Partial<ImageRef> & { sprite?: { column: number; ro
   return { id: IMAGE_ID, width: 400, height: 300, ...overrides };
 }
 
-/** 一个「只有图」的状态（v30 那些老数据的形状，也是迁移之后的结果）。 */
+/** 一个「只有图」的状态（v30 那些老数据的形状；迁移之后会补上 `showMedia: true`）。 */
 function imageState(image: ImageRef): MagnifierState {
-  return { image };
+  return { showMedia: true, image };
 }
 
 function sceneWith(objects: readonly GameObjectDoc[]): SceneDoc {
@@ -183,7 +184,10 @@ describe("addMagnifierState：末尾加一个空状态槽", () => {
       expect(addMagnifierState(draft, "m1")).toBe(true);
     });
 
-    expect(dataOf(next)).toEqual({ states: [{}], picked: 0 });
+    expect(dataOf(next)).toEqual({
+      states: [{ showTitle: true, showMedia: true, showText: true }],
+      picked: 0,
+    });
   });
 
   it("再加一个：列表变长，选中**新加的那个**（刚加的就该是正在编辑的那个）", () => {
@@ -198,7 +202,13 @@ describe("addMagnifierState：末尾加一个空状态槽", () => {
       expect(addMagnifierState(draft, "m1")).toBe(true);
     });
 
-    expect(dataOf(next)).toEqual({ states: [{ title: "线索一" }, {}], picked: 1 });
+    expect(dataOf(next)).toEqual({
+      states: [
+        { showTitle: true, showMedia: true, showText: true, title: "线索一" },
+        { showTitle: true, showMedia: true, showText: true },
+      ],
+      picked: 1,
+    });
   });
 
   it("缺放大镜组件时加不进去（不补建）；显式修复后可编辑", () => {
@@ -517,23 +527,31 @@ describe("放大镜的读口", () => {
     expect(magnifierImageOf(objectOf(pickedText, "m1")!)).toBeUndefined();
   });
 
-  it("`magnifierStateIsEmpty`：三项都没有内容才算空（有图 / 有标题 / 有文字都不算）", () => {
+  it("`magnifierStateIsEmpty`：三块显示开关**全关**才算空（开着一块哪怕没值也不算）", () => {
     expect(magnifierStateIsEmpty(undefined)).toBe(true);
     expect(magnifierStateIsEmpty({})).toBe(true);
-    expect(magnifierStateIsEmpty({ title: "" })).toBe(true);
-    expect(magnifierStateIsEmpty({ text: " " })).toBe(false); // 空格也是内容（trim 是命令那边的事）
-    expect(magnifierStateIsEmpty({ title: "线索一" })).toBe(false);
-    expect(magnifierStateIsEmpty({ text: "只有文字" })).toBe(false);
-    expect(magnifierStateIsEmpty(imageState(imageOf_({})))).toBe(false);
+    // v34：开关管显示——没开关就不显示，写了值也不算（值只是留着）
+    expect(magnifierStateIsEmpty({ title: "线索一" })).toBe(true);
+    expect(magnifierStateIsEmpty({ image: imageOf_({}) })).toBe(true);
+    expect(magnifierStateIsEmpty({ showTitle: true })).toBe(false); // 开着但没值 = 一条空标题带
+    expect(magnifierStateIsEmpty({ showText: true, text: "只有文字" })).toBe(false);
+    expect(magnifierStateIsEmpty(imageState(imageOf_({})))).toBe(false); // showMedia: true
   });
 });
 
 describe("放大镜的解析、迁移与版本", () => {
   it("带状态与展示项能往返解析（三项都有、也有空状态槽）", () => {
     const states = [
-      { title: "线索一", image: imageOf_({}), text: "第一行\n第二行" },
+      {
+        showTitle: true,
+        showMedia: true,
+        showText: true,
+        title: "线索一",
+        image: imageOf_({}),
+        text: "第一行\n第二行",
+      },
       {},
-      { image: imageOf_({ id: OTHER_ID, sprite: { column: 1, row: 0 } }) },
+      imageState(imageOf_({ id: OTHER_ID, sprite: { column: 1, row: 0 } })),
     ];
     const parsed = parseSceneFile(rawFile({ states, picked: 2 }));
 
@@ -571,8 +589,8 @@ describe("放大镜的解析、迁移与版本", () => {
     expect(parsed.needsRewrite).toBe(true);
   });
 
-  it("当前文档格式（v33 起放大镜一屏的媒体支持视频 + 动画）", () => {
-    expect(DOCUMENT_FORMAT_VERSION).toBe(33);
+  it("当前文档格式（v34 起放大镜一屏的三块各带显示开关）", () => {
+    expect(DOCUMENT_FORMAT_VERSION).toBe(34);
   });
 
   it("`picked` 只收非负整数（小数 / 负数直接被 schema 拒掉）", () => {
@@ -627,12 +645,16 @@ describe("放大镜的校验", () => {
     expect(formatIssues(validateScene(sceneWith([stale])))).toMatch(/不在状态列表里/);
   });
 
-  it("只有标题 / 文字的状态**不算问题**（纯文字线索卡放得出来）；三项全空才报「是空的」", () => {
+  it("开关开着的状态**不算问题**（空标题带 / 纯文字都放得出来）；三块全关才报「是空的」", () => {
     const textOnly = sceneWith([
       createMagnifierObject({
         name: "放大镜",
         id: "m1",
-        states: [{ title: "只有标题" }, { text: "只有文字" }, imageState(imageOf_({}))],
+        states: [
+          { showTitle: true, title: "只有标题" },
+          { showText: true, text: "只有文字" },
+          imageState(imageOf_({})),
+        ],
         picked: 0,
       }),
     ]);
@@ -644,9 +666,12 @@ describe("放大镜的校验", () => {
     });
     expect(formatIssues(validateScene(pickedText))).not.toMatch(/是空的/);
 
-    // 三项全空（「添加状态」刚加出来、还没填）：这一条要提醒
+    // 三块全关（手写的空槽）：这一条要提醒
     const emptyState = mutate(pickedText, (draft) => {
       addMagnifierState(draft, "m1");
+      setMagnifierStateShow(draft, "m1", 3, "title", false);
+      setMagnifierStateShow(draft, "m1", 3, "media", false);
+      setMagnifierStateShow(draft, "m1", 3, "text", false);
     });
     expect(formatIssues(validateScene(emptyState))).toMatch(/是空的/);
 

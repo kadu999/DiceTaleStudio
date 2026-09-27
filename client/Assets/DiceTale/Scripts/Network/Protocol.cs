@@ -134,8 +134,14 @@ namespace DiceTale
         /// 与 `tween`（媒体那块的动画预设 `none / shake / breathe / float / sway`）。
         /// 老前端（v23）不认这两项 → 视频那一屏放不出来、动画不动（不是崩，是功能丢），
         /// 照旧 +1；这类不兼容由握手 close `4002` 挡住。**命令那一组一个字节都没动。**
+        ///
+        /// v25（2026-09-27）：**放大镜一屏的三块各带一个显示开关**（与文档格式 v34 同一批）——
+        /// `Magnifier` 的每个状态多三项：`showTitle` / `showMedia` / `showText`（可选布尔）。
+        /// **显示与否由开关说**，不再看那一项有没有值；老前端（v24）不认这三项 → 只认「有值才显示」
+        /// 的老口径（不是崩，是显示不一致），照旧 +1；这类不兼容由握手 close `4002` 挡住。
+        /// **命令那一组一个字节都没动。**
         /// </summary>
-        public const int Version = 24;
+        public const int Version = 25;
 
         /// <summary>
         /// 战争雾雾层显示顺序的**缺省值**（v23 起）：**最前面**（`short.MaxValue`）。
@@ -155,15 +161,14 @@ namespace DiceTale
             public const string Sprite = "SpriteLayer";
             public const string Sound = "PlaySound";
             public const string Teleport = "Teleport";
-            /// <summary>
-            /// 放大镜（v21 起，动作对象；v22 起数据是**状态列表**；v24 起媒体支持视频 + 动画）：
-            /// `{ states: [{ title?, image?: { id, width, height, sprite?, spriteGrid? }, video?:
-            /// { id, loop, audio }, tween?, text? }], picked? }`，`picked` 是**下标**。
-            /// 一个状态 = 一屏画面（上面标题、左边**媒体**、右边文字；都可以没有；**三项全空才展示不出来**）。
-            /// **媒体二选一**：`image` 或 `video`（两个都写着按视频处理）；`tween` 是媒体那块的动画
-            /// （`none / shake / breathe / float / sway`）。对象自己不渲染任何东西（画布上那枚徽标是
-            /// 编辑器的画法）；触发它 = 由服务端的 `open_magnifier` / `close_magnifier` 让前端弹 / 收
-            /// 一扇窗，窗里放的就是 `picked` 那一屏。
+            /// 放大镜（v21 起，动作对象；v22 状态列表；v24 媒体支持视频 + 动画；v25 三块各带显示开关）：
+            /// `{ states: [{ showTitle?, showMedia?, showText?, title?, image?: { id, width, height,
+            /// sprite?, spriteGrid? }, video?: { id, loop, audio }, tween?, text? }], picked? }`，
+            /// `picked` 是**下标**。一屏 = 上面标题、左边**媒体**、右边描述；**显不显示由三个开关说**
+            /// （不再看有没有值，三块全关就展示不出来）。**媒体二选一**：`image` 或 `video`
+            /// （两个都写着按视频处理）；`tween` 是媒体那块的动画（`none / shake / breathe / float / sway`）。
+            /// 对象自己不渲染任何东西（画布上那枚徽标是编辑器的画法）；触发它 = 由服务端的
+            /// `open_magnifier` / `close_magnifier` 让前端弹 / 收一扇窗，窗里放的就是 `picked` 那一屏。
             /// **换状态 / 换媒体 / 改字都不是命令**：文档一改整份 `scene_sync` 带下来（见 `Logic/SceneMirror.cs`）。
             /// </summary>
             public const string Magnifier = "Magnifier";

@@ -34,11 +34,20 @@ const OTHER: ImageRef = { id: "project:测试/Assets/images/clue.png", width: 64
 /** 同一张图的**另一格**（与 `IMAGE` 同 id、不同格子 = 另一个状态里的图）。 */
 const CELL: ImageRef = { ...IMAGE, width: 100, height: 100, sprite: { column: 1, row: 0 } };
 
+/**
+ * 造一个放大镜对象。`states` 里**写了哪一项就给哪一项开开关**（v34 起显示由开关管）——
+ * 与 schema 迁移「按有没有值补开关」同一口径，测试里就不用每条都手写开关。
+ */
 function magnifier(states: readonly MagnifierState[] = [], picked?: number): GameObjectDoc {
   return createMagnifierObject({
     id: "magnifier-1",
     name: "放大镜",
-    states,
+    states: states.map((state) => ({
+      ...state,
+      ...(state.title === undefined ? {} : { showTitle: true }),
+      ...(state.image === undefined ? {} : { showMedia: true }),
+      ...(state.text === undefined ? {} : { showText: true }),
+    })),
     ...(picked === undefined ? {} : { picked }),
     position: { x: 0, y: 0 },
   });
@@ -279,7 +288,13 @@ describe("放大镜窗口：上面一块是选中状态的画面，下面一排�
       fireEvent.click(screen.getByTestId("magnifier-add-state"));
     });
 
-    expect(dataOf("magnifier-1")).toEqual({ states: [{ image: IMAGE, title: "线索一" }, {}], picked: 1 });
+    expect(dataOf("magnifier-1")).toEqual({
+      states: [
+        { showTitle: true, showMedia: true, image: IMAGE, title: "线索一" },
+        { showTitle: true, showMedia: true, showText: true },
+      ],
+      picked: 1,
+    });
     expect(slots()).toHaveLength(2);
     // 新加的空槽：上面那块换成「点这里挑一张图」，标题输入框也是空的
     expect(screen.getByTestId("magnifier-image-empty")).toBeDefined();
@@ -294,11 +309,15 @@ describe("放大镜窗口：上面一块是选中状态的画面，下面一排�
       fireEvent.click(screen.getAllByTestId("magnifier-state-remove")[0]!);
     });
 
-    expect(dataOf("magnifier-1")).toEqual({ states: [{ image: OTHER }], picked: 0 });
+    expect(dataOf("magnifier-1")).toEqual({
+      states: [{ showMedia: true, image: OTHER }],
+      picked: 0,
+    });
   });
 
   it("标题与文字：敲进那一格、失焦写进文档（多行文字照原样）", async () => {
-    seedScene([magnifier([{}], 0)]);
+    // v34：三块要**开关开着**才在窗口里出现（这里是纯手写的空状态，显式把两个开关打开）
+    seedScene([magnifier([{ showTitle: true, showText: true }], 0)]);
     render(<MagnifierDialog open objectId="magnifier-1" onClose={() => undefined} />);
 
     const title = screen.getByTestId("magnifier-title");
@@ -311,7 +330,12 @@ describe("放大镜窗口：上面一块是选中状态的画面，下面一排�
       fireEvent.blur(text);
     });
 
-    expect(dataOf("magnifier-1")?.states?.[0]).toEqual({ title: "线索一", text: "第一行\n第二行" });
+    expect(dataOf("magnifier-1")?.states?.[0]).toEqual({
+      showTitle: true,
+      showText: true,
+      title: "线索一",
+      text: "第一行\n第二行",
+    });
   });
 
   it("点图那块弹选图框；右上角 × 把图移出（状态还在，只是没图了）", async () => {
@@ -332,7 +356,11 @@ describe("放大镜窗口：上面一块是选中状态的画面，下面一排�
       fireEvent.click(screen.getByTestId("magnifier-image-clear"));
     });
 
-    expect(dataOf("magnifier-1")?.states?.[0]).toEqual({ title: "线索一" });
+    expect(dataOf("magnifier-1")?.states?.[0]).toEqual({
+      showTitle: true,
+      showMedia: true,
+      title: "线索一",
+    });
   });
 
   it("编辑器窗的开 / 关就是前端那扇窗的开 / 关；底栏不再有开 / 关按钮", async () => {

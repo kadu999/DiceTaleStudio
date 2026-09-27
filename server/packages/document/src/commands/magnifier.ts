@@ -40,8 +40,55 @@ import { withMediaData } from "./shared";
  */
 export function addMagnifierState(scene: Draft<SceneDoc>, objectId: string): boolean {
   return withMediaData(scene, objectId, ensureMagnifierData, (data) => {
-    data.states.push({});
+    // v34：新状态的三块**默认都开着**（一上来就是「空标题 + 空媒体 + 空描述」的骨架，
+    // 用户在窗口里填；不要哪块就把开关关掉）
+    data.states.push({ showTitle: true, showMedia: true, showText: true });
     data.picked = data.states.length - 1;
+    return true;
+  });
+}
+
+/** 放大镜一屏的三块（v34）：与 `showTitle` / `showMedia` / `showText` 一一对应。 */
+export type MagnifierPart = "title" | "media" | "text";
+
+/**
+ * 改第 `index` 个状态某一块的**显示开关**（v34）。
+ *
+ * `true` 写 `showXxx: true`；`false` 把字段删掉（缺省即不显示，文件自描述）。
+ * **值本身不动**——关掉只是不显示，标题 / 图 / 文字还留着（再打开就回来）。
+ */
+export function setMagnifierStateShow(
+  scene: Draft<SceneDoc>,
+  objectId: string,
+  index: number,
+  part: MagnifierPart,
+  shown: boolean,
+): boolean {
+  return withMagnifierState(scene, objectId, index, (state) => {
+    const current =
+      (part === "title" ? state.showTitle : part === "media" ? state.showMedia : state.showText) === true;
+    if (current === shown) {
+      return false;
+    }
+
+    if (part === "title") {
+      if (shown) {
+        state.showTitle = true;
+      } else {
+        delete state.showTitle;
+      }
+    } else if (part === "media") {
+      if (shown) {
+        state.showMedia = true;
+      } else {
+        delete state.showMedia;
+      }
+    } else if (shown) {
+      state.showText = true;
+    } else {
+      delete state.showText;
+    }
+
     return true;
   });
 }

@@ -23,7 +23,7 @@ export type LeftTab = "assets" | "hierarchy";
  * 要有意制造「旧版本文件」时别用它：自己写那个版本号（`formatVersion: 4` 之类），
  * 并预期编辑器会把它升上来回写一次。
  */
-export const CURRENT_SCENE_FORMAT_VERSION = 33;
+export const CURRENT_SCENE_FORMAT_VERSION = 34;
 
 /**
  * 战争雾雾层的**默认显示顺序**（v32 起可配置）：最前面。

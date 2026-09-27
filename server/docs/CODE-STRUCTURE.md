@@ -11,13 +11,13 @@
 |---|---|
 | 语言 / 运行时 | TypeScript 5.9 + ESM，Node 22+（后端跑在 `tsx` 上，无编译产物） |
 | 包管理 | pnpm workspace（`apps/*` + `packages/*`，共 8 个包） |
-| 文档格式版本 | `DOCUMENT_FORMAT_VERSION = 32`（`packages/document/src/types.ts`；v30 加「放大镜」动作对象，v31 把它的「图片列表」换成「状态列表」`states`——每项 = 标题 + 图 + 文字，由 `migrateMagnifierImagesToStates` 搬一次；v32 给 `FogOfWar` 加可配置的 `sortingOrder`——无迁移函数，靠 schema 默认值） |
-| 协议版本 | `PROTOCOL_VERSION = 23`（`packages/protocol/src/messages.ts`；v17 新增视频混合组件 `VideoBlend` 与命令 `erase_video_mask`，v18 加 `autoPlay`，v19 把两路收成「一个素材（图片 / 视频）」，v20 加 `fill_video_mask`（整张填 1 / 0），v21 加放大镜组件与 `open_magnifier` / `close_magnifier`，v22 把放大镜的 `images` 换成 `states`，v23 给 `FogOfWar` 加 `sortingOrder`，见 §6.1） |
+| 文档格式版本 | `DOCUMENT_FORMAT_VERSION = 34`（`packages/document/src/types.ts`；v30 加「放大镜」动作对象，v31 把它的「图片列表」换成「状态列表」`states`，v32 给 `FogOfWar` 加可配置的 `sortingOrder`，v33 给放大镜状态加 `video`（与 `image` 二选一）与媒体动画 `tween`，v34 再给三块各加一个显示开关 `showTitle` / `showMedia` / `showText`——只有 v31 有迁移函数，其余靠 schema 默认值 / 迁移按"有没有值"补） |
+| 协议版本 | `PROTOCOL_VERSION = 25`（`packages/protocol/src/messages.ts`；v17 新增视频混合组件 `VideoBlend` 与命令 `erase_video_mask`，v18 加 `autoPlay`，v19 把两路收成「一个素材（图片 / 视频）」，v20 加 `fill_video_mask`（整张填 1 / 0），v21 加放大镜组件与 `open_magnifier` / `close_magnifier`，v22 把放大镜的 `images` 换成 `states`，v23 给 `FogOfWar` 加 `sortingOrder`，v24 给放大镜状态加 `video` / `tween`，v25 加 `showTitle` / `showMedia` / `showText`，见 §6.1） |
 | 后端默认地址 | `0.0.0.0:1420`（`resources/config/app.json`，可被 `HOST` / `PORT` 覆盖） |
 | 编辑器开发地址 | `http://localhost:5173`（Vite，`/api`、`/editor`、`/client` 反代到 1420） |
 | 编辑器生产地址 | `http://localhost:1420`（后端同源托管 `apps/editor/dist`） |
-| 源码规模（不含测试） | 176 个文件 / 40,911 行（packages 14,164 · backend 3,721 · editor 23,026） |
-| 测试规模 | 36,298 行（单测 26,086 · E2E 9,929 · 架构测试 283） |
+| 源码规模（不含测试） | 176 个文件 / 41,109 行（packages 14,309 · backend 3,721 · editor 23,079） |
+| 测试规模 | 36,351 行（单测 26,139 · E2E 9,929 · 架构测试 283） |
 
 > 上表两行与 §0.1 表格里加粗的文件行数、§3.x 节标题里的包规模由
 > `scripts/check-code-structure-stats.mjs` **机器校验**（`pnpm check` 的一环）：
@@ -430,7 +430,7 @@ build: { outDir: "dist", sourcemap: true },
 - 画笔半径 `floor((brushSize-1)/2)`（1/2→1×1、3/4→3×3、5→5×5，含偶数尺寸的刻意保真），与 Unity `ApplyBrush` 完全一致；
 - 坐标系只有一个：**世界坐标**（x 右、y 上、像素、无限大）；`grid(0,0)` 在地图矩形左下角 = 图片最下面一行，grid.y 与世界 y 同向、不翻转；唯一的翻转发生在贴图绘制（`worldRectTopLeft`）。
 
-### 3.2 `@dts/document` — 文档模型、命令与历史（9,244 行）
+### 3.2 `@dts/document` — 文档模型、命令与历史（9,380 行）
 
 | 文件 | 行数 | 职责 | 关键导出 |
 |---|---|---|---|
@@ -679,7 +679,7 @@ v23 起 `validateScene` 多了第二个参数：`validateScene(scene, { metas })
 > **历史**：`@dts/actions`（动作类型注册表、条件求值、动作图校验）曾是独立的一个包，
 > 随「动作挂在组件上」那套旧模型一起整包删除了；动作编辑的数据面落地时重新设计。
 
-### 3.3 `@dts/protocol` — WS 消息契约（1,098 行）
+### 3.3 `@dts/protocol` — WS 消息契约（1,107 行）
 
 单文件 `src/messages.ts`（1,051 行）+ `index.ts` barrel（1 行）。
 **编辑器、服务端、Unity 前端共用同一份 zod schema。**
@@ -1627,7 +1627,7 @@ edit：取消去抖、`lastPushedSceneText=null`、发 `runtime_stop`）、`push
 
 ### 6.1 版本演进
 
-`DOCUMENT_FORMAT_VERSION = 32`，`PROTOCOL_VERSION = 23`。两者**独立编号**，只有不兼容的 wire 改动才会让协议 +1：
+`DOCUMENT_FORMAT_VERSION = 34`，`PROTOCOL_VERSION = 25`。两者**独立编号**，只有不兼容的 wire 改动才会让协议 +1：
 文档 v22 ↔ 协议 v12 是**最后一次配套发布**（`kind` 改名：贴图 `Texture`→`Image`、精灵 `SceneObject`→`Sprite`，
 协议 v11 的老客户端不认这两个值——占位色退回灰色（图照常显示，显示走组件名），
 按「不是崩、是画面错」的同一条纪律靠握手 `4002` 挡住）。
