@@ -1,4 +1,4 @@
-import { magnifierDataOf, type GameObjectDoc } from "@dts/document";
+import { magnifierDataOf, magnifierStateIsEmpty, type GameObjectDoc } from "@dts/document";
 import { useEditorStore } from "../../state/editor-store";
 import { FieldRow } from "./fields";
 
@@ -17,7 +17,8 @@ export function MagnifierFields({ object }: { readonly object: GameObjectDoc }):
   const states = magnifier?.states ?? [];
   const picked = magnifier?.picked;
   const state = picked === undefined ? undefined : states[picked];
-  const shown = state?.image !== undefined;
+  /** 选中的那个状态**有东西可展示**（标题 / 图 / 文字至少一项）——没有图也行（纯文字线索卡）。 */
+  const shown = !magnifierStateIsEmpty(state);
 
   const showMagnifier = useEditorStore((store) => store.showMagnifier);
   const closeMagnifierWindow = useEditorStore((store) => store.closeMagnifierWindow);
@@ -65,7 +66,7 @@ export function MagnifierFields({ object }: { readonly object: GameObjectDoc }):
             : showingHere
               ? shown
                 ? "画面上开着这一个状态"
-                : "画面上开着（但选中的状态还没图）"
+                : "画面上开着（但选中的状态是空的）"
               : `画面上没开 · ${states.length} 个状态`}
         </span>
       </div>

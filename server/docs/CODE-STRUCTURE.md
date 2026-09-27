@@ -16,8 +16,8 @@
 | 后端默认地址 | `0.0.0.0:1420`（`resources/config/app.json`，可被 `HOST` / `PORT` 覆盖） |
 | 编辑器开发地址 | `http://localhost:5173`（Vite，`/api`、`/editor`、`/client` 反代到 1420） |
 | 编辑器生产地址 | `http://localhost:1420`（后端同源托管 `apps/editor/dist`） |
-| 源码规模（不含测试） | 176 个文件 / 40,342 行（packages 13,819 · backend 3,721 · editor 22,802） |
-| 测试规模 | 36,096 行（单测 25,929 · E2E 9,884 · 架构测试 283） |
+| 源码规模（不含测试） | 176 个文件 / 40,393 行（packages 13,842 · backend 3,721 · editor 22,830） |
+| 测试规模 | 36,139 行（单测 25,972 · E2E 9,884 · 架构测试 283） |
 
 > 上表两行与 §0.1 表格里加粗的文件行数、§3.x 节标题里的包规模由
 > `scripts/check-code-structure-stats.mjs` **机器校验**（`pnpm check` 的一环）：
@@ -430,16 +430,16 @@ build: { outDir: "dist", sourcemap: true },
 - 画笔半径 `floor((brushSize-1)/2)`（1/2→1×1、3/4→3×3、5→5×5，含偶数尺寸的刻意保真），与 Unity `ApplyBrush` 完全一致；
 - 坐标系只有一个：**世界坐标**（x 右、y 上、像素、无限大）；`grid(0,0)` 在地图矩形左下角 = 图片最下面一行，grid.y 与世界 y 同向、不翻转；唯一的翻转发生在贴图绘制（`worldRectTopLeft`）。
 
-### 3.2 `@dts/document` — 文档模型、命令与历史（8,945 行）
+### 3.2 `@dts/document` — 文档模型、命令与历史（8,968 行）
 
 | 文件 | 行数 | 职责 | 关键导出 |
 |---|---|---|---|
 | `types.ts` | 741 | 全部文档类型与格式版本常量（**`ObjectKind` 不在这里：v22 起住在 `presets.ts`，层级已移除、kind 只是预设 id**） | `DOCUMENT_FORMAT_VERSION`(=30)、`ProjectDoc`、`SceneDoc`、`SceneFileDoc`、`GameObjectDoc`、`ComponentDoc`、`MapDataDoc`（含 v26 的 `sortingOrder`）、`ImageLayerDataDoc`（`ImageRef & { sortingOrder }`）、`FogOfWarDataDoc`（v27：`mapId` + `enabled` + `regions`）、`SoundDataDoc`、`TeleportDataDoc`、`MagnifierDataDoc`（v30：图片列表 `images` + `picked` 下标）、`VideoDataDoc`、`VideoBlendDataDoc`（v17 / v19：两路 `{ kind, id? }` + `loop` / `autoPlay` / `audio`）、`ImageRef`、`GridSpec`、`CellRuns`、`ItemLibraryDoc`、`AudioTagTableDoc`、`SOUND_LAYERS`、`OBJECT_SOUND_LAYERS`、`ImageSpriteRef`、`SpriteSheetDoc`、`SpriteImportSettingsDoc`、`ResolvedSprite`、`SOUND_LAYER_LABELS` |
 | `presets.ts` | 313 | **对象预设表 + 能力槽位**（kinds.ts / features.ts 合并而来）：kind 只是预设 id，`GameObject` 仍是抽象基类（不落进文档）；每个预设声明允许的能力槽位 → 承载组件 + 缺省承载兜底 + 特性缺省值 | `ComponentSlot`、`OBJECT_KINDS`、`ObjectKind`、`GameObjectPreset`、`OBJECT_PRESETS`、`DEFAULT_SLOT_COMPONENT`、`SPRITE_COMPONENT`、`presetOf`、`isAbstractKind`、`CONCRETE_KINDS`、`componentForSlot`、`carriesComponent`、`supportsVideo`、`supportsFog`、`supportsMagnifier`、`supportsSpriteSheet`、`displayImageField`、`DEFAULT_SOUND_LAYER`、`DEFAULT_VIDEO_*` |
-| `access.ts` | 516 | **对象特性的唯一访问路径**（数据存在哪只有这里知道；v22 层级移除后一律按组件自报的 slot 查找） | 读：`componentOf`、`componentOfSlot`、`componentDataOf`、`componentDataOfSlot`、`mapDataOf`、`fogOf`、`imageOf`（按 slot 直接找，**只挑回 `ImageRef` 那几个字段**）、`imageLayerDataOf`、`objectImage`、`sortingOrderOf`（v26：地图 → 图片层 → 0）、`soundDataOf`、`teleportDataOf`、`videoDataOf`、`isFogEnabled`、`isVideoEnabled`；写：`mapDraftOf`、`writeFeature`、`removeFeature`、`ensureSoundData`、`ensureTeleportData`、`ensureVideoData`、`ensureFogData`、`withFeature` |
+| `access.ts` | 537 | **对象特性的唯一访问路径**（数据存在哪只有这里知道；v22 层级移除后一律按组件自报的 slot 查找） | 读：`componentOf`、`componentOfSlot`、`componentDataOf`、`componentDataOfSlot`、`mapDataOf`、`fogOf`、`imageOf`（按 slot 直接找，**只挑回 `ImageRef` 那几个字段**）、`imageLayerDataOf`、`objectImage`、`sortingOrderOf`（v26：地图 → 图片层 → 0）、`soundDataOf`、`teleportDataOf`、`videoDataOf`、`isFogEnabled`、`isVideoEnabled`；写：`mapDraftOf`、`writeFeature`、`removeFeature`、`ensureSoundData`、`ensureTeleportData`、`ensureVideoData`、`ensureFogData`、`withFeature` |
 | `schema.ts` | 1835 | zod schema + **版本迁移链**（v23 / v24 的素材 meta 迁移、v25 的 `migrateMapFogToComponent`、v26 的 `migrateSortingOrderToRenderComponents` 也在这一段里）+ 文件解析 | `sceneFileSchema`、`projectDocSchema`、`imageSpriteRefSchema`、`mapDataSchema`、`imageLayerDataSchema`、`upgradeRawDocument`、`migrateProjectDoc`、`parseProjectFile`、`parseProjectDoc`、`parseSceneFile`、`defaultProjectSettings`、`defaultAudioSettings`、`defaultBgmSettings`、`DEFAULT_BGM_VOLUME`(0.6)、`DEFAULT_SFX_VOLUME`(0.8)、`DEFAULT_VOICE_VOLUME`(1)；类型 `SceneSizeHint`、`ProjectFileLoad`、`SceneFileLoad` |
 | `commands/` | 1,858 | **65 个文档变换命令**（`commands/*.ts` 里 `export function` 的条数；分组表里另有 3 个读/判据由 `access.ts` / `presets.ts` 提供），按特性拆成 9 个模块 | 见 §3.2.2 |
-| `validation.ts` | 664 | 文档语义校验（跨字段、跨场景 + **子图的越界格子**（切分按素材 meta 查）+ **视频只给地图与贴图** + **素材 meta 里的标签引用**（顶层 `tags` 与音频旧段同一套规矩）） | `IssueLevel`、`ValidationIssue`、`SceneValidationOptions`、`hasErrors`、`formatIssues`、`validateScene`、`validateAssetMetas`、`validateProject` |
+| `validation.ts` | 666 | 文档语义校验（跨字段、跨场景 + **子图的越界格子**（切分按素材 meta 查）+ **视频只给地图与贴图** + **素材 meta 里的标签引用**（顶层 `tags` 与音频旧段同一套规矩）） | `IssueLevel`、`ValidationIssue`、`SceneValidationOptions`、`hasErrors`、`formatIssues`、`validateScene`、`validateAssetMetas`、`validateProject` |
 | `sprites.ts` | 451 | **精灵（子图）的全部知识**（v20 新增）：一张图怎么切、对象取哪一格、那一格在图片里的哪块矩形、画多大；「地图贴图不支持子图」的**唯一判据**也在这里。切分从 v23 起**按素材 meta 查**（参数是 `AssetMetas` 索引，**guid 优先、路径兜底**） | `SPRITE_SHEET_MAX`(64)、`DEFAULT_SPRITE_SHEET`(1×1)、`normalizeSpriteSheet`、`isTrivialSpriteSheet`、`spriteSheetOf`（meta 里没 `sheet` = 整图）、`clampSpriteCell`、`resolvedSpriteOf`、`displaySpriteOf`、`spriteUvRectOf`、`spritePixelRectOf`、`spriteCellSizeOf`、`spriteCellAtFraction`、`resolveSceneSprites`（推送用的解析：夹格子 + 摘掉地图上的误写 + **把 guid 换算回当前路径 ID** + 保留 `sortingOrder`） |
 | `asset-meta.ts` | 629 | **素材 meta 的全部知识**（v23 新增；v24 起覆盖**每一种素材**）：`<素材>.meta` 的形状（GUID + 导入器 + 精灵设置 / 切分 + 音频标注 + **顶层 `name` / `tags`**）、schema、解析、序列化、GUID 生成，以及「meta ↔ 文档词汇」的访问器与纯函数写入。显示名与标签**任何素材**都能写：一律落顶层，音频旧数据（`audio.name` / `audio.tags`）由 `assetNameOfMeta` / `assetTagsOfMeta` 兼容读、写入时一并摘掉（不需要迁移） | `ASSET_META_FORMAT_VERSION`(1)、`ASSET_IMPORTERS`、`AssetImporter`、`AssetMetaDoc`、`AssetMetaSpriteDoc`、`AssetMetaAudioDoc`、`AssetMetaFileLoad`、`assetMetaSchema`、`newAssetGuid`、`createAssetMeta`、`parseAssetMetaFile`（只容错"缺 guid"，补上并 `needsRewrite`）、`serializeAssetMetaFile`、`isSpriteMeta`、`spriteSettingsOfMeta`、`spriteSheetOfMeta`、`withMetaSpriteSettings`、`withMetaSpriteSheet`、`audioNameOfMeta`（旧段）、`assetNameOfMeta`（统一读）、`withMetaAudioName`（旧段）、`withMetaAssetName`（统一写）、`audioTagsOfMeta`（旧段）、`assetTagsOfMeta`（统一读）、`withMetaAudioTags`（旧段）、`withMetaAssetTags`（统一写）、`withoutMetaAudioTag`（两处都摘）、`AssetMetas`（guid ↔ 路径双向索引）、`emptyAssetMetas`、`createAssetMetas`、`metaOfImage` |
 | `history.ts` | 222 | 补丁式撤销 / 重做容器 | `DocumentHistory`、`HistoryEntry`、`DEFAULT_HISTORY_LIMIT`(=200)、`DEFAULT_COALESCE_WINDOW_MS`(=700)、`SceneListDraft` |
@@ -1166,7 +1166,7 @@ store 用 **zustand 切片**模式拆开了：原来是一个 4,493 行的 `edit
 | `editor-store.ts` | **94** | **只剩组装与再导出**：`create<EditorStoreState>()` 里展开初始状态与 17 个切片，再导出只保留真正从这里取的名字（逐名核对过消费方） | `useEditorStore`、`sceneHistory`、`projectHistory`、`fitSceneViewport`、`serializeSceneFile`、`compareSceneNames`、`findResourceNode`、`withRenamedSceneImage`；类型 `EditorMode`、`ProjectDialogMode`、`SceneDialogMode`、`SceneSaveState` |
 | `store-types.ts` | 901 | 全部状态类型 + `EditorStoreState`（**129 个 action + 44 个状态字段**）+ `StoreSet` / `StoreGet` / `EditorStoreData`（由「全部 action 名」算出来的状态部分）；素材 meta 的 `AssetMetaTable`（真源表）、`AssetMetaDraft`（`applyMetas` 拿到的那份可写草稿）与 `assetMetas`（派生索引）也在这里 | 上表那些类型 |
 | `store-core.ts` | 394 | **模块级**工具与状态：**三份** `DocumentHistory`（`sceneHistory` / `projectHistory` / `metaHistory`）、撤销轨（`lastEditTrack` / `activeTrack` / `historyOf` / `EDIT_TRACKS` = `scenes` / `project` / `metas`）、常量、`fitSceneViewport`、`serializeSceneFile` / `serializeProjectFile`、`withRenamedSceneImage`、`compareSceneNames`、`findResourceNode`、`makeLog` | 同 `editor-store` 的值导出 |
-| `store-context.ts` | 1559 | **闭包状态与局部工具**（原 `create()` 里那段）：`StoreContext` 53 个成员——40 个函数（`pushLog` / `switchScene` / `deliverSoundPlay` / `applyActiveScene` / `scheduleSceneSave` / `scheduleMetaSave` / `metaDirtyIds` / `fogTargetOf` / `currentSceneDoc` / `findObjectById` …）、8 个稳定引用（`runtimeClient` / 两个 `ScenePushScheduler` / `savedScenes` / **`savedMetas`** / `sceneViewports` / `quietCommandIds` / `storedGridPaint`）、5 个可变标量走 get/set（`lastPushedSceneText` / `pendingRunRequest` / `viewportAdjusted` / `bootstrapping` / `savedProjectText`）；**`metaHistory.subscribe` 在这里重建 `assetMetas` 索引并安排 meta 落盘** | `StoreContext`、`createStoreContext` |
+| `store-context.ts` | 1567 | **闭包状态与局部工具**（原 `create()` 里那段）：`StoreContext` 53 个成员——40 个函数（`pushLog` / `switchScene` / `deliverSoundPlay` / `applyActiveScene` / `scheduleSceneSave` / `scheduleMetaSave` / `metaDirtyIds` / `fogTargetOf` / `currentSceneDoc` / `findObjectById` …）、8 个稳定引用（`runtimeClient` / 两个 `ScenePushScheduler` / `savedScenes` / **`savedMetas`** / `sceneViewports` / `quietCommandIds` / `storedGridPaint`）、5 个可变标量走 get/set（`lastPushedSceneText` / `pendingRunRequest` / `viewportAdjusted` / `bootstrapping` / `savedProjectText`）；**`metaHistory.subscribe` 在这里重建 `assetMetas` 索引并安排 meta 落盘** | `StoreContext`、`createStoreContext` |
 | `initialState.ts` | 84 | 初始状态（返回类型是 `EditorStoreData`，所以**少一个状态字段就编译报错**；素材 meta 两份初始为空） | `createInitialState` |
 | `slices/history-slice.ts` | 148 | `applyScenes` `applyProject` `applyMetas` `undo` `redo` `resetDoc`（三条轨道各一个写入口，且**真的产生改动时**才 `setLastEditTrack`——撤销才会作用在「最近改过的那条」上；`resetDoc` 连 `metaHistory` 一起清） | — |
 | `slices/save-slice.ts` | 198 | `saveSceneNow` `flushSceneSave` `saveProjectNow` `saveMetasNow` `flushMetaSave`（meta 只写内容变过的那几份）；工程文件**没有 flush**——没有「关闭前 flush」的调用方，改动全走去抖定时器 | — |
@@ -1251,7 +1251,7 @@ export function createSoundSlice(
 | `FogMaskDialog.tsx` | 435 | 「战争雾 Mask 窗口」：贴图底 + canvas 遮罩（960 宽、按贴图比例定高），软边圆刷擦除，右侧「整区开关」（雾区绑定 v25 起读独立的 `FogOfWar` 组件）；运行态下按批下发 `erase_mask` 轨迹、整区开关下发 `reveal_fog_region`；编辑态纯预览、不写文档不落盘。 | `FogMaskDialog` |
 | `VideoBlendMaskDialog.tsx` | 345 | 「视频混合 Mask 窗口」：底图是 B 的缩略图（编辑器不解码视频）+ canvas 遮罩（同一张 960 宽、按素材像素尺寸定高），软边圆刷擦除（软边 0.5 有实心核）；右侧两个**「整张盖住（1）/ 整张擦开（0）」**按钮（走播放键那一档的样式：常态就有边框与底、hover 描强调色边框；按钮里那个**实心 / 空心小方块**是遮罩状态的提示）一次填满或清空；运行态下按批下发 `erase_video_mask`、整张按钮下发 `fill_video_mask`；编辑态纯预览、不写文档不落盘。 | `VideoBlendMaskDialog` |
 | `GridEditDialog.tsx` | 459 | 「网格编辑窗口」：**唯一**的格子涂/擦入口，用同一渲染器 + `fitViewport` 把地图铺满窗口；指针捕获 + 补齐两事件点之间的格子（不断线）；「全部清除」可撤销。 | `GridEditDialog` |
-| `MagnifierDialog.tsx` | 384 | 「放大镜窗口」：**上面一块是选中状态的画面**（标题输入框 + 左边图（点一下弹选图框、右上角 × 移出）+ 右边多行文字，长宽比取**素材真实尺寸**、一格图按那一格算）+ **下面一排状态槽**（点一个 = 换成展示它，写文档、可撤销；每条带 × 移出；末尾「添加状态」加空槽）+ 底栏「在画面上打开 / 关闭画面」（只在运行态可用）；与前端那扇窗长得一样，差别就是「多这排状态槽与添加按钮 / 多这两个按钮」。关掉这扇窗**不**连带关前端那扇。 | `MagnifierDialog` |
+| `MagnifierDialog.tsx` | 403 | 「放大镜窗口」：**上面一块是选中状态的画面**（**标题带卡片**（左边一条暖黄强调条 + 标题居中，与前端同款）+ 左边图（点一下弹选图框、右上角 × 移出）+ 右边多行文字；**三块卡片一暗一亮**分得清图与文字，与前端那扇窗同一套层次；长宽比取**素材真实尺寸**、一格图按那一格算）+ **下面一排状态槽**（点一个 = 换成展示它，写文档、可撤销；每条带 × 移出；末尾「添加状态」加空槽）+ 底栏「在画面上打开 / 关闭画面」（只在运行态可用）；与前端那扇窗长得一样，差别就是「多这排状态槽与添加按钮 / 多这两个按钮」。关掉这扇窗**不**连带关前端那扇。 | `MagnifierDialog` |
 
 #### `panels/`（6）
 
@@ -1294,7 +1294,7 @@ export function createSoundSlice(
 | `TeleportFields.tsx` | 105 | 传送阵的「传送」组：候选目标小方块 + `＋` 开「传送目标」窗口 + 「传送」按钮（不能传时按钮上写原因）。 | `TeleportFields` |
 | `FogFields.tsx` | 150 | 战争雾编辑区（挂在独立的 `Fog` 对象上）：读写在它 `FogOfWar` 组件（`fogOf(object)`），第一行「引用地图」选择器，接着总开关（闸住整组），打开后给「指定雾区」小方块与「雾格子 → 编辑」入口。 | `FogFields` |
 | `GridAnnotationFields.tsx` | 36 | 「区域」组里的一行入口：只留一个按钮打开 `GridEditDialog`。 | `GridAnnotationFields` |
-| `MagnifierFields.tsx` | 74 | 放大镜的「放大镜」组：**只剩「窗口」那一行**（「打开窗口」= 开编辑器那扇、运行态下同时投到前端；「关闭画面」只在这个对象正被投影时出现——前端那扇窗没有关闭按钮；提示里带状态个数）。**状态列表整行搬进那扇窗口里**了（v31），面板不再重复一套。 | `MagnifierFields` |
+| `MagnifierFields.tsx` | 75 | 放大镜的「放大镜」组：**只剩「窗口」那一行**（「打开窗口」= 开编辑器那扇、运行态下同时投到前端；「关闭画面」只在这个对象正被投影时出现——前端那扇窗没有关闭按钮；提示里带状态个数）。**状态列表整行搬进那扇窗口里**了（v31），面板不再重复一套。 | `MagnifierFields` |
 
 > **加一个对象特性 = 在 `registry.tsx` 加一行 + 写一个字段组件**，不必回到面板 JSX 里插
 > `kind === …` 判断。`InspectorPanel.tsx` 从 1,195 行降到 341 行就是这么来的。
@@ -1910,7 +1910,7 @@ upgradeRawDocument
 | `document/asset-meta.test.ts` | 869 | **素材 meta 本身**（v23 新增、v24 扩到音频）：`<素材>.meta` 的 schema 与解析（缺 guid 补一个并 `needsRewrite`、高版本拒读、坏形状拒读）、GUID 生成与「只认小写」、导入设置与切分两个纯函数写入（`Default` 摘节点、`1×1` 摘 sheet、值没变返回原对象）、**音频那一段**（`audioNameOfMeta` / `audioTagsOfMeta` / `withMetaAudioName` / `withMetaAudioTags` / `withoutMetaAudioTag`：归一化去重升序、越界与洞丢弃、跨字段不互相覆盖）、`AssetMetas` 索引（guid ↔ 路径、重复 guid 先到先得、`metaOfImage` 先 guid 再 id）、以及 `validateAssetMetas` 的每一条 warning |
 | `document/audio-meta.test.ts` | 472 | **素材轨**：显示名（旧 `setAudioMetaName` 的口径，写进 `.meta` 的 `audio.name`）、文件上的标签 ID 列表（旧 `setAudioMetaTags` 的口径，按工程文件的表归一化）、`withoutMetaAudioTag`（删标签的后半截）；**项目轨**：标签表新建/改名/按序号命名/删除（留洞）；读写工程文件与 **v17 → v18 → v24 迁移**（`audioMeta` 搬进 `migratedMetas`，表留在工程文件）；校验（`validateProject` 不再报 `audioMeta/...` 路径，那几条搬去了 `validateAssetMetas`） |
 | `document/teleport.test.ts` | 370 | 传送阵工厂；`setTeleportTargets`（加/移候选）；`setTeleportPicked`；解析与版本（含 `{target}` 老形状迁移）；校验 |
-| `document/magnifier.test.ts` | 733 | 放大镜工厂（三项都可没有的状态）；`addMagnifierState` / `removeMagnifierState` / `setMagnifierPicked` / `setMagnifierStateImage`（含同格判等、清空）/ `setMagnifierStateTitle` / `setMagnifierStateText`（trim、空 = 删字段、无变更不入栈、越界拒掉）；读口（`magnifierStateOf` / `magnifierImageOf`）；解析与版本（格式 31；**v30 → v31 迁移**：`images` 搬成 `states[].image`）；校验（空列表 / 没选 / 越界 / 选中的状态没图）；存盘（GUID 换算）与推送（`spriteGrid` + 夹格，没有图的状态原样留着） |
+| `document/magnifier.test.ts` | 757 | 放大镜工厂（三项都可没有的状态）；`addMagnifierState` / `removeMagnifierState` / `setMagnifierPicked` / `setMagnifierStateImage`（含同格判等、清空）/ `setMagnifierStateTitle` / `setMagnifierStateText`（trim、空 = 删字段、无变更不入栈、越界拒掉）；读口（`magnifierStateOf` / `magnifierImageOf` / `magnifierStateIsEmpty`）；解析与版本（格式 31；**v30 → v31 迁移**：`images` 搬成 `states[].image`）；校验（空列表 / 没选 / 越界 / **选中的状态三项全空**）；存盘（GUID 换算）与推送（`spriteGrid` + 夹格，没有图的状态原样留着） |
 | `document/sound.test.ts` | 406 | 声音对象工厂；声音命令（列表/选中/层级/名字）；场景文件 schema；校验 |
 | `renderer/gizmo.test.ts` | 363 | 矩形四角；绕枢轴旋转；八个缩放手柄与**边中点 = 相邻两角平均**；锚点对侧且随旋转转；角=等比 / 边=单轴；屏幕几何（中心点=平移量、柄落在角与边中点、太小不可绘制、移动轴贴着对象长、旋转环包住整个对象、**间距与环半径用矩形自己的半尺寸所以转过角度不「呼吸」**、转 45° 后绘制与命中仍是同一份坐标）；`toolHasGizmo` 与命中的口径一致；命中测试（容差是一条带子、旋转环内外都不命中、移动轴只认自己的轴、**拖动模式一个手柄都点不到**、太小一律不给命中） |
 | `document/bgm-settings.test.ts` | 312 | 全局设置缺省值；**v16 迁移**（歌单从工程文件里拿掉）；三档音量；校验；**场景格式 v15**（环境音并进背景音乐） |
@@ -1949,7 +1949,7 @@ upgradeRawDocument
 | `grid-annotate.test.tsx` | 392 | 属性面板编辑窗口入口；画笔偏好写进 store 也写进浏览器本地；涂抹写进 RLE 且**整笔可撤销**；网格线与网格标注两个总开关；格子颜色只画可见位且按低位在上叠加 |
 | `mask-math.test.ts` | 433 | `strokeStampCenters`；`applyEraseToPixels`（与 `MaskEraseStamp.shader` 同式，含「视频混合 0.5 有实心核 / 雾 1 擦不到 0」）；`paintRegionPixels`（整区开/关）；`fillMaskAlpha`（整张填 1 / 0，只动 alpha、越界值收敛）；`previewMaskSizeFor`/`brushRadiusFor`；`fillFogMaskPixels` |
 | `teleport-object.test.tsx` | 324 | 种类表；创建；属性面板（候选小方块 + ＋ + 传送）；「传送目标」窗口勾选；触发传送（**不改文档**） |
-| `magnifier-object.test.tsx` | 378 | 放大镜（v30；v31 起是状态列表）：种类表；创建（固定徽标 64×64）；属性面板（**只剩「窗口」那一行**、缺组件修复、编辑态只预览、运行态记账与「选中的状态没图」拒掉）；窗口（上面那块编辑区：标题 / 文字 / 挑图 / 移出图；下面状态槽：点选、× 移出、「添加状态」加空槽并选中；底栏两个按钮的可用状态、对象被删的兜底）；`magnifierImageOf`（越界 / 没选 / 那个状态没图都按「没有」处理） |
+| `magnifier-object.test.tsx` | 397 | 放大镜（v30；v31 起是状态列表）：种类表；创建（固定徽标 64×64）；属性面板（**只剩「窗口」那一行**、缺组件修复、编辑态只预览、运行态记账与「选中的状态三项全空」拒掉，**只有标题 / 文字的状态照样能开**）；窗口（上面那块编辑区：标题 / 文字 / 挑图 / 移出图；下面状态槽：点选、× 移出、「添加状态」加空槽并选中；底栏两个按钮的可用状态、对象被删的兜底）；`magnifierImageOf`（越界 / 没选 / 那个状态没图都按「没有」处理） |
 | `audio-catalog.test.ts` | 321 | 清单 = 项目音频 + 标注（名字与标签 ID 经**素材 meta 表**读）；标签表与文件上的标签；名字兜底链；搜索与标签筛选 |
 | `transform.test.ts` | 305 | 移动（相对按下时的指针）；旋转（相对按下时的方位角，**屏幕上跟手**）；缩放（相对按下时的指针偏移） |
 | `fog-mask.test.tsx` | 313 | 属性面板战争雾开关与雾区；揭示记账（**运行态才下发**给前端） |

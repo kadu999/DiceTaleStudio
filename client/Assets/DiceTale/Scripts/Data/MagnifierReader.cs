@@ -5,7 +5,7 @@ namespace DiceTale
 {
     /// <summary>
     /// 放大镜里**一个状态**（协议 v22 起）：一屏画面 = 标题（上面）+ 图（左）+ 文字（右）。
-    /// 三项都可以没有——但**没有图的展示不出来**（见 <see cref="MagnifierReader.TryPickState"/>）。
+    /// 三项都可以没有——**只要有一项就有东西可展示**（纯文字 / 只有标题的线索卡是常见用法）。
     /// </summary>
     public sealed class MagnifierStateView
     {
@@ -15,7 +15,7 @@ namespace DiceTale
         /// <summary>右边那段文字描述（多行纯文本，换行照原样）；空 = 没有文字。</summary>
         public string Text = "";
 
-        /// <summary>左边那张图的资源逻辑 ID（交给取图加载器）。</summary>
+        /// <summary>左边那张图的资源逻辑 ID（交给取图加载器）；**空 = 这一屏没有图**。</summary>
         public string Id;
 
         /// <summary>要取的那一格；`null` = 整张图。</summary>
@@ -33,17 +33,18 @@ namespace DiceTale
     /// 带回来（见那里的「加新字段的规矩」）。所以这一小段单独收在一处：
     /// **`MirrorObject` 不动、`SceneParser` 不动**，命令路由（弹窗）与单元测试都从这里拿结果。
     ///
-    /// 与编辑器那边 `magnifierStateOf` / `magnifierImageOf` **同一口径**：
-    /// 没挂组件 / 列表空 / `picked` 缺失或越界 / **选中的那个状态没有图** → 展示不出来
-    /// （前端据此明确拒掉 `open_magnifier`）。
+    /// 与编辑器那边 `magnifierStateOf` / `magnifierStateIsEmpty` **同一口径**：
+    /// 没挂组件 / 列表空 / `picked` 缺失或越界 / **选中的那个状态三项全空** → 展示不出来
+    /// （前端据此明确拒掉 `open_magnifier`）。**没有图不算**——纯文字 / 只有标题的线索卡照放。
     /// </summary>
     public static class MagnifierReader
     {
         /// <summary>
         /// 取「现在该展示的那一个状态」；没有可展示的东西时返回 `false`（`state` 为 null）。
         ///
-        /// 「有图才展示得出来」这条与编辑器逐字对齐：放大镜放的就是那张图，只有标题 / 文字
-        /// 的状态在编辑器那边「在画面上打开」也点不了（`magnifierImageOf` 是 undefined）。
+        /// 「三项全空才展示不出来」这条与编辑器逐字对齐（`magnifierStateIsEmpty`）：
+        /// 有图、有标题、有文字，任意一项就够了。`Id` 为空表示这一屏**没有图**
+        /// （窗口那边会把图那一格收掉、让文字铺满整行）。
         /// </summary>
         public static bool TryPickState(MirrorObject obj, out MagnifierStateView state)
         {
@@ -76,17 +77,21 @@ namespace DiceTale
             // 图住在 `image` 里（空状态槽 / 只有文字的状态没有它）
             var image = JsonParser.GetObject(entry, "image");
             var id = image == null ? null : JsonParser.GetString(image, "id");
-            if (string.IsNullOrEmpty(id))
+            var title = JsonParser.GetString(entry, "title") ?? "";
+            var text = JsonParser.GetString(entry, "text") ?? "";
+
+            // 三项全空 = 一张空卡：投上去什么也看不见，明确拒掉
+            if (string.IsNullOrEmpty(id) && string.IsNullOrEmpty(title) && string.IsNullOrEmpty(text))
             {
                 return false;
             }
 
             state = new MagnifierStateView
             {
-                Title = JsonParser.GetString(entry, "title") ?? "",
-                Text = JsonParser.GetString(entry, "text") ?? "",
-                Id = id,
-                Sprite = ReadSprite(image),
+                Title = title,
+                Text = text,
+                Id = id ?? "",
+                Sprite = image == null ? null : ReadSprite(image),
             };
             return true;
         }

@@ -6,6 +6,7 @@ import {
   imageOf,
   isFogEnabled,
   magnifierDataOf,
+  magnifierStateIsEmpty,
   mapDataOf,
   soundDataOf,
   teleportDataOf,
@@ -295,8 +296,9 @@ function validateObject(
   /*
     放大镜（动作对象，v30；v31 起「图片列表」变成「状态列表」）。
     与传送阵那几条同一个口径——错了都是「按没加 / 按没选处理」，所以只报警告不拦运行：
-    一个状态都没有、有状态但没选、选中的那个还没有图，都是**合法状态**（刚建出来就是这样），
-    但那时窗口里没图可放（「在画面上打开」点不了）。
+    一个状态都没有、有状态但没选，都是**合法状态**（刚建出来就是这样），但那时窗口里没东西可放。
+    **没有图不算问题**（纯文字 / 只有标题的线索卡放得出来，见 `magnifierStateIsEmpty`），
+    但**三项全空**的状态投上去只是一张空卡——那一条要提醒。
   */
   const magnifier = magnifierDataOf(object);
   if (magnifier === undefined && canRepairObjectComponent(object, DEFAULT_SLOT_COMPONENT.magnifier)) {
@@ -327,11 +329,11 @@ function validateObject(
         path: `${path}/magnifier/picked`,
         message: "要展示的那个状态不在状态列表里（按还没选处理）",
       });
-    } else if (magnifier.states[pickedState]?.image === undefined) {
+    } else if (magnifierStateIsEmpty(magnifier.states[pickedState])) {
       issues.push({
         level: "warning",
-        path: `${path}/magnifier/states/${pickedState}/image`,
-        message: "要展示的那个状态还没有图（窗口里没有图可放）",
+        path: `${path}/magnifier/states/${pickedState}`,
+        message: "要展示的那个状态是空的（标题 / 图 / 文字都没有，窗口里放不出东西）",
       });
     }
   }

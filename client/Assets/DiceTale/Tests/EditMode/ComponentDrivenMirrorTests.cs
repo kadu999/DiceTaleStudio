@@ -357,12 +357,23 @@ namespace DiceTale.Tests
                 "\"picked\":7}}]}");
             Assert.That(MagnifierReader.TryPickState(outOfRange, out _), Is.False);
 
-            // 选中的那个状态只有文字（没有图）：放大镜放的就是那张图，展示不出来
+            // 选中的那个状态**只有文字 / 只有标题**（没有图）：照样展示得出来——纯文字线索卡
             var textOnly = ParseObject(
                 "{\"id\":\"mag\",\"kind\":\"Magnifier\",\"components\":[" +
                 "{\"type\":\"Magnifier\",\"data\":{\"states\":[{\"title\":\"只有标题\",\"text\":\"只有文字\"}]," +
                 "\"picked\":0}}]}");
-            Assert.That(MagnifierReader.TryPickState(textOnly, out _), Is.False);
+            Assert.That(MagnifierReader.TryPickState(textOnly, out var textState), Is.True);
+            Assert.That(textState.Title, Is.EqualTo("只有标题"));
+            Assert.That(textState.Text, Is.EqualTo("只有文字"));
+            // `Id` 为空 = 这一屏没有图（窗口那边会把图那一格收掉、让文字铺满整行）
+            Assert.That(textState.Id, Is.Empty);
+            Assert.That(textState.Sprite, Is.Null);
+
+            // 三项全空（「添加状态」刚加出来、还没填）：一张空卡，展示不出来
+            var emptyState = ParseObject(
+                "{\"id\":\"mag\",\"kind\":\"Magnifier\",\"components\":[" +
+                "{\"type\":\"Magnifier\",\"data\":{\"states\":[{}],\"picked\":0}}]}");
+            Assert.That(MagnifierReader.TryPickState(emptyState, out _), Is.False);
 
             var noComponent = ParseObject("{\"id\":\"plain\",\"kind\":\"Sprite\",\"components\":[]}");
             Assert.That(MagnifierReader.TryPickState(noComponent, out _), Is.False);

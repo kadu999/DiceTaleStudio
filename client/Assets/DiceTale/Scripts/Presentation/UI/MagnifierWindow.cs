@@ -127,6 +127,9 @@ namespace DiceTale
         /// 标题与文字**每次都直接覆盖**（它们是纯文本，改起来不要钱）；图是同一张、同一格、
         /// 同一个纹理时跳过重建——镜像每次落地都会叫一声（`OnSceneApplied`），而绝大多数
         /// 推送与这一屏无关。
+        ///
+        /// **这一屏没有图**（`state.Id` 为空，纯文字 / 只有标题的线索卡）时：把上一屏的图清掉，
+        /// 图那一格整块收起来（版式见 <see cref="ApplyContent"/>）。
         /// </summary>
         public void Show(MagnifierStateView state, Texture2D texture)
         {
@@ -135,7 +138,14 @@ namespace DiceTale
                 return;
             }
 
-            ApplyContent(state.Title, state.Text);
+            var hasImage = !string.IsNullOrEmpty(state.Id);
+            ApplyContent(state.Title, state.Text, hasImage);
+
+            if (!hasImage)
+            {
+                DestroySprite();
+                return;
+            }
 
             if (image == null || texture == null || IsShowing(state.Id, texture, state.Sprite))
             {
@@ -163,9 +173,10 @@ namespace DiceTale
         /// <summary>
         /// 把标题与文字铺上去，并按「这一屏有什么」重排：
         /// - **没有标题** → 标题带整条不占位，内容区顶上去；
-        /// - **没有文字** → 右边那块不占位，图铺满整行。
+        /// - **没有图** → 图那一格整块收起来（纯文字 / 只有标题的线索卡），文字铺满整行；
+        /// - **没有文字** → 文字那块不占位，图铺满整行。
         /// </summary>
-        private void ApplyContent(string title, string body)
+        private void ApplyContent(string title, string body, bool hasImage)
         {
             var hasTitle = !string.IsNullOrEmpty(title);
             titleBar.gameObject.SetActive(hasTitle);
@@ -175,9 +186,15 @@ namespace DiceTale
             bodyCard.gameObject.SetActive(hasBody);
             bodyText.text = hasBody ? body : "";
 
+            frame.gameObject.SetActive(hasImage);
+
             content.offsetMax = new Vector2(0f, hasTitle ? -(TitleHeight + Gap) : 0f);
-            frame.anchorMax = new Vector2(hasBody ? ImageWidthRatio : 1f, 1f);
-            frame.offsetMax = new Vector2(hasBody ? -Gap : 0f, 0f);
+
+            // 图与文字各占一边；只有一边时它铺满整行（另一边不占位）
+            var split = hasImage && hasBody;
+            frame.anchorMax = new Vector2(split ? ImageWidthRatio : 1f, 1f);
+            frame.offsetMax = new Vector2(split ? -Gap : 0f, 0f);
+            bodyCard.anchorMin = new Vector2(split ? ImageWidthRatio : 0f, 0f);
         }
 
         // ---------------------------------------------------------------- 搭界面
@@ -228,12 +245,13 @@ namespace DiceTale
             accentRect.offsetMin = new Vector2(22f, 22f);
             accentRect.offsetMax = new Vector2(30f, -22f);
 
-            titleText = CreateText("Title", titleContent, TitleFontSize, TextAnchor.MiddleLeft, FontStyle.Bold);
+            // 标题**居中**（左右留一样的边，免得长标题压到左边那条强调条上）
+            titleText = CreateText("Title", titleContent, TitleFontSize, TextAnchor.MiddleCenter, FontStyle.Bold);
             titleText.color = TitleColor;
             titleText.rectTransform.anchorMin = Vector2.zero;
             titleText.rectTransform.anchorMax = Vector2.one;
             titleText.rectTransform.offsetMin = new Vector2(48f, 0f);
-            titleText.rectTransform.offsetMax = new Vector2(-24f, 0f);
+            titleText.rectTransform.offsetMax = new Vector2(-48f, 0f);
 
             // 内容区：标题带下面那一行（左边图、右边文字）
             var contentGo = new GameObject("Content", typeof(RectTransform));

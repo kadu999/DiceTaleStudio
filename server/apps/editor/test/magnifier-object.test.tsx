@@ -199,17 +199,27 @@ describe("属性面板：只剩「窗口」那一行（状态列表整行搬进�
     expect(screen.queryByTestId("magnifier-close-window")).toBeNull();
   });
 
-  it("选中的状态还没有图时，运行态点「打开窗口」也点不动（写明原因）", async () => {
-    seedScene([magnifier([{ title: "只有标题" }], 0)]);
+  it("只有标题 / 文字的状态**也能**打开（纯文字线索卡）；三项全空才点不动", async () => {
+    seedScene([magnifier([{ title: "只有标题" }, { text: "只有文字" }, {}], 1)]);
     seedRuntime(false);
     render(<InspectorPanel />);
 
     await act(async () => {
       fireEvent.click(screen.getByTestId("magnifier-open"));
     });
+    expect(useEditorStore.getState().magnifierShown).toBe("magnifier-1");
+
+    // 换成那个三项全空的状态：点不动，并写明原因
+    await act(async () => {
+      useEditorStore.getState().selectMagnifierState("magnifier-1", 2);
+      useEditorStore.getState().closeMagnifierWindow();
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("magnifier-open"));
+    });
 
     expect(useEditorStore.getState().magnifierShown).toBeNull();
-    expect(logs().join("\n")).toMatch(/选中的那个状态还没有图/);
+    expect(logs().join("\n")).toMatch(/是空的/);
   });
 });
 
@@ -319,6 +329,15 @@ describe("放大镜窗口：上面一块是选中状态的画面，下面一排�
     });
 
     expect(dataOf("magnifier-1")?.states?.[0]).toEqual({ title: "线索一" });
+  });
+
+  it("只有文字的状态：运行态「在画面上打开」照样能点（没有图也行——纯文字线索卡）", () => {
+    seedScene([magnifier([{ text: "只有文字" }], 0)]);
+    seedRuntime(true);
+    render(<MagnifierDialog open objectId="magnifier-1" onClose={() => undefined} />);
+
+    expect(screen.getByTestId("magnifier-image-empty")).toBeDefined();
+    expect((screen.getByTestId("magnifier-show") as HTMLButtonElement).disabled).toBe(false);
   });
 
   it("编辑态：底栏写明只是预览，「在画面上打开」点不了", () => {

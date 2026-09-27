@@ -281,12 +281,33 @@ export function magnifierStateOf(object: GameObjectDoc): MagnifierState | undefi
 }
 
 /**
- * 放大镜当前展示的那个状态里**那张图**（`undefined` = 没选状态 / 那个状态还没挑图）。
+ * 放大镜当前展示的那个状态里**那张图**（`undefined` = 没选状态 / 那个状态还没有图）。
  *
- * 「能不能在画面上打开」的判据就是它：那扇窗没有图可放时明确拒掉。
+ * 注意「能不能在画面上打开」**不是**看它（v31 起）：纯文字 / 只有标题的线索卡也放得出来，
+ * 那条判据是 {@link magnifierStateIsEmpty}。它只回答「这一屏有没有图」——编辑器画舞台、
+ * 前端铺图都用它。
  */
 export function magnifierImageOf(object: GameObjectDoc): ImageRef | undefined {
   return magnifierStateOf(object)?.image;
+}
+
+/**
+ * 这个状态**是不是空的**（标题 / 图 / 文字三项都没有内容）。
+ *
+ * 「能不能在画面上打开」的判据就是它（两端逐字一致）：纯文字的线索卡是常见用法（跑团时
+ * 一句话就是一条线索），所以**没有图也能展示**；而三项全空的状态投上去只是一张空卡，
+ * 那个仍然点不动——`validateScene` 也会为它报一条 warning。
+ *
+ * 「没写」与「写了空串」在这里同义（命令写空串时会把字段删掉，手写文件两种都收）。
+ */
+export function magnifierStateIsEmpty(state: MagnifierState | undefined): boolean {
+  if (state === undefined) {
+    return true;
+  }
+
+  const hasTitle = state.title !== undefined && state.title.length > 0;
+  const hasText = state.text !== undefined && state.text.length > 0;
+  return !hasTitle && state.image === undefined && !hasText;
 }
 
 /** 视频数据（列表 + 选中的那条 + 循环 / 声音）。 */

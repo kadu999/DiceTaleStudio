@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   magnifierDataOf,
   magnifierImageOf,
+  magnifierStateIsEmpty,
   spriteCellSizeOf,
   spriteSheetOfMeta,
   type ImageRef,
@@ -71,6 +72,9 @@ export function MagnifierDialog({
 
   const showingHere = object !== undefined && windowShown === object.id;
 
+  /** 选中的那个状态**有东西可展示**（标题 / 图 / 文字至少一项）——没有图也行（纯文字线索卡）。 */
+  const showable = !magnifierStateIsEmpty(state);
+
   /*
     舞台按**这一张图**的长宽比等比装进可视区（与两个 Mask 窗口同一套 `useFittedBox`）。
     长宽比取**素材的真实像素尺寸**（`?info=1` 探一下），不是引用里声明的宽高：
@@ -98,8 +102,8 @@ export function MagnifierDialog({
 
   const hint = !running
     ? "编辑态只是预览：进运行态才能在画面上打开"
-    : image === undefined
-      ? "先给选中的状态挑一张图（点上面那块）"
+    : !showable
+      ? "选中的状态还是空的：给它填点东西（标题 / 图 / 文字都行）"
       : showingHere
         ? "画面上正开着这一个状态"
         : "画面上没开：点「在画面上打开」";
@@ -117,12 +121,12 @@ export function MagnifierDialog({
           <button
             type="button"
             data-testid="magnifier-show"
-            disabled={!running || image === undefined || showingHere}
+            disabled={!running || !showable || showingHere}
             title={
               !running
                 ? "先进入运行态（顶栏「运行」）"
-                : image === undefined
-                  ? "先给选中的状态挑一张图"
+                : !showable
+                  ? "先给选中的状态填点东西（标题 / 图 / 文字都行）"
                   : showingHere
                     ? "画面上已经开着它了"
                     : "让前端弹一扇窗显示这一个状态（画面上没有选择 / 关闭按钮，只能从这里控制）"
@@ -157,7 +161,7 @@ export function MagnifierDialog({
         {state === undefined ? (
           <div
             data-testid="magnifier-stage-empty"
-            className="flex min-h-0 flex-1 items-center justify-center rounded border border-dashed border-[var(--color-editor-border)] text-[11px] text-[var(--color-editor-text-dim)]"
+            className="flex min-h-0 flex-1 items-center justify-center rounded-lg border border-dashed border-[var(--color-editor-border)] text-[11px] text-[var(--color-editor-text-dim)]"
           >
             {states.length === 0
               ? "还没有状态：点下面的「添加状态」加一个"
@@ -165,40 +169,50 @@ export function MagnifierDialog({
           </div>
         ) : (
           <>
-            <input
-              key={`title-${picked}`}
-              data-testid="magnifier-title"
-              defaultValue={state.title ?? ""}
-              placeholder="标题（可以没有）"
-              title="这一个状态最上面那行标题；留空 = 没有标题"
-              className="flex-none rounded border border-[var(--color-editor-border)] bg-black/30 px-1 py-0.5 text-[11px] outline-none"
-              onBlur={(event) => {
-                if (object !== undefined && picked !== undefined) {
-                  setStateTitle(object.id, picked, event.target.value);
-                }
-              }}
-              onKeyDown={(event) => {
-                // Enter = 提交并失焦；Esc 也提交（弹窗会跟着关掉，别把刚敲的字丢了）
-                if (event.key === "Enter" || event.key === "Escape") {
+            {/*
+              标题带：**一块卡片**（与前端那扇窗同款）——左边一条暖黄强调条，
+              与画布上那枚放大镜徽标同色（`SceneLayer` 的 `KIND_MARKER_COLORS.Magnifier`）。
+            */}
+            <div className="flex flex-none items-center gap-3 rounded-lg border border-[var(--color-editor-border)] bg-[var(--color-editor-panel-alt)] px-3 py-2 focus-within:border-[var(--color-editor-accent)]">
+              <span aria-hidden className="h-6 w-1 flex-none rounded-full bg-[#e8c840]" />
+              <input
+                key={`title-${picked}`}
+                data-testid="magnifier-title"
+                defaultValue={state.title ?? ""}
+                placeholder="标题（可以没有）"
+                title="这一个状态最上面那行标题；留空 = 没有标题"
+                className="min-w-0 flex-1 rounded bg-transparent text-center text-[15px] font-semibold text-[var(--color-editor-text)] outline-none placeholder:font-normal placeholder:text-[var(--color-editor-text-dim)] focus:bg-black/20"
+                onBlur={(event) => {
                   if (object !== undefined && picked !== undefined) {
-                    setStateTitle(object.id, picked, event.currentTarget.value);
+                    setStateTitle(object.id, picked, event.target.value);
                   }
-                }
+                }}
+                onKeyDown={(event) => {
+                  // Enter = 提交并失焦；Esc 也提交（弹窗会跟着关掉，别把刚敲的字丢了）
+                  if (event.key === "Enter" || event.key === "Escape") {
+                    if (object !== undefined && picked !== undefined) {
+                      setStateTitle(object.id, picked, event.currentTarget.value);
+                    }
+                  }
 
-                if (event.key === "Enter") {
-                  event.currentTarget.blur();
-                }
-              }}
-            />
+                  if (event.key === "Enter") {
+                    event.currentTarget.blur();
+                  }
+                }}
+              />
+              {/* 右边留一块与强调条同宽的空位：这样标题是**整张卡**居中，不会被那条挤偏 */}
+              <span aria-hidden className="h-6 w-1 flex-none" />
+            </div>
 
             <div className="flex min-h-0 flex-1 gap-2">
               {/*
                 左边：**这个状态的图**。整块就是一个按钮（点哪儿都弹选图框），
                 有图时里面按真实长宽比等比装下；右上角那个 `×` 把图移出（状态还在，只是没图了）。
+                这一格**比面板更暗**（像嵌进相框）——与前端那扇窗同一套层次。
               */}
               <div
                 ref={setStageNode}
-                className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded border border-[var(--color-editor-border)] bg-black/40"
+                className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-lg border border-[var(--color-editor-border)] bg-[#0a0e14]"
               >
                 <button
                   type="button"
@@ -247,26 +261,31 @@ export function MagnifierDialog({
                 )}
               </div>
 
-              {/* 右边：**这个状态的文字描述**（多行纯文本，换行照原样） */}
-              <textarea
-                key={`text-${picked}`}
-                data-testid="magnifier-text"
-                defaultValue={state.text ?? ""}
-                placeholder="文字描述（可以没有，可以换行）"
-                title="这一个状态右边那段文字；留空 = 没有文字。失焦时保存"
-                className="min-h-0 w-[38%] flex-none resize-none rounded border border-[var(--color-editor-border)] bg-black/30 p-1 text-[11px] outline-none"
-                onBlur={(event) => {
-                  if (object !== undefined && picked !== undefined) {
-                    setStateText(object.id, picked, event.target.value);
-                  }
-                }}
-                onKeyDown={(event) => {
-                  // Esc 会把整扇窗关掉（弹窗外壳管的）：先把这一格提交，别丢刚敲的字
-                  if (event.key === "Escape" && object !== undefined && picked !== undefined) {
-                    setStateText(object.id, picked, event.currentTarget.value);
-                  }
-                }}
-              />
+              {/*
+                右边：**这个状态的文字描述**（多行纯文本，换行照原样）。
+                这一格**比面板更亮**（浮起来的一层）——与左边那格「一暗一亮」，一眼分得清。
+              */}
+              <div className="flex min-h-0 w-[38%] flex-none flex-col rounded-lg border border-[var(--color-editor-border)] bg-[var(--color-editor-panel-alt)] focus-within:border-[var(--color-editor-accent)]">
+                <textarea
+                  key={`text-${picked}`}
+                  data-testid="magnifier-text"
+                  defaultValue={state.text ?? ""}
+                  placeholder="文字描述（可以没有，可以换行）"
+                  title="这一个状态右边那段文字；留空 = 没有文字。失焦时保存"
+                  className="min-h-0 flex-1 resize-none rounded-lg bg-transparent p-3 text-[13px] leading-relaxed text-[var(--color-editor-text)] outline-none placeholder:text-[var(--color-editor-text-dim)] focus:bg-black/20"
+                  onBlur={(event) => {
+                    if (object !== undefined && picked !== undefined) {
+                      setStateText(object.id, picked, event.target.value);
+                    }
+                  }}
+                  onKeyDown={(event) => {
+                    // Esc 会把整扇窗关掉（弹窗外壳管的）：先把这一格提交，别丢刚敲的字
+                    if (event.key === "Escape" && object !== undefined && picked !== undefined) {
+                      setStateText(object.id, picked, event.currentTarget.value);
+                    }
+                  }}
+                />
+              </div>
             </div>
           </>
         )}
@@ -281,10 +300,10 @@ export function MagnifierDialog({
             return (
               <span
                 key={index}
-                className={`flex items-center gap-1 rounded border p-0.5 ${
+                className={`flex items-center gap-1 rounded-lg border p-0.5 ${
                   selected
                     ? "border-[var(--color-editor-accent)] bg-[var(--color-editor-accent-dim)]"
-                    : "border-[var(--color-editor-border)] hover:bg-[var(--color-editor-panel-alt)]"
+                    : "border-[var(--color-editor-border)] bg-[var(--color-editor-panel-alt)] hover:border-[var(--color-editor-bar-hover)]"
                 }`}
               >
                 <button
@@ -337,7 +356,7 @@ export function MagnifierDialog({
             type="button"
             data-testid="magnifier-add-state"
             title="加一个空状态（标题 / 图 / 文字都可以之后再填）"
-            className="flex h-[52px] flex-none items-center gap-1 rounded border border-dashed border-[var(--color-editor-border)] px-3 text-[11px] leading-none text-[var(--color-editor-text-dim)] hover:border-[var(--color-editor-accent)] hover:text-[var(--color-editor-text)]"
+            className="flex h-[52px] flex-none items-center gap-1 rounded-lg border border-dashed border-[var(--color-editor-border)] px-3 text-[11px] leading-none text-[var(--color-editor-text-dim)] hover:border-[var(--color-editor-accent)] hover:text-[var(--color-editor-text)]"
             onClick={() => {
               if (object !== undefined) {
                 addState(object.id);

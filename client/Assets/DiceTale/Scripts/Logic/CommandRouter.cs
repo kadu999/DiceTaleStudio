@@ -1135,7 +1135,7 @@ namespace DiceTale
 
             if (!MagnifierReader.TryPickState(obj, out var state))
             {
-                var empty = $"「{obj.name}」还没有可展示的画面（没有状态 / 还没选 / 选中的那个状态还没有图）";
+                var empty = $"「{obj.name}」还没有可展示的画面（没有状态 / 还没选 / 选中的那个状态是空的）";
                 Debug.LogWarning($"[命令] 打开放大镜窗口失败：{empty}");
                 session.SendCommandResult(command, false, empty);
                 return;
@@ -1254,6 +1254,20 @@ namespace DiceTale
             MagnifierStateView state,
             CommandRequest command)
         {
+            // 这一屏**没有图**（纯文字 / 只有标题的线索卡）：不用取图，直接把这一屏铺上去
+            if (string.IsNullOrEmpty(state.Id))
+            {
+                window.Show(state, null);
+                var textOnly = $"显示「{obj.name}」的文字画面";
+                Debug.Log($"[命令] 放大镜窗口：{textOnly}");
+                if (command != null)
+                {
+                    session.SendCommandResult(command, true, effects: new[] { textOnly });
+                }
+
+                return;
+            }
+
             if (imageLoader == null)
             {
                 var noLoader = "前端没有装配取图加载器（Game 上的 ResourceImageLoader）";

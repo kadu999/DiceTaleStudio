@@ -13,6 +13,7 @@ import {
   imageOf,
   magnifierDataOf,
   magnifierImageOf,
+  magnifierStateIsEmpty,
   magnifierStateOf,
   mapDataOf,
   soundDataOf,
@@ -515,6 +516,16 @@ describe("放大镜的读口", () => {
     });
     expect(magnifierImageOf(objectOf(pickedText, "m1")!)).toBeUndefined();
   });
+
+  it("`magnifierStateIsEmpty`：三项都没有内容才算空（有图 / 有标题 / 有文字都不算）", () => {
+    expect(magnifierStateIsEmpty(undefined)).toBe(true);
+    expect(magnifierStateIsEmpty({})).toBe(true);
+    expect(magnifierStateIsEmpty({ title: "" })).toBe(true);
+    expect(magnifierStateIsEmpty({ text: " " })).toBe(false); // 空格也是内容（trim 是命令那边的事）
+    expect(magnifierStateIsEmpty({ title: "线索一" })).toBe(false);
+    expect(magnifierStateIsEmpty({ text: "只有文字" })).toBe(false);
+    expect(magnifierStateIsEmpty(imageState(imageOf_({})))).toBe(false);
+  });
 });
 
 describe("放大镜的解析、迁移与版本", () => {
@@ -616,23 +627,36 @@ describe("放大镜的校验", () => {
     expect(formatIssues(validateScene(sceneWith([stale])))).toMatch(/不在状态列表里/);
   });
 
-  it("选中的那个状态还没有图 = warning（窗口里没有图可放）；没选它就没有这条", () => {
-    const pickedText = sceneWith([
+  it("只有标题 / 文字的状态**不算问题**（纯文字线索卡放得出来）；三项全空才报「是空的」", () => {
+    const textOnly = sceneWith([
       createMagnifierObject({
         name: "放大镜",
         id: "m1",
-        states: [{ title: "只有标题" }, imageState(imageOf_({}))],
+        states: [{ title: "只有标题" }, { text: "只有文字" }, imageState(imageOf_({}))],
         picked: 0,
       }),
     ]);
-    expect(formatIssues(validateScene(pickedText))).toMatch(/还没有图/);
+    expect(hasErrors(validateScene(textOnly))).toBe(false);
+    expect(formatIssues(validateScene(textOnly))).not.toMatch(/是空的/);
 
-    const pickedImage = mutate(pickedText, (draft) => {
+    const pickedText = mutate(textOnly, (draft) => {
       setMagnifierPicked(draft, "m1", 1);
+    });
+    expect(formatIssues(validateScene(pickedText))).not.toMatch(/是空的/);
+
+    // 三项全空（「添加状态」刚加出来、还没填）：这一条要提醒
+    const emptyState = mutate(pickedText, (draft) => {
+      addMagnifierState(draft, "m1");
+    });
+    expect(formatIssues(validateScene(emptyState))).toMatch(/是空的/);
+
+    // 没选它就没有这条
+    const pickedImage = mutate(emptyState, (draft) => {
+      setMagnifierPicked(draft, "m1", 2);
     });
     const issues = validateScene(pickedImage);
     expect(hasErrors(issues)).toBe(false);
-    expect(formatIssues(issues)).not.toMatch(/还没有图/);
+    expect(formatIssues(issues)).not.toMatch(/是空的/);
   });
 });
 

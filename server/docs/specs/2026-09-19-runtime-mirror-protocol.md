@@ -268,7 +268,7 @@ v12 起叫 `Image`）——**只显示整张图**，与精灵的差别只有「�
 |---|---|
 | `Data/SceneModel.cs` | 镜像模型（与 `SceneDoc` 同构）+ `MirrorSettings`（项目级全局设置） |
 | `Data/SceneParser.cs` + `Data/SettingsParser.cs` + `Data/JsonParser.cs` + `Data/GridRle.cs` | 解析场景 / 设置 / RLE 解码（JsonUtility 读不了嵌套数组） |
-| `Data/MagnifierReader.cs` | 放大镜（v21；v22 起是**状态列表**）「现在展示哪一屏」的读取口径（标题 + 图 + 文字）：泛型读取器读不了**数组的第 N 项**，这一小段单独收一处（`MirrorObject` / `SceneParser` 都不动） |
+| `Data/MagnifierReader.cs` | 放大镜（v21；v22 起是**状态列表**）「现在展示哪一屏」的读取口径（标题 + 图 + 文字）：泛型读取器读不了**数组的第 N 项**，这一小段单独收一处（`MirrorObject` / `SceneParser` 都不动）。**没有图也算有东西可展示**（纯文字 / 只有标题的线索卡；`Id` 为空 = 这一屏没有图），只有**三项全空**才返回 false——与编辑器 `magnifierStateIsEmpty` 逐字同一条判据 |
 | `Network/Protocol.cs` | 协议常量、出站 DTO、`ws://…/client` → `http://…` 推导 |
 | `Network/ServerConnection.cs` | WS 连接（未开闸时握手被拒 = 正常现象，只提示一次并重试） |
 | `Network/ClientSession.cs` | 握手 / 心跳 / 把消息变成事件 |
@@ -282,4 +282,4 @@ v12 起叫 `Image`）——**只显示整张图**，与精灵的差别只有「�
 | `Presentation/VideoOverlay.cs` | 视频层：按 URL 放（本地资源包优先、否则服务端原始字节），与宿主对象共享位置 / 尺寸 / sortingOrder；首帧就绪后隐藏宿主 Renderer，停止或解码失败时恢复 |
 | `Presentation/VideoBlend.cs` | 视频混合层：视频那一路 `VideoPlayer` → `RenderTexture`（图片那一路走 `ResourceImageLoader` 取贴图），用 `DiceTale/VideoBlend`（`lerp(B, A, mask.a)`）与一张 CPU 遮罩混合；遮罩初始**整张不透明**，按 `erase_video_mask` 擦、按 `fill_video_mask` 整张填 1 / 0，**两者按收到的先后重放**（尺寸按素材像素尺寸，与编辑器同式）；`Presentation/VideoBlendLayer.cs` 是它的渲染器（`GroundLayer` 的第三个子类） |
 | `Presentation/ResourceImageLoader.cs` | 按逻辑 ID 取图（带缓存 / 去重 / 失败记忆） |
-| `Presentation/UI/MagnifierWindow.cs` | 放大镜那扇窗（v21；v22 起是**一屏画面**，代码构建）：全屏半透明底 + 居中一张「线索卡」——三层明暗（遮底 → 卡片 → 图那格更暗 / 文字那格更亮）+ 1px 圆角描边（圆角贴图自己造，Unity 6 里内置的 `UI/Skin/*.psd` 已拿不到）+ 标题带的暖黄强调条；上面一行标题（有才占位）、下面左边一张等比放大的图（一格图走 `SpriteLayer.UvRectOf` 那一处唯一的 y 翻转）、右边一段文字（长文自动缩字号）；**没有按钮、不吃点击**，只能由 `open_magnifier` / `close_magnifier` 开关，场景落地时刷新或关掉 |
+| `Presentation/UI/MagnifierWindow.cs` | 放大镜那扇窗（v21；v22 起是**一屏画面**，代码构建）：全屏半透明底 + 居中一张「线索卡」——三层明暗（遮底 → 卡片 → 图那格更暗 / 文字那格更亮）+ 1px 圆角描边（圆角贴图自己造，Unity 6 里内置的 `UI/Skin/*.psd` 已拿不到）+ 标题带的暖黄强调条与**居中标题**；上面一行标题（有才占位）、下面左边一张等比放大的图（一格图走 `SpriteLayer.UvRectOf` 那一处唯一的 y 翻转）、右边一段文字（长文自动缩字号）；**没有图 / 没有文字时对应那格整个收起来**（另一边铺满整行）；**没有按钮、不吃点击**，只能由 `open_magnifier` / `close_magnifier` 开关，场景落地时刷新或关掉 |

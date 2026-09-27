@@ -8,7 +8,8 @@ import {
   supportsObjectComponent,
   createAssetMetas,
   magnifierDataOf,
-  magnifierImageOf,
+  magnifierStateIsEmpty,
+  magnifierStateOf,
   mapDataOf,
   serializeAssetMetaFile,
   videoBlendDataOf,
@@ -833,11 +834,12 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
   };
 
   /**
-   * 找出「能弹放大镜窗口」的对象：当前场景里挂着 `Magnifier` 组件、且**选中的那个状态有图**
-   * 的对象（下标落在列表里）。
+   * 找出「能弹放大镜窗口」的对象：当前场景里挂着 `Magnifier` 组件、且**选中的那个状态里有东西**
+   * （标题 / 图 / 文字至少一项）的对象。
    *
    * 与 `videoTargetOf` 同一个口径：找不到就写一条**说明原因**的运行日志并返回 null（不静默失败）。
-   * 「能展示」的判据只有 `supportsMagnifier` + `magnifierImageOf` 两处。
+   * 「能展示」的判据只有 `supportsMagnifier` + `magnifierStateIsEmpty` 两处——
+   * **没有图也能展示**（纯文字线索卡），三项全空才点不动。
    */
   const magnifierTargetOf = (objectId: string, what: string): GameObjectDoc | null => {
     const object = findObjectById(objectId);
@@ -858,8 +860,14 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
       return null;
     }
 
-    if (magnifierImageOf(object) === undefined) {
-      pushLog(makeLog("warn", `${what}失败：「${object.name}」选中的那个状态还没有图（窗口里给它挑一张）`));
+    const state = magnifierStateOf(object);
+    if (state === undefined) {
+      pushLog(makeLog("warn", `${what}失败：「${object.name}」还没选要展示哪一个状态（窗口下排点一个）`));
+      return null;
+    }
+
+    if (magnifierStateIsEmpty(state)) {
+      pushLog(makeLog("warn", `${what}失败：「${object.name}」选中的那个状态是空的（标题 / 图 / 文字都没有）`));
       return null;
     }
 
@@ -872,7 +880,7 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
     return (
       object !== undefined &&
       supportsObjectComponent(object, DEFAULT_SLOT_COMPONENT.magnifier) &&
-      magnifierImageOf(object) !== undefined
+      !magnifierStateIsEmpty(magnifierStateOf(object))
     );
   };
 
