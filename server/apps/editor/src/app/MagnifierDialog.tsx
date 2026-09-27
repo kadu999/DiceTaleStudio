@@ -332,7 +332,9 @@ export function MagnifierDialog({
                     <button
                       type="button"
                       data-testid="magnifier-video-clear"
-                      className={`${MEDIA_BUTTON_CLASS} ${MEDIA_BUTTON_OFF}`}
+                      disabled={structureLocked}
+                      title={structureLocked ? STRUCTURE_LOCK_HINT : undefined}
+                      className={`${MEDIA_BUTTON_CLASS} ${MEDIA_BUTTON_OFF}${structureLockedClass(structureLocked)}`}
                       onClick={() => {
                         if (object !== undefined && picked !== undefined) {
                           setStateVideo(object.id, picked, null);
@@ -383,9 +385,10 @@ export function MagnifierDialog({
                   <button
                     type="button"
                     data-testid="magnifier-image-clear"
+                    disabled={structureLocked}
                     aria-label="移出这张图"
-                    title="把这张图移出这个状态（状态还在，只是没图了）"
-                    className="absolute right-1 top-1 z-10 rounded border border-[#bc9b60] bg-[#e8d8b4] px-1 text-[12px] leading-none text-[#8a6d3b] after:content-['×'] hover:border-[var(--color-editor-danger)] hover:text-[var(--color-editor-danger)]"
+                    title={structureLocked ? STRUCTURE_LOCK_HINT : "把这张图移出这个状态（状态还在，只是没图了）"}
+                    className={`absolute right-1 top-1 z-10 rounded border border-[#bc9b60] bg-[#e8d8b4] px-1 text-[12px] leading-none text-[#8a6d3b] after:content-['×'] hover:border-[var(--color-editor-danger)] hover:text-[var(--color-editor-danger)]${structureLockedClass(structureLocked)}`}
                     onClick={() => {
                       if (object !== undefined) {
                         setStateImage(object.id, picked, null);
