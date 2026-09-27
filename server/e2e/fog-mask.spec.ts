@@ -1,6 +1,7 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import {
   COMPONENT,
+  FOG_DEFAULT_SORTING_ORDER,
   dropProject,
   enterEditor,
   expandRuns,
@@ -107,7 +108,7 @@ test.describe("战争雾 Mask 窗口", () => {
       await expect(fog.getByTestId("fog-mask-open")).toBeDisabled();
       await expect
         .poll(() => readSceneFog(request, project, SCENE))
-        .toEqual({ mapId, enabled: true, regions: [] });
+        .toEqual({ mapId, enabled: true, regions: [], sortingOrder: FOG_DEFAULT_SORTING_ORDER });
 
       // 关掉：组件总在（它是雾对象的数据本体），只是 enabled=false、雾区设置收起来
       await fog.getByTestId("fog-enable").uncheck();
@@ -115,7 +116,7 @@ test.describe("战争雾 Mask 窗口", () => {
       await expect(fog.getByTestId("fog-mask-open")).toHaveCount(0);
       await expect
         .poll(() => readSceneFog(request, project, SCENE))
-        .toEqual({ mapId, enabled: false, regions: [] });
+        .toEqual({ mapId, enabled: false, regions: [], sortingOrder: FOG_DEFAULT_SORTING_ORDER });
 
       // 打开并指定「区域1」：绑定落进场景文件
       await fog.getByTestId("fog-enable").check();
@@ -126,9 +127,34 @@ test.describe("战争雾 Mask 窗口", () => {
       await fog.getByTestId("fog-enable").uncheck();
       await expect
         .poll(() => readSceneFog(request, project, SCENE))
-        .toEqual({ mapId, enabled: false, regions: [1] });
+        .toEqual({ mapId, enabled: false, regions: [1], sortingOrder: FOG_DEFAULT_SORTING_ORDER });
       await fog.getByTestId("fog-enable").check();
       await expect(fog.getByTestId("fog-region-1")).toHaveAttribute("data-bound", "true");
+    } finally {
+      await dropProject(request, project);
+    }
+  });
+
+  test("雾层显示顺序可配置：默认最前面，改小后写进文档", async ({ page, request }) => {
+    const project = await newProject(request);
+    try {
+      const mapDoc = mapObjectDoc(project, SCENE, "网格地图", MAP_SIZE, GRID);
+      const mapId = String(mapDoc["id"]);
+      await seedProjectDoc(request, project, [
+        sceneDoc(SCENE, [mapDoc, fogObjectDoc(mapDoc, "战争雾", { regions: [1] })]),
+      ]);
+      await uploadSceneImage(request, project, SCENE, solidPng(4, 4, [60, 60, 60]));
+      await openFogObject(page, project);
+
+      // 默认最前面；改成负数（把雾压到对象后面），值落进场景文件
+      const sorting = page.getByTestId("fog-sorting-order");
+      await expect(sorting).toHaveValue(String(FOG_DEFAULT_SORTING_ORDER));
+
+      await sorting.fill("-3");
+      await sorting.blur();
+      await expect
+        .poll(() => readSceneFog(request, project, SCENE))
+        .toEqual({ mapId, enabled: true, regions: [1], sortingOrder: -3 });
     } finally {
       await dropProject(request, project);
     }

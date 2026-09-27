@@ -6,7 +6,12 @@ import {
   SLOT_COMPONENT_TYPES,
 } from "./components";
 import { defaultDataOf } from "./component-specs";
-import { DEFAULT_SLOT_COMPONENT, DEFAULT_SOUND_LAYER, supportsSpriteSheet } from "./presets";
+import {
+  DEFAULT_SLOT_COMPONENT,
+  DEFAULT_SOUND_LAYER,
+  FOG_DEFAULT_SORTING_ORDER,
+  supportsSpriteSheet,
+} from "./presets";
 import type { ComponentSlot } from "./presets";
 import type {
   ComponentDoc,
@@ -525,13 +530,14 @@ export function ensureVideoBlendData(
  * 战争雾数据的 draft；缺实例时，只有具备战争雾能力的对象才创建默认组件。
  *
  * 不是 `Fog` 对象返回 `undefined`（预设表 `OBJECT_PRESETS`：只有战争雾对象声明了 fog 槽位）。
- * 默认数据 `{ mapId: "", enabled: true, regions: [] }`：`mapId` 空着等用户在面板上选地图
- * （校验会报 error 直到选上）。
+ * 默认数据 `{ mapId: "", enabled: true, regions: [], sortingOrder: 最前面 }`：`mapId` 空着
+ * 等用户在面板上选地图（校验会报 error 直到选上）。
  */
 export function ensureFogData(object: Draft<GameObjectDoc>): Draft<FogOfWarDataDoc> | undefined {
   return ensureSlotData<FogOfWarDataDoc>(object, "fog", () => ({
     mapId: "",
     enabled: true,
     regions: [],
+    sortingOrder: FOG_DEFAULT_SORTING_ORDER,
   }));
 }

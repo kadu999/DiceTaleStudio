@@ -23,7 +23,15 @@ export type LeftTab = "assets" | "hierarchy";
  * 要有意制造「旧版本文件」时别用它：自己写那个版本号（`formatVersion: 4` 之类），
  * 并预期编辑器会把它升上来回写一次。
  */
-export const CURRENT_SCENE_FORMAT_VERSION = 31;
+export const CURRENT_SCENE_FORMAT_VERSION = 32;
+
+/**
+ * 战争雾雾层的**默认显示顺序**（v32 起可配置）：最前面。
+ *
+ * 与 `@dts/document` 的 `FOG_DEFAULT_SORTING_ORDER` 同值——e2e 不引用内部包，所以这里**复述**。
+ * 造雾对象 / 断言雾组件数据时用它，免得散落魔法数字。
+ */
+export const FOG_DEFAULT_SORTING_ORDER = 32767;
 
 /**
  * **承载对象特性的组件类型名**（v19 起特性住在 `object.components[]` 里）。
@@ -415,7 +423,14 @@ export function fogObjectDoc(
   return withComponent(
     gameObjectDoc(name, "Fog", { x: 0, y: 0 }),
     COMPONENT.fogOfWar,
-    { mapId: String(map["id"]), enabled: true, regions: [], ...patch },
+    {
+      mapId: String(map["id"]),
+      enabled: true,
+      regions: [],
+      // v32 起雾层显示顺序可配置：与编辑器 `createFogObject` 的缺省一致（最前面）
+      sortingOrder: FOG_DEFAULT_SORTING_ORDER,
+      ...patch,
+    },
   );
 }
 
@@ -719,7 +734,7 @@ export async function readSceneMap(
 }
 
 /**
- * 读场景文件里**战争雾对象**的**战争雾配置**（引用哪张地图 + 总开关 + 指定的雾区位）。
+ * 读场景文件里**战争雾对象**的**战争雾配置**（引用哪张地图 + 总开关 + 指定的雾区位 + 显示顺序）。
  *
  * v27 起雾是独立的 `Fog` 对象：这里按 `kind: "Fog"` 找那个对象上的 `FogOfWar` 组件。
  * 没有雾对象就是 `undefined`（= 这个场景没开战争雾）。
@@ -728,10 +743,12 @@ export async function readSceneFog(
   request: APIRequestContext,
   project: string,
   sceneName: string,
-): Promise<{ mapId?: string; enabled?: boolean; regions?: readonly number[] } | undefined> {
+): Promise<
+  { mapId?: string; enabled?: boolean; regions?: readonly number[]; sortingOrder?: number } | undefined
+> {
   const file = await readSceneFile(request, project, sceneName);
   return componentDataOf(file, { kind: "Fog" }, COMPONENT.fogOfWar) as
-    | { mapId?: string; enabled?: boolean; regions?: readonly number[] }
+    | { mapId?: string; enabled?: boolean; regions?: readonly number[]; sortingOrder?: number }
     | undefined;
 }
 

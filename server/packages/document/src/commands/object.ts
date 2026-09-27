@@ -3,7 +3,13 @@ import type { Draft } from "immer";
 import { gridSizeFromImage } from "@dts/grid";
 // 特性的读写一律走访问器（「数据存在哪个组件里」只有 access.ts 知道）
 import { canAddOptionalObjectComponent, canRepairObjectComponent, componentTypeForObjectSlot, imageLayerDataOf, mapDataOf, objectImage, objectSupportsSpriteSheet, removeFeature, sortingOrderOf, writeFeature } from "../access";
-import { componentForSlot, DEFAULT_SLOT_COMPONENT, DEFAULT_SOUND_LAYER, SPRITE_COMPONENT } from "../presets";
+import {
+  componentForSlot,
+  DEFAULT_SLOT_COMPONENT,
+  DEFAULT_SOUND_LAYER,
+  FOG_DEFAULT_SORTING_ORDER,
+  SPRITE_COMPONENT,
+} from "../presets";
 import { DEFAULT_OBJECT_SCALE, clampObjectScale, collapseScale } from "../scale";
 import {
   DEFAULT_SORTING_ORDER,
@@ -78,7 +84,7 @@ export function repairObjectComponent(
           type === "Magnifier"
           ? { states: [] }
           : // 战争雾（v27：独立的 Fog 对象）：默认还没选地图，由用户在面板上选
-            { mapId: "", enabled: true, regions: [] };
+            { mapId: "", enabled: true, regions: [], sortingOrder: FOG_DEFAULT_SORTING_ORDER };
   writeFeature(object, type, data);
   return true;
 }

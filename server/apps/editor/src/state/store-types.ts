@@ -866,6 +866,14 @@ export interface EditorStoreState {
    */
   setFogEnabled(fogObjectId: string, enabled: boolean): boolean;
   /**
+   * 改雾层的**显示顺序**（v32 起可配置）：大的画在前面。
+   *
+   * 写在 `FogOfWar` 组件的 data 里（取整 + 夹 `±FOG_SORTING_ORDER_LIMIT`），
+   * 与对象的显示顺序同一套提交规则：失焦 / 回车生效、连续输入合并成一条撤销记录。
+   * 默认值 = **最前面**（`FOG_DEFAULT_SORTING_ORDER`），调小可以让别的对象盖住雾。
+   */
+  setFogSortingOrder(fogObjectId: string, sortingOrder: number): boolean;
+  /**
    * 战争雾：在 Mask 窗口里**擦一笔**（运行态才下发给前端）。
    *
    * 拖动中是分批调用的：每一批的点都记进 `fogReveal`（相邻批次并成一条完整轨迹），

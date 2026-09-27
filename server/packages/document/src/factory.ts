@@ -5,7 +5,7 @@ import {
 } from "./commands";
 import { featureComponent } from "./components";
 // 特性缺省值与缺省承载组件住在 `presets.ts`（那张表是「哪个 kind 允许哪个槽位」的唯一归属地）
-import { DEFAULT_SLOT_COMPONENT, DEFAULT_SOUND_LAYER } from "./presets";
+import { DEFAULT_SLOT_COMPONENT, DEFAULT_SOUND_LAYER, FOG_DEFAULT_SORTING_ORDER } from "./presets";
 // 全局设置的缺省值住在 schema 里（那里也是「形状 + 默认值」的家）：新建工程与读老文件
 // 补齐共用同一份，不会出现「新建的缺一样、读出来的缺另一样」
 import { defaultProjectSettings } from "./schema";
@@ -120,6 +120,7 @@ export function createFogObject(input: {
         mapId: input.mapId,
         enabled: true,
         regions: [],
+        sortingOrder: FOG_DEFAULT_SORTING_ORDER,
       }),
     ],
   };

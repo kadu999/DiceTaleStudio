@@ -216,33 +216,51 @@ export function TextureField({ object }: { readonly object: GameObjectDoc }): Re
 }
 
 /**
- * **显示顺序**（渲染层属性，v26 起住在渲染组件里）：大的画在前面（盖住小的）。
+ * **显示顺序输入框**（通用件）：大的画在前面（盖住小的）。
  *
- * 从 `sortingOrderOf` 读（v28 起一律取图片层的 data），经 store 的
- * `setRenderSortingOrder` 写回。这一行只出现在两个渲染组（图片层 / 精灵层）里：
- * **没有图片层的对象没有这个参数**。
- *
+ * 图片层（`ImageLayer` / `SpriteLayer`）与战争雾（`FogOfWar`，v32 起）都用它——
  * 提交规则与缩放 / 角度同一套：失焦 / 回车生效、Esc 还原、连续输入合并成一条撤销记录。
+ * 取值口径与范围由调用方给（`value` / `limit`），写回也由调用方给（`onCommit`）；
+ * 组件本身不碰 store。
  */
-export function SortingOrderField({ object }: { readonly object: GameObjectDoc }): React.JSX.Element {
-  const setRenderSortingOrder = useEditorStore((state) => state.setRenderSortingOrder);
+export function SortingOrderInput({
+  value,
+  resetKey,
+  testId,
+  ariaLabel,
+  title = "大的画在前面（盖住小的）；相同则按场景对象列表里的先后",
+  limit = SORTING_ORDER_LIMIT,
+  onCommit,
+}: {
+  readonly value: number;
+  /** 换对象 / 换雾对象时把框里的草稿重置（同一个 id 内不重置，免得冲掉正在敲的值）。 */
+  readonly resetKey: string;
+  readonly testId: string;
+  readonly ariaLabel: string;
+  readonly title?: string;
+  /** 取值范围（`±limit`）：对象用 `SORTING_ORDER_LIMIT`，雾用它自己的上限。 */
+  readonly limit?: number;
+  readonly onCommit: (next: number) => void;
+}): React.JSX.Element {
   const inputRef = useRef<HTMLInputElement>(null);
-  const current = sortingOrderOf(object);
-  const [draft, setDraft] = useState(String(current));
+  const [draft, setDraft] = useState(String(value));
 
   useEffect(() => {
     // 正在输入的框不被 store 回灌（否则提交后触发的同步会把刚敲的值冲掉）
     if (document.activeElement !== inputRef.current) {
-      setDraft(String(current));
+      setDraft(String(value));
     }
-  }, [object.id, current]);
+  }, [resetKey, value]);
+
+  const clamped = (next: number): number =>
+    Math.min(limit, Math.max(-limit, Math.round(next)));
 
   const commit = (): void => {
     const parsed = Number.parseInt(draft, 10);
-    const next = Number.isFinite(parsed) ? parsed : current;
-    setRenderSortingOrder(object.id, next);
+    const next = Number.isFinite(parsed) ? parsed : value;
+    onCommit(next);
     // 提交后回到**文档里实际采用的值**（会被取整 / 夹取），否则框里留着用户敲的原始文本
-    setDraft(String(Math.min(SORTING_ORDER_LIMIT, Math.max(-SORTING_ORDER_LIMIT, Math.round(next)))));
+    setDraft(String(clamped(next)));
   };
 
   return (
@@ -250,14 +268,14 @@ export function SortingOrderField({ object }: { readonly object: GameObjectDoc }
       <input
         ref={inputRef}
         value={draft}
-        data-testid="inspector-object-sorting"
-        aria-label="显示顺序"
+        data-testid={testId}
+        aria-label={ariaLabel}
         inputMode="numeric"
         type="number"
         step="1"
-        min={-SORTING_ORDER_LIMIT}
-        max={SORTING_ORDER_LIMIT}
-        title="大的画在前面（盖住小的）；相同则按场景对象列表里的先后"
+        min={-limit}
+        max={limit}
+        title={title}
         className="min-w-0 flex-1 rounded border border-[var(--color-editor-border)] bg-black/30 px-1 py-0.5 font-mono text-[11px] outline-none"
         onChange={(event) => setDraft(event.target.value)}
         onBlur={commit}
@@ -266,11 +284,32 @@ export function SortingOrderField({ object }: { readonly object: GameObjectDoc }
             commit();
             event.currentTarget.blur();
           } else if (event.key === "Escape") {
-            setDraft(String(current));
+            setDraft(String(value));
           }
         }}
       />
     </FieldRow>
+  );
+}
+
+/**
+ * **显示顺序**（渲染层属性，v26 起住在渲染组件里）：大的画在前面（盖住小的）。
+ *
+ * 从 `sortingOrderOf` 读（v28 起一律取图片层的 data），经 store 的
+ * `setRenderSortingOrder` 写回。这一行只出现在两个渲染组（图片层 / 精灵层）里：
+ * **没有图片层的对象没有这个参数**。
+ */
+export function SortingOrderField({ object }: { readonly object: GameObjectDoc }): React.JSX.Element {
+  const setRenderSortingOrder = useEditorStore((state) => state.setRenderSortingOrder);
+
+  return (
+    <SortingOrderInput
+      value={sortingOrderOf(object)}
+      resetKey={object.id}
+      testId="inspector-object-sorting"
+      ariaLabel="显示顺序"
+      onCommit={(next) => setRenderSortingOrder(object.id, next)}
+    />
   );
 }
 

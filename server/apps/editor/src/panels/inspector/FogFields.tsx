@@ -1,7 +1,15 @@
 import { PAINTABLE_MASKS, maskToLabel, regionsToMask } from "@dts/grid";
-import { fogOf, isFogEnabled, mapDataOf, type GameObjectDoc } from "@dts/document";
+import {
+  FOG_SORTING_ORDER_LIMIT,
+  fogOf,
+  fogSortingOrderOf,
+  isFogEnabled,
+  mapDataOf,
+  type GameObjectDoc,
+} from "@dts/document";
 import { useEditorStore } from "../../state/editor-store";
 import { FieldRow } from "./fields";
+import { SortingOrderInput } from "./object-fields";
 
 /**
  * 战争雾的**编辑区**：放进属性面板的「战争雾」分组里（分组标题由外面给，这里只出行）。
@@ -11,7 +19,9 @@ import { FieldRow } from "./fields";
  * 一张地图最多一个雾对象（校验强制）。
  *
  * 整组由**总开关**管着：关着时只留那一个开关，打开以后才露出雾区设置——
- * 「没开战争雾的雾对象」不该摆着一排用不上的按钮。这个开关是**场景文档数据**
+ * 「没开战争雾的雾对象」不该摆着一排用不上的按钮。打开后还给一行**雾层显示顺序**
+ * （`FogOfWar.sortingOrder`，v32 起可配置，缺省最前面——只有真会生成雾层时它才有意义）。
+ * 这个开关是**场景文档数据**
  * （`FogOfWar.enabled`，可撤销、跟着场景存盘下发）：**只有开着前端才生成那一层雾**，
  * 所以它不能记在浏览器本地——那是「新旧看到的不是同一件事」的老 bug。
  *
@@ -24,6 +34,7 @@ export function FogFields({ object }: { readonly object: GameObjectDoc }): React
   const setFogMap = useEditorStore((state) => state.setFogMap);
   const setFogRegions = useEditorStore((state) => state.setFogRegions);
   const setFogEnabled = useEditorStore((state) => state.setFogEnabled);
+  const setFogSortingOrder = useEditorStore((state) => state.setFogSortingOrder);
   const openFogMask = useEditorStore((state) => state.openFogMask);
 
   const fog = fogOf(object);
@@ -79,6 +90,17 @@ export function FogFields({ object }: { readonly object: GameObjectDoc }): React
 
       {!enabled || mapId.length === 0 ? null : (
         <>
+          {/* 雾层的显示顺序（v32 起可配置）：默认最前面，调小可以让别的对象盖住雾 */}
+          <SortingOrderInput
+            value={fogSortingOrderOf(object)}
+            resetKey={object.id}
+            testId="fog-sorting-order"
+            ariaLabel="雾层显示顺序"
+            title="大的画在前面（盖住小的）；雾默认在最前面，调小可以让别的对象盖住雾"
+            limit={FOG_SORTING_ORDER_LIMIT}
+            onCommit={(next) => setFogSortingOrder(object.id, next)}
+          />
+
           <FieldRow label="指定雾区">
             <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
               {PAINTABLE_MASKS.map((bit) => {

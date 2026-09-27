@@ -15,8 +15,9 @@ namespace DiceTale
     /// 挂在**本组件所在 GameObject 下**，位置 / 旋转 / 缩放自动跟着雾对象走，不用谁替它摆一遍；
     /// 尺寸交给子物体上的 <see cref="ImageLayer"/> 烘进网格（世界尺寸 = 被引用地图的显示图声明
     /// 尺寸 × 雾对象 scale，由调用方乘好），离地 = 父级抬升 + <see cref="OverlayLift"/>；
-    /// 显示顺序取 <see cref="SortingOrder"/>（最前面）——未探索的地方连地图上的对象一起盖住
-    /// （`sortingOrder` 是全局的，挂成子物体不改变这一点）。
+    /// 显示顺序取组件数据里的 `sortingOrder`（v23 起可配置，缺省**最前面**——未探索的地方
+    /// 连地图上的对象一起盖住，调小则让别的对象盖住雾）；`sortingOrder` 是全局的，
+    /// 挂成子物体不改变这一点。
     ///
     /// **子物体只在三个条件都满足时才存在**，每次收到场景推送都重新判断（<see cref="Apply"/>）：
     /// 被引用地图的数据到了（方法参数 `map` 非 null）、`FogOfWar.enabled`（编辑器那个总开关）
@@ -89,15 +90,6 @@ namespace DiceTale
 
         /// <summary>渲染子物体的名字（一眼看出层级里多出来的这一块是什么）。</summary>
         private const string OverlayName = "FogOverlay";
-
-        /// <summary>
-        /// 雾层的显示顺序：**盖在所有东西前面**（未探索 = 连上面的令牌一起看不见）。
-        ///
-        /// 文档里的 `sortingOrder` 是给对象自己排前后用的（默认范围很小），雾不该跟它们比大小；
-        /// 取 `short.MaxValue`（Unity 的 `sortingOrder` 是 16 位有符号），实际就是「最前面」。
-        /// 已经揭示的地方雾是透明的，所以不会挡住该看见的东西。
-        /// </summary>
-        private const int SortingOrder = short.MaxValue;
 
         /// <summary>
         /// 雾层比自己那张地图高多少（**世界单位**）：只求比地图抬升高一档、别跟地图共面。
@@ -191,8 +183,8 @@ namespace DiceTale
         /// <paramref name="worldWidth"/> / <paramref name="worldHeight"/> 是**雾面片的世界尺寸**
         /// （= 被引用地图的显示图声明尺寸 × 雾对象 scale × <see cref="SceneObjectView.GlobalScale"/>，
         /// 调用方已经算好），雾面片与它同大小；<paramref name="mapLift"/> 是调用方给这一层的离地抬升，
-        /// 雾层在它的基础上再加 <see cref="OverlayLift"/>。雾层**恒定取最前面**（<see cref="SortingOrder"/>，
-        /// 未探索要连排得比地图还高的对象一起盖住），不再需要调用方交代对象的显示顺序。
+        /// 雾层在它的基础上再加 <see cref="OverlayLift"/>。显示顺序取 `fogData.sortingOrder`
+        /// （v23 起可配置，缺省最前面：未探索要连排得比地图还高的对象一起盖住）。
         /// </summary>
         public void Apply(MirrorMap map, MirrorImage mapImage, MirrorFog fogData, float worldWidth, float worldHeight, float mapLift)
         {
@@ -222,7 +214,7 @@ namespace DiceTale
             {
                 // 白色染色 = 原样显示（雾色已经在遮罩里了）；离地 = 父级抬升 + OverlayLift，
                 // 世界高度与以前「同级、按同一份数值摆」逐字一致（x/z 留在局部原点，跟随父级）
-                overlayRenderer.Apply(DisplayTexture, worldWidth, worldHeight, Color.white, SortingOrder, mapLift + OverlayLift);
+                overlayRenderer.Apply(DisplayTexture, worldWidth, worldHeight, Color.white, fogData.sortingOrder, mapLift + OverlayLift);
             }
         }
 

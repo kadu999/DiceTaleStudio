@@ -123,8 +123,20 @@ namespace DiceTale
         /// `Magnifier` 的 data 里 `images` 换成 `states`（每项 = 标题 + 图 + 文字，三项都可没有）。
         /// 老前端（v21）按 `images` 读 → 读不到（那扇窗里没图），照旧 +1；这类不兼容由握手
         /// close `4002` 挡住。**两条命令与其余消息一个字节都没动。**
+        ///
+        /// v23（2026-09-27）：**战争雾的显示顺序可配置**（与文档格式 v32 同一批）——`FogOfWar`
+        /// 的 data 多一项 `sortingOrder`（int，缺省 = 最前面）。v23 之前前端把雾层写死在
+        /// `short.MaxValue`；老前端（v22）不认这一项 → 按缺省当 0 处理（遮挡顺序错乱），
+        /// 照旧 +1；这类不兼容由握手 close `4002` 挡住。**命令那一组一个字节都没动。**
         /// </summary>
-        public const int Version = 22;
+        public const int Version = 23;
+
+        /// <summary>
+        /// 战争雾雾层显示顺序的**缺省值**（v23 起）：**最前面**（`short.MaxValue`）。
+        /// 与协议载荷 / 文档的缺省同值，由服务端契约测试保证一致；老载荷少发 `sortingOrder`
+        /// 时前端按它兜底（与 v23 之前的写死值逐字相同，画面不变）。
+        /// </summary>
+        public const int FogDefaultSortingOrder = 32767;
 
         /// <summary>对象特性组件的类型名（v9 起）。与服务端 `@dts/protocol` 的 `COMPONENT_TYPE` 逐字一致。</summary>
         public static class ComponentType
@@ -157,7 +169,8 @@ namespace DiceTale
             public const string VideoBlend = "VideoBlend";
             /// <summary>
             /// 战争雾：**独立组件，挂在独立的 `Fog` 对象上**（v13 起从 `GridMap` 拆出；v15 起雾自身成对象）。
-            /// `{ mapId, enabled, regions }`：`mapId` 引用被雾罩住的那张地图（地图那边仍是 `GridMap`）。
+            /// `{ mapId, enabled, regions, sortingOrder }`：`mapId` 引用被雾罩住的那张地图
+            /// （地图那边仍是 `GridMap`）；`sortingOrder`（v23 起）是雾层显示顺序，缺省最前面。
             /// </summary>
             public const string FogOfWar = "FogOfWar";
         }

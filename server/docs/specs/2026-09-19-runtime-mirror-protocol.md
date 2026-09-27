@@ -147,7 +147,7 @@
 | 组件 `type` | 前端行为 |
 |---|---|
 | `GridMap` | **网格数据**（v16 起是贴图上的可选组件）：`data` = `{grid, rowOrder, cells}`。贴图在对象的 `ImageLayer` 里，网格线以后画在这里 |
-| `FogOfWar` | **战争雾**（v15 起挂在独立的 `Fog` 对象上）：`data` = `{ mapId, enabled, regions }`。`mapId` 引用被罩住的**带网格的贴图**；`enabled` 总开关（缺省算开）；`regions` 哪几个「区域位」算雾区。**只有 `mapId` 有效、`enabled && regions.length > 0` 前端才建那一层雾**；**哪里被揭示了不在数据里**——那是运行态，由 `erase_mask` / `reveal_fog_region` 驱动，不写文档、也不随 `scene_sync` 回来 |
+| `FogOfWar` | **战争雾**（v15 起挂在独立的 `Fog` 对象上）：`data` = `{ mapId, enabled, regions, sortingOrder }`（`sortingOrder` 是 **v23** 加的可配置显示顺序，缺省最前面）。`mapId` 引用被罩住的**带网格的贴图**；`enabled` 总开关（缺省算开）；`regions` 哪几个「区域位」算雾区。**只有 `mapId` 有效、`enabled && regions.length > 0` 前端才建那一层雾**；**哪里被揭示了不在数据里**——那是运行态，由 `erase_mask` / `reveal_fog_region` 驱动，不写文档、也不随 `scene_sync` 回来 |
 | `ImageLayer` | **贴图对象 / 网格地图**自己那张图（`data` = `{id, width, height, sortingOrder}`——整张铺满） |
 | `SpriteLayer` | **精灵对象**自己那张图（`data` = `{id, width, height, sprite?, spriteGrid?, sortingOrder}`；后两项是 **v10 的子图**） |
 | `PlaySound` | **不建可见物**：数据留在镜像里（`play_sound` 时从 `data.picked` 取播哪一条） |

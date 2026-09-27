@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   COMPONENT_TYPE,
+  DEFAULT_FOG_SORTING_ORDER,
   PROTOCOL_VERSION,
   clientToServerSchema,
   createRequestId,
@@ -138,11 +139,13 @@ describe("协议：场景（镜像的那份对象数据）", () => {
         objects: [mapObjectWith(feature(COMPONENT_TYPE.fog, fog as Record<string, unknown>))],
       });
 
-    // 老视角（协议 v3 及更早）里只有 regions：「有 fog」就等于「开着」
+    // 老视角（协议 v3 及更早）里只有 regions：「有 fog」就等于「开着」；
+    // v23 起缺 sortingOrder 时兜底到「最前面」（与 v32 之前写死的值同值）
     expect(featureData(parseWithFog({ regions: [8] }).objects[0], COMPONENT_TYPE.fog)).toEqual({
       mapId: "",
       enabled: true,
       regions: [8],
+      sortingOrder: DEFAULT_FOG_SORTING_ORDER,
     });
 
     // 编辑器关掉了：前端看到的就是关着（**不是**建了再藏起来）
@@ -152,6 +155,20 @@ describe("协议：场景（镜像的那份对象数据）", () => {
       mapId: "map_01",
       enabled: false,
       regions: [8],
+      sortingOrder: DEFAULT_FOG_SORTING_ORDER,
+    });
+
+    // v23 起显示顺序可配置：显式值原样传给前端
+    expect(
+      featureData(
+        parseWithFog({ mapId: "map_01", enabled: true, regions: [1], sortingOrder: 7 }).objects[0],
+        COMPONENT_TYPE.fog,
+      ),
+    ).toEqual({
+      mapId: "map_01",
+      enabled: true,
+      regions: [1],
+      sortingOrder: 7,
     });
   });
 

@@ -11,13 +11,13 @@
 |---|---|
 | 语言 / 运行时 | TypeScript 5.9 + ESM，Node 22+（后端跑在 `tsx` 上，无编译产物） |
 | 包管理 | pnpm workspace（`apps/*` + `packages/*`，共 8 个包） |
-| 文档格式版本 | `DOCUMENT_FORMAT_VERSION = 31`（`packages/document/src/types.ts`；v30 加「放大镜」动作对象，v31 把它的「图片列表」换成「状态列表」`states`——每项 = 标题 + 图 + 文字，由 `migrateMagnifierImagesToStates` 搬一次） |
-| 协议版本 | `PROTOCOL_VERSION = 22`（`packages/protocol/src/messages.ts`；v17 新增视频混合组件 `VideoBlend` 与命令 `erase_video_mask`，v18 加 `autoPlay`，v19 把两路收成「一个素材（图片 / 视频）」，v20 加 `fill_video_mask`（整张填 1 / 0），v21 加放大镜组件与 `open_magnifier` / `close_magnifier`，v22 把放大镜的 `images` 换成 `states`，见 §6.1） |
+| 文档格式版本 | `DOCUMENT_FORMAT_VERSION = 32`（`packages/document/src/types.ts`；v30 加「放大镜」动作对象，v31 把它的「图片列表」换成「状态列表」`states`——每项 = 标题 + 图 + 文字，由 `migrateMagnifierImagesToStates` 搬一次；v32 给 `FogOfWar` 加可配置的 `sortingOrder`——无迁移函数，靠 schema 默认值） |
+| 协议版本 | `PROTOCOL_VERSION = 23`（`packages/protocol/src/messages.ts`；v17 新增视频混合组件 `VideoBlend` 与命令 `erase_video_mask`，v18 加 `autoPlay`，v19 把两路收成「一个素材（图片 / 视频）」，v20 加 `fill_video_mask`（整张填 1 / 0），v21 加放大镜组件与 `open_magnifier` / `close_magnifier`，v22 把放大镜的 `images` 换成 `states`，v23 给 `FogOfWar` 加 `sortingOrder`，见 §6.1） |
 | 后端默认地址 | `0.0.0.0:1420`（`resources/config/app.json`，可被 `HOST` / `PORT` 覆盖） |
 | 编辑器开发地址 | `http://localhost:5173`（Vite，`/api`、`/editor`、`/client` 反代到 1420） |
 | 编辑器生产地址 | `http://localhost:1420`（后端同源托管 `apps/editor/dist`） |
-| 源码规模（不含测试） | 176 个文件 / 40,393 行（packages 13,842 · backend 3,721 · editor 22,830） |
-| 测试规模 | 36,139 行（单测 25,972 · E2E 9,884 · 架构测试 283） |
+| 源码规模（不含测试） | 176 个文件 / 40,585 行（packages 13,954 · backend 3,721 · editor 22,910） |
+| 测试规模 | 36,305 行（单测 26,095 · E2E 9,927 · 架构测试 283） |
 
 > 上表两行与 §0.1 表格里加粗的文件行数、§3.x 节标题里的包规模由
 > `scripts/check-code-structure-stats.mjs` **机器校验**（`pnpm check` 的一环）：
@@ -430,15 +430,15 @@ build: { outDir: "dist", sourcemap: true },
 - 画笔半径 `floor((brushSize-1)/2)`（1/2→1×1、3/4→3×3、5→5×5，含偶数尺寸的刻意保真），与 Unity `ApplyBrush` 完全一致；
 - 坐标系只有一个：**世界坐标**（x 右、y 上、像素、无限大）；`grid(0,0)` 在地图矩形左下角 = 图片最下面一行，grid.y 与世界 y 同向、不翻转；唯一的翻转发生在贴图绘制（`worldRectTopLeft`）。
 
-### 3.2 `@dts/document` — 文档模型、命令与历史（8,968 行）
+### 3.2 `@dts/document` — 文档模型、命令与历史（9,063 行）
 
 | 文件 | 行数 | 职责 | 关键导出 |
 |---|---|---|---|
-| `types.ts` | 741 | 全部文档类型与格式版本常量（**`ObjectKind` 不在这里：v22 起住在 `presets.ts`，层级已移除、kind 只是预设 id**） | `DOCUMENT_FORMAT_VERSION`(=30)、`ProjectDoc`、`SceneDoc`、`SceneFileDoc`、`GameObjectDoc`、`ComponentDoc`、`MapDataDoc`（含 v26 的 `sortingOrder`）、`ImageLayerDataDoc`（`ImageRef & { sortingOrder }`）、`FogOfWarDataDoc`（v27：`mapId` + `enabled` + `regions`）、`SoundDataDoc`、`TeleportDataDoc`、`MagnifierDataDoc`（v30：图片列表 `images` + `picked` 下标）、`VideoDataDoc`、`VideoBlendDataDoc`（v17 / v19：两路 `{ kind, id? }` + `loop` / `autoPlay` / `audio`）、`ImageRef`、`GridSpec`、`CellRuns`、`ItemLibraryDoc`、`AudioTagTableDoc`、`SOUND_LAYERS`、`OBJECT_SOUND_LAYERS`、`ImageSpriteRef`、`SpriteSheetDoc`、`SpriteImportSettingsDoc`、`ResolvedSprite`、`SOUND_LAYER_LABELS` |
-| `presets.ts` | 313 | **对象预设表 + 能力槽位**（kinds.ts / features.ts 合并而来）：kind 只是预设 id，`GameObject` 仍是抽象基类（不落进文档）；每个预设声明允许的能力槽位 → 承载组件 + 缺省承载兜底 + 特性缺省值 | `ComponentSlot`、`OBJECT_KINDS`、`ObjectKind`、`GameObjectPreset`、`OBJECT_PRESETS`、`DEFAULT_SLOT_COMPONENT`、`SPRITE_COMPONENT`、`presetOf`、`isAbstractKind`、`CONCRETE_KINDS`、`componentForSlot`、`carriesComponent`、`supportsVideo`、`supportsFog`、`supportsMagnifier`、`supportsSpriteSheet`、`displayImageField`、`DEFAULT_SOUND_LAYER`、`DEFAULT_VIDEO_*` |
+| `types.ts` | 494 | 全部文档类型与格式版本常量（**`ObjectKind` 不在这里：v22 起住在 `presets.ts`，层级已移除、kind 只是预设 id**） | `DOCUMENT_FORMAT_VERSION`(=32)、`ProjectDoc`、`SceneDoc`、`SceneFileDoc`、`GameObjectDoc`、`ComponentDoc`、`MapDataDoc`（含 v26 的 `sortingOrder`）、`ImageLayerDataDoc`（`ImageRef & { sortingOrder }`）、`FogOfWarDataDoc`（v27：`mapId` + `enabled` + `regions`；v32：+ `sortingOrder`）、`SoundDataDoc`、`TeleportDataDoc`、`MagnifierDataDoc`（v30：图片列表 `images` + `picked` 下标）、`VideoDataDoc`、`VideoBlendDataDoc`（v17 / v19：两路 `{ kind, id? }` + `loop` / `autoPlay` / `audio`）、`ImageRef`、`GridSpec`、`CellRuns`、`ItemLibraryDoc`、`AudioTagTableDoc`、`SOUND_LAYERS`、`OBJECT_SOUND_LAYERS`、`ImageSpriteRef`、`SpriteSheetDoc`、`SpriteImportSettingsDoc`、`ResolvedSprite`、`SOUND_LAYER_LABELS` |
+| `presets.ts` | 313 | **对象预设表 + 能力槽位**（kinds.ts / features.ts 合并而来）：kind 只是预设 id，`GameObject` 仍是抽象基类（不落进文档）；每个预设声明允许的能力槽位 → 承载组件 + 缺省承载兜底 + 特性缺省值 | `ComponentSlot`、`OBJECT_KINDS`、`ObjectKind`、`GameObjectPreset`、`OBJECT_PRESETS`、`DEFAULT_SLOT_COMPONENT`、`SPRITE_COMPONENT`、`presetOf`、`isAbstractKind`、`CONCRETE_KINDS`、`componentForSlot`、`carriesComponent`、`supportsVideo`、`supportsFog`、`supportsMagnifier`、`supportsSpriteSheet`、`displayImageField`、`DEFAULT_SOUND_LAYER`、`DEFAULT_VIDEO_*`、`FOG_DEFAULT_SORTING_ORDER` / `FOG_SORTING_ORDER_LIMIT`（v32 起雾层显示顺序的缺省与范围，均为 32767） |
 | `access.ts` | 537 | **对象特性的唯一访问路径**（数据存在哪只有这里知道；v22 层级移除后一律按组件自报的 slot 查找） | 读：`componentOf`、`componentOfSlot`、`componentDataOf`、`componentDataOfSlot`、`mapDataOf`、`fogOf`、`imageOf`（按 slot 直接找，**只挑回 `ImageRef` 那几个字段**）、`imageLayerDataOf`、`objectImage`、`sortingOrderOf`（v26：地图 → 图片层 → 0）、`soundDataOf`、`teleportDataOf`、`videoDataOf`、`isFogEnabled`、`isVideoEnabled`；写：`mapDraftOf`、`writeFeature`、`removeFeature`、`ensureSoundData`、`ensureTeleportData`、`ensureVideoData`、`ensureFogData`、`withFeature` |
 | `schema.ts` | 1835 | zod schema + **版本迁移链**（v23 / v24 的素材 meta 迁移、v25 的 `migrateMapFogToComponent`、v26 的 `migrateSortingOrderToRenderComponents` 也在这一段里）+ 文件解析 | `sceneFileSchema`、`projectDocSchema`、`imageSpriteRefSchema`、`mapDataSchema`、`imageLayerDataSchema`、`upgradeRawDocument`、`migrateProjectDoc`、`parseProjectFile`、`parseProjectDoc`、`parseSceneFile`、`defaultProjectSettings`、`defaultAudioSettings`、`defaultBgmSettings`、`DEFAULT_BGM_VOLUME`(0.6)、`DEFAULT_SFX_VOLUME`(0.8)、`DEFAULT_VOICE_VOLUME`(1)；类型 `SceneSizeHint`、`ProjectFileLoad`、`SceneFileLoad` |
-| `commands/` | 1,858 | **65 个文档变换命令**（`commands/*.ts` 里 `export function` 的条数；分组表里另有 3 个读/判据由 `access.ts` / `presets.ts` 提供），按特性拆成 9 个模块 | 见 §3.2.2 |
+| `commands/` | 1,858 | **77 个文档变换命令**（`commands/*.ts` 里 `export function` 的条数；分组表里另有 3 个读/判据由 `access.ts` / `presets.ts` 提供），按特性拆成 9 个模块 | 见 §3.2.2 |
 | `validation.ts` | 666 | 文档语义校验（跨字段、跨场景 + **子图的越界格子**（切分按素材 meta 查）+ **视频只给地图与贴图** + **素材 meta 里的标签引用**（顶层 `tags` 与音频旧段同一套规矩）） | `IssueLevel`、`ValidationIssue`、`SceneValidationOptions`、`hasErrors`、`formatIssues`、`validateScene`、`validateAssetMetas`、`validateProject` |
 | `sprites.ts` | 451 | **精灵（子图）的全部知识**（v20 新增）：一张图怎么切、对象取哪一格、那一格在图片里的哪块矩形、画多大；「地图贴图不支持子图」的**唯一判据**也在这里。切分从 v23 起**按素材 meta 查**（参数是 `AssetMetas` 索引，**guid 优先、路径兜底**） | `SPRITE_SHEET_MAX`(64)、`DEFAULT_SPRITE_SHEET`(1×1)、`normalizeSpriteSheet`、`isTrivialSpriteSheet`、`spriteSheetOf`（meta 里没 `sheet` = 整图）、`clampSpriteCell`、`resolvedSpriteOf`、`displaySpriteOf`、`spriteUvRectOf`、`spritePixelRectOf`、`spriteCellSizeOf`、`spriteCellAtFraction`、`resolveSceneSprites`（推送用的解析：夹格子 + 摘掉地图上的误写 + **把 guid 换算回当前路径 ID** + 保留 `sortingOrder`） |
 | `asset-meta.ts` | 629 | **素材 meta 的全部知识**（v23 新增；v24 起覆盖**每一种素材**）：`<素材>.meta` 的形状（GUID + 导入器 + 精灵设置 / 切分 + 音频标注 + **顶层 `name` / `tags`**）、schema、解析、序列化、GUID 生成，以及「meta ↔ 文档词汇」的访问器与纯函数写入。显示名与标签**任何素材**都能写：一律落顶层，音频旧数据（`audio.name` / `audio.tags`）由 `assetNameOfMeta` / `assetTagsOfMeta` 兼容读、写入时一并摘掉（不需要迁移） | `ASSET_META_FORMAT_VERSION`(1)、`ASSET_IMPORTERS`、`AssetImporter`、`AssetMetaDoc`、`AssetMetaSpriteDoc`、`AssetMetaAudioDoc`、`AssetMetaFileLoad`、`assetMetaSchema`、`newAssetGuid`、`createAssetMeta`、`parseAssetMetaFile`（只容错"缺 guid"，补上并 `needsRewrite`）、`serializeAssetMetaFile`、`isSpriteMeta`、`spriteSettingsOfMeta`、`spriteSheetOfMeta`、`withMetaSpriteSettings`、`withMetaSpriteSheet`、`audioNameOfMeta`（旧段）、`assetNameOfMeta`（统一读）、`withMetaAudioName`（旧段）、`withMetaAssetName`（统一写）、`audioTagsOfMeta`（旧段）、`assetTagsOfMeta`（统一读）、`withMetaAudioTags`（旧段）、`withMetaAssetTags`（统一写）、`withoutMetaAudioTag`（两处都摘）、`AssetMetas`（guid ↔ 路径双向索引）、`emptyAssetMetas`、`createAssetMetas`、`metaOfImage` |
@@ -478,7 +478,7 @@ Assets/scenes/<场景名>.json（SceneFileDoc）   ← 场景名不进文件内�
    ├─ position: { x, y } | null      ← 世界坐标，原点 = 场景中心，y 向上
    └─ components: ComponentDoc[]     ← { id, type, displayName?, data }
       ├─ GridMap          ← 网格数据（原 map；v28 起是**贴图上的可选组件**）：grid + rowOrder + cells(RLE)
-      ├─ FogOfWar         ← 战争雾的数据（v27：挂在独立的 `Fog` 对象上）：mapId + enabled + regions
+      ├─ FogOfWar         ← 战争雾的数据（v27：挂在独立的 `Fog` 对象上）：mapId + enabled + regions + sortingOrder(v32，缺省最前面)
       ├─ ImageLayer       ← 对象自己显示的图（原 image），**贴图对象与网格地图**用：整张铺满 + sortingOrder(v26)
       ├─ SpriteLayer      ← 对象自己显示的图（原 image），**精灵对象**用：+ `sprite?: {column, row}`（v20：取图集里哪一格）+ sortingOrder(v26)
       ├─ PlaySound        ← 音频列表 + 选中 + 层级（原 sound）
@@ -542,7 +542,7 @@ kind 只是预设 id，没有层级——「允许哪些能力槽位」看 `OBJE
 | `object.ts` | 549 | 对象增删改 + 变换 + 排序（`setRenderSortingOrder`，v26 起按「先地图、后图片层」路由）+ 缩放 + `setObjectImage`（**换 id 丢掉旧的子图引用**，v20）+ `setObjectSprite`（取图集里哪一格，`null` = 整图） |
 | `scene.ts` | 52 | 场景名校验 / 查找 / 重名判定（纯函数） |
 | `grid-map.ts` | 238 | 地图数据 + 网格与标注（`clearMapFog` 也在这里：它动的是格子数据，只从 `fogMaskOf` 读绑定） |
-| `fog.ts` | 151 | 战争雾（v27 起是独立的 `Fog` 对象的数据）：`setFogMap` / 总开关 / 指定雾区 / `fogMaskOf` / `fogMapOf`——组件总在，雾引用一张地图 |
+| `fog.ts` | 170 | 战争雾（v27 起是独立的 `Fog` 对象的数据）：`setFogMap` / 总开关 / 指定雾区 / 显示顺序（v32：`setFogSortingOrder`）/ `fogMaskOf` / `fogMapOf` / `fogSortingOrderOf`——组件总在，雾引用一张地图 |
 | `play-sound.ts` | 63 | 声音对象（音频列表 / 选中 / 层级） |
 | `teleport.ts` | 48 | 传送阵（候选场景 / 选中） |
 | `magnifier.ts` | 266 | 放大镜（v30；v31 起数据是**状态列表**）：加 / 移出一个状态、换展示第几个、往某个状态里挑图 / 写标题与文字——空状态槽没有 id 可用，所以**选中是下标**（`picked: number`），移出一个要顺手调它 |
@@ -565,7 +565,7 @@ kind 只是预设 id，没有层级——「允许哪些能力槽位」看 `OBJE
 | 对象增删改 | `createGameObject`、`addObject`、`removeObject`、`renameObject`、`nextObjectName`、`setObjectPosition`、`setObjectActive`、`setObjectLocked`、`setRenderSortingOrder`、`setObjectRotation`、`setObjectImage`、`setObjectSprite`、`objectImage` |
 | 缩放 | `setObjectScale`、`setObjectScaleAxes`、`normalizeDegrees`、`objectsInDrawOrder` |
 | 地图网格 | `setMapCells`、`clearMapCells`、`paintMapCells`、`setMapGrid` |
-| 战争雾 | `fogMaskOf`、`fogMapOf`、`setFogMap`、`setFogEnabled`、`setFogRegions`、`clearMapFog`（后者在 `grid-map.ts`：按雾对象 → 被引用地图，动格子数据） |
+| 战争雾 | `fogMaskOf`、`fogMapOf`、`fogSortingOrderOf`、`setFogMap`、`setFogEnabled`、`setFogRegions`、`setFogSortingOrder`（v32）、`clearMapFog`（后者在 `grid-map.ts`：按雾对象 → 被引用地图，动格子数据） |
 | 声音对象 | `setSoundClips`、`setSoundPicked`、`setSoundLayer` |
 | 传送阵 | `setTeleportTargets`、`setTeleportPicked` |
 | 放大镜（v30；v31 起是状态列表） | `addMagnifierState`、`removeMagnifierState`、`setMagnifierPicked`、`setMagnifierStateImage`、`setMagnifierStateTitle`、`setMagnifierStateText`（空状态槽没有 id 可用，所以选中是下标） |
@@ -679,7 +679,7 @@ v23 起 `validateScene` 多了第二个参数：`validateScene(scene, { metas })
 > **历史**：`@dts/actions`（动作类型注册表、条件求值、动作图校验）曾是独立的一个包，
 > 随「动作挂在组件上」那套旧模型一起整包删除了；动作编辑的数据面落地时重新设计。
 
-### 3.3 `@dts/protocol` — WS 消息契约（1,052 行）
+### 3.3 `@dts/protocol` — WS 消息契约（1,069 行）
 
 单文件 `src/messages.ts`（1,051 行）+ `index.ts` barrel（1 行）。
 **编辑器、服务端、Unity 前端共用同一份 zod schema。**
@@ -691,8 +691,9 @@ v23 起 `validateScene` 多了第二个参数：`validateScene(scene, { metas })
 
 | 名称 | 值 | 用途 |
 |---|---|---|
-| `PROTOCOL_VERSION` | `22` | 握手校验；不一致则关闭连接（`4002`）。最近一次改动是**放大镜的「图片列表」换成「状态列表」**（`Magnifier` 的 `images` → `states`）：老前端（v21）按 `images` 读、读不到那一屏，靠握手把它挡在连上的那一刻 |
+| `PROTOCOL_VERSION` | `23` | 握手校验；不一致则关闭连接（`4002`）。最近一次改动是**战争雾的显示顺序可配置**（`FogOfWar` 多一项 `sortingOrder`）：老前端（v22）不认这一项、按缺省当 0 处理（遮挡顺序错乱），靠握手把它挡在连上的那一刻 |
 | `SPRITE_SHEET_MAX` | `64` | 子图切分的**列 / 行上限**（与 `@dts/document` 的 `SPRITE_SHEET_MAX` 同值，契约测试盯着） |
+| `DEFAULT_FOG_SORTING_ORDER` | `32767` | 战争雾雾层显示顺序的**缺省值**（最前面；与 `@dts/document` 的 `FOG_DEFAULT_SORTING_ORDER` 同值，契约测试盯着） |
 | `RUNTIME_INACTIVE_STATUS` | `503` | 未开闸时拒绝 `/client` 升级的 HTTP 状态 |
 | `RUNTIME_INACTIVE_REASON` | `"runtime-inactive"` | 写在 `x-dts-reason` 头里 |
 | `RUNTIME_STOPPED_CODE` | `4003` | WS 关闭码：退出运行态 / 被顶替 / 心跳超时 |
@@ -1405,6 +1406,7 @@ edit：取消去抖、`lastPushedSceneText=null`、发 `runtime_stop`）、`push
 `endGridStroke`、`clearGrid`。
 
 **战争雾**：`openFogMask` / `openGridEditor`（两者**互斥**）、`setFogMap`、`setFogRegions`、`setFogEnabled`、
+`setFogSortingOrder`（v32，与对象的显示顺序同一套 `coalesceKey`）、
 `eraseFogMask`、`setFogRegionRevealed`、`flushFogReveal`（先 `pruneFogReveal` 按当前文档剪枝，再逐步重放）。
 
 #### 5.3.3 文件级导出的辅助函数
@@ -1625,7 +1627,7 @@ edit：取消去抖、`lastPushedSceneText=null`、发 `runtime_stop`）、`push
 
 ### 6.1 版本演进
 
-`DOCUMENT_FORMAT_VERSION = 30`，`PROTOCOL_VERSION = 21`。两者**独立编号**，只有不兼容的 wire 改动才会让协议 +1：
+`DOCUMENT_FORMAT_VERSION = 32`，`PROTOCOL_VERSION = 23`。两者**独立编号**，只有不兼容的 wire 改动才会让协议 +1：
 文档 v22 ↔ 协议 v12 是**最后一次配套发布**（`kind` 改名：贴图 `Texture`→`Image`、精灵 `SceneObject`→`Sprite`，
 协议 v11 的老客户端不认这两个值——占位色退回灰色（图照常显示，显示走组件名），
 按「不是崩、是画面错」的同一条纪律靠握手 `4002` 挡住）。
@@ -1695,6 +1697,7 @@ edit：取消去抖、`lastPushedSceneText=null`、发 `runtime_stop`）、`push
 | **v29** | **视频混合的两路从「列表 + 选中」收成单个素材**：`VideoBlendChannelDoc` 由 `{ clips, picked? }` 变成 `{ kind, id? }`——每路只放一个素材，且可以是**图片**或**视频**（`kind`） | `migrateVideoBlendChannels`（取 `picked`，没选取 `clips[0]`，`kind` 记 `video`；幂等）。协议同批 +1 到 **v19** |
 | **v30** | **新增「放大镜」动作对象**：`OBJECT_KINDS` 多一个 `Magnifier` + 第 9 种组件 `Magnifier`（图片列表 `images` + `picked` 下标）。**纯加法**：老文件里既没有这个 kind、也没有这个组件 | **没有迁移函数**——格式 +1 只是为了让老编辑器撞上 `kind: z.enum(OBJECT_KINDS)` 时拿到一句明确的「请升级编辑器」（与 `Fog`（v27）同一条老规矩）。协议同批 +1 到 **v21** |
 | **v31** | **放大镜的「图片列表」换成「状态列表」**：`MagnifierDataDoc.images` → `states`（每项 = `{ title?, image?, text? }`，三项都可没有；空状态槽合法），`picked` 照旧是下标 | `migrateMagnifierImagesToStates`（老的每一条图片搬成 `states[i].image`，`picked` 原样；幂等）。协议同批 +1 到 **v22**（同一个组件、数据形状变了；两条命令没动） |
+| **v32** | **战争雾的显示顺序可配置**：`FogOfWarDataDoc` 多一项 `sortingOrder`（int，缺省 `FOG_DEFAULT_SORTING_ORDER` = 最前面）——v32 之前前端把雾层写死在 `short.MaxValue` | **没有迁移函数**——老文件缺这一项，schema 补默认值（= 历史行为），格式 +1 触发回写、并让老编辑器提示升级。协议同批 +1 到 **v23**（同一个组件多一项） |
 
 **版本判断纪律**（`schema.ts` 里专门写了注释）：**不能拿文件里的 `formatVersion` 跟 `DOCUMENT_FORMAT_VERSION` 比**
 来判断「要不要做位置换算」——版本号一涨，所有旧文件都会被判成「需要换算」，那会把已经是世界坐标的 v5 文件
@@ -1775,6 +1778,7 @@ upgradeRawDocument
 | `scaleX` / `scaleY` | `.optional()` | `.optional()`，**刻意不设默认**（老编辑器不发、老前端不认，属无害的额外信息，不必升版本号） |
 | `FogOfWar.mapId` | `.default("")`（v27，引用地图 id） | `.default("")` |
 | `FogOfWar.enabled` / `FogOfWar.regions` | `.default(true)` / `.int().min(1).max(255)` + `.default([])` | `.default(true)` / `.int()`（无默认、无范围） |
+| `FogOfWar.sortingOrder`（v32） | `.int().default(FOG_DEFAULT_SORTING_ORDER)` | `.int().default(DEFAULT_FOG_SORTING_ORDER)`；两常量**同值**（32767），由契约测试的「缺省一致」一条断言 |
 | `rleRun` | `[int 0..255, int ≥0]` | `[int, int]`，无范围 |
 | `sound.clips` | `z.array(z.string().min(1))` | `z.array(z.string())` |
 | `image.sprite` | `.optional()`，只要求**非负整数**（越界合法：切分被改小之后老对象的格子会暂时越界，夹取交给解析） | `.optional()`，另有 `refine`：与 `spriteGrid` **同时出现**时必须落在切分范围内（越界 = 坏载荷）；缺 `spriteGrid` 时按 1×1 收下 |
@@ -1816,7 +1820,7 @@ upgradeRawDocument
 | 对象 | 组件 | 客户端建了什么 |
 |---|---|---|
 | `网格地图（map_…）` | `ImageLayer` + `GridMap` | `SceneObjectView` + `ImageLayer`（面片）+ `GridMapView`（网格数据，v28） |
-| `战争雾（fog_…）` | `FogOfWar` | `FogOfWar`（自己的 `FogOverlay` 子物体是 `ImageLayer`，v27 起独立对象） |
+| `战争雾（fog_…）` | `FogOfWar` | `FogOfWar`（自己的 `FogOverlay` 子物体是 `ImageLayer`，v27 起独立对象；显示顺序取 `sortingOrder`，v32 起可配置） |
 | `精灵（obj_…）` | `SpriteLayer` | `SceneObjectView` + `ImageLayer`（面片是 `ImageLayer`，取哪一块由 `SpriteLayer.UvRectOf` 算） |
 | `贴图（obj_…）` | `ImageLayer` | `SceneObjectView` + `ImageLayer`（整张铺满） |
 | `sound_…` | `PlaySound` | **一个 GameObject 都不建**（数据留在镜像里） |

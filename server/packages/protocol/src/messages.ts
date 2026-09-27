@@ -137,8 +137,13 @@ import { z } from "zod";
  * `Magnifier` 的 data 里 `images` 换成 `states`（每项 = 标题 + 图 + 文字，三项都可没有）。
  * 老前端（v21）按 `images` 读 → 读不到（那扇窗里没图），按同一条纪律 +1。
  * **两条命令与其余消息一个字节都没动。**
+ *
+ * v23（2026-09-27）：**战争雾的显示顺序可配置**（与文档格式 v32 同一批）——`FogOfWar`
+ * 的 data 多一项 `sortingOrder`（int，缺省 = 最前面）。v23 之前前端把雾层写死在
+ * `short.MaxValue`；老前端（v22）不认这一项 → 会把雾层按缺省当 0 处理（不是崩，
+ * 是遮挡顺序错乱），按同一条纪律 +1。**命令那一组仍然一个字节都没动。**
  */
-export const PROTOCOL_VERSION = 22;
+export const PROTOCOL_VERSION = 23;
 
 /** 未进入运行态时拒绝 `/client` 升级的 HTTP 状态与原因头。 */
 export const RUNTIME_INACTIVE_STATUS = 503;
@@ -176,6 +181,15 @@ export const spriteRefSchema = z.object({
  * 由 `apps/backend/test/protocol-document-contract.test.ts` 断言两边一致。
  */
 export const SPRITE_SHEET_MAX = 64;
+
+/**
+ * 战争雾雾层显示顺序的默认值（v23 起）：**最前面**（`short.MaxValue`）。
+ *
+ * 与 `@dts/document` 的 `FOG_DEFAULT_SORTING_ORDER` **同值**：`protocol` 是被三端共用的
+ * 最底层包，不能反过来依赖文档包，所以这里复刻一份（与 `SPRITE_SHEET_MAX` 同一套做法），
+ * 由 `apps/backend/test/protocol-document-contract.test.ts` 断言两边一致。
+ */
+export const DEFAULT_FOG_SORTING_ORDER = 32767;
 
 /** 一张图的切分（v10 起）：几列几行。`1×1` = 整图。 */
 export const spriteGridSchema = z.object({
@@ -267,6 +281,9 @@ export const mapFogSchema = z.object({
   enabled: z.boolean().default(true),
   // 与文档同口径：区域位只到 1–255、缺省空数组（越界的「已知位」由语义校验报 warning）
   regions: z.array(z.number().int().min(1).max(255)).default([]),
+  // v23 起雾层显示顺序可配置：缺省 = 最前面（与文档 `FOG_DEFAULT_SORTING_ORDER` 同值，
+  // 由 `protocol-document-contract.test.ts` 断言）——老编辑器少发这一项时前端读到最前面
+  sortingOrder: z.number().int().default(DEFAULT_FOG_SORTING_ORDER),
 });
 /** `GridMap` 组件携带的**网格数据**（`rowOrder` 固定 bottom-up）。贴图与显示顺序自 v16 起在 `ImageLayer` 组件里，战争雾在独立的 `FogOfWar` 组件里。 */
 export const mapDataSchema = z.object({

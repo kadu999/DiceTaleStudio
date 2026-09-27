@@ -143,8 +143,14 @@ import type { ObjectKind } from "./presets";
  * `MagnifierDataDoc.images` 换成 `states`，`picked` 照旧是下标；由
  * `migrateMagnifierImagesToStates` 把老文件里每一条图片搬成 `states[i].image`（`picked` 原样）。
  * 协议侧同步升到 v22（同一个组件，数据形状变了）。
+ *
+ * v32（2026-09-27）：**战争雾的显示顺序可配置**。`FogOfWar` 组件的 data 多一项 `sortingOrder`
+ * （int，缺省 `FOG_DEFAULT_SORTING_ORDER` = 最前面）——v32 之前前端把它写死成
+ * `short.MaxValue`，现在它跟图片层一样是可编辑的渲染属性。**没有迁移函数**：老文件缺这一项，
+ * schema 补默认值（= 历史行为），格式 +1 触发一次回写、并让老编辑器撞上时提示升级。
+ * 协议侧同步升到 v23（同一个组件多一项）。
  */
-export const DOCUMENT_FORMAT_VERSION = 31;
+export const DOCUMENT_FORMAT_VERSION = 32;
 
 /** 网格行序：`bottom-up` 表示 cells 第 0 行是图片最下面一行（与 Unity GridMap 一致）。 */
 export type RowOrder = "bottom-up";
@@ -309,6 +315,15 @@ export interface FogOfWarDataDoc {
   readonly enabled: boolean;
   /** 指定的雾区位（如 `[8, 16]` = 区域4 + 区域5）；空数组 = 一个都没指定。 */
   readonly regions: number[];
+
+  /**
+   * 雾层的**显示顺序**（v32 起，渲染属性）：大的画在前面。
+   *
+   * 缺省 = **最前面**（`FOG_DEFAULT_SORTING_ORDER`，盖住地图上的对象，这是 v32 之前
+   * 前端写死的口径）；调小可以让别的对象盖住雾。写入一律取整 + 夹在
+   * `±FOG_SORTING_ORDER_LIMIT`（见 `setFogSortingOrder`）。
+   */
+  readonly sortingOrder: number;
 }
 
 /**

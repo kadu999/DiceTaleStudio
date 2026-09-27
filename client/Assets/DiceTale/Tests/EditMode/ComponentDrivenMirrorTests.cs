@@ -131,6 +131,21 @@ namespace DiceTale.Tests
         }
 
         [Test]
+        public void FogOfWarComponentParsesSortingOrder()
+        {
+            // v23 起雾层显示顺序可配置：显式值原样读出来，缺这一项时兜底到「最前面」
+            var explicitOrder = ParseObject(
+                "{\"id\":\"fog\",\"kind\":\"Fog\",\"components\":[" +
+                "{\"type\":\"FogOfWar\",\"data\":{\"mapId\":\"map_1\",\"enabled\":true,\"regions\":[1],\"sortingOrder\":12}}]}");
+            var missingOrder = ParseObject(
+                "{\"id\":\"fog\",\"kind\":\"Fog\",\"components\":[" +
+                "{\"type\":\"FogOfWar\",\"data\":{\"mapId\":\"map_1\",\"enabled\":true,\"regions\":[1]}}]}");
+
+            Assert.That(explicitOrder.fog.sortingOrder, Is.EqualTo(12));
+            Assert.That(missingOrder.fog.sortingOrder, Is.EqualTo(Protocol.FogDefaultSortingOrder));
+        }
+
+        [Test]
         public void MissingFogOfWarComponentMeansNoFog()
         {
             // 没有 `FogOfWar` 组件 = 没开战争雾；网格数据里那个老 `fog` 字段（v13 前）一律忽略

@@ -8,6 +8,7 @@ import {
   setFogEnabled as setSceneFogEnabled,
   setFogMap as setSceneFogMap,
   setFogRegions as setSceneFogRegions,
+  setFogSortingOrder as setSceneFogSortingOrder,
 } from "@dts/document";
 import { maskToLabel } from "@dts/grid";
 import {
@@ -31,6 +32,7 @@ export function createFogSlice(
   | "setFogMap"
   | "setFogRegions"
   | "setFogEnabled"
+  | "setFogSortingOrder"
   | "eraseFogMask"
   | "setFogRegionRevealed"
   | "flushFogReveal"
@@ -76,6 +78,17 @@ export function createFogSlice(
         // 规范化与「没变更」的判断都在命令里，这里只负责找到场景
         setSceneFogRegions(scene, fogObjectId, regions);
       });
+    },
+
+    setFogSortingOrder(fogObjectId, sortingOrder) {
+      return applyActiveScene(
+        "修改雾层显示顺序",
+        (scene) => {
+          setSceneFogSortingOrder(scene, fogObjectId, sortingOrder);
+        },
+        // 连续敲数字 / 按住微调按钮合并成一条撤销记录（与对象的显示顺序同一套）
+        { coalesceKey: `fog-sorting:${fogObjectId}` },
+      );
     },
 
     setFogEnabled(fogObjectId, enabled) {

@@ -17,6 +17,7 @@ import {
   DEFAULT_VIDEO_BLEND_KIND,
   DEFAULT_VIDEO_ENABLED,
   DEFAULT_VIDEO_LOOP,
+  FOG_DEFAULT_SORTING_ORDER,
   SPRITE_COMPONENT,
   componentForSlot,
   presetOf,
@@ -106,6 +107,9 @@ export const mapFogSchema = z.object({
   mapId: z.string().default(""),
   enabled: z.boolean().default(true),
   regions: z.array(z.number().int().min(1).max(255)).default([]),
+  // v32 起雾层显示顺序可配置：缺省 = 最前面（`FOG_DEFAULT_SORTING_ORDER`），
+  // 与 v32 之前前端写死的 `short.MaxValue` 同值——老文件补默认值后画面不变
+  sortingOrder: z.number().int().default(FOG_DEFAULT_SORTING_ORDER),
 });
 
 /** `GridMap` 组件携带的**网格数据**（v28 起只到这里；`rowOrder` 固定 bottom-up）。贴图与显示顺序住在 `ImageLayer` 里，战争雾在独立的 `FogOfWar` 组件里。 */

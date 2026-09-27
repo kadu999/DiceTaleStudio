@@ -311,3 +311,20 @@ export const DEFAULT_VIDEO_BLEND_AUDIO: VideoBlendAudio = "none";
  * 这组件最早就是「两条视频用 Mask 混合」，图片是后加的一档；老数据迁移过来也一律是视频。
  */
 export const DEFAULT_VIDEO_BLEND_KIND: VideoBlendKind = "video";
+
+/**
+ * 战争雾雾层的**显示顺序默认值**（v32 起可配置）：**最前面**。
+ *
+ * 未探索的雾要盖住地图上的对象，所以默认取 `short.MaxValue`（与图片层「大的画在前面」
+ * 同一套口径，但对象自己的 `sortingOrder` 被夹在 `±SORTING_ORDER_LIMIT`，够不着它）。
+ * 想拿别的对象盖住雾时在属性面板里把这一项调小。
+ */
+export const FOG_DEFAULT_SORTING_ORDER = 32767;
+
+/**
+ * 战争雾雾层显示顺序的取值范围（`±FOG_SORTING_ORDER_LIMIT`）。
+ *
+ * 与 `SORTING_ORDER_LIMIT`（对象渲染层）分开：雾默认要落在这个范围的最顶，
+ * 而对象的显示顺序够不到这里，所以「默认在最前面」是稳的。
+ */
+export const FOG_SORTING_ORDER_LIMIT = 32767;

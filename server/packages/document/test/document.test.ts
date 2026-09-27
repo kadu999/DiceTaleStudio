@@ -13,6 +13,7 @@ import {
   findMapObject,
   findObject,
   fogMaskOf,
+  fogSortingOrderOf,
   listMapObjects,
   objectsInDrawOrder,
   paintMapCells,
@@ -23,6 +24,7 @@ import {
   setFogEnabled,
   setFogMap,
   setFogRegions,
+  setFogSortingOrder,
   setMapGrid,
   setObjectActive,
   setObjectImage,
@@ -47,7 +49,7 @@ import {
   writeFeature,
 } from "../src/access";
 import { isKnownComponentType } from "../src/components";
-import { DEFAULT_SLOT_COMPONENT } from "../src/presets";
+import { DEFAULT_SLOT_COMPONENT, FOG_DEFAULT_SORTING_ORDER } from "../src/presets";
 import {
   createEmptyProject,
   createEmptyScene,
@@ -949,12 +951,22 @@ describe("战争雾：独立对象（Fog）", () => {
       setFogRegions(draft, "fog-1", [8]);
       paintMapCells(draft, "map-1", { x: 1, y: 1 }, { x: 1, y: 1 }, { mask: CellMask.Fog1, brushSize: 1 });
     });
-    expect(fogOf(fogObjectOf(scene))).toEqual({ mapId: "map-1", enabled: true, regions: [8] });
+    expect(fogOf(fogObjectOf(scene))).toEqual({
+      mapId: "map-1",
+      enabled: true,
+      regions: [8],
+      sortingOrder: FOG_DEFAULT_SORTING_ORDER,
+    });
 
     scene = mutate(scene, (draft) => {
       setFogRegions(draft, "fog-1", []);
     });
-    expect(fogOf(fogObjectOf(scene))).toEqual({ mapId: "map-1", enabled: true, regions: [] });
+    expect(fogOf(fogObjectOf(scene))).toEqual({
+      mapId: "map-1",
+      enabled: true,
+      regions: [],
+      sortingOrder: FOG_DEFAULT_SORTING_ORDER,
+    });
     // 解除绑定 ≠ 清数据：画好的雾格子还在，重新绑定就回来
     expect(mapCells(scene)[1 * GRID.width + 1]).toBe(CellMask.Fog1);
 
@@ -962,7 +974,12 @@ describe("战争雾：独立对象（Fog）", () => {
     scene = mutate(scene, (draft) => {
       setFogEnabled(draft, "fog-1", false);
     });
-    expect(fogOf(fogObjectOf(scene))).toEqual({ mapId: "map-1", enabled: false, regions: [] });
+    expect(fogOf(fogObjectOf(scene))).toEqual({
+      mapId: "map-1",
+      enabled: false,
+      regions: [],
+      sortingOrder: FOG_DEFAULT_SORTING_ORDER,
+    });
     expect(mapCells(scene)[1 * GRID.width + 1]).toBe(CellMask.Fog1);
   });
 
@@ -1089,7 +1106,12 @@ describe("战争雾：独立对象（Fog）", () => {
       expect(setFogEnabled(draft, "fog-1", false)).toBe(true);
     });
     expect(isFogEnabled(fogObjectOf(scene))).toBe(false);
-    expect(fogOf(fogObjectOf(scene))).toEqual({ mapId: "map-1", enabled: false, regions: [] });
+    expect(fogOf(fogObjectOf(scene))).toEqual({
+      mapId: "map-1",
+      enabled: false,
+      regions: [],
+      sortingOrder: FOG_DEFAULT_SORTING_ORDER,
+    });
 
     // 同一个状态再写一次 = 没变更（不进撤销栈）
     expect(
@@ -1102,7 +1124,12 @@ describe("战争雾：独立对象（Fog）", () => {
     scene = mutate(scene, (draft) => {
       setFogRegions(draft, "fog-1", [CellMask.Fog1]);
     });
-    expect(fogOf(fogObjectOf(scene))).toEqual({ mapId: "map-1", enabled: false, regions: [CellMask.Fog1] });
+    expect(fogOf(fogObjectOf(scene))).toEqual({
+      mapId: "map-1",
+      enabled: false,
+      regions: [CellMask.Fog1],
+      sortingOrder: FOG_DEFAULT_SORTING_ORDER,
+    });
 
     // 再打开：绑定原样留着
     scene = mutate(scene, (draft) => {
@@ -1110,6 +1137,44 @@ describe("战争雾：独立对象（Fog）", () => {
     });
     expect(isFogEnabled(fogObjectOf(scene))).toBe(true);
     expect(fogOf(fogObjectOf(scene))?.regions).toEqual([CellMask.Fog1]);
+  });
+
+  it("雾层显示顺序：可配置、取整夹取；默认最前面，没变更不入栈", () => {
+    let scene = withFog(withMapObject(makeScene()));
+    // 新建的雾对象默认**最前面**（与 v32 之前写死的值一致）
+    expect(fogSortingOrderOf(fogObjectOf(scene))).toBe(FOG_DEFAULT_SORTING_ORDER);
+
+    // 写一个非整数：落盘是取整后的值
+    scene = mutate(scene, (draft) => {
+      expect(setFogSortingOrder(draft, "fog-1", 12.6)).toBe(true);
+    });
+    expect(fogSortingOrderOf(fogObjectOf(scene))).toBe(13);
+
+    // 同值再写一次 = 没变更（不进撤销栈）
+    expect(
+      mutate(scene, (draft) => {
+        setFogSortingOrder(draft, "fog-1", 13);
+      }),
+    ).toBe(scene);
+
+    // 越界夹到上限；NaN 拒绝
+    const clamped = mutate(scene, (draft) => {
+      setFogSortingOrder(draft, "fog-1", 99999);
+    });
+    expect(fogSortingOrderOf(fogObjectOf(clamped))).toBe(32767);
+    expect(
+      mutate(clamped, (draft) => {
+        setFogSortingOrder(draft, "fog-1", Number.NaN);
+      }),
+    ).toBe(clamped);
+
+    // 不是雾对象：拒绝
+    const withDoor = withObject(withFog(withMapObject(makeScene())), "door");
+    expect(
+      mutate(withDoor, (draft) => {
+        setFogSortingOrder(draft, "door", 5);
+      }),
+    ).toBe(withDoor);
   });
 
   it("v13 之前的老文件：`fog` 里没有 enabled，读出来算**开着**并补进内存", () => {
@@ -1145,6 +1210,7 @@ describe("战争雾：独立对象（Fog）", () => {
       mapId: "map-1",
       enabled: true,
       regions: [CellMask.Fog1],
+      sortingOrder: FOG_DEFAULT_SORTING_ORDER,
     });
     expect(mapDataOf(load.file.objects[0]!)).not.toHaveProperty("fog");
     expect(isFogEnabled(load.file.objects[1]!)).toBe(true);
@@ -1810,7 +1876,12 @@ describe("场景文件 schema", () => {
     // 雾成了独立对象（v27），引用这张地图、形状原样
     const fog = parsed.file.objects[1]!;
     expect(fog.kind).toBe("Fog");
-    expect(fogOf(fog)).toEqual({ mapId: "map-1", enabled: false, regions: [8, 32] });
+    expect(fogOf(fog)).toEqual({
+      mapId: "map-1",
+      enabled: false,
+      regions: [8, 32],
+      sortingOrder: FOG_DEFAULT_SORTING_ORDER,
+    });
     // 实例 id 是确定性的：再解析一遍不会多出第二个雾对象
     const again = parseSceneFile(JSON.parse(JSON.stringify(parsed.file)) as unknown);
     expect(again.file.objects.filter((item) => item.kind === "Fog")).toHaveLength(1);
@@ -1992,7 +2063,12 @@ describe("场景文件 schema", () => {
     expect(fogOf(map!)).toBeUndefined();
     // 新雾对象：引用地图、形状原样、摆放复制地图
     expect(fog?.kind).toBe("Fog");
-    expect(fogOf(fog!)).toEqual({ mapId: "map-1", enabled: false, regions: [8, 32] });
+    expect(fogOf(fog!)).toEqual({
+      mapId: "map-1",
+      enabled: false,
+      regions: [8, 32],
+      sortingOrder: FOG_DEFAULT_SORTING_ORDER,
+    });
     expect(fog?.position).toEqual({ x: 120, y: -80 });
     expect(fog?.rotation).toBe(0.5);
     expect(fog?.scale).toBe(2);

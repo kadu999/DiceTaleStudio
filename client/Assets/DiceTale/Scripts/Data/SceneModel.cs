@@ -245,6 +245,13 @@ namespace DiceTale
 
         /// <summary>被指定为战争雾的区域位（空 = 没指定，与旧版一样不生成雾层）。</summary>
         public int[] regions = new int[0];
+
+        /// <summary>
+        /// 雾层的**显示顺序**（v23 起可配置）：大的画在前面。缺省 = **最前面**
+        /// （`Protocol.FogDefaultSortingOrder`，与 v23 之前写死的 `short.MaxValue` 逐字相同）——
+        /// 未探索的雾要盖住地图上的对象；调小可以让别的对象盖住雾。
+        /// </summary>
+        public int sortingOrder = 32767;
     }
 
     /// <summary>声音对象的数据：前端播的就是 <see cref="picked"/> 那一条。</summary>

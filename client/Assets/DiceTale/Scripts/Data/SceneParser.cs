@@ -257,10 +257,11 @@ namespace DiceTale
         }
 
         /// <summary>
-        /// 战争雾组件：`{ mapId, enabled, regions }`。
+        /// 战争雾组件：`{ mapId, enabled, regions, sortingOrder }`。
         ///
         /// v15 起多了 `mapId`（引用被雾罩住的那张地图，雾自身不带格子）；老载荷缺这一项时留空串，
         /// 前端据此拆掉雾层。`enabled` 缺省算开（组件在就是「开了雾」，这个开关只是再关一道）；
+        /// v23 起多了 `sortingOrder`（雾层显示顺序，缺省最前面）。
         /// 没有 `FogOfWar` 组件的对象 <see cref="MirrorObject.fog"/> 留 null——那与「没开战争雾」是同一件事。
         /// </summary>
         private static MirrorFog ParseFog(Dictionary<string, object> node)
@@ -275,6 +276,12 @@ namespace DiceTale
                 mapId = JsonParser.GetString(node, "mapId") ?? "",
                 enabled = JsonParser.GetBool(node, "enabled", true),
                 regions = GridRle.FlattenInts(JsonParser.GetArray(node, "regions")),
+                // v23 起可配置：老载荷少发这一项时按**最前面**兜底（与 v23 之前的写死值逐字相同）
+                sortingOrder = (int)JsonParser.GetNumber(
+                    node,
+                    "sortingOrder",
+                    Protocol.FogDefaultSortingOrder
+                ),
             };
         }
 

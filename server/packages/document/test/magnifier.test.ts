@@ -571,8 +571,8 @@ describe("放大镜的解析、迁移与版本", () => {
     expect(parsed.needsRewrite).toBe(true);
   });
 
-  it("当前文档格式是 31（v31 起放大镜的数据是状态列表）", () => {
-    expect(DOCUMENT_FORMAT_VERSION).toBe(31);
+  it("当前文档格式（v32 起战争雾的显示顺序可配置，排在放大镜状态列表之后）", () => {
+    expect(DOCUMENT_FORMAT_VERSION).toBe(32);
   });
 
   it("`picked` 只收非负整数（小数 / 负数直接被 schema 拒掉）", () => {

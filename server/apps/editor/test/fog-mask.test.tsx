@@ -3,10 +3,12 @@ import { cleanup, fireEvent, render, screen, act } from "@testing-library/react"
 import { CellMask } from "@dts/grid";
 import {
   DEFAULT_SLOT_COMPONENT,
+  FOG_DEFAULT_SORTING_ORDER,
   createGridMapObject,
   createGameObject,
   createFogObject,
   fogOf,
+  fogSortingOrderOf,
   isFogEnabled,
   withFeature,
   type GameObjectDoc,
@@ -44,6 +46,7 @@ function fogObject(
     readonly mapId?: string;
     readonly enabled?: boolean;
     readonly regions?: readonly number[];
+    readonly sortingOrder?: number;
   } = {},
 ): GameObjectDoc {
   const id = input.id ?? "fog-1";
@@ -55,6 +58,7 @@ function fogObject(
       mapId,
       enabled: input.enabled ?? true,
       regions: [...(input.regions ?? [CellMask.Fog1])],
+      sortingOrder: input.sortingOrder ?? FOG_DEFAULT_SORTING_ORDER,
     },
   );
 }
@@ -183,6 +187,7 @@ describe("属性面板：战争雾开关与雾区", () => {
       mapId: "map-1",
       enabled: true,
       regions: [],
+      sortingOrder: FOG_DEFAULT_SORTING_ORDER,
     });
     expect(screen.getByTestId("fog-mask-open").hasAttribute("disabled")).toBe(true);
 
@@ -199,6 +204,31 @@ describe("属性面板：战争雾开关与雾区", () => {
 
     fireEvent.change(screen.getByTestId("fog-map"), { target: { value: "map-2" } });
     expect(fogOf(fogObjectInStore()!)?.mapId).toBe("map-2");
+  });
+
+  it("雾层显示顺序可编辑：写进文档、可撤销、越界夹取", () => {
+    seedScene([mapObject(), fogObject()], ["fog-1"]);
+    render(<InspectorPanel />);
+
+    // 默认最前面（与 v32 之前前端写死的值一致）
+    expect(fogSortingOrderOf(fogObjectInStore()!)).toBe(FOG_DEFAULT_SORTING_ORDER);
+    const sorting = screen.getByTestId("fog-sorting-order") as HTMLInputElement;
+    expect(sorting.value).toBe(String(FOG_DEFAULT_SORTING_ORDER));
+
+    fireEvent.change(sorting, { target: { value: "-3" } });
+    fireEvent.blur(sorting);
+    expect(fogSortingOrderOf(fogObjectInStore()!)).toBe(-3);
+    expect(useEditorStore.getState().undoLabel).toBe("修改雾层显示顺序");
+
+    // 一次文档编辑：撤销回到默认值
+    act(() => useEditorStore.getState().undo());
+    expect(fogSortingOrderOf(fogObjectInStore()!)).toBe(FOG_DEFAULT_SORTING_ORDER);
+
+    // 越界输入被文档命令夹到上限，框里回填夹取后的值
+    fireEvent.change(sorting, { target: { value: "999999" } });
+    fireEvent.blur(sorting);
+    expect(fogSortingOrderOf(fogObjectInStore()!)).toBe(32767);
+    expect(sorting.value).toBe("32767");
   });
 
   it("「编辑」把目标雾对象写进 store（Mask 窗口）", () => {

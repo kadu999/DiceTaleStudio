@@ -2,7 +2,7 @@
 // 总开关与雾区都写在它自己身上的 `FogOfWar` 组件里。
 import type { Draft } from "immer";
 import { normalizeRegions, regionsToMask } from "@dts/grid";
-import { DEFAULT_SLOT_COMPONENT } from "../presets";
+import { DEFAULT_SLOT_COMPONENT, FOG_DEFAULT_SORTING_ORDER, FOG_SORTING_ORDER_LIMIT } from "../presets";
 // 特性的读写一律走访问器（「数据存在哪个组件里」只有 access.ts 知道）
 import {
   canRepairObjectComponent,
@@ -23,6 +23,16 @@ import type { FogOfWarDataDoc, GameObjectDoc, SceneDoc } from "../types";
  */
 export function fogMaskOf(object: GameObjectDoc): number {
   return regionsToMask(fogOf(object)?.regions ?? []);
+}
+
+/**
+ * 雾层的**显示顺序**（v32 起可配置）。
+ *
+ * 全仓唯一读口（与 `sortingOrderOf` 同一套）：有 `FogOfWar` 组件就取它的 `sortingOrder`，
+ * 没有（损坏的手写文件）兜底到**最前面**（`FOG_DEFAULT_SORTING_ORDER`，与 schema 的缺省一致）。
+ */
+export function fogSortingOrderOf(object: GameObjectDoc): number {
+  return fogOf(object)?.sortingOrder ?? FOG_DEFAULT_SORTING_ORDER;
 }
 
 /**
@@ -64,6 +74,7 @@ function ensureFogDraft(object: Draft<GameObjectDoc>): Draft<FogOfWarDataDoc> | 
     mapId: "",
     enabled: true,
     regions: [],
+    sortingOrder: FOG_DEFAULT_SORTING_ORDER,
   }).data as Draft<FogOfWarDataDoc>;
 }
 
@@ -146,6 +157,41 @@ export function setFogRegions(
     }
 
     fog.regions = next;
+    return true;
+  });
+}
+
+/**
+ * 改雾层的**显示顺序**（v32 起可配置）：大的画在前面（盖住小的）。
+ *
+ * 取整并夹在 `±FOG_SORTING_ORDER_LIMIT` 内（与 `setRenderSortingOrder` 同一套写入口径，
+ * 只是范围到 `short.MaxValue`——雾默认要能在最前面）；值没变 / 不是 `Fog` 对象返回 `false`。
+ * `NaN` / `Infinity` 同样拒绝、不写文档。
+ */
+export function setFogSortingOrder(
+  scene: Draft<SceneDoc>,
+  fogObjectId: string,
+  sortingOrder: number,
+): boolean {
+  if (!Number.isFinite(sortingOrder)) {
+    return false;
+  }
+
+  return withObject(scene, fogObjectId, (object) => {
+    const fog = ensureFogDraft(object);
+    if (fog === undefined) {
+      return false;
+    }
+
+    const value = Math.min(
+      FOG_SORTING_ORDER_LIMIT,
+      Math.max(-FOG_SORTING_ORDER_LIMIT, Math.round(sortingOrder)),
+    );
+    if (fog.sortingOrder === value) {
+      return false;
+    }
+
+    fog.sortingOrder = value;
     return true;
   });
 }

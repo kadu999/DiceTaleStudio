@@ -1,5 +1,5 @@
 {
-  "formatVersion": 31,
+  "formatVersion": 32,
   "objects": [
     {
       "id": "map_mu6uln3x1l7fg",
@@ -368,7 +368,8 @@
               1,
               2,
               4
-            ]
+            ],
+            "sortingOrder": 100
           }
         }
       ]
@@ -492,8 +493,7 @@
                     "column": 1,
                     "row": 0
                   }
-                },
-                "text": "456"
+                }
               }
             ],
             "picked": 0
