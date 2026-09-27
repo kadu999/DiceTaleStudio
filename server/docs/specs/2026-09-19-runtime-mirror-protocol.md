@@ -39,6 +39,9 @@
 > 「当前展示第几张」）与两条命令 `open_magnifier` / `close_magnifier`（让前端弹 / 收一扇窗；
 > **换图不是命令**——`picked` 是文档数据，整份 `scene_sync` 带下来）——与文档格式 v30 同一批；
 > 老前端（v20）不认这个组件、也不认那两条命令，照旧 +1。
+> **v22（2026-09-27）**把放大镜的「图片列表」换成**「状态列表」**（`states`，每项 = 标题 + 图 +
+> 文字，三项都可没有）——与文档格式 v31 同一批；老前端（v21）按 `images` 读、读不到那一屏，
+> 照旧 +1。**两条命令与其余消息一个字节都没动。**
 > 逐条见 `CODE-STRUCTURE.md` §6.1 与 `packages/protocol/src/messages.ts` 的版本注释。
 > 取代 [`2026-09-18-frontend-integration-contract.md`](2026-09-18-frontend-integration-contract.md)
 > （那份写的是「前端上报数据、后台按 id 寻址动作」的老模型，已整层删除）。
@@ -233,7 +236,7 @@ v12 起叫 `Image`）——**只显示整张图**，与精灵的差别只有「�
 | `pause_video` | `{ objectId }` | 暂停在当前帧 |
 | `resume_video` | `{ objectId }` | 从暂停处续播 |
 | `stop_video` | `{ objectId }` | 停止并**拆掉那一层**（露出对象原来的贴图） |
-| `open_magnifier` | `{ objectId }` | 让前端**弹一扇放大镜窗**显示这个对象 `images[picked]` 那一张（v21；命令里不带数据）。那扇窗**没有按钮**——只能后端开、后端关 |
+| `open_magnifier` | `{ objectId }` | 让前端**弹一扇放大镜窗**显示这个对象 `states[picked]` 那一屏（标题 + 图 + 文字；v21 起，v22 起是状态列表；命令里不带数据）。那扇窗**没有按钮**——只能后端开、后端关 |
 | `close_magnifier` | `{ objectId }` | 关掉那扇窗（v21）。带 `objectId` 是**认领**：只关正为它开着的那一扇（迟到的关闭不该关掉新开的那扇） |
 
 **战争雾发的是轨迹，不是整张遮罩**（照参考实现 `backend_diceTale` 的 `erase_mask` / `EraseStroke`）：
@@ -265,7 +268,7 @@ v12 起叫 `Image`）——**只显示整张图**，与精灵的差别只有「�
 |---|---|
 | `Data/SceneModel.cs` | 镜像模型（与 `SceneDoc` 同构）+ `MirrorSettings`（项目级全局设置） |
 | `Data/SceneParser.cs` + `Data/SettingsParser.cs` + `Data/JsonParser.cs` + `Data/GridRle.cs` | 解析场景 / 设置 / RLE 解码（JsonUtility 读不了嵌套数组） |
-| `Data/MagnifierReader.cs` | 放大镜（v21）「现在展示哪一张」的读取口径：泛型读取器读不了**数组的第 N 项**，这一小段单独收一处（`MirrorObject` / `SceneParser` 都不动） |
+| `Data/MagnifierReader.cs` | 放大镜（v21；v22 起是**状态列表**）「现在展示哪一屏」的读取口径（标题 + 图 + 文字）：泛型读取器读不了**数组的第 N 项**，这一小段单独收一处（`MirrorObject` / `SceneParser` 都不动） |
 | `Network/Protocol.cs` | 协议常量、出站 DTO、`ws://…/client` → `http://…` 推导 |
 | `Network/ServerConnection.cs` | WS 连接（未开闸时握手被拒 = 正常现象，只提示一次并重试） |
 | `Network/ClientSession.cs` | 握手 / 心跳 / 把消息变成事件 |
@@ -279,4 +282,4 @@ v12 起叫 `Image`）——**只显示整张图**，与精灵的差别只有「�
 | `Presentation/VideoOverlay.cs` | 视频层：按 URL 放（本地资源包优先、否则服务端原始字节），与宿主对象共享位置 / 尺寸 / sortingOrder；首帧就绪后隐藏宿主 Renderer，停止或解码失败时恢复 |
 | `Presentation/VideoBlend.cs` | 视频混合层：视频那一路 `VideoPlayer` → `RenderTexture`（图片那一路走 `ResourceImageLoader` 取贴图），用 `DiceTale/VideoBlend`（`lerp(B, A, mask.a)`）与一张 CPU 遮罩混合；遮罩初始**整张不透明**，按 `erase_video_mask` 擦、按 `fill_video_mask` 整张填 1 / 0，**两者按收到的先后重放**（尺寸按素材像素尺寸，与编辑器同式）；`Presentation/VideoBlendLayer.cs` 是它的渲染器（`GroundLayer` 的第三个子类） |
 | `Presentation/ResourceImageLoader.cs` | 按逻辑 ID 取图（带缓存 / 去重 / 失败记忆） |
-| `Presentation/UI/MagnifierWindow.cs` | 放大镜那扇窗（v21，代码构建）：全屏半透明底 + 居中一张等比放大的图（一格图走 `SpriteLayer.UvRectOf` 那一处唯一的 y 翻转）；**没有按钮、不吃点击**，只能由 `open_magnifier` / `close_magnifier` 开关，场景落地时刷新或关掉 |
+| `Presentation/UI/MagnifierWindow.cs` | 放大镜那扇窗（v21；v22 起是**一屏画面**，代码构建）：全屏半透明底 + 居中一块面板（上面一行标题（有才占位）、下面左边一张等比放大的图、右边一段文字；一格图走 `SpriteLayer.UvRectOf` 那一处唯一的 y 翻转）；**没有按钮、不吃点击**，只能由 `open_magnifier` / `close_magnifier` 开关，场景落地时刷新或关掉 |

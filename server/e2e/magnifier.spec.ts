@@ -20,16 +20,19 @@ import {
 } from "./helpers/editor";
 
 /**
- * **放大镜**（动作对象，文档 v30 / 协议 v21）。
+ * **放大镜**（动作对象，文档 v31 / 协议 v22）。
  *
- * 用户要的是：点开一扇窗，**中间一张大图、下面一排可以选的图**；属性面板里有图片列表（支持精灵）；
- * 前端弹的是「同一扇窗」，只是**没有选择按钮、也没有关闭按钮**——只能由后端来关。
+ * 用户要的是：点开一扇窗，里面是**一屏画面**——上面标题、左边一张图、右边一段文字；
+ * 下面一排**状态槽**（点一个 = 换成展示它），末尾「添加状态」加空槽，**填内容都在窗口里做**
+ * （属性面板那边整行搬走了，只剩「窗口」那一行）。前端弹的是「同一扇窗」，只是
+ * **没有状态槽、没有添加、也没有关闭按钮**——只能由后端来关。
  *
- * 所以这里钉三件事：
- * 1. **图片列表是文档数据**：从精灵素材里挑（可整张可一格）→ 落盘成「素材 GUID + 第几格」；
- * 2. **窗口与前端那扇同形**：中间是当前那张、下面是可选的那些，点一张就换（也写文档）；
+ * 所以这里钉四件事：
+ * 1. **状态列表是文档数据**：加状态 / 挑图（可整张可一格）/ 写标题与文字 → 都落盘；
+ * 2. **窗口与前端那扇同形**：上面是选中状态那一屏、下面是状态槽，点一个就换（也写文档）；
  * 3. **开 / 关两条命令**：运行态下「打开窗口 / 关闭画面」下发 `open_magnifier` / `close_magnifier`；
- *    **换图不是命令**——文档一改，整份 `scene_push` 就把新那张带给前端（运行态那条在这里验）。
+ *    **换状态 / 换图 / 改字都不是命令**——文档一改，整份 `scene_push` 就把新值带给前端；
+ * 4. **属性面板不再有「图片」那一行**（搬进窗口了）。
  */
 
 const SCENE = "Map001";
@@ -39,16 +42,21 @@ const GUID = /^[0-9a-f]{32}$/;
 
 const imageId = (project: string): string => `project:${project}/Assets/images/handout.png`;
 
-/** 一个放大镜（动作对象），`images` / `picked` 由夹具给。 */
+/** 一个放大镜（动作对象），`states` / `picked` 由夹具给。 */
 function magnifierDoc(
-  images: readonly Record<string, unknown>[] = [],
+  states: readonly Record<string, unknown>[] = [],
   picked?: number,
 ): Record<string, unknown> {
   return withComponent(
     gameObjectDoc("放大镜", "Magnifier", { x: 0, y: 0 }, { id: "magnifier_1" }),
     COMPONENT.magnifier,
-    { images, ...(picked === undefined ? {} : { picked }) } as Record<string, unknown>,
+    { states, ...(picked === undefined ? {} : { picked }) } as Record<string, unknown>,
   );
+}
+
+/** 一个「只有图」的状态（最常见的形状）。 */
+function imageState(image: Record<string, unknown>): Record<string, unknown> {
+  return { image };
 }
 
 /** 场景文件里那个对象的放大镜数据（没有就抛）。 */
@@ -75,10 +83,10 @@ async function openMagnifier(page: Page, project: string): Promise<void> {
   await expect(page.getByTestId("inspector-object-name")).toHaveValue("放大镜");
 }
 
-// ---------------------------------------------------------------- 编辑态：面板 + 窗口
+// ---------------------------------------------------------------- 编辑态：窗口里加状态 / 填内容
 
-test.describe("放大镜：属性面板 + 那扇窗", () => {
-  test("属性面板：＋ 挑一张精灵（取一格）→ 落盘成「GUID + 第几格」并自动选中", async ({
+test.describe("放大镜：窗口里加状态 + 填内容", () => {
+  test("「添加状态」→ 上面挑一张精灵（取一格）→ 落盘成「GUID + 第几格」", async ({
     page,
     request,
   }) => {
@@ -91,14 +99,34 @@ test.describe("放大镜：属性面板 + 那扇窗", () => {
       await seedProjectDoc(request, project, [sceneDoc(SCENE, [magnifierDoc()])]);
       await openMagnifier(page, project);
 
+      // 属性面板只剩「窗口」那一行：**没有**「图片」列表，也没有那个 ＋
       const group = page.locator('[data-group="magnifier"]');
-      await expect(group.getByTestId("magnifier-empty")).toBeVisible();
+      await expect(group.getByTestId("magnifier-window")).toBeVisible();
+      await expect(group.getByTestId("magnifier-images")).toHaveCount(0);
+      await expect(group.getByTestId("magnifier-add")).toHaveCount(0);
       await expect(group.getByTestId("magnifier-close-window")).toHaveCount(0);
       // 编辑态：只有窗口预览（进运行态才投到前端）
       await expect(group.getByTestId("magnifier-window-state")).toContainText("编辑态只有窗口预览");
 
-      // ＋ → 通用选图框（精灵那一档：可以整张，也可以取一格）
-      await group.getByTestId("magnifier-add").click();
+      // 打开那扇窗：一个状态都没有，上面写「还没有状态」
+      await group.getByTestId("magnifier-open").click();
+      const dialog = page.getByTestId("magnifier-dialog");
+      await expect(dialog).toBeVisible();
+      await expect(dialog.getByTestId("magnifier-stage-empty")).toContainText("还没有状态");
+      await expect(dialog.getByTestId("magnifier-state")).toHaveCount(0);
+
+      // 「添加状态」→ 加一个空槽并选中它（上面那块换成「点这里挑一张图」）
+      await dialog.getByTestId("magnifier-add-state").click();
+      await expect(dialog.getByTestId("magnifier-state")).toHaveCount(1);
+      await expect(dialog.getByTestId("magnifier-state").nth(0)).toHaveAttribute(
+        "data-selected",
+        "true",
+      );
+      await expect(dialog.getByTestId("magnifier-state-blank")).toHaveCount(1);
+      await expect(dialog.getByTestId("magnifier-image-empty")).toBeVisible();
+
+      // 点图那块 → 通用选图框（精灵那一档：可以整张，也可以取一格）
+      await dialog.getByTestId("magnifier-image-pick").click();
       const picker = page.getByTestId("image-picker-dialog");
       await expect(picker).toBeVisible();
       // 先选那一行，右边的切分面板才出来（与精灵对象挑图是同一条路）
@@ -110,41 +138,47 @@ test.describe("放大镜：属性面板 + 那扇窗", () => {
       await page.getByTestId("image-picker-confirm").click();
       await expect(picker).toHaveCount(0);
 
-      // 落盘：**素材 GUID + 第几格**（路径 ID 只在内存里），并且自动选中第一条
+      // 落盘：**素材 GUID + 第几格**（路径 ID 只在内存里），状态槽上出现缩略图
       await expect
         .poll(async () => {
           const data = await magnifierData(request, project, "magnifier_1");
-          const images = data["images"] as readonly Record<string, unknown>[] | undefined;
-          const first = images?.[0];
-          const sprite = first?.["sprite"] as
+          const states = data["states"] as readonly Record<string, unknown>[] | undefined;
+          const image = states?.[0]?.["image"] as Record<string, unknown> | undefined;
+          const sprite = image?.["sprite"] as
             | { readonly column?: number; readonly row?: number }
             | undefined;
           return {
-            count: images?.length,
+            count: states?.length,
             picked: data["picked"],
-            idIsGuid: typeof first?.["id"] === "string" && GUID.test(String(first["id"])),
+            idIsGuid: typeof image?.["id"] === "string" && GUID.test(String(image["id"])),
             sprite: { column: sprite?.column, row: sprite?.row },
           };
         })
         .toEqual({ count: 1, picked: 0, idIsGuid: true, sprite: { column: 1, row: 0 } });
 
-      // 面板上那一条是选中的（前端窗里放的就是它）
-      const chip = group.getByTestId("magnifier-image");
-      await expect(chip).toHaveCount(1);
-      await expect(chip).toHaveAttribute("data-selected", "true");
+      // 上面那块换成舞台（就是刚才挑的那一格），空槽占位没了
+      await expect(dialog.getByTestId("magnifier-stage")).toBeVisible();
+      await expect(dialog.getByTestId("magnifier-state-blank")).toHaveCount(0);
 
-      // 点一下（已选中的）= 取消展示：面板上不再有选中的那条
-      await group.getByTestId("magnifier-image-pick").click();
-      await expect(chip).toHaveAttribute("data-selected", "false");
+      // 右上角 × 把图移出（状态还在，只是没图了）
+      await dialog.getByTestId("magnifier-image-clear").click();
+      await expect(dialog.getByTestId("magnifier-image-empty")).toBeVisible();
       await expect
-        .poll(async () => (await magnifierData(request, project, "magnifier_1"))["picked"])
-        .toBeUndefined();
+        .poll(async () => {
+          const data = await magnifierData(request, project, "magnifier_1");
+          const states = data["states"] as readonly Record<string, unknown>[] | undefined;
+          return { count: states?.length, image: states?.[0]?.["image"] };
+        })
+        .toEqual({ count: 1, image: undefined });
     } finally {
       await dropProject(request, project);
     }
   });
 
-  test("窗口：中间是当前那张、下面那排点一下就换（写文档、可撤销）", async ({ page, request }) => {
+  test("窗口：上面是选中状态那一屏（标题 / 图 / 文字），下面点一个槽就换（写文档、可撤销）", async ({
+    page,
+    request,
+  }) => {
     const project = await newProject(request);
     try {
       await uploadSceneImage(request, project, "handout", solidPng(64, 64, [200, 120, 40]));
@@ -153,8 +187,12 @@ test.describe("放大镜：属性面板 + 那扇窗", () => {
         sceneDoc(SCENE, [
           magnifierDoc(
             [
-              { id: imageId(project), width: 64, height: 64 },
-              { id: imageId(project), width: 16, height: 32, sprite: { column: 1, row: 0 } },
+              imageState({ id: imageId(project), width: 64, height: 64 }),
+              {
+                title: "线索二",
+                image: { id: imageId(project), width: 16, height: 32, sprite: { column: 1, row: 0 } },
+                text: "第一行\n第二行",
+              },
             ],
             0,
           ),
@@ -167,28 +205,45 @@ test.describe("放大镜：属性面板 + 那扇窗", () => {
 
       const dialog = page.getByTestId("magnifier-dialog");
       await expect(dialog).toBeVisible();
-      // 中间：当前那张（舞台）；下面：**可以选择的图片**
+      // 上面：当前那一屏（舞台）；下面：**状态槽**
       await expect(dialog.getByTestId("magnifier-stage")).toBeVisible();
-      const picks = dialog.getByTestId("magnifier-pick");
-      await expect(picks).toHaveCount(2);
-      await expect(picks.nth(0)).toHaveAttribute("data-selected", "true");
+      const slots = dialog.getByTestId("magnifier-state");
+      await expect(slots).toHaveCount(2);
+      await expect(slots.nth(0)).toHaveAttribute("data-selected", "true");
+      // 第一个状态没有标题：输入框是空的
+      await expect(dialog.getByTestId("magnifier-title")).toHaveValue("");
 
       // 编辑态只是预览：底栏「在画面上打开」点不了
       await expect(dialog.getByTestId("magnifier-show")).toBeDisabled();
       await expect(dialog.getByTestId("magnifier-dialog-state")).toContainText("编辑态只是预览");
 
-      // 点下面第二张 → 换成展示它（写文档）
-      await picks.nth(1).click();
+      // 点下面第二个槽 → 换成展示它（写文档），上面那块换成它的标题 / 图 / 文字
+      await slots.nth(1).click();
       await expect
         .poll(async () => (await magnifierData(request, project, "magnifier_1"))["picked"])
         .toBe(1);
-      await expect(dialog.getByTestId("magnifier-pick").nth(1)).toHaveAttribute("data-selected", "true");
+      await expect(dialog.getByTestId("magnifier-state").nth(1)).toHaveAttribute("data-selected", "true");
+      await expect(dialog.getByTestId("magnifier-title")).toHaveValue("线索二");
+      await expect(dialog.getByTestId("magnifier-text")).toHaveValue("第一行\n第二行");
 
-      // 撤销回到第一张（换图是文档数据，进撤销栈）
+      // 撤销回到第一个（换状态是文档数据，进撤销栈）
       await page.keyboard.press("Control+z");
       await expect
         .poll(async () => (await magnifierData(request, project, "magnifier_1"))["picked"])
         .toBe(0);
+
+      // 写标题与文字：失焦时落盘（多行照原样）
+      await dialog.getByTestId("magnifier-title").fill("线索一");
+      await dialog.getByTestId("magnifier-title").blur();
+      await dialog.getByTestId("magnifier-text").fill("甲\n乙");
+      await dialog.getByTestId("magnifier-text").blur();
+      await expect
+        .poll(async () => {
+          const data = await magnifierData(request, project, "magnifier_1");
+          const states = data["states"] as readonly Record<string, unknown>[] | undefined;
+          return { title: states?.[0]?.["title"], text: states?.[0]?.["text"] };
+        })
+        .toEqual({ title: "线索一", text: "甲\n乙" });
 
       // 关掉编辑器这扇窗（前端那扇不受影响——那是「关闭画面」的事）
       await page.getByTestId("magnifier-close").click();
@@ -206,7 +261,10 @@ test.describe("放大镜：属性面板 + 那扇窗", () => {
       // 手写一条已经选好的（省掉挑图那一步：双击那条路本身才是这里要验的）
       await seedProjectDoc(request, project, [
         sceneDoc(SCENE, [
-          magnifierDoc([{ id: imageId(project), width: 16, height: 32, sprite: { column: 1, row: 0 } }], 0),
+          magnifierDoc(
+            [imageState({ id: imageId(project), width: 16, height: 32, sprite: { column: 1, row: 0 } })],
+            0,
+          ),
         ]),
       ]);
 
@@ -265,7 +323,7 @@ async function connectFakeClient(page: Page, port: number): Promise<void> {
           type: "client_hello",
           // 与 `@dts/protocol` 的 `PROTOCOL_VERSION` 一致（照抄字面量：e2e 不 import workspace 包，
           // 那个常量不会被类型检查兜住，见 CODE-STRUCTURE 的「复述常量」一节）
-          protocolVersion: 21,
+          protocolVersion: 22,
           name: "e2e 假前端",
           version: "0.0.0",
         }),
@@ -316,10 +374,10 @@ async function fakePicked(page: Page): Promise<unknown> {
   });
 }
 
-test.describe("放大镜：开 / 关两条命令 + 换图靠整份场景", { tag: "@runtime" }, () => {
+test.describe("放大镜：开 / 关两条命令 + 换状态靠整份场景", { tag: "@runtime" }, () => {
   test.describe.configure({ mode: "serial" });
 
-  test("「打开窗口 / 关闭画面」下发 open_magnifier / close_magnifier；换图走 scene_push", async ({
+  test("「打开窗口 / 关闭画面」下发 open_magnifier / close_magnifier；换状态走 scene_push", async ({
     page,
     request,
   }, testInfo) => {
@@ -331,13 +389,17 @@ test.describe("放大镜：开 / 关两条命令 + 换图靠整份场景", { tag
     try {
       await uploadSceneImage(request, project, "handout", solidPng(64, 64, [200, 120, 40]));
       await seedImageSpriteMeta(request, imageId(project), { mode: "Multiple", sheet: SHEET });
-      // 两条图（第一条整张、第二条取一格）：下面那排点一下就换
+      // 两个状态（第二个还带标题与文字）：下面那排点一下就换
       await seedProjectDoc(request, project, [
         sceneDoc(SCENE, [
           magnifierDoc(
             [
-              { id: imageId(project), width: 64, height: 64 },
-              { id: imageId(project), width: 16, height: 32, sprite: { column: 1, row: 0 } },
+              imageState({ id: imageId(project), width: 64, height: 64 }),
+              {
+                title: "线索二",
+                image: { id: imageId(project), width: 16, height: 32, sprite: { column: 1, row: 0 } },
+                text: "第一行\n第二行",
+              },
             ],
             0,
           ),
@@ -354,7 +416,7 @@ test.describe("放大镜：开 / 关两条命令 + 换图靠整份场景", { tag
       const group = page.locator('[data-group="magnifier"]');
       const dialog = page.getByTestId("magnifier-dialog");
 
-      // 打开那扇窗 → open_magnifier（只带 objectId：放哪一张从镜像里读）
+      // 打开那扇窗 → open_magnifier（只带 objectId：放哪一屏从镜像里读）
       await group.getByTestId("magnifier-open").click();
       await expect(dialog).toBeVisible();
       await expect
@@ -364,9 +426,9 @@ test.describe("放大镜：开 / 关两条命令 + 换图靠整份场景", { tag
       const opened = (await fakeCommands(page)).find((item) => item.kind === "open_magnifier");
       expect(opened?.objectId).toBe("magnifier_1");
 
-      // 换图**不是命令**：文档一改，整份场景推下去，假前端那边的 picked 跟着变
+      // 换状态**不是命令**：文档一改，整份场景推下去，假前端那边的 picked 跟着变
       await expect.poll(async () => fakePicked(page)).toBe(0);
-      await dialog.getByTestId("magnifier-pick").nth(1).click();
+      await dialog.getByTestId("magnifier-state").nth(1).click();
       await expect.poll(async () => fakePicked(page)).toBe(1);
       expect((await fakeCommands(page)).filter((item) => item.kind !== "open_magnifier")).toEqual([]);
 
