@@ -102,9 +102,6 @@ namespace DiceTale
         private RectTransform content;
         private Text bodyText;
 
-        /// <summary>媒体那块（图 / 视频）共同的外框（v33）：动画（tween）作用在它身上。</summary>
-        private RectTransform mediaRoot;
-
         /// <summary>当前显示的那张资源逻辑 ID 与那一格（用来判断「同一张就别重建」）。</summary>
         private string currentId = "";
         private MirrorSprite currentSprite;
@@ -118,6 +115,17 @@ namespace DiceTale
         private Vector2 tweenBasePosition;
         private Vector3 tweenBaseScale;
         private Quaternion tweenBaseRotation;
+
+        /// <summary>视频那块自己一套基准：它挂在 `Content` 上、不在 `Frame` 里，动画要**跟着一起动**。</summary>
+        private Vector2 videoBasePosition;
+        private Vector3 videoBaseScale = Vector3.one;
+        private Quaternion videoBaseRotation = Quaternion.identity;
+
+        /// <summary>
+        /// **起过一次动画**才为真。`StopTween` 只在它为真时把基准写回去——否则（第一次铺屏、
+        /// 预设里 `frame.localScale` 是 1）会拿默认的 `Vector3.zero` 基准把整块缩成 0（踩过）。
+        /// </summary>
+        private bool tweenApplied;
 
         /// <summary>视频那块（v33）：`RawImage` 显示 `RenderTexture`，`VideoPlayer` 按 URL 放（与图二选一）。</summary>
         private RawImage videoImage;
@@ -202,11 +210,8 @@ namespace DiceTale
             bodyCard = foundBody as RectTransform;
             bodyText = foundBodyTextGraphic;
 
-            // 媒体外框（v33；老 prefab 里可能没有——那时动画没有载体，退化到动 Frame）
-            mediaRoot = transform.Find("Panel/PanelFill/Padding/Content/Media") as RectTransform;
-
-            // 视频那块（v33）：挂在媒体外框下（不挂进 FrameFill，见 Build 的说明）
-            var foundVideo = transform.Find("Panel/PanelFill/Padding/Content/Media/Video");
+            // 视频那块（v33）：挂在 Content 上（**不能挂进 `FrameFill`**，见 Build 的说明）
+            var foundVideo = transform.Find("Panel/PanelFill/Padding/Content/Video");
             videoImage = foundVideo == null ? null : foundVideo.GetComponent<RawImage>();
             videoPlayer = GetComponent<VideoPlayer>();
             return true;
@@ -351,12 +356,12 @@ namespace DiceTale
         /// </summary>
         private void SyncVideoRect()
         {
-            if (videoImage == null || frame == null || mediaRoot == null)
+            if (videoImage == null || frame == null || content == null)
             {
                 return;
             }
 
-            var media = mediaRoot.rect;
+            var media = content.rect;
             var area = frame.rect.size;
             var inset = (BorderWidth + ImageInset) * 2f;
             var availableWidth = Mathf.Max(1f, area.x - inset);
@@ -451,14 +456,23 @@ namespace DiceTale
         private void ApplyTween(MagnifierTween tween)
         {
             StopTween();
-            if (mediaRoot == null || tween == MagnifierTween.None || !isActiveAndEnabled)
+            if (frame == null || tween == MagnifierTween.None || !isActiveAndEnabled)
             {
                 return;
             }
 
-            tweenBasePosition = mediaRoot.anchoredPosition;
-            tweenBaseScale = mediaRoot.localScale;
-            tweenBaseRotation = mediaRoot.localRotation;
+            tweenBasePosition = frame.anchoredPosition;
+            tweenBaseScale = frame.localScale;
+            tweenBaseRotation = frame.localRotation;
+            if (videoImage != null)
+            {
+                var videoRect = videoImage.rectTransform;
+                videoBasePosition = videoRect.anchoredPosition;
+                videoBaseScale = videoRect.localScale;
+                videoBaseRotation = videoRect.localRotation;
+            }
+
+            tweenApplied = true;
             tweenRoutine = StartCoroutine(AnimateTween(tween));
         }
 
@@ -470,11 +484,27 @@ namespace DiceTale
                 tweenRoutine = null;
             }
 
-            if (mediaRoot != null)
+            // 没起过动画就别动它：基准还没采过（默认全 0），写回去会把媒体块缩成 0
+            if (!tweenApplied)
             {
-                mediaRoot.anchoredPosition = tweenBasePosition;
-                mediaRoot.localScale = tweenBaseScale;
-                mediaRoot.localRotation = tweenBaseRotation;
+                return;
+            }
+
+            tweenApplied = false;
+
+            if (frame != null)
+            {
+                frame.anchoredPosition = tweenBasePosition;
+                frame.localScale = tweenBaseScale;
+                frame.localRotation = tweenBaseRotation;
+            }
+
+            if (videoImage != null)
+            {
+                var videoRect = videoImage.rectTransform;
+                videoRect.anchoredPosition = videoBasePosition;
+                videoRect.localScale = videoBaseScale;
+                videoRect.localRotation = videoBaseRotation;
             }
         }
 
@@ -485,23 +515,37 @@ namespace DiceTale
             while (true)
             {
                 phase += Time.deltaTime;
+                var position = tweenBasePosition;
+                var scale = tweenBaseScale;
+                var rotation = tweenBaseRotation;
                 switch (tween)
                 {
                     case MagnifierTween.Shake:
-                        mediaRoot.anchoredPosition =
-                            tweenBasePosition + new Vector2(Wave(phase, ShakeHz) * ShakePixels, 0f);
+                        position += new Vector2(Wave(phase, ShakeHz) * ShakePixels, 0f);
                         break;
                     case MagnifierTween.Breathe:
-                        mediaRoot.localScale = tweenBaseScale * (1f + Wave(phase, BreatheHz) * BreatheScale);
+                        scale *= 1f + Wave(phase, BreatheHz) * BreatheScale;
                         break;
                     case MagnifierTween.Float:
-                        mediaRoot.anchoredPosition =
-                            tweenBasePosition + new Vector2(0f, Wave(phase, FloatHz) * FloatPixels);
+                        position += new Vector2(0f, Wave(phase, FloatHz) * FloatPixels);
                         break;
                     case MagnifierTween.Sway:
-                        mediaRoot.localRotation =
-                            tweenBaseRotation * Quaternion.Euler(0f, 0f, Wave(phase, SwayHz) * SwayDegrees);
+                        rotation *= Quaternion.Euler(0f, 0f, Wave(phase, SwayHz) * SwayDegrees);
                         break;
+                }
+
+                frame.anchoredPosition = position;
+                frame.localScale = scale;
+                frame.localRotation = rotation;
+
+                // 视频那块挂在 Content 上（不在 Frame 里）：把**同一份相对变化**套到它身上，两者一起动
+                if (videoImage != null)
+                {
+                    var videoRect = videoImage.rectTransform;
+                    var ratio = Mathf.Approximately(tweenBaseScale.x, 0f) ? 1f : scale.x / tweenBaseScale.x;
+                    videoRect.anchoredPosition = videoBasePosition + (position - tweenBasePosition);
+                    videoRect.localScale = videoBaseScale * ratio;
+                    videoRect.localRotation = videoBaseRotation * (Quaternion.Inverse(tweenBaseRotation) * rotation);
                 }
 
                 yield return null;
@@ -609,22 +653,12 @@ namespace DiceTale
             content.offsetMax = new Vector2(0f, -(TitleHeight + Gap));
 
             /*
-              媒体那块（图 / 视频）共同的**外框**（v33）：动画作用在它上面，图与视频才会一起动。
-              视频**不能挂进 `FrameFill`**（实测那个带 Sliced 圆角图的 Image 底下 `RawImage` 生成不出
-              网格），所以图与视频都挂这一层、各自摆位。
-            */
-            var mediaGo = new GameObject("Media", typeof(RectTransform));
-            mediaGo.transform.SetParent(content, false);
-            mediaRoot = mediaGo.GetComponent<RectTransform>();
-            Stretch(mediaRoot);
-
-            /*
               图那一块：与标题 / 文字**同款卡片表面**（三块一块料），里面那张等比装下。
               为什么不用「量出可视区再算像素」（编辑器那扇窗的 `fitBox` 那样）：uGUI 的
               `preserveAspect` 就是「在这个矩形里等比装下」，宽高比交给它，一行都不用算——
               编辑器那边要算是因为 canvas 还要按同一块矩形做像素级擦除，这里没有那件事。
             */
-            frame = CreateCard("Frame", mediaRoot, CardFill, CardEdge, out var frameContent);
+            frame = CreateCard("Frame", content, CardFill, CardEdge, out var frameContent);
             frame.anchorMin = new Vector2(0f, 0f);
             frame.anchorMax = new Vector2(ImageWidthRatio, 1f);
             frame.offsetMin = Vector2.zero;
@@ -646,7 +680,7 @@ namespace DiceTale
               `SyncVideoRect` 按媒体那块的尺寸与视频长宽比居中装下。一开始整块关着：首帧到了才显示。
             */
             var videoGo = new GameObject("Video", typeof(RawImage));
-            videoGo.transform.SetParent(mediaRoot, false);
+            videoGo.transform.SetParent(content, false);
             videoImage = videoGo.GetComponent<RawImage>();
             videoImage.raycastTarget = false;
             videoGo.SetActive(false);
