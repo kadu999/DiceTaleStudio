@@ -37,6 +37,7 @@ import { createSoundSlice } from "./slices/sound-slice";
 import { createVideoSlice } from "./slices/video-slice";
 import { createVideoBlendSlice } from "./slices/video-blend-slice";
 import { createBgmSlice } from "./slices/bgm-slice";
+import { createImageGenSlice } from "./slices/image-gen-slice";
 import { createAudioMetaSlice } from "./slices/audio-meta-slice";
 import { createTeleportSlice } from "./slices/teleport-slice";
 import { createMagnifierSlice } from "./slices/magnifier-slice";
@@ -68,6 +69,7 @@ export const useEditorStore = create<EditorStoreState>()((set, get) => {
     ...createVideoSlice(set, get, ctx),
     ...createVideoBlendSlice(set, get, ctx),
     ...createBgmSlice(set, get, ctx),
+    ...createImageGenSlice(set, get, ctx),
     ...createAudioMetaSlice(set, get, ctx),
     ...createTeleportSlice(set, get, ctx),
     ...createMagnifierSlice(set, get, ctx),

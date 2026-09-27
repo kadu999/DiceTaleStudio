@@ -30,8 +30,30 @@ pnpm --filter @dts/backend mock   # 另开一个终端：启动 Mock 前端（�
   `/api/projects/reveal`（在服务端那台机器上用文件管理器打开项目里选中的那一层）、
   `/api/health`、`/api/config`、`/api/resources/index`、`/api/resources/raw?id=...`、`/api/resources/thumbnail?id=...`、`/api/resources/text?id=...`、
   `/api/resources/rename`（重命名资源：`{from,to}` 逻辑 ID）、
+  `/api/tools/generate-image`（AI 生图：调外部接口画一张、**直接存成项目素材**，
+  请求体 `{project, prompt, size?, name?}`，回 `{id, path, guid, width, height}`——
+  与「从项目里挑一张图」拿到的东西一样，所以贴图那一步走的是同一条命令）、
   `/api/state`（运行态摘要：开没开闸 / 前端是谁 / 镜像的是哪份场景）
 - WebSocket：`/client`（前端，**只有编辑器点了「运行」才接受连接**）、`/editor`（编辑器）
+
+### AI 生图（编辑器「工具 → AI 生图」）
+
+写一句提示词 → 后端调**生图接口**画一张 → **直接存进项目**（默认 `Assets/images/generated/`），
+随后可以一键用作选中对象的贴图。生出来的图就是**普通项目素材**：素材面板里一样能看见、改名、删。
+
+走的是 **OpenAI 兼容**的 `POST {baseUrl}/images/generations`（body `{model, prompt, size, n}`，
+响应取 `data[0].b64_json`，只有 `url` 就再下载一次），所以换供应商只改配置、代码不动。
+密钥与地址**只在服务端**（浏览器那一侧拿到的只是「生成好的素材 ID」）：
+
+| `resources/config/app.json` 的 `imageGen` | 环境变量（优先） | 说明 |
+|---|---|---|
+| `baseUrl` | `DTS_IMAGE_API_BASE` | 默认 `https://api.openai.com/v1` |
+| `apiKey` | `DTS_IMAGE_API_KEY` | 两边都空 = 这个功能不可用（接口回 400），其余功能一切照旧 |
+| `model` | `DTS_IMAGE_MODEL` | 默认 `gpt-image-1` |
+| `size` / `timeoutMs` / `outputDir` | — | 默认出图尺寸 / 单次超时 / 落在项目里的哪个目录 |
+
+失败的面孔是固定的：没配密钥、提示词为空、尺寸不合法 → **400**（原话说清怎么办）；
+项目不存在 → **404**；供应商那边出错（连不上 / 401 / 没返回图）→ **502** 并带上它的原话（截断 300 字）。
 
 ## 常用脚本（在 `server/` 下执行）
 

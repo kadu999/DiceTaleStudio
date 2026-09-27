@@ -41,6 +41,7 @@ export function MenuBar({ compact }: MenuBarProps): React.JSX.Element {
   const projectSaveState = useEditorStore((state) => state.projectSaveState);
   const openGlobalSettings = useEditorStore((state) => state.openGlobalSettings);
   const openAudioTags = useEditorStore((state) => state.openAudioTags);
+  const openImageGenDialog = useEditorStore((state) => state.openImageGenDialog);
   // 运行态下不写盘：保存入口要挡住（改动退出运行时会整体还原）
   const runtimeActive = useEditorStore((state) => state.runtime.runtimeActive);
   const objectDialog = useEditorStore((state) => state.objectDialog);
@@ -198,6 +199,18 @@ export function MenuBar({ compact }: MenuBarProps): React.JSX.Element {
         <MenuItem
           label={mode === "edit" ? "进入运行状态" : "退出运行状态"}
           onSelect={() => setMode(mode === "edit" ? "run" : "edit")}
+        />
+      </Menu>
+
+      <Menu label="工具">
+        {/*
+          AI 生图：写一句要画什么，后端调生图接口画一张、**直接存成项目素材**。
+          出图要几十秒，所以没有快捷键——只在菜单里，平板也点得到。
+        */}
+        <MenuItem
+          label="AI 生图…"
+          disabled={currentProject === null}
+          onSelect={() => openImageGenDialog(true)}
         />
       </Menu>
 

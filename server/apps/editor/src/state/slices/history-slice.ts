@@ -134,6 +134,10 @@ export function createHistorySlice(
         bgmDialog: false,
         // 标签表窗口也跟前一个项目的标签表说再见
         audioTags: false,
+        // 生图聊天记录里那些图属于上一个项目（路径都指过去了），窗口也一起关掉
+        imageGenDialog: false,
+        imageGenEntries: [],
+        imageGenBusy: false,
         // 战争雾的揭示记账同理：瞄准的对象已经不存在了
         fogReveal: emptyFogReveal(),
         // 放大镜：编辑器那扇窗盯的对象与前端那扇窗都跟着上一个文档没了

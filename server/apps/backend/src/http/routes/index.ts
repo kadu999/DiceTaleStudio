@@ -24,6 +24,7 @@ import {
   writeResourceTextRoute,
 } from "./resources";
 import { getState } from "./state";
+import { generateImageRoute } from "./tools";
 
 /**
  * 路由表：**加一条接口 = 加一个函数 + 加一行**。
@@ -63,4 +64,8 @@ export const ROUTES: readonly Route[] = [
   { method: "GET", path: "/api/resources/manifest", handler: getManifestRoute },
   { method: "GET", path: "/api/resources/bundle", handler: getBundleRoute },
   { method: "POST", path: "/api/resources/rename", handler: renameResourceRoute },
+
+  // ---------------------------------------------------------------- 工具
+  // AI 生图：调外部接口画一张、直接存成项目素材（密钥只在服务端，见 `image-gen/openai-image.ts`）
+  { method: "POST", path: "/api/tools/generate-image", handler: generateImageRoute },
 ];

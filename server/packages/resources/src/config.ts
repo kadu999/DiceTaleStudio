@@ -52,6 +52,35 @@ export const appConfigSchema = z.object({
       maxBodyBytes: z.number().int().positive().default(64 * 1024 * 1024),
     })
     .default({ maxBodyBytes: 64 * 1024 * 1024 }),
+  /**
+   * AI 生图（编辑器「工具 → AI 生图」用的**外部接口**）。
+   *
+   * 只打一个 OpenAI 兼容的 `POST {baseUrl}/images/generations`（body：`model` / `prompt` /
+   * `size` / `n`，响应取 `data[0].b64_json`，没有就取 `data[0].url` 再下载）。
+   * 密钥与地址**只在服务端**：环境变量 `DTS_IMAGE_API_BASE` / `DTS_IMAGE_API_KEY` /
+   * `DTS_IMAGE_MODEL` 优先，其次这份配置——浏览器那一侧永远拿不到密钥。
+   * 没配密钥（两边都空）= 这个功能不可用（接口回 400），其余功能一切照旧。
+   */
+  imageGen: z
+    .object({
+      baseUrl: z.string().default("https://api.openai.com/v1"),
+      apiKey: z.string().default(""),
+      model: z.string().default("gpt-image-1"),
+      /** 默认出图尺寸（`宽x高`，如 `1024x1024`）；编辑器里可以逐次改。 */
+      size: z.string().default("1024x1024"),
+      /** 单次生成的整体超时（毫秒）——出图慢，默认给到 3 分钟。 */
+      timeoutMs: z.number().int().positive().default(180_000),
+      /** 生成的 PNG 落在项目里的哪个目录（**项目内相对路径**）。 */
+      outputDir: z.string().default("Assets/images/generated"),
+    })
+    .default({
+      baseUrl: "https://api.openai.com/v1",
+      apiKey: "",
+      model: "gpt-image-1",
+      size: "1024x1024",
+      timeoutMs: 180_000,
+      outputDir: "Assets/images/generated",
+    }),
 });
 
 export type AppConfig = z.infer<typeof appConfigSchema>;

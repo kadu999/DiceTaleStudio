@@ -16,6 +16,7 @@ import { TeleportEditDialog } from "./TeleportEditDialog";
 import { AudioTagEditorDialog } from "./AudioTagEditorDialog";
 import { BgmDialog } from "./BgmDialog";
 import { GlobalSettingsDialog } from "./GlobalSettingsDialog";
+import { ImageGenDialog } from "./ImageGenDialog";
 import { MenuBar } from "./MenuBar";
 import { StatusBar } from "./StatusBar";
 import { currentImageAssetId } from "../panels/asset-picker";
@@ -307,6 +308,9 @@ export function EditorShell(): React.JSX.Element {
 
       {/* 全局设置（项目级）：三档音量（背景音乐的清单不在这里） */}
       <GlobalSettingsDialog />
+
+      {/* AI 生图（菜单栏「工具 → AI 生图」）：聊天框，画完直接存成项目素材 */}
+      <ImageGenDialog />
 
       {/* 战争雾 Mask 窗口：在贴图上按雾区涂 / 擦（目标地图由属性面板指定） */}
       <FogMaskDialog

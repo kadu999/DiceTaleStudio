@@ -27,6 +27,7 @@ import { type GizmoHandle, type TransformTool, type Viewport } from "@dts/render
 import type { ClientInfo, ProjectSettingsInfo, ResourcesInfo, SceneInfo } from "@dts/protocol";
 import { type RuntimeLogEntry, type RuntimeStatus } from "../services/runtime-client";
 import { type BgmPlaybackState } from "../services/bgm-playback";
+import { type GeneratedImage } from "../services/image-gen-api";
 import { type ProjectSummary, type ResourceTreeNode } from "../services/project-api";
 import { type TransformStart } from "../panels/scene/transform";
 import { type SoundPlaybackState } from "../services/sound-playback";
@@ -141,6 +142,23 @@ export interface GridPaintState {
   readonly showAnnotations: boolean;
 }
 
+/**
+ * 「AI 生图」聊天记录里的一条：**一句提示词 + 它的结果**。
+ *
+ * 三种状态各有各的展示（还在画 = 转圈、画好了 = 图 + 「用作选中对象的贴图」、
+ * 失败了 = 红字写上原因）。`image` 里那四项就是一份普通素材的身份与尺寸——
+ * 与「从项目里挑一张图」拿到的完全一样，所以贴图那一步能直接复用同一条命令。
+ */
+export interface ImageGenEntry {
+  readonly id: string;
+  readonly prompt: string;
+  /** 这一次要的尺寸（`宽x高`；空串 = 用后端配置里的默认值）。 */
+  readonly size: string;
+  readonly status: "pending" | "done" | "error";
+  readonly image?: GeneratedImage;
+  readonly error?: string;
+}
+
 export interface EditorStoreState {
   readonly mode: EditorMode;
   /** 项目文件（`project.json`）的内容：只有项目级数据 */
@@ -211,6 +229,12 @@ export interface EditorStoreState {
   readonly bgmDialog: boolean;
   /** 「标签」窗口是否打开（工程菜单 / 属性面板唤出；标签表：新建 / 改名 / 删除） */
   readonly audioTags: boolean;
+  /** 「AI 生图」聊天框是否打开（菜单栏「工具 → AI 生图」唤出） */
+  readonly imageGenDialog: boolean;
+  /** 生图聊天记录：一句提示词一条，最近的在最后（只活在这一次会话里，不写盘、不进撤销栈） */
+  readonly imageGenEntries: readonly ImageGenEntry[];
+  /** 正在画（同一时刻只画一张：按钮与输入框据此禁用） */
+  readonly imageGenBusy: boolean;
   /** 「战争雾 Mask 窗口」是否打开（属性面板的按钮唤出） */
   readonly fogMask: boolean;
   /** Mask 窗口正在编辑哪张地图；null 表示窗口没打开 */
@@ -491,6 +515,25 @@ export interface EditorStoreState {
   openGlobalSettings(open: boolean): void;
   /** 打开 / 关闭「背景音乐」弹框（顶栏「音乐」按钮唤出）。 */
   openBgmDialog(open: boolean): void;
+  /** 打开 / 关闭「AI 生图」聊天框（菜单栏「工具 → AI 生图」唤出）。 */
+  openImageGenDialog(open: boolean): void;
+  /**
+   * AI 生图：写一句要画什么，让后端画一张并**存成项目素材**。
+   *
+   * 成功返回 true（记录里那条会补上图片与落盘路径），失败返回 false（那条记下错误原文）。
+   * 没打开项目 / 空提示词 / 上一张还在画时静默返回 false（界面自己会挡住这几种情况）。
+   */
+  generateImage(prompt: string, size?: string): Promise<boolean>;
+  /** AI 生图：清空聊天记录（生出来的图**不会**被删，它们已经是普通项目素材）。 */
+  clearImageGenHistory(): void;
+  /**
+   * AI 生图：把某一条生成出来的图**用作当前选中对象的贴图**。
+   *
+   * 成功返回空串，失败返回一句给人看的原因（没选中 / 没图 / 这个对象放不了贴图）。
+   * 走的是与「从项目里挑一张图」**同一条命令**（`setObjectImageSprite`），
+   * 所以身份（GUID）、撤销、自动存这些都跟手动挑图完全一致。
+   */
+  useGeneratedImage(entryId: string): string;
   /**
    * 素材文件（**任何素材**：图 / 音频 / 视频）：起**显示名**（`""` = 退回素材文件名）。
    * 进素材 meta 那条轨道、可撤销、随自动落盘；只是编辑器里给人看的标签，不进协议。

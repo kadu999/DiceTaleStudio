@@ -21,5 +21,13 @@
   },
   "http": {
     "maxBodyBytes": 67108864
+  },
+  "imageGen": {
+    "baseUrl": "https://api.openai.com/v1",
+    "apiKey": "",
+    "model": "gpt-image-1",
+    "size": "1024x1024",
+    "timeoutMs": 180000,
+    "outputDir": "Assets/images/generated"
   }
 }
