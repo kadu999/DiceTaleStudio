@@ -1,16 +1,21 @@
 /**
  * 本文件从 `editor-store.ts` 拆出（照 `teleport-slice.ts` 的样子）。
  *
- * 放大镜（动作对象，v30）：**图片列表 + 当前展示的那一张**，以及「前端那扇窗」的开 / 关。
+ * 放大镜（动作对象，v30；v31 起数据是**状态列表**）：**状态列表 + 当前展示的那一个**
+ * （每条 = 标题 + 图 + 文字），以及「前端那扇窗」的开 / 关。
  *
  * 两条分工别混：
- * - **列表与展示哪一张**是文档数据（进撤销栈、随场景存盘下发）——窗口下排点一下就是改它；
+ * - **列表与展示哪一个 / 每个状态里的内容**是文档数据（进撤销栈、随场景存盘下发）
+ *   ——窗口下排点一下、上面那块区域里挑图 / 打字，改的都是它；
  * - **前端那扇窗开没开**是运行态记账（不写文档）：开 / 关各一条命令。
  */
 import {
-  addMagnifierImage as addSceneMagnifierImage,
-  removeMagnifierImage as removeSceneMagnifierImage,
+  addMagnifierState as addSceneMagnifierState,
+  removeMagnifierState as removeSceneMagnifierState,
   setMagnifierPicked as setSceneMagnifierPicked,
+  setMagnifierStateImage as setSceneMagnifierStateImage,
+  setMagnifierStateText as setSceneMagnifierStateText,
+  setMagnifierStateTitle as setSceneMagnifierStateTitle,
   type ImageRef,
 } from "@dts/document";
 import { type StoreSet, type StoreGet, type EditorStoreState } from "../store-types";
@@ -25,9 +30,12 @@ export function createMagnifierSlice(
   EditorStoreState,
   | "openMagnifierEditor"
   | "showMagnifier"
-  | "addMagnifierImage"
-  | "removeMagnifierImage"
-  | "selectMagnifierImage"
+  | "addMagnifierState"
+  | "removeMagnifierState"
+  | "selectMagnifierState"
+  | "setMagnifierStateImage"
+  | "setMagnifierStateTitle"
+  | "setMagnifierStateText"
   | "openMagnifierWindow"
   | "closeMagnifierWindow"
   | "flushMagnifierWindow"
@@ -54,21 +62,39 @@ export function createMagnifierSlice(
       return get().openMagnifierWindow(objectId);
     },
 
-    addMagnifierImage(objectId, image: ImageRef) {
-      return applyActiveScene("添加放大镜图片", (scene) => {
-        addSceneMagnifierImage(scene, objectId, image);
+    addMagnifierState(objectId) {
+      return applyActiveScene("添加放大镜状态", (scene) => {
+        addSceneMagnifierState(scene, objectId);
       });
     },
 
-    removeMagnifierImage(objectId, index) {
-      return applyActiveScene("移出放大镜图片", (scene) => {
-        removeSceneMagnifierImage(scene, objectId, index);
+    removeMagnifierState(objectId, index) {
+      return applyActiveScene("移出放大镜状态", (scene) => {
+        removeSceneMagnifierState(scene, objectId, index);
       });
     },
 
-    selectMagnifierImage(objectId, index) {
-      return applyActiveScene("换一张放大镜图片", (scene) => {
+    selectMagnifierState(objectId, index) {
+      return applyActiveScene("换一个放大镜状态", (scene) => {
         setSceneMagnifierPicked(scene, objectId, index);
+      });
+    },
+
+    setMagnifierStateImage(objectId, index, image: ImageRef | null) {
+      return applyActiveScene("换放大镜状态里的图", (scene) => {
+        setSceneMagnifierStateImage(scene, objectId, index, image);
+      });
+    },
+
+    setMagnifierStateTitle(objectId, index, title) {
+      return applyActiveScene("改放大镜状态标题", (scene) => {
+        setSceneMagnifierStateTitle(scene, objectId, index, title);
+      });
+    },
+
+    setMagnifierStateText(objectId, index, text) {
+      return applyActiveScene("改放大镜状态文字", (scene) => {
+        setSceneMagnifierStateText(scene, objectId, index, text);
       });
     },
 
@@ -111,7 +137,7 @@ export function createMagnifierSlice(
     /**
      * 把记着的「前端那扇窗为谁开着」补发一遍（前端刚连上时调用）。
      *
-     * 目标已经没意义了（对象没了 / 组件没了 / 还没选图）就**不补发**，顺手把记账清掉——
+     * 目标已经没意义了（对象没了 / 组件没了 / 选中的状态还没有图）就**不补发**，顺手把记账清掉——
      * 否则每次重连都发一条注定失败的命令，运行日志里全是「镜像里没有这个对象」。
      */
     flushMagnifierWindow() {

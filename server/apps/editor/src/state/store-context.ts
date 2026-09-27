@@ -833,7 +833,7 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
   };
 
   /**
-   * 找出「能弹放大镜窗口」的对象：当前场景里挂着 `Magnifier` 组件、且**选了一张展示得了的图**
+   * 找出「能弹放大镜窗口」的对象：当前场景里挂着 `Magnifier` 组件、且**选中的那个状态有图**
    * 的对象（下标落在列表里）。
    *
    * 与 `videoTargetOf` 同一个口径：找不到就写一条**说明原因**的运行日志并返回 null（不静默失败）。
@@ -853,13 +853,13 @@ export function createStoreContext(set: StoreSet, get: StoreGet): StoreContext {
     }
 
     const magnifier = magnifierDataOf(object);
-    if (magnifier === undefined || magnifier.images.length === 0) {
-      pushLog(makeLog("warn", `${what}失败：「${object.name}」还没加图片（属性面板 → 放大镜）`));
+    if (magnifier === undefined || magnifier.states.length === 0) {
+      pushLog(makeLog("warn", `${what}失败：「${object.name}」还没有状态（在那扇窗口里加）`));
       return null;
     }
 
     if (magnifierImageOf(object) === undefined) {
-      pushLog(makeLog("warn", `${what}失败：「${object.name}」还没选要展示哪一张（面板上点一下小图）`));
+      pushLog(makeLog("warn", `${what}失败：「${object.name}」选中的那个状态还没有图（窗口里给它挑一张）`));
       return null;
     }
 

@@ -1,23 +1,34 @@
-import { useMemo } from "react";
-import { magnifierDataOf, magnifierImageOf, spriteCellSizeOf, spriteSheetOfMeta } from "@dts/document";
+import { useEffect, useMemo, useState } from "react";
+import {
+  magnifierDataOf,
+  magnifierImageOf,
+  spriteCellSizeOf,
+  spriteSheetOfMeta,
+  type ImageRef,
+} from "@dts/document";
 import { AssetImage } from "../panels/asset-image";
 import { useAssetSize } from "../hooks/useAssetSize";
 import { useEditorStore } from "../state/editor-store";
+import { ResourcePickerDialog } from "./ResourcePickerDialog";
 import { useFittedBox } from "./dialog-size";
 import { MapDialogShell, useSceneObject } from "./map-dialog-shell";
 
 /**
- * 「放大镜窗口」：**中间一张大图 + 下面一排可以选的图**。
+ * 「放大镜窗口」：**上面一块是选中状态的画面（标题 + 图 + 文字），下面一排是状态槽**。
  *
- * 与前端那扇窗（`client/.../MagnifierWindow.cs`）长得一样，只有两处差别（用户原话：
- * 「前端也是弹一个这样的界面，只是中间显示图片，没有显示选择按钮，没有关闭按钮，
- * 只能后端来关闭」）：
- * - 编辑器这一扇**多下面那排小图**（点一张 = 换成展示它）——那是**文档数据**（`picked`），
- *   运行态下文档一改，整份 `scene_push` 就把新值带到前端；
- * - 前端那一扇**没有按钮**，开 / 关只能由编辑器下发的两条命令驱动（底栏那两个按钮）。
+ * 与前端那扇窗（`client/.../MagnifierWindow.cs`）长得一样，差别正是用户说的那两点：
+ * 编辑器这一扇**多下面那排状态槽与「添加状态」**、**多底栏那两个按钮**，前端的只有上面那块
+ * 画面（用户原话：「前端也是弹一个这样的界面，只是中间显示图片，没有显示选择按钮，
+ * 没有关闭按钮，只能后端来关闭」）。
  *
- * 编辑器**不解码任何东西**：中间那张与下面那排都走既有取图那条路（原图 / 缩略图），
- * 精灵素材的那一格用 CSS 背景取（`AssetImage`）——与素材面板里的精灵预览同一套算式。
+ * 数据全在这里改（属性面板那边**整行搬走**了）：
+ * - 下排状态槽：点一个 = **换成展示它**（写 `picked`）；每条带 `×` 移出；末尾「添加状态」加空槽；
+ * - 上面那块：**给选中的那个状态填内容**——标题输入框、点图那块弹选图框（支持精灵）、
+ *   右边一个多行文本框。改的都是**文档数据**，进撤销栈、随场景存盘；运行态下文档一改，
+ *   整份 `scene_push` 就把新值带到前端（**没有**「换状态 / 换图」这类命令）。
+ *
+ * 编辑器**不解码任何东西**：图走既有取图那条路（原图），精灵素材的那一格用 CSS 背景取
+ * （`AssetImage`）——与素材面板里的精灵预览同一套算式。
  *
  * 关掉这扇窗**不**连带关前端那扇（DM 要能关掉窗口继续编辑）——要收前端那扇得点「关闭画面」。
  */
@@ -33,16 +44,30 @@ export function MagnifierDialog({
   // 目标对象现查一次：它可能已经被删掉（删了窗口就该关，这里只是兜底不崩）
   const object = useSceneObject(objectId);
   const magnifier = object === undefined ? undefined : magnifierDataOf(object);
-  const images = magnifier?.images ?? [];
+  const states = magnifier?.states ?? [];
   const picked = magnifier?.picked;
+  const state = picked === undefined ? undefined : states[picked];
   const image = object === undefined ? undefined : magnifierImageOf(object);
 
-  const selectImage = useEditorStore((state) => state.selectMagnifierImage);
-  const openWindow = useEditorStore((state) => state.openMagnifierWindow);
-  const closeWindow = useEditorStore((state) => state.closeMagnifierWindow);
-  const windowShown = useEditorStore((state) => state.magnifierShown);
-  const running = useEditorStore((state) => state.mode === "run");
-  const metaTable = useEditorStore((state) => state.assetMetaTable);
+  const selectState = useEditorStore((store) => store.selectMagnifierState);
+  const addState = useEditorStore((store) => store.addMagnifierState);
+  const removeState = useEditorStore((store) => store.removeMagnifierState);
+  const setStateImage = useEditorStore((store) => store.setMagnifierStateImage);
+  const setStateTitle = useEditorStore((store) => store.setMagnifierStateTitle);
+  const setStateText = useEditorStore((store) => store.setMagnifierStateText);
+  const openWindow = useEditorStore((store) => store.openMagnifierWindow);
+  const closeWindow = useEditorStore((store) => store.closeMagnifierWindow);
+  const windowShown = useEditorStore((store) => store.magnifierShown);
+  const running = useEditorStore((store) => store.mode === "run");
+  const metaTable = useEditorStore((store) => store.assetMetaTable);
+
+  /** 「选择图片」弹框开着没有（关掉窗口 / 换一个状态就收起来）。 */
+  const [picking, setPicking] = useState(false);
+  useEffect(() => {
+    if (!open) {
+      setPicking(false);
+    }
+  }, [open]);
 
   const showingHere = object !== undefined && windowShown === object.id;
 
@@ -74,9 +99,9 @@ export function MagnifierDialog({
   const hint = !running
     ? "编辑态只是预览：进运行态才能在画面上打开"
     : image === undefined
-      ? "先选一张图（下面点一下）"
+      ? "先给选中的状态挑一张图（点上面那块）"
       : showingHere
-        ? "画面上正开着这一张"
+        ? "画面上正开着这一个状态"
         : "画面上没开：点「在画面上打开」";
 
   return (
@@ -97,10 +122,10 @@ export function MagnifierDialog({
               !running
                 ? "先进入运行态（顶栏「运行」）"
                 : image === undefined
-                  ? "先在下面选一张图"
+                  ? "先给选中的状态挑一张图"
                   : showingHere
                     ? "画面上已经开着它了"
-                    : "让前端弹一扇窗显示这一张（画面上没有选择 / 关闭按钮，只能从这里控制）"
+                    : "让前端弹一扇窗显示这一个状态（画面上没有选择 / 关闭按钮，只能从这里控制）"
             }
             className={FOOTER_BUTTON_CLASS}
             onClick={() => {
@@ -128,70 +153,222 @@ export function MagnifierDialog({
       }
     >
       <div className="flex min-h-0 flex-1 flex-col gap-2">
-        {/* 中间：当前展示的那一张（等比装进可视区；前端那扇窗显示的就是它） */}
-        <div
-          ref={setStageNode}
-          className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded border border-[var(--color-editor-border)] bg-black/40"
-        >
-          {image === undefined ? (
-            <span
-              data-testid="magnifier-stage-empty"
-              className="text-[11px] text-[var(--color-editor-text-dim)]"
-            >
-              {images.length === 0
-                ? "还没加图片（属性面板 → 放大镜 → 图片 → ＋）"
-                : "还没选要展示哪一张（下面点一张）"}
-            </span>
-          ) : (
-            <div
-              data-testid="magnifier-stage"
-              className="bg-black"
-              style={{ width: stageBox.width, height: stageBox.height }}
-            >
-              <AssetImage image={image} source="raw" className="h-full w-full" />
-            </div>
-          )}
-        </div>
+        {/* 上面：**选中状态的那一屏**（没有选中 / 一个状态都没有时给一句话） */}
+        {state === undefined ? (
+          <div
+            data-testid="magnifier-stage-empty"
+            className="flex min-h-0 flex-1 items-center justify-center rounded border border-dashed border-[var(--color-editor-border)] text-[11px] text-[var(--color-editor-text-dim)]"
+          >
+            {states.length === 0
+              ? "还没有状态：点下面的「添加状态」加一个"
+              : "下面点一个状态，上面这块就是它的画面（标题 + 图 + 文字）"}
+          </div>
+        ) : (
+          <>
+            <input
+              key={`title-${picked}`}
+              data-testid="magnifier-title"
+              defaultValue={state.title ?? ""}
+              placeholder="标题（可以没有）"
+              title="这一个状态最上面那行标题；留空 = 没有标题"
+              className="flex-none rounded border border-[var(--color-editor-border)] bg-black/30 px-1 py-0.5 text-[11px] outline-none"
+              onBlur={(event) => {
+                if (object !== undefined && picked !== undefined) {
+                  setStateTitle(object.id, picked, event.target.value);
+                }
+              }}
+              onKeyDown={(event) => {
+                // Enter = 提交并失焦；Esc 也提交（弹窗会跟着关掉，别把刚敲的字丢了）
+                if (event.key === "Enter" || event.key === "Escape") {
+                  if (object !== undefined && picked !== undefined) {
+                    setStateTitle(object.id, picked, event.currentTarget.value);
+                  }
+                }
 
-        {/* 下面：**可以选择的图片**（点一张 = 换成展示它，也进撤销栈） */}
+                if (event.key === "Enter") {
+                  event.currentTarget.blur();
+                }
+              }}
+            />
+
+            <div className="flex min-h-0 flex-1 gap-2">
+              {/*
+                左边：**这个状态的图**。整块就是一个按钮（点哪儿都弹选图框），
+                有图时里面按真实长宽比等比装下；右上角那个 `×` 把图移出（状态还在，只是没图了）。
+              */}
+              <div
+                ref={setStageNode}
+                className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded border border-[var(--color-editor-border)] bg-black/40"
+              >
+                <button
+                  type="button"
+                  data-testid="magnifier-image-pick"
+                  title={
+                    image === undefined
+                      ? "从项目里的精灵素材里挑（可以整张，也可以只取图集里的一格）"
+                      : "换一张图（可以只取图集里的一格）"
+                  }
+                  className="absolute inset-0 flex items-center justify-center"
+                  onClick={() => setPicking(true)}
+                >
+                  {image === undefined ? (
+                    <span
+                      data-testid="magnifier-image-empty"
+                      className="px-3 text-center text-[11px] text-[var(--color-editor-text-dim)]"
+                    >
+                      点这里挑一张图
+                      <br />
+                      （可以只取图集里的一格）
+                    </span>
+                  ) : (
+                    <span
+                      data-testid="magnifier-stage"
+                      className="block bg-black"
+                      style={{ width: stageBox.width, height: stageBox.height }}
+                    >
+                      <AssetImage image={image} source="raw" className="h-full w-full" />
+                    </span>
+                  )}
+                </button>
+
+                {image === undefined || picked === undefined ? null : (
+                  <button
+                    type="button"
+                    data-testid="magnifier-image-clear"
+                    aria-label="移出这张图"
+                    title="把这张图移出这个状态（状态还在，只是没图了）"
+                    className="absolute right-1 top-1 z-10 rounded border border-[var(--color-editor-border)] bg-[var(--color-editor-bar)] px-1 text-[12px] leading-none text-[var(--color-editor-text-dim)] after:content-['×'] hover:border-[var(--color-editor-danger)] hover:text-[var(--color-editor-danger)]"
+                    onClick={() => {
+                      if (object !== undefined) {
+                        setStateImage(object.id, picked, null);
+                      }
+                    }}
+                  />
+                )}
+              </div>
+
+              {/* 右边：**这个状态的文字描述**（多行纯文本，换行照原样） */}
+              <textarea
+                key={`text-${picked}`}
+                data-testid="magnifier-text"
+                defaultValue={state.text ?? ""}
+                placeholder="文字描述（可以没有，可以换行）"
+                title="这一个状态右边那段文字；留空 = 没有文字。失焦时保存"
+                className="min-h-0 w-[38%] flex-none resize-none rounded border border-[var(--color-editor-border)] bg-black/30 p-1 text-[11px] outline-none"
+                onBlur={(event) => {
+                  if (object !== undefined && picked !== undefined) {
+                    setStateText(object.id, picked, event.target.value);
+                  }
+                }}
+                onKeyDown={(event) => {
+                  // Esc 会把整扇窗关掉（弹窗外壳管的）：先把这一格提交，别丢刚敲的字
+                  if (event.key === "Escape" && object !== undefined && picked !== undefined) {
+                    setStateText(object.id, picked, event.currentTarget.value);
+                  }
+                }}
+              />
+            </div>
+          </>
+        )}
+
+        {/* 下面：**状态槽**（点一个 = 换成展示它）+ 末尾的「添加状态」 */}
         <div
-          data-testid="magnifier-picks"
+          data-testid="magnifier-states"
           className="flex flex-none flex-wrap items-center justify-center gap-1"
         >
-          {images.length === 0 ? (
-            <span className="text-[10px] text-[var(--color-editor-text-dim)]">
-              图片列表是空的（属性面板 → 放大镜 → 图片 → ＋）
-            </span>
-          ) : (
-            images.map((item, index) => {
-              const selected = index === picked;
-              return (
+          {states.map((item, index) => {
+            const selected = index === picked;
+            return (
+              <span
+                key={index}
+                className={`flex items-center gap-1 rounded border p-0.5 ${
+                  selected
+                    ? "border-[var(--color-editor-accent)] bg-[var(--color-editor-accent-dim)]"
+                    : "border-[var(--color-editor-border)] hover:bg-[var(--color-editor-panel-alt)]"
+                }`}
+              >
                 <button
-                  key={`${item.id}#${index}`}
                   type="button"
-                  data-testid="magnifier-pick"
+                  data-testid="magnifier-state"
                   data-index={index}
                   data-selected={selected}
                   aria-pressed={selected}
-                  title={`展示第 ${index + 1} 张`}
-                  className={`rounded border p-0.5 ${
-                    selected
-                      ? "border-[var(--color-editor-accent)] bg-[var(--color-editor-accent-dim)]"
-                      : "border-[var(--color-editor-border)] hover:bg-[var(--color-editor-panel-alt)]"
-                  }`}
+                  title={`展示第 ${index + 1} 个状态${item.title === undefined ? "" : `：${item.title}`}`}
+                  className="flex flex-none items-center"
                   onClick={() => {
                     if (object !== undefined) {
-                      selectImage(object.id, index);
+                      selectState(object.id, index);
                     }
                   }}
                 >
-                  <AssetImage image={item} className="h-12 w-12 rounded bg-black/30" />
+                  {item.image === undefined ? (
+                    <span
+                      data-testid="magnifier-state-blank"
+                      className="flex h-12 w-12 items-center justify-center rounded border border-dashed border-[var(--color-editor-border)] text-[11px] text-[var(--color-editor-text-dim)]"
+                    >
+                      {index + 1}
+                    </span>
+                  ) : (
+                    <AssetImage image={item.image} className="h-12 w-12 rounded bg-black/30" />
+                  )}
                 </button>
-              );
-            })
-          )}
+                {/*
+                  × 用 CSS 画（::after content）：不进 textContent，e2e 对小方块的断言
+                  才不会被这个符号弄脏（与视频那一行同一套）。
+                */}
+                <button
+                  type="button"
+                  data-testid="magnifier-state-remove"
+                  data-index={index}
+                  aria-label={`移出第 ${index + 1} 个状态`}
+                  title="移出这一个状态（素材文件不会被删）"
+                  className="flex-none self-stretch px-1 text-[var(--color-editor-text-dim)] after:content-['×'] hover:text-[var(--color-editor-danger)]"
+                  onClick={() => {
+                    if (object !== undefined) {
+                      removeState(object.id, index);
+                    }
+                  }}
+                />
+              </span>
+            );
+          })}
+
+          <button
+            type="button"
+            data-testid="magnifier-add-state"
+            title="加一个空状态（标题 / 图 / 文字都可以之后再填）"
+            className="flex h-[52px] flex-none items-center gap-1 rounded border border-dashed border-[var(--color-editor-border)] px-3 text-[11px] leading-none text-[var(--color-editor-text-dim)] hover:border-[var(--color-editor-accent)] hover:text-[var(--color-editor-text)]"
+            onClick={() => {
+              if (object !== undefined) {
+                addState(object.id);
+              }
+            }}
+          >
+            ＋ 添加状态
+          </button>
         </div>
       </div>
+
+      {/* 选图：选中一张（可选一格）→ 填进当前这个状态。与精灵对象挑图同一个选择框 */}
+      <ResourcePickerDialog
+        kind="image"
+        allowSprite
+        open={picking}
+        onClose={() => setPicking(false)}
+        onPick={(next: ImageRef, sprite) => {
+          if (object !== undefined && picked !== undefined) {
+            const meta = useEditorStore.getState().ensureAssetMeta(next.id);
+            setStateImage(
+              object.id,
+              picked,
+              sprite === null ? { ...next, guid: meta.guid } : { ...next, guid: meta.guid, sprite },
+            );
+          }
+
+          // 一次挑一张：选完就收起（与「选择贴图」那条路一致）
+          setPicking(false);
+        }}
+      />
     </MapDialogShell>
   );
 }

@@ -742,10 +742,10 @@ export interface EditorStoreState {
    */
   teleport(objectId: string): boolean;
   /**
-   * 打开 / 关闭「放大镜窗口」（编辑器的预览 + 挑图窗口；传 null 关闭）。
+   * 打开 / 关闭「放大镜窗口」（编辑器的预览 + 编辑窗口；传 null 关闭）。
    *
-   * 纯界面状态：窗口里点下面那排小图换的是**文档数据**（`picked`），与前端那扇窗是两条线
-   * （关掉编辑器这扇窗**不**连带关前端那扇——DM 要能关掉窗口继续编辑）。
+   * 纯界面状态：窗口里加状态 / 挑图 / 写标题文字换的都是**文档数据**（`states` / `picked`），
+   * 与前端那扇窗是两条线（关掉编辑器这扇窗**不**连带关前端那扇——DM 要能关掉窗口继续编辑）。
    */
   openMagnifierEditor(objectId: string | null): void;
   /**
@@ -755,12 +755,18 @@ export interface EditorStoreState {
    * 编辑态只有编辑器这扇窗（预览）——那时连前端都没有，一条命令都不发。
    */
   showMagnifier(objectId: string): string | undefined;
-  /** 放大镜：往图片列表里**加一条**（已经在列表里就不重复加，改成展示它）。 */
-  addMagnifierImage(objectId: string, image: ImageRef): boolean;
-  /** 放大镜：**移出一条**（列表缩短，展示项由文档命令一起收拾）。 */
-  removeMagnifierImage(objectId: string, index: number): boolean;
-  /** 放大镜：换成**展示第几条**（`null` = 取消展示）；越界拒掉。 */
-  selectMagnifierImage(objectId: string, index: number | null): boolean;
+  /** 放大镜：往状态列表末尾**加一个空状态槽**并选中它（接着就要在上面那块区域里填它）。 */
+  addMagnifierState(objectId: string): boolean;
+  /** 放大镜：**移出一个状态**（列表缩短，展示项由文档命令一起收拾）。 */
+  removeMagnifierState(objectId: string, index: number): boolean;
+  /** 放大镜：换成**展示第几个状态**（`null` = 取消展示）；越界拒掉。 */
+  selectMagnifierState(objectId: string, index: number | null): boolean;
+  /** 放大镜：给第 `index` 个状态**换图**（`null` = 清掉它的图）。 */
+  setMagnifierStateImage(objectId: string, index: number, image: ImageRef | null): boolean;
+  /** 放大镜：改第 `index` 个状态的**标题**（空 = 没有标题）。 */
+  setMagnifierStateTitle(objectId: string, index: number, title: string): boolean;
+  /** 放大镜：改第 `index` 个状态的**文字描述**（多行纯文本；空 = 没有文字）。 */
+  setMagnifierStateText(objectId: string, index: number, text: string): boolean;
   /**
    * 放大镜：让前端**弹那扇窗**（记账 + 尽力下发 `open_magnifier`）。
    *
