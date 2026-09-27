@@ -7,6 +7,11 @@ import {
   type GameObjectDoc,
   type SoundLayer,
 } from "@dts/document";
+import {
+  STRUCTURE_LOCK_HINT,
+  structureLockedClass,
+  useStructureLocked,
+} from "./structure-lock";
 import { useEditorStore, type EditorMode } from "../../state/editor-store";
 import type { RuntimeStatus } from "../../services/runtime-client";
 import { deliveryHint } from "../../services/delivery-hint";
@@ -88,6 +93,8 @@ export function SoundFields({ object }: { readonly object: GameObjectDoc }): Rea
 
   /** 「选择音频」弹框开着没有（换个对象就收起来）。 */
   const [picking, setPicking] = useState(false);
+  // 运行态锁住**加 / 删条目**（值照旧能改）
+  const structureLocked = useStructureLocked();
 
   const sound = soundDataOf(object);
   // 手写文件里可能整个 sound 都没有（`validateScene` 会报错）：这里按「还没加音频、音效层」显示
@@ -236,9 +243,10 @@ export function SoundFields({ object }: { readonly object: GameObjectDoc }): Rea
                     type="button"
                     data-testid="sound-clip-remove"
                     data-clip={clip}
+                    disabled={structureLocked}
                     aria-label={`移出 ${name}`}
-                    title="移出这一条（素材文件不会被删）"
-                    className="flex-none self-stretch px-1 text-[var(--color-editor-text-dim)] after:content-['×'] hover:text-[var(--color-editor-danger)]"
+                    title={structureLocked ? STRUCTURE_LOCK_HINT : "移出这一条（素材文件不会被删）"}
+                    className={`flex-none self-stretch px-1 text-[var(--color-editor-text-dim)] after:content-['×'] hover:text-[var(--color-editor-danger)]${structureLockedClass(structureLocked)}`}
                     onClick={() => removeSoundClip(object.id, clip)}
                   />
                 </span>
@@ -249,9 +257,14 @@ export function SoundFields({ object }: { readonly object: GameObjectDoc }): Rea
           <button
             type="button"
             data-testid="sound-add"
-            title="从项目里的音频素材里挑（选中一条，点「添加」加入）"
+            disabled={structureLocked}
+            title={
+              structureLocked
+                ? STRUCTURE_LOCK_HINT
+                : "从项目里的音频素材里挑（选中一条，点「添加」加入）"
+            }
             aria-label="添加音频"
-            className="flex h-6 w-6 flex-none items-center justify-center rounded border border-dashed border-[var(--color-editor-border)] text-[13px] leading-none text-[var(--color-editor-text-dim)] hover:border-[var(--color-editor-accent)] hover:text-[var(--color-editor-text)]"
+            className={`flex h-6 w-6 flex-none items-center justify-center rounded border border-dashed border-[var(--color-editor-border)] text-[13px] leading-none text-[var(--color-editor-text-dim)] hover:border-[var(--color-editor-accent)] hover:text-[var(--color-editor-text)]${structureLockedClass(structureLocked)}`}
             onClick={() => setPicking(true)}
           >
             ＋
@@ -260,8 +273,9 @@ export function SoundFields({ object }: { readonly object: GameObjectDoc }): Rea
             <button
               type="button"
               data-testid="sound-clear"
-              title="全部移出（素材文件不会被删）"
-              className="flex-none rounded border border-[var(--color-editor-border)] px-1.5 py-0.5 text-[10px] text-[var(--color-editor-text-dim)] hover:border-[var(--color-editor-accent)] hover:text-[var(--color-editor-text)]"
+              disabled={structureLocked}
+              title={structureLocked ? STRUCTURE_LOCK_HINT : "全部移出（素材文件不会被删）"}
+              className={`flex-none rounded border border-[var(--color-editor-border)] px-1.5 py-0.5 text-[10px] text-[var(--color-editor-text-dim)] hover:border-[var(--color-editor-accent)] hover:text-[var(--color-editor-text)]${structureLockedClass(structureLocked)}`}
               onClick={() => clearSoundClips(object.id)}
             >
               清空

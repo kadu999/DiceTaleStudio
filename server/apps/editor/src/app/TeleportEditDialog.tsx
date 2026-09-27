@@ -1,6 +1,7 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { teleportDataOf } from "@dts/document";
 import { useEditorStore } from "../state/editor-store";
+import { STRUCTURE_LOCK_HINT, useStructureLocked } from "../panels/inspector/structure-lock";
 
 /**
  * 「传送目标」窗口：把项目里的场景**勾进来 / 取消勾**，成为这个传送阵的候选。
@@ -34,6 +35,8 @@ export function TeleportEditDialog({
       : scenes.find((scene) => scene.name === activeSceneName)?.objects.find((item) => item.id === objectId);
 
   const targets = (object === undefined ? undefined : teleportDataOf(object))?.targets ?? [];
+  // 运行态锁住**加 / 删候选场景**（勾一个 = 加一条、取消 = 删一条）
+  const structureLocked = useStructureLocked();
   const stale = targets.filter((name) => !names.includes(name));
 
   const toggle = (name: string, on: boolean): void => {
@@ -73,14 +76,16 @@ export function TeleportEditDialog({
                     data-testid="teleport-scene-row"
                     data-scene={name}
                     data-checked={targets.includes(name)}
+                    title={structureLocked ? STRUCTURE_LOCK_HINT : undefined}
                     className={rowClass}
                   >
                     <input
                       type="checkbox"
                       data-testid="teleport-scene-check"
                       checked={targets.includes(name)}
+                      disabled={structureLocked}
                       onChange={(event) => toggle(name, event.target.checked)}
-                      className="flex-none"
+                      className="flex-none disabled:cursor-not-allowed disabled:opacity-40"
                     />
                     <span className="min-w-0 flex-1 truncate">{name}</span>
                     {!alive ? (

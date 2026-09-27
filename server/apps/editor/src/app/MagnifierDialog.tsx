@@ -9,6 +9,11 @@ import {
 } from "@dts/document";
 import { AssetImage } from "../panels/asset-image";
 import { mediaClipName } from "../panels/inspector/VideoFields";
+import {
+  STRUCTURE_LOCK_HINT,
+  structureLockedClass,
+  useStructureLocked,
+} from "../panels/inspector/structure-lock";
 import { useAssetSize } from "../hooks/useAssetSize";
 import { useEditorStore } from "../state/editor-store";
 import { ResourcePickerDialog } from "./ResourcePickerDialog";
@@ -89,6 +94,8 @@ export function MagnifierDialog({
   /** 「选择图片 / 选择视频」弹框开着没有（关掉窗口 / 换一个状态就收起来）。 */
   const [picking, setPicking] = useState(false);
   const [pickingVideo, setPickingVideo] = useState(false);
+  // 运行态锁住**加 / 删条目**（值照旧能改）
+  const structureLocked = useStructureLocked();
   useEffect(() => {
     if (!open) {
       setPicking(false);
@@ -469,9 +476,10 @@ export function MagnifierDialog({
                   type="button"
                   data-testid="magnifier-state-remove"
                   data-index={index}
+                  disabled={structureLocked}
                   aria-label={`移出第 ${index + 1} 个状态`}
-                  title="移出这一个状态（素材文件不会被删）"
-                  className="flex-none self-stretch px-1 text-[#8a6d3b] after:content-['×'] hover:text-[var(--color-editor-danger)]"
+                  title={structureLocked ? STRUCTURE_LOCK_HINT : "移出这一个状态（素材文件不会被删）"}
+                  className={`flex-none self-stretch px-1 text-[#8a6d3b] after:content-['×'] hover:text-[var(--color-editor-danger)]${structureLockedClass(structureLocked)}`}
                   onClick={() => {
                     if (object !== undefined) {
                       removeState(object.id, index);
@@ -485,8 +493,13 @@ export function MagnifierDialog({
           <button
             type="button"
             data-testid="magnifier-add-state"
-            title="加一个空状态（标题 / 图 / 文字都可以之后再填）"
-            className="flex h-[52px] flex-none items-center gap-1 rounded-lg border border-dashed border-[#bc9b60] px-3 text-[11px] leading-none text-[#a08a63] hover:border-[#8c2f1e] hover:text-[#3a2a16]"
+            disabled={structureLocked}
+            title={
+              structureLocked
+                ? STRUCTURE_LOCK_HINT
+                : "加一个空状态（标题 / 图 / 文字都可以之后再填）"
+            }
+            className={`flex h-[52px] flex-none items-center gap-1 rounded-lg border border-dashed border-[#bc9b60] px-3 text-[11px] leading-none text-[#a08a63] hover:border-[#8c2f1e] hover:text-[#3a2a16]${structureLockedClass(structureLocked)}`}
             onClick={() => {
               if (object !== undefined) {
                 addState(object.id);
