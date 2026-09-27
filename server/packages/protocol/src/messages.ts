@@ -132,8 +132,13 @@ import { z } from "zod";
  * （让前端弹 / 收一扇窗；**换图不是命令**：`picked` 是文档数据，整份 `scene_push` 带过去）。
  * 老前端（v20）不认这个组件 → 那扇窗永远弹不出来（不是崩，是功能丢），也不认那两条命令，
  * 按同一条纪律 +1：服务端与 Unity 客户端必须同批更新。
+ *
+ * v22（2026-09-27）：**放大镜的「图片列表」变成「状态列表」**（与文档格式 v31 同一批）——
+ * `Magnifier` 的 data 里 `images` 换成 `states`（每项 = 标题 + 图 + 文字，三项都可没有）。
+ * 老前端（v21）按 `images` 读 → 读不到（那扇窗里没图），按同一条纪律 +1。
+ * **两条命令与其余消息一个字节都没动。**
  */
-export const PROTOCOL_VERSION = 21;
+export const PROTOCOL_VERSION = 22;
 
 /** 未进入运行态时拒绝 `/client` 升级的 HTTP 状态与原因头。 */
 export const RUNTIME_INACTIVE_STATUS = 503;
@@ -351,18 +356,31 @@ export const teleportDataSchema = z.object({
 });
 
 /**
- * 放大镜（动作对象，v21 起）的数据：**图片列表 + 当前展示的那一张**。
+ * 放大镜里**一个状态**（v22 起）：一屏画面 = 标题（上面）+ 图（左）+ 文字（右）。
  *
- * 每一项复用 `imageRefSchema`（一张图的引用；`sprite` / `spriteGrid` 与图片层同一个口径——
+ * 三项都可选，而且「没写」都有明确语义（空状态槽 = 三项都没写）——与 `@dts/document` 的
+ * `magnifierStateSchema` 逐字一致，**不给默认值**：给 `""` 只会在载荷里多一堆空壳。
+ * `image` 复用 `imageRefSchema`（`sprite` / `spriteGrid` 与图片层同一个口径——
  * `spriteGrid` 是编辑器推送时解析进去的，前端不能依赖「几行几列」在别处）。
- * `picked` 是 `images` 的**下标**（同一张图的两个不同格子是两条，id 当不了键）：
- * 前端窗里放的就是它，缺省 = 还没选（那扇窗没有图可放）。
+ */
+export const magnifierStateSchema = z.object({
+  title: z.string().optional(),
+  image: imageRefSchema.optional(),
+  text: z.string().optional(),
+});
+
+/**
+ * 放大镜（动作对象，v21 起；v22 起「图片列表」变成「状态列表」）的数据：
+ * **状态列表 + 当前展示的那一个**。
  *
- * **换图不是命令**：它是文档数据，编辑器一改就整份 `scene_push` 下来，前端跟着换
+ * `picked` 是 `states` 的**下标**（空状态槽没有 id 可用，位置才是这把列表里的身份）：
+ * 前端窗里放的就是它，缺省 = 还没选（那扇窗没有东西可放）。
+ *
+ * **换状态不是命令**：它是文档数据，编辑器一改就整份 `scene_push` 下来，前端跟着换
  * （与 `video.picked` / `sound.picked` 同一条「数据在场景里」的规矩）。
  */
 export const magnifierDataSchema = z.object({
-  images: z.array(imageRefSchema).default([]),
+  states: z.array(magnifierStateSchema).default([]),
   picked: z.number().int().nonnegative().optional(),
 });
 
@@ -572,15 +590,15 @@ export function resourceIdsOfObject(object: GameObjectPayload): readonly string[
     ids.push(...(media?.clips ?? []));
   }
 
-  // 放大镜（v21 起）：图片列表里每一张都要进资源包——那扇窗放的正是它们。
+  // 放大镜（v21 起）：状态列表里每一个状态的图都要进资源包——那扇窗放的正是它。
   // 漏了这一条最不容易发现：资源包只影响「先下后载」，弹窗要等到逐文件回落时才慢慢出图。
-  const magnifier = componentDataOf<{ images?: readonly { id?: string }[] }>(
+  const magnifier = componentDataOf<{ states?: readonly { image?: { id?: string } }[] }>(
     object,
     COMPONENT_TYPE.magnifier,
   );
-  for (const image of magnifier?.images ?? []) {
-    if (image.id !== undefined) {
-      ids.push(image.id);
+  for (const state of magnifier?.states ?? []) {
+    if (state.image?.id !== undefined) {
+      ids.push(state.image.id);
     }
   }
 

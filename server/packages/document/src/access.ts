@@ -14,6 +14,7 @@ import type {
   ImageRef,
   ImageLayerDataDoc,
   MagnifierDataDoc,
+  MagnifierState,
   MapDataDoc,
   GameObjectDoc,
   SoundDataDoc,
@@ -257,26 +258,35 @@ export function teleportDataOf(object: GameObjectDoc): TeleportDataDoc | undefin
   return componentDataOfSlot<TeleportDataDoc>(object, "teleport");
 }
 
-/** 放大镜数据（图片列表 + 当前展示的那一张）。 */
+/** 放大镜数据（状态列表 + 当前展示的那一个）。 */
 export function magnifierDataOf(object: GameObjectDoc): MagnifierDataDoc | undefined {
   return componentDataOfSlot<MagnifierDataDoc>(object, "magnifier");
 }
 
 /**
- * 放大镜**当前展示的那一张**（`undefined` = 还没选 / 下标越界 / 根本没这个组件）。
+ * 放大镜**当前展示的那一个状态**（`undefined` = 还没选 / 下标越界 / 根本没这个组件）。
  *
- * 全仓唯一读口：前端那扇窗放的就是它，编辑器的面板 / 窗口 / 「能不能打开」也走它——
- * 免得三处各写一遍「下标落在列表里吗」。「越界按还没选处理」这条口径也只在这里判
+ * 全仓唯一读口：前端那扇窗放的就是它（的标题 / 图 / 文字），编辑器的窗口 / 「能不能打开」
+ * 也走它——免得三处各写一遍「下标落在列表里吗」。「越界按还没选处理」这条口径也只在这里判
  * （与 `validateScene` 的 warning 一致）。
  */
-export function magnifierImageOf(object: GameObjectDoc): ImageRef | undefined {
+export function magnifierStateOf(object: GameObjectDoc): MagnifierState | undefined {
   const magnifier = magnifierDataOf(object);
   const picked = magnifier?.picked;
   if (magnifier === undefined || picked === undefined) {
     return undefined;
   }
 
-  return magnifier.images[picked];
+  return magnifier.states[picked];
+}
+
+/**
+ * 放大镜当前展示的那个状态里**那张图**（`undefined` = 没选状态 / 那个状态还没挑图）。
+ *
+ * 「能不能在画面上打开」的判据就是它：那扇窗没有图可放时明确拒掉。
+ */
+export function magnifierImageOf(object: GameObjectDoc): ImageRef | undefined {
+  return magnifierStateOf(object)?.image;
 }
 
 /** 视频数据（列表 + 选中的那条 + 循环 / 声音）。 */
@@ -456,11 +466,11 @@ export function ensureTeleportData(object: Draft<GameObjectDoc>): Draft<Teleport
 /**
  * 放大镜数据的 draft；缺失组件须先通过显式修复操作恢复（与传送阵同一套必需组件口径）。
  *
- * 默认数据就是「一扇还没有图的窗」：`images: []`、`picked` 不写（那扇窗中间写「还没选图」）。
+ * 默认数据就是「一扇还没有状态的窗」：`states: []`、`picked` 不写（那扇窗中间写「还没加状态」）。
  */
 export function ensureMagnifierData(object: Draft<GameObjectDoc>): Draft<MagnifierDataDoc> | undefined {
   return ensureSlotData<MagnifierDataDoc>(object, "magnifier", () => ({
-    images: [],
+    states: [],
   }));
 }
 

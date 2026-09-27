@@ -125,10 +125,10 @@ export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
     tooltip: "候选目标场景 + 选中的那一个；触发 = 切换当前场景（不需要新协议命令）",
   },
   {
-    // 放大镜（动作对象，v30 加的第 9 种）：图片列表 + 当前展示的那一张。
+    // 放大镜（动作对象，v30 加的第 9 种）：状态列表 + 当前展示的那一个（v31 起）。
     // 对象自己**什么都不渲染**（画布上画一枚内置放大镜徽标），声明的是「告诉前端弹一扇窗、
-    // 窗里放哪张图」——开 / 关是两条命令（`open_magnifier` / `close_magnifier`），
-    // 换图不是命令（`picked` 是文档数据，整份 `scene_push` 会把新值带到前端）。
+    // 窗里放哪个状态」——开 / 关是两条命令（`open_magnifier` / `close_magnifier`），
+    // 换状态不是命令（`picked` 是文档数据，整份 `scene_push` 会把新值带到前端）。
     // 与 `Teleport` 同一条「必需组件」的路：缺组件（坏的手写文件）走面板上的显式修复入口。
     type: "Magnifier",
     displayName: "放大镜",
@@ -136,7 +136,7 @@ export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
     slot: "magnifier",
     templateKinds: ["Magnifier"],
     repairKinds: ["Magnifier"],
-    tooltip: "图片列表 + 当前展示的那一张；触发 = 让前端弹一扇窗显示它",
+    tooltip: "状态列表 + 当前展示的那一个（每条 = 标题 + 图 + 文字）；触发 = 让前端弹一扇窗显示它",
   },
   {
     type: "VideoOverlay",

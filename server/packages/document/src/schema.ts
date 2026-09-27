@@ -160,16 +160,30 @@ export const teleportDataSchema = z.object({
 });
 
 /**
- * 放大镜（动作对象，v30）：**图片列表 + 当前展示的那一张**。
+ * 放大镜里**一个状态**（v31 起）：一屏画面 = 标题（上面）+ 图（左）+ 文字（右）。
  *
- * 每一项直接复用 `imageRefSchema`（一张图的引用，可带 `sprite` = 取图集里的一格）——
+ * 三项**都是可选的**，而且「没写」都有明确语义：空状态槽 = 三项都没写（「添加状态」先加的就是
+ * 它，之后再一项一项填）。**不给默认值**：给 `""` 会在文件里留下一堆空壳，而「没写」与
+ * 「写了空串」在这里同义，不如让文件自描述（命令那边写空串时会把字段删掉）。
+ *
+ * `image` 复用 `imageRefSchema`（一张图的引用，可带 `sprite` = 取图集里的一格）——
  * 与贴图 / 精灵引用是同一个形状，所以这里连「格子从左上数、越界不算解析错误」都是同一套。
- * `images` 给默认值 `[]`（与 `sound.clips` / `teleport.targets` 同一个口径：手写文件里少写
- * 一项时，语义只能是「还没加图」）；`picked` **不给默认值**——它的「没写」有明确语义：
- * 还没选展示哪一张（「在画面上打开」点不了）。
+ */
+export const magnifierStateSchema = z.object({
+  title: z.string().optional(),
+  image: imageRefSchema.optional(),
+  text: z.string().optional(),
+});
+
+/**
+ * 放大镜（动作对象，v30；v31 起「图片列表」变成「状态列表」）：**状态列表 + 当前展示的那一个**。
+ *
+ * `states` 给默认值 `[]`（与 `sound.clips` / `teleport.targets` 同一个口径：手写文件里少写
+ * 一项时，语义只能是「还没加状态」）；`picked` **不给默认值**——它的「没写」有明确语义：
+ * 还没选展示哪一个（「在画面上打开」点不了）。
  */
 export const magnifierDataSchema = z.object({
-  images: z.array(imageRefSchema).default([]),
+  states: z.array(magnifierStateSchema).default([]),
   picked: z.number().int().nonnegative().optional(),
 });
 
@@ -1506,6 +1520,55 @@ function migrateVideoBlendChannels(raw: Record<string, unknown>): {
 }
 
 /**
+ * v31：放大镜的**图片列表**（`images`）变成**状态列表**（`states`）。
+ *
+ * 老的每一条图片就是新列表里一个「只有图」的状态（`{ image }`），`picked` 照旧是下标——
+ * 于是老工程打开之后那扇窗里放的还是同一张图，一条都不丢。
+ * 幂等：没有 `images` 数组的数据原样返回（已经是 `states` 的、或手写的怪东西都交给 schema 判）。
+ */
+function migrateMagnifierImagesToStates(raw: Record<string, unknown>): {
+  readonly raw: Record<string, unknown>;
+  readonly changed: boolean;
+} {
+  const objects = Array.isArray(raw.objects) ? raw.objects : [];
+  let changed = false;
+  const next = objects.map((object) => {
+    if (!isRecord(object) || !Array.isArray(object.components)) {
+      return object;
+    }
+
+    const magnifier = object.components.find(
+      (component) => isRecord(component) && component.type === DEFAULT_SLOT_COMPONENT.magnifier,
+    );
+    if (magnifier === undefined || !isRecord(magnifier.data)) {
+      return object;
+    }
+
+    const data = magnifier.data;
+    const images = data.images;
+    if (!Array.isArray(images)) {
+      return object;
+    }
+
+    const converted: Record<string, unknown> = { ...data };
+    delete converted.images;
+    converted.states = images.map((image) => ({ image }));
+
+    changed = true;
+    return {
+      ...object,
+      components: object.components.map((component) =>
+        component === magnifier
+          ? { ...(component as Record<string, unknown>), data: converted }
+          : component,
+      ),
+    };
+  });
+
+  return changed ? { raw: { ...raw, objects: next }, changed } : { raw, changed };
+}
+
+/**
  * 读一个（还没过 schema 的）对象的 `kind`；认不出来时按**精灵** `Sprite` 算
  * （`MirrorObject` 同一个兜底）。
  *
@@ -1723,6 +1786,9 @@ export function parseSceneFile(raw: unknown, size?: SceneSizeHint): SceneFileLoa
     const gridImage = migrateGridMapImageToLayer(fogObjects.raw);
     // v29：视频混合的两路从「列表 + 选中」收成单个素材（`{ kind, id }`）
     const blendChannels = migrateVideoBlendChannels(gridImage.raw);
+    // v31：放大镜的图片列表变成状态列表（每条图片 → `states[i].image`，`picked` 照旧是下标）。
+    // 排在最后：放大镜是 v30 才有的东西，只有那之后写下的文件才有 `images` 要搬
+    const magnifierStates = migrateMagnifierImagesToStates(blendChannels.raw);
     // v13：战争雾的总开关（`fog.enabled`）**不用单独迁移**——schema 给它默认值 `true`
     // （v10–v12 的文件里「有 fog」就等于「开着」），而版本号一升就会回写一次，
     // 于是磁盘上的文件重新变得自描述。
@@ -1739,8 +1805,9 @@ export function parseSceneFile(raw: unknown, size?: SceneSizeHint): SceneFileLoa
     // v28：`Map` kind 落到 `Image`（`kinds` 那一趟）、贴图从 `GridMap` 搬进 `ImageLayer`
     // （`gridImage` 那一趟）。
     // v29：视频混合的两路从「列表 + 选中」收成单个素材（`blendChannels` 那一趟）。
+    // v31：放大镜的图片列表变成状态列表（`magnifierStates` 那一趟）。
     // 读出来的文档一律是当前版本（v6 起网格里不再存 `cellSize`，顺手被 schema 丢掉）
-    normalized = { ...blendChannels.raw, formatVersion: DOCUMENT_FORMAT_VERSION };
+    normalized = { ...magnifierStates.raw, formatVersion: DOCUMENT_FORMAT_VERSION };
     needsRewrite =
       version < DOCUMENT_FORMAT_VERSION ||
       filled.changed ||

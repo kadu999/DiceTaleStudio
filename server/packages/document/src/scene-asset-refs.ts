@@ -72,24 +72,39 @@ function mapComponentData(
   }
 
   /*
-    放大镜（v30）：`images[]` 里每一条都是**一份完整的图片引用**（`{ id, guid?, width, height, sprite? }`），
-    所以逐条走 `mapImageReference`——与图片层那一份是同一个形状、同一套「guid 优先」的换算。
-    注意要**整份重写** `data`（`images` 是新数组），否则引用对不上时磁盘上留的还是旧的。
+    放大镜（v30；v31 起每一项是一个**状态**）：`states[].image` 里那份是**一份完整的图片引用**
+    （`{ id, guid?, width, height, sprite? }`），所以走 `mapImageReference`——与图片层那一份是
+    同一个形状、同一套「guid 优先」的换算。没有图的状态原样留着（空状态槽是合法的）。
+    注意要**整份重写** `data`（`states` 是新数组），否则引用对不上时磁盘上留的还是旧的。
   */
   if (type === "Magnifier") {
-    const images = data.images;
-    if (!Array.isArray(images)) {
+    const states = data.states;
+    if (!Array.isArray(states)) {
       return data;
     }
 
     let changed = false;
-    const mapped = images.map((item) => {
-      const next = mapImageReference(item, metas, mode);
-      changed ||= next !== item;
-      return next;
+    const mapped = states.map((state) => {
+      if (typeof state !== "object" || state === null || Array.isArray(state)) {
+        return state;
+      }
+
+      const entry = state as Record<string, unknown>;
+      const image = entry.image;
+      if (typeof image !== "object" || image === null || Array.isArray(image)) {
+        return state;
+      }
+
+      const next = mapImageReference(image, metas, mode);
+      if (next === image) {
+        return state;
+      }
+
+      changed = true;
+      return { ...entry, image: next };
     });
 
-    return changed ? { ...data, images: mapped } : data;
+    return changed ? { ...data, states: mapped } : data;
   }
 
   return data;

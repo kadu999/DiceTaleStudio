@@ -351,32 +351,39 @@ function resolveObjectImageSprites(object: GameObjectDoc, metas: AssetMetas): Ga
 }
 
 /**
- * **放大镜（v30）的图片列表**：逐条把「第几格」解析成 `sprite` + `spriteGrid`——上面的主转换里的一趟。
+ * **放大镜（v30）的状态列表**：逐个状态把里面那张图的「第几格」解析成 `sprite` + `spriteGrid`
+ * ——上面的主转换里的一趟。
  *
  * 与图片层那一条同一套理由（切分只有一份、住在素材 `.meta` 里，前端手上没有它，所以必须随载荷
- * 走、越界的格子在这里统一夹）。差别只有一处：列表项**没有 `sortingOrder`**（它不渲染在世界里，
- * 是弹出来的一扇窗），所以不需要图片层那份「整份重写、别把显示顺序抹掉」的小心。
+ * 走、越界的格子在这里统一夹）。差别只有一处：状态**不渲染在世界里**（它是弹出来的一扇窗），
+ * 所以不需要图片层那份「整份重写、别把显示顺序抹掉」的小心；没有图的状态原样留着。
  */
 function resolveMagnifierSprites(object: GameObjectDoc, metas: AssetMetas): GameObjectDoc {
   const component = object.components.find((item) => findComponentType(item.type)?.slot === "magnifier");
-  const images = component === undefined ? undefined : (component.data as { images?: unknown }).images;
-  if (component === undefined || !Array.isArray(images)) {
+  const states = component === undefined ? undefined : (component.data as { states?: unknown }).states;
+  if (component === undefined || !Array.isArray(states)) {
     return object;
   }
 
   let changed = false;
-  const next = images.map((item) => {
-    if (typeof item !== "object" || item === null) {
-      return item;
+  const next = states.map((state) => {
+    if (typeof state !== "object" || state === null || Array.isArray(state)) {
+      return state;
     }
 
-    const payload = payloadImageOf(item as ImageRef, metas);
+    const entry = state as Record<string, unknown>;
+    const image = entry.image;
+    if (typeof image !== "object" || image === null || Array.isArray(image)) {
+      return state;
+    }
+
+    const payload = payloadImageOf(image as ImageRef, metas);
     if (payload === null) {
-      return item;
+      return state;
     }
 
     changed = true;
-    return payload;
+    return { ...entry, image: payload };
   });
 
   if (!changed) {
@@ -386,7 +393,7 @@ function resolveMagnifierSprites(object: GameObjectDoc, metas: AssetMetas): Game
   return {
     ...object,
     components: object.components.map((item) =>
-      item === component ? { ...item, data: { ...item.data, images: next } } : item,
+      item === component ? { ...item, data: { ...item.data, states: next } } : item,
     ),
   };
 }

@@ -7,6 +7,7 @@ import {
   componentSchema,
   mapFogSchema as protocolMapFogSchema,
   magnifierDataSchema as protocolMagnifierDataSchema,
+  magnifierStateSchema as protocolMagnifierStateSchema,
   sceneComponentSchema,
   sceneSchema,
   soundDataSchema as protocolSoundDataSchema,
@@ -37,6 +38,7 @@ import {
   hasErrors,
   imageOf,
   magnifierDataSchema,
+  magnifierStateSchema,
   mapFogSchema,
   parseSceneFile,
   resolveSceneSprites,
@@ -124,7 +126,10 @@ describe("契约：协议与文档的组件口径一致", () => {
       createTeleportObject({ name: "传送阵", targets: ["场景2"], position: { x: 0, y: 0 } }),
       createMagnifierObject({
         name: "放大镜",
-        images: [{ id: "project:P/Assets/images/handout.png", width: 400, height: 300 }],
+        states: [
+          { title: "线索一", image: { id: "project:P/Assets/images/handout.png", width: 400, height: 300 } },
+          { text: "只有文字" },
+        ],
         position: { x: 0, y: 0 },
       }),
     ];
@@ -271,6 +276,7 @@ describe("契约：协议与文档的组件口径一致", () => {
       { name: "PlaySound", doc: soundDataSchema, proto: protocolSoundDataSchema },
       { name: "Teleport", doc: teleportDataSchema, proto: protocolTeleportDataSchema },
       { name: "Magnifier", doc: magnifierDataSchema, proto: protocolMagnifierDataSchema },
+      { name: "MagnifierState", doc: magnifierStateSchema, proto: protocolMagnifierStateSchema },
       { name: "VideoOverlay", doc: videoDataSchema, proto: protocolVideoDataSchema },
       { name: "VideoBlend", doc: videoBlendDataSchema, proto: protocolVideoBlendDataSchema },
     ];
@@ -289,10 +295,10 @@ describe("契约：协议与文档的组件口径一致", () => {
       { name: "layer 未知", doc: soundDataSchema, proto: protocolSoundDataSchema, sample: { layer: "bogus" } },
       { name: "targets 含空串", doc: teleportDataSchema, proto: protocolTeleportDataSchema, sample: { targets: [""] } },
       {
-        name: "magnifier 图片缺 id",
-        doc: magnifierDataSchema,
-        proto: protocolMagnifierDataSchema,
-        sample: { images: [{ width: 4, height: 4 }] },
+        name: "magnifier 状态里的图缺 id",
+        doc: magnifierStateSchema,
+        proto: protocolMagnifierStateSchema,
+        sample: { image: { width: 4, height: 4 } },
       },
       {
         name: "magnifier picked 是小数",

@@ -74,9 +74,9 @@ export function repairObjectComponent(
       ? { clips: [], layer: DEFAULT_SOUND_LAYER }
       : type === "Teleport"
         ? { targets: [] }
-        : // 放大镜（v30）：补出来是一扇还没有图的窗（面板上再挑图片）
+        : // 放大镜（v30；v31 起是状态列表）：补出来是一扇还没有状态的窗（窗口里再加状态）
           type === "Magnifier"
-          ? { images: [] }
+          ? { states: [] }
           : // 战争雾（v27：独立的 Fog 对象）：默认还没选地图，由用户在面板上选
             { mapId: "", enabled: true, regions: [] };
   writeFeature(object, type, data);
