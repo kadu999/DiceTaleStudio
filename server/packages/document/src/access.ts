@@ -20,6 +20,7 @@ import type {
   ImageLayerDataDoc,
   MagnifierDataDoc,
   MagnifierState,
+  MagnifierVideoDoc,
   MapDataDoc,
   GameObjectDoc,
   SoundDataDoc,
@@ -297,6 +298,16 @@ export function magnifierImageOf(object: GameObjectDoc): ImageRef | undefined {
 }
 
 /**
+ * 放大镜当前展示的那个状态里**那条视频**（v33；`undefined` = 没选状态 / 那个状态放的是图或没媒体）。
+ *
+ * 与 {@link magnifierImageOf} 对称：一屏的媒体**二选一**，两条读口各答一半；
+ * 「这一屏到底放什么」由 `state.video !== undefined` 判（渲染按视频优先）。
+ */
+export function magnifierVideoOf(object: GameObjectDoc): MagnifierVideoDoc | undefined {
+  return magnifierStateOf(object)?.video;
+}
+
+/**
  * 这个状态**是不是空的**（标题 / 图 / 文字三项都没有内容）。
  *
  * 「能不能在画面上打开」的判据就是它（两端逐字一致）：纯文字的线索卡是常见用法（跑团时
@@ -312,7 +323,7 @@ export function magnifierStateIsEmpty(state: MagnifierState | undefined): boolea
 
   const hasTitle = state.title !== undefined && state.title.length > 0;
   const hasText = state.text !== undefined && state.text.length > 0;
-  return !hasTitle && state.image === undefined && !hasText;
+  return !hasTitle && state.image === undefined && state.video === undefined && !hasText;
 }
 
 /** 视频数据（列表 + 选中的那条 + 循环 / 声音）。 */

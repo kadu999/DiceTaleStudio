@@ -9,6 +9,7 @@ import {
   type ComponentType,
   type ImageRef,
   type ImageSpriteRef,
+  type MagnifierTween,
   type ObjectKind,
   type ProjectDoc,
   type SceneDoc,
@@ -742,14 +743,14 @@ export interface EditorStoreState {
    */
   teleport(objectId: string): boolean;
   /**
-   * 打开 / 关闭「放大镜窗口」（编辑器的预览 + 编辑窗口；传 null 关闭）。
+   * 打开 / 关闭**编辑器那扇放大镜窗**（传 null 关闭）；**前端那扇窗跟着它一起开 / 关**。
    *
-   * 纯界面状态：窗口里加状态 / 挑图 / 写标题文字换的都是**文档数据**（`states` / `picked`），
-   * 与前端那扇窗是两条线（关掉编辑器这扇窗**不**连带关前端那扇——DM 要能关掉窗口继续编辑）。
+   * 前端那扇窗自己没有按钮（只能由后端开、后端关），所以编辑器这扇窗就是**唯一的开关**：
+   * 打开顺手投到前端、关闭顺手收掉（编辑态没有前端，投不出去）。返回下发请求 id。
    */
-  openMagnifierEditor(objectId: string | null): void;
+  openMagnifierEditor(objectId: string | null): string | undefined;
   /**
-   * **触发放大镜这个动作**：开编辑器那扇窗，运行态下再让前端也弹一扇。
+   * **触发放大镜这个动作**：等价于 `openMagnifierEditor(objectId)`（开编辑器那扇 + 同步前端）。
    *
    * 画布上双击徽标与面板上的「窗口」按钮都走它（与传送阵「双击徽标 = 传送」同一套快路径）。
    * 编辑态只有编辑器这扇窗（预览）——那时连前端都没有，一条命令都不发。
@@ -763,6 +764,16 @@ export interface EditorStoreState {
   selectMagnifierState(objectId: string, index: number | null): boolean;
   /** 放大镜：给第 `index` 个状态**换图**（`null` = 清掉它的图）。 */
   setMagnifierStateImage(objectId: string, index: number, image: ImageRef | null): boolean;
+  /** 放大镜：给第 `index` 个状态**放一条视频**（v33；`null` = 清掉它的视频）。与图**二选一**：放视频会清掉图。 */
+  setMagnifierStateVideo(objectId: string, index: number, clipId: string | null): boolean;
+  /** 放大镜：改第 `index` 个状态那条视频的**循环 / 声音**开关（没有视频时无变更）。 */
+  setMagnifierStateVideoSwitch(
+    objectId: string,
+    index: number,
+    patch: { readonly loop?: boolean; readonly audio?: boolean },
+  ): boolean;
+  /** 放大镜：改第 `index` 个状态**媒体那块的动画**（v33；`"none"` = 不动）。 */
+  setMagnifierStateTween(objectId: string, index: number, tween: MagnifierTween): boolean;
   /** 放大镜：改第 `index` 个状态的**标题**（空 = 没有标题）。 */
   setMagnifierStateTitle(objectId: string, index: number, title: string): boolean;
   /** 放大镜：改第 `index` 个状态的**文字描述**（多行纯文本；空 = 没有文字）。 */
@@ -770,11 +781,12 @@ export interface EditorStoreState {
   /**
    * 放大镜：让前端**弹那扇窗**（记账 + 尽力下发 `open_magnifier`）。
    *
+   * **由 `openMagnifierEditor` 同步调**（编辑器那扇窗一开就往前端投），一般不用直接调。
    * 与 `playVideo` 同一套规矩：命令里只有 `objectId`（放哪一张由前端从镜像读），
    * 前端没连时照样能点、等它连上补发。**编辑态不发**（与 Mask 窗口「编辑态只是预览」同一档）。
    */
   openMagnifierWindow(objectId: string): string | undefined;
-  /** 放大镜：让前端**关掉那扇窗**（记账清空 + 尽力下发 `close_magnifier`）。 */
+  /** 放大镜：让前端**关掉那扇窗**（记账清空 + 尽力下发 `close_magnifier`）。由 `openMagnifierEditor(null)` 同步调。 */
   closeMagnifierWindow(): string | undefined;
   /** 把记着的「前端那扇窗为谁开着」补发一遍（前端刚连上时调用）。 */
   flushMagnifierWindow(): number;

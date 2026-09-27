@@ -7,7 +7,8 @@
  * 两条分工别混：
  * - **列表与展示哪一个 / 每个状态里的内容**是文档数据（进撤销栈、随场景存盘下发）
  *   ——窗口下排点一下、上面那块区域里挑图 / 打字，改的都是它；
- * - **前端那扇窗开没开**是运行态记账（不写文档）：开 / 关各一条命令。
+ * - **前端那扇窗开没开**是运行态记账（不写文档）：开 / 关各一条命令，**跟着编辑器那扇窗的
+ *   开 / 关走**（`openMagnifierEditor`）——界面上不再单独摆开 / 关按钮。
  */
 import {
   addMagnifierState as addSceneMagnifierState,
@@ -16,7 +17,11 @@ import {
   setMagnifierStateImage as setSceneMagnifierStateImage,
   setMagnifierStateText as setSceneMagnifierStateText,
   setMagnifierStateTitle as setSceneMagnifierStateTitle,
+  setMagnifierStateTween as setSceneMagnifierStateTween,
+  setMagnifierStateVideo as setSceneMagnifierStateVideo,
+  setMagnifierStateVideoSwitch as setSceneMagnifierStateVideoSwitch,
   type ImageRef,
+  type MagnifierTween,
 } from "@dts/document";
 import { type StoreSet, type StoreGet, type EditorStoreState } from "../store-types";
 import { makeLog } from "../store-core";
@@ -34,6 +39,9 @@ export function createMagnifierSlice(
   | "removeMagnifierState"
   | "selectMagnifierState"
   | "setMagnifierStateImage"
+  | "setMagnifierStateVideo"
+  | "setMagnifierStateVideoSwitch"
+  | "setMagnifierStateTween"
   | "setMagnifierStateTitle"
   | "setMagnifierStateText"
   | "openMagnifierWindow"
@@ -47,19 +55,30 @@ export function createMagnifierSlice(
   return {
     // ------------------------------------------------------------ 放大镜（动作对象）
 
+    /**
+     * 打开 / 关闭**编辑器这扇放大镜窗**；**前端那扇窗的开 / 关跟着它走**（同一次切换）。
+     *
+     * 打开（`objectId` 非 null）→ 顺手投到前端；关闭（`null`）→ 顺手收掉前端那扇。
+     * 前端那扇窗自己没有按钮（「只能后端来关闭」），编辑器这扇窗就是那个**唯一的开关**——
+     * 面板与底栏都不再各摆一个按钮（用户原话：「关闭和打开都是界面打开和关闭的同步，
+     * 根本就不需要另外加按钮」）。编辑态投不出去（`openMagnifierWindow` 自己会挡）。
+     *
+     * 返回下发请求 id（前端没连 / 编辑态时是 `undefined`）。
+     */
     openMagnifierEditor(objectId) {
       set({ magnifierEditor: objectId !== null, magnifierEditorTarget: objectId });
+
+      return objectId === null
+        ? get().closeMagnifierWindow()
+        : get().openMagnifierWindow(objectId);
     },
 
     /**
-     * **触发放大镜这个动作**：开编辑器那扇窗，运行态下再让前端也弹一扇。
-     *
-     * 画布上双击徽标与面板上的「窗口」按钮都走这里——与传送阵「双击徽标 = 传送」同一套
-     * 快路径。编辑态只有编辑器这扇窗（预览），前端那扇等进了运行态再说。
+     * **触发放大镜这个动作**（画布上双击徽标 / 面板上的「窗口」按钮）：开编辑器那扇窗，
+     * 前端那扇由 `openMagnifierEditor` 顺手同步（运行态下才投得出去）。
      */
     showMagnifier(objectId) {
-      get().openMagnifierEditor(objectId);
-      return get().openMagnifierWindow(objectId);
+      return get().openMagnifierEditor(objectId);
     },
 
     addMagnifierState(objectId) {
@@ -83,6 +102,24 @@ export function createMagnifierSlice(
     setMagnifierStateImage(objectId, index, image: ImageRef | null) {
       return applyActiveScene("换放大镜状态里的图", (scene) => {
         setSceneMagnifierStateImage(scene, objectId, index, image);
+      });
+    },
+
+    setMagnifierStateVideo(objectId, index, clipId) {
+      return applyActiveScene("换放大镜状态里的视频", (scene) => {
+        setSceneMagnifierStateVideo(scene, objectId, index, clipId);
+      });
+    },
+
+    setMagnifierStateVideoSwitch(objectId, index, patch) {
+      return applyActiveScene("改放大镜视频开关", (scene) => {
+        setSceneMagnifierStateVideoSwitch(scene, objectId, index, patch);
+      });
+    },
+
+    setMagnifierStateTween(objectId, index, tween: MagnifierTween) {
+      return applyActiveScene("改放大镜媒体动画", (scene) => {
+        setSceneMagnifierStateTween(scene, objectId, index, tween);
       });
     },
 

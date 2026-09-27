@@ -1,5 +1,5 @@
 {
-  "formatVersion": 32,
+  "formatVersion": 33,
   "objects": [
     {
       "id": "map_mu7t4t731b222",
@@ -40,6 +40,54 @@
             "loop": true,
             "autoPlay": true,
             "audio": "none"
+          }
+        }
+      ]
+    },
+    {
+      "id": "magnifier_mujvjf2p18635",
+      "name": "放大镜",
+      "kind": "Magnifier",
+      "active": true,
+      "position": {
+        "x": 665.5812110091742,
+        "y": -268.7577247706422
+      },
+      "rotation": 0,
+      "scale": 1,
+      "locked": false,
+      "components": [
+        {
+          "id": "magnifier_mujvjf2p18635__Magnifier",
+          "type": "Magnifier",
+          "data": {
+            "states": [
+              {
+                "image": {
+                  "id": "e8cc24db31905e5bd057cf32fedbb0e1",
+                  "guid": "e8cc24db31905e5bd057cf32fedbb0e1",
+                  "width": 2048,
+                  "height": 2048,
+                  "sprite": {
+                    "column": 0,
+                    "row": 0
+                  }
+                }
+              },
+              {
+                "image": {
+                  "id": "e8cc24db31905e5bd057cf32fedbb0e1",
+                  "guid": "e8cc24db31905e5bd057cf32fedbb0e1",
+                  "width": 2048,
+                  "height": 2048,
+                  "sprite": {
+                    "column": 1,
+                    "row": 0
+                  }
+                }
+              }
+            ],
+            "picked": 0
           }
         }
       ]

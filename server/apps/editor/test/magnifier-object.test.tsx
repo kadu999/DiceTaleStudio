@@ -24,7 +24,7 @@ import { sceneHistory, useEditorStore } from "../src/state/editor-store";
  * **选中是下标**（空状态槽没有 id 可用，位置才是身份）。
  *
  * 界面分工（v31 起）：**列表与内容整行搬进那扇窗口里**（下排状态槽 + 上面那块编辑区），
- * 属性面板只剩「窗口」那一行（打开窗口 / 关闭画面）。
+ * 属性面板只剩「窗口」那一行，而且**只有「打开窗口」一个按钮**（关闭画面在编辑器那扇窗的底栏）。
  * 另一件要钉死的事：**触发它 = 让前端弹一扇窗**（`open_magnifier` / `close_magnifier`），
  * 编辑态只预览、一条命令都不发；前端那扇窗没有按钮，只能由后端开、由后端关。
  */
@@ -157,8 +157,9 @@ describe("属性面板：只剩「窗口」那一行（状态列表整行搬进�
     expect(screen.queryByTestId("magnifier-images")).toBeNull();
     expect(screen.queryByTestId("magnifier-empty")).toBeNull();
     expect(screen.queryByTestId("magnifier-add")).toBeNull();
-    // 状态数量写在「窗口」那一行的提示里，一眼能看出有几个
-    expect(screen.getByTestId("magnifier-window-state").textContent).toMatch(/1 个状态/);
+    // 「窗口」那一行只剩「打开窗口」一个按钮：状态说明与「关闭画面」都没有
+    expect(screen.queryByTestId("magnifier-window-state")).toBeNull();
+    expect(screen.queryByTestId("magnifier-close-window")).toBeNull();
   });
 
   it("编辑态：点「打开窗口」只开编辑器那扇窗（一条命令都不发）", async () => {
@@ -174,7 +175,8 @@ describe("属性面板：只剩「窗口」那一行（状态列表整行搬进�
     // 编辑态：前端那扇窗的记账没动，也没写任何「已记录」的日志
     expect(useEditorStore.getState().magnifierShown).toBeNull();
     expect(logs()).toEqual([]);
-    expect(screen.getByTestId("magnifier-window-state").textContent).toMatch(/编辑态只有窗口预览/);
+    // 面板里没有状态说明文字了（这一行只留动作本身）
+    expect(screen.queryByTestId("magnifier-window-state")).toBeNull();
   });
 
   it("运行态：点「打开窗口」记账 + 尽力下发；没连上时写明「等它连上后自动补发」", async () => {
@@ -191,12 +193,14 @@ describe("属性面板：只剩「窗口」那一行（状态列表整行搬进�
     // 关键是「只记账 + 写明会补发」）
     expect(logs().join("\n")).toMatch(/连上后自动补发/);
 
-    // 「关闭画面」只在**这个对象正被投影**时出现；点它就是清记账 + 尽力下发关闭
+    // 属性面板这一行**没有**「关闭画面」：前端那扇窗的开关就是编辑器这扇窗本身
+    expect(screen.queryByTestId("magnifier-close-window")).toBeNull();
+
+    // 关掉编辑器那扇窗 = 前端那扇跟着收（界面上不加额外按钮）
     await act(async () => {
-      fireEvent.click(screen.getByTestId("magnifier-close-window"));
+      useEditorStore.getState().openMagnifierEditor(null);
     });
     expect(useEditorStore.getState().magnifierShown).toBeNull();
-    expect(screen.queryByTestId("magnifier-close-window")).toBeNull();
   });
 
   it("只有标题 / 文字的状态**也能**打开（纯文字线索卡）；三项全空才点不动", async () => {
@@ -224,13 +228,13 @@ describe("属性面板：只剩「窗口」那一行（状态列表整行搬进�
 });
 
 describe("放大镜窗口：上面一块是选中状态的画面，下面一排状态槽", () => {
-  it("一个状态都没有：上面写「还没有状态」，「在画面上打开」点不了", () => {
+  it("一个状态都没有：上面写「还没有状态」，底栏没有开 / 关按钮", () => {
     seedScene([magnifier()]);
     render(<MagnifierDialog open objectId="magnifier-1" onClose={() => undefined} />);
 
     expect(screen.getByTestId("magnifier-stage-empty").textContent).toMatch(/还没有状态/);
-    expect((screen.getByTestId("magnifier-show") as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByTestId("magnifier-hide") as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByTestId("magnifier-show")).toBeNull();
+    expect(screen.queryByTestId("magnifier-hide")).toBeNull();
     expect(slots()).toHaveLength(0);
   });
 
@@ -331,40 +335,27 @@ describe("放大镜窗口：上面一块是选中状态的画面，下面一排�
     expect(dataOf("magnifier-1")?.states?.[0]).toEqual({ title: "线索一" });
   });
 
-  it("只有文字的状态：运行态「在画面上打开」照样能点（没有图也行——纯文字线索卡）", () => {
+  it("编辑器窗的开 / 关就是前端那扇窗的开 / 关；底栏不再有开 / 关按钮", async () => {
     seedScene([magnifier([{ text: "只有文字" }], 0)]);
     seedRuntime(true);
     render(<MagnifierDialog open objectId="magnifier-1" onClose={() => undefined} />);
 
-    expect(screen.getByTestId("magnifier-image-empty")).toBeDefined();
-    expect((screen.getByTestId("magnifier-show") as HTMLButtonElement).disabled).toBe(false);
-  });
+    // 底栏那两枚按钮与状态提示都没了（界面上不加额外按钮）
+    expect(screen.queryByTestId("magnifier-show")).toBeNull();
+    expect(screen.queryByTestId("magnifier-hide")).toBeNull();
+    expect(screen.queryByTestId("magnifier-dialog-state")).toBeNull();
 
-  it("编辑态：底栏写明只是预览，「在画面上打开」点不了", () => {
-    seedScene([magnifier([{ image: IMAGE }], 0)]);
-    render(<MagnifierDialog open objectId="magnifier-1" onClose={() => undefined} />);
-
-    expect((screen.getByTestId("magnifier-show") as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.getByTestId("magnifier-dialog-state").textContent).toMatch(/编辑态只是预览/);
-  });
-
-  it("运行态：能打开也能关（记账跟着走，按钮的可用状态跟着换）", async () => {
-    seedScene([magnifier([{ image: IMAGE }], 0)]);
-    seedRuntime(true);
-    render(<MagnifierDialog open objectId="magnifier-1" onClose={() => undefined} />);
-
+    // 开编辑器窗 → 前端跟着投（纯文字线索卡也照投：判据是选中的状态非空，不看有没有图）
     await act(async () => {
-      fireEvent.click(screen.getByTestId("magnifier-show"));
+      useEditorStore.getState().openMagnifierEditor("magnifier-1");
     });
     expect(useEditorStore.getState().magnifierShown).toBe("magnifier-1");
-    expect((screen.getByTestId("magnifier-show") as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByTestId("magnifier-hide") as HTMLButtonElement).disabled).toBe(false);
 
+    // 关掉编辑器窗 → 前端那扇跟着收
     await act(async () => {
-      fireEvent.click(screen.getByTestId("magnifier-hide"));
+      useEditorStore.getState().openMagnifierEditor(null);
     });
     expect(useEditorStore.getState().magnifierShown).toBeNull();
-    expect((screen.getByTestId("magnifier-show") as HTMLButtonElement).disabled).toBe(false);
   });
 
   it("对象已经被删掉：给「找不到这个放大镜」兜底，不崩", () => {

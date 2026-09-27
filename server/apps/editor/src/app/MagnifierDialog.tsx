@@ -2,25 +2,49 @@ import { useEffect, useMemo, useState } from "react";
 import {
   magnifierDataOf,
   magnifierImageOf,
-  magnifierStateIsEmpty,
   spriteCellSizeOf,
   spriteSheetOfMeta,
   type ImageRef,
+  type MagnifierTween,
 } from "@dts/document";
 import { AssetImage } from "../panels/asset-image";
+import { mediaClipName } from "../panels/inspector/VideoFields";
 import { useAssetSize } from "../hooks/useAssetSize";
 import { useEditorStore } from "../state/editor-store";
 import { ResourcePickerDialog } from "./ResourcePickerDialog";
 import { useFittedBox } from "./dialog-size";
 import { MapDialogShell, useSceneObject } from "./map-dialog-shell";
 
+/** 媒体那块的动画预设（v33）：与前端 `MagnifierWindow` / `MAGNIFIER_TWEENS` 同一套。 */
+const TWEEN_OPTIONS: ReadonlyArray<{ readonly value: MagnifierTween; readonly label: string }> = [
+  { value: "none", label: "无" },
+  { value: "shake", label: "震动" },
+  { value: "breathe", label: "呼吸" },
+  { value: "float", label: "漂浮" },
+  { value: "sway", label: "摇摆" },
+];
+
+/** 媒体工具条 / 视频块上小按钮的样子（选中态一眼看得出）。 */
+const MEDIA_BUTTON_CLASS =
+  "flex-none rounded border px-1.5 py-0.5 text-[10px] leading-none";
+const MEDIA_BUTTON_ON = "border-[#8c2f1e] bg-[#e6cfa8] text-[#3a2a16]";
+const MEDIA_BUTTON_OFF = "border-[#bc9b60] text-[#8a6d3b] hover:border-[#8c2f1e] hover:text-[#3a2a16]";
+
 /**
  * 「放大镜窗口」：**上面一块是选中状态的画面（标题 + 图 + 文字），下面一排是状态槽**。
  *
- * 与前端那扇窗（`client/.../MagnifierWindow.cs`）长得一样，差别正是用户说的那两点：
- * 编辑器这一扇**多下面那排状态槽与「添加状态」**、**多底栏那两个按钮**，前端的只有上面那块
- * 画面（用户原话：「前端也是弹一个这样的界面，只是中间显示图片，没有显示选择按钮，
+ * 与前端那扇窗（`client/.../MagnifierWindow.cs`）长得一样，差别只有一处：
+ * 编辑器这一扇**多下面那排状态槽与「添加状态」**，前端的只有上面那块画面
+ * （用户原话：「前端也是弹一个这样的界面，只是中间显示图片，没有显示选择按钮，
  * 没有关闭按钮，只能后端来关闭」）。
+ *
+ * **这扇窗的开 / 关就是前端那扇窗的开 / 关**（用户在底栏与面板都不想要额外的按钮）：
+ * 编辑器这扇一开（`openMagnifierEditor(id)`）就往前端投、一关（`openMagnifierEditor(null)`）
+ * 就收掉前端那扇——`EditorShell` 的 `onClose` 与 Radix 的遮罩 / Esc 都走这条路。
+ *
+ * **配色与前端那扇窗对齐（羊皮纸线索卡，2026-09-27）**：暖米黄纸面（`#F1E5C6`）+ 深棕字
+ * （标题 `#3A2A16` / 正文 `#4A381F`）+ 棕描边（`#BC9B60`）+ 红蜡色强调条（`#8C2F1E`）——
+ * 这里改完，前端 `MagnifierWindow` 那份 prefab 要跟着同步（两边是一套）。
  *
  * 数据全在这里改（属性面板那边**整行搬走**了）：
  * - 下排状态槽：点一个 = **换成展示它**（写 `picked`）；每条带 `×` 移出；末尾「添加状态」加空槽；
@@ -30,8 +54,6 @@ import { MapDialogShell, useSceneObject } from "./map-dialog-shell";
  *
  * 编辑器**不解码任何东西**：图走既有取图那条路（原图），精灵素材的那一格用 CSS 背景取
  * （`AssetImage`）——与素材面板里的精灵预览同一套算式。
- *
- * 关掉这扇窗**不**连带关前端那扇（DM 要能关掉窗口继续编辑）——要收前端那扇得点「关闭画面」。
  */
 export function MagnifierDialog({
   open,
@@ -54,26 +76,29 @@ export function MagnifierDialog({
   const addState = useEditorStore((store) => store.addMagnifierState);
   const removeState = useEditorStore((store) => store.removeMagnifierState);
   const setStateImage = useEditorStore((store) => store.setMagnifierStateImage);
+  const setStateVideo = useEditorStore((store) => store.setMagnifierStateVideo);
+  const setStateVideoSwitch = useEditorStore((store) => store.setMagnifierStateVideoSwitch);
+  const setStateTween = useEditorStore((store) => store.setMagnifierStateTween);
   const setStateTitle = useEditorStore((store) => store.setMagnifierStateTitle);
   const setStateText = useEditorStore((store) => store.setMagnifierStateText);
-  const openWindow = useEditorStore((store) => store.openMagnifierWindow);
-  const closeWindow = useEditorStore((store) => store.closeMagnifierWindow);
-  const windowShown = useEditorStore((store) => store.magnifierShown);
-  const running = useEditorStore((store) => store.mode === "run");
   const metaTable = useEditorStore((store) => store.assetMetaTable);
+  const tree = useEditorStore((store) => store.project.tree);
+  const assetMetas = useEditorStore((store) => store.assetMetas);
 
-  /** 「选择图片」弹框开着没有（关掉窗口 / 换一个状态就收起来）。 */
+  /** 「选择图片 / 选择视频」弹框开着没有（关掉窗口 / 换一个状态就收起来）。 */
   const [picking, setPicking] = useState(false);
+  const [pickingVideo, setPickingVideo] = useState(false);
   useEffect(() => {
     if (!open) {
       setPicking(false);
+      setPickingVideo(false);
     }
   }, [open]);
 
-  const showingHere = object !== undefined && windowShown === object.id;
-
-  /** 选中的那个状态**有东西可展示**（标题 / 图 / 文字至少一项）——没有图也行（纯文字线索卡）。 */
-  const showable = !magnifierStateIsEmpty(state);
+  // 一屏的媒体**二选一**（v33）：视频在就放视频，否则放图（渲染按视频优先，与校验口径一致）
+  const video = state?.video;
+  const hasVideo = video !== undefined;
+  const videoName = video === undefined ? "" : mediaClipName(tree, assetMetas, metaTable, video.id);
 
   /*
     舞台按**这一张图**的长宽比等比装进可视区（与两个 Mask 窗口同一套 `useFittedBox`）。
@@ -100,14 +125,6 @@ export function MagnifierDialog({
 
   const [stageBox, setStageNode] = useFittedBox(aspect);
 
-  const hint = !running
-    ? "编辑态只是预览：进运行态才能在画面上打开"
-    : !showable
-      ? "选中的状态还是空的：给它填点东西（标题 / 图 / 文字都行）"
-      : showingHere
-        ? "画面上正开着这一个状态"
-        : "画面上没开：点「在画面上打开」";
-
   return (
     <MapDialogShell
       open={open}
@@ -116,45 +133,6 @@ export function MagnifierDialog({
       title={object === undefined ? "放大镜" : `放大镜：${object.name}`}
       found={object !== undefined}
       missing="找不到这个放大镜（可能已经被删掉了）"
-      footer={
-        <>
-          <button
-            type="button"
-            data-testid="magnifier-show"
-            disabled={!running || !showable || showingHere}
-            title={
-              !running
-                ? "先进入运行态（顶栏「运行」）"
-                : !showable
-                  ? "先给选中的状态填点东西（标题 / 图 / 文字都行）"
-                  : showingHere
-                    ? "画面上已经开着它了"
-                    : "让前端弹一扇窗显示这一个状态（画面上没有选择 / 关闭按钮，只能从这里控制）"
-            }
-            className={FOOTER_BUTTON_CLASS}
-            onClick={() => {
-              if (object !== undefined) {
-                openWindow(object.id);
-              }
-            }}
-          >
-            在画面上打开
-          </button>
-          <button
-            type="button"
-            data-testid="magnifier-hide"
-            disabled={!showingHere}
-            title={showingHere ? "让前端把那扇窗收起来" : "画面上现在没开着它"}
-            className={FOOTER_BUTTON_CLASS}
-            onClick={() => closeWindow()}
-          >
-            关闭画面
-          </button>
-          <span data-testid="magnifier-dialog-state" className="min-w-0 truncate">
-            {hint}
-          </span>
-        </>
-      }
     >
       <div className="flex min-h-0 flex-1 flex-col gap-2">
         {/* 上面：**选中状态的那一屏**（没有选中 / 一个状态都没有时给一句话） */}
@@ -170,18 +148,18 @@ export function MagnifierDialog({
         ) : (
           <>
             {/*
-              标题带：**一块卡片**（与前端那扇窗同款）——左边一条暖黄强调条，
-              与画布上那枚放大镜徽标同色（`SceneLayer` 的 `KIND_MARKER_COLORS.Magnifier`）。
+              标题带：**一块卡片**（与前端那扇窗同款）——左边一条**红蜡色**强调条，
+              整张卡是**羊皮纸**（暖米黄纸面 + 深棕字 + 棕描边）。
             */}
-            <div className="flex flex-none items-center gap-3 rounded-lg border border-[var(--color-editor-border)] bg-[var(--color-editor-panel-alt)] px-3 py-2 focus-within:border-[var(--color-editor-accent)]">
-              <span aria-hidden className="h-6 w-1 flex-none rounded-full bg-[#e8c840]" />
+            <div className="flex flex-none items-center gap-3 rounded-lg border border-[#bc9b60] bg-[#f1e5c6] px-3 py-2 focus-within:border-[#8c2f1e]">
+              <span aria-hidden className="h-6 w-1 flex-none rounded-full bg-[#8c2f1e]" />
               <input
                 key={`title-${picked}`}
                 data-testid="magnifier-title"
                 defaultValue={state.title ?? ""}
                 placeholder="标题（可以没有）"
                 title="这一个状态最上面那行标题；留空 = 没有标题"
-                className="min-w-0 flex-1 rounded bg-transparent text-center text-[15px] font-semibold text-[var(--color-editor-text)] outline-none placeholder:font-normal placeholder:text-[var(--color-editor-text-dim)] focus:bg-black/20"
+                className="min-w-0 flex-1 rounded bg-transparent text-center text-[15px] font-semibold text-[#3a2a16] outline-none placeholder:font-normal placeholder:text-[#a08a63] focus:bg-black/5"
                 onBlur={(event) => {
                   if (object !== undefined && picked !== undefined) {
                     setStateTitle(object.id, picked, event.target.value);
@@ -204,15 +182,130 @@ export function MagnifierDialog({
               <span aria-hidden className="h-6 w-1 flex-none" />
             </div>
 
+            {/*
+              媒体工具条（v33）：**媒体类型**（图片 / 视频，二选一）+ **媒体那块的动画**（下拉框）。
+              点「图片」弹选图框、点「视频」弹选视频框——写入命令会把另一种媒体删掉。
+            */}
+            <div className="flex flex-none flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-[#8a6d3b]">
+              <span className="flex items-center gap-1">
+                <span>媒体</span>
+                <button
+                  type="button"
+                  data-testid="magnifier-media-image"
+                  data-active={!hasVideo}
+                  className={`${MEDIA_BUTTON_CLASS} ${hasVideo ? MEDIA_BUTTON_OFF : MEDIA_BUTTON_ON}`}
+                  onClick={() => setPicking(true)}
+                >
+                  图片
+                </button>
+                <button
+                  type="button"
+                  data-testid="magnifier-media-video"
+                  data-active={hasVideo}
+                  className={`${MEDIA_BUTTON_CLASS} ${hasVideo ? MEDIA_BUTTON_ON : MEDIA_BUTTON_OFF}`}
+                  onClick={() => setPickingVideo(true)}
+                >
+                  视频
+                </button>
+              </span>
+
+              <label className="flex items-center gap-1">
+                <span>动画</span>
+                <select
+                  data-testid="magnifier-tween"
+                  value={state.tween ?? "none"}
+                  title="媒体那块的动画（只作用在图 / 视频那一块）"
+                  className="rounded border border-[#bc9b60] bg-[#f1e5c6] px-1.5 py-0.5 text-[10px] leading-none text-[#3a2a16] outline-none hover:border-[#8c2f1e]"
+                  onChange={(event) => {
+                    if (object !== undefined && picked !== undefined) {
+                      setStateTween(object.id, picked, event.target.value as MagnifierTween);
+                    }
+                  }}
+                >
+                  {TWEEN_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
             <div className="flex min-h-0 flex-1 gap-2">
               {/*
-                左边：**这个状态的图**。整块就是一个按钮（点哪儿都弹选图框），
-                有图时里面按真实长宽比等比装下；右上角那个 `×` 把图移出（状态还在，只是没图了）。
-                这一格**比面板更暗**（像嵌进相框）——与前端那扇窗同一套层次。
+                左边：**这个状态的媒体**（v33 起图与视频二选一）。
+                - 图：整块就是一个按钮（点哪儿都弹选图框），右上角 `×` 把图移出；
+                - 视频：编辑器**不预览**（不解码），显示素材名 + 循环 / 声音开关 + 换 / 清除。
+                媒体这块是**羊皮纸面**——与前端那扇窗同款。
               */}
+              {hasVideo ? (
+                <div
+                  data-testid="magnifier-video-stage"
+                  className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 overflow-hidden rounded-lg border border-[#bc9b60] bg-[#e8d8b4] p-3 text-center"
+                >
+                  <span className="text-[11px] text-[#8a6d3b]">视频（编辑器不预览）</span>
+                  <span
+                    data-testid="magnifier-video-name"
+                    title={video?.id}
+                    className="max-w-full truncate text-[13px] font-semibold text-[#3a2a16]"
+                  >
+                    {videoName}
+                  </span>
+                  <span className="flex items-center gap-3 text-[11px] text-[#4a381f]">
+                    <label className="flex items-center gap-1">
+                      <input
+                        type="checkbox"
+                        data-testid="magnifier-video-loop"
+                        checked={video?.loop ?? true}
+                        onChange={(event) => {
+                          if (object !== undefined && picked !== undefined) {
+                            setStateVideoSwitch(object.id, picked, { loop: event.target.checked });
+                          }
+                        }}
+                      />
+                      循环
+                    </label>
+                    <label className="flex items-center gap-1">
+                      <input
+                        type="checkbox"
+                        data-testid="magnifier-video-audio"
+                        checked={video?.audio ?? false}
+                        onChange={(event) => {
+                          if (object !== undefined && picked !== undefined) {
+                            setStateVideoSwitch(object.id, picked, { audio: event.target.checked });
+                          }
+                        }}
+                      />
+                      声音
+                    </label>
+                  </span>
+                  <span className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      data-testid="magnifier-video-pick"
+                      className={`${MEDIA_BUTTON_CLASS} ${MEDIA_BUTTON_OFF}`}
+                      onClick={() => setPickingVideo(true)}
+                    >
+                      换视频
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="magnifier-video-clear"
+                      className={`${MEDIA_BUTTON_CLASS} ${MEDIA_BUTTON_OFF}`}
+                      onClick={() => {
+                        if (object !== undefined && picked !== undefined) {
+                          setStateVideo(object.id, picked, null);
+                        }
+                      }}
+                    >
+                      清除视频
+                    </button>
+                  </span>
+                </div>
+              ) : (
               <div
                 ref={setStageNode}
-                className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-lg border border-[var(--color-editor-border)] bg-[#0a0e14]"
+                className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-lg border border-[#bc9b60] bg-[#f1e5c6]"
               >
                 <button
                   type="button"
@@ -228,7 +321,7 @@ export function MagnifierDialog({
                   {image === undefined ? (
                     <span
                       data-testid="magnifier-image-empty"
-                      className="px-3 text-center text-[11px] text-[var(--color-editor-text-dim)]"
+                      className="px-3 text-center text-[11px] text-[#a08a63]"
                     >
                       点这里挑一张图
                       <br />
@@ -237,7 +330,7 @@ export function MagnifierDialog({
                   ) : (
                     <span
                       data-testid="magnifier-stage"
-                      className="block bg-black"
+                      className="block bg-[#f1e5c6]"
                       style={{ width: stageBox.width, height: stageBox.height }}
                     >
                       <AssetImage image={image} source="raw" className="h-full w-full" />
@@ -251,7 +344,7 @@ export function MagnifierDialog({
                     data-testid="magnifier-image-clear"
                     aria-label="移出这张图"
                     title="把这张图移出这个状态（状态还在，只是没图了）"
-                    className="absolute right-1 top-1 z-10 rounded border border-[var(--color-editor-border)] bg-[var(--color-editor-bar)] px-1 text-[12px] leading-none text-[var(--color-editor-text-dim)] after:content-['×'] hover:border-[var(--color-editor-danger)] hover:text-[var(--color-editor-danger)]"
+                    className="absolute right-1 top-1 z-10 rounded border border-[#bc9b60] bg-[#e8d8b4] px-1 text-[12px] leading-none text-[#8a6d3b] after:content-['×'] hover:border-[var(--color-editor-danger)] hover:text-[var(--color-editor-danger)]"
                     onClick={() => {
                       if (object !== undefined) {
                         setStateImage(object.id, picked, null);
@@ -260,19 +353,20 @@ export function MagnifierDialog({
                   />
                 )}
               </div>
+              )}
 
               {/*
                 右边：**这个状态的文字描述**（多行纯文本，换行照原样）。
-                这一格**比面板更亮**（浮起来的一层）——与左边那格「一暗一亮」，一眼分得清。
+                与标题 / 图同款**羊皮纸面**，字是深棕——一眼分得清「图」与「文字」。
               */}
-              <div className="flex min-h-0 w-[38%] flex-none flex-col rounded-lg border border-[var(--color-editor-border)] bg-[var(--color-editor-panel-alt)] focus-within:border-[var(--color-editor-accent)]">
+              <div className="flex min-h-0 w-[38%] flex-none flex-col rounded-lg border border-[#bc9b60] bg-[#f1e5c6] focus-within:border-[#8c2f1e]">
                 <textarea
                   key={`text-${picked}`}
                   data-testid="magnifier-text"
                   defaultValue={state.text ?? ""}
                   placeholder="文字描述（可以没有，可以换行）"
                   title="这一个状态右边那段文字；留空 = 没有文字。失焦时保存"
-                  className="min-h-0 flex-1 resize-none rounded-lg bg-transparent p-3 text-[13px] leading-relaxed text-[var(--color-editor-text)] outline-none placeholder:text-[var(--color-editor-text-dim)] focus:bg-black/20"
+                  className="min-h-0 flex-1 resize-none rounded-lg bg-transparent p-3 text-[13px] leading-relaxed text-[#4a381f] outline-none placeholder:text-[#a08a63] focus:bg-black/5"
                   onBlur={(event) => {
                     if (object !== undefined && picked !== undefined) {
                       setStateText(object.id, picked, event.target.value);
@@ -302,8 +396,8 @@ export function MagnifierDialog({
                 key={index}
                 className={`flex items-center gap-1 rounded-lg border p-0.5 ${
                   selected
-                    ? "border-[var(--color-editor-accent)] bg-[var(--color-editor-accent-dim)]"
-                    : "border-[var(--color-editor-border)] bg-[var(--color-editor-panel-alt)] hover:border-[var(--color-editor-bar-hover)]"
+                    ? "border-[#8c2f1e] bg-[#e6cfa8]"
+                    : "border-[#bc9b60] bg-[#f1e5c6] hover:border-[#8c2f1e]"
                 }`}
               >
                 <button
@@ -323,12 +417,12 @@ export function MagnifierDialog({
                   {item.image === undefined ? (
                     <span
                       data-testid="magnifier-state-blank"
-                      className="flex h-12 w-12 items-center justify-center rounded border border-dashed border-[var(--color-editor-border)] text-[11px] text-[var(--color-editor-text-dim)]"
+                      className="flex h-12 w-12 items-center justify-center rounded border border-dashed border-[#bc9b60] text-[11px] text-[#a08a63]"
                     >
                       {index + 1}
                     </span>
                   ) : (
-                    <AssetImage image={item.image} className="h-12 w-12 rounded bg-black/30" />
+                    <AssetImage image={item.image} className="h-12 w-12 rounded bg-[#f1e5c6]" />
                   )}
                 </button>
                 {/*
@@ -341,7 +435,7 @@ export function MagnifierDialog({
                   data-index={index}
                   aria-label={`移出第 ${index + 1} 个状态`}
                   title="移出这一个状态（素材文件不会被删）"
-                  className="flex-none self-stretch px-1 text-[var(--color-editor-text-dim)] after:content-['×'] hover:text-[var(--color-editor-danger)]"
+                  className="flex-none self-stretch px-1 text-[#8a6d3b] after:content-['×'] hover:text-[var(--color-editor-danger)]"
                   onClick={() => {
                     if (object !== undefined) {
                       removeState(object.id, index);
@@ -356,7 +450,7 @@ export function MagnifierDialog({
             type="button"
             data-testid="magnifier-add-state"
             title="加一个空状态（标题 / 图 / 文字都可以之后再填）"
-            className="flex h-[52px] flex-none items-center gap-1 rounded-lg border border-dashed border-[var(--color-editor-border)] px-3 text-[11px] leading-none text-[var(--color-editor-text-dim)] hover:border-[var(--color-editor-accent)] hover:text-[var(--color-editor-text)]"
+            className="flex h-[52px] flex-none items-center gap-1 rounded-lg border border-dashed border-[#bc9b60] px-3 text-[11px] leading-none text-[#a08a63] hover:border-[#8c2f1e] hover:text-[#3a2a16]"
             onClick={() => {
               if (object !== undefined) {
                 addState(object.id);
@@ -388,16 +482,20 @@ export function MagnifierDialog({
           setPicking(false);
         }}
       />
+
+      {/* 选视频（v33）：选中一条 → 填进当前这个状态（会把这一屏的图删掉：媒体二选一） */}
+      <ResourcePickerDialog
+        kind="video"
+        open={pickingVideo}
+        onClose={() => setPickingVideo(false)}
+        onPick={(id: string) => {
+          if (object !== undefined && picked !== undefined) {
+            setStateVideo(object.id, picked, id);
+          }
+
+          setPickingVideo(false);
+        }}
+      />
     </MapDialogShell>
   );
 }
-
-/**
- * 底栏那两个按钮的样子：**一眼要看出能按**。
- *
- * 外壳的底栏是一行 `text-[10px]` 小字，`toolbar-button` 那种「透明底 + 透明边」摆在这里
- * 同样像纯文字（视频混合窗口那次踩过同一个坑），所以自己给边框与底；
- * 禁用（不在运行态 / 没选图 / 已经开着）退回灰字、不可点。
- */
-const FOOTER_BUTTON_CLASS =
-  "flex-none rounded border border-[var(--color-editor-border)] bg-[var(--color-editor-bar)] px-2 py-0.5 text-[11px] text-[var(--color-editor-text)] hover:border-[var(--color-editor-accent)] hover:bg-[var(--color-editor-bar-hover)] hover:text-white disabled:border-[var(--color-editor-border)] disabled:bg-transparent disabled:text-[var(--color-editor-text-dim)] disabled:hover:border-[var(--color-editor-border)] disabled:hover:bg-transparent disabled:hover:text-[var(--color-editor-text-dim)]";

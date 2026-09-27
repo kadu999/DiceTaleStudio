@@ -149,8 +149,13 @@ import type { ObjectKind } from "./presets";
  * `short.MaxValue`，现在它跟图片层一样是可编辑的渲染属性。**没有迁移函数**：老文件缺这一项，
  * schema 补默认值（= 历史行为），格式 +1 触发一次回写、并让老编辑器撞上时提示升级。
  * 协议侧同步升到 v23（同一个组件多一项）。
+ *
+ * v33（2026-09-27）：**放大镜一屏的媒体支持视频 + 动画**。`MagnifierState` 多两项：
+ * `video`（`{ id, loop, audio }`，与 `image` **二选一**）与 `tween`（媒体那块的动画预设，
+ * 见 `MAGNIFIER_TWEENS`）。**纯加法、没有迁移函数**：老状态只有 `image`，读出来照旧是图；
+ * 格式 +1 触发一次回写、并让老编辑器撞上时提示升级。协议侧同步升到 v24。
  */
-export const DOCUMENT_FORMAT_VERSION = 32;
+export const DOCUMENT_FORMAT_VERSION = 33;
 
 /** 网格行序：`bottom-up` 表示 cells 第 0 行是图片最下面一行（与 Unity GridMap 一致）。 */
 export type RowOrder = "bottom-up";
@@ -419,21 +424,48 @@ export interface TeleportDataDoc {
 }
 
 /**
+ * 放大镜一屏里**媒体那块**的动画：几种固定预设（v33 起）。
+ *
+ * 作用范围**只有媒体那块**（图 / 视频；标题与文字不动）——像一张会动的道具图。
+ * `none` = 不动（缺省 / 没写同义）。
+ */
+export const MAGNIFIER_TWEENS = ["none", "shake", "breathe", "float", "sway"] as const;
+export type MagnifierTween = (typeof MAGNIFIER_TWEENS)[number];
+
+/**
+ * 放大镜一屏里的视频（v33 起）：一个资源逻辑 ID + 循环 / 声音两个开关。
+ *
+ * 一屏的媒体**二选一**（图 或 视频）：命令写一个会把另一个删掉（`setMagnifierStateImage` /
+ * `setMagnifierStateVideo`）；手写文件里两个都写了属于坏数据（`validateScene` 报 warning，
+ * 渲染按**视频**处理）。循环缺省**开**（线索卡上的动图通常要一直动）、声音缺省**关**
+ * （与对象上的视频同一条：跑团时误响比听不到更糟）。
+ */
+export interface MagnifierVideoDoc {
+  readonly id: string;
+  readonly loop: boolean;
+  readonly audio: boolean;
+}
+
+/**
  * 放大镜里**一个状态**（v31 起）：那扇窗里的一屏画面。
  *
- * 三项都可以没有——「空状态槽」是合法状态（「添加状态」先加的就是它，之后再一项一项填）。
- * 版式固定（编辑器那扇窗与前端那扇窗同一套）：`title` 在上面一行，下面左边 `image`、
- * 右边 `text`。
+ * 都可以没有——「空状态槽」是合法状态（「添加状态」先加的就是它，之后再一项一项填）。
+ * 版式固定（编辑器那扇窗与前端那扇窗同一套）：`title` 在上面一行，下面左边媒体、右边 `text`。
  *
  * `image` 直接复用 {@link ImageRef}：它就是「一张图的引用（可以取图集里的一格）」那个形状，
  * 所以「支持精灵」不需要多一个字段；存盘时 `id` 按同一套换算成 GUID
  * （`scene-asset-refs.ts`）、推送时把 `spriteGrid` 解析进载荷（`sprites.ts`）。
+ * v33 起媒体还多了 `video`（与 `image` **二选一**），以及媒体那块的动画 `tween`。
  */
 export interface MagnifierState {
   /** 上面那行标题；没写 = 没有标题（前端也不留那一行）。 */
   readonly title?: string;
-  /** 左边那张图；没写 = 这个状态还没有图（那一格空着）。 */
+  /** 左边那张图；没写 = 这个状态没有图。与 `video` **二选一**。 */
   readonly image?: ImageRef;
+  /** 左边那条视频（v33）；没写 = 没有视频。与 `image` **二选一**。 */
+  readonly video?: MagnifierVideoDoc;
+  /** 媒体那块的动画（v33）；没写 = 不动（等价于 `"none"`）。 */
+  readonly tween?: MagnifierTween;
   /** 右边那段文字描述（**多行纯文本**，换行照原样）；没写 = 没有文字。 */
   readonly text?: string;
 }

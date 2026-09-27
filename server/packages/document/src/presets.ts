@@ -313,6 +313,14 @@ export const DEFAULT_VIDEO_BLEND_AUDIO: VideoBlendAudio = "none";
 export const DEFAULT_VIDEO_BLEND_KIND: VideoBlendKind = "video";
 
 /**
+ * 放大镜一屏里视频的默认开关（v33）：**循环、静音**。
+ *
+ * 循环 = 线索卡上的动图通常要一直动；静音 = 与对象上的视频同一条（跑团时误响比听不到更糟）。
+ */
+export const DEFAULT_MAGNIFIER_VIDEO_LOOP = true;
+export const DEFAULT_MAGNIFIER_VIDEO_AUDIO = false;
+
+/**
  * 战争雾雾层的**显示顺序默认值**（v32 起可配置）：**最前面**。
  *
  * 未探索的雾要盖住地图上的对象，所以默认取 `short.MaxValue`（与图片层「大的画在前面」

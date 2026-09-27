@@ -329,7 +329,8 @@ export function EditorShell(): React.JSX.Element {
         onClose={() => openGridEditor(null)}
       />
 
-      {/* 放大镜窗口：中间一张大图 + 下面一排可以选的图（前端那扇窗只有中间那张，没有按钮） */}
+      {/* 放大镜窗口：编辑那一屏 + 一排状态槽。**它的开 / 关就是前端那扇窗的开 / 关**：
+          `onClose`（含遮罩 / Esc）走 `openMagnifierEditor(null)`，顺手把前端那扇收掉 */}
       <MagnifierDialog
         open={magnifierEditor && magnifierEditorTarget !== null}
         objectId={magnifierEditorTarget}

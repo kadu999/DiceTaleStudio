@@ -18,6 +18,8 @@ import {
   DEFAULT_VIDEO_ENABLED,
   DEFAULT_VIDEO_LOOP,
   FOG_DEFAULT_SORTING_ORDER,
+  DEFAULT_MAGNIFIER_VIDEO_AUDIO,
+  DEFAULT_MAGNIFIER_VIDEO_LOOP,
   SPRITE_COMPONENT,
   componentForSlot,
   presetOf,
@@ -25,6 +27,7 @@ import {
 import { OBJECT_KINDS, type ObjectKind } from "./presets";
 import {
   DOCUMENT_FORMAT_VERSION,
+  MAGNIFIER_TWEENS,
   SOUND_LAYERS,
   VIDEO_BLEND_AUDIO,
   VIDEO_BLEND_KINDS,
@@ -176,6 +179,16 @@ export const teleportDataSchema = z.object({
 export const magnifierStateSchema = z.object({
   title: z.string().optional(),
   image: imageRefSchema.optional(),
+  // v33：一屏的媒体还能是**视频**（与 `image` 二选一；`loop` / `audio` 给默认值）
+  video: z
+    .object({
+      id: z.string().min(1),
+      loop: z.boolean().default(DEFAULT_MAGNIFIER_VIDEO_LOOP),
+      audio: z.boolean().default(DEFAULT_MAGNIFIER_VIDEO_AUDIO),
+    })
+    .optional(),
+  // v33：媒体那块的动画预设（缺省 = 不动）
+  tween: z.enum(MAGNIFIER_TWEENS).optional(),
   text: z.string().optional(),
 });
 

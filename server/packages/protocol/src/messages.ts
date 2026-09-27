@@ -142,8 +142,13 @@ import { z } from "zod";
  * 的 data 多一项 `sortingOrder`（int，缺省 = 最前面）。v23 之前前端把雾层写死在
  * `short.MaxValue`；老前端（v22）不认这一项 → 会把雾层按缺省当 0 处理（不是崩，
  * 是遮挡顺序错乱），按同一条纪律 +1。**命令那一组仍然一个字节都没动。**
+ *
+ * v24（2026-09-27）：**放大镜一屏的媒体支持视频 + 动画**（与文档格式 v33 同一批）——
+ * `magnifierStateSchema` 多 `video`（`{ id, loop, audio }`，与 `image` 二选一）与 `tween`
+ * （媒体那块的动画预设）。老前端（v23）不认这两项 → 视频那一屏放不出来、动画不动
+ * （不是崩，是功能丢），按同一条纪律 +1。**命令那一组一个字节都没动。**
  */
-export const PROTOCOL_VERSION = 23;
+export const PROTOCOL_VERSION = 24;
 
 /** 未进入运行态时拒绝 `/client` 升级的 HTTP 状态与原因头。 */
 export const RUNTIME_INACTIVE_STATUS = 503;
@@ -190,6 +195,16 @@ export const SPRITE_SHEET_MAX = 64;
  * 由 `apps/backend/test/protocol-document-contract.test.ts` 断言两边一致。
  */
 export const DEFAULT_FOG_SORTING_ORDER = 32767;
+
+/**
+ * 放大镜一屏媒体的**动画预设**（v24 起）：与 `@dts/document` 的 `MAGNIFIER_TWEENS` **同值**
+ * （同样复刻一份，契约测试盯着「缺省一致 / 枚举一致」）。
+ */
+export const MAGNIFIER_TWEENS = ["none", "shake", "breathe", "float", "sway"] as const;
+
+/** 放大镜一屏里视频的默认开关（v24 起）：**循环、静音**（与 `@dts/document` 同值）。 */
+export const DEFAULT_MAGNIFIER_VIDEO_LOOP = true;
+export const DEFAULT_MAGNIFIER_VIDEO_AUDIO = false;
 
 /** 一张图的切分（v10 起）：几列几行。`1×1` = 整图。 */
 export const spriteGridSchema = z.object({
@@ -383,6 +398,16 @@ export const teleportDataSchema = z.object({
 export const magnifierStateSchema = z.object({
   title: z.string().optional(),
   image: imageRefSchema.optional(),
+  // v24：一屏的媒体还能是**视频**（与 `image` 二选一；`loop` / `audio` 给默认值）
+  video: z
+    .object({
+      id: z.string().min(1),
+      loop: z.boolean().default(DEFAULT_MAGNIFIER_VIDEO_LOOP),
+      audio: z.boolean().default(DEFAULT_MAGNIFIER_VIDEO_AUDIO),
+    })
+    .optional(),
+  // v24：媒体那块的动画预设（缺省 = 不动）
+  tween: z.enum(MAGNIFIER_TWEENS).optional(),
   text: z.string().optional(),
 });
 
@@ -607,15 +632,19 @@ export function resourceIdsOfObject(object: GameObjectPayload): readonly string[
     ids.push(...(media?.clips ?? []));
   }
 
-  // 放大镜（v21 起）：状态列表里每一个状态的图都要进资源包——那扇窗放的正是它。
-  // 漏了这一条最不容易发现：资源包只影响「先下后载」，弹窗要等到逐文件回落时才慢慢出图。
-  const magnifier = componentDataOf<{ states?: readonly { image?: { id?: string } }[] }>(
-    object,
-    COMPONENT_TYPE.magnifier,
-  );
+  // 放大镜（v21 起）：状态列表里每一个状态的**媒体**都要进资源包——那扇窗放的正是它。
+  // v24 起媒体还可能是**视频**，一起收进来。漏了这一条最不容易发现：资源包只影响
+  // 「先下后载」，弹窗要等到逐文件回落时才慢慢出图 / 出视频。
+  const magnifier = componentDataOf<{
+    states?: readonly { image?: { id?: string }; video?: { id?: string } }[];
+  }>(object, COMPONENT_TYPE.magnifier);
   for (const state of magnifier?.states ?? []) {
     if (state.image?.id !== undefined) {
       ids.push(state.image.id);
+    }
+
+    if (state.video?.id !== undefined) {
+      ids.push(state.video.id);
     }
   }
 

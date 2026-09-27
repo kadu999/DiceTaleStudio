@@ -2,7 +2,17 @@
 import type { Draft } from "immer";
 // 特性的读写一律走访问器（「数据存在哪个组件里」只有 access.ts 知道）
 import { ensureMagnifierData } from "../access";
-import type { ImageRef, ImageSpriteRef, MagnifierState, SceneDoc } from "../types";
+import {
+  DEFAULT_MAGNIFIER_VIDEO_AUDIO,
+  DEFAULT_MAGNIFIER_VIDEO_LOOP,
+} from "../presets";
+import type {
+  ImageRef,
+  ImageSpriteRef,
+  MagnifierState,
+  MagnifierTween,
+  SceneDoc,
+} from "../types";
 import { withMediaData } from "./shared";
 
 // ---------------------------------------------------------------- 放大镜（动作对象）
@@ -132,6 +142,101 @@ export function setMagnifierStateImage(
     }
 
     state.image = next;
+    // 一屏只有一块媒体（v33）：放图就把视频删掉
+    delete state.video;
+    return true;
+  });
+}
+
+/**
+ * 给第 `index` 个状态**放一条视频**（v33；`null` = 清掉视频，它退回只剩下标题 / 文字）。
+ *
+ * 与 {@link setMagnifierStateImage} **二选一**：放视频会把这个状态的**图删掉**（反过来放图也删视频）
+ * ——一屏只有一块媒体。新放的视频用默认开关（**循环、静音**）；换一条时沿用原开关。
+ */
+export function setMagnifierStateVideo(
+  scene: Draft<SceneDoc>,
+  objectId: string,
+  index: number,
+  clipId: string | null,
+): boolean {
+  if (clipId === null) {
+    return withMagnifierState(scene, objectId, index, (state) => {
+      if (state.video === undefined) {
+        return false;
+      }
+
+      delete state.video;
+      return true;
+    });
+  }
+
+  const next = clipId.trim();
+  if (next.length === 0) {
+    return false;
+  }
+
+  return withMagnifierState(scene, objectId, index, (state) => {
+    if (state.video !== undefined && state.video.id === next) {
+      return false;
+    }
+
+    state.video = {
+      id: next,
+      loop: state.video?.loop ?? DEFAULT_MAGNIFIER_VIDEO_LOOP,
+      audio: state.video?.audio ?? DEFAULT_MAGNIFIER_VIDEO_AUDIO,
+    };
+    // 一屏只有一块媒体（v33）：放视频就把图删掉
+    delete state.image;
+    return true;
+  });
+}
+
+/** 改第 `index` 个状态那条视频的**循环 / 声音**开关（那个状态没有视频时无变更）。 */
+export function setMagnifierStateVideoSwitch(
+  scene: Draft<SceneDoc>,
+  objectId: string,
+  index: number,
+  patch: { readonly loop?: boolean; readonly audio?: boolean },
+): boolean {
+  return withMagnifierState(scene, objectId, index, (state) => {
+    const video = state.video;
+    if (video === undefined) {
+      return false;
+    }
+
+    const loop = patch.loop ?? video.loop;
+    const audio = patch.audio ?? video.audio;
+    if (loop === video.loop && audio === video.audio) {
+      return false;
+    }
+
+    state.video = { id: video.id, loop, audio };
+    return true;
+  });
+}
+
+/**
+ * 改第 `index` 个状态媒体那块的**动画**（v33）：`null` / `"none"` = 不动（字段删掉，文件自描述）。
+ */
+export function setMagnifierStateTween(
+  scene: Draft<SceneDoc>,
+  objectId: string,
+  index: number,
+  tween: MagnifierTween | null,
+): boolean {
+  return withMagnifierState(scene, objectId, index, (state) => {
+    const next = tween === null || tween === "none" ? undefined : tween;
+    if (state.tween === next) {
+      return false;
+    }
+
+    if (next === undefined) {
+      delete state.tween;
+    } else {
+      state.tween = next;
+    }
+
     return true;
   });
 }

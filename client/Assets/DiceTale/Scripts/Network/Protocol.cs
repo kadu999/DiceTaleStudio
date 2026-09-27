@@ -128,8 +128,14 @@ namespace DiceTale
         /// 的 data 多一项 `sortingOrder`（int，缺省 = 最前面）。v23 之前前端把雾层写死在
         /// `short.MaxValue`；老前端（v22）不认这一项 → 按缺省当 0 处理（遮挡顺序错乱），
         /// 照旧 +1；这类不兼容由握手 close `4002` 挡住。**命令那一组一个字节都没动。**
+        ///
+        /// v24（2026-09-27）：**放大镜一屏的媒体支持视频 + 动画**（与文档格式 v33 同一批）——
+        /// `Magnifier` 的每个状态多两项：`video`（`{ id, loop, audio }`，与 `image` **二选一**）
+        /// 与 `tween`（媒体那块的动画预设 `none / shake / breathe / float / sway`）。
+        /// 老前端（v23）不认这两项 → 视频那一屏放不出来、动画不动（不是崩，是功能丢），
+        /// 照旧 +1；这类不兼容由握手 close `4002` 挡住。**命令那一组一个字节都没动。**
         /// </summary>
-        public const int Version = 23;
+        public const int Version = 24;
 
         /// <summary>
         /// 战争雾雾层显示顺序的**缺省值**（v23 起）：**最前面**（`short.MaxValue`）。
@@ -150,12 +156,15 @@ namespace DiceTale
             public const string Sound = "PlaySound";
             public const string Teleport = "Teleport";
             /// <summary>
-            /// 放大镜（v21 起，动作对象；v22 起数据是**状态列表**）：`{ states: [{ title?, image?: { id,
-            /// width, height, sprite?, spriteGrid? }, text? }], picked? }`，`picked` 是**下标**。
-            /// 一个状态 = 一屏画面（上面标题、左边图、右边文字，三项都可以没有；**没有图的展示不出来**）。
-            /// 对象自己不渲染任何东西（画布上那枚徽标是编辑器的画法）；触发它 = 由服务端的
-            /// `open_magnifier` / `close_magnifier` 让前端弹 / 收一扇窗，窗里放的就是 `picked` 那一屏。
-            /// **换状态 / 换图 / 改字都不是命令**：文档一改整份 `scene_sync` 带下来（见 `Logic/SceneMirror.cs`）。
+            /// 放大镜（v21 起，动作对象；v22 起数据是**状态列表**；v24 起媒体支持视频 + 动画）：
+            /// `{ states: [{ title?, image?: { id, width, height, sprite?, spriteGrid? }, video?:
+            /// { id, loop, audio }, tween?, text? }], picked? }`，`picked` 是**下标**。
+            /// 一个状态 = 一屏画面（上面标题、左边**媒体**、右边文字；都可以没有；**三项全空才展示不出来**）。
+            /// **媒体二选一**：`image` 或 `video`（两个都写着按视频处理）；`tween` 是媒体那块的动画
+            /// （`none / shake / breathe / float / sway`）。对象自己不渲染任何东西（画布上那枚徽标是
+            /// 编辑器的画法）；触发它 = 由服务端的 `open_magnifier` / `close_magnifier` 让前端弹 / 收
+            /// 一扇窗，窗里放的就是 `picked` 那一屏。
+            /// **换状态 / 换媒体 / 改字都不是命令**：文档一改整份 `scene_sync` 带下来（见 `Logic/SceneMirror.cs`）。
             /// </summary>
             public const string Magnifier = "Magnifier";
             public const string Video = "VideoOverlay";

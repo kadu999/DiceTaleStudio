@@ -1244,7 +1244,8 @@ namespace DiceTale
                 return null;
             }
 
-            return game.UIManager.OpenWindow<MagnifierWindow>();
+            // **从 prefab 加载**（`Resources/UI/MagnifierWindow.prefab`）：层级是资产、能在 Project 里看/改。
+            return game.UIManager.OpenWindow<MagnifierWindow>(MagnifierWindow.PrefabResourcePath);
         }
 
         /// <summary>取图 → 塞进窗口；`command` 非空时回执（null = 这是镜像落地时的刷新，不回执）。</summary>
@@ -1254,6 +1255,33 @@ namespace DiceTale
             MagnifierStateView state,
             CommandRequest command)
         {
+            // 视频那一屏（v33）：媒体二选一里的「视频」那条——按本地包 / 服务端的 URL 交给窗口放
+            if (state.IsVideo)
+            {
+                var videoUrl = VideoUrlOf(state.Video.Id);
+                if (string.IsNullOrEmpty(videoUrl))
+                {
+                    const string noVideoUrl = "视频拿不到地址（本地资源包里没有，服务端地址也没配）";
+                    Debug.LogWarning($"[命令] 打开放大镜窗口失败：{noVideoUrl}");
+                    if (command != null)
+                    {
+                        session.SendCommandResult(command, false, noVideoUrl);
+                    }
+
+                    return;
+                }
+
+                window.ShowVideo(state, videoUrl);
+                var videoEffect = $"显示「{obj.name}」的视频画面：{state.Video.Id}";
+                Debug.Log($"[命令] 放大镜窗口：{videoEffect}");
+                if (command != null)
+                {
+                    session.SendCommandResult(command, true, effects: new[] { videoEffect });
+                }
+
+                return;
+            }
+
             // 这一屏**没有图**（纯文字 / 只有标题的线索卡）：不用取图，直接把这一屏铺上去
             if (string.IsNullOrEmpty(state.Id))
             {

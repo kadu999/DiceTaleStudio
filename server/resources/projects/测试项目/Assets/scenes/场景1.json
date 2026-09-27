@@ -1,5 +1,5 @@
 {
-  "formatVersion": 32,
+  "formatVersion": 33,
   "objects": [
     {
       "id": "map_mu6uln3x1l7fg",
@@ -454,7 +454,7 @@
     },
     {
       "id": "magnifier_muit3qiw1r2c5",
-      "name": "放大镜",
+      "name": "放大镜-马车",
       "kind": "Magnifier",
       "active": true,
       "locked": false,
@@ -492,6 +492,126 @@
                   "sprite": {
                     "column": 1,
                     "row": 0
+                  }
+                }
+              }
+            ],
+            "picked": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": "magnifier_mujvnjz522pbw",
+      "name": "放大镜-桥",
+      "kind": "Magnifier",
+      "active": true,
+      "position": {
+        "x": -275.97269724770644,
+        "y": -82.97218348623855
+      },
+      "rotation": 0,
+      "scale": 1,
+      "locked": false,
+      "components": [
+        {
+          "id": "magnifier_mujvnjz522pbw__Magnifier",
+          "type": "Magnifier",
+          "data": {
+            "states": [
+              {
+                "image": {
+                  "id": "453ddb3f351c1fc89d1dd7797037378a",
+                  "guid": "453ddb3f351c1fc89d1dd7797037378a",
+                  "width": 2048,
+                  "height": 2048,
+                  "sprite": {
+                    "column": 0,
+                    "row": 0
+                  }
+                }
+              },
+              {
+                "image": {
+                  "id": "453ddb3f351c1fc89d1dd7797037378a",
+                  "guid": "453ddb3f351c1fc89d1dd7797037378a",
+                  "width": 2048,
+                  "height": 2048,
+                  "sprite": {
+                    "column": 1,
+                    "row": 0
+                  }
+                }
+              }
+            ],
+            "picked": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "magnifier_mujvowgh3w28l",
+      "name": "放大镜-锁",
+      "kind": "Magnifier",
+      "active": true,
+      "position": {
+        "x": 600.6464587155963,
+        "y": 18.03743119266055
+      },
+      "rotation": 0,
+      "scale": 1,
+      "locked": false,
+      "components": [
+        {
+          "id": "magnifier_mujvowgh3w28l__Magnifier",
+          "type": "Magnifier",
+          "data": {
+            "states": [
+              {
+                "image": {
+                  "id": "2d0195e4ae656c6fc24fd5ba68e79b1b",
+                  "guid": "2d0195e4ae656c6fc24fd5ba68e79b1b",
+                  "width": 2048,
+                  "height": 2048,
+                  "sprite": {
+                    "column": 0,
+                    "row": 0
+                  }
+                }
+              },
+              {
+                "image": {
+                  "id": "2d0195e4ae656c6fc24fd5ba68e79b1b",
+                  "guid": "2d0195e4ae656c6fc24fd5ba68e79b1b",
+                  "width": 2048,
+                  "height": 2048,
+                  "sprite": {
+                    "column": 1,
+                    "row": 0
+                  }
+                }
+              },
+              {
+                "image": {
+                  "id": "2d0195e4ae656c6fc24fd5ba68e79b1b",
+                  "guid": "2d0195e4ae656c6fc24fd5ba68e79b1b",
+                  "width": 2048,
+                  "height": 2048,
+                  "sprite": {
+                    "column": 0,
+                    "row": 1
+                  }
+                }
+              },
+              {
+                "image": {
+                  "id": "2d0195e4ae656c6fc24fd5ba68e79b1b",
+                  "guid": "2d0195e4ae656c6fc24fd5ba68e79b1b",
+                  "width": 2048,
+                  "height": 2048,
+                  "sprite": {
+                    "column": 1,
+                    "row": 1
                   }
                 }
               }

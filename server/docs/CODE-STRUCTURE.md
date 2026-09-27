@@ -16,8 +16,8 @@
 | 后端默认地址 | `0.0.0.0:1420`（`resources/config/app.json`，可被 `HOST` / `PORT` 覆盖） |
 | 编辑器开发地址 | `http://localhost:5173`（Vite，`/api`、`/editor`、`/client` 反代到 1420） |
 | 编辑器生产地址 | `http://localhost:1420`（后端同源托管 `apps/editor/dist`） |
-| 源码规模（不含测试） | 176 个文件 / 40,585 行（packages 13,954 · backend 3,721 · editor 22,910） |
-| 测试规模 | 36,305 行（单测 26,095 · E2E 9,927 · 架构测试 283） |
+| 源码规模（不含测试） | 176 个文件 / 40,911 行（packages 14,164 · backend 3,721 · editor 23,026） |
+| 测试规模 | 36,298 行（单测 26,086 · E2E 9,929 · 架构测试 283） |
 
 > 上表两行与 §0.1 表格里加粗的文件行数、§3.x 节标题里的包规模由
 > `scripts/check-code-structure-stats.mjs` **机器校验**（`pnpm check` 的一环）：
@@ -430,7 +430,7 @@ build: { outDir: "dist", sourcemap: true },
 - 画笔半径 `floor((brushSize-1)/2)`（1/2→1×1、3/4→3×3、5→5×5，含偶数尺寸的刻意保真），与 Unity `ApplyBrush` 完全一致；
 - 坐标系只有一个：**世界坐标**（x 右、y 上、像素、无限大）；`grid(0,0)` 在地图矩形左下角 = 图片最下面一行，grid.y 与世界 y 同向、不翻转；唯一的翻转发生在贴图绘制（`worldRectTopLeft`）。
 
-### 3.2 `@dts/document` — 文档模型、命令与历史（9,063 行）
+### 3.2 `@dts/document` — 文档模型、命令与历史（9,244 行）
 
 | 文件 | 行数 | 职责 | 关键导出 |
 |---|---|---|---|
@@ -679,7 +679,7 @@ v23 起 `validateScene` 多了第二个参数：`validateScene(scene, { metas })
 > **历史**：`@dts/actions`（动作类型注册表、条件求值、动作图校验）曾是独立的一个包，
 > 随「动作挂在组件上」那套旧模型一起整包删除了；动作编辑的数据面落地时重新设计。
 
-### 3.3 `@dts/protocol` — WS 消息契约（1,069 行）
+### 3.3 `@dts/protocol` — WS 消息契约（1,098 行）
 
 单文件 `src/messages.ts`（1,051 行）+ `index.ts` barrel（1 行）。
 **编辑器、服务端、Unity 前端共用同一份 zod schema。**
@@ -1185,7 +1185,7 @@ store 用 **zustand 切片**模式拆开了：原来是一个 4,493 行的 `edit
 | `slices/bgm-slice.ts` | 83 | 全局背景音乐（播放 / 暂停 / 继续 / 停止 / 补发） | — |
 | `slices/audio-meta-slice.ts` | 169 | 素材**显示名与标签**（任何素材：图 / 声 / 视频；写在**素材 meta 那条轨道**上：走 `applyMetas` + `withMetaAssetName` / `withMetaAssetTags`）+ 项目级标签表（`applyProject`）+ 三档音量 | — |
 | `slices/teleport-slice.ts` | 89 | 传送阵：候选、选中、触发换台 | — |
-| `slices/magnifier-slice.ts` | 159 | 放大镜（v30；v31 起数据是**状态列表**）：加 / 移出一个状态、换展示第几个、往某个状态里挑图 / 写标题与文字（**文档数据**），以及前端那扇窗的开 / 关记账与补发（**运行态**；编辑态只开编辑器那扇窗的预览） | — |
+| `slices/magnifier-slice.ts` | 146 | 放大镜（v30；v31 起数据是**状态列表**）：加 / 移出一个状态、换展示第几个、往某个状态里挑图 / 写标题与文字（**文档数据**），以及前端那扇窗的开 / 关记账与补发（**运行态**）——**编辑器那扇窗一开 / 一关就顺手同步前端那扇**（`openMagnifierEditor`，界面上不再单独摆按钮） | — |
 | `slices/grid-paint-slice.ts` | 134 | 网格标注：画笔偏好、涂抹、清空 | — |
 | `slices/fog-slice.ts` | 208 | 战争雾：开关、雾区、擦除记账、补发 | — |
 | `slices/sprite-slice.ts` | 199 | 精灵（子图）：`setObjectImageSprite`（图 + 格子**一条撤销记录**；对象取哪一格只有这一条写入路径）、`setSpriteSheet` / `setSpriteImportSettings`（切分与导入设置落在**素材 meta**那条轨道：走 `applyMetas`）、`ensureAssetMeta`（挑图那一刻把 guid 定下来） | — |
@@ -1252,7 +1252,7 @@ export function createSoundSlice(
 | `FogMaskDialog.tsx` | 435 | 「战争雾 Mask 窗口」：贴图底 + canvas 遮罩（960 宽、按贴图比例定高），软边圆刷擦除，右侧「整区开关」（雾区绑定 v25 起读独立的 `FogOfWar` 组件）；运行态下按批下发 `erase_mask` 轨迹、整区开关下发 `reveal_fog_region`；编辑态纯预览、不写文档不落盘。 | `FogMaskDialog` |
 | `VideoBlendMaskDialog.tsx` | 345 | 「视频混合 Mask 窗口」：底图是 B 的缩略图（编辑器不解码视频）+ canvas 遮罩（同一张 960 宽、按素材像素尺寸定高），软边圆刷擦除（软边 0.5 有实心核）；右侧两个**「整张盖住（1）/ 整张擦开（0）」**按钮（走播放键那一档的样式：常态就有边框与底、hover 描强调色边框；按钮里那个**实心 / 空心小方块**是遮罩状态的提示）一次填满或清空；运行态下按批下发 `erase_video_mask`、整张按钮下发 `fill_video_mask`；编辑态纯预览、不写文档不落盘。 | `VideoBlendMaskDialog` |
 | `GridEditDialog.tsx` | 459 | 「网格编辑窗口」：**唯一**的格子涂/擦入口，用同一渲染器 + `fitViewport` 把地图铺满窗口；指针捕获 + 补齐两事件点之间的格子（不断线）；「全部清除」可撤销。 | `GridEditDialog` |
-| `MagnifierDialog.tsx` | 403 | 「放大镜窗口」：**上面一块是选中状态的画面**（**标题带卡片**（左边一条暖黄强调条 + 标题居中，与前端同款）+ 左边图（点一下弹选图框、右上角 × 移出）+ 右边多行文字；**三块卡片一暗一亮**分得清图与文字，与前端那扇窗同一套层次；长宽比取**素材真实尺寸**、一格图按那一格算）+ **下面一排状态槽**（点一个 = 换成展示它，写文档、可撤销；每条带 × 移出；末尾「添加状态」加空槽）+ 底栏「在画面上打开 / 关闭画面」（只在运行态可用）；与前端那扇窗长得一样，差别就是「多这排状态槽与添加按钮 / 多这两个按钮」。关掉这扇窗**不**连带关前端那扇。 | `MagnifierDialog` |
+| `MagnifierDialog.tsx` | 317 | 「放大镜窗口」：**上面一块是选中状态的画面**（**羊皮纸卡片**，与前端同套：暖米黄纸面 + 深棕字 + 棕描边 + **红蜡色**强调条 + 标题居中；左边图（点一下弹选图框、右上角 × 移出）+ 右边多行文字；长宽比取**素材真实尺寸**、一格图按那一格算）+ **下面一排状态槽**（点一个 = 换成展示它，写文档、可撤销；每条带 × 移出；末尾「添加状态」加空槽）。**这扇窗的开 / 关就是前端那扇窗的开 / 关**（`openMagnifierEditor` 同步开 / 关 `open_magnifier` / `close_magnifier`）——底栏不再有「在画面上打开 / 关闭画面 / 状态提示」。 | `MagnifierDialog` |
 
 #### `panels/`（6）
 
@@ -1295,7 +1295,7 @@ export function createSoundSlice(
 | `TeleportFields.tsx` | 105 | 传送阵的「传送」组：候选目标小方块 + `＋` 开「传送目标」窗口 + 「传送」按钮（不能传时按钮上写原因）。 | `TeleportFields` |
 | `FogFields.tsx` | 150 | 战争雾编辑区（挂在独立的 `Fog` 对象上）：读写在它 `FogOfWar` 组件（`fogOf(object)`），第一行「引用地图」选择器，接着总开关（闸住整组），打开后给「指定雾区」小方块与「雾格子 → 编辑」入口。 | `FogFields` |
 | `GridAnnotationFields.tsx` | 36 | 「区域」组里的一行入口：只留一个按钮打开 `GridEditDialog`。 | `GridAnnotationFields` |
-| `MagnifierFields.tsx` | 75 | 放大镜的「放大镜」组：**只剩「窗口」那一行**（「打开窗口」= 开编辑器那扇、运行态下同时投到前端；「关闭画面」只在这个对象正被投影时出现——前端那扇窗没有关闭按钮；提示里带状态个数）。**状态列表整行搬进那扇窗口里**了（v31），面板不再重复一套。 | `MagnifierFields` |
+| `MagnifierFields.tsx` | 33 | 放大镜的「放大镜」组：**只剩「窗口」那一行、而且只有「打开窗口」一个按钮**（开编辑器那扇、运行态下同时投到前端）。**「关闭画面」与状态说明文字都不在这里**（前端那扇窗的开关就是编辑器那扇窗本身）；**状态列表整行搬进那扇窗口里**了（v31），面板不再重复一套。 | `MagnifierFields` |
 
 > **加一个对象特性 = 在 `registry.tsx` 加一行 + 写一个字段组件**，不必回到面板 JSX 里插
 > `kind === …` 判断。`InspectorPanel.tsx` 从 1,195 行降到 341 行就是这么来的。
@@ -2033,9 +2033,9 @@ upgradeRawDocument
 - `globalTeardown` 只能是**文件路径**，所以临时根经环境变量 `DTS_E2E_RESOURCES` 传给 teardown。
 
 **helper 的两处「复述常量」**（升级时必须同步改，注释里都写明了）：
-`e2e/helpers/editor.ts` 的 `CURRENT_SCENE_FORMAT_VERSION = 31` 复述 `@dts/document` 的
+`e2e/helpers/editor.ts` 的 `CURRENT_SCENE_FORMAT_VERSION = 32` 复述 `@dts/document` 的
 `DOCUMENT_FORMAT_VERSION`；`fog-reveal.spec.ts` / `global-bgm.spec.ts` / `video-object.spec.ts` /
-`video-blend.spec.ts` / `sound-object.spec.ts` / `magnifier.spec.ts` 里写死的 `protocolVersion: 22`
+`video-blend.spec.ts` / `sound-object.spec.ts` / `magnifier.spec.ts` 里写死的 `protocolVersion: 23`
 复述 `@dts/protocol` 的 `PROTOCOL_VERSION`。
 E2E **不引用内部包**（根上没有 workspace 链接），所以这些常量不会被类型检查兜住。
 

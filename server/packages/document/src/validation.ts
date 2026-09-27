@@ -313,6 +313,18 @@ function validateObject(
       });
     }
 
+    // 一屏只有一块媒体（v33）：图与视频同时写着属于坏数据，渲染按视频处理
+    for (let index = 0; index < magnifier.states.length; index += 1) {
+      const state = magnifier.states[index];
+      if (state?.image !== undefined && state.video !== undefined) {
+        issues.push({
+          level: "warning",
+          path: `${path}/magnifier/states/${index}`,
+          message: "这个状态同时有图与视频（一屏只有一块媒体，按视频处理）",
+        });
+      }
+    }
+
     const pickedState = magnifier.picked;
     if (pickedState === undefined) {
       if (magnifier.states.length > 0) {
@@ -333,7 +345,7 @@ function validateObject(
       issues.push({
         level: "warning",
         path: `${path}/magnifier/states/${pickedState}`,
-        message: "要展示的那个状态是空的（标题 / 图 / 文字都没有，窗口里放不出东西）",
+        message: "要展示的那个状态是空的（标题 / 媒体 / 文字都没有，窗口里放不出东西）",
       });
     }
   }

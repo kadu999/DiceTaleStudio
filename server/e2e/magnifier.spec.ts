@@ -99,14 +99,15 @@ test.describe("放大镜：窗口里加状态 + 填内容", () => {
       await seedProjectDoc(request, project, [sceneDoc(SCENE, [magnifierDoc()])]);
       await openMagnifier(page, project);
 
-      // 属性面板只剩「窗口」那一行：**没有**「图片」列表，也没有那个 ＋
+      // 属性面板只剩「窗口」那一行，而且只有一个「打开窗口」按钮：
+      // 没有「图片」列表 / ＋，也没有「关闭画面」与状态说明文字
       const group = page.locator('[data-group="magnifier"]');
       await expect(group.getByTestId("magnifier-window")).toBeVisible();
+      await expect(group.getByTestId("magnifier-open")).toBeVisible();
       await expect(group.getByTestId("magnifier-images")).toHaveCount(0);
       await expect(group.getByTestId("magnifier-add")).toHaveCount(0);
       await expect(group.getByTestId("magnifier-close-window")).toHaveCount(0);
-      // 编辑态：只有窗口预览（进运行态才投到前端）
-      await expect(group.getByTestId("magnifier-window-state")).toContainText("编辑态只有窗口预览");
+      await expect(group.getByTestId("magnifier-window-state")).toHaveCount(0);
 
       // 打开那扇窗：一个状态都没有，上面写「还没有状态」
       await group.getByTestId("magnifier-open").click();
@@ -213,9 +214,10 @@ test.describe("放大镜：窗口里加状态 + 填内容", () => {
       // 第一个状态没有标题：输入框是空的
       await expect(dialog.getByTestId("magnifier-title")).toHaveValue("");
 
-      // 编辑态只是预览：底栏「在画面上打开」点不了
-      await expect(dialog.getByTestId("magnifier-show")).toBeDisabled();
-      await expect(dialog.getByTestId("magnifier-dialog-state")).toContainText("编辑态只是预览");
+      // 编辑器窗底栏**没有**「在画面上打开 / 关闭画面 / 状态提示」：开关就是这扇窗本身
+      await expect(dialog.getByTestId("magnifier-show")).toHaveCount(0);
+      await expect(dialog.getByTestId("magnifier-hide")).toHaveCount(0);
+      await expect(dialog.getByTestId("magnifier-dialog-state")).toHaveCount(0);
 
       // 点下面第二个槽 → 换成展示它（写文档），上面那块换成它的标题 / 图 / 文字
       await slots.nth(1).click();
@@ -245,7 +247,7 @@ test.describe("放大镜：窗口里加状态 + 填内容", () => {
         })
         .toEqual({ title: "线索一", text: "甲\n乙" });
 
-      // 关掉编辑器这扇窗（前端那扇不受影响——那是「关闭画面」的事）
+      // 关掉编辑器这扇窗：运行态下前端那扇也跟着收（这条用例是编辑态，没有前端）
       await page.getByTestId("magnifier-close").click();
       await expect(dialog).toHaveCount(0);
     } finally {
@@ -323,7 +325,7 @@ async function connectFakeClient(page: Page, port: number): Promise<void> {
           type: "client_hello",
           // 与 `@dts/protocol` 的 `PROTOCOL_VERSION` 一致（照抄字面量：e2e 不 import workspace 包，
           // 那个常量不会被类型检查兜住，见 CODE-STRUCTURE 的「复述常量」一节）
-          protocolVersion: 22,
+          protocolVersion: 24,
           name: "e2e 假前端",
           version: "0.0.0",
         }),
@@ -377,7 +379,7 @@ async function fakePicked(page: Page): Promise<unknown> {
 test.describe("放大镜：开 / 关两条命令 + 换状态靠整份场景", { tag: "@runtime" }, () => {
   test.describe.configure({ mode: "serial" });
 
-  test("「打开窗口 / 关闭画面」下发 open_magnifier / close_magnifier；换状态走 scene_push", async ({
+  test("打开编辑器窗 = open_magnifier、关掉 = close_magnifier；换状态走 scene_push", async ({
     page,
     request,
   }, testInfo) => {
@@ -432,8 +434,8 @@ test.describe("放大镜：开 / 关两条命令 + 换状态靠整份场景", { 
       await expect.poll(async () => fakePicked(page)).toBe(1);
       expect((await fakeCommands(page)).filter((item) => item.kind !== "open_magnifier")).toEqual([]);
 
-      // 关闭画面 → close_magnifier（带 objectId 认领）；用底栏那一枚（窗口开着时面板在遮罩后面）
-      await dialog.getByTestId("magnifier-hide").click();
+      // 关掉编辑器这扇窗 = 前端那扇跟着收：close_magnifier（带 objectId 认领）
+      await page.getByTestId("magnifier-close").click();
       await expect
         .poll(async () => (await fakeCommands(page)).filter((item) => item.kind === "close_magnifier").length)
         .toBe(1);

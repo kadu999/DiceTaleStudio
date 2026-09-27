@@ -3,9 +3,27 @@ using UnityEngine;
 
 namespace DiceTale
 {
+    /// <summary>放大镜一屏媒体的动画预设（v33）：与文档 `MAGNIFIER_TWEENS` / 编辑器同一套。</summary>
+    public enum MagnifierTween
+    {
+        None,
+        Shake,
+        Breathe,
+        Float,
+        Sway,
+    }
+
+    /// <summary>放大镜一屏里的视频（v33）：资源逻辑 ID + 循环 / 声音。</summary>
+    public sealed class MagnifierVideoView
+    {
+        public string Id = "";
+        public bool Loop = true;
+        public bool Audio;
+    }
+
     /// <summary>
-    /// 放大镜里**一个状态**（协议 v22 起）：一屏画面 = 标题（上面）+ 图（左）+ 文字（右）。
-    /// 三项都可以没有——**只要有一项就有东西可展示**（纯文字 / 只有标题的线索卡是常见用法）。
+    /// 放大镜里**一个状态**（协议 v22 起）：一屏画面 = 标题（上面）+ 媒体（左）+ 文字（右）。
+    /// 都可以没有——**只要有一项就有东西可展示**（纯文字 / 只有标题的线索卡是常见用法）。
     /// </summary>
     public sealed class MagnifierStateView
     {
@@ -15,11 +33,20 @@ namespace DiceTale
         /// <summary>右边那段文字描述（多行纯文本，换行照原样）；空 = 没有文字。</summary>
         public string Text = "";
 
-        /// <summary>左边那张图的资源逻辑 ID（交给取图加载器）；**空 = 这一屏没有图**。</summary>
+        /// <summary>左边**那张图**的资源逻辑 ID（交给取图加载器）；**空 = 这一屏没有图**。</summary>
         public string Id;
 
         /// <summary>要取的那一格；`null` = 整张图。</summary>
         public MirrorSprite Sprite;
+
+        /// <summary>左边**那条视频**（v33）；`null` = 这一屏放的是图（媒体二选一：渲染按视频优先）。</summary>
+        public MagnifierVideoView Video;
+
+        /// <summary>媒体那块的动画（v33）；`None` = 不动。</summary>
+        public MagnifierTween Tween = MagnifierTween.None;
+
+        /// <summary>这一屏放的是不是**视频**（坏数据里图与视频都写了时按视频处理，与校验口径一致）。</summary>
+        public bool IsVideo => Video != null;
     }
 
     /// <summary>
@@ -80,8 +107,23 @@ namespace DiceTale
             var title = JsonParser.GetString(entry, "title") ?? "";
             var text = JsonParser.GetString(entry, "text") ?? "";
 
-            // 三项全空 = 一张空卡：投上去什么也看不见，明确拒掉
-            if (string.IsNullOrEmpty(id) && string.IsNullOrEmpty(title) && string.IsNullOrEmpty(text))
+            // 视频住在 `video` 里（v33）：与图**二选一**；坏数据里两个都写了按**视频**处理
+            var video = JsonParser.GetObject(entry, "video");
+            var videoId = video == null ? null : JsonParser.GetString(video, "id");
+            var videoView = string.IsNullOrEmpty(videoId)
+                ? null
+                : new MagnifierVideoView
+                {
+                    Id = videoId,
+                    Loop = JsonParser.GetBool(video, "loop", true),
+                    Audio = JsonParser.GetBool(video, "audio", false),
+                };
+
+            // 三项全空 = 一张空卡：投上去什么也看不见，明确拒掉（有视频也算有东西）
+            if (string.IsNullOrEmpty(id)
+                && videoView == null
+                && string.IsNullOrEmpty(title)
+                && string.IsNullOrEmpty(text))
             {
                 return false;
             }
@@ -90,10 +132,31 @@ namespace DiceTale
             {
                 Title = title,
                 Text = text,
-                Id = id ?? "",
-                Sprite = image == null ? null : ReadSprite(image),
+                // 有视频就把图那条路整个让开（渲染按视频优先）
+                Id = videoView != null ? "" : (id ?? ""),
+                Sprite = videoView != null || image == null ? null : ReadSprite(image),
+                Video = videoView,
+                Tween = ParseTween(JsonParser.GetString(entry, "tween")),
             };
             return true;
+        }
+
+        /// <summary>媒体动画预设的字符串 → 枚举（认不出的一律 `None`，向前兼容）。</summary>
+        private static MagnifierTween ParseTween(string value)
+        {
+            switch (value)
+            {
+                case "shake":
+                    return MagnifierTween.Shake;
+                case "breathe":
+                    return MagnifierTween.Breathe;
+                case "float":
+                    return MagnifierTween.Float;
+                case "sway":
+                    return MagnifierTween.Sway;
+                default:
+                    return MagnifierTween.None;
+            }
         }
 
         /// <summary>
