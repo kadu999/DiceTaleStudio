@@ -1104,11 +1104,12 @@ namespace DiceTale
         // ---------------------------------------------------------------- 放大镜（动作对象）
 
         /// <summary>
-        /// 放大镜（v21）：让前端**弹一扇窗**显示这个对象当前选中的那张图（命令里只有 `objectId`）。
+        /// 放大镜（v21；v22 起放的是**一个状态**：标题 + 图 + 文字）：让前端**弹一扇窗**显示
+        /// 这个对象当前选中的那一屏（命令里只有 `objectId`）。
         ///
-        /// 与 `play_video` 同一套：放哪一张从**镜像**里读（`picked` 是文档数据），所以「编辑器里点了
-        /// 下排另一张小图」不需要再来一条命令——整份 `scene_sync` 会把新值带下来，由
-        /// <see cref="OnSceneApplied"/> 把窗里那一张换掉。
+        /// 与 `play_video` 同一套：放哪一屏从**镜像**里读（`picked` 与 `states` 都是文档数据），
+        /// 所以「编辑器里点了下排另一个状态槽 / 换了一张图 / 改了几个字」都不需要再来一条命令——
+        /// 整份 `scene_sync` 会把新值带下来，由 <see cref="OnSceneApplied"/> 把窗里那一屏换掉。
         ///
         /// 回执分两次：**建窗 / 目标不成立时立刻回**；取图是异步的，成功那条在加载完成后回
         /// （与 `LoadAudioThen` 同一条做法——编辑器那边不播画面，等一两百毫秒没关系）。
@@ -1132,9 +1133,9 @@ namespace DiceTale
                 return;
             }
 
-            if (!MagnifierReader.TryPickImage(obj, out var picked))
+            if (!MagnifierReader.TryPickState(obj, out var state))
             {
-                var empty = $"「{obj.name}」还没有要展示的图（图片列表为空 / 还没选）";
+                var empty = $"「{obj.name}」还没有可展示的画面（没有状态 / 还没选 / 选中的那个状态还没有图）";
                 Debug.LogWarning($"[命令] 打开放大镜窗口失败：{empty}");
                 session.SendCommandResult(command, false, empty);
                 return;
@@ -1150,7 +1151,7 @@ namespace DiceTale
             }
 
             magnifierTarget = command.objectId;
-            LoadMagnifierImageThen(window, obj, picked, command);
+            LoadMagnifierStateThen(window, obj, state, command);
         }
 
         /// <summary>
@@ -1186,8 +1187,9 @@ namespace DiceTale
         /// 「镜像落地后通知」的路）。四种情形：
         /// - 窗没开 → 什么都不做；
         /// - 目标对象**不在这一份场景里**（删了 / 换了台）→ 关掉；
-        /// - 还在、而且还有要展示的图 → 换成 `picked` 那一张（**换图不需要命令**，这就是刷新信号）；
-        /// - 还在、但已经没图可展示（列表被清空 / 取消选中）→ 关掉。
+        /// - 还在、而且还有可展示的画面 → 换成 `picked` 那一屏（**换状态 / 换图 / 改字都不需要
+        ///   命令**，这就是刷新信号）；
+        /// - 还在、但已经没有可展示的画面了（状态被删空 / 取消选中 / 那个状态没图）→ 关掉。
         /// </summary>
         public void OnSceneApplied(string sceneName)
         {
@@ -1206,19 +1208,19 @@ namespace DiceTale
 
             var obj =
                 sceneName == null || mirror == null ? null : mirror.FindInScene(sceneName, magnifierTarget);
-            if (obj == null || !MagnifierReader.TryPickImage(obj, out var picked))
+            if (obj == null || !MagnifierReader.TryPickState(obj, out var state))
             {
                 window.Close();
                 var why = obj == null
                     ? $"目标对象不在这一份场景里了（{magnifierTarget}）"
-                    : $"「{obj.name}」已经没有可展示的图了";
+                    : $"「{obj.name}」已经没有可展示的画面了";
                 Debug.LogWarning($"[放大镜] 关掉窗口：{why}");
                 magnifierTarget = "";
                 return;
             }
 
-            // 同一张、同一格、同一个纹理时 `Show` 自己会跳过——所以每次落地都叫一遍是安全的
-            LoadMagnifierImageThen(window, obj, picked, null);
+            // 同一张、同一格、同一个纹理时 `Show` 自己会跳过重建——所以每次落地都叫一遍是安全的
+            LoadMagnifierStateThen(window, obj, state, null);
         }
 
         /// <summary>当前那扇放大镜窗（没建过 / UI 管理器还没准备好时 null）。**不会**顺手创建。</summary>
@@ -1246,10 +1248,10 @@ namespace DiceTale
         }
 
         /// <summary>取图 → 塞进窗口；`command` 非空时回执（null = 这是镜像落地时的刷新，不回执）。</summary>
-        private void LoadMagnifierImageThen(
+        private void LoadMagnifierStateThen(
             MagnifierWindow window,
             MirrorObject obj,
-            MagnifierImage picked,
+            MagnifierStateView state,
             CommandRequest command)
         {
             if (imageLoader == null)
@@ -1264,11 +1266,11 @@ namespace DiceTale
                 return;
             }
 
-            imageLoader.Load(picked.Id, texture =>
+            imageLoader.Load(state.Id, texture =>
             {
                 if (texture == null)
                 {
-                    var noImage = $"图拿不到：{picked.Id}（本地资源包里没有，服务端 /api/resources/raw 也没取到）";
+                    var noImage = $"图拿不到：{state.Id}（本地资源包里没有，服务端 /api/resources/raw 也没取到）";
                     Debug.LogWarning($"[命令] 打开放大镜窗口失败：{noImage}");
                     if (command != null)
                     {
@@ -1278,12 +1280,12 @@ namespace DiceTale
                     return;
                 }
 
-                window.Show(picked.Id, texture, picked.Sprite);
+                window.Show(state, texture);
 
-                var cell = picked.Sprite == null
+                var cell = state.Sprite == null
                     ? ""
-                    : $"（第 {picked.Sprite.row + 1} 行第 {picked.Sprite.column + 1} 列）";
-                var effect = $"显示「{obj.name}」的那张图：{picked.Id}{cell}";
+                    : $"（第 {state.Sprite.row + 1} 行第 {state.Sprite.column + 1} 列）";
+                var effect = $"显示「{obj.name}」的画面：{state.Id}{cell}";
                 Debug.Log($"[命令] 放大镜窗口：{effect}");
                 if (command != null)
                 {

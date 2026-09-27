@@ -271,12 +271,13 @@ namespace DiceTale.Tests
         {
             // v21：放大镜也是**动作对象**（像声音 / 传送阵）：它只带 `Magnifier` 的数据，
             // 一帧画面都不画——那扇窗由后端的两条命令弹 / 收。数据一律走泛型读取器。
+            // v22 起数据是**状态列表**（每项 = 标题 + 图 + 文字）。
             var obj = ParseObject(
                 "{\"id\":\"mag\",\"kind\":\"Magnifier\",\"components\":[" +
-                "{\"type\":\"Magnifier\",\"data\":{\"images\":[" +
-                "{\"id\":\"a.png\",\"width\":400,\"height\":300}," +
-                "{\"id\":\"b.png\",\"width\":100,\"height\":50,\"sprite\":{\"column\":1,\"row\":0}," +
-                "\"spriteGrid\":{\"columns\":4,\"rows\":2}}],\"picked\":1}}]}");
+                "{\"type\":\"Magnifier\",\"data\":{\"states\":[" +
+                "{\"title\":\"线索一\",\"image\":{\"id\":\"a.png\",\"width\":400,\"height\":300}}," +
+                "{\"image\":{\"id\":\"b.png\",\"width\":100,\"height\":50,\"sprite\":{\"column\":1,\"row\":0}," +
+                "\"spriteGrid\":{\"columns\":4,\"rows\":2}},\"text\":\"第一行\"}],\"picked\":1}}]}");
 
             Assert.That(obj.HasComponent("Magnifier"), Is.True);
             Assert.That(obj.image, Is.Null);
@@ -284,17 +285,19 @@ namespace DiceTale.Tests
             Assert.That(SceneObjectView.NeedsView(obj), Is.False);
 
             var data = obj.ComponentData("Magnifier");
-            var images = JsonParser.GetArray(data, "images");
+            var states = JsonParser.GetArray(data, "states");
             var picked = (int)JsonParser.GetNumber(data, "picked", -1);
-            Assert.That(images, Is.Not.Null);
-            Assert.That(images.Count, Is.EqualTo(2));
+            Assert.That(states, Is.Not.Null);
+            Assert.That(states.Count, Is.EqualTo(2));
             Assert.That(picked, Is.EqualTo(1));
 
-            var entry = images[picked] as System.Collections.Generic.Dictionary<string, object>;
-            Assert.That(JsonParser.GetString(entry, "id"), Is.EqualTo("b.png"));
-            Assert.That(JsonParser.GetNumber(entry, "width"), Is.EqualTo(100));
-            var cell = JsonParser.GetObject(entry, "sprite");
-            var grid = JsonParser.GetObject(entry, "spriteGrid");
+            var entry = states[picked] as System.Collections.Generic.Dictionary<string, object>;
+            Assert.That(JsonParser.GetString(entry, "text"), Is.EqualTo("第一行"));
+            var image = JsonParser.GetObject(entry, "image");
+            Assert.That(JsonParser.GetString(image, "id"), Is.EqualTo("b.png"));
+            Assert.That(JsonParser.GetNumber(image, "width"), Is.EqualTo(100));
+            var cell = JsonParser.GetObject(image, "sprite");
+            var grid = JsonParser.GetObject(image, "spriteGrid");
             Assert.That(JsonParser.GetNumber(cell, "column"), Is.EqualTo(1));
             Assert.That(JsonParser.GetNumber(cell, "row"), Is.EqualTo(0));
             Assert.That(JsonParser.GetNumber(grid, "columns"), Is.EqualTo(4));
@@ -302,19 +305,23 @@ namespace DiceTale.Tests
         }
 
         [Test]
-        public void MagnifierReaderPicksTheShownImageAndClampsTheCell()
+        public void MagnifierReaderPicksTheShownStateAndClampsTheCell()
         {
-            // 前端真正读「现在展示哪一张」的那条路（命令路由与窗口都用它）——四种「没有图」的
-            // 情形与编辑器那边同一口径：没挂组件 / 列表空 / `picked` 缺失 / `picked` 越界。
+            // 前端真正读「现在展示哪一屏」的那条路（命令路由与窗口都用它）——五种「展示不出来」的
+            // 情形与编辑器那边同一口径：没挂组件 / 列表空 / `picked` 缺失 / `picked` 越界 /
+            // **选中的那个状态没有图**（只有标题 / 文字）。
             var picked = ParseObject(
                 "{\"id\":\"mag\",\"kind\":\"Magnifier\",\"components\":[" +
-                "{\"type\":\"Magnifier\",\"data\":{\"images\":[" +
-                "{\"id\":\"a.png\",\"width\":400,\"height\":300}," +
-                "{\"id\":\"b.png\",\"width\":100,\"height\":50,\"sprite\":{\"column\":9,\"row\":9}," +
-                "\"spriteGrid\":{\"columns\":4,\"rows\":2}}],\"picked\":1}}]}");
+                "{\"type\":\"Magnifier\",\"data\":{\"states\":[" +
+                "{\"image\":{\"id\":\"a.png\",\"width\":400,\"height\":300}}," +
+                "{\"title\":\"线索二\",\"image\":{\"id\":\"b.png\",\"width\":100,\"height\":50," +
+                "\"sprite\":{\"column\":9,\"row\":9},\"spriteGrid\":{\"columns\":4,\"rows\":2}}," +
+                "\"text\":\"第一行\\n第二行\"}],\"picked\":1}}]}");
 
-            Assert.That(MagnifierReader.TryPickImage(picked, out var second), Is.True);
+            Assert.That(MagnifierReader.TryPickState(picked, out var second), Is.True);
             Assert.That(second.Id, Is.EqualTo("b.png"));
+            Assert.That(second.Title, Is.EqualTo("线索二"));
+            Assert.That(second.Text, Is.EqualTo("第一行\n第二行"));
             // 越界的格子夹到最后一格（与推送 / 渲染同一条规矩）
             Assert.That(second.Sprite, Is.Not.Null);
             Assert.That(second.Sprite.columns, Is.EqualTo(4));
@@ -322,34 +329,43 @@ namespace DiceTale.Tests
             Assert.That(second.Sprite.column, Is.EqualTo(3));
             Assert.That(second.Sprite.row, Is.EqualTo(1));
 
-            // 整张图（没有 `sprite`）→ Sprite 为 null
+            // 整张图（没有 `sprite`）→ Sprite 为 null；没有标题 / 文字时是空串（不是 null）
             var whole = ParseObject(
                 "{\"id\":\"mag\",\"kind\":\"Magnifier\",\"components\":[" +
-                "{\"type\":\"Magnifier\",\"data\":{\"images\":[{\"id\":\"a.png\",\"width\":400,\"height\":300}]," +
+                "{\"type\":\"Magnifier\",\"data\":{\"states\":[{\"image\":{\"id\":\"a.png\",\"width\":400,\"height\":300}}]," +
                 "\"picked\":0}}]}");
-            Assert.That(MagnifierReader.TryPickImage(whole, out var first), Is.True);
+            Assert.That(MagnifierReader.TryPickState(whole, out var first), Is.True);
             Assert.That(first.Id, Is.EqualTo("a.png"));
             Assert.That(first.Sprite, Is.Null);
+            Assert.That(first.Title, Is.Empty);
+            Assert.That(first.Text, Is.Empty);
 
-            // 三种「没有可展示的图」
+            // 四种「没有可展示的画面」
             var empty = ParseObject(
                 "{\"id\":\"mag\",\"kind\":\"Magnifier\",\"components\":[" +
-                "{\"type\":\"Magnifier\",\"data\":{\"images\":[]}}]}");
-            Assert.That(MagnifierReader.TryPickImage(empty, out _), Is.False);
+                "{\"type\":\"Magnifier\",\"data\":{\"states\":[]}}]}");
+            Assert.That(MagnifierReader.TryPickState(empty, out _), Is.False);
 
             var unpicked = ParseObject(
                 "{\"id\":\"mag\",\"kind\":\"Magnifier\",\"components\":[" +
-                "{\"type\":\"Magnifier\",\"data\":{\"images\":[{\"id\":\"a.png\",\"width\":4,\"height\":4}]}}]}");
-            Assert.That(MagnifierReader.TryPickImage(unpicked, out _), Is.False);
+                "{\"type\":\"Magnifier\",\"data\":{\"states\":[{\"image\":{\"id\":\"a.png\",\"width\":4,\"height\":4}}]}}]}");
+            Assert.That(MagnifierReader.TryPickState(unpicked, out _), Is.False);
 
             var outOfRange = ParseObject(
                 "{\"id\":\"mag\",\"kind\":\"Magnifier\",\"components\":[" +
-                "{\"type\":\"Magnifier\",\"data\":{\"images\":[{\"id\":\"a.png\",\"width\":4,\"height\":4}]," +
+                "{\"type\":\"Magnifier\",\"data\":{\"states\":[{\"image\":{\"id\":\"a.png\",\"width\":4,\"height\":4}}]," +
                 "\"picked\":7}}]}");
-            Assert.That(MagnifierReader.TryPickImage(outOfRange, out _), Is.False);
+            Assert.That(MagnifierReader.TryPickState(outOfRange, out _), Is.False);
+
+            // 选中的那个状态只有文字（没有图）：放大镜放的就是那张图，展示不出来
+            var textOnly = ParseObject(
+                "{\"id\":\"mag\",\"kind\":\"Magnifier\",\"components\":[" +
+                "{\"type\":\"Magnifier\",\"data\":{\"states\":[{\"title\":\"只有标题\",\"text\":\"只有文字\"}]," +
+                "\"picked\":0}}]}");
+            Assert.That(MagnifierReader.TryPickState(textOnly, out _), Is.False);
 
             var noComponent = ParseObject("{\"id\":\"plain\",\"kind\":\"Sprite\",\"components\":[]}");
-            Assert.That(MagnifierReader.TryPickImage(noComponent, out _), Is.False);
+            Assert.That(MagnifierReader.TryPickState(noComponent, out _), Is.False);
         }
 
         [Test]

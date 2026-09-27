@@ -118,8 +118,13 @@ namespace DiceTale
         /// `close_magnifier`（让前端弹 / 收一扇窗）。老前端（v20）不认这个组件 → 那扇窗永远
         /// 弹不出来（不是崩，是功能丢），也不认那两条命令，照旧 +1；这类不兼容由握手
         /// close `4002` 挡住。**换图不是命令**：`picked` 是文档数据，整份 `scene_sync` 带下来。
+        ///
+        /// v22（2026-09-27）：**放大镜的「图片列表」变成「状态列表」**（与文档格式 v31 同一批）——
+        /// `Magnifier` 的 data 里 `images` 换成 `states`（每项 = 标题 + 图 + 文字，三项都可没有）。
+        /// 老前端（v21）按 `images` 读 → 读不到（那扇窗里没图），照旧 +1；这类不兼容由握手
+        /// close `4002` 挡住。**两条命令与其余消息一个字节都没动。**
         /// </summary>
-        public const int Version = 21;
+        public const int Version = 22;
 
         /// <summary>对象特性组件的类型名（v9 起）。与服务端 `@dts/protocol` 的 `COMPONENT_TYPE` 逐字一致。</summary>
         public static class ComponentType
@@ -133,11 +138,12 @@ namespace DiceTale
             public const string Sound = "PlaySound";
             public const string Teleport = "Teleport";
             /// <summary>
-            /// 放大镜（v21 起，动作对象）：**图片列表 + 当前展示的那一张**（`{ images: [{ id, width,
-            /// height, sprite?, spriteGrid? }], picked? }`，`picked` 是**下标**）。
+            /// 放大镜（v21 起，动作对象；v22 起数据是**状态列表**）：`{ states: [{ title?, image?: { id,
+            /// width, height, sprite?, spriteGrid? }, text? }], picked? }`，`picked` 是**下标**。
+            /// 一个状态 = 一屏画面（上面标题、左边图、右边文字，三项都可以没有；**没有图的展示不出来**）。
             /// 对象自己不渲染任何东西（画布上那枚徽标是编辑器的画法）；触发它 = 由服务端的
-            /// `open_magnifier` / `close_magnifier` 让前端弹 / 收一扇窗，窗里放的就是 `picked` 那张。
-            /// **换图不是命令**：文档一改整份 `scene_sync` 带下来（见 `Logic/SceneMirror.cs`）。
+            /// `open_magnifier` / `close_magnifier` 让前端弹 / 收一扇窗，窗里放的就是 `picked` 那一屏。
+            /// **换状态 / 换图 / 改字都不是命令**：文档一改整份 `scene_sync` 带下来（见 `Logic/SceneMirror.cs`）。
             /// </summary>
             public const string Magnifier = "Magnifier";
             public const string Video = "VideoOverlay";
@@ -195,7 +201,7 @@ namespace DiceTale
         /// <summary>视频混合：把**整张**混合遮罩填成 1 / 0（`covered` = true 是盖住、false 是擦开）。</summary>
         public const string CommandFillVideoMask = "fill_video_mask";
         /// <summary>
-        /// 放大镜（v21）：让前端**弹一扇窗**显示**这个对象** `picked` 那张图（命令里不带数据）。
+        /// 放大镜（v21）：让前端**弹一扇窗**显示**这个对象** `picked` 的那一屏状态（命令里不带数据）。
         /// 前端那扇窗**没有按钮**（没有选择、也没有关闭）——只能由后端开、由后端关。
         /// </summary>
         public const string CommandOpenMagnifier = "open_magnifier";
