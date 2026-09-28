@@ -419,6 +419,9 @@ build: { outDir: "dist", sourcemap: true },
 - `Protocol` / `Protocol.ComponentType` 改为 `partial`，手写常量块删掉，常量住在生成文件里；
 - 生成物**不要手改**：改了源跑 `pnpm gen:contract`，忘了跑由 `pnpm check:contract` 拦下；
 - C# 常量名与组件类型名的对照表（`Map` / `Image` / `Video` …）是生成器里**唯一**的手工表；
+- `check:contract` 还做**复刻 schema 的穷举结构比对**：用 `z.toJSONSchema` 摊平 `@dts/document` 与
+  `@dts/protocol` 的同名 data schema 后逐路径比（字段名 / 可选性 / 默认值 / 约束），
+  剔除两张有意差异表（文档专有 `guid`、载荷专有 `spriteGrid`）；不一致即失败并指出具体路径；
 - 详见 `docs/PLAN-单一数据源与codegen.md`。
 
 ---

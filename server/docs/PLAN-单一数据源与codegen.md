@@ -106,11 +106,17 @@ VideoOverlay → Video  VideoBlend → VideoBlend
 | C# 编译 | Unity 控制台 0 error（本环境经 Unity MCP 验证；不可用时如实标注待验） |
 | 加一个组件 | e2e / C# 手改 = 0（改完源跑一次 `gen:contract` 即可） |
 
-### 阶段 2：字段清单 + 穷举一致性检查（后续）
+### 阶段 2：穷举结构一致性检查（✅ 已完成，2026-09-29）
 
-- 新增 `contract/fields.ts`（组件 → 字段的 `name / type / default / optional`）。
-- `check:contract` 用它**逐一断言** `document/schema.ts` 与 `protocol/messages.ts` 声明同一组字段、同样的可选性 / 默认值。
-- 把契约测试从「抽样」升级成「穷举」；B5 那类漂移变成 `check` 失败。
+- **不新增手写清单**：改用 `z.toJSONSchema`（zod 4）把两套复刻 schema 摊平成 JSON Schema，
+  在 `check:contract` 里**逐路径比对**（字段名 / 可选性 / 默认值 / 约束全都在 JSON Schema 里）。
+  ——原计划的 `contract/fields.ts` 清单因此**不需要了**：清单本身就是 schema，第二份清单反而会再漂。
+- **有意的差异**写进两张小表（各 1 项）：文档专有 `guid`（磁盘身份，推送时剥掉）、
+  载荷专有 `spriteGrid`（推送时解析出来，落盘不写）；比对时各自剥掉。
+- 覆盖 9 组：GridMap / FogOfWar / ImageLayer·SpriteLayer / PlaySound / Teleport / Magnifier /
+  Magnifier 状态 / VideoOverlay / VideoBlend。
+- 效果：B5 那类「约束/默认值漂移」现在由 `pnpm check` 明确报出**具体路径**
+  （实测：把协议侧 `layer` 默认值改成 `voice`，`check:contract` 立刻报 `[PlaySound] properties.layer.default: doc="sfx" proto="voice"`）。
 
 ### 阶段 3：删掉 #2 复刻（待决策）
 
@@ -188,6 +194,17 @@ VideoOverlay → Video  VideoBlend → VideoBlend
 1. **C# 成员级 XML 文档收拢了**：原来 `Protocol.cs` 里每个组件 / 命令常量都带 `/// <summary>`（含版本历史），改成生成后，成员级文档改由生成器从 `COMPONENT_TYPES` 的 `displayName` / `tooltip` 产出；更长的历史说明以 `//` 注释块留在 `Protocol.cs` 指向生成文件。**知识没丢，但不再挂在成员上**（IDE 悬浮文本会短一些）。
 2. **C# 别名表进了生成器**：`Map` / `Image` / `Video` … 与组件类型名不同名，所以生成器里保留一张 9 行的对照表——这是本阶段**唯一**新增的手工表；加组件时若沿用默认名（类型名本身）则连这张表都不用改。
 
-### 下一步（阶段 2）
+### 阶段 2（2026-09-29）：复刻 schema 的穷举结构一致性
 
-字段清单 + 穷举一致性检查（见 §4 阶段 2）：把 `protocol` ↔ `document` 的字段 / 默认值一致性从「抽样契约测试」升级为 `check:contract` 的穷举断言。开工前需要先确认字段清单的来源形状。
+- `scripts/gen-contract.ts` 增加结构比对段：用 `z.toJSONSchema` 把两套复刻 schema 摊平后**逐路径比较**，
+  剔除两张有意差异表（文档专有 `guid`、载荷专有 `spriteGrid`）；在 `check:contract` 里跑，失败报**具体 JSON 路径**。
+- 复刻 schema 从「抽样断言」升级为「9 组结构穷举」；原计划的 `contract/fields.ts` 手写清单**取消**
+  （清单本身会再漂，直接以 schema 为源）。
+- 验证：`pnpm check:contract` / `lint` / `check:docs` / `typecheck:e2e` 全过。
+- **漂移实测**：把协议侧 `soundDataSchema.layer` 的默认值改成 `voice` → `check:contract` 立即报
+  `[PlaySound] properties.layer.default: doc="sfx" proto="voice"`；改回即恢复。
+
+### 尚未做
+
+- 阶段 3（删掉 protocol 复刻，走 `@dts/contract` 或 `protocol→document`）：动 schema 语义，待单独拍板。
+- 阶段 4（C# DTO / 解析 codegen）：前置是实测「新字段能否全靠泛型读取」，未评估。

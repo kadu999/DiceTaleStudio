@@ -25,6 +25,10 @@ import {
   FOG_DEFAULT_SORTING_ORDER,
 } from "../packages/document/src/index";
 import { commandRequestSchema } from "../packages/protocol/src/messages";
+// `scripts/` 不是 workspace 包，拿不到 `zod` 的顶层符号；借文档包自己那份（同一个 store 实例）。
+import { z } from "../packages/document/node_modules/zod";
+import * as documentContract from "../packages/document/src/index";
+import * as protocolContract from "../packages/protocol/src/messages";
 
 const SERVER_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const WORKSPACE_ROOT = resolve(SERVER_ROOT, "..");
@@ -138,6 +142,126 @@ ${commandMembers}
 `;
 }
 
+// ---------------------------------------------------------------- 结构一致性（两侧复刻 schema）
+
+/**
+ * 两侧**有意**保留的差异（不是漂移，比对时各自剥掉）：
+ * - 文档专有 `guid`：磁盘上的素材身份，推送时由 `resolveSceneSprites` 剥掉（前端只认路径 ID）；
+ * - 载荷专有 `spriteGrid`：推送时按素材 meta 解析出来的「几列几行」，落盘不写。
+ */
+const DOC_ONLY_KEYS: ReadonlySet<string> = new Set(["guid"]);
+const PROTO_ONLY_KEYS: ReadonlySet<string> = new Set(["spriteGrid"]);
+
+/**
+ * 「同一份数据形状」在两侧的复刻对照：协议不能依赖文档包，所以两边各手写一份，
+ * **必须逐字一致**（字段名 / 可选性 / 默认值 / 约束）。这里用 `z.toJSONSchema` 把两份
+ * zod schema 都摊平成 JSON Schema 再逐路径比——比抽样断言更能兜住悄悄漂移（见审计 B5）。
+ */
+const SCHEMA_PAIRS: readonly { name: string; doc: unknown; proto: unknown }[] = [
+  { name: "GridMap", doc: documentContract.mapDataSchema, proto: protocolContract.mapDataSchema },
+  { name: "FogOfWar", doc: documentContract.mapFogSchema, proto: protocolContract.mapFogSchema },
+  {
+    name: "ImageLayer / SpriteLayer",
+    doc: documentContract.imageLayerDataSchema,
+    proto: protocolContract.imageLayerDataSchema,
+  },
+  { name: "PlaySound", doc: documentContract.soundDataSchema, proto: protocolContract.soundDataSchema },
+  { name: "Teleport", doc: documentContract.teleportDataSchema, proto: protocolContract.teleportDataSchema },
+  {
+    name: "Magnifier",
+    doc: documentContract.magnifierDataSchema,
+    proto: protocolContract.magnifierDataSchema,
+  },
+  {
+    name: "Magnifier 状态",
+    doc: documentContract.magnifierStateSchema,
+    proto: protocolContract.magnifierStateSchema,
+  },
+  { name: "VideoOverlay", doc: documentContract.videoDataSchema, proto: protocolContract.videoDataSchema },
+  {
+    name: "VideoBlend",
+    doc: documentContract.videoBlendDataSchema,
+    proto: protocolContract.videoBlendDataSchema,
+  },
+];
+
+function toJsonSchema(schema: unknown): unknown {
+  return z.toJSONSchema(schema as never, { unrepresentable: "any" });
+}
+
+/** 递归剥掉指定的对象键。 */
+function stripKeys(value: unknown, keys: ReadonlySet<string>): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => stripKeys(item, keys));
+  }
+
+  if (value !== null && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+      if (keys.has(key)) continue;
+      out[key] = stripKeys(item, keys);
+    }
+
+    return out;
+  }
+
+  return value;
+}
+
+/** 逐路径比较两份 JSON 值，返回人类可读的差异行（键顺序无关）。 */
+function schemaDiff(a: unknown, b: unknown, path = ""): string[] {
+  if (a === b) return [];
+  const label = path === "" ? "(root)" : path;
+  const aObject = a !== null && typeof a === "object";
+  const bObject = b !== null && typeof b === "object";
+  if (!aObject || !bObject) {
+    if (aObject !== bObject || typeof a !== typeof b) {
+      return [`${label}: 类型不同（doc=${typeof a} / proto=${typeof b}）`];
+    }
+
+    return [`${label}: doc=${JSON.stringify(a)} proto=${JSON.stringify(b)}`];
+  }
+
+  if (Array.isArray(a) !== Array.isArray(b)) {
+    return [`${label}: 结构不同（数组 / 对象）`];
+  }
+
+  if (Array.isArray(a) && Array.isArray(b)) {
+    if (a.length !== b.length) return [`${label}: 数组长度不同（${a.length} / ${b.length}）`];
+    return a.flatMap((item, index) => schemaDiff(item, b[index], `${path}[${index}]`));
+  }
+
+  const aRecord = a as Record<string, unknown>;
+  const bRecord = b as Record<string, unknown>;
+  const lines: string[] = [];
+  for (const key of new Set([...Object.keys(aRecord), ...Object.keys(bRecord)])) {
+    const child = path === "" ? key : `${path}.${key}`;
+    if (!(key in aRecord)) {
+      lines.push(`${child}: 只有协议侧有`);
+    } else if (!(key in bRecord)) {
+      lines.push(`${child}: 只有文档侧有`);
+    } else {
+      lines.push(...schemaDiff(aRecord[key], bRecord[key], child));
+    }
+  }
+
+  return lines;
+}
+
+/** 两份复刻 schema 的结构差异（已剔除有意的两侧专有键）。 */
+function checkSchemaConsistency(): string[] {
+  const problems: string[] = [];
+  for (const pair of SCHEMA_PAIRS) {
+    const docJson = stripKeys(toJsonSchema(pair.doc), DOC_ONLY_KEYS);
+    const protoJson = stripKeys(toJsonSchema(pair.proto), PROTO_ONLY_KEYS);
+    for (const line of schemaDiff(docJson, protoJson)) {
+      problems.push(`[${pair.name}] ${line}`);
+    }
+  }
+
+  return problems;
+}
+
 // ---------------------------------------------------------------- 写出 / 校验
 
 const OUTPUTS: readonly { path: string; content: string }[] = [
@@ -178,6 +302,8 @@ for (const output of OUTPUTS) {
 }
 
 if (checkMode) {
+  const schemaProblems = checkSchemaConsistency();
+
   if (mismatches.length > 0) {
     console.error("契约生成物已过期（改了源就重新生成）：");
     for (const item of mismatches) {
@@ -185,11 +311,24 @@ if (checkMode) {
     }
 
     console.error("\n重新生成：pnpm gen:contract");
+  }
+
+  if (schemaProblems.length > 0) {
+    console.error("协议 / 文档的复刻 schema 已漂移（字段名 / 默认值 / 约束必须逐字一致）：");
+    for (const item of schemaProblems) {
+      console.error(`  ✗ ${item}`);
+    }
+
+    console.error("\n对齐两边（有意的差异写进 DOC_ONLY_KEYS / PROTO_ONLY_KEYS）后重跑。");
+  }
+
+  if (mismatches.length > 0 || schemaProblems.length > 0) {
     process.exit(1);
   }
 
   console.log(
-    `契约生成物一致：组件 ${COMPONENT_TYPES.length} 种 / 命令 ${COMMAND_KINDS.length} 条。`,
+    `契约一致：组件 ${COMPONENT_TYPES.length} 种 / 命令 ${COMMAND_KINDS.length} 条；` +
+      `复刻 schema ${SCHEMA_PAIRS.length} 组结构对齐（忽略 ${DOC_ONLY_KEYS.size + PROTO_ONLY_KEYS.size} 个有意的两侧专有键）。`,
   );
 }
 
