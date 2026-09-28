@@ -102,11 +102,21 @@ C# 的 `HasComponent` / `ComponentData` / `ComponentBool` / `ComponentString` / 
 - 改成：**槽位清单从组件注册表派生**，`presets.ts` 只声明「kind 允许哪些槽位」（保留），缺省承载不再手抄。
 - 验收：`presets.test.ts` 的等价断言零改动通过；加组件少改 1 处。
 
-### 阶段 2：schema 单源（承接「单一数据源」阶段 3）
+### 阶段 2：schema 单源（✅ 已完成，2026-09-29）
 
-- 由唯一 schema 派生 protocol 的 wire 变体（去 `guid` / 加 `spriteGrid`）与 `sceneComponentSchema` 分支。
-- 目标：**一个字段只写在 1 个 schema 文件里**。
-- 验收：阶段 0 的 `check:contract` 保持绿（行为冻结）；`schema.ts` 与 `messages.ts` 不再各写一份 data schema。
+- 新增中性包 **`@dts/contract`**（只有 zod）：**共享数据形状与常量的唯一来源**；
+- `document` 从「基类 + `guid`」派生磁盘变体，`protocol` 从「基类 + `spriteGrid`」派生 wire 变体——
+  **一个字段只写一遍**，差异只有这两处；
+- 图片引用被嵌在「图片层 / 放大镜状态 / 放大镜数据」里，所以 contract 提供三处**参数化构造器**
+  （`imageLayerDataSchemaWith` / `magnifierStateSchemaWith` / `magnifierDataSchemaWith`），两边各传自己的图片引用变体；
+- 常量（层级 / 视频开关 / 雾缺省显示顺序 / 三档音量 / 图集上限 / 动画预设）也搬进 contract，
+  `types.ts` / `presets.ts` / `sprites.ts` / `schema.ts` 转出口（既有 `from "@dts/document"` 用法不变）；
+- 架构测试：`contract` 进 `PURE_PACKAGES`；`ALLOWED` 改为 `protocol: ["contract"]`、`document: ["grid","contract"]`。
+- **验收**：`pnpm check:contract` 保持绿（9 组结构逐路径一致 + refine 探针）、`typecheck` 全过、
+  单测 1343 passed（2 条 ffmpeg 环境用例无关）、`lint` / `check:docs` 绿、编辑器构建通过、桌面冒烟 E2E 通过。
+
+> 这一阶段之后，`PLAN-单一数据源与codegen` 的「阶段 3（收集 protocol 复刻）」**不再需要**——
+> 没有复刻可收了。
 
 ### 阶段 3：编辑器「归类 / 面板」数据驱动（约 1 天）
 

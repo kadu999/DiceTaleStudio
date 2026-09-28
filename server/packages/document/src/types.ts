@@ -1,4 +1,7 @@
 import type { RleRun } from "@dts/grid";
+// 共享枚举 / 常量现在只有 `@dts/contract` 一个来源；这里转出口，保持既有 `from "@dts/document"` 的用法不变。
+import { MAGNIFIER_TWEENS, SOUND_LAYERS, VIDEO_BLEND_AUDIO, VIDEO_BLEND_KINDS } from "@dts/contract";
+import type { MagnifierTween, SoundLayer, VideoBlendAudio, VideoBlendKind } from "@dts/contract";
 // 对象类型（= 预设 id）住在 `presets.ts`（那张表是「哪个 kind 允许哪个能力槽位」的唯一归属地）。
 // **只 import 不转出口**：barrel 里 `./presets` 已经把它导出去了，两处都 `export *`
 // 会让这个同名类型变成「来源不明」，TS 会直接报重名。
@@ -349,9 +352,7 @@ export interface FogOfWarDataDoc {
  * 这一档留着是因为协议里它仍是**声道名**（前端按它选声源），
  * 也是老文件里 `layer: "bgm"` 的对象能读回来的依据。
  */
-export const SOUND_LAYERS = ["bgm", "sfx", "voice"] as const;
-
-export type SoundLayer = (typeof SOUND_LAYERS)[number];
+export { SOUND_LAYERS, type SoundLayer };
 
 /** 层级的中文名（面板上的下拉框；只有这里写中文）。 */
 export const SOUND_LAYER_LABELS: Record<SoundLayer, string> = {
@@ -434,8 +435,7 @@ export interface TeleportDataDoc {
  * 作用范围**只有媒体那块**（图 / 视频；标题与文字不动）——像一张会动的道具图。
  * `none` = 不动（缺省 / 没写同义）。
  */
-export const MAGNIFIER_TWEENS = ["none", "shake", "breathe", "float", "sway"] as const;
-export type MagnifierTween = (typeof MAGNIFIER_TWEENS)[number];
+export { MAGNIFIER_TWEENS, type MagnifierTween };
 
 /**
  * 放大镜一屏里的视频（v33 起）：一个资源逻辑 ID + 循环 / 声音两个开关。
@@ -575,9 +575,7 @@ export interface VideoDataDoc {
  * 2. 前端据此决定这一路怎么显示（视频 → `VideoPlayer` → `RenderTexture`；图片 → 取一张贴图），
  *    不必去猜文件后缀。
  */
-export const VIDEO_BLEND_KINDS = ["image", "video"] as const;
-
-export type VideoBlendKind = (typeof VIDEO_BLEND_KINDS)[number];
+export { VIDEO_BLEND_KINDS, type VideoBlendKind };
 
 /**
  * 视频混合里**一路素材**的数据：**一个**素材（图片或视频）+ 它是哪种。
@@ -601,9 +599,7 @@ export interface VideoBlendChannelDoc {
  *
  * 两条同时放、声音至多出一路：现场同时轰两条比听不到更糟——与视频的「缺省静音」同一口径。
  */
-export const VIDEO_BLEND_AUDIO = ["none", "a", "b"] as const;
-
-export type VideoBlendAudio = (typeof VIDEO_BLEND_AUDIO)[number];
+export { VIDEO_BLEND_AUDIO, type VideoBlendAudio };
 
 /**
  * 视频混合组件（`VideoBlend`）的数据：**两路素材（图片 / 视频各一路）+ 循环 + 声音来源**。

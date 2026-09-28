@@ -10,14 +10,14 @@
 | 项 | 值 |
 |---|---|
 | 语言 / 运行时 | TypeScript 5.9 + ESM，Node 22+（后端跑在 `tsx` 上，无编译产物） |
-| 包管理 | pnpm workspace（`apps/*` + `packages/*`，共 8 个包） |
+| 包管理 | pnpm workspace（`apps/*` + `packages/*`，共 9 个包） |
 | 文档格式版本 | `DOCUMENT_FORMAT_VERSION = 34`（`packages/document/src/types.ts`；v30 加「放大镜」动作对象，v31 把它的「图片列表」换成「状态列表」`states`，v32 给 `FogOfWar` 加可配置的 `sortingOrder`，v33 给放大镜状态加 `video`（与 `image` 二选一）与媒体动画 `tween`，v34 再给三块各加一个显示开关 `showTitle` / `showMedia` / `showText`——只有 v31 有迁移函数，其余靠 schema 默认值 / 迁移按"有没有值"补） |
 | 协议版本 | `PROTOCOL_VERSION = 25`（`packages/protocol/src/messages.ts`；v17 新增视频混合组件 `VideoBlend` 与命令 `erase_video_mask`，v18 加 `autoPlay`，v19 把两路收成「一个素材（图片 / 视频）」，v20 加 `fill_video_mask`（整张填 1 / 0），v21 加放大镜组件与 `open_magnifier` / `close_magnifier`，v22 把放大镜的 `images` 换成 `states`，v23 给 `FogOfWar` 加 `sortingOrder`，v24 给放大镜状态加 `video` / `tween`，v25 加 `showTitle` / `showMedia` / `showText`，见 §6.1） |
 | 后端默认地址 | `0.0.0.0:1420`（`resources/config/app.json`，可被 `HOST` / `PORT` 覆盖） |
 | 编辑器开发地址 | `http://localhost:5173`（Vite，`/api`、`/editor`、`/client` 反代到 1420） |
 | 编辑器生产地址 | `http://localhost:1420`（后端同源托管 `apps/editor/dist`） |
-| 源码规模（不含测试） | 188 个文件 / 42,940 行（packages 14,392 · backend 4,720 · editor 23,828） |
-| 测试规模 | 37,191 行（单测 26,993 · E2E 9,915 · 架构测试 283） |
+| 源码规模（不含测试） | 190 个文件 / 43,008 行（packages 14,460 · backend 4,720 · editor 23,828） |
+| 测试规模 | 37,192 行（单测 26,993 · E2E 9,915 · 架构测试 284） |
 
 > 上表两行与 §0.1 表格里加粗的文件行数、§3.x 节标题里的包规模由
 > `scripts/check-code-structure-stats.mjs` **机器校验**（`pnpm check` 的一环）：
@@ -73,8 +73,9 @@ server/
 │  │     └─ mock-client/       # 假 Unity 前端（联调用）
 │  └─ editor/                  # React 编辑器（20,225 行）
 │     └─ src/{app,panels,services,state,hooks,styles}/   # state/ 是切片式 store（见 §5.2）
-├─ packages/                   # 5 个可独立测试的内部模块
+├─ packages/                   # 6 个可独立测试的内部模块
 │  ├─ grid/                    # 位掩码、坐标换算、RLE、.bytes 编解码（零依赖）
+│  ├─ contract/                # 共享数据形状与常量（磁盘 / wire 的唯一来源；两边各自 extend 出变体）
 │  ├─ document/                # 文档模型 + 对象预设表（kind + 能力槽位）+ 访问器 + zod 校验 + 组件注册表 + 补丁式撤销
 │  ├─ protocol/                # WS 消息契约（编辑器 / 服务端 / 前端共用）
 │  ├─ resources/               # 逻辑 ID 规则 + ResourceProvider 抽象 + 内存实现
@@ -127,10 +128,15 @@ server/
 | 包 | 允许依赖 |
 |---|---|
 | `grid` | — |
-| `protocol` | — |
+| `contract` | — |
+| `protocol` | `contract` |
 | `resources` | — |
-| `document` | `grid` |
+| `document` | `grid`、`contract` |
 | `renderer` | `grid`、`document` |
+
+> `@dts/contract` 是最底层（只有 zod）：**共享数据形状与常量**的唯一来源。
+> `document`（磁盘）与 `protocol`（wire）各自 `extend` 出变体——已知差异只有 `guid`（磁盘专有）
+> 与 `spriteGrid`（wire 专有）；两侧逐路径一致由 `pnpm check:contract` 盯着。
 
 应用层的实际依赖：
 
@@ -291,7 +297,7 @@ v23 起切分搬出了工程文件（v22 及更早才是 `ProjectDoc.spriteSheet
 | `apps/editor` | `@dts/editor` | `index.html` → `src/main.tsx` | 全部 `@dts/*`、React 19、zustand、Radix UI、react-resizable-panels、@tanstack/react-virtual |
 
 所有包都是 `"type": "module"`、`private`、`version: 0.0.0`，导出直接指向 `src/*.ts`（无构建步骤，靠 Vite/tsx 转译）。
-另外：**5 个 `packages/*` 都没有 `test` 脚本**——单测从根 `vitest run` 统一跑（各包只有 `typecheck`）。
+另外：**6 个 `packages/*` 都没有 `test` 脚本**——单测从根 `vitest run` 统一跑（各包只有 `typecheck`）。
 
 ### 2.2 脚本
 
@@ -302,7 +308,7 @@ v23 起切分搬出了工程文件（v22 及更早才是 `ProjectDoc.spriteSheet
 | `dev` | `pnpm --parallel --filter @dts/editor --filter @dts/backend dev` | 后端 + Vite 一起起 |
 | `dev:editor` / `dev:backend` | 单包 `dev` | 分开起 |
 | `build` | `pnpm --filter @dts/editor build` | 构建编辑器到 `apps/editor/dist` |
-| `typecheck` | `pnpm -r typecheck` | 8 个包逐个 `tsc --noEmit` |
+| `typecheck` | `pnpm -r typecheck` | 9 个包逐个 `tsc --noEmit` |
 | `test` / `test:watch` | `vitest run` / `vitest` | 单测 + 架构测试 |
 | `lint` | `eslint .` | ESLint flat config |
 | `e2e:smoke` | 先 build，再跑桌面 `smoke.spec.ts`（排除 `@runtime`） | 快速冒烟 |
@@ -337,7 +343,7 @@ v23 起切分搬出了工程文件（v22 及更早才是 `ProjectDoc.spriteSheet
 | `apps/backend` | `"types": ["node"]` |
 | `apps/editor` | `"lib": ["ES2023","DOM","DOM.Iterable"]`、`"jsx": "react-jsx"`、`"types": ["vite/client"]` |
 | `packages/renderer` | `"lib": ["ES2023","DOM","DOM.Iterable"]` —— 唯一有覆写的内部包（它要碰 Canvas） |
-| 其余 5 个 `packages/*` | 无覆写 |
+| 其余 6 个 `packages/*` | 无覆写 |
 
 ### 2.4 Vitest（`vitest.config.ts`）
 
@@ -450,7 +456,7 @@ build: { outDir: "dist", sourcemap: true },
 - 画笔半径 `floor((brushSize-1)/2)`（1/2→1×1、3/4→3×3、5→5×5，含偶数尺寸的刻意保真），与 Unity `ApplyBrush` 完全一致；
 - 坐标系只有一个：**世界坐标**（x 右、y 上、像素、无限大）；`grid(0,0)` 在地图矩形左下角 = 图片最下面一行，grid.y 与世界 y 同向、不翻转；唯一的翻转发生在贴图绘制（`worldRectTopLeft`）。
 
-### 3.2 `@dts/document` — 文档模型、命令与历史（9,380 行）
+### 3.2 `@dts/document` — 文档模型、命令与历史（9,289 行）
 
 | 文件 | 行数 | 职责 | 关键导出 |
 |---|---|---|---|
@@ -699,7 +705,7 @@ v23 起 `validateScene` 多了第二个参数：`validateScene(scene, { metas })
 > **历史**：`@dts/actions`（动作类型注册表、条件求值、动作图校验）曾是独立的一个包，
 > 随「动作挂在组件上」那套旧模型一起整包删除了；动作编辑的数据面落地时重新设计。
 
-### 3.3 `@dts/protocol` — WS 消息契约（1,107 行）
+### 3.3 `@dts/protocol` — WS 消息契约（1,031 行）
 
 单文件 `src/messages.ts`（1,051 行）+ `index.ts` barrel（1 行）。
 **编辑器、服务端、Unity 前端共用同一份 zod schema。**
@@ -835,6 +841,19 @@ resources/
 **裁剪、命中、选中框、手柄仍按对象矩形算**——渲染器不认识「子图」这个概念，它只拿到一块源矩形。
 
 ---
+
+### 3.6 `@dts/contract` — 共享数据形状与常量（235 行）
+
+| 文件 | 行数 | 职责 | 关键导出 |
+|---|---|---|---|
+| `schemas.ts` | 234 | **磁盘 / wire 共用的唯一形状**：常量（层级 / 视频开关 / 雾缺省显示顺序 / 三档音量）、叶子形状（`worldPosition` / 图片引用基类 / `rleRun` / `gridSpec` / `cellRuns`）、组件数据（`mapFog` / `mapData` / `sound` / `teleport` / `video` / `videoBlend` / `channelVolume` / `projectSettings`），以及三处**参数化构造器** | `imageRefBaseSchema`、`imageLayerDataSchemaWith`、`magnifierStateSchemaWith`、`magnifierDataSchemaWith`、`FOG_DEFAULT_SORTING_ORDER`、`SPRITE_SHEET_MAX` 等 |
+| `index.ts` | 1 | barrel | — |
+
+- `document` 从「基类 + `guid`」派生磁盘变体；`protocol` 从「基类 + `spriteGrid`」派生 wire 变体——
+  **一个字段只写一遍**，差异只有这两处；
+- 三处**参数化构造器**（图片层 / 放大镜状态 / 放大镜数据）是因为图片引用被嵌在它们里面：
+  两边各传自己的图片引用变体，其余字段（`sortingOrder` / `states` / `title` / `tween` …）只写一遍；
+- 两边一致由 `pnpm check:contract`（9 组结构逐路径比对 + refine 探针）盯着。
 
 ## 4. 后端 `apps/backend`（4,720 行）
 

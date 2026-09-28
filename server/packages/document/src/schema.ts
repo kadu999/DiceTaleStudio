@@ -10,16 +10,7 @@ import type { AssetMetaDoc } from "./asset-meta";
 import { COMPONENT_TYPES, FEATURE_COMPONENT_TYPES, componentId, findComponentType, hasLegacyFeatureField } from "./components";
 import {
   DEFAULT_SLOT_COMPONENT,
-  DEFAULT_SOUND_LAYER,
-  DEFAULT_VIDEO_AUDIO,
-  DEFAULT_VIDEO_AUTO_PLAY,
-  DEFAULT_VIDEO_BLEND_AUDIO,
   DEFAULT_VIDEO_BLEND_KIND,
-  DEFAULT_VIDEO_ENABLED,
-  DEFAULT_VIDEO_LOOP,
-  FOG_DEFAULT_SORTING_ORDER,
-  DEFAULT_MAGNIFIER_VIDEO_AUDIO,
-  DEFAULT_MAGNIFIER_VIDEO_LOOP,
   SPRITE_COMPONENT,
   componentForSlot,
   presetOf,
@@ -27,18 +18,37 @@ import {
 import { OBJECT_KINDS, type ObjectKind } from "./presets";
 import {
   DOCUMENT_FORMAT_VERSION,
-  MAGNIFIER_TWEENS,
-  SOUND_LAYERS,
-  VIDEO_BLEND_AUDIO,
-  VIDEO_BLEND_KINDS,
-  type BgmSettingsDoc,
   type ProjectDoc,
-  type ProjectSettingsDoc,
   type SceneDoc,
   type SceneFileDoc,
   type SpriteImportSettingsDoc,
   type SpriteSheetDoc,
 } from "./types";
+// 共享形状的唯一来源（磁盘 / wire 的差异只在 `imageRefSchema` 这一处派生）。
+import {
+  channelVolumeSchema,
+  cellRunsSchema,
+  DEFAULT_BGM_VOLUME,
+  DEFAULT_SFX_VOLUME,
+  DEFAULT_VOICE_VOLUME,
+  defaultAudioSettings,
+  defaultBgmSettings,
+  defaultProjectSettings,
+  gridSpecSchema,
+  imageLayerDataSchemaWith,
+  imageRefBaseSchema,
+  imageSpriteRefSchema,
+  magnifierDataSchemaWith,
+  magnifierStateSchemaWith,
+  mapDataSchema,
+  mapFogSchema,
+  projectSettingsSchema,
+  soundDataSchema,
+  teleportDataSchema,
+  videoBlendDataSchema,
+  videoDataSchema,
+  worldPositionSchema,
+} from "@dts/contract";
 
 /**
  * 文档 zod 校验。
@@ -49,10 +59,7 @@ import {
  * 由 `upgradeRawDocument` / `migrateScenePositions` 先升级结构，再走 schema。
  */
 
-export const worldPositionSchema = z.object({
-  x: z.number(),
-  y: z.number(),
-});
+export { worldPositionSchema };
 
 /**
  * 「图集里的第几格」（v20 起）：`column` 从左数（0 起）、`row` **从最上数**（0 起），
@@ -62,10 +69,7 @@ export const worldPositionSchema = z.object({
  * 老对象的格子会暂时越界，读不开文件比读出来再提示更糟；它由渲染与推送统一夹到最后一格
  * （`sprites.ts` 的 `clampSpriteCell`），`validateScene` 报 warning。
  */
-export const imageSpriteRefSchema = z.object({
-  column: z.number().int().nonnegative(),
-  row: z.number().int().nonnegative(),
-});
+export { imageSpriteRefSchema };
 
 /**
  * 图片引用（v20 起多了可选的 `sprite`；v23 起多了可选的 `guid`）：资源逻辑 ID + 声明尺寸 + 「取哪一格」。
@@ -74,23 +78,14 @@ export const imageSpriteRefSchema = z.object({
  * `guid` 是素材的**稳定身份**（有它就以它为准，`id` 只是「上次见到的路径」）——这里只要求
  * 「非空字符串」：认不出的 guid 顶多查不到 meta、退回按 `id` 解析，读不开文件比画不出来更糟。
  */
-export const imageRefSchema = z.object({
-  id: z.string().min(1),
+/** 磁盘图片引用 = 公共形状（`@dts/contract`）+ `guid`（素材身份；推送时由 `resolveSceneSprites` 剥掉）。 */
+export const imageRefSchema = imageRefBaseSchema.extend({
   guid: z.string().min(1).optional(),
-  width: z.number().int().positive(),
-  height: z.number().int().positive(),
-  sprite: imageSpriteRefSchema.optional(),
 });
 
-export const gridSpecSchema = z.object({
-  width: z.number().int().positive(),
-  height: z.number().int().positive(),
-});
+export { gridSpecSchema };
 
-export const cellRunsSchema = z.object({
-  encoding: z.literal("rle"),
-  runs: z.array(z.tuple([z.number().int().min(0).max(255), z.number().int().nonnegative()])),
-});
+export { cellRunsSchema };
 
 /**
  * 战争雾（v10 起：雾区；v13 起：总开关；v25 起：独立 `FogOfWar` 组件的 data，形状不变）：
@@ -105,22 +100,10 @@ export const cellRunsSchema = z.object({
  * 就等于「这张地图有雾」——补成 `false` 会把老场景的雾静默关掉。读出旧文件时补进内存，
  * 并随迁移回写一次（版本升到 13 时本来就要回写）。
  */
-export const mapFogSchema = z.object({
-  // v27 起雾是独立对象：引用哪张地图（对象 id）。缺省空串（损坏 / 手写文件），校验报 error
-  mapId: z.string().default(""),
-  enabled: z.boolean().default(true),
-  regions: z.array(z.number().int().min(1).max(255)).default([]),
-  // v32 起雾层显示顺序可配置：缺省 = 最前面（`FOG_DEFAULT_SORTING_ORDER`），
-  // 与 v32 之前前端写死的 `short.MaxValue` 同值——老文件补默认值后画面不变
-  sortingOrder: z.number().int().default(FOG_DEFAULT_SORTING_ORDER),
-});
+export { mapFogSchema };
 
 /** `GridMap` 组件携带的**网格数据**（v28 起只到这里；`rowOrder` 固定 bottom-up）。贴图与显示顺序住在 `ImageLayer` 里，战争雾在独立的 `FogOfWar` 组件里。 */
-export const mapDataSchema = z.object({
-  grid: gridSpecSchema,
-  rowOrder: z.literal("bottom-up"),
-  cells: cellRunsSchema,
-});
+export { mapDataSchema };
 
 /**
  * 图片层组件（`ImageLayer` / `SpriteLayer`）的数据：一份图片引用 + v26 起的显示顺序。
@@ -130,9 +113,7 @@ export const mapDataSchema = z.object({
  *
  * v28 起**带网格的贴图也用它承载贴图与显示顺序**：`mapDataSchema` 不再有 `image`。
  */
-export const imageLayerDataSchema = imageRefSchema.extend({
-  sortingOrder: z.number().int().default(0),
-});
+export const imageLayerDataSchema = imageLayerDataSchemaWith(imageRefSchema);
 
 /**
  * 播放声音（动作对象）的数据：加进来的音频列表 + 选中的那条（可选）+ 每个文件的显示名（可选）+ 层级。
@@ -147,11 +128,7 @@ export const imageLayerDataSchema = imageRefSchema.extend({
  * 显示名**不在场景里**：「文件 → 显示名」住在素材自己的 `.meta`（顶层 `name`），
  * 任何地方都只在文件属性上改（旧版本按对象记的 `names` 已退役，读到时随回写清掉）。
  */
-export const soundDataSchema = z.object({
-  clips: z.array(z.string().min(1)).default([]),
-  picked: z.string().min(1).optional(),
-  layer: z.enum(SOUND_LAYERS).default(DEFAULT_SOUND_LAYER),
-});
+export { soundDataSchema };
 
 /**
  * 传送阵（动作对象）的数据：候选目标场景 + 选中的那一个（可选）。
@@ -161,10 +138,7 @@ export const soundDataSchema = z.object({
  * `picked` **不给默认值**：它的「没写」有明确语义——还没选要传送哪一个（按钮点不了）。
  * 选中的那条必须落在 `targets` 里，越界不算解析错误（`validateScene` 会提醒并按没选处理）。
  */
-export const teleportDataSchema = z.object({
-  targets: z.array(z.string().min(1)).default([]),
-  picked: z.string().min(1).optional(),
-});
+export { teleportDataSchema };
 
 /**
  * 放大镜里**一个状态**（v31 起）：一屏画面 = 标题（上面）+ 图（左）+ 文字（右）。
@@ -176,25 +150,10 @@ export const teleportDataSchema = z.object({
  * `image` 复用 `imageRefSchema`（一张图的引用，可带 `sprite` = 取图集里的一格）——
  * 与贴图 / 精灵引用是同一个形状，所以这里连「格子从左上数、越界不算解析错误」都是同一套。
  */
-export const magnifierStateSchema = z.object({
-  // v34：三块各带一个**显示开关**（开关管显示，不看有没有值）
-  showTitle: z.boolean().optional(),
-  showMedia: z.boolean().optional(),
-  showText: z.boolean().optional(),
-  title: z.string().optional(),
-  image: imageRefSchema.optional(),
-  // v33：一屏的媒体还能是**视频**（与 `image` 二选一；`loop` / `audio` 给默认值）
-  video: z
-    .object({
-      id: z.string().min(1),
-      loop: z.boolean().default(DEFAULT_MAGNIFIER_VIDEO_LOOP),
-      audio: z.boolean().default(DEFAULT_MAGNIFIER_VIDEO_AUDIO),
-    })
-    .optional(),
-  // v33：媒体那块的动画预设（缺省 = 不动）
-  tween: z.enum(MAGNIFIER_TWEENS).optional(),
-  text: z.string().optional(),
-});
+/** 磁盘放大镜状态 / 数据：公共构造器 + 磁盘图片引用（带 `guid`）。 */
+export const magnifierStateSchema = magnifierStateSchemaWith(imageRefSchema);
+
+export const magnifierDataSchema = magnifierDataSchemaWith(magnifierStateSchema);
 
 /**
  * 放大镜（动作对象，v30；v31 起「图片列表」变成「状态列表」）：**状态列表 + 当前展示的那一个**。
@@ -203,10 +162,7 @@ export const magnifierStateSchema = z.object({
  * 一项时，语义只能是「还没加状态」）；`picked` **不给默认值**——它的「没写」有明确语义：
  * 还没选展示哪一个（「在画面上打开」点不了）。
  */
-export const magnifierDataSchema = z.object({
-  states: z.array(magnifierStateSchema).default([]),
-  picked: z.number().int().nonnegative().optional(),
-});
+
 
 /**
  * 视频列表（v14 起，可选）：地图 / 精灵上的「一组视频 + 选中哪条 + 循环 / 声音」。
@@ -219,16 +175,7 @@ export const magnifierDataSchema = z.object({
  * **不需要补壳迁移**：整个 `video` 字段是可选的，「没有它」就等于「这个对象不放视频」，
  * 所以 v13 → v14 只是版本号 +1 触发一次回写，不像 `fog.enabled` 那样要往老文件里填默认值。
  */
-export const videoDataSchema = z.object({
-  // v14 起，与 `map.fog.enabled` 同一个口径：老编辑器不发这一项时语义只能是「在用」
-  // （`video` 只有加过视频才写出来），补成 false 会把已有的视频静默关掉
-  enabled: z.boolean().default(DEFAULT_VIDEO_ENABLED),
-  autoPlay: z.boolean().default(DEFAULT_VIDEO_AUTO_PLAY),
-  clips: z.array(z.string().min(1)).default([]),
-  picked: z.string().min(1).optional(),
-  loop: z.boolean().default(DEFAULT_VIDEO_LOOP),
-  audio: z.boolean().default(DEFAULT_VIDEO_AUDIO),
-});
+export { videoDataSchema };
 
 /**
  * 视频混合（可选，只有贴图能带）：**两路素材**（A 盖住 / B 擦开露出）+ 循环 + 自动播放 + 声音来源。
@@ -240,20 +187,7 @@ export const videoDataSchema = z.object({
  * **组件在 = 在用**（与 `GridMap` 同一条口径）：不像 `videoDataSchema` 那样有个兼容性的
  * `enabled`——那是 v19 迁移留下来的；新组件由属性面板底部的 Add Component 添加、组头移除。
  */
-const videoBlendChannelSchema = z.object({
-  // 老文件（v28 及更早）没有 `kind`：按**视频**兜底（那时通道只能是视频）
-  kind: z.enum(VIDEO_BLEND_KINDS).default(DEFAULT_VIDEO_BLEND_KIND),
-  id: z.string().min(1).optional(),
-});
-
-export const videoBlendDataSchema = z.object({
-  a: videoBlendChannelSchema.default(() => ({ kind: DEFAULT_VIDEO_BLEND_KIND })),
-  b: videoBlendChannelSchema.default(() => ({ kind: DEFAULT_VIDEO_BLEND_KIND })),
-  loop: z.boolean().default(DEFAULT_VIDEO_LOOP),
-  // 场景激活时自动播放（与视频同一口径；缺省关）
-  autoPlay: z.boolean().default(DEFAULT_VIDEO_AUTO_PLAY),
-  audio: z.enum(VIDEO_BLEND_AUDIO).default(DEFAULT_VIDEO_BLEND_AUDIO),
-});
+export { videoBlendDataSchema };
 
 /**
  * 组件实例（v19）。
@@ -363,28 +297,9 @@ export const itemLibrarySchema = z.object({
  * 放在这里而不是散在各处，是因为它们既是 schema 的默认值，也是「新建项目」的初值
  * （`createEmptyProject` 与 `defaultProjectSettings()` 共用同一份）。
  */
-export const DEFAULT_BGM_VOLUME = 0.6;
-export const DEFAULT_SFX_VOLUME = 0.8;
-export const DEFAULT_VOICE_VOLUME = 1;
+export { DEFAULT_BGM_VOLUME, DEFAULT_SFX_VOLUME, DEFAULT_VOICE_VOLUME };
 
-/** 缺省的背景音乐通道：只有音量（歌单在编辑器弹框里，不进文档）。 */
-export function defaultBgmSettings(): BgmSettingsDoc {
-  return { volume: DEFAULT_BGM_VOLUME };
-}
-
-/** 缺省的音频设置（背景音乐 + 音效 + 旁白三档音量）。 */
-export function defaultAudioSettings(): ProjectSettingsDoc["audio"] {
-  return {
-    bgm: defaultBgmSettings(),
-    sfx: { volume: DEFAULT_SFX_VOLUME },
-    voice: { volume: DEFAULT_VOICE_VOLUME },
-  };
-}
-
-/** 缺省的项目级全局设置（新建项目、老文件缺项补齐都用它）。 */
-export function defaultProjectSettings(): ProjectSettingsDoc {
-  return { audio: defaultAudioSettings() };
-}
+export { defaultBgmSettings, defaultAudioSettings, defaultProjectSettings };
 
 /**
  * 三档音量共用的形状：**只有一个 `volume`**。
@@ -393,9 +308,7 @@ export function defaultProjectSettings(): ProjectSettingsDoc {
  * 越界不在这里硬拒（与 `scale` 同一个口径：读不开比听不清更糟）：`validateProject` 报 warning、
  * 编辑命令按 `0..1` 夹一次，前端收到也按 `0..1` 用。
  */
-export const channelVolumeSchema = z.object({
-  volume: z.number(),
-});
+export { channelVolumeSchema };
 
 /**
  * 项目级全局设置（v15 起，v16 起背景音乐只剩音量）。
@@ -404,15 +317,7 @@ export const channelVolumeSchema = z.object({
  * 不必在调用方到处写三元判断。音效音量比旁白低一档是常听的配比（音效多半是点缀，
  * 旁白是「必须听清」的那一档）。
  */
-export const projectSettingsSchema = z.object({
-  audio: z
-    .object({
-      bgm: channelVolumeSchema.default(() => defaultBgmSettings()),
-      sfx: channelVolumeSchema.default(() => ({ volume: DEFAULT_SFX_VOLUME })),
-      voice: channelVolumeSchema.default(() => ({ volume: DEFAULT_VOICE_VOLUME })),
-    })
-    .default(() => defaultAudioSettings()),
-});
+export { projectSettingsSchema };
 
 /**
  * 项目级**标签表**（v18 起）：下标 = tag ID，值 = 名字（`null` = 已删除的洞）。

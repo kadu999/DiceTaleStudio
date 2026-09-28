@@ -1,4 +1,5 @@
 import type { ImageSize } from "@dts/grid";
+import { SPRITE_SHEET_MAX } from "@dts/contract";
 import { imageOf, mapDataOf } from "./access";
 import type { AssetMetaDoc, AssetMetas } from "./asset-meta";
 import { findComponentType } from "./components";
@@ -42,7 +43,7 @@ import type {
  * 再密就没有「一格」可言了（4096 的图切 64 列 = 每格 64px，已经是像素画的粒度），
  * 而且属性面板与预览要给得出可点的格子。
  */
-export const SPRITE_SHEET_MAX = 64;
+export { SPRITE_SHEET_MAX };
 
 /** 缺省切分：**整图**（1×1）。meta 里没写 `sheet` = 这一份，所以这种值不写进文件。 */
 export const DEFAULT_SPRITE_SHEET: SpriteSheetDoc = { columns: 1, rows: 1 };

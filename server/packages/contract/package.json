@@ -1,9 +1,9 @@
 {
-  "name": "@dts/document",
+  "name": "@dts/contract",
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "编辑器文档模型：项目/地图/对象/组件/动作 + zod 校验 + 组件注册表 + 补丁式撤销重做",
+  "description": "编辑器 / 服务端 / 前端共用的**数据形状**：与磁盘 / 传输无关的纯 zod schema 与常量（document 与 protocol 各自 extend 出变体）",
   "exports": {
     ".": "./src/index.ts"
   },
@@ -11,9 +11,6 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@dts/contract": "workspace:*",
-    "@dts/grid": "workspace:*",
-    "immer": "^11.1.18",
     "zod": "^4.6.5"
   },
   "devDependencies": {

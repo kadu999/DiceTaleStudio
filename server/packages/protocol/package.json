@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@dts/contract": "workspace:*",
     "zod": "^4.6.5"
   },
   "devDependencies": {

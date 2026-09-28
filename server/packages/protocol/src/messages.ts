@@ -1,4 +1,34 @@
 import { z } from "zod";
+// 共享形状的唯一来源：wire 专有的只有 `spriteGrid`（下面对 `imageRef` 系做一处派生）。
+import {
+  cellRunsSchema,
+  channelVolumeSchema,
+  DEFAULT_BGM_VOLUME,
+  DEFAULT_MAGNIFIER_VIDEO_AUDIO,
+  DEFAULT_MAGNIFIER_VIDEO_LOOP,
+  DEFAULT_SFX_VOLUME,
+  DEFAULT_VOICE_VOLUME,
+  FOG_DEFAULT_SORTING_ORDER,
+  gridSpecSchema,
+  imageLayerDataSchemaWith,
+  imageRefBaseSchema,
+  imageSpriteRefSchema,
+  magnifierDataSchemaWith,
+  magnifierStateSchemaWith,
+  MAGNIFIER_TWEENS,
+  mapDataSchema,
+  mapFogSchema,
+  projectSettingsSchema,
+  rleRunSchema,
+  soundDataSchema,
+  soundLayerSchema,
+  SPRITE_SHEET_MAX,
+  spriteGridSchema,
+  teleportDataSchema,
+  videoBlendDataSchema,
+  videoDataSchema,
+  worldPositionSchema,
+} from "@dts/contract";
 
 /**
  * WebSocket 消息契约（编辑器 / 服务端 / 前端三端共用的唯一来源）。
@@ -172,16 +202,10 @@ export const PROTOCOL_MISMATCH_CODE = 4002;
  * 这里**复刻一份只读 schema**而不是 import `@dts/document`：`protocol` 是被三端共用的
  * 最底层包，不该反过来依赖文档包。字段口径与文档严格一致，文档加字段时这里同步补。
  */
-export const worldPositionSchema = z.object({
-  x: z.number(),
-  y: z.number(),
-});
+export { worldPositionSchema };
 
 /** 图片里的一格（v10 起）：`column` 从左数（0 起）、`row` **从最上数**（0 起）。 */
-export const spriteRefSchema = z.object({
-  column: z.number().int().nonnegative(),
-  row: z.number().int().nonnegative(),
-});
+export { imageSpriteRefSchema as spriteRefSchema };
 
 /**
  * 一张图的切分上限（列与行各自的上限）。
@@ -190,7 +214,7 @@ export const spriteRefSchema = z.object({
  * 不能反过来依赖文档包，所以这里复刻一份（与 `DEFAULT_*_VOLUME` 同一套做法），
  * 由 `apps/backend/test/protocol-document-contract.test.ts` 断言两边一致。
  */
-export const SPRITE_SHEET_MAX = 64;
+export { SPRITE_SHEET_MAX };
 
 /**
  * 战争雾雾层显示顺序的默认值（v23 起）：**最前面**（`short.MaxValue`）。
@@ -199,23 +223,19 @@ export const SPRITE_SHEET_MAX = 64;
  * 最底层包，不能反过来依赖文档包，所以这里复刻一份（与 `SPRITE_SHEET_MAX` 同一套做法），
  * 由 `apps/backend/test/protocol-document-contract.test.ts` 断言两边一致。
  */
-export const DEFAULT_FOG_SORTING_ORDER = 32767;
+export { FOG_DEFAULT_SORTING_ORDER as DEFAULT_FOG_SORTING_ORDER };
 
 /**
  * 放大镜一屏媒体的**动画预设**（v24 起）：与 `@dts/document` 的 `MAGNIFIER_TWEENS` **同值**
  * （同样复刻一份，契约测试盯着「缺省一致 / 枚举一致」）。
  */
-export const MAGNIFIER_TWEENS = ["none", "shake", "breathe", "float", "sway"] as const;
+export { MAGNIFIER_TWEENS };
 
 /** 放大镜一屏里视频的默认开关（v24 起）：**循环、静音**（与 `@dts/document` 同值）。 */
-export const DEFAULT_MAGNIFIER_VIDEO_LOOP = true;
-export const DEFAULT_MAGNIFIER_VIDEO_AUDIO = false;
+export { DEFAULT_MAGNIFIER_VIDEO_LOOP, DEFAULT_MAGNIFIER_VIDEO_AUDIO };
 
 /** 一张图的切分（v10 起）：几列几行。`1×1` = 整图。 */
-export const spriteGridSchema = z.object({
-  columns: z.number().int().min(1).max(SPRITE_SHEET_MAX),
-  rows: z.number().int().min(1).max(SPRITE_SHEET_MAX),
-});
+export { spriteGridSchema };
 
 /**
  * 图片引用：资源逻辑 ID + 声明的宽高（世界像素；实际尺寸 = 声明尺寸 × 对象 scale）。
@@ -232,17 +252,13 @@ export const spriteGridSchema = z.object({
  * 老前端（v9）不认这两项，会把整张图集当成一张图铺出来——那是**可见的错误**，
  * 所以 `PROTOCOL_VERSION` 跟着 +1，靠握手把它挡在连上的那一刻。
  */
-export const imageRefSchema = z
-  .object({
-    id: z.string().min(1),
-    width: z.number().int().positive(),
-    height: z.number().int().positive(),
-    sprite: spriteRefSchema.optional(),
-    spriteGrid: spriteGridSchema.optional(),
-  })
-  // 格子必须落在切分范围内：编辑器推送前统一夹过（`clampSpriteCell`），所以越界只可能是
-  // 坏载荷——这里明确拒掉，别让前端算出画到图外的 UV
-  .refine(spriteFitsSheet, { message: "子图超出切分范围" });
+const wireImageRefObject = imageRefBaseSchema.extend({ spriteGrid: spriteGridSchema.optional() });
+
+/**
+ * wire 图片引用 = 公共形状 + `spriteGrid`（推送时解析进去）+ 越界 refine。
+ * 磁盘侧（`@dts/document`）是同一个公共形状 + `guid`。
+ */
+export const imageRefSchema = wireImageRefObject.refine(spriteFitsSheet, { message: "子图超出切分范围" });
 
 /**
  * 图片层组件（`ImageLayer` / `SpriteLayer`）的数据（v14 起）：`imageRefSchema` + 显示顺序。
@@ -251,16 +267,9 @@ export const imageRefSchema = z
  * `GridMap.image` 也在用，多一项会污染地图贴图）。`default(0)` 让老编辑器少发这一项时
  * 前端照常读到 0，与文档侧同一个口径。
  */
-export const imageLayerDataSchema = z
-  .object({
-    id: z.string().min(1),
-    width: z.number().int().positive(),
-    height: z.number().int().positive(),
-    sprite: spriteRefSchema.optional(),
-    spriteGrid: spriteGridSchema.optional(),
-    sortingOrder: z.number().int().default(0),
-  })
-  .refine(spriteFitsSheet, { message: "子图超出切分范围" });
+export const imageLayerDataSchema = imageLayerDataSchemaWith(wireImageRefObject).refine(spriteFitsSheet, {
+  message: "子图超出切分范围",
+});
 
 /** 子图必须落在切分范围内（缺任一项都不判错，见 `imageRefSchema`）。 */
 function spriteFitsSheet(image: {
@@ -275,17 +284,11 @@ function spriteFitsSheet(image: {
 }
 
 /** RLE 一段：`[掩码, 连续格数]`（掩码 0–255、格数非负，与 `@dts/document` 的 `cellRunsSchema` 同口径）。 */
-export const rleRunSchema = z.tuple([z.number().int().min(0).max(255), z.number().int().nonnegative()]);
+export { rleRunSchema };
 
-export const gridSpecSchema = z.object({
-  width: z.number().int().positive(),
-  height: z.number().int().positive(),
-});
+export { gridSpecSchema };
 
-export const cellRunsSchema = z.object({
-  encoding: z.literal("rle"),
-  runs: z.array(rleRunSchema),
-});
+export { cellRunsSchema };
 
 /**
  * 战争雾组件的数据（v27 起住在独立的 `Fog` 对象上）：**引用哪张地图** + **总开关** +
@@ -296,21 +299,9 @@ export const cellRunsSchema = z.object({
  * **哪个格子被揭示了不在数据里**：那是运行态，由 `erase_mask` / `reveal_fog_region` 命令驱动，
  * 不写文档、也不随 `scene_sync` 走。
  */
-export const mapFogSchema = z.object({
-  mapId: z.string().default(""),
-  enabled: z.boolean().default(true),
-  // 与文档同口径：区域位只到 1–255、缺省空数组（越界的「已知位」由语义校验报 warning）
-  regions: z.array(z.number().int().min(1).max(255)).default([]),
-  // v23 起雾层显示顺序可配置：缺省 = 最前面（与文档 `FOG_DEFAULT_SORTING_ORDER` 同值，
-  // 由 `protocol-document-contract.test.ts` 断言）——老编辑器少发这一项时前端读到最前面
-  sortingOrder: z.number().int().default(DEFAULT_FOG_SORTING_ORDER),
-});
+export { mapFogSchema };
 /** `GridMap` 组件携带的**网格数据**（`rowOrder` 固定 bottom-up）。贴图与显示顺序自 v16 起在 `ImageLayer` 组件里，战争雾在独立的 `FogOfWar` 组件里。 */
-export const mapDataSchema = z.object({
-  grid: gridSpecSchema,
-  rowOrder: z.literal("bottom-up"),
-  cells: cellRunsSchema,
-});
+export { mapDataSchema };
 
 /**
  * 声音层级：**固定三档**（同层同时只响一条）。
@@ -322,14 +313,10 @@ export const mapDataSchema = z.object({
  * `layer: "bgm"` 的声音对象能被读回来的依据；但背景音乐由编辑器顶栏「音乐」弹框 +
  * `play_bgm` 那一组命令管，不再挂在对象上、也不是项目设置里的歌单。
  */
-export const soundLayerSchema = z.enum(["bgm", "sfx", "voice"]);
+export { soundLayerSchema };
 
 /** 声音对象的数据：加进来的音频 + 当前选中的那条 + 层级（前端播的就是 `picked`）。 */
-export const soundDataSchema = z.object({
-  clips: z.array(z.string().min(1)).default([]),
-  picked: z.string().min(1).optional(),
-  layer: soundLayerSchema.default("sfx"),
-});
+export { soundDataSchema };
 
 /**
  * 地图 / 精灵上的**视频列表**（v14 起）：加进来的视频 + 当前选中的那条 + 循环 / 声音两个开关。
@@ -341,16 +328,7 @@ export const soundDataSchema = z.object({
  * 命令里只有 `objectId`，放哪一条 / 循环 / 声音都从这里读——与 `play_sound` 同一条「命令只是触发器」。
  * `names`（显示名）**不进协议**：它只是编辑器里给人看的标签。
  */
-export const videoDataSchema = z.object({
-  // 总开关：关着 = 这个对象现在不放视频（前端连那一层都不建）。缺省算开——`video` 只有
-  // 加过视频才写出来，「字段在」本来就等于「在用」（与 `map.fog.enabled` 同一个口径）
-  enabled: z.boolean().default(true),
-  autoPlay: z.boolean().default(false),
-  clips: z.array(z.string().min(1)).default([]),
-  picked: z.string().min(1).optional(),
-  loop: z.boolean().default(false),
-  audio: z.boolean().default(false),
-});
+export { videoDataSchema };
 
 /**
  * 视频混合组件（v17 起，可选，只有贴图能带）：**两路素材**（A 盖住 / B 擦开露出）
@@ -364,21 +342,7 @@ export const videoDataSchema = z.object({
  * 前端据此建混合层（**视频**那一路 `VideoPlayer` → `RenderTexture`、**图片**那一路取一张贴图，
  * 用一个 Mask 混合）；命令里只有 `objectId`，放哪两路 / 循环 / 声音都从这里读。
  */
-const videoBlendChannelSchema = z.object({
-  // 与文档的 `VIDEO_BLEND_KINDS` 同值（protocol 不能依赖文档包，这里复刻一份）
-  kind: z.enum(["image", "video"]).default("video"),
-  id: z.string().min(1).optional(),
-});
-
-export const videoBlendDataSchema = z.object({
-  a: videoBlendChannelSchema.default(() => ({ kind: "video" as const })),
-  b: videoBlendChannelSchema.default(() => ({ kind: "video" as const })),
-  loop: z.boolean().default(false),
-  // 场景激活时自动混合播放（v18；与 `videoDataSchema` 的 `autoPlay` 同一口径）
-  autoPlay: z.boolean().default(false),
-  // 与文档的 `VIDEO_BLEND_AUDIO` 同值（protocol 不能依赖文档包，这里复刻一份）
-  audio: z.enum(["none", "a", "b"]).default("none"),
-});
+export { videoBlendDataSchema };
 
 /**
  * 传送阵（动作对象）的数据：候选目标场景 + 当前选中的那一个。
@@ -387,10 +351,7 @@ export const videoBlendDataSchema = z.object({
  * 前端只管换镜像（没有一个「teleport」命令，也不需要）。放进协议 schema 是因为它就是
  * `GameObjectDoc` 的一部分——这份 schema 是文档形状的只读复刻，少了字段等于悄悄丢数据。
  */
-export const teleportDataSchema = z.object({
-  targets: z.array(z.string().min(1)).default([]),
-  picked: z.string().min(1).optional(),
-});
+export { teleportDataSchema };
 
 /**
  * 放大镜里**一个状态**（v22 起）：一屏画面 = 标题（上面）+ 图（左）+ 文字（右）。
@@ -400,25 +361,7 @@ export const teleportDataSchema = z.object({
  * `image` 复用 `imageRefSchema`（`sprite` / `spriteGrid` 与图片层同一个口径——
  * `spriteGrid` 是编辑器推送时解析进去的，前端不能依赖「几行几列」在别处）。
  */
-export const magnifierStateSchema = z.object({
-  // v25：三块各带一个**显示开关**（开关管显示，不看有没有值）
-  showTitle: z.boolean().optional(),
-  showMedia: z.boolean().optional(),
-  showText: z.boolean().optional(),
-  title: z.string().optional(),
-  image: imageRefSchema.optional(),
-  // v24：一屏的媒体还能是**视频**（与 `image` 二选一；`loop` / `audio` 给默认值）
-  video: z
-    .object({
-      id: z.string().min(1),
-      loop: z.boolean().default(DEFAULT_MAGNIFIER_VIDEO_LOOP),
-      audio: z.boolean().default(DEFAULT_MAGNIFIER_VIDEO_AUDIO),
-    })
-    .optional(),
-  // v24：媒体那块的动画预设（缺省 = 不动）
-  tween: z.enum(MAGNIFIER_TWEENS).optional(),
-  text: z.string().optional(),
-});
+export const magnifierStateSchema = magnifierStateSchemaWith(imageRefSchema);
 
 /**
  * 放大镜（动作对象，v21 起；v22 起「图片列表」变成「状态列表」）的数据：
@@ -430,23 +373,16 @@ export const magnifierStateSchema = z.object({
  * **换状态不是命令**：它是文档数据，编辑器一改就整份 `scene_push` 下来，前端跟着换
  * （与 `video.picked` / `sound.picked` 同一条「数据在场景里」的规矩）。
  */
-export const magnifierDataSchema = z.object({
-  states: z.array(magnifierStateSchema).default([]),
-  picked: z.number().int().nonnegative().optional(),
-});
+export const magnifierDataSchema = magnifierDataSchemaWith(magnifierStateSchema);
 
 /**
  * 三档音量的缺省值（与 `@dts/document` 的 `DEFAULT_*_VOLUME` 同值；`protocol` 是被三端共用的
  * 最底层包，不能反过来依赖文档包，所以这里复刻一份数字）。
  */
-export const DEFAULT_BGM_VOLUME = 0.6;
-export const DEFAULT_SFX_VOLUME = 0.8;
-export const DEFAULT_VOICE_VOLUME = 1;
+export { DEFAULT_BGM_VOLUME, DEFAULT_SFX_VOLUME, DEFAULT_VOICE_VOLUME };
 
 /** 一条声道（背景音乐 / 音效 / 旁白）：**只剩音量**（v8 起背景音乐的歌单不在这里）。 */
-export const channelVolumeSchema = z.object({
-  volume: z.number(),
-});
+export { channelVolumeSchema };
 
 /**
  * 项目级**全局设置**（v7 起，目前只有音频）：前端不解释业务，照着调音量。
@@ -461,19 +397,7 @@ export const channelVolumeSchema = z.object({
  *   也不是命令的载荷来源——编辑器弹框直接列项目 `Assets/audio/` 下的音频，点一首就发
  *   `play_bgm{clip}`。背景音乐因此与项目设置彻底分开：这里只是「这条声道多大声」。
  */
-export const projectSettingsSchema = z.object({
-  audio: z
-    .object({
-      bgm: channelVolumeSchema.default(() => ({ volume: DEFAULT_BGM_VOLUME })),
-      sfx: channelVolumeSchema.default(() => ({ volume: DEFAULT_SFX_VOLUME })),
-      voice: channelVolumeSchema.default(() => ({ volume: DEFAULT_VOICE_VOLUME })),
-    })
-    .default(() => ({
-      bgm: { volume: DEFAULT_BGM_VOLUME },
-      sfx: { volume: DEFAULT_SFX_VOLUME },
-      voice: { volume: DEFAULT_VOICE_VOLUME },
-    })),
-});
+export { projectSettingsSchema };
 
 /**
  * 对象特性组件的类型名（v9 起）。

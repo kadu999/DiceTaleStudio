@@ -1,6 +1,17 @@
 import { componentKindMismatchOf, findComponentType, type ComponentType } from "./components";
+import {
+  DEFAULT_MAGNIFIER_VIDEO_AUDIO,
+  DEFAULT_MAGNIFIER_VIDEO_LOOP,
+  DEFAULT_SOUND_LAYER,
+  DEFAULT_VIDEO_AUDIO,
+  DEFAULT_VIDEO_AUTO_PLAY,
+  DEFAULT_VIDEO_BLEND_AUDIO,
+  DEFAULT_VIDEO_BLEND_KIND,
+  DEFAULT_VIDEO_ENABLED,
+  DEFAULT_VIDEO_LOOP,
+  FOG_DEFAULT_SORTING_ORDER,
+} from "@dts/contract";
 import type { GameObjectDoc } from "./types";
-import type { SoundLayer, VideoBlendAudio, VideoBlendKind } from "./types";
 
 /**
  * 对象预设（原 `ObjectKind` 的落地形态）与**能力槽位**。
@@ -284,7 +295,7 @@ export function supportsSpriteSheet(target: ObjectKind | GameObjectDoc): boolean
  * 分到两层。三档的取值与中文名见 `types.ts` 的 `SOUND_LAYERS` / `SOUND_LAYER_LABELS`；
  * 对象界面上只给 `OBJECT_SOUND_LAYERS`（音效 / 旁白）——背景音乐是项目级全局设置。
  */
-export const DEFAULT_SOUND_LAYER: SoundLayer = "sfx";
+export { DEFAULT_SOUND_LAYER };
 
 /**
  * 视频的默认开关（v14 起）：**开着、不循环、静音**。
@@ -293,32 +304,28 @@ export const DEFAULT_SOUND_LAYER: SoundLayer = "sfx";
  * 不循环 = 过场视频放一遍停在最后一帧（要循环的背景视频在面板上打开）；
  * 静音 = 现场跑团时「不小心点开视频就轰一声」比听不到更糟。
  */
-export const DEFAULT_VIDEO_ENABLED = true;
-export const DEFAULT_VIDEO_AUTO_PLAY = false;
-export const DEFAULT_VIDEO_LOOP = false;
-export const DEFAULT_VIDEO_AUDIO = false;
+export { DEFAULT_VIDEO_ENABLED, DEFAULT_VIDEO_AUTO_PLAY, DEFAULT_VIDEO_LOOP, DEFAULT_VIDEO_AUDIO };
 
 /**
  * 视频混合的默认声音来源：**静音**（与视频同一条口径）。
  *
  * 两条视频同时放时，声音只能出一路——默认哪条都不出，要出声才在面板上选。
  */
-export const DEFAULT_VIDEO_BLEND_AUDIO: VideoBlendAudio = "none";
+export { DEFAULT_VIDEO_BLEND_AUDIO };
 
 /**
  * 视频混合每一路的默认素材种类：**视频**。
  *
  * 这组件最早就是「两条视频用 Mask 混合」，图片是后加的一档；老数据迁移过来也一律是视频。
  */
-export const DEFAULT_VIDEO_BLEND_KIND: VideoBlendKind = "video";
+export { DEFAULT_VIDEO_BLEND_KIND };
 
 /**
  * 放大镜一屏里视频的默认开关（v33）：**循环、静音**。
  *
  * 循环 = 线索卡上的动图通常要一直动；静音 = 与对象上的视频同一条（跑团时误响比听不到更糟）。
  */
-export const DEFAULT_MAGNIFIER_VIDEO_LOOP = true;
-export const DEFAULT_MAGNIFIER_VIDEO_AUDIO = false;
+export { DEFAULT_MAGNIFIER_VIDEO_LOOP, DEFAULT_MAGNIFIER_VIDEO_AUDIO };
 
 /**
  * 战争雾雾层的**显示顺序默认值**（v32 起可配置）：**最前面**。
@@ -327,7 +334,7 @@ export const DEFAULT_MAGNIFIER_VIDEO_AUDIO = false;
  * 同一套口径，但对象自己的 `sortingOrder` 被夹在 `±SORTING_ORDER_LIMIT`，够不着它）。
  * 想拿别的对象盖住雾时在属性面板里把这一项调小。
  */
-export const FOG_DEFAULT_SORTING_ORDER = 32767;
+export { FOG_DEFAULT_SORTING_ORDER };
 
 /**
  * 战争雾雾层显示顺序的取值范围（`±FOG_SORTING_ORDER_LIMIT`）。

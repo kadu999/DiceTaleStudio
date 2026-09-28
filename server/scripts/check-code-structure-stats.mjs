@@ -58,12 +58,13 @@ function bucketOf(dirs, extensions) {
 const format = (value) => value.toLocaleString("en-US");
 
 const SOURCE = {
-  packages: bucketOf(["packages/grid/src", "packages/document/src", "packages/protocol/src", "packages/resources/src", "packages/renderer/src"], [".ts"]),
+  packages: bucketOf(["packages/grid/src", "packages/contract/src", "packages/document/src", "packages/protocol/src", "packages/resources/src", "packages/renderer/src"], [".ts"]),
   backend: bucketOf(["apps/backend/src"], [".ts"]),
   editor: bucketOf(["apps/editor/src"], [".ts", ".tsx"]),
 };
 const PACKAGE_SOURCE = {
   grid: bucketOf(["packages/grid/src"], [".ts"]),
+  contract: bucketOf(["packages/contract/src"], [".ts"]),
   document: bucketOf(["packages/document/src"], [".ts"]),
   protocol: bucketOf(["packages/protocol/src"], [".ts"]),
   resources: bucketOf(["packages/resources/src"], [".ts"]),
