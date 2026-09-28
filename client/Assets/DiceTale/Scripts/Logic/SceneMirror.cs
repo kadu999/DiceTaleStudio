@@ -559,9 +559,8 @@ namespace DiceTale
         /// </summary>
         private static string BlendPickedKey(MirrorObject obj)
         {
-            var data = obj.ComponentData(Protocol.ComponentType.VideoBlend);
-            var a = JsonParser.GetString(JsonParser.GetObject(data, "a"), "id");
-            var b = JsonParser.GetString(JsonParser.GetObject(data, "b"), "id");
+            var a = JsonParser.GetString(obj.ComponentObject(Protocol.ComponentType.VideoBlend, "a"), "id");
+            var b = JsonParser.GetString(obj.ComponentObject(Protocol.ComponentType.VideoBlend, "b"), "id");
             return string.IsNullOrEmpty(a) && string.IsNullOrEmpty(b) ? null : a + "\u0000" + b;
         }
 

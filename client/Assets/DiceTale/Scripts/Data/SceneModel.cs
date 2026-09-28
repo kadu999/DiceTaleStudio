@@ -164,6 +164,24 @@ namespace DiceTale
         {
             return JsonParser.GetNumber(ComponentData(type), key, fallback);
         }
+
+        /// <summary>
+        /// 读某个组件上的**对象字段**（如 `VideoBlend.a` / `Magnifier` 里的 `image`）；
+        /// 组件没挂 / 字段没写 / 值不是对象时返回 `null`（与 <see cref="JsonParser.GetObject"/> 同口径）。
+        /// </summary>
+        public Dictionary<string, object> ComponentObject(string type, string key)
+        {
+            return JsonParser.GetObject(ComponentData(type), key);
+        }
+
+        /// <summary>
+        /// 读某个组件上的**数组字段**（如 `video.clips` / `Magnifier.states`）；
+        /// 缺失时返回 `null`（与 <see cref="JsonParser.GetArray"/> 同口径）。
+        /// </summary>
+        public List<object> ComponentArray(string type, string key)
+        {
+            return JsonParser.GetArray(ComponentData(type), key);
+        }
     }
 
     /// <summary>

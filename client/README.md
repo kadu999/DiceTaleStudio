@@ -86,18 +86,23 @@ Assets/
 **网络层**同理只做「连接 + 会话 + 协议」，一行游戏逻辑都没有。
 
 **加一个字段时读哪里（规矩）**：`MirrorObject.components` 里**一直留着**每个组件的原始 `data`
-（`MirrorComponent.data`），所以新字段**就地读**，用
-`obj.ComponentBool("VideoOverlay", "autoPlay")` / `ComponentString` / `ComponentNumber`
-（`SceneModel.cs` 的四个读取器）。`VideoBlend` 就是这条路的一个实例：两路的 `kind` / `id`
+（`MirrorComponent.data`），所以新字段**就地读**，用 `SceneModel.cs` 的泛型读取器：
+`ComponentBool` / `ComponentString` / `ComponentNumber` / `ComponentObject` / `ComponentArray`
+（另可用 `ComponentData` 拿整份）。`VideoBlend` 就是这条路的一个实例：两路的 `kind` / `id`
 都**没有**强类型镜像字段，`SceneMirror` / `CommandRouter` 也靠这些读取器读它。
 读取器读不了的那一层（**数组里的第 N 项**）另收一个小类，而不是又加镜像字段：
 放大镜的 `MagnifierReader.TryPickState`（`Data/MagnifierReader.cs`）就是——`MirrorObject` 与
 `SceneParser` 都不动，命令路由与单元测试都从它拿结果。
 
-**不要**再往 `MirrorVideo` / `MirrorSound` 这类强类型镜像上加字段，也不要往 `SceneParser`
-里加解析行——那是同一个事实抄两遍（镜像字段 + 解析行），而且会让「这个字段到底谁说了算」
-变成两个地方。既有的强类型字段（`map` / `image` / `sound` / `video`）是历史沉淀的便利层，
-保持不动即可，新代码优先用读取器。
+**加字段前的自检**（照这条走，C# 侧通常 0 处手改）：
+
+1. `Protocol.ComponentType` / `Protocol.Command*` **不用手改**——它们由 `pnpm gen:contract`
+   从 `server/packages/{document,protocol}` 生成（`pnpm check:contract` 保证不漂）；
+2. 读字段**优先用上面的泛型读取器**；只有「数组里的第 N 项」这类深层口径才另开 `*Reader`；
+3. **不要**往 `MirrorVideo` / `MirrorSound` 这类强类型镜像上加字段，也不要往 `SceneParser`
+   里加解析行——那是同一个事实抄两遍（镜像字段 + 解析行），而且会让「这个字段到底谁说了算」
+   变成两个地方。既有的强类型字段（`map` / `image` / `sound` / `video`）是历史沉淀的便利层，
+   保持不动即可，新代码优先用读取器。
 
 > 这条规矩的来历：实测「给视频加一个布尔」原本要碰 6 个生产文件，其中 2 个就是这个重复抄写；
 > 泛型那条路一直是通的（`SceneParser.cs` 早就把整份 `data` 存进了 `components`）。

@@ -323,3 +323,41 @@ VideoOverlay → Video  VideoBlend → VideoBlend
 
 - 不改任何 C# 生成/结构；本阶段**无代码改动**（默认）。
 - 若采纳 10.4 的可选项，另行小改并保持 Unity 编译 0 error / 0 warning。
+
+---
+
+## 11. 决定（2026-09-29）
+
+- **阶段 3：暂缓。** 理由：阶段 2 已经把「重复会悄悄漂」变成「被 `pnpm check` 按具体路径点名」，
+  残留收益是**整洁**（约 250–300 行）而不是**省时间**；而代价是动 **wire 契约 + 跑全量 e2e**。
+  在没有下列触发条件时，用 wire 风险换 DRY 收益不划算。
+- **触发条件**（满足任一再启动阶段 3）：
+  1. 要做**独立的 TS protocol 客户端 / SDK** → 选 **B**（`@dts/contract`）；
+  2. 出现**结构比对没抓到的漂移**（大概率是 refine 类）→ 先收紧守卫，必要时再从根上收；
+  3. 某次本来就要**大改协议** → 顺手捎上阶段 3，边际成本最低。
+- **阶段 4：取消**（理由见 §10）。
+
+## 12. 本轮收尾的两件低风险项（2026-09-29）
+
+> 都属「守卫更强 / 习惯更硬」，不碰 wire 契约。
+
+1. **补 refine 盲区**（`scripts/gen-contract.ts` 的 `check:contract`）：
+   - **行为探针** `REFINE_PROBES`（5 条）：把已知 refine 的判定固定下来，含一处**有意的两侧非对称**
+     （协议 `spriteFitsSheet` 拒越界子图；文档没有它——磁盘无 `spriteGrid`，改由 `validateScene` 判）；
+     另有「宽松分支排除已知名」两侧都拒、未知组件名两侧都收。
+   - **refine 预算** `REFINE_BUDGET`：两个 schema 文件的 refine 数量各记一个预算（协议 3 / 文档 1），
+     多一处即失败——新增 refine 的人必须登记并补探针（照 `architecture.test.ts` 的 ALLOWLIST 写法）。
+   - 实测：把协议 `spriteFitsSheet` 改成恒真 → 探针报错；给文档加一条临时 refine → 预算报错。
+2. **C# 泛型读取器补全**（阶段 4 §10.4 的可选项）：
+   - `MirrorObject` 新增 `ComponentObject(type,key)` / `ComponentArray(type,key)`；
+     `SceneMirror` / `CommandRouter` 里 `JsonParser.GetObject(ComponentData(...), …)` 的写法换成它；
+   - `client/README.md` 的「加一个字段时读哪里」升级成 **加字段自检 3 条**（常量已生成 / 优先泛型读 /
+     不再扩强类型镜像）；
+   - Unity EditMode 测试补断言（`ComponentObject` / `ComponentArray` 缺失或类型不对给 `null`）。
+3. **顺手修掉一条基线就红的 EditMode 测试**（不是本次引入）：
+   `ComponentDrivenMirrorTests.MagnifierReaderPicksTheShownStateAndClampsTheCell` 自 `d9c97d8`
+   （v25「显示开关」）起就红——`MagnifierReader` 要求三块显示开关至少开一个才展示，而该测试的状态里
+   没写开关。`d9c97d8` 改了 `MagnifierReader.cs` 但没同步测试。
+   **修法**：给「应当展示」的那几个状态补上 `showTitle` / `showMedia` / `showText`（并把「三项全空 =
+   展示不出来」那条保持不变）。
+   **Unity 验证**：EditMode **19 / 19 通过**（`ComponentDrivenMirrorTests`），控制台 0 error / 0 warning。

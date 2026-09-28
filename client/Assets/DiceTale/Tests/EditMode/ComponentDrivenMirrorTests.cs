@@ -65,13 +65,21 @@ namespace DiceTale.Tests
         {
             var obj = ParseObject(
                 "{\"id\":\"fields\",\"kind\":\"Image\",\"components\":[" +
-                "{\"type\":\"VideoOverlay\",\"data\":{\"audio\":\"invalid\",\"duration\":1.5}}]}");
+                "{\"type\":\"VideoOverlay\",\"data\":{\"audio\":\"invalid\",\"duration\":1.5," +
+                "\"clips\":[\"a\"],\"nested\":{\"v\":2}}}]}");
 
             Assert.That(obj.ComponentBool("VideoOverlay", "audio", true), Is.True);
             Assert.That(obj.ComponentBool("VideoOverlay", "missing", true), Is.True);
             Assert.That(obj.ComponentBool("Missing", "audio", true), Is.True);
             Assert.That(obj.ComponentNumber("VideoOverlay", "duration"), Is.EqualTo(1.5));
             Assert.That(obj.ComponentString("VideoOverlay", "missing"), Is.Null);
+            // 对象 / 数组两种泛型读取器（与三个标量读取器同口径：缺失或类型不对给 null）
+            Assert.That(obj.ComponentArray("VideoOverlay", "clips").Count, Is.EqualTo(1));
+            Assert.That(obj.ComponentArray("VideoOverlay", "missing"), Is.Null);
+            Assert.That(obj.ComponentArray("Missing", "clips"), Is.Null);
+            Assert.That(obj.ComponentObject("VideoOverlay", "nested"), Is.Not.Null);
+            Assert.That(obj.ComponentObject("VideoOverlay", "missing"), Is.Null);
+            Assert.That(obj.ComponentObject("Missing", "nested"), Is.Null);
         }
 
         [Test]
@@ -329,7 +337,8 @@ namespace DiceTale.Tests
                 "{\"id\":\"mag\",\"kind\":\"Magnifier\",\"components\":[" +
                 "{\"type\":\"Magnifier\",\"data\":{\"states\":[" +
                 "{\"image\":{\"id\":\"a.png\",\"width\":400,\"height\":300}}," +
-                "{\"title\":\"线索二\",\"image\":{\"id\":\"b.png\",\"width\":100,\"height\":50," +
+                "{\"showTitle\":true,\"showMedia\":true,\"showText\":true," +
+                "\"title\":\"线索二\",\"image\":{\"id\":\"b.png\",\"width\":100,\"height\":50," +
                 "\"sprite\":{\"column\":9,\"row\":9},\"spriteGrid\":{\"columns\":4,\"rows\":2}}," +
                 "\"text\":\"第一行\\n第二行\"}],\"picked\":1}}]}");
 
@@ -345,9 +354,11 @@ namespace DiceTale.Tests
             Assert.That(second.Sprite.row, Is.EqualTo(1));
 
             // 整张图（没有 `sprite`）→ Sprite 为 null；没有标题 / 文字时是空串（不是 null）
+            // （v25 起「显不显示」由开关说：这里开 `showMedia` 才展示得出来）
             var whole = ParseObject(
                 "{\"id\":\"mag\",\"kind\":\"Magnifier\",\"components\":[" +
-                "{\"type\":\"Magnifier\",\"data\":{\"states\":[{\"image\":{\"id\":\"a.png\",\"width\":400,\"height\":300}}]," +
+                "{\"type\":\"Magnifier\",\"data\":{\"states\":[{\"showMedia\":true," +
+                "\"image\":{\"id\":\"a.png\",\"width\":400,\"height\":300}}]," +
                 "\"picked\":0}}]}");
             Assert.That(MagnifierReader.TryPickState(whole, out var first), Is.True);
             Assert.That(first.Id, Is.EqualTo("a.png"));
@@ -373,9 +384,11 @@ namespace DiceTale.Tests
             Assert.That(MagnifierReader.TryPickState(outOfRange, out _), Is.False);
 
             // 选中的那个状态**只有文字 / 只有标题**（没有图）：照样展示得出来——纯文字线索卡
+            // （v25 起要开对应的显示开关）
             var textOnly = ParseObject(
                 "{\"id\":\"mag\",\"kind\":\"Magnifier\",\"components\":[" +
-                "{\"type\":\"Magnifier\",\"data\":{\"states\":[{\"title\":\"只有标题\",\"text\":\"只有文字\"}]," +
+                "{\"type\":\"Magnifier\",\"data\":{\"states\":[{\"showTitle\":true,\"showText\":true," +
+                "\"title\":\"只有标题\",\"text\":\"只有文字\"}]," +
                 "\"picked\":0}}]}");
             Assert.That(MagnifierReader.TryPickState(textOnly, out var textState), Is.True);
             Assert.That(textState.Title, Is.EqualTo("只有标题"));

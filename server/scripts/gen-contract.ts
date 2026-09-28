@@ -262,6 +262,142 @@ function checkSchemaConsistency(): string[] {
   return problems;
 }
 
+// ---------------------------------------------------------------- refine 行为探针
+//
+// JSON Schema 摊不进 `.refine()`（命令式判断），所以结构比对**看不见 refine**。这里补两层：
+// ① **行为探针**：把已知 refine 的判定固定下来（含一处有意的两侧非对称）；
+// ② **refine 预算**：两个 schema 文件的 refine 数量各记一个预算，多一处就失败——新增 refine 的人
+//    必须在这里登记并补探针（照 `test/architecture.test.ts` 的「可搜索约束 + ALLOWLIST」写法）。
+
+/** 两个 schema 文件的 refine 预算（改这里 = 改了设计，请连理由一起改）。 */
+const REFINE_BUDGET: readonly { file: string; count: number; reason: string }[] = [
+  {
+    file: "packages/protocol/src/messages.ts",
+    count: 3,
+    reason: "spriteFitsSheet（imageRefSchema / imageLayerDataSchema 各一处）+ 宽松分支排除已知名",
+  },
+  {
+    file: "packages/document/src/schema.ts",
+    count: 1,
+    reason:
+      "宽松分支排除已知名（文档侧**没有** spriteFitsSheet：磁盘 schema 里没有 spriteGrid，判不了，改由 validateScene 判）",
+  },
+];
+
+/** 去掉注释后再数 refine，免得把说明文字里的 `.refine(` 也算进来。 */
+function countRefines(source: string): number {
+  const stripped = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+  return stripped.match(/\.(?:super)?refine\s*\(/g)?.length ?? 0;
+}
+
+function checkRefineBudget(): string[] {
+  const problems: string[] = [];
+  for (const budget of REFINE_BUDGET) {
+    const actual = countRefines(readFileSync(join(SERVER_ROOT, budget.file), "utf8"));
+    if (actual !== budget.count) {
+      problems.push(
+        `${budget.file} 的 refine 数从 ${budget.count} 变成 ${actual}` +
+          `（原预算理由：${budget.reason}）——新增的 refine 结构比对看不见，` +
+          `请在 REFINE_PROBES 里补一条探针并更新预算`,
+      );
+    }
+  }
+
+  return problems;
+}
+
+interface LooseSchema {
+  safeParse: (value: unknown) => { success: boolean };
+}
+
+/**
+ * 已知 refine 的行为探针。`docExpect` / `protoExpect` 是**当前设计**下的期望；改判定（哪怕只一边）
+ * 都要在这里显式改——这正是「结构比对看不见 refine」的那层保险。
+ */
+const REFINE_PROBES: readonly {
+  name: string;
+  doc: LooseSchema;
+  docExpect: boolean;
+  proto: LooseSchema;
+  protoExpect: boolean;
+  sample: unknown;
+}[] = [
+  {
+    name: "子图越界：协议拒（spriteFitsSheet），文档收（磁盘无 spriteGrid，改由 validateScene 判）——有意的非对称",
+    doc: documentContract.imageLayerDataSchema,
+    docExpect: true,
+    proto: protocolContract.imageLayerDataSchema,
+    protoExpect: false,
+    sample: {
+      id: "project:P/Assets/images/a.png",
+      width: 4,
+      height: 4,
+      sprite: { column: 9, row: 0 },
+      spriteGrid: { columns: 2, rows: 2 },
+    },
+  },
+  {
+    name: "子图在范围内：两侧都收",
+    doc: documentContract.imageLayerDataSchema,
+    docExpect: true,
+    proto: protocolContract.imageLayerDataSchema,
+    protoExpect: true,
+    sample: {
+      id: "project:P/Assets/images/a.png",
+      width: 4,
+      height: 4,
+      sprite: { column: 1, row: 1 },
+      spriteGrid: { columns: 2, rows: 2 },
+    },
+  },
+  {
+    name: "有 sprite 但没 spriteGrid：不判范围，两侧都收",
+    doc: documentContract.imageLayerDataSchema,
+    docExpect: true,
+    proto: protocolContract.imageLayerDataSchema,
+    protoExpect: true,
+    sample: {
+      id: "project:P/Assets/images/a.png",
+      width: 4,
+      height: 4,
+      sprite: { column: 999, row: 999 },
+    },
+  },
+  {
+    name: "宽松分支排除已知组件名：两侧都拒（坏 GridMap 不许掉进宽松支）",
+    doc: documentContract.sceneComponentSchema,
+    docExpect: false,
+    proto: protocolContract.sceneComponentSchema,
+    protoExpect: false,
+    sample: { id: "obj_1__GridMap", type: "GridMap", data: {} },
+  },
+  {
+    name: "宽松分支收未知组件名：两侧都收",
+    doc: documentContract.sceneComponentSchema,
+    docExpect: true,
+    proto: protocolContract.sceneComponentSchema,
+    protoExpect: true,
+    sample: { id: "obj_1__CustomThing", type: "CustomThing", data: { anything: 1 } },
+  },
+];
+
+function checkRefineProbes(): string[] {
+  const problems: string[] = [];
+  for (const probe of REFINE_PROBES) {
+    const docOk = probe.doc.safeParse(probe.sample).success;
+    const protoOk = probe.proto.safeParse(probe.sample).success;
+    if (docOk !== probe.docExpect) {
+      problems.push(`${probe.name}：文档侧期望 ${probe.docExpect}，实际 ${docOk}`);
+    }
+
+    if (protoOk !== probe.protoExpect) {
+      problems.push(`${probe.name}：协议侧期望 ${probe.protoExpect}，实际 ${protoOk}`);
+    }
+  }
+
+  return problems;
+}
+
 // ---------------------------------------------------------------- 写出 / 校验
 
 const OUTPUTS: readonly { path: string; content: string }[] = [
@@ -303,6 +439,7 @@ for (const output of OUTPUTS) {
 
 if (checkMode) {
   const schemaProblems = checkSchemaConsistency();
+  const refineProblems = [...checkRefineBudget(), ...checkRefineProbes()];
 
   if (mismatches.length > 0) {
     console.error("契约生成物已过期（改了源就重新生成）：");
@@ -322,13 +459,23 @@ if (checkMode) {
     console.error("\n对齐两边（有意的差异写进 DOC_ONLY_KEYS / PROTO_ONLY_KEYS）后重跑。");
   }
 
-  if (mismatches.length > 0 || schemaProblems.length > 0) {
+  if (refineProblems.length > 0) {
+    console.error("refine 判定与登记不符（结构比对看不见 refine，改了就显式改这里）：");
+    for (const item of refineProblems) {
+      console.error(`  ✗ ${item}`);
+    }
+
+    console.error("\n改判定请同步 REFINE_BUDGET / REFINE_PROBES 与理由。");
+  }
+
+  if (mismatches.length > 0 || schemaProblems.length > 0 || refineProblems.length > 0) {
     process.exit(1);
   }
 
   console.log(
     `契约一致：组件 ${COMPONENT_TYPES.length} 种 / 命令 ${COMMAND_KINDS.length} 条；` +
-      `复刻 schema ${SCHEMA_PAIRS.length} 组结构对齐（忽略 ${DOC_ONLY_KEYS.size + PROTO_ONLY_KEYS.size} 个有意的两侧专有键）。`,
+      `复刻 schema ${SCHEMA_PAIRS.length} 组结构对齐（忽略 ${DOC_ONLY_KEYS.size + PROTO_ONLY_KEYS.size} 个有意的两侧专有键）；` +
+      `refine 探针 ${REFINE_PROBES.length} 条 + 预算 ${REFINE_BUDGET.length} 份。`,
   );
 }
 

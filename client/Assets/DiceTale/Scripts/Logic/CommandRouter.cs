@@ -830,16 +830,15 @@ namespace DiceTale
             out BlendChannel channelA,
             out BlendChannel channelB)
         {
-            var data = obj.ComponentData(Protocol.ComponentType.VideoBlend);
-            channelA = ReadBlendChannel(data, "a");
-            channelB = ReadBlendChannel(data, "b");
+            channelA = ReadBlendChannel(obj, "a");
+            channelB = ReadBlendChannel(obj, "b");
             return !channelA.IsEmpty || !channelB.IsEmpty;
         }
 
         /// <summary>读一路：`kind` 缺省按**视频**算（与文档 / 协议 schema 的默认值同一口径）。</summary>
-        private static BlendChannel ReadBlendChannel(Dictionary<string, object> data, string key)
+        private static BlendChannel ReadBlendChannel(MirrorObject obj, string key)
         {
-            var channel = JsonParser.GetObject(data, key);
+            var channel = obj.ComponentObject(Protocol.ComponentType.VideoBlend, key);
             var kind = JsonParser.GetString(channel, "kind");
             var isVideo = string.IsNullOrEmpty(kind) || kind == "video";
             return new BlendChannel(isVideo, JsonParser.GetString(channel, "id"));
