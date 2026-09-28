@@ -28,6 +28,7 @@ import type { ClientInfo, ProjectSettingsInfo, ResourcesInfo, SceneInfo } from "
 import { type RuntimeLogEntry, type RuntimeStatus } from "../services/runtime-client";
 import { type BgmPlaybackState } from "../services/bgm-playback";
 import { type GeneratedImage } from "../services/image-gen-api";
+import { type ImageGenConfig } from "../services/config-api";
 import { type ProjectSummary, type ResourceTreeNode } from "../services/project-api";
 import { type TransformStart } from "../panels/scene/transform";
 import { type SoundPlaybackState } from "../services/sound-playback";
@@ -157,6 +158,8 @@ export interface ImageGenEntry {
   readonly status: "pending" | "done" | "error";
   readonly image?: GeneratedImage;
   readonly error?: string;
+  /** 图生图 / 修图用的参考图（项目内素材 ID）；无 = 文生图。 */
+  readonly inputImage?: string;
 }
 
 export interface EditorStoreState {
@@ -235,6 +238,12 @@ export interface EditorStoreState {
   readonly imageGenEntries: readonly ImageGenEntry[];
   /** 正在画（同一时刻只画一张：按钮与输入框据此禁用） */
   readonly imageGenBusy: boolean;
+  /** 这一次生成是否抠掉背景（出透明 PNG；初值来自服务端配置，编辑器里可逐次改） */
+  readonly imageGenRemoveBackground: boolean;
+  /** 图生图 / 修图的参考图（项目内素材 ID）；空串 = 文生图 */
+  readonly imageGenReferenceImage: string;
+  /** 服务端下发的生图设置（平台名 / 配没配好 / 尺寸档 / 默认抠背景）；未取到前为 null */
+  readonly imageGenConfig: ImageGenConfig | null;
   /** 「战争雾 Mask 窗口」是否打开（属性面板的按钮唤出） */
   readonly fogMask: boolean;
   /** Mask 窗口正在编辑哪张地图；null 表示窗口没打开 */
@@ -523,9 +532,15 @@ export interface EditorStoreState {
    * 成功返回 true（记录里那条会补上图片与落盘路径），失败返回 false（那条记下错误原文）。
    * 没打开项目 / 空提示词 / 上一张还在画时静默返回 false（界面自己会挡住这几种情况）。
    */
-  generateImage(prompt: string, size?: string): Promise<boolean>;
+  generateImage(prompt: string, size?: string, removeBackground?: boolean): Promise<boolean>;
   /** AI 生图：清空聊天记录（生出来的图**不会**被删，它们已经是普通项目素材）。 */
   clearImageGenHistory(): void;
+  /** AI 生图：记住「这一次是否抠背景」（只影响这一次会话的下一次生成）。 */
+  setImageGenRemoveBackground(remove: boolean): void;
+  /** AI 生图：记住「参考图」（项目内素材 ID；空 = 文生图）。 */
+  setImageGenReferenceImage(imageId: string | undefined): void;
+  /** AI 生图：取一次服务端配置（平台名 / 配没配好 / 尺寸档 / 默认抠背景），打开窗口时调用。 */
+  refreshImageGenConfig(): Promise<void>;
   /**
    * AI 生图：把某一条生成出来的图**用作当前选中对象的贴图**。
    *

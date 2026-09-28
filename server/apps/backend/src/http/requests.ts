@@ -104,3 +104,9 @@ export function bodyString(body: Record<string, unknown>, key: string): string {
 export function bodyTrimmed(body: Record<string, unknown>, key: string): string {
   return bodyString(body, key).trim();
 }
+
+/** 请求体里的布尔字段；只认真正的布尔，其余（含 "true" 字符串）给 `undefined`。 */
+export function bodyBoolean(body: Record<string, unknown>, key: string): boolean | undefined {
+  const value = body[key];
+  return typeof value === "boolean" ? value : undefined;
+}

@@ -12,6 +12,7 @@
  * 3. 聊天记录**只活在这一次会话里**（不写盘、不进撤销栈）——它是操作日志，不是文档数据。
  */
 import { imageGenApi } from "../../services/image-gen-api";
+import { configApi } from "../../services/config-api";
 import { type StoreSet, type StoreGet, type EditorStoreState } from "../store-types";
 import { makeLog } from "../store-core";
 import { type StoreContext } from "../store-context";
@@ -30,16 +31,26 @@ export function createImageGenSlice(
   ctx: StoreContext,
 ): Pick<
   EditorStoreState,
-  "openImageGenDialog" | "generateImage" | "clearImageGenHistory" | "useGeneratedImage"
+  | "openImageGenDialog"
+  | "generateImage"
+  | "clearImageGenHistory"
+  | "useGeneratedImage"
+  | "setImageGenRemoveBackground"
+  | "setImageGenReferenceImage"
+  | "refreshImageGenConfig"
 > {
   const { pushLog } = ctx;
 
   return {
     openImageGenDialog(open) {
       set({ imageGenDialog: open });
+      // 打开时顺手取一次配置：平台名 / 配没配好 / 尺寸档都可能被服务端改过
+      if (open) {
+        void get().refreshImageGenConfig();
+      }
     },
 
-    async generateImage(prompt, size) {
+    async generateImage(prompt, size, removeBackground) {
       const project = get().project.current;
       const text = prompt.trim();
       // 三个「不该发生」：没打开项目 / 空提示词 / 上一张还在画——都不报错，静默不动更省事
@@ -47,12 +58,16 @@ export function createImageGenSlice(
         return false;
       }
 
+      const remove = removeBackground ?? get().imageGenRemoveBackground;
+      const reference = get().imageGenReferenceImage;
+      const inputs = reference.length === 0 ? [] : [reference];
       const entryId = nextEntryId();
       const entry = {
         id: entryId,
         prompt: text,
         size: size ?? "",
         status: "pending" as const,
+        ...(reference.length === 0 ? {} : { inputImage: reference }),
       };
       set((state) => ({
         imageGenBusy: true,
@@ -64,6 +79,8 @@ export function createImageGenSlice(
           project,
           prompt: text,
           ...(size === undefined || size.length === 0 ? {} : { size }),
+          removeBackground: remove,
+          ...(inputs.length === 0 ? {} : { inputImages: inputs }),
         });
         set((state) => ({
           imageGenBusy: false,
@@ -91,6 +108,31 @@ export function createImageGenSlice(
 
     clearImageGenHistory() {
       set({ imageGenEntries: [] });
+    },
+
+    setImageGenRemoveBackground(remove) {
+      set({ imageGenRemoveBackground: remove });
+    },
+
+    setImageGenReferenceImage(imageId) {
+      set({ imageGenReferenceImage: imageId ?? "" });
+    },
+
+    async refreshImageGenConfig() {
+      try {
+        const config = await configApi.get();
+        const imageGen = config.imageGen ?? null;
+        set({
+          imageGenConfig: imageGen,
+          // 初值只在第一次（还没有配置）时采用，免得把用户手动勾的覆盖掉
+          ...(imageGen === null || get().imageGenConfig !== null
+            ? {}
+            : { imageGenRemoveBackground: imageGen.removeBackground }),
+        });
+      } catch (error) {
+        // 取不到配置不影响用生图（尺寸走平台默认、抠背景默认关）：记一条日志即可
+        pushLog(makeLog("warn", `读取生图配置失败：${error instanceof Error ? error.message : String(error)}`));
+      }
     },
 
     useGeneratedImage(entryId) {

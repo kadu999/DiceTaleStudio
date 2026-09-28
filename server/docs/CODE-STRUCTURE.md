@@ -16,8 +16,8 @@
 | 后端默认地址 | `0.0.0.0:1420`（`resources/config/app.json`，可被 `HOST` / `PORT` 覆盖） |
 | 编辑器开发地址 | `http://localhost:5173`（Vite，`/api`、`/editor`、`/client` 反代到 1420） |
 | 编辑器生产地址 | `http://localhost:1420`（后端同源托管 `apps/editor/dist`） |
-| 源码规模（不含测试） | 182 个文件 / 42,024 行（packages 14,338 · backend 4,046 · editor 23,640） |
-| 测试规模 | 36,800 行（单测 26,588 · E2E 9,929 · 架构测试 283） |
+| 源码规模（不含测试） | 188 个文件 / 42,940 行（packages 14,392 · backend 4,720 · editor 23,828） |
+| 测试规模 | 37,205 行（单测 26,993 · E2E 9,929 · 架构测试 283） |
 
 > 上表两行与 §0.1 表格里加粗的文件行数、§3.x 节标题里的包规模由
 > `scripts/check-code-structure-stats.mjs` **机器校验**（`pnpm check` 的一环）：
@@ -746,17 +746,18 @@ v23 起 `validateScene` 多了第二个参数：`validateScene(scene, { metas })
 解析助手：`parseClientToServer`、`parseServerToClient`、`parseEditorToServer`、`parseServerToEditor`
 （失败信息形如 `"<通道> 消息校验失败: <path>: <message>"`）、`parseJsonMessage`、`createRequestId(prefix)`。
 
-### 3.4 `@dts/resources` — 资源 ID 与 Provider 抽象（1,211 行）
+### 3.4 `@dts/resources` — 资源 ID 与 Provider 抽象（1,265 行）
 
 | 文件 | 行数 | 职责 | 关键导出 |
 |---|---|---|---|
-| `ids.ts` | 262 | **目录约定的唯一归属地** + 逻辑 ID 编解码（含 `<素材>.meta` 的路径 / ID 换算） | `ResourceKind`、`RESOURCE_KINDS`、`PROJECT_FOLDERS`、`DEFAULT_PROJECT_FOLDERS`、`PROJECT_FILE_NAME`、`PROJECT_SPECIAL_FILES`、`PROJECT_SCENE_FILE_EXTENSION`、`ASSET_META_SUFFIX`、`isAssetMetaPath`、`assetMetaPathOf`、`assetMetaIdOf`、`assetIdOfMetaId`、`formatResourceId`、`parseResourceId`、`projectPath`、`projectFileId`、`projectAssetId`、`projectFolderId`、`projectSceneBytesId`、`projectSceneImageId`、`projectSceneFileId`、`projectNameFromId`、`projectRelativePathFromId`、`projectNameFromFileId`、`configId`、`normalizePath` |
-| `provider.ts` | 49 | 资源访问抽象（接口 + 内存 / 文件系统两实现共用） | `ResourceEntry`、`ResourceProvider`、`ResourceDirs`、`DEFAULT_RESOURCE_DIRS` |
+| `ids.ts` | 265 | **目录约定的唯一归属地** + 逻辑 ID 编解码（含 `<素材>.meta` 的路径 / ID 换算） | `ResourceKind`、`RESOURCE_KINDS`、`PROJECT_FOLDERS`、`DEFAULT_PROJECT_FOLDERS`、`PROJECT_FILE_NAME`、`PROJECT_SPECIAL_FILES`、`PROJECT_SCENE_FILE_EXTENSION`、`ASSET_META_SUFFIX`、`isAssetMetaPath`、`assetMetaPathOf`、`assetMetaIdOf`、`assetIdOfMetaId`、`formatResourceId`、`parseResourceId`、`projectPath`、`projectFileId`、`projectAssetId`、`projectFolderId`、`projectSceneBytesId`、`projectSceneImageId`、`projectSceneFileId`、`projectNameFromId`、`projectRelativePathFromId`、`projectNameFromFileId`、`configId`、`normalizePath` |
+| `provider.ts` | 50 | 资源访问抽象（接口 + 内存 / 文件系统两实现共用） | `ResourceEntry`、`ResourceProvider`、`ResourceDirs`、`DEFAULT_RESOURCE_DIRS` |
 | `project.ts` | 370 | 项目级业务操作（与宿主无关） | `ProjectSummary`、`ResourceTreeNode`、`validateProjectName`、`validateProjectRelativePath`、`listProjects`、`projectExists`、`readProjectEntries`、`buildResourceTree`、`createProject`、`deleteProject`、`readProjectFile`、`belongsToProject`、`CreateProjectOptions` |
 | `memory.ts` | 238 | 内存实现（测试与联调） | `MemoryResourceProvider`、`createMemoryResourceProvider` |
 | `meta.ts` | 178 | `<素材>.meta` 的路径换算、导入器判定与缺省 meta 文本；rename 校验（`assertRenameAllowed`）与「确保有 meta」（`ensureAssetMetaCore`）的公共纯函数——内存 / 文件系统两个 provider 同一套口径，错误消息只有这一份 | `ownsAssetMeta`、`assetMetaPathFor`、`assetFolderPathsFor`、`AssetImporter`、`assetImporterForPath`、`assetMetaIdFor`、`assertRenameAllowed`、`ensureAssetMetaCore`、`newAssetMetaText`、`guidFromAssetMetaText` |
-| `config.ts` | 63 | `app.json` 的 zod schema 与默认值 | `appConfigSchema`、`AppConfig`、`defaultAppConfig`、`parseAppConfig` |
-| `index.ts` | 5 | barrel | — |
+| `image.ts` | 24 | **输入图格式知识**（`imageMimeForPath`：扩展名 → MIME）——图生图 / 修图要喂「项目里的一份图」，编辑器和后端共用这一份；刻意不引 `node:path`（浏览器侧也用） | `imageMimeForPath` |
+| `config.ts` | 133 | `app.json` 的 zod schema 与默认值（含 `imageGen.platforms.<平台>` 的 `imagePlatformSchema`：地址 / 模型 / 密钥是部署项） | `appConfigSchema`、`AppConfig`、`defaultAppConfig`、`parseAppConfig`、`imagePlatformSchema`、`ImagePlatformOverride` |
+| `index.ts` | 7 | barrel | — |
 
 **逻辑 ID 布局**
 
@@ -815,7 +816,7 @@ resources/
 
 ---
 
-## 4. 后端 `apps/backend`（3,181 行）
+## 4. 后端 `apps/backend`（4,720 行）
 
 ### 4.1 文件清单
 
@@ -830,11 +831,14 @@ resources/
 | `src/http/router.ts` | 64 | 路由表编译与分派（路径精确匹配 + 动词；404 `未知接口` / 405 `不支持的方法`） |
 | `src/http/context.ts` | 64 | `HttpContext`（config + provider + hub + log + openFolder + 资源包缓存 + 缩略图缓存）；`HttpServerOptions = Omit<HttpContext, "bundles" | "thumbnails" | "openFolder"> & { openFolder?: … }`——字段清单只此一处 |
 | `src/http/responses.ts` | 98 | `HttpError`（唯一的「提前返回状态码」手段）+ `sendJson`/`sendText`/`sendBytes`/`sendEmpty` + `rethrowProviderError`（业务错误 → 400、系统错误冒泡 → 500） |
-| `src/http/requests.ts` | 106 | 请求体 / 查询参数读取助手（`readBody`/`readJsonBody` 带 `maxBytes`，超限抛 413；`queryRaw`/`queryTrimmed`/`bodyString`/`bodyTrimmed`） |
+| `src/http/requests.ts` | 112 | 请求体 / 查询参数读取助手（`readBody`/`readJsonBody` 带 `maxBytes`，超限抛 413；`queryRaw`/`queryTrimmed`/`bodyString`/`bodyTrimmed`/`bodyBoolean`） |
 | `src/http/mime.ts` | 35 | 扩展名 → Content-Type |
 | `src/http/static.ts` | 92 | 编辑器产物托管 + SPA 回退 + 目录穿越防护（畸形百分号编码回 400） |
-| `src/http/routes/*.ts` | 860 | **一条协议一个函数**：health(17) / config(20) / state(12) / projects(299, **7 个**：项目生命周期 + `/tree` + **`/meta`**（一次拿全项目的素材 meta，连读不出来的那几个也报出来）) / resources(360, 9 个；缩略图交给 `ThumbnailStore` 做**内存 + 磁盘**两级缓存，视频走 ffmpeg 抽首帧——**先落临时文件再让 ffmpeg 读文件**：管道不可 seek，`moov` 在文件尾的 mp4 会整批抽不出首帧；失败原因只进服务端日志、不回显给客户端) / tools(137, **AI 生图**：调外部接口画一张 + 直接落成项目素材 + 把新素材的 GUID 一并回给编辑器) / index(66, 路由表) |
-| `src/image-gen/openai-image.ts` | 159 | AI 生图的**唯一出网点**：OpenAI 兼容的 `POST {baseUrl}/images/generations`（`{model, prompt, size, n}`；取 `data[0].b64_json`，只有 `url` 就再下载一次）。密钥环境变量优先、配置兜底（`resolveImageGenSettings`），**只在服务端**、只出现在 `authorization` 头里 |
+| `src/http/routes/*.ts` | 1,074 | **一条协议一个函数**：health(14) / config(63) / state(12) / projects(299, **7 个**：项目生命周期 + `/tree` + **`/meta`**（一次拿全项目的素材 meta，连读不出来的那几个也报出来）) / resources(360, 9 个；缩略图交给 `ThumbnailStore` 做**内存 + 磁盘**两级缓存，视频走 ffmpeg 抽首帧——**先落临时文件再让 ffmpeg 读文件**：管道不可 seek，`moov` 在文件尾的 mp4 会整批抽不出首帧；失败原因只进服务端日志、不回显给客户端) / tools(252, **AI 生图**：调平台画一张（文生图 / 图生图 / 多图参考 / 蒙版重绘）+ 转 PNG（可选抠背景）+ 直接落成项目素材 + 把新素材的 GUID 一并回给编辑器；输入图与蒙版按项目内素材 ID 读到字节，不由编辑器上传) / index(71, 路由表) |
+| `src/image-gen/platform.ts` | 331 | AI 生图的**唯一出网点**：**选平台**（`providers/` 自动发现 → 环境变量 / 配置取地址 / 模型 / 密钥）→ 调它拼请求（JSON / multipart；文生图或图生图，可带蒙版）→ 统一转 **PNG**（可选抠纯色背景）。密钥环境变量优先、配置兜底，**只在服务端**、只出现在 `authorization` 头里 |
+| `src/image-gen/providers/types.ts` | 291 | 生图**平台接口** `ImageProvider`（`buildRequest` 覆盖文生图 / 图生图 / 多图参考 / **蒙版重绘**；能力位 `supportsEdit` / `supportsMask`；**不含 baseUrl / model**——那是配置）+ 通用工厂 `openAiCompatibleProvider` |
+| `src/image-gen/providers/{volcengine,openai}.ts` | 23 / 18 | **一个平台一个文件**：各自声明尺寸档 / 额外字段 / 修图形状（火山 `data-uri`、OpenAI `multipart`）；**地址与模型不写死**（在 `app.json`）。**加平台 = 加一个文件 + 配地址模型**（`index.ts` 自动发现，无需注册表） |
+| `src/image-gen/providers/index.ts` | 30 | 平台**自动发现**：读目录下的 `.ts`（除 types/index），取导出的 `provider` |
 | `src/resources/fs-provider.ts` | 327 | `FsResourceProvider`（唯一碰磁盘的地方）+ 原子写 |
 | `src/resources/bundle.ts` | — | 资源清单 / 指纹 / ZIP 组装与缓存；编码委托给 `fflate`（STORED） |
 | `src/resources/thumbnail-store.ts` | 199 | 缩略图**两级缓存**（内存热点 + 磁盘跨重启）：条目**按内容寻址**（文件名 = 源素材 md5 + 源宽高）→ 内容没变永远命中、变了自动换名，不用另写失效逻辑；写盘原子（临时文件 + rename）、失败只记日志（缓存只是加速，绝不拖垮请求）；内存 96 条 / 磁盘 512 条（超了按 mtime 淘汰） |
@@ -921,7 +925,7 @@ startServer()
 | `/api/resources/manifest` | GET | `?project=` | `{project, fingerprint, bytes, fileCount, files}` | `400`/`404`（项目不存在） |
 | `/api/resources/bundle` | GET | `?project=&v=<指纹>` | `application/zip` + `x-dts-*` 头；指纹一致时 **304** | `400`/`404`/`413`（超上限） |
 | `/api/resources/rename` | POST | `{from, to}` | `{ok:true, id: to}` | `400`/`405` |
-| `/api/tools/generate-image` | POST | `{project, prompt, size?, name?}` | `{id, path, guid, width, height}`（图已**落成项目素材**，连身份 GUID 一起回；编辑器据此直接当贴图用） | `400`（缺项目 / 空提示词 / 尺寸不合法 / **没配密钥**）/`404`（项目不存在）/`502`（生图接口那边出错：连不上 / 401 / 没返回图；带上它的原话，截断 300 字）/`405` |
+| `/api/tools/generate-image` | POST | `{project, prompt, size?, name?, removeBackground?, inputImages?, mask?}` | `{id, path, guid, width, height}`（图已**落成项目素材**并转成 PNG，连身份 GUID 一起回；编辑器据此直接当贴图用）。`inputImages` 是**项目内素材 ID 数组**：不给 = 文生图，1 张 = 图生图 / 修图，多张 = 垫图参考；`mask` 再给一张 = **蒙版局部重绘** | `400`（缺项目 / 空提示词 / 尺寸不合法 / **没配好**——缺 `baseUrl`/`model`/`apiKey` 任一项 / 平台不支持修图或蒙版 / 输入图格式不对或不属于本项目）/`404`（项目或输入图不存在）/`502`（生图平台那边出错：连不上 / 401 / 没返回图 / 转码失败；带上它的原话，截断 300 字）/`405` |
 | `/api/state` | 任意 | — | `RuntimeSnapshot` + `serverTime` | — |
 | `/api/*`（未匹配） | — | — | — | `404 {error:"未知接口: …"}` |
 
@@ -1107,7 +1111,7 @@ Radmin / Hamachi / Bluetooth）；真实网卡（Wi-Fi / WLAN / Wireless / Ether
 
 ---
 
-## 5. 编辑器 `apps/editor`（20,225 行 / 84 个文件）
+## 5. 编辑器 `apps/editor`（23,828 行 / 100 个文件）
 
 ### 5.1 分层总览
 
@@ -1184,7 +1188,7 @@ store 用 **zustand 切片**模式拆开了：原来是一个 4,493 行的 `edit
 | `slices/sound-slice.ts` | 276 | 声音对象：选中、层级、名字、播放下发（列表的加 / 删在窗口里完成，不经 store 整体替换） | — |
 | `slices/video-slice.ts` | 228 | 视频：列表、选中、循环、播放下发（组件的添加 / 移除在 `component-slice`；声音 / 自动播放开关走组件规格的 `setComponentField`） | — |
 | `slices/video-blend-slice.ts` | 343 | 视频混合：两路素材的「种类 + 素材」（组件添加 / 移除在 `component-slice`）、播放三键的记账与补发、Mask 窗口的**擦一笔 + 整张填 1 / 0**（都记进同一条有序操作序列并尽力下发；编辑态只预览） | — |
-| `slices/image-gen-slice.ts` | 112 | 「AI 生图」工具：聊天记录 + `generateImage`（发后端、记结果、刷资源树）+ `useGeneratedImage`（走与「挑一张图」同一条命令） | — |
+| `slices/image-gen-slice.ts` | 165 | 「AI 生图」工具：聊天记录 + `generateImage`（发后端、记结果、刷资源树；带参考图就是图生图）+ `useGeneratedImage`（走与「挑一张图」同一条命令）+ `refreshImageGenConfig`（取平台 / 尺寸档 / 默认抠背景 / 支不支持修图） | — |
 | `slices/bgm-slice.ts` | 83 | 全局背景音乐（播放 / 暂停 / 继续 / 停止 / 补发） | — |
 | `slices/audio-meta-slice.ts` | 169 | 素材**显示名与标签**（任何素材：图 / 声 / 视频；写在**素材 meta 那条轨道**上：走 `applyMetas` + `withMetaAssetName` / `withMetaAssetTags`）+ 项目级标签表（`applyProject`）+ 三档音量 | — |
 | `slices/teleport-slice.ts` | 89 | 传送阵：候选、选中、触发换台 | — |
@@ -1216,7 +1220,8 @@ export function createSoundSlice(
 
 | 文件 | 行数 | 职责 | 对外导出 | 后端交互 |
 |---|---|---|---|---|
-| `image-gen-api.ts` | 50 | AI 生图的 HTTP 客户端（`POST /api/tools/generate-image`）：只送提示词与尺寸，拿回**刚存进项目的那份素材**（id / guid / 宽高）。**密钥不在这里**——它只在服务端 | `imageGenApi`、类型 `GeneratedImage` | — |
+| `image-gen-api.ts` | 69 | AI 生图的 HTTP 客户端（`POST /api/tools/generate-image`）：只送提示词 / 尺寸 / 是否抠背景 / 参考图 ID（图生图，可多张）/ 蒙版 ID，拿回**刚存进项目的那份素材**（id / guid / 宽高）。**密钥不在这里**——它只在服务端 | `imageGenApi`、类型 `GeneratedImage` | — |
+| `config-api.ts` | 43 | 服务端配置客户端（`GET /api/config`）：只为工具窗口取**生图那一小块**（平台名 / 配没配好 / 尺寸档 / 默认抠背景 / 支不支持修图与蒙版 / 输出目录）；**密钥 / 地址不下发** | `configApi`、类型 `ServerConfig`、`ImageGenConfig` | `GET /api/config` |
 | `project-api.ts` | 187 | 项目 HTTP 客户端；统一把非 2xx 的 `{error}` 转成 `Error`，204 返回 `undefined`；`readMetas` 一次拿全项目的素材 meta 原文，并把「盘上有、但读不出来」的那几个 ID 单独报回来（`unreadable`）。 | `projectApi`（含 `readMetas`）、`contentTypeFor`；类型 `ProjectSummary`、`ResourceTreeNode` | 见 §5.4.1 |
 | `runtime-client.ts` | 328 | 编辑器↔服务端的 WS 运行态连接：只负责协议与连接，不含编辑态数据；含重连退避、稳定连接判定、close-code 翻译。 | `RuntimeClient`、`defaultEditorSocketUrl`、`reconnectDelayMs`、`describeSocketClose`、`CLOSE_PROTOCOL_MISMATCH`(4002)；类型 `RuntimeStatus`、`RuntimeLogEntry`、`RuntimeStateSnapshot`、`RuntimeHandlers` | `WS /editor` |
 | `runtime-push.ts` | 115 | 运行态推送的**纯判定 + 去抖**：只在 run 且 WS open 且内容变了才推；子图的切分在解析时随载荷走（读 `AssetMetas` 索引，缺省空索引）。 | `RUNTIME_PUSH_DEBOUNCE_MS`(200)、`shouldPushScene`、`scenePayloadText(scene, metas?)`、`scenePayloadOf(scene, metas?)`、`projectSettingsPayloadText`、`ScenePushScheduler`；类型 `ScenePushDecision` | —（纯逻辑） |
@@ -1256,7 +1261,7 @@ export function createSoundSlice(
 | `FogMaskDialog.tsx` | 435 | 「战争雾 Mask 窗口」：贴图底 + canvas 遮罩（960 宽、按贴图比例定高），软边圆刷擦除，右侧「整区开关」（雾区绑定 v25 起读独立的 `FogOfWar` 组件）；运行态下按批下发 `erase_mask` 轨迹、整区开关下发 `reveal_fog_region`；编辑态纯预览、不写文档不落盘。 | `FogMaskDialog` |
 | `VideoBlendMaskDialog.tsx` | 345 | 「视频混合 Mask 窗口」：底图是 B 的缩略图（编辑器不解码视频）+ canvas 遮罩（同一张 960 宽、按素材像素尺寸定高），软边圆刷擦除（软边 0.5 有实心核）；右侧两个**「整张盖住（1）/ 整张擦开（0）」**按钮（走播放键那一档的样式：常态就有边框与底、hover 描强调色边框；按钮里那个**实心 / 空心小方块**是遮罩状态的提示）一次填满或清空；运行态下按批下发 `erase_video_mask`、整张按钮下发 `fill_video_mask`；编辑态纯预览、不写文档不落盘。 | `VideoBlendMaskDialog` |
 | `GridEditDialog.tsx` | 459 | 「网格编辑窗口」：**唯一**的格子涂/擦入口，用同一渲染器 + `fitViewport` 把地图铺满窗口；指针捕获 + 补齐两事件点之间的格子（不断线）；「全部清除」可撤销。 | `GridEditDialog` |
-| `ImageGenDialog.tsx` | 223 | 「AI 生图」：一个**聊天框**（写一句 → 后端画一张并落成项目素材 → 显示结果 + 「用作选中对象的贴图」）。出图慢，所以同一时刻只画一张、在画时输入框与按钮一起禁用；失败**留在对话里**（红字 + 后端给的原因），不弹一次性提示 | `ImageGenDialog` | — |
+| `ImageGenDialog.tsx` | 305 | 「AI 生图」：一个**聊天框**（写一句 → 后端画一张并落成项目素材 → 显示结果 + 「用作选中对象的贴图」）。出图慢，所以同一时刻只画一张、在画时输入框与按钮一起禁用；失败**留在对话里**（红字 + 后端给的原因），不弹一次性提示。尺寸档 / 平台名 / 默认抠背景 / 支不支持修图来自 `/api/config`，另有「抠背景」开关与「参考图」下拉（图生图 / 修图） | `ImageGenDialog` | — |
 | `MagnifierDialog.tsx` | 317 | 「放大镜窗口」：**上面一块是选中状态的画面**（**羊皮纸卡片**，与前端同套：暖米黄纸面 + 深棕字 + 棕描边 + **红蜡色**强调条 + 标题居中；左边图（点一下弹选图框、右上角 × 移出）+ 右边多行文字；长宽比取**素材真实尺寸**、一格图按那一格算）+ **下面一排状态槽**（点一个 = 换成展示它，写文档、可撤销；每条带 × 移出；末尾「添加状态」加空槽）。**这扇窗的开 / 关就是前端那扇窗的开 / 关**（`openMagnifierEditor` 同步开 / 关 `open_magnifier` / `close_magnifier`）——底栏不再有「在画面上打开 / 关闭画面 / 状态提示」。 | `MagnifierDialog` |
 
 #### `panels/`（6）

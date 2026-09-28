@@ -60,6 +60,7 @@ function seed(objects: GameObjectDoc[], selected: readonly string[]): void {
     imageGenDialog: true,
     imageGenEntries: [],
     imageGenBusy: false,
+    imageGenReferenceImage: "",
   });
 }
 
@@ -112,6 +113,7 @@ describe("AI 生图", () => {
       project: PROJECT,
       prompt: "一把生锈的黄铜钥匙",
       size: "512x512",
+      removeBackground: false,
     });
 
     const state = useEditorStore.getState();
@@ -136,6 +138,26 @@ describe("AI 生图", () => {
     expect(state.imageGenBusy).toBe(false);
     expect(state.imageGenEntries[0]!.status).toBe("error");
     expect(state.imageGenEntries[0]!.error).toContain("DTS_IMAGE_API_KEY");
+  });
+
+  it("图生图 / 修图：选了参考图后，请求体带上 inputImages（项目内素材 ID）", async () => {
+    seed([sprite()], ["sprite-1"]);
+    useEditorStore.setState({
+      imageGenReferenceImage: `project:${PROJECT}/Assets/images/old.png`,
+    });
+
+    await act(async () => {
+      await useEditorStore.getState().generateImage("把它改成蓝色", "512x512");
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.body).toEqual({
+      project: PROJECT,
+      prompt: "把它改成蓝色",
+      size: "512x512",
+      removeBackground: false,
+      inputImages: [`project:${PROJECT}/Assets/images/old.png`],
+    });
   });
 
   it("用作选中对象的贴图：走「挑图」同一条命令，身份 GUID 一起写上", async () => {

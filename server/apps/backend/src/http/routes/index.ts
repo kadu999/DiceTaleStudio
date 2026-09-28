@@ -66,6 +66,6 @@ export const ROUTES: readonly Route[] = [
   { method: "POST", path: "/api/resources/rename", handler: renameResourceRoute },
 
   // ---------------------------------------------------------------- 工具
-  // AI 生图：调外部接口画一张、直接存成项目素材（密钥只在服务端，见 `image-gen/openai-image.ts`）
+  // AI 生图：调外部接口画一张、直接存成项目素材（密钥只在服务端，见 `image-gen/platform.ts`）
   { method: "POST", path: "/api/tools/generate-image", handler: generateImageRoute },
 ];

@@ -38,22 +38,87 @@ pnpm --filter @dts/backend mock   # 另开一个终端：启动 Mock 前端（�
 
 ### AI 生图（编辑器「工具 → AI 生图」）
 
-写一句提示词 → 后端调**生图接口**画一张 → **直接存进项目**（默认 `Assets/images/generated/`），
+写一句提示词 → 后端调**生图平台**画一张 → 转成 PNG 存进项目（默认 `Assets/images/generated/`），
 随后可以一键用作选中对象的贴图。生出来的图就是**普通项目素材**：素材面板里一样能看见、改名、删。
 
-走的是 **OpenAI 兼容**的 `POST {baseUrl}/images/generations`（body `{model, prompt, size, n}`，
-响应取 `data[0].b64_json`，只有 `url` 就再下载一次），所以换供应商只改配置、代码不动。
+**一个平台 = 一个文件**。平台住在 `apps/backend/src/image-gen/providers/` 下，后端启动时
+**自动发现**（读目录里的每个 `.ts`，取其导出的 `provider`），接口定义在
+`providers/types.ts`。**加一个平台 = 往这个目录丢一个文件 + 在 `app.json` 里给它地址和模型**，
+不用改任何注册表：
+
+```ts
+// providers/volcengine.ts（火山方舟 Seedream —— 就是十来行）
+export const provider = openAiCompatibleProvider({
+  id: "volcengine",
+  label: "火山方舟 Seedream",
+  size: "1024x1024",
+  sizes: ["1024x1024", "1536x1024", "1024x1536", "2K", "4K"],
+  extraBody: { response_format: "b64_json", watermark: false },
+  sizeTiers: true,       // 额外认 `2K` / `4K` 档位
+  edit: { kind: "data-uri" }, // 图生图 / 修图：同一端点，原图当 data URI（见下）
+});
+```
+
+```jsonc
+// resources/config/app.json —— 地址与模型是部署参数，写在这里（走网关 / 中转时改这里）
+"imageGen": {
+  "default": "volcengine",
+  "platforms": {
+    "volcengine": {
+      "baseUrl": "https://ark.cn-beijing.volces.com/api/v3",
+      "model": "doubao-seedream-4-0-250828",
+      "apiKey": ""
+    }
+  }
+}
+```
+
+**平台文件只描述协议，不写死地址与模型**：`baseUrl` / `model` 可能因自建网关、中转、不同接入点
+而不同，所以它们是**配置项**，不在代码里。尺寸档 / 超时 / 额外字段也可以留空，用平台文件里的默认值。
+
+**文生图 + 图生图 / 修图**是一套接口的几条路：`buildRequest` 看有没有输入图 / 蒙版——
+没有就是文生图，有就是修图。形状差异封在平台文件里，API 只认「有没有图 / 有没有蒙版」：
+
+| 输入 | 含义 | 怎么带 |
+|---|---|---|
+| 无 `inputImages` | 文生图 | —— |
+| `inputImages` 1 张 | 图生图 / 整图重画 | 见下表 `edit.kind` |
+| `inputImages` 多张 | 垫图 / 风格参考 | 同上（多张一起带） |
+| 再加 `mask` | **蒙版局部重绘** | 平台需声明 `supportsMask`，蒙版走 `maskField`（默认 `mask`） |
+
+`edit.kind` 决定怎么把原图（和蒙版）交给平台：
+
+| `edit.kind` | 谁用 | 怎么带原图 |
+|---|---|---|
+| `data-uri` | 火山 Seedream 等 | 同一 `/images/generations` 端点，原图当 `data:image/png;base64,…` 放进 JSON 的 `image` 字段 |
+| `multipart` | OpenAI `gpt-image-1` 等 | 改走 `/images/edits`，`FormData` 传文件（蒙版作为 `mask` 文件字段，见 `supportsMask`） |
+| 不给 | 只支持文生图的平台 | ——（带输入图时后端明确回 400） |
+
+蒙版与多图参考**接口已就绪但编辑器 UI 暂未接**（当前编辑器只露出单张「参考图」）；后端能力位
+`supportsEdit` / `supportsMask` 由 `/api/config` 下发，将来做涂抹重绘时据此决定露不露入口。
+
+绝大多数平台吃 **OpenAI 兼容**的 `{model, prompt, size, n}`
+（响应取 `data[0].b64_json`，只有 `url` 就再下载一次），所以一行 `openAiCompatibleProvider({...})`
+就够了；形状确实不同的，实现 `ImageProvider` 接口（`buildRequest` / `parseImage` / `acceptsSize`）即可。
+
 密钥与地址**只在服务端**（浏览器那一侧拿到的只是「生成好的素材 ID」）：
 
-| `resources/config/app.json` 的 `imageGen` | 环境变量（优先） | 说明 |
-|---|---|---|
-| `baseUrl` | `DTS_IMAGE_API_BASE` | 默认 `https://api.openai.com/v1` |
-| `apiKey` | `DTS_IMAGE_API_KEY` | 两边都空 = 这个功能不可用（接口回 400），其余功能一切照旧 |
-| `model` | `DTS_IMAGE_MODEL` | 默认 `gpt-image-1` |
-| `size` / `timeoutMs` / `outputDir` | — | 默认出图尺寸 / 单次超时 / 落在项目里的哪个目录 |
+| 环境变量（优先） | 说明 |
+|---|---|
+| `DTS_IMAGE_PLATFORM` | 用哪个平台（覆盖 `imageGen.default`；写错就回落到第一个） |
+| `DTS_IMAGE_API_KEY` | 密钥（也可用平台自己声明的 `apiKeyEnv`） |
+| `DTS_IMAGE_API_BASE` / `DTS_IMAGE_MODEL` | 覆盖当前平台的地址 / 模型 |
 
-失败的面孔是固定的：没配密钥、提示词为空、尺寸不合法 → **400**（原话说清怎么办）；
-项目不存在 → **404**；供应商那边出错（连不上 / 401 / 没返回图）→ **502** 并带上它的原话（截断 300 字）。
+**图生图 / 修图的输入图是项目内素材 ID**（`inputImages: ["project:<项目>/Assets/images/a.png"]`）：
+素材本来就在后端，编辑器只送 ID，图像字节由后端从项目里读，**不用上传**。
+带了输入图但平台不支持修图 / 图不存在 / 格式不对，都会明确回 **400 / 404**，不去调平台。
+
+**统一出 PNG，可选抠背景**：各家回来的格式不一（火山 Seedream 回 JPEG），后端一律用 `sharp` 转成
+PNG 再落盘；请求里带 `removeBackground: true`（或配置里默认开）时，再抠掉**纯色**背景、
+输出带透明通道的 PNG，适合当角色 / 道具贴图。
+
+失败的面孔是固定的：**没配好**（缺 `baseUrl` / `model` / `apiKey` 任一项）、提示词为空、尺寸不合法 → **400**（原话说清缺什么 / 怎么办）；
+项目不存在 → **404**；平台那边出错（连不上 / 401 / 没返回图 / 转码失败）→ **502** 并带上它的原话（截断 300 字）。
 
 ## 常用脚本（在 `server/` 下执行）
 

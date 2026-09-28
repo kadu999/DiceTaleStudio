@@ -20,8 +20,20 @@ export interface GeneratedImage {
 export interface GenerateImageInput {
   readonly project: string;
   readonly prompt: string;
-  /** `宽x高`（如 `1024x1024`）；不给就用后端配置里的默认值。 */
+  /** `宽x高`（如 `1024x1024`）或平台档位（如 `2K`）；不给就用后端平台的默认值。 */
   readonly size?: string;
+  /** 是否抠掉纯色背景（出透明 PNG）；不给就用后端配置里的默认值。 */
+  readonly removeBackground?: boolean;
+  /**
+   * 图生图 / 修图的输入图（**项目内素材 ID**，如 `project:我的项目/Assets/images/a.png`）。
+   * 不给 = 文生图；1 张 = 待编辑的图；多张 = 垫图 / 风格参考。素材在后端，这里只送 ID。
+   */
+  readonly inputImages?: readonly string[];
+  /**
+   * 蒙版局部重绘的蒙版（**项目内素材 ID**，与首图同尺寸：白 / 不透明 = 要重画）。
+   * 平台需支持蒙版（见 `/api/config` 的 `supportsMask`）；不给就是整图重画。
+   */
+  readonly mask?: string;
 }
 
 export const imageGenApi = {

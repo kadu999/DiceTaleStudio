@@ -1,24 +1,26 @@
 import { useEffect, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { useEditorStore } from "../state/editor-store";
-import { assetRawUrl } from "../panels/asset-picker";
+import { assetDisplayPath, assetRawUrl, listImageAssets } from "../panels/asset-picker";
 import type { ImageGenEntry } from "../state/store-types";
 
 /**
  * 「AI 生图」工具（菜单栏「工具 → AI 生图」）：一个**聊天框**。
  *
- * 写一句要画什么 → 后端调生图接口画一张、**直接存成项目素材** → 这里显示结果，
+ * 写一句要画什么 → 后端调生图平台画一张、**直接存成项目素材** → 这里显示结果，
  * 并且可以一键「用作选中对象的贴图」。它**不是文档数据**：聊天记录只活在这一次会话里，
  * 生出来的图则已经是普通项目素材（素材面板里一样能看见、改名、删）。
  *
- * 两个刻意的取舍：
+ * 平台与协议都在服务端（编辑器只从 `/api/config` 拿到「平台名 / 配没配好 / 尺寸档 / 默认抠背景」）。
+ * 三个刻意的取舍：
  * - 出图慢（几十秒级），所以**同一时刻只画一张**（`imageGenBusy`），输入框与按钮一起禁用；
  *   失败也留在对话里（红字 + 供应商的原话），而不是弹一个转身就忘的提示。
- * - 尺寸给四个常用的就够（`gpt-image-1` 只认这几档），默认 1024×1024。
+ * - 尺寸档**由平台配置给**（火山 Seedream 认 `2K` / `4K`，OpenAI 只认几档 `宽x高`）；取不到就用内置默认。
+ * - 抠背景是**逐次开关**（默认取服务端配置）：出图后转成带透明通道的 PNG，适合角色 / 道具贴图。
  */
 
-/** 常见出图尺寸（OpenAI 图像接口支持的几档）。 */
-const SIZE_OPTIONS = ["1024x1024", "1024x1536", "1536x1024", "512x512"] as const;
+/** 内置默认尺寸（服务端没给尺寸档时用；贴近 OpenAI 那几档）。 */
+const DEFAULT_SIZE_OPTIONS = ["1024x1024", "1024x1536", "1536x1024", "512x512"] as const;
 
 const DEFAULT_SIZE = "1024x1024";
 
@@ -30,13 +32,34 @@ export function ImageGenDialog(): React.JSX.Element {
   const generateImage = useEditorStore((state) => state.generateImage);
   const clearHistory = useEditorStore((state) => state.clearImageGenHistory);
   const useGeneratedImage = useEditorStore((state) => state.useGeneratedImage);
+  const removeBackground = useEditorStore((state) => state.imageGenRemoveBackground);
+  const setRemoveBackground = useEditorStore((state) => state.setImageGenRemoveBackground);
+  const referenceImage = useEditorStore((state) => state.imageGenReferenceImage);
+  const setReferenceImage = useEditorStore((state) => state.setImageGenReferenceImage);
+  const imageGenConfig = useEditorStore((state) => state.imageGenConfig);
+  const images = useEditorStore((state) => state.project.tree);
   const project = useEditorStore((state) => state.project.current);
   const selection = useEditorStore((state) => state.selectedObjectIds);
+
+  const sizeOptions =
+    imageGenConfig !== null && imageGenConfig.sizes.length > 0
+      ? imageGenConfig.sizes
+      : DEFAULT_SIZE_OPTIONS;
+  const defaultSize = imageGenConfig?.defaultSize ?? DEFAULT_SIZE;
+  const supportsEdit = imageGenConfig?.supportsEdit ?? false;
+  const imageOptions = listImageAssets(images);
 
   const [prompt, setPrompt] = useState("");
   const [size, setSize] = useState<string>(DEFAULT_SIZE);
   const [note, setNote] = useState<{ readonly id: string; readonly text: string } | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
+
+  // 配置回来（或换了平台）时把尺寸对齐到平台的默认档；当前值仍是合法选项就不动
+  useEffect(() => {
+    if (!sizeOptions.includes(size)) {
+      setSize(defaultSize);
+    }
+  }, [sizeOptions, defaultSize, size]);
 
   // 新的一条进来（或在画的那条出结果）就滚到底：聊天框的手感
   useEffect(() => {
@@ -210,13 +233,60 @@ export function ImageGenDialog(): React.JSX.Element {
                   className="rounded border border-[var(--color-editor-border)] bg-[var(--color-editor-panel-alt)] px-1 py-0.5 text-[10px] text-[var(--color-editor-text)] outline-none focus:border-[var(--color-editor-accent)]"
                   onChange={(event) => setSize(event.target.value)}
                 >
-                  {SIZE_OPTIONS.map((option) => (
+                  {sizeOptions.map((option) => (
                     <option key={option} value={option}>
                       {option.replace("x", "×")}
                     </option>
                   ))}
                 </select>
               </label>
+              <label
+                className="flex items-center gap-1 text-[10px] text-[var(--color-editor-text-dim)]"
+                title="出图后抠掉纯色背景，转成带透明通道的 PNG（适合角色 / 道具贴图）"
+              >
+                <input
+                  data-testid="image-gen-remove-bg"
+                  type="checkbox"
+                  checked={removeBackground}
+                  disabled={busy}
+                  onChange={(event) => setRemoveBackground(event.target.checked)}
+                />
+                <span>抠背景</span>
+              </label>
+              {imageGenConfig === null ? null : (
+                <span
+                  data-testid="image-gen-platform"
+                  className="text-[10px] text-[var(--color-editor-text-dim)]"
+                  title={
+                    imageGenConfig.configured
+                      ? "生图平台已配置"
+                      : "还没配密钥：设置环境变量 DTS_IMAGE_API_KEY，或填 resources/config/app.json"
+                  }
+                >
+                  {imageGenConfig.configured ? imageGenConfig.platform : `${imageGenConfig.platform}（未配密钥）`}
+                </span>
+              )}
+              {imageGenConfig === null || !supportsEdit ? null : (
+                imageOptions.length === 0 ? null : (
+                  <label className="flex items-center gap-1 text-[10px] text-[var(--color-editor-text-dim)]" title="图生图 / 修图：选一张项目里的图当参考（留空 = 文生图）">
+                    <span>参考图</span>
+                    <select
+                      data-testid="image-gen-reference"
+                      value={referenceImage}
+                      disabled={busy}
+                      className="max-w-[150px] rounded border border-[var(--color-editor-border)] bg-[var(--color-editor-panel-alt)] px-1 py-0.5 text-[10px] text-[var(--color-editor-text)] outline-none focus:border-[var(--color-editor-accent)]"
+                      onChange={(event) => setReferenceImage(event.target.value)}
+                    >
+                      <option value="">（无）</option>
+                      {imageOptions.map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {assetDisplayPath(option.id)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )
+              )}
               <button
                 type="button"
                 data-testid="image-gen-send"

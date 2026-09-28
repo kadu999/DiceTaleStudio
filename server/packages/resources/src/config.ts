@@ -14,6 +14,35 @@ const dirsSchema = z.object({
   project: z.string().min(1),
 } satisfies Record<ResourceKind, z.ZodString>);
 
+/**
+ * 生图平台的配置（`app.json` 的 `imageGen.platforms.<平台>`）。
+ *
+ * 平台文件（`apps/backend/src/image-gen/providers/<平台>.ts`）只描述**协议知识**
+ * （端点 / 尺寸形状 / 额外字段 / 修图形状）；**地址与模型是部署参数，只在这里给**——
+ * 走自建网关 / 中转、或换接入点时改这里，不用碰代码。其余字段（尺寸 / 超时 / 额外字段）
+ * 可留空，用平台文件里的默认值。密钥也放这里（或环境变量）。
+ */
+export const imagePlatformSchema = z.object({
+  /** API 根地址（如 `https://ark.cn-beijing.volces.com/api/v3`）；可被环境变量 `DTS_IMAGE_API_BASE` 覆盖。 */
+  baseUrl: z.string().default(""),
+  /** 模型名 / 接入点 ID（如 `doubao-seedream-4-0-250828`）；可被 `DTS_IMAGE_MODEL` 覆盖。 */
+  model: z.string().default(""),
+  /** 密钥；留空 = 这个平台没配好（接口回 400，不会发一个注定 401 的请求）。 */
+  apiKey: z.string().default(""),
+  /** 默认出图尺寸（`宽x高`，或平台档位如 `2K`）；编辑器里可以逐次改。留空 = 用平台默认。 */
+  size: z.string().optional(),
+  /** 编辑器尺寸下拉的选项（覆盖平台默认值）。 */
+  sizes: z.array(z.string()).optional(),
+  /** 覆盖**密钥**的环境变量名（默认用平台自己声明的那个）。 */
+  apiKeyEnv: z.string().optional(),
+  /** 单次生成的整体超时（毫秒）——出图慢，默认给到 3 分钟。 */
+  timeoutMs: z.number().int().positive().optional(),
+  /** 额外塞进请求体的字段（与平台默认值**合并**，同名字段以这里为准）。 */
+  extraBody: z.record(z.string(), z.unknown()).optional(),
+});
+
+export type ImagePlatformOverride = z.infer<typeof imagePlatformSchema>;
+
 export const appConfigSchema = z.object({
   /** 资源根：相对 server/ 的路径，或绝对路径。缺省时后端按模块位置推导。 */
   resourceRoot: z.string().min(1).default("resources"),
@@ -55,31 +84,31 @@ export const appConfigSchema = z.object({
   /**
    * AI 生图（编辑器「工具 → AI 生图」用的**外部接口**）。
    *
-   * 只打一个 OpenAI 兼容的 `POST {baseUrl}/images/generations`（body：`model` / `prompt` /
-   * `size` / `n`，响应取 `data[0].b64_json`，没有就取 `data[0].url` 再下载）。
-   * 密钥与地址**只在服务端**：环境变量 `DTS_IMAGE_API_BASE` / `DTS_IMAGE_API_KEY` /
-   * `DTS_IMAGE_MODEL` 优先，其次这份配置——浏览器那一侧永远拿不到密钥。
-   * 没配密钥（两边都空）= 这个功能不可用（接口回 400），其余功能一切照旧。
+   * 平台是**一个文件一个平台**（`apps/backend/src/image-gen/providers/*.ts`），后端自动发现；
+   * 这里放「用哪个平台（`default`）、落盘目录、默认抠背景」，以及**每个平台的地址 / 模型 /
+   * 密钥**（`platforms.<平台>`）。地址与模型是部署参数，只从配置来——平台文件里不写死。
+   *
+   * 密钥与地址**只在服务端**：环境变量 `DTS_IMAGE_PLATFORM` / `DTS_IMAGE_API_BASE` /
+   * `DTS_IMAGE_API_KEY` / `DTS_IMAGE_MODEL` 优先（后三个覆盖**当前平台**的字段），
+   * 其次这份配置——浏览器那一侧永远拿不到密钥。
+   * 没配密钥 = 这个功能不可用（接口回 400），其余功能一切照旧。
    */
   imageGen: z
     .object({
-      baseUrl: z.string().default("https://api.openai.com/v1"),
-      apiKey: z.string().default(""),
-      model: z.string().default("gpt-image-1"),
-      /** 默认出图尺寸（`宽x高`，如 `1024x1024`）；编辑器里可以逐次改。 */
-      size: z.string().default("1024x1024"),
-      /** 单次生成的整体超时（毫秒）——出图慢，默认给到 3 分钟。 */
-      timeoutMs: z.number().int().positive().default(180_000),
+      /** 用哪个平台（provider 的 `id`）；可被环境变量 `DTS_IMAGE_PLATFORM` 覆盖。 */
+      default: z.string().default("volcengine"),
       /** 生成的 PNG 落在项目里的哪个目录（**项目内相对路径**）。 */
       outputDir: z.string().default("Assets/images/generated"),
+      /** 是否默认抠掉纯色背景（出图后转成带透明通道的 PNG）；编辑器里可逐次改。 */
+      removeBackground: z.boolean().default(false),
+      /** 每个平台的地址 / 模型 / 密钥（与尺寸 / 超时等可选覆盖项）。 */
+      platforms: z.record(z.string(), imagePlatformSchema).default({}),
     })
     .default({
-      baseUrl: "https://api.openai.com/v1",
-      apiKey: "",
-      model: "gpt-image-1",
-      size: "1024x1024",
-      timeoutMs: 180_000,
+      default: "volcengine",
       outputDir: "Assets/images/generated",
+      removeBackground: false,
+      platforms: {},
     }),
 });
 
