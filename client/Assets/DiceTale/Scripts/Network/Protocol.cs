@@ -10,7 +10,7 @@ namespace DiceTale
     /// 前端只回三样：`client_hello`（自报家门）、`command_result`（回执）、`pong`（心跳）。
     /// 前端**不上报任何游戏数据**——数据在后台，前端只是它的镜像 + 播放器。
     /// </summary>
-    public static class Protocol
+    public static partial class Protocol
     {
         /// <summary>
         /// 协议版本：与 `server/packages/protocol` 的 `PROTOCOL_VERSION` 一一对应。
@@ -150,44 +150,18 @@ namespace DiceTale
         /// </summary>
         public const int FogDefaultSortingOrder = 32767;
 
-        /// <summary>对象特性组件的类型名（v9 起）。与服务端 `@dts/protocol` 的 `COMPONENT_TYPE` 逐字一致。</summary>
-        public static class ComponentType
-        {
-            /// <summary>网格（v16 起是贴图上的**可选组件**，纯数据；贴图在 `ImageLayer` 里）。</summary>
-            public const string Map = "GridMap";
-            /// <summary>「显示一张图」：**贴图对象**与**带网格的贴图**都用它，整张铺满。</summary>
-            public const string Image = "ImageLayer";
-            /// <summary>「显示一张图」：**精灵对象**用它（`kind: "Sprite"`），会取图集里的一格。</summary>
-            public const string Sprite = "SpriteLayer";
-            public const string Sound = "PlaySound";
-            public const string Teleport = "Teleport";
-            /// 放大镜（v21 起，动作对象；v22 状态列表；v24 媒体支持视频 + 动画；v25 三块各带显示开关）：
-            /// `{ states: [{ showTitle?, showMedia?, showText?, title?, image?: { id, width, height,
-            /// sprite?, spriteGrid? }, video?: { id, loop, audio }, tween?, text? }], picked? }`，
-            /// `picked` 是**下标**。一屏 = 上面标题、左边**媒体**、右边描述；**显不显示由三个开关说**
-            /// （不再看有没有值，三块全关就展示不出来）。**媒体二选一**：`image` 或 `video`
-            /// （两个都写着按视频处理）；`tween` 是媒体那块的动画（`none / shake / breathe / float / sway`）。
-            /// 对象自己不渲染任何东西（画布上那枚徽标是编辑器的画法）；触发它 = 由服务端的
-            /// `open_magnifier` / `close_magnifier` 让前端弹 / 收一扇窗，窗里放的就是 `picked` 那一屏。
-            /// **换状态 / 换媒体 / 改字都不是命令**：文档一改整份 `scene_sync` 带下来（见 `Logic/SceneMirror.cs`）。
-            /// </summary>
-            public const string Magnifier = "Magnifier";
-            public const string Video = "VideoOverlay";
-            /// <summary>
-            /// 视频混合（v17 起）：**两路素材**叠在**同一个矩形**上用 Mask 混合（A 盖住、擦开露 B）。
-            /// `{ a: { kind（image / video）, id }, b: { ... }, loop, autoPlay（v18 起）, audio }`——
-            /// 每路只放**一个**素材（v19 起，之前是「列表 + 选中」），可以是图片或视频；
-            /// **遮罩是纯运行态**（由 `erase_video_mask` 驱动），不随场景下发。与 `VideoOverlay` 语义互斥
-            /// （同一对象最多其一），前端取 `VideoBlend` 优先。
-            /// </summary>
-            public const string VideoBlend = "VideoBlend";
-            /// <summary>
-            /// 战争雾：**独立组件，挂在独立的 `Fog` 对象上**（v13 起从 `GridMap` 拆出；v15 起雾自身成对象）。
-            /// `{ mapId, enabled, regions, sortingOrder }`：`mapId` 引用被雾罩住的那张地图
-            /// （地图那边仍是 `GridMap`）；`sortingOrder`（v23 起）是雾层显示顺序，缺省最前面。
-            /// </summary>
-            public const string FogOfWar = "FogOfWar";
-        }
+        // 对象特性组件的类型名（v9 起）与命令种类常量**定义在生成文件 `GeneratedContract.g.cs`**
+        // （由 `server/scripts/gen-contract.ts` 从 `@dts/document` 的 `COMPONENT_TYPES` 与
+        // `@dts/protocol` 的 `commandRequestSchema` 生成，`pnpm check:contract` 保证不漂）。
+        //
+        // C# 常量名与组件类型名的对照（加组件时若想要别的别名，改生成器里的那张表）：
+        //   ComponentType.Map        = "GridMap"       FogOfWar  = "FogOfWar"
+        //   ComponentType.Image      = "ImageLayer"    Sprite    = "SpriteLayer"
+        //   ComponentType.Sound      = "PlaySound"     Teleport  = "Teleport"
+        //   ComponentType.Magnifier  = "Magnifier"     Video     = "VideoOverlay"
+        //   ComponentType.VideoBlend = "VideoBlend"
+        //   ComponentType.FogOfWar   = "FogOfWar"（独立组件，v13 起从 GridMap 拆出；v15 起雾自身成对象）
+        //   Command* = 命令判别值（play_sound … close_magnifier）
 
         // 服务端 → 前端
         public const string TypeServerHello = "server_hello";
@@ -212,44 +186,7 @@ namespace DiceTale
         /// <summary>整包 zip；带 `&v=<指纹>` 时指纹一致则服务端回 304。</summary>
         public const string BundlePath = "/api/resources/bundle?project=";
 
-        // 命令种类
-        public const string CommandPlaySound = "play_sound";
-        public const string CommandStopSound = "stop_sound";
-        /// <summary>声音：暂停某一层（同层只响一条，所以「暂停这一层」= 暂停当前那条）。</summary>
-        public const string CommandPauseSound = "pause_sound";
-        /// <summary>声音：从暂停处继续放某一层。</summary>
-        public const string CommandResumeSound = "resume_sound";
-        /// <summary>战争雾：沿一笔轨迹擦掉**雾对象**上的雾（载荷是**轨迹**，不是整张遮罩）。</summary>
-        public const string CommandEraseMask = "erase_mask";
-        /// <summary>战争雾：整片揭示 / 整片盖回某个区域（区域位取自**那个雾对象**的 `FogOfWar` 组件）。</summary>
-        public const string CommandRevealFogRegion = "reveal_fog_region";
-        /// <summary>视频混合：沿一笔轨迹擦掉**贴图对象**上的混合遮罩（载荷与 `erase_mask` 同一套 `stroke`）。</summary>
-        public const string CommandEraseVideoMask = "erase_video_mask";
-        /// <summary>视频混合：把**整张**混合遮罩填成 1 / 0（`covered` = true 是盖住、false 是擦开）。</summary>
-        public const string CommandFillVideoMask = "fill_video_mask";
-        /// <summary>
-        /// 放大镜（v21）：让前端**弹一扇窗**显示**这个对象** `picked` 的那一屏状态（命令里不带数据）。
-        /// 前端那扇窗**没有按钮**（没有选择、也没有关闭）——只能由后端开、由后端关。
-        /// </summary>
-        public const string CommandOpenMagnifier = "open_magnifier";
-        /// <summary>放大镜：关掉那扇窗（`objectId` 用来**认领**：只关正为它开着的那一扇）。</summary>
-        public const string CommandCloseMagnifier = "close_magnifier";
-        /// <summary>视频：在对象自己的矩形上放它 `video.picked` 那一条（命令里不带数据）。</summary>
-        public const string CommandPlayVideo = "play_video";
-        /// <summary>视频：暂停在当前帧。</summary>
-        public const string CommandPauseVideo = "pause_video";
-        /// <summary>视频：从暂停处续播。</summary>
-        public const string CommandResumeVideo = "resume_video";
-        /// <summary>视频：停止并拆掉那一层（露出对象原来的贴图）。</summary>
-        public const string CommandStopVideo = "stop_video";
-        /// <summary>背景音乐（v7）：放 / 切换到**指定的那一首**（清单在编辑器弹框里，所以命令带 clip）。</summary>
-        public const string CommandPlayBgm = "play_bgm";
-        /// <summary>背景音乐：暂停在当前处。</summary>
-        public const string CommandPauseBgm = "pause_bgm";
-        /// <summary>背景音乐：从暂停处继续。</summary>
-        public const string CommandResumeBgm = "resume_bgm";
-        /// <summary>背景音乐：停掉。</summary>
-        public const string CommandStopBgm = "stop_bgm";
+        // 命令种类常量见生成文件 `GeneratedContract.g.cs`（上方已注明）。
 
         /// <summary>关闸（编辑器退出运行态）时服务端用的 close code。</summary>
         public const int CloseRuntimeStopped = 4003;

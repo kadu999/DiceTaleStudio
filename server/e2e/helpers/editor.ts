@@ -1,6 +1,11 @@
 import { expect, type APIRequestContext, type Page } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 import { deflateSync } from "node:zlib";
+import {
+  COMPONENT,
+  CURRENT_SCENE_FORMAT_VERSION,
+  FOG_DEFAULT_SORTING_ORDER,
+} from "./generated/contract";
 
 /**
  * E2E 公共操作。
@@ -12,57 +17,9 @@ import { deflateSync } from "node:zlib";
 
 export type LeftTab = "assets" | "hierarchy";
 
-/**
- * 场景文件的当前格式版本。
- *
- * **必须与 `@dts/document` 的 `DOCUMENT_FORMAT_VERSION` 一起改**：e2e 不引用内部包
- * （见 `scene-transform.spec.ts` 顶部那条分工说明），所以这里是**复述**——
- * 升级场景格式时忘了改这一处，`hierarchy` / `scene-menu` 里那几条「旧文件自动回写」
- * 的用例会立刻指出来。
- *
- * 要有意制造「旧版本文件」时别用它：自己写那个版本号（`formatVersion: 4` 之类），
- * 并预期编辑器会把它升上来回写一次。
- */
-export const CURRENT_SCENE_FORMAT_VERSION = 34;
-
-/**
- * 战争雾雾层的**默认显示顺序**（v32 起可配置）：最前面。
- *
- * 与 `@dts/document` 的 `FOG_DEFAULT_SORTING_ORDER` 同值——e2e 不引用内部包，所以这里**复述**。
- * 造雾对象 / 断言雾组件数据时用它，免得散落魔法数字。
- */
-export const FOG_DEFAULT_SORTING_ORDER = 32767;
-
-/**
- * **承载对象特性的组件类型名**（v19 起特性住在 `object.components[]` 里）。
- *
- * | 旧扁平字段（v18 及更早） | 组件 `type` |
- * |---|---|
- * | `object.map` | `gridMap` |
- * | `object.image` | `imageLayer`（贴图）/ `spriteLayer`（精灵）——v21 起拆成两种 |
- * | `object.sound` | `playSound` |
- * | `object.teleport` | `teleport` |
- * | `object.video` | `videoOverlay` |
- *
- * 与 `@dts/document` 的 `DEFAULT_SLOT_COMPONENT` 一致（e2e 不引用内部包，所以这里是**复述**）；
- * 组件名只在 helpers 里写这一份，spec 不该再散落字符串字面量。
- */
-export const COMPONENT = {
-  gridMap: "GridMap",
-  /** 战争雾（v25 起是独立组件；总开关 + 雾区，从属 `GridMap`）。 */
-  fogOfWar: "FogOfWar",
-  /** 对象自己那张图：**贴图对象**用它（整张铺满）。 */
-  imageLayer: "ImageLayer",
-  /** 对象自己那张图：**精灵对象**用它（会取图集里的一格）。 */
-  spriteLayer: "SpriteLayer",
-  playSound: "PlaySound",
-  teleport: "Teleport",
-  /** 放大镜（v30 的动作对象）：图片列表 + 当前展示的那一张；触发 = 让前端弹 / 收一扇窗。 */
-  magnifier: "Magnifier",
-  videoOverlay: "VideoOverlay",
-  /** 视频混合（v17）：两条视频叠在同一矩形上用 Mask 混合（A 盖住、擦开露 B）；遮罩纯运行态。 */
-  videoBlend: "VideoBlend",
-} as const;
+// 场景格式版本 / 战争雾缺省显示顺序 / 组件类型名，都由 `scripts/gen-contract.ts` 从内部包生成
+// （e2e 不引用内部包，所以生成一份复述）。改了源忘了重新生成，`pnpm check:contract` 会失败。
+export { COMPONENT, CURRENT_SCENE_FORMAT_VERSION, FOG_DEFAULT_SORTING_ORDER };
 
 /** 场景文件（或内存里的场景文档）的形状：只声明 e2e 真正会读的字段。 */
 export interface SceneFileLike {

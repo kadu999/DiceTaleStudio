@@ -17,7 +17,7 @@
 | 编辑器开发地址 | `http://localhost:5173`（Vite，`/api`、`/editor`、`/client` 反代到 1420） |
 | 编辑器生产地址 | `http://localhost:1420`（后端同源托管 `apps/editor/dist`） |
 | 源码规模（不含测试） | 188 个文件 / 42,940 行（packages 14,392 · backend 4,720 · editor 23,828） |
-| 测试规模 | 37,205 行（单测 26,993 · E2E 9,929 · 架构测试 283） |
+| 测试规模 | 37,191 行（单测 26,993 · E2E 9,915 · 架构测试 283） |
 
 > 上表两行与 §0.1 表格里加粗的文件行数、§3.x 节标题里的包规模由
 > `scripts/check-code-structure-stats.mjs` **机器校验**（`pnpm check` 的一环）：
@@ -310,7 +310,9 @@ v23 起切分搬出了工程文件（v22 及更早才是 `ProjectDoc.spriteSheet
 | `e2e` / `e2e:fast` | 先 build，再跑桌面全套 + 运行态串行 | 快速回归 |
 | `e2e:full` | 先 build，再跑三档完整矩阵 + 运行态串行 | 合并前完整验证 |
 | `progress-reporter.cjs` | 每项开始即打印名称，完成打印耗时；超过 10 秒每 10 秒报告仍在运行 | 卡顿定位 |
-| `check` | `typecheck && test && lint` | 提交前一把过 |
+| `gen:contract` | `tsx scripts/gen-contract.ts` | 从 `@dts/document` / `@dts/protocol` 生成 e2e 契约常量与 C# 常量（见 §2.9） |
+| `check:contract` | `tsx scripts/gen-contract.ts --check` | 校验生成物未过期（`check` 的一环） |
+| `check` | `typecheck && test && lint && check:docs && check:contract` | 提交前一把过 |
 
 **各包**
 
@@ -403,6 +405,21 @@ build: { outDir: "dist", sourcemap: true },
 | `command-build.bat` | `pnpm -r typecheck` → `pnpm build`；类型检查失败即中止 | — |
 | `command-start.bat` | 单端口启动后端（同源托管编辑器）；缺产物时先 `pnpm build`；有端口占用预检（`netstat` + PID 提示） | `[--open]`（默认不弹浏览器）；`PORT` 默认 1420、`HOST` 默认 `0.0.0.0` |
 | `command-open-port.bat` | 放行 Windows 防火墙入站 TCP 端口（先删同名规则再建，幂等）；非管理员自动 UAC 提权 | `[端口] [--print]`；默认 1420，`--print` 只打印 `netsh` 命令 |
+
+### 2.9 契约生成（单一数据源）
+
+`scripts/gen-contract.ts` 从**唯一来源**产出几份手抄副本，治「加一个组件 / 一条命令要改 4 处」：
+
+| 生成物 | 内容 | 源 |
+|---|---|---|
+| `e2e/helpers/generated/contract.ts` | `COMPONENT` / `CURRENT_SCENE_FORMAT_VERSION` / `FOG_DEFAULT_SORTING_ORDER` | `@dts/document` 的 `COMPONENT_TYPES` / `DOCUMENT_FORMAT_VERSION` / `FOG_DEFAULT_SORTING_ORDER` |
+| `client/.../Scripts/Generated/GeneratedContract.g.cs` | `Protocol.ComponentType.*`（9）/ `Protocol.Command*`（18） | `@dts/document` 的 `COMPONENT_TYPES` + `@dts/protocol` 的 `commandRequestSchema` |
+
+- `e2e/helpers/editor.ts` 改为 **re-export** 生成物（e2e 仍不引用内部包）；
+- `Protocol` / `Protocol.ComponentType` 改为 `partial`，手写常量块删掉，常量住在生成文件里；
+- 生成物**不要手改**：改了源跑 `pnpm gen:contract`，忘了跑由 `pnpm check:contract` 拦下；
+- C# 常量名与组件类型名的对照表（`Map` / `Image` / `Video` …）是生成器里**唯一**的手工表；
+- 详见 `docs/PLAN-单一数据源与codegen.md`。
 
 ---
 
