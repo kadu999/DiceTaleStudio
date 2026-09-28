@@ -185,6 +185,9 @@ import {
  */
 export const PROTOCOL_VERSION = 25;
 
+// 抬版判据（什么时候该 +1、什么时候不该）见 `server/docs/SPEC-版本与迁移判据.md`：
+// **唯一理由是「旧前端会把新数据读错」**；纯新增（可选字段 + 默认值、新组件、老前端会忽略的消息）不抬。
+
 /** 未进入运行态时拒绝 `/client` 升级的 HTTP 状态与原因头。 */
 export const RUNTIME_INACTIVE_STATUS = 503;
 export const RUNTIME_INACTIVE_REASON = "runtime-inactive";

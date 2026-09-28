@@ -96,11 +96,12 @@ C# 的 `HasComponent` / `ComponentData` / `ComponentBool` / `ComponentString` / 
 - 组件名 / 命令名 / e2e 常量 / C# 常量 → **生成**；
 - `check:contract`：9 组复刻 schema 结构比对 + refine 探针。
 
-### 阶段 1：合并「槽位 / 缺省承载」登记（约 1 天）
+### 阶段 1：合并「槽位 / 缺省承载」登记（❌ 核查后不做）
 
-- 现在「哪个组件承担哪个槽位」在 **两处**：`components.ts` 的 `slot`（自报）与 `presets.ts` 的 `DEFAULT_SLOT_COMPONENT` / `OBJECT_PRESETS.slots`。
-- 改成：**槽位清单从组件注册表派生**，`presets.ts` 只声明「kind 允许哪些槽位」（保留），缺省承载不再手抄。
-- 验收：`presets.test.ts` 的等价断言零改动通过；加组件少改 1 处。
+**核查结论：收益接近零。** `DEFAULT_SLOT_COMPONENT`（槽位→缺省组件）与 `COMPONENT_TYPES.slot`
+（组件自报槽位）**不是同一件事**：`image` 槽位有两个组件（`ImageLayer` / `SpriteLayer`），
+谁当缺省无法从自报推导——「合并」等于新增一个 `defaultForSlot` 标记，**信息量不变、只是搬家**；
+`OBJECT_PRESETS.slots`（kind 允许哪些槽位）更是另一回事。**这不叫重复，叫不同关注点。**
 
 ### 阶段 2：schema 单源（✅ 已完成，2026-09-29）
 
@@ -118,16 +119,19 @@ C# 的 `HasComponent` / `ComponentData` / `ComponentBool` / `ComponentString` / 
 > 这一阶段之后，`PLAN-单一数据源与codegen` 的「阶段 3（收集 protocol 复刻）」**不再需要**——
 > 没有复刻可收了。
 
-### 阶段 3：编辑器「归类 / 面板」数据驱动（约 1 天）
+### 阶段 3：编辑器「归类 / 面板」数据驱动（❌ 核查后不做）
 
-- `object-kinds.ts` 的归类从预设表派生；`registry.tsx` 只在「自定义交互」时才需要一行。
-- 验收：加一个「只有简单字段」的组件，编辑器面板 **0 处**手改（已接近，补齐归类即可）。
+**核查结论：不该合并。** `object-kinds.ts` 是**编辑器侧的 UI 归类**（种类 / 标签 / 可创建 /
+瓦片 id / `withGrid`），与文档注册表是**不同关注点**；硬合并会把 UI 概念塞进文档包。
+「简单字段自动出行」已经由 `component-specs` + `DescriptorRows` 做掉了，这条不再需要。
 
-### 阶段 4：版本 / 迁移仪式归零（约 1 天，需一次决策）
+### 阶段 4：版本 / 迁移仪式归零（✅ 已完成，2026-09-29）
 
-- 字段一律**可选 + 默认**、解析容错；只有「真正会让老前端**读错**」的改动才抬 `PROTOCOL_VERSION`。
-- 现状：`DOCUMENT_FORMAT_VERSION = 34` / `PROTOCOL_VERSION = 25`，注释里一堆其实是「加法」也照抬。
-- 验收：写一份**版本判据**（什么必须抬 / 什么不抬），并把它写进 `CODE-STRUCTURE`；下一次加字段不抬版本。
+- 新增 `docs/SPEC-版本与迁移判据.md`：把「什么时候抬 `DOCUMENT_FORMAT_VERSION` / `PROTOCOL_VERSION`」
+  写成一条可执行判据——**唯一理由是「旧读者会把新数据读错」**；纯新增（可选字段 + 默认值、
+  新组件、老前端会忽略的消息）**不抬**。
+- 在两个版本号旁边加了指路注释（`types.ts` / `messages.ts`）。
+- 本阶段**不改任何版本号、无迁移、无行为变化**——它约束的是**以后**。
 
 ### 阶段 5（可选）：新建特性脚手架
 

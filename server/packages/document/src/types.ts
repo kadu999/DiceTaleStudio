@@ -165,6 +165,9 @@ import type { ObjectKind } from "./presets";
  */
 export const DOCUMENT_FORMAT_VERSION = 34;
 
+// 抬版判据见 `server/docs/SPEC-版本与迁移判据.md`：**旧编辑器会读错**（丢数据 / 误改）才抬；
+// 纯新增可选字段可以不抬（老编辑器丢掉它、照常用）。
+
 /** 网格行序：`bottom-up` 表示 cells 第 0 行是图片最下面一行（与 Unity GridMap 一致）。 */
 export type RowOrder = "bottom-up";
 
