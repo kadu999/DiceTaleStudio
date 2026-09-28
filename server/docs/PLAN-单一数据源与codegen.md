@@ -279,3 +279,47 @@ VideoOverlay → Video  VideoBlend → VideoBlend
 - **C 不做**。无论哪条，**envelope（gameObject / scene）不碰**。
 - 顺带（可选，审计 **S3**）：`resourceIdsOfObject`（协议包里替 `RuntimeSession` 反推项目的业务逻辑）
   可一并挪到 `@dts/document` 或 backend——阶段 3 既然要动 protocol，正好一起收。
+
+---
+
+## 10. 阶段 4 前置实测：C# DTO / 解析还要不要 codegen
+
+> 结论先行：**不需要做（本阶段取消）**。C# 侧的「镜像税」在 2026-09-24 的 `ee382cc` 就已经用
+> **泛型读取器**治掉了；真正按特性反复手改的只剩**常量**，而那部分阶段 1 已经生成掉了。
+> 剩下的 C# 代码是**行为与语义**（RLE 解格子、子图夹取、状态列表下标），codegen 产不出来。
+
+### 10.1 问题
+
+阶段 1 生成掉了 C# 的组件/命令**常量**。阶段 4 原本要评估：C# 那份**手抄的镜像字段 + 解析行**
+（`MirrorObject` / `MirrorXxx` / `SceneParser.ParseXxx`）还值不值得 codegen。
+
+### 10.2 实测证据
+
+| 证据 | 内容 |
+|---|---|
+| **既有约定** | `ee382cc`（2026-09-24）「组件字段改用泛型读取器，不再手抄镜像」：`SceneModel.cs` 只加了 `ComponentData` / `ComponentBool` / `ComponentString` / `ComponentNumber`（+56 行）与一条规矩注释——**新字段就地读，不再扩 `MirrorXxx`、不再改 `SceneParser`** |
+| **约定被证明有效** | 之后**新增的两个组件都没有碰 `SceneModel.cs` / `SceneParser.cs`**：`VideoBlend`（协议 v17）与 `Magnifier`（协议 v21 起）都走 `ComponentData` + `JsonParser` 就地读（`CommandRouter` / `SceneMirror` / `MagnifierReader`） |
+| **向前兼容有测试** | `ComponentDrivenMirrorTests` 断言 `ComponentBool("FutureComponent", "preserved")` 能读到**未知组件**的字段——老前端不会被新组件卡住 |
+| **唯一的漏点** | `bdb328b`（v23 雾 `sortingOrder`）给**已有**的 `MirrorFog` 又加了强类型字段 + `ParseFog` 一行。这是「在已有强类型组件上顺手扩」的习惯，**不是必需**（`obj.ComponentNumber("FogOfWar","sortingOrder", …)` 等价） |
+| **代码体量** | `SceneModel.cs` ≈ 350 行、`SceneParser.cs` ≈ 353 行；**大部分是注释与语义**，不是可生成的样板 |
+| **codegen 的上限** | 可生成的只有「标量 / 引用」字段的 `MirrorXxx` + 解析行；而**语义硬骨头**——`MirrorMap.cells`（RLE 解成掩码数组）、`MirrorSprite`（子图越界夹取）、`MagnifierReader`（数组第 N 项 + 越界判据）——**必须手写**，codegen 只会把它们包一层更难读的生成代码 |
+
+### 10.3 结论
+
+- **阶段 4 取消**：收益已被「泛型读取器（阶段 0 既有）+ 常量生成（阶段 1）」吃掉了。
+- 每个新特性的 C# 手改，现在只剩：**行为本体**（必然）+ 极少数**结构性改动**（改已有组件的形状时）。
+- 加一个**新组件的简单字段**：C# 侧 **0 处**（泛型读）；加一个**已有强类型组件**的简单字段：
+  0–2 行（可选，建议优先用泛型读，别再扩 `MirrorXxx`）。
+
+### 10.4 如果还想再省（可选，都很小）
+
+1. **给 `MirrorObject` 补两个泛型读取器** `ComponentArray(type,key)` / `ComponentObject(type,key)`：
+   现在 `JsonParser.GetArray(ComponentData(...))` 这种写法在 `MagnifierReader` / `SceneMirror` /
+   `CommandRouter` 里各写了几遍；补上能少一点重复（纯 C# 小改，与 codegen 无关）。
+2. **把「新字段优先泛型读」写进 `client/README.md` 的加字段清单**（约定已有，补一句检查项，
+   免得再出现 `bdb328b` 那种「顺手扩 `MirrorFog`」）。
+
+### 10.5 验收
+
+- 不改任何 C# 生成/结构；本阶段**无代码改动**（默认）。
+- 若采纳 10.4 的可选项，另行小改并保持 Unity 编译 0 error / 0 warning。
