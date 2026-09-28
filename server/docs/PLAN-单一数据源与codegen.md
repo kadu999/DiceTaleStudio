@@ -206,5 +206,76 @@ VideoOverlay → Video  VideoBlend → VideoBlend
 
 ### 尚未做
 
-- 阶段 3（删掉 protocol 复刻，走 `@dts/contract` 或 `protocol→document`）：动 schema 语义，待单独拍板。
+- 阶段 3（删掉 protocol 复刻，走 `@dts/contract` 或 `protocol→document`）：见 §9 评估。
 - 阶段 4（C# DTO / 解析 codegen）：前置是实测「新字段能否全靠泛型读取」，未评估。
+
+---
+
+## 9. 阶段 3 评估：protocol 的复刻怎么收
+
+> 结论先行：**A（protocol→document）最省、B（`@dts/contract`）最正、C（codegen）不推荐**；
+> 三者都只能收「数据形状」，收不掉 protocol 的**消息信封**（那是它自己的职责）。行为由 §4 阶段 2 的
+> `check:contract` 逐路径结构比对兜底，所以 A/B 的行为风险都低。
+
+### 9.1 到底有多少复刻、哪些能统一
+
+`packages/protocol/src/messages.ts` 约 1,100 行，其中「与文档复刻的数据形状」是第 175–604 行，约 430 行（含注释）。
+用 `z.toJSONSchema` 全量比对（忽略有意的 `guid` / `spriteGrid`）后：
+
+| 分类 | 内容 |
+|---|---|
+| **可统一**（16 组，两侧逐字一致） | 9 个组件 data（GridMap / FogOfWar / ImageLayer·SpriteLayer / PlaySound / Teleport / Magnifier / Magnifier 状态 / VideoOverlay / VideoBlend）+ worldPosition + spriteRef(imageSpriteRef) + imageRef + gridSpec + cellRuns + channelVolume + projectSettings |
+| **有意不同、不能统一** | `gameObject`（文档 `kind` 是 `OBJECT_KINDS` 枚举、协议是**自由字符串**——协议注释明说「加 kind 不动协议」；`active`/`locked`/`scale` 文档有默认值、协议无；`components` 协议默认 `[]`）；`sceneFile`（`formatVersion`+objects）vs `scene`（`name`+objects）；`permissiveComponentSchema` vs `componentSchema`（宽松形状不同，`toJSONSchema` 还无法表达 `z.record`） |
+| **有意的字段差**（阶段 2 已登记） | 文档专有 `guid`（磁盘身份）、载荷专有 `spriteGrid`（推送解析） |
+
+**两个硬约束**：
+
+1. **载荷变体躲不掉**：`imageRef` 系（镜像的 `image`、放大镜状态里的 `image`）在协议侧必须「去 `guid`、加 `spriteGrid`」。
+   所以 A/B **都至少要留一处 `extend`**——不是「protocol 直接 re-export 文档 schema」就完事。
+2. **信封不统一**：`gameObject` / `scene` 的两侧差异是**设计**（磁盘要枚举 + 补默认值，wire 要自由 kind + 少补）。
+   阶段 3 的收益上限 = 上面那 16 组共享形状（实体代码约 **250–300 行**），**不是**把 protocol 文件砍光。
+
+### 9.2 三条路线
+
+| | **A. `protocol → document`** | **B. 新建 `@dts/contract`** | **C. 从文档 codegen protocol zod** |
+|---|---|---|---|
+| 做法 | 文档导出「载荷变体 schema」（`*PayloadSchema`，已去 guid / 加 spriteGrid），protocol 直接 re-export；文档本就是「推送解析」（`resolveSceneSprites`）的归属地 | 共享形状下沉到最底层包，document 与 protocol 各自 `extend`（文档加 `guid`、协议加 `spriteGrid`） | 生成器从 document schema 产出 protocol 侧 zod |
+| 消除 | protocol 那 430 行复刻 | 同上，且两侧不再互相依赖 | 同 A 的消除量 |
+| 仍要做 | 文档里新增/整理 16 个载荷 schema 导出 | 新包 + 两侧 extend + 两侧 package.json | 生成器要处理默认值/refine/两处差异 |
+| 触碰文件 | ~6（protocol×2、document×2、架构测试、文档） | ~11（新包 4 + document×2 + protocol×2 + 架构 + 安装 + 文档） | ~4 |
+| 依赖方向 | `protocol → document`（连带 immer + 迁移链） | `document → contract`、`protocol → contract`（正交） | 不变 |
+| 行为风险 | **低**（checker 兜） | **低**（checker 兜） | 中（生成物难读难调） |
+| 可维护性 | 中：wire 与 disk 仍耦合在一处，将来磁盘专属改动会溢到协议 | 高：wire / disk 各自演进，共享形状单源 | 低：调试生成代码 |
+| 回滚 | 易（改 2 个 import） | 中 | 易 |
+
+### 9.3 影响面（谁会被波及）
+
+- **protocol 的消费者只有 `apps/editor` 与 `apps/backend`**（Unity 是 C#，不读 TS 协议）；两者**都已经依赖 `document`**。
+  所以 A 的「拖上 immer / 迁移链」**目前没有实际代价**（它们本来就都在包里）。
+- 真正的代价是**概念方向**：A 之后 `protocol` 不再是「最底层、可独立发布」的包；将来若要做**独立 TS 客户端 SDK**，
+  B 才留得住这条路。
+- 架构测试要动：`test/architecture.test.ts` 的 `ALLOWED`（A：`protocol: ["document"]`；B：加 `contract: []`、
+  `document: [... "contract"]`、`protocol: ["contract"]`，并把 `contract` 加进 `PURE_PACKAGES`）。
+- `CODE-STRUCTURE.md` 的依赖表/图与包规模要同步（§0 计数由脚本校验）。
+
+### 9.4 成本与收益（估）
+
+- A：**约 0.5 天**，净行数 −250 左右，无新包，风险低。
+- B：**约 1–2 天**，净行数 −200 左右（含新包骨架），分层最干净，风险低。
+- C：**约 1 天**，但生成 zod 可读性差，**收益被 B 完全覆盖**——不做。
+
+### 9.5 验收标准（无论 A/B）
+
+1. `pnpm check:contract` 仍旧全绿（**16 组结构逐路径一致**，行为冻结的安全网）；
+2. `pnpm typecheck` / `test` 既有用例**零改动**通过；
+3. `test/architecture.test.ts` 按选定的依赖方向更新且通过；
+4. `CODE-STRUCTURE.md` 依赖表/图与 §0 计数同步（`check:docs` 绿）；
+5. 不改 `PROTOCOL_VERSION` / `DOCUMENT_FORMAT_VERSION`，无迁移。
+
+### 9.6 建议
+
+- **想尽快兑现收益** → 选 **A**：一个下午，checker 兜底，随时可回滚。
+- **想长期正确** → 选 **B**：多花一天，换来 wire / disk 正交、protocol 保持独立。
+- **C 不做**。无论哪条，**envelope（gameObject / scene）不碰**。
+- 顺带（可选，审计 **S3**）：`resourceIdsOfObject`（协议包里替 `RuntimeSession` 反推项目的业务逻辑）
+  可一并挪到 `@dts/document` 或 backend——阶段 3 既然要动 protocol，正好一起收。
