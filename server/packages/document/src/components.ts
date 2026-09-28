@@ -1,4 +1,4 @@
-import type { ComponentSlot } from "./presets";
+import type { ComponentSlot, ObjectKind } from "./presets";
 import type { ComponentDoc } from "./types";
 
 /**
@@ -43,11 +43,11 @@ export interface ComponentTypeDef {
   /** v19 之前这个特性住在对象的哪个扁平字段里（只有从对象特性提升上来的组件有）。 */
   readonly legacyField?: ComponentSlot;
   /** Kinds whose creation preset associates this capability slot with this component. */
-  readonly templateKinds?: readonly string[];
+  readonly templateKinds?: readonly ObjectKind[];
   /** Kinds whose missing required component can be explicitly repaired in the editor. */
-  readonly repairKinds?: readonly string[];
+  readonly repairKinds?: readonly ObjectKind[];
   /** Kinds allowed to add this optional component when it is not attached yet. */
-  readonly optionalKinds?: readonly string[];
+  readonly optionalKinds?: readonly ObjectKind[];
   readonly tooltip?: string;
 }
 
@@ -226,7 +226,7 @@ export function isKnownComponentType(type: string): boolean {
 }
 
 /** Whether known attached components disagree with the object's legacy kind template. */
-export function componentKindMismatchOf(components: readonly ComponentDoc[], kind: string): boolean {
+export function componentKindMismatchOf(components: readonly ComponentDoc[], kind: ObjectKind): boolean {
   return components.some((component) => {
     const definition = findComponentType(component.type);
     return definition?.slot !== undefined && definition.templateKinds?.includes(kind) !== true;

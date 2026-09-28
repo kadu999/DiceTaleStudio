@@ -66,7 +66,7 @@ describe("对象预设表（presets.ts）", () => {
     }
 
     for (const definition of COMPONENT_TYPES) {
-      const presetKinds: string[] = Object.values(OBJECT_PRESETS)
+      const presetKinds = Object.values(OBJECT_PRESETS)
         .filter((preset) => Object.values(preset.slots).includes(definition.type))
         .map((preset) => preset.kind);
       expect([...(definition.templateKinds ?? [])].sort(), definition.type).toEqual(presetKinds.sort());
