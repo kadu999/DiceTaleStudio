@@ -1,5 +1,5 @@
 {
-  "formatVersion": 34,
+  "formatVersion": 35,
   "objects": [
     {
       "id": "map_mu7t4t731b222",
@@ -19,9 +19,9 @@
           "type": "ImageLayer",
           "data": {
             "id": "894e85be220a607ac7a51dd26c623a18",
-            "guid": "894e85be220a607ac7a51dd26c623a18",
             "width": 1920,
             "height": 1080,
+            "guid": "894e85be220a607ac7a51dd26c623a18",
             "sortingOrder": -10
           }
         },
@@ -66,26 +66,26 @@
                 "showMedia": true,
                 "image": {
                   "id": "e8cc24db31905e5bd057cf32fedbb0e1",
-                  "guid": "e8cc24db31905e5bd057cf32fedbb0e1",
                   "width": 2048,
                   "height": 2048,
                   "sprite": {
                     "column": 0,
                     "row": 0
-                  }
+                  },
+                  "guid": "e8cc24db31905e5bd057cf32fedbb0e1"
                 }
               },
               {
                 "showMedia": true,
                 "image": {
                   "id": "e8cc24db31905e5bd057cf32fedbb0e1",
-                  "guid": "e8cc24db31905e5bd057cf32fedbb0e1",
                   "width": 2048,
                   "height": 2048,
                   "sprite": {
                     "column": 1,
                     "row": 0
-                  }
+                  },
+                  "guid": "e8cc24db31905e5bd057cf32fedbb0e1"
                 }
               }
             ],
