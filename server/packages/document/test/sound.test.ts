@@ -205,7 +205,7 @@ describe("声音对象的命令", () => {
   });
 
   it("缺声音组件时普通字段写入不补建；显式修复后可编辑", () => {
-    // 只有 kind，没有 PlaySound 组件（schema 里组件是可选的，读得开——校验会报错提醒）
+    // 只有 kind，没有 PlaySound 组件；当前文档保留这个未配置态，历史迁移才会补旧模板组件。
     const broken: GameObjectDoc = { ...createSoundObject({ name: "脚步", id: "s1" }), components: [] };
 
     const scene = mutate(sceneWith([broken]), (draft) => {
@@ -270,13 +270,11 @@ describe("声音对象的场景文件 schema", () => {
 });
 
 describe("声音对象的校验", () => {
-  it("声音对象缺少声音数据 → 报错（它是个什么都不播的空壳）", () => {
-    // 「缺少声音数据」在 v19 下 = 没有 `PlaySound` 组件（手写文件里可能整个组件都没有）
+  it("当前格式的声音 kind 缺少 PlaySound 组件 = 未配置态", () => {
     const broken = { ...createSoundObject({ name: "脚步", id: "s1" }), components: [] };
 
     const issues = validateScene(sceneWith([broken]));
-    expect(hasErrors(issues)).toBe(true);
-    expect(formatIssues(issues)).toMatch(/缺少声音数据/);
+    expect(hasErrors(issues)).toBe(false);
   });
 
   it("声音对象正常（含空音频列表）时不报错——刚建出来就是这样", () => {
@@ -285,8 +283,7 @@ describe("声音对象的校验", () => {
     );
   });
 
-  it("普通对象带声音数据 / 声音对象带贴图 → 各给一条警告", () => {
-    // v19 起「带声音数据」= 挂着 PlaySound 组件（kind 不是 PlaySound 时校验会提醒）
+  it("声音与贴图组件都由实际挂载决定，kind 不产生模板诊断", () => {
     const door: GameObjectDoc = {
       id: "door",
       name: "木门",
@@ -300,7 +297,7 @@ describe("声音对象的校验", () => {
         featureComponent("door", DEFAULT_SLOT_COMPONENT.sound, { clips: [CLIP_A], layer: "sfx" }),
       ],
     };
-    // 声音对象画的是**固定的内置图标**，贴图组件没有意义（手写文件里可能挂着一个）
+    // 组件组合按实际挂载工作；kind 不会否决 ImageLayer。
     const soundWithImage: GameObjectDoc = {
       ...createSoundObject({ name: "脚步", id: "s1", position: { x: 0, y: 0 } }),
       components: [
@@ -315,8 +312,7 @@ describe("声音对象的校验", () => {
 
     const issues = validateScene(sceneWith([door, soundWithImage]));
     expect(hasErrors(issues)).toBe(false);
-    expect(formatIssues(issues)).not.toMatch(/不应携带声音数据/);
-    expect(formatIssues(issues)).toMatch(/声音对象用固定的内置图标（不允许改贴图）/);
+    expect(formatIssues(issues)).not.toMatch(/不应携带声音数据|声音对象用固定的内置图标/);
   });
 
   it("选中的那条不在列表里 → 警告（手写文件才会这样）", () => {

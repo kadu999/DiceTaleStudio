@@ -32,8 +32,7 @@ import {
 import { sceneImage, sceneImageError, subscribeSceneImage } from "../../services/scene-image";
 import { useEditorStore } from "../../state/editor-store";
 import { EmptyState } from "../EmptyState";
-import { badgeIconOf } from "../object-kinds";
-import { displayImageOf, displayRectOf, displaySizeOf } from "./display";
+import { displayIconOf, displayImageOf, displayRectOf, displaySizeOf } from "./display";
 import { cellColorsOf, decodeCellsCached } from "./grid-paint";
 
 /**
@@ -963,7 +962,7 @@ export function ScenePanel(): React.JSX.Element {
             grid,
             // 动作对象画**内置徽标**（固定图形，不能换）：有它在，场景里才看得见、
             // 点得到、拖得动；播放声音正在播时徽标会动（一圈圈声波 + 喇叭呼吸）
-            icon: badgeIconOf(object),
+            icon: displayIconOf(object),
             playing: playingSounds.has(object.id),
             // 「网格线」总开关：关了就不画线（只是不画，格子数据不动）
             showGrid: grid !== undefined && gridPaint.showGridLines,

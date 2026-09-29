@@ -308,16 +308,14 @@ describe("传送阵的解析与版本", () => {
 });
 
 describe("传送阵的校验", () => {
-  it("缺传送数据（整个 teleport 没有）= error", () => {
-    // v19 下「缺传送数据」= 没有 `Teleport` 组件
+  it("当前格式的传送 kind 缺少 Teleport 组件 = 未配置态", () => {
     const broken: GameObjectDoc = {
       ...createTeleportObject({ name: "传送阵", id: "t1" }),
       components: [],
     };
 
     const issues = validateScene(sceneWith([broken]));
-    expect(hasErrors(issues)).toBe(true);
-    expect(formatIssues(issues)).toMatch(/缺少传送数据/);
+    expect(hasErrors(issues)).toBe(false);
   });
 
   it("还没加目标 = warning（新建出来就是这个状态，是合法的）", () => {

@@ -20,7 +20,7 @@ import {
  * 预设（哪个 kind 允许哪些能力槽位）在 `@dts/document` 的 `presets.ts`，不在这张表里。
  */
 describe("对象类型表（object-kinds.ts）", () => {
-  it("徽标优先按显式功能组件判定，组件不匹配时不沿用 kind 徽标", () => {
+  it("徽标只按实际挂载的功能组件判定，不沿用 kind", () => {
     const base: GameObjectDoc = {
       id: "custom",
       name: "组合对象",
@@ -35,7 +35,8 @@ describe("对象类型表（object-kinds.ts）", () => {
 
     expect(badgeIconOf({ ...base, components: [featureComponent(base.id, "VideoOverlay", {})] })).toBeUndefined();
     expect(badgeIconOf({ ...base, components: [featureComponent(base.id, "Teleport", {})] })).toBe("teleport");
-    expect(badgeIconOf(base)).toBe("audio");
+    expect(badgeIconOf(base)).toBeUndefined();
+    expect(badgeIconOf({ ...base, components: [featureComponent(base.id, "PlaySound", {})] })).toBe("audio");
   });
 
   it("每个 ObjectKind 都有种类归属，且只归一个种类", () => {

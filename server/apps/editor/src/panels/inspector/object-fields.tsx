@@ -3,8 +3,6 @@ import {
   effectiveScaleX,
   effectiveScaleY,
   isUniformScale,
-  canRepairObjectComponent,
-  componentForSlot,
   mapDataOf,
   normalizeDegrees,
   objectImage,
@@ -136,7 +134,6 @@ export function TextureField({ object }: { readonly object: GameObjectDoc }): Re
   const tree = useEditorStore((state) => state.project.tree);
   const assetMetas = useEditorStore((state) => state.assetMetas);
   const openImagePicker = useEditorStore((state) => state.openImagePicker);
-  const missingImageComponent = canRepairObjectComponent(object, componentForSlot("image", object.kind));
   const image = objectImage(object);
 
   // 引用的文件不在项目里（素材没提交 / 改名了）：直接把这件事写出来
@@ -158,8 +155,8 @@ export function TextureField({ object }: { readonly object: GameObjectDoc }): Re
     <FieldRow label="贴图">
       {spriteCapable ? (
         image === undefined ? (
-          <span className={`min-w-0 flex-1 text-[11px] ${missingImageComponent ? "text-[var(--color-editor-warn)]" : "text-[var(--color-editor-text-dim)]"}`}>
-            {missingImageComponent ? "图片组件缺失" : "（无贴图）"}
+            <span className="min-w-0 flex-1 text-[11px] text-[var(--color-editor-text-dim)]">
+            （无贴图）
           </span>
         ) : <span className="min-w-0 flex-1" />
       ) : (
@@ -169,11 +166,9 @@ export function TextureField({ object }: { readonly object: GameObjectDoc }): Re
           }`}
           title={currentAsset?.id ?? image?.id}
         >
-          {missingImageComponent
-            ? "图片组件缺失"
-            : image === undefined
-              ? "（无贴图）"
-              : assetDisplayPath(currentAsset?.id ?? currentImageAssetId(image, assetMetas))}
+          {image === undefined
+            ? "（无贴图）"
+            : assetDisplayPath(currentAsset?.id ?? currentImageAssetId(image, assetMetas))}
         </span>
       )}
       {cell === undefined || sheet === undefined ? null : (
@@ -209,7 +204,7 @@ export function TextureField({ object }: { readonly object: GameObjectDoc }): Re
         className="toolbar-button flex-none hover:toolbar-button-hover"
         onClick={() => openImagePicker(object.id)}
       >
-        {missingImageComponent ? "选择图片并添加" : "选择"}
+        选择
       </button>
     </FieldRow>
   );

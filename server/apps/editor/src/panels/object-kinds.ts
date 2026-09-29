@@ -1,13 +1,12 @@
 import {
   DEFAULT_SLOT_COMPONENT,
-  presetOf,
-  SLOT_COMPONENT_TYPES,
+  findComponentType,
   type GameObjectDoc,
   type ObjectKind,
 } from "@dts/document";
 
 /**
- * 对象类型表：**先分种类，种类下再放对象**。
+ * 对象创建模板表：**先分创建类别，类别下再放模板**。
  *
  * 种类是编辑器侧的归类（实体 / 动作 / 事件），落进文档的仍然是对象的 `kind`——
  * `kind` 是前端也认的字段，不能为了分类随意造新值。它只是**预设 id**
@@ -15,7 +14,7 @@ import {
  *
  * 这张表同时服务两处，所以每个类型带一个 `creatable`：
  * - 「新建对象」弹框只列 `creatable` 的（实体 → 网格地图 / 精灵 / 贴图；动作 → 播放声音）；
- * - 场景对象面板**按种类过滤**，所以每个 `kind` 都要有归属，不能留没种类的类型。
+ * 分类只用于「新建对象」弹框；对象创建后，其功能与层级展示只看实际挂载的组件。
  *
  * **每个类型自带 `id` 与 `label`，不要拿 `kind` 当它们用**：
  * - 「网格地图」「精灵」「贴图」是三个**显示名不同的实体类型**，落进文档的 `kind` 是
@@ -126,37 +125,29 @@ export function categoryOfKind(kind: ObjectKind): ObjectCategoryDef | undefined 
 }
 
 /**
- * 这个类型画的是**固定内置徽标**吗（动作对象）？返回徽标名，普通对象返回 `undefined`。
- *
- * 抽成一个函数是因为「哪种对象不认贴图」在三个地方要用，各写一遍 `kind === "PlaySound"`
- * 迟早会漏掉新加的那一种：
- * 1. 画布上画什么（徽标还是 `image` / `map.image`；尺寸也按徽标那块固定矩形算）；
- * 2. 属性面板要不要给「渲染」那一组（固定徽标就没有换贴图的入口）；
- * 3. 列表行尾显示什么提示（层级 / 目标场景）。
+ * 取画布上的内置徽标提示；只认实际挂载的组件，不从 kind 推断缺失能力。
  */
-export function badgeIconOf(target: ObjectKind | GameObjectDoc): "audio" | "teleport" | "fog" | "magnifier" | undefined {
-  if (typeof target !== "string") {
-    if (target.components.some((component) => component.type === DEFAULT_SLOT_COMPONENT.sound)) return "audio";
-    if (target.components.some((component) => component.type === DEFAULT_SLOT_COMPONENT.teleport)) return "teleport";
-    if (target.components.some((component) => component.type === DEFAULT_SLOT_COMPONENT.magnifier)) return "magnifier";
-    if (target.components.some((component) => component.type === DEFAULT_SLOT_COMPONENT.fog)) return "fog";
-    if (target.components.some((component) => SLOT_COMPONENT_TYPES.some((definition) => definition.type === component.type))) return undefined;
-    return badgeIconOf(target.kind);
-  }
-
-  if (presetOf(target)?.slots.sound !== undefined) {
+export function badgeIconOf(target: GameObjectDoc): "audio" | "teleport" | "fog" | "magnifier" | undefined {
+  if (target.components.some((component) => component.type === DEFAULT_SLOT_COMPONENT.sound)) {
     return "audio";
   }
 
-  if (presetOf(target)?.slots.teleport !== undefined) {
+  if (target.components.some((component) => component.type === DEFAULT_SLOT_COMPONENT.teleport)) {
     return "teleport";
   }
 
-  if (presetOf(target)?.slots.magnifier !== undefined) {
+  if (target.components.some((component) => component.type === DEFAULT_SLOT_COMPONENT.magnifier)) {
     return "magnifier";
   }
 
-  return presetOf(target)?.slots.fog !== undefined ? "fog" : undefined;
+  return target.components.some((component) => component.type === DEFAULT_SLOT_COMPONENT.fog)
+    ? "fog"
+    : undefined;
+}
+
+/** 当前实际挂载的组件名，供层级搜索与紧凑标签使用；未知组件也保留其原始类型名。 */
+export function componentLabelsOf(object: GameObjectDoc): readonly string[] {
+  return [...new Set(object.components.map((component) => findComponentType(component.type)?.displayName ?? component.type))];
 }
 
 /** 对象类型的展示名（弹框的瓦片、面板的提示共用）。**只有这里写中文**，代码一律用英文。 */

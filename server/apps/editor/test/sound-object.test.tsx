@@ -193,9 +193,9 @@ describe("属性面板：声音组", () => {
     seedScene([broken], [broken.id]);
     render(<InspectorPanel />);
 
-    expect(screen.getByText("组件数据缺失")).toBeDefined();
-    expect(screen.queryByTestId("sound-layer")).toBeNull();
-    fireEvent.click(screen.getByTestId("repair-component-PlaySound"));
+    expect(hasGroup("sound")).toBe(false);
+    fireEvent.click(screen.getByTestId("add-component"));
+    fireEvent.click(screen.getByTestId("add-component-PlaySound"));
 
     expect(soundOf(broken.id)).toEqual({ clips: [], layer: "sfx" });
     expect(useEditorStore.getState().canUndo).toBe(true);

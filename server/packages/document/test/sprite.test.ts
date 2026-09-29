@@ -92,7 +92,7 @@ function spriteObject(id = "sprite-1", image: ImageRef = IMAGE): GameObjectDoc {
 
 function setImage(object: GameObjectDoc, id: string, image: ImageRef = IMAGE): GameObjectDoc {
   const scene = sceneWith([object]);
-  repairImageObjectComponent(scene, id, image);
+  repairImageObjectComponent(scene, id, "SpriteLayer", image);
   const next = scene.objects[0];
   if (next === undefined) {
     throw new Error("对象不见了");
@@ -503,14 +503,14 @@ describe("校验：只提醒，不算错", () => {
 });
 
 /**
- * v20 → v21：**精灵的图片组件从 `TextureRenderer` 改名成 `SpriteLayer`**。
+ * v20 → v21：历史 `TextureRenderer` 按旧模板 kind 改名为现行图片组件；后续模板迁移补足必需组件。
  *
  * 这一条是 v21 唯一一处会**动老文件里的数据**的迁移，所以两件事都要钉住：
  * 组件名字换对（否则精灵与贴图两种形状长期共存），**组件 id 也跟着换**
  * （组件 id 的规范是 `<对象 id>__<组件类型>`；只改类型不改 id 的话，编辑器下一次写这个组件时
  * 按新名字找不到旧实例、会**多补一个**，对象上就挂了两份图）。
  */
-describe("v21 迁移：图片组件改名（按 kind）", () => {
+describe("v21 历史迁移：图片组件按旧模板 kind 改名", () => {
   /** 一个 v20 形状的精灵：kind=SceneObject（那时精灵复用这个名字）+ 旧组件名 `TextureRenderer`。 */
   const legacySprite = (id: string, data: Record<string, unknown>): Record<string, unknown> => ({
     id,
@@ -579,7 +579,7 @@ describe("v21 迁移：图片组件改名（按 kind）", () => {
     expect(loaded.needsRewrite).toBe(true);
   });
 
-  it("不在 image 特性 kinds 里的 kind：TextureRenderer 原样留着（不替它猜归属）", () => {
+  it("保留未知 TextureRenderer，同时为旧 PlaySound 模板补齐 PlaySound 组件", () => {
     // 未知组件类型有宽松分支（手写自定义组件读得回来），所以这里不会读不开——
     // 迁移的承诺只是「不碰它」，把它留给用户自己处理。
     const sound = {
@@ -605,9 +605,10 @@ describe("v21 迁移：图片组件改名（按 kind）", () => {
     const loaded = load([sound]);
     expect(loaded.file.objects[0]!.components.map((item) => item.type)).toEqual([
       "TextureRenderer",
+      "PlaySound",
     ]);
     expect(loaded.file.objects[0]!.components[0]?.id).toBe("sound_1__TextureRenderer");
-    // 读得开（宽松分支）；回写只是因为版本号 v20 → v21，迁移本身没改这个组件
+    // 旧 kind 迁移补上其历史必需的 PlaySound 模板组件，但保留不识别的 TextureRenderer。
     expect(loaded.needsRewrite).toBe(true);
   });
 

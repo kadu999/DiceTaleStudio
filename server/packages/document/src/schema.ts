@@ -10,6 +10,8 @@ import type { AssetMetaDoc } from "./asset-meta";
 import { COMPONENT_TYPES, FEATURE_COMPONENT_TYPES, componentId, findComponentType, hasLegacyFeatureField } from "./components";
 import {
   DEFAULT_SLOT_COMPONENT,
+  DEFAULT_SOUND_LAYER,
+  FOG_DEFAULT_SORTING_ORDER,
   DEFAULT_VIDEO_BLEND_KIND,
   SPRITE_COMPONENT,
   componentForSlot,
@@ -156,7 +158,7 @@ export const magnifierStateSchema = magnifierStateSchemaWith(imageRefSchema);
 export const magnifierDataSchema = magnifierDataSchemaWith(magnifierStateSchema);
 
 /**
- * 放大镜（动作对象，v30；v31 起「图片列表」变成「状态列表」）：**状态列表 + 当前展示的那一个**。
+ * 放大镜组件（v30；v31 起「图片列表」变成「状态列表」）：**状态列表 + 当前展示的那一个**。
  *
  * `states` 给默认值 `[]`（与 `sound.clips` / `teleport.targets` 同一个口径：手写文件里少写
  * 一项时，语义只能是「还没加状态」）；`picked` **不给默认值**——它的「没写」有明确语义：
@@ -178,7 +180,7 @@ export const magnifierDataSchema = magnifierDataSchemaWith(magnifierStateSchema)
 export { videoDataSchema };
 
 /**
- * 视频混合（可选，只有贴图能带）：**两路素材**（A 盖住 / B 擦开露出）+ 循环 + 自动播放 + 声音来源。
+ * 视频混合（可选，组件可显式挂载到任意对象）：**两路素材**（A 盖住 / B 擦开露出）+ 循环 + 自动播放 + 声音来源。
  *
  * 每路是**一个素材**（图片或视频，见 `VideoBlendChannelDoc`）：`kind` 给默认值（老文件缺它就
  * 按视频算），`id` **不给**（「没写」= 这一路空着，播放按钮点不了）。
@@ -1566,6 +1568,66 @@ function migrateMagnifierVisibilityFlags(raw: Record<string, unknown>): {
 }
 
 /**
+ * v34 → v35: materialize the initial required components for historical kind templates.
+ * This is the final compatibility point where kind may supply a missing component; current
+ * v35+ objects are never repaired or assigned behavior from kind during normal reads.
+ */
+function migrateKindTemplatesToComponents(raw: Record<string, unknown>): {
+  readonly raw: Record<string, unknown>;
+  readonly changed: boolean;
+} {
+  const objects = Array.isArray(raw.objects) ? raw.objects : [];
+  let changed = false;
+  const next = objects.map((object, index) => {
+    if (!isRecord(object)) return object;
+
+    const preset = presetOf(kindOf(object));
+    if (preset === undefined) return object;
+    const components = Array.isArray(object.components) ? [...object.components] : [];
+    let localChanged = false;
+    const hasSlot = (slot: string): boolean =>
+      components.some((item) => isRecord(item) && findComponentType(String(item.type))?.slot === slot);
+
+    for (const type of Object.values(preset.slots)) {
+      const definition = findComponentType(type);
+      if (definition?.slot === undefined || definition.optional === true || hasSlot(definition.slot)) continue;
+
+      const id = typeof object.id === "string" && object.id.length > 0 ? object.id : `obj${index}`;
+      let data: Record<string, unknown>;
+      switch (type) {
+        case "ImageLayer":
+        case "SpriteLayer":
+          data = { sortingOrder: components.some((item) => isRecord(item) && item.type === "GridMap") ? -10 : 0 };
+          break;
+        case "PlaySound":
+          data = { clips: [], layer: DEFAULT_SOUND_LAYER };
+          break;
+        case "Teleport":
+          data = { targets: [] };
+          break;
+        case "Magnifier":
+          data = { states: [] };
+          break;
+        case "FogOfWar":
+          data = { mapId: "", enabled: true, regions: [], sortingOrder: FOG_DEFAULT_SORTING_ORDER };
+          break;
+        default:
+          continue;
+      }
+
+      components.push({ id: componentId(id, type), type, data });
+      localChanged = true;
+    }
+
+    if (!localChanged) return object;
+    changed = true;
+    return { ...object, components };
+  });
+
+  return { raw: changed ? { ...raw, objects: next } : raw, changed };
+}
+
+/**
  * 读一个（还没过 schema 的）对象的 `kind`；认不出来时按**精灵** `Sprite` 算
  * （`MirrorObject` 同一个兜底）。
  *
@@ -1647,7 +1709,7 @@ function renameObjectKinds(raw: Record<string, unknown>): {
 const LEGACY_IMAGE_COMPONENT: string = "TextureRenderer";
 
 /**
- * v20 → v21：把旧名 `TextureRenderer` 的图片组件按 **kind 路由**换成现行名字。
+ * v20 → v21：把旧名 `TextureRenderer` 的图片组件按**历史创建模板 kind**路由换成现行名字。
  *
  * v20 及更早，「对象自己显示的图」只有一种组件（`TextureRenderer`），所有 kind 共用它。
  * v21 把它拆成两种——精灵 `SpriteLayer`（会取图集里的一格）、其余 `ImageLayer`
@@ -1788,6 +1850,9 @@ export function parseSceneFile(raw: unknown, size?: SceneSizeHint): SceneFileLoa
     const magnifierStates = migrateMagnifierImagesToStates(blendChannels.raw);
     // v34：给放大镜每个状态补三块显示开关（按老文件"有没有值"补，行为不变）
     const magnifierFlags = migrateMagnifierVisibilityFlags(magnifierStates.raw);
+    // v35：kind 仅在历史格式迁移中用于补齐其原始创建模板中的必需组件。
+    const kindTemplates =
+      version < 35 ? migrateKindTemplatesToComponents(magnifierFlags.raw) : { raw: magnifierFlags.raw, changed: false };
     // v13：战争雾的总开关（`fog.enabled`）**不用单独迁移**——schema 给它默认值 `true`
     // （v10–v12 的文件里「有 fog」就等于「开着」），而版本号一升就会回写一次，
     // 于是磁盘上的文件重新变得自描述。
@@ -1807,7 +1872,7 @@ export function parseSceneFile(raw: unknown, size?: SceneSizeHint): SceneFileLoa
     // v31：放大镜的图片列表变成状态列表（`magnifierStates` 那一趟）。
     // v34：放大镜每个状态补三块显示开关（`magnifierFlags` 那一趟）。
     // 读出来的文档一律是当前版本（v6 起网格里不再存 `cellSize`，顺手被 schema 丢掉）
-    normalized = { ...magnifierFlags.raw, formatVersion: DOCUMENT_FORMAT_VERSION };
+    normalized = { ...kindTemplates.raw, formatVersion: DOCUMENT_FORMAT_VERSION };
     needsRewrite =
       version < DOCUMENT_FORMAT_VERSION ||
       filled.changed ||
@@ -1821,7 +1886,8 @@ export function parseSceneFile(raw: unknown, size?: SceneSizeHint): SceneFileLoa
       fogObjects.changed ||
       gridImage.changed ||
       blendChannels.changed ||
-      magnifierFlags.changed;
+      magnifierFlags.changed ||
+      kindTemplates.changed;
   }
 
   const result = sceneFileSchema.safeParse(normalized);

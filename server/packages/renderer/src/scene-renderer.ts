@@ -222,8 +222,8 @@ const MIN_GRID_LINE_SPACING = 4;
 /** 网格线条数上限：视口缩得极小时不至于画上百万条线。 */
 const MAX_GRID_LINES = 4000;
 
-/** 对象类型色（弹框里那个小圆点、以及声音对象那枚内置图标都用它）。 */
-const KIND_MARKER_COLORS: Record<string, string> = {
+/** 创建弹框里的模板色点；仅用于创建模板选择，不代表对象创建后的类型行为。 */
+const TEMPLATE_MARKER_COLORS: Record<string, string> = {
   // 精灵（v22 前叫 `GameObject`：那时它复用泛用的场景对象名）
   Sprite: "#4f9cf9",
   // 贴图对象（v21，v22 前叫 `Texture`）：与精灵分开——两者都显示一张图，但精灵会取图集里的一格。
@@ -244,16 +244,26 @@ const KIND_MARKER_COLORS: Record<string, string> = {
   Magnifier: "#e8c840",
 };
 
-const DEFAULT_MARKER_COLOR = "#9aa4b2";
+const DEFAULT_TEMPLATE_MARKER_COLOR = "#9aa4b2";
 
 /**
- * 取某类型对象的颜色（未知类型走默认灰）。
+ * 取创建模板的颜色（未知模板走默认灰）。
  *
  * 「新建对象」弹框里的类型色点用它；画布上不再画标记点，但配色仍从这里取，
  * 免得弹框和别处各写一套颜色。
  */
-export function kindMarkerColor(kind: string): string {
-  return KIND_MARKER_COLORS[kind] ?? DEFAULT_MARKER_COLOR;
+export function templateMarkerColor(kind: string): string {
+  return TEMPLATE_MARKER_COLORS[kind] ?? DEFAULT_TEMPLATE_MARKER_COLOR;
+}
+
+/** 组件提供的内置徽标色，不从对象 kind 推断。 */
+function componentBadgeColor(component: "PlaySound" | "Teleport" | "FogOfWar" | "Magnifier"): string {
+  switch (component) {
+    case "PlaySound": return "#ff7a1a";
+    case "Teleport": return "#22c7d6";
+    case "FogOfWar": return "#5b6b8c";
+    case "Magnifier": return "#e8c840";
+  }
 }
 
 /**
@@ -626,7 +636,7 @@ function drawAudioBadge(
   const left = cx - half;
   const top = cy - half;
   const radius = badge * 0.2;
-  const color = kindMarkerColor("PlaySound");
+  const color = componentBadgeColor("PlaySound");
   const motion = audioBadgeAnimation({ playing: animation.playing, timeMs: animation.timeMs });
 
   const outline = (): void => {
@@ -719,7 +729,7 @@ function drawTeleportBadge(
   const left = cx - half;
   const top = cy - half;
   const radius = badge * 0.2;
-  const color = kindMarkerColor("Teleport");
+  const color = componentBadgeColor("Teleport");
 
   const outline = (): void => {
     context.beginPath();
@@ -806,7 +816,7 @@ function drawFogBadge(
   const left = cx - half;
   const top = cy - half;
   const radius = badge * 0.2;
-  const color = kindMarkerColor("Fog");
+  const color = componentBadgeColor("FogOfWar");
 
   const outline = (): void => {
     context.beginPath();
@@ -895,7 +905,7 @@ function drawMagnifierBadge(
 
   // 2) 实色牌面（类型色）
   outline();
-  context.fillStyle = kindMarkerColor("Magnifier");
+  context.fillStyle = componentBadgeColor("Magnifier");
   context.fill();
 
   // 3) 白色放大镜：镜圈偏左上，手柄朝右下（与「拿在手里看」的方向一致）

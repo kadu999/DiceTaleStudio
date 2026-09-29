@@ -85,32 +85,28 @@ export function InspectorPanel(): React.JSX.Element {
           // 对象视图只列**人要用它做决定**的字段：内部标识（id）不显示——
           // id 是一串机器 id，只会占地方。
           //
-          // 分组 = 三类，一一对应的关系从这里能直接看出来：
-          // - 「基础」（`OBJECT_EDITOR`）= **实体属性组**：名称 / 变换这些不进组件的字段（角标「实体」）；
+          // 分组 = 基础属性 + 实际挂载的组件：
+          // - 「基础」（`OBJECT_EDITOR`）= 名称 / 变换这些不进组件的属性；
           // - 组件编辑器表（`registry.tsx` 的 `COMPONENT_EDITORS`）**一个组件一个组**，
           //   组标题 = 组件 displayName；挂上的**可选组件**（网格 / 视频）组头带「移除组件」；
-          // - 缺失**必需**组件时那一组是**能力入口**（选图 / 修复），角标「未添加」；
-          //   可选的（网格 / 视频）没挂上时不出组——底部的「添加组件」才是它的入口（Unity 式）。
+          // - 只显示实际挂载的组件；缺失能力统一从底部「添加组件」显式添加。
           //
           // `key` = 对象 id：**换对象时分组回到展开**（折叠状态是组件本地的，参考实现也在
           // 切换对象时重置，免得「上一个对象收起的分组」跟着跑到下一个对象身上）。
           // 显示哪几组、组里是什么，全在 `registry.tsx` 里——这里只负责「按顺序渲染适用的那些组」。
           <div key={selected.id} data-testid="object-properties">
-            <FieldGroup title={OBJECT_EDITOR.title} group={OBJECT_EDITOR.group} badge="entity">
+            <FieldGroup title={OBJECT_EDITOR.title} group={OBJECT_EDITOR.group}>
               {OBJECT_EDITOR.render(selected)}
             </FieldGroup>
             {componentEditorsFor(selected).flatMap((editor) => {
-              // 组件实例在 = 正式组件组（不挂角标）；实例不在（能力入口）= 挂「未添加」
-              const attached = componentOf(selected, editor.type) !== undefined;
               return editor.panels.map((panel) => (
                 <FieldGroup
                   key={`${editor.type}:${panel.group}`}
                   title={panel.title}
                   group={panel.group}
-                  badge={attached ? undefined : "capability"}
-                  // 可选能力组件（网格 / 视频）挂上后，组头给一枚「移除组件」
+                  // 可移除组件（网格 / 视频 / 视频混合）挂上后，组头给一枚「移除组件」
                   onRemove={
-                    attached && editor.removable === true
+                    componentOf(selected, editor.type) !== undefined && editor.removable === true
                       ? () => removeObjectComponent(selected.id, editor.type)
                       : undefined
                   }
@@ -120,7 +116,7 @@ export function InspectorPanel(): React.JSX.Element {
                 </FieldGroup>
               ));
             })}
-            {/* 底部「添加组件」：可选组件（网格 / 视频）没挂上时只有这里能加（Unity 式） */}
+            {/* 组件组合由用户显式组装；仅已挂载的可选组件可移除 */}
             <AddComponentMenu object={selected} addable={addableComponentsFor(selected)} />
           </div>
         ) : activeScene !== undefined ? (
@@ -150,7 +146,7 @@ export function InspectorPanel(): React.JSX.Element {
 /**
  * 面板底部的「**添加组件**」（Unity 的 Add Component）。
  *
- * 只在**还有可选组件可加**时出现；点开列出这个对象能加的组件（网格地图 / 视频），选一个就加上。
+ * 点开后列出该对象槽位中尚未挂载的组件；非可选组件可添加/修复但不能移除。
  *
  * 用内联展开而不是浮层：属性面板本身是滚动容器，浮层会被裁切；这里通常只有两三项，
  * 展开也不占多少地方。换对象时整块 `object-properties` 按 id 重建，展开状态跟着回到收起。
@@ -175,7 +171,7 @@ function AddComponentMenu({
         type="button"
         data-testid="add-component"
         aria-expanded={open}
-        title="给这个对象加一个组件（网格地图 / 视频）"
+        title="给这个对象添加组件"
         className="flex w-full items-center justify-center gap-1.5 rounded border border-dashed border-[var(--color-editor-border)] px-2 py-1.5 text-[11px] text-[var(--color-editor-text-dim)] hover:bg-[var(--color-editor-panel-alt)] hover:text-[var(--color-editor-text)]"
         onClick={() => setOpen((previous) => !previous)}
       >

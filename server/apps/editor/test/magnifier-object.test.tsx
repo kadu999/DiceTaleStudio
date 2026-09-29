@@ -146,14 +146,14 @@ describe("创建放大镜", () => {
 });
 
 describe("属性面板：只剩「窗口」那一行（状态列表整行搬进窗口里）", () => {
-  it("缺少放大镜组件时提供显式修复；修复后显示「窗口」那一行", () => {
+  it("缺少放大镜组件时可显式添加；添加后显示「窗口」那一行", () => {
     const broken = { ...magnifier(), components: [] };
     seedScene([broken]);
     render(<InspectorPanel />);
 
-    expect(screen.getByText("组件数据缺失")).toBeDefined();
     expect(screen.queryByTestId("magnifier-window")).toBeNull();
-    fireEvent.click(screen.getByTestId("repair-component-Magnifier"));
+    fireEvent.click(screen.getByTestId("add-component"));
+    fireEvent.click(screen.getByTestId("add-component-Magnifier"));
 
     expect(dataOf(broken.id)).toEqual({ states: [] });
     expect(screen.getByTestId("magnifier-window")).toBeDefined();

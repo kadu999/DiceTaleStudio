@@ -1,4 +1,4 @@
-import type { ComponentSlot, ObjectKind } from "./presets";
+import type { ComponentSlot } from "./presets";
 import type { ComponentDoc } from "./types";
 
 /**
@@ -9,9 +9,7 @@ import type { ComponentDoc } from "./types";
  * 拆出来的第 7 种，视频混合（`VideoBlend`）是第 8 种，放大镜（`Magnifier`）是 v30 加的第 9 种。
  * 这些组件多两项：
  * - `slot`：它承担对象哪种能力（**组件自报**；访问器按 slot 找对象上的组件，不看 kind）；
- * - `templateKinds`：对象创建模板中会预置/路由到该组件的 kind；
- * - `repairKinds`：组件缺失时，编辑器提供显式修复入口的 kind；
- * - `optionalKinds`：允许用户主动添加该可选组件的 kind；
+ * - `optional`：该组件可在创建后通过 Inspector 添加 / 移除；
  * - `legacyField`：v19 之前它住在对象的哪个扁平字段里——迁移函数靠它把老字段搬成组件实例。
  */
 
@@ -37,25 +35,21 @@ export interface ComponentTypeDef {
    * 这个组件承担对象哪种能力（v19 从对象特性提升上来的那 6 种才有）。
    *
    * **组件是唯一功能载体**：访问器（`access.ts`）按 slot 在对象的组件列表上查找；
-   * 「哪个 kind 允许哪个槽位」住在 `presets.ts` 的 `OBJECT_PRESETS`，不在这里重复写。
+   * 对象创建时用 kind 选初始组件；对象创建后不再用 kind 限制组件组合。
    */
   readonly slot?: ComponentSlot;
   /** v19 之前这个特性住在对象的哪个扁平字段里（只有从对象特性提升上来的组件有）。 */
   readonly legacyField?: ComponentSlot;
-  /** Kinds whose creation preset associates this capability slot with this component. */
-  readonly templateKinds?: readonly ObjectKind[];
-  /** Kinds whose missing required component can be explicitly repaired in the editor. */
-  readonly repairKinds?: readonly ObjectKind[];
-  /** Kinds allowed to add this optional component when it is not attached yet. */
-  readonly optionalKinds?: readonly ObjectKind[];
+  /** 可由用户在创建后添加 / 移除的组件。 */
+  readonly optional?: boolean;
   readonly tooltip?: string;
 }
 
 export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
   // ---------------------------------------------------------------- v19：对象特性提升上来的组件
   //
-  // 前 6 条自报 `slot`（`FogOfWar` 是 v25 加的第七条）。模板、显式修复和可选组件准入分别声明，
-  // 并由 presets.test.ts 保证创建模板与 templateKinds 一致。
+  // 组件声明自己的 slot。只有明确可选的组件可在对象创建后添加 / 移除；
+  // 组件组合不再由对象 kind 决定。
   // `legacyField` 记着 v19 之前它住在对象的哪个扁平字段里。
   {
     // 网格（v28 起是贴图上的**可选能力**，像「视频」）：加在贴图上 = 网格地图，可移除。
@@ -65,8 +59,7 @@ export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
     gmEditable: true,
     slot: "map",
     legacyField: "map",
-    templateKinds: ["Image"],
-    optionalKinds: ["Image"],
+    optional: true,
     tooltip: "网格数据（列 / 行 / 行序 / 格子 RLE）；加在贴图上 = 网格地图，可移除",
   },
   {
@@ -76,9 +69,7 @@ export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
     displayName: "战争雾",
     gmEditable: true,
     slot: "fog",
-    templateKinds: ["Fog"],
-    repairKinds: ["Fog"],
-    tooltip: "引用哪张贴图 + 总开关 + 把哪些「区域」当成雾区；只有战争雾对象携带，一张贴图最多一个",
+    tooltip: "引用哪张贴图 + 总开关 + 把哪些「区域」当成雾区；通常由战争雾模板携带，也可显式添加到其他对象",
   },
   {
     // 贴图对象的图片组件（精灵的那一份是下面的 `SpriteLayer`，两者共用同一份 `ImageRef` 形状）
@@ -87,9 +78,7 @@ export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
     gmEditable: true,
     slot: "image",
     legacyField: "image",
-    templateKinds: ["Image", "Player", "Item", "Event"],
-    repairKinds: ["Image", "Player", "Item", "Event"],
-    tooltip: "对象自己要显示的图片，整张铺在对象矩形上（贴图对象与带网格的贴图都用它）",
+    tooltip: "对象自己要显示的整张图片，铺在对象矩形上；由 ImageLayer 组件决定",
   },
   {
     // 精灵对象的图片组件：与 `ImageLayer` 同一份数据，差别是它**会取图集里的一格**
@@ -100,9 +89,7 @@ export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
     gmEditable: true,
     slot: "image",
     legacyField: "image",
-    templateKinds: ["Sprite"],
-    repairKinds: ["Sprite"],
-    tooltip: "精灵要显示的图片：可以取图集里的一格（子图），由渲染那一组挑第几行第几列",
+    tooltip: "对象显示的图片：可以取图集里的一格（子图），由渲染那一组挑第几行第几列",
   },
   {
     type: "PlaySound",
@@ -110,8 +97,6 @@ export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
     gmEditable: true,
     slot: "sound",
     legacyField: "sound",
-    templateKinds: ["PlaySound"],
-    repairKinds: ["PlaySound"],
     tooltip: "音频列表 + 选中的那条 + 层级：声明「告诉前端播什么」，编辑器自己不播放",
   },
   {
@@ -120,8 +105,6 @@ export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
     gmEditable: true,
     slot: "teleport",
     legacyField: "teleport",
-    templateKinds: ["Teleport"],
-    repairKinds: ["Teleport"],
     tooltip: "候选目标场景 + 选中的那一个；触发 = 切换当前场景（不需要新协议命令）",
   },
   {
@@ -134,8 +117,6 @@ export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
     displayName: "放大镜",
     gmEditable: true,
     slot: "magnifier",
-    templateKinds: ["Magnifier"],
-    repairKinds: ["Magnifier"],
     tooltip: "状态列表 + 当前展示的那一个（每条 = 标题 + 图 + 文字）；触发 = 让前端弹一扇窗显示它",
   },
   {
@@ -144,8 +125,7 @@ export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
     gmEditable: true,
     slot: "video",
     legacyField: "video",
-    templateKinds: ["Image"],
-    optionalKinds: ["Image"],
+    optional: true,
     tooltip: "视频列表 + 选中的那条 + 循环 / 声音两个开关；画面盖在对象自己的矩形上",
   },
   {
@@ -158,8 +138,7 @@ export const COMPONENT_TYPES: readonly ComponentTypeDef[] = [
     displayName: "视频混合",
     gmEditable: true,
     slot: "videoBlend",
-    templateKinds: ["Image"],
-    optionalKinds: ["Image"],
+    optional: true,
     tooltip: "两条视频通道（A 盖住 / B 擦开露出）+ 循环 + 声音来源；遮罩在 Mask 窗口里擦",
   },
 ];
@@ -223,12 +202,4 @@ export function findComponentType(type: string): ComponentTypeDef | undefined {
 
 export function isKnownComponentType(type: string): boolean {
   return BY_TYPE.has(type);
-}
-
-/** Whether known attached components disagree with the object's legacy kind template. */
-export function componentKindMismatchOf(components: readonly ComponentDoc[], kind: ObjectKind): boolean {
-  return components.some((component) => {
-    const definition = findComponentType(component.type);
-    return definition?.slot !== undefined && definition.templateKinds?.includes(kind) !== true;
-  });
 }

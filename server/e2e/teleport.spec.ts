@@ -101,9 +101,8 @@ test.describe("动作对象：传送阵", () => {
 
       await createTeleport(page);
 
-      // 列表：动作种类筛得出来，行尾写它会把 DM 送到哪张图（还没加目标就明说，别留白）
-      await expect(page.getByTestId("category-filter-action")).toBeVisible();
-      const row = page.locator('[data-testid="object-row"][data-kind="Teleport"]').first();
+      // 列表行由实际 Teleport 组件识别，行尾写目标（还没加目标就明说，别留白）
+      const row = page.getByTestId("object-row").filter({ hasText: "传送阵" }).first();
       await expect(row).toContainText("未加目标");
 
       // 属性面板：基础和实体一样，另有「传送阵」；**没有「图片层 / 精灵层」**（徽标是固定的，不给换贴图）

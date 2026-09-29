@@ -794,7 +794,7 @@ namespace DiceTale
 
             if (!obj.HasComponent(Protocol.ComponentType.VideoBlend))
             {
-                return $"「{obj.name}」没有视频混合组件（kind={obj.kind}），混合放不了";
+                return $"「{obj.name}」没有视频混合组件，混合放不了";
             }
 
             view = mirror.FindView(objectId);
@@ -1126,7 +1126,7 @@ namespace DiceTale
 
             if (!obj.HasComponent(Protocol.ComponentType.Magnifier))
             {
-                var wrongKind = $"「{obj.name}」没有放大镜组件（kind={obj.kind}）";
+                var wrongKind = $"「{obj.name}」没有放大镜组件";
                 Debug.LogWarning($"[命令] 打开放大镜窗口失败：{wrongKind}");
                 session.SendCommandResult(command, false, wrongKind);
                 return;
@@ -1357,7 +1357,7 @@ namespace DiceTale
             // v9 起「能不能放视频」看**组件**：编辑器只会给地图 / 精灵挂 `VideoOverlay`
             if (!obj.HasComponent(Protocol.ComponentType.Video))
             {
-                return $"「{obj.name}」没有视频组件（kind={obj.kind}），放不了视频";
+                return $"「{obj.name}」没有视频组件，放不了视频";
             }
 
             // 与编辑器那边（`videoTargetOf`）逐条对齐：没开 / 没加 / 没选是三种不同的拒绝

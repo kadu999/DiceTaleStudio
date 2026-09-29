@@ -12,13 +12,13 @@ namespace DiceTale
             /// <summary>网格地图：网格数据（列 / 行 / 行序 / 格子 RLE）；加在贴图上 = 网格地图，可移除</summary>
             public const string Map = "GridMap";
 
-            /// <summary>战争雾：引用哪张贴图 + 总开关 + 把哪些「区域」当成雾区；只有战争雾对象携带，一张贴图最多一个</summary>
+            /// <summary>战争雾：引用哪张贴图 + 总开关 + 把哪些「区域」当成雾区；通常由战争雾模板携带，也可显式添加到其他对象</summary>
             public const string FogOfWar = "FogOfWar";
 
-            /// <summary>图片层：对象自己要显示的图片，整张铺在对象矩形上（贴图对象与带网格的贴图都用它）</summary>
+            /// <summary>图片层：对象自己要显示的整张图片，铺在对象矩形上；由 ImageLayer 组件决定</summary>
             public const string Image = "ImageLayer";
 
-            /// <summary>精灵层：精灵要显示的图片：可以取图集里的一格（子图），由渲染那一组挑第几行第几列</summary>
+            /// <summary>精灵层：对象显示的图片：可以取图集里的一格（子图），由渲染那一组挑第几行第几列</summary>
             public const string Sprite = "SpriteLayer";
 
             /// <summary>播放声音：音频列表 + 选中的那条 + 层级：声明「告诉前端播什么」，编辑器自己不播放</summary>

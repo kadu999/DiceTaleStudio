@@ -1,7 +1,6 @@
 import { PAINTABLE_MASKS, decodeRle } from "@dts/grid";
-import { componentKindMismatchOf, isKnownComponentType } from "./components";
+import { isKnownComponentType } from "./components";
 import {
-  canRepairObjectComponent,
   fogOf,
   imageOf,
   isFogEnabled,
@@ -14,7 +13,6 @@ import {
   videoDataOf,
 } from "./access";
 import type { AssetMetaDoc, AssetMetas } from "./asset-meta";
-import { DEFAULT_SLOT_COMPONENT, supportsFog } from "./presets";
 import { spriteSheetOf } from "./sprites";
 import type {
   AudioTagTableDoc,
@@ -165,16 +163,8 @@ function validateObject(
     }
   }
 
-  // 战争雾（v27 起是独立的 `Fog` 对象；开关与雾区住它自己的 `FogOfWar` 组件里）
+  // 战争雾（v27 起是独立对象；能力仅由已挂载的 FogOfWar 组件决定）
   const fog = fogOf(object);
-  if (fog === undefined && supportsFog(object)) {
-    issues.push({
-      level: "error",
-      path,
-      message: "战争雾对象缺少雾数据（引用哪张地图 / 开关 / 雾区）",
-    });
-  }
-
   if (fog !== undefined) {
     // 指定的雾区位必须是可绘制的区域位：手写文件里写了别的值（0、3、256…），
     // 编辑器会把它丢掉，所以这里得说出来——不然「明明指定了却不生效」无从排查
@@ -207,11 +197,8 @@ function validateObject(
       });
     }
   }
-  // 声音对象（动作对象）：基础属性与实体一样，另加声音数据——缺了就是个什么都不播的空壳
+  // PlaySound 组件是独立能力；未挂组件的对象不执行播放声音行为。
   const sound = soundDataOf(object);
-  if (sound === undefined && canRepairObjectComponent(object, DEFAULT_SLOT_COMPONENT.sound)) {
-    issues.push({ level: "error", path, message: "声音对象缺少声音数据（音频列表 / 层级）" });
-  }
   if (sound !== undefined) {
     /*
       背景音乐不再属于对象（顶栏「音乐」弹框管：清单就是项目 `Assets/audio/` 下的音频）。
@@ -243,21 +230,10 @@ function validateObject(
       });
     }
 
-    // 它画的是**固定的内置图标**（不给换贴图），所以 `image` 字段没有意义
-    if (imageOf(object) !== undefined) {
-      issues.push({
-        level: "warning",
-        path: `${path}/image`,
-        message: "声音对象用固定的内置图标（不允许改贴图），多余的 image 字段会被忽略",
-      });
-    }
   }
 
-  // 传送阵（动作对象）：基础属性与实体一样，另加「候选目标场景 + 选中的那一个」
+  // Teleport 组件提供候选目标场景 + 当前选择。
   const teleport = teleportDataOf(object);
-  if (teleport === undefined && canRepairObjectComponent(object, DEFAULT_SLOT_COMPONENT.teleport)) {
-    issues.push({ level: "error", path, message: "传送阵缺少传送数据（候选目标场景）" });
-  }
   if (teleport !== undefined) {
     // 还没勾任何目标是**合法状态**（刚建出来就是这样），但要提醒：那时传送按钮点不了
     if (teleport.targets.length === 0) {
@@ -294,16 +270,13 @@ function validateObject(
   }
 
   /*
-    放大镜（动作对象，v30；v31 起「图片列表」变成「状态列表」）。
+    放大镜组件（v30；v31 起「图片列表」变成「状态列表」）。
     与传送阵那几条同一个口径——错了都是「按没加 / 按没选处理」，所以只报警告不拦运行：
     一个状态都没有、有状态但没选，都是**合法状态**（刚建出来就是这样），但那时窗口里没东西可放。
     **没有图不算问题**（纯文字 / 只有标题的线索卡放得出来，见 `magnifierStateIsEmpty`），
     但**三项全空**的状态投上去只是一张空卡——那一条要提醒。
   */
   const magnifier = magnifierDataOf(object);
-  if (magnifier === undefined && canRepairObjectComponent(object, DEFAULT_SLOT_COMPONENT.magnifier)) {
-    issues.push({ level: "error", path, message: "放大镜缺少状态数据（状态列表 + 当前展示的那一个）" });
-  }
   if (magnifier !== undefined) {
     if (magnifier.states.length === 0) {
       issues.push({
@@ -351,9 +324,9 @@ function validateObject(
   }
 
   /*
-    视频列表（v14 起）：**挂载 VideoOverlay 的对象**能带；kind 只用于缺组件旧对象的迁移期诊断。
+    视频列表（v14 起）：挂载 `VideoOverlay` 组件的对象能带。
     与声音那几条同一个口径——错了都是「按没加 / 按没选处理」，所以只报警告不拦运行。
-    旧 kind 与显式组件不一致时保留组件，并在组件遍历处给迁移提示；不因 kind 忽略其数据。
+    对象 kind 不参与组件诊断，也不影响组件数据。
     **扩展名不在这里校验**：webm 在 Windows 上多半解不了属于「这台机器的解码器」问题，
     提醒放在界面上（选择器 / 面板），免得每次打开场景都报一遍。
   */
@@ -412,13 +385,6 @@ function validateObject(
       continue;
     }
 
-    if (componentKindMismatchOf([component], object.kind)) {
-      issues.push({
-        level: "warning",
-        path: componentPath,
-        message: `组件 ${component.type} 与 kind=${object.kind} 的旧模板不一致；组件数据仍保留并按组件生效`,
-      });
-    }
   }
 }
 

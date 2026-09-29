@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import {
   dropProject,
+  COMPONENT,
   enterEditor,
   fogObjectDoc,
   mapObjectDoc,
@@ -9,14 +10,14 @@ import {
   openProject,
   sceneDoc,
   gameObjectDoc,
+  withComponent,
   seedProjectDoc,
   selectObject,
 } from "./helpers/editor";
 
 /**
  * 属性面板的**分组**（可折叠）：对象分组 = 「基础」+ **一一对应的组件组**——
- * 地图对象是「基础 / 网格地图 / 视频」，战争雾对象是「基础 / 战争雾」，精灵是「基础 / 精灵层」，
- * 贴图是「基础 / 图片层 / 视频」。点标题收起 / 展开。
+ * 分组仅由实际挂载的组件决定；未添加的功能组件从显式菜单添加。
  *
  * 这里只驱动真实界面（分组是纯 UI 行为，没有数据副作用），所以一条用例够了；
  * 「换对象时重置」「折叠不动数据」由 jsdom 那条 `inspector-groups.test.tsx` 覆盖。
@@ -25,7 +26,7 @@ import {
 const SCENE = "Map001";
 
 test.describe("属性分组", () => {
-  test("地图分「基础 / 网格地图 / 战争雾 / 视频」；精灵「基础 / 精灵层」；贴图「基础 / 图片层 / 视频」：点标题可收起 / 展开", async ({
+  test("仅展示已挂载组件组；空白能力可从添加菜单显式添加；点标题可收起 / 展开", async ({
     page,
     request,
   }) => {
@@ -35,9 +36,13 @@ test.describe("属性分组", () => {
       await seedProjectDoc(request, project, [
         sceneDoc(SCENE, [
           mapDoc,
-          gameObjectDoc("精灵", "Sprite", { x: 200, y: 0 }),
-          // 贴图：视频那一组的宿主（v21 起从精灵换成贴图）
-          gameObjectDoc("贴图", "Image", { x: -200, y: 0 }),
+          withComponent(gameObjectDoc("精灵", "Sprite", { x: 200, y: 0 }), COMPONENT.spriteLayer, {
+            sortingOrder: 0,
+          }),
+          // 贴图：带实际图片渲染组件，视频可稍后显式添加
+          withComponent(gameObjectDoc("贴图", "Image", { x: -200, y: 0 }), COMPONENT.imageLayer, {
+            sortingOrder: 0,
+          }),
           // 战争雾（v27 起是独立对象）
           fogObjectDoc(mapDoc),
         ]),
@@ -70,8 +75,8 @@ test.describe("属性分组", () => {
       await expect(map).toContainText("每格");
       await expect(map).toContainText("行序");
       await expect(map).toContainText("网格标注");
-      // 「基础」是实体属性组：挂「实体」角标；组件组不挂
-      await expect(basic.locator('[data-testid="field-group-badge"]')).toHaveAttribute("data-kind", "entity");
+      // 「基础」只显示固有属性；组件组不挂角标
+      await expect(basic.locator('[data-testid="field-group-badge"]')).toHaveCount(0);
       await expect(image.locator('[data-testid="field-group-badge"]')).toHaveCount(0);
       await expect(map.locator('[data-testid="field-group-badge"]')).toHaveCount(0);
 
@@ -140,14 +145,18 @@ test.describe("属性分组", () => {
       await expect(fog.getByTestId("fog-enable")).toBeVisible();
 
       // 精灵：「基础 / 精灵层」（图片组件是 `SpriteLayer`，组 slug 跟着组件走）。
-      // **没有视频**（v21 起那一组归贴图），也不是地图 → 没有网格地图 / 战争雾；也没有可加的组件
+      // 没有视频或网格组；其它能力都由底部的显式「添加组件」入口添加。
       await selectObject(page, 1);
       await expect(page.locator('[data-group="basic"]')).toBeVisible();
       await expect(page.locator('[data-group="sprite"]')).toBeVisible();
       await expect(page.locator('[data-group="video"]')).toHaveCount(0);
       await expect(page.locator('[data-group="map"]')).toHaveCount(0);
       await expect(page.locator('[data-group="fog"]')).toHaveCount(0);
-      await expect(page.getByTestId("add-component")).toHaveCount(0);
+      await expect(page.getByTestId("add-component")).toBeVisible();
+      await page.getByTestId("add-component").click();
+      await expect(page.getByTestId("add-component-VideoOverlay")).toBeVisible();
+      await expect(page.getByTestId("add-component-GridMap")).toBeVisible();
+      await page.getByTestId("add-component").click();
 
       // 贴图：「基础 / 图片层」；网格与视频都是**可选能力**，入口在底部「添加组件」，没有战争雾
       await selectObject(page, 2);

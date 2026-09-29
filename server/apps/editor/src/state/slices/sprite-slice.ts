@@ -18,9 +18,6 @@
  */
 import {
   createAssetMeta,
-  canRepairObjectComponent,
-  componentForSlot,
-  repairImageObjectComponent as repairSceneImageObjectComponent,
   setObjectImage as setGameObjectImage,
   withMetaSpriteSheet,
   withMetaSpriteSettings,
@@ -65,17 +62,7 @@ export function createSpriteSlice(
      * 补身份是挑图那一刻的事，见 `ensureAssetMeta` 与 `ResourcePickerDialog`。
      */
     setObjectImageSprite(objectId, image: ImageRef, sprite: ImageSpriteRef | null) {
-      const state = get();
-      const object = state.scenes
-        .find((scene) => scene.name === state.activeSceneName)
-        ?.objects.find((item) => item.id === objectId);
-      const imageComponent = object === undefined ? undefined : componentForSlot("image", object.kind);
-      const repairingImage = object !== undefined && imageComponent !== undefined &&
-        canRepairObjectComponent(object, imageComponent);
-      const label =
-        repairingImage
-          ? "添加图片组件"
-          : sprite === null ? "更换贴图" : `换图并取子图 第${sprite.row + 1}行第${sprite.column + 1}列`;
+      const label = sprite === null ? "更换贴图" : `换图并取子图 第${sprite.row + 1}行第${sprite.column + 1}列`;
       return applyActiveScene(label, (scene) => {
         const ref: ImageRef = {
           id: image.id,
@@ -84,12 +71,8 @@ export function createSpriteSlice(
           ...(image.guid === undefined ? {} : { guid: image.guid }),
         };
 
-        if (repairingImage) {
-          repairSceneImageObjectComponent(scene, objectId, sprite === null ? ref : { ...ref, sprite });
-        } else {
-          // 整图时显式不带 sprite；带格子时由 setObjectImage 原样写入。
-          setGameObjectImage(scene, objectId, sprite === null ? ref : { ...ref, sprite });
-        }
+        // 整图时显式不带 sprite；带格子时由 setObjectImage 原样写入。
+        setGameObjectImage(scene, objectId, sprite === null ? ref : { ...ref, sprite });
       });
     },
 

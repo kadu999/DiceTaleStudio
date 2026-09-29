@@ -128,8 +128,10 @@ describe("属性分组：基础 + 一一对应的组件组", () => {
     ], ["sprite"]);
     render(<InspectorPanel />);
 
-    expect(screen.getByTestId("pick-texture").textContent).toBe("选择图片并添加");
-    expect(screen.getByText("图片组件缺失")).toBeDefined();
+    expect(hasGroup("sprite")).toBe(false);
+    expect(addableLabels()).toContain("精灵层");
+    addComponentFromMenu("SpriteLayer");
+    expect(screen.getByTestId("pick-texture").textContent).toBe("选择");
     act(() => {
       useEditorStore.getState().setObjectImageSprite(
         "sprite",
@@ -144,11 +146,16 @@ describe("属性分组：基础 + 一一对应的组件组", () => {
     });
     expect(useEditorStore.getState().canUndo).toBe(true);
     act(() => useEditorStore.getState().undo());
+    expect(useEditorStore.getState().scenes[0]?.objects[0]?.components).toHaveLength(1);
+    expect(useEditorStore.getState().scenes[0]?.objects[0]?.components[0]?.data).toEqual({ sortingOrder: 0 });
+    act(() => useEditorStore.getState().undo());
     expect(useEditorStore.getState().scenes[0]?.objects[0]?.components).toEqual([]);
     expect(useEditorStore.getState().canUndo).toBe(false);
 
     act(() => useEditorStore.getState().setSelection(["image"]));
-    expect(screen.getByTestId("pick-texture").textContent).toBe("选择图片并添加");
+    expect(hasGroup("image")).toBe(false);
+    addComponentFromMenu("ImageLayer");
+    expect(screen.getByTestId("pick-texture").textContent).toBe("选择");
     act(() => {
       useEditorStore.getState().setObjectImageSprite(
         "image",
@@ -217,15 +224,15 @@ describe("属性分组：基础 + 一一对应的组件组", () => {
     expect(isOpen("basic")).toBe(true);
     expect(isOpen("image")).toBe(true);
     expect(isOpen("map")).toBe(true);
-    expect(addableLabels()).toEqual(["视频", "视频混合"]);
+    expect(addableLabels()).toEqual(["战争雾", "播放声音", "传送阵", "放大镜", "视频", "视频混合"]);
 
     // 组序 = 基础 + 组件组（注册表顺序）：图片层 → 网格地图
     // （战争雾自 v27 起是**独立对象**；网格自 v28 起是贴图上的可选组件）
     expect(groupSlugs()).toEqual(["basic", "image", "map"]);
     expect(hasGroup("fog")).toBe(false);
 
-    // 「基础」是实体属性组：挂「实体」角标，组件组不挂角标
-    expect(groupOf("basic").querySelector('[data-testid="field-group-badge"]')?.getAttribute("data-kind")).toBe("entity");
+    // 基础属性与组件组都不展示 kind 类别角标
+    expect(groupOf("basic").querySelector('[data-testid="field-group-badge"]')).toBeNull();
     expect(groupOf("image").querySelector('[data-testid="field-group-badge"]')).toBeNull();
     expect(groupOf("map").querySelector('[data-testid="field-group-badge"]')).toBeNull();
 
@@ -252,33 +259,40 @@ describe("属性分组：基础 + 一一对应的组件组", () => {
     expect(groupOf("fog").querySelector('[data-testid="field-group-badge"]')).toBeNull();
     expect(hasGroup("map")).toBe(false);
     expect(hasGroup("video")).toBe(false);
-    // 战争雾对象没有可选组件可加：底部没有「添加组件」
-    expect(screen.queryByTestId("add-component")).toBeNull();
+    // 缺失组件可显式添加，但 kind 不会自动展示对应编辑器组。
+    expect(screen.getByTestId("add-component")).toBeDefined();
+    expect(addableLabels()).toContain("图片层");
 
     unmount();
     seedScene([mapObject(), createGameObject({ id: "sprite", name: "精灵" })], ["sprite"]);
     const spritePanel = render(<InspectorPanel />);
 
-    // 精灵：「基础 / 精灵层」（图片组件是 `SpriteLayer`，组 slug 跟着组件走）。
-    // 没有「视频」（v21 起那一组归贴图），也不是地图 → 没有网格地图 / 战争雾
+    // 空白精灵没有实际图片组件，因此 kind 不会自动展示「精灵层」。
     expect(headerOf("basic")).toBeDefined();
-    expect(headerOf("sprite")).toBeDefined();
-    expect(groupSlugs()).toEqual(["basic", "sprite"]);
+    expect(hasGroup("sprite")).toBe(false);
+    expect(groupSlugs()).toEqual(["basic"]);
     expect(hasGroup("video")).toBe(false);
     expect(hasGroup("map")).toBe(false);
     expect(hasGroup("fog")).toBe(false);
-    // 精灵没有可选组件可加
-    expect(screen.queryByTestId("add-component")).toBeNull();
+    // 图片渲染能力可显式选择添加。
+    expect(screen.getByTestId("add-component")).toBeDefined();
+    expect(addableLabels()).toContain("精灵层");
 
     spritePanel.unmount();
-    seedScene([mapObject(), textureObject()], ["tex-1"]);
+    seedScene([
+      mapObject(),
+      {
+        ...textureObject(),
+        components: [featureComponent("tex-1", "ImageLayer", { sortingOrder: 0 })],
+      },
+    ], ["tex-1"]);
     render(<InspectorPanel />);
 
     // 贴图：「基础 / 图片层」；网格 / 视频 / 视频混合都是可选能力，入口在底部「添加组件」，没有战争雾
     expect(headerOf("basic")).toBeDefined();
     expect(headerOf("image")).toBeDefined();
     expect(groupSlugs()).toEqual(["basic", "image"]);
-    expect(addableLabels()).toEqual(["网格地图", "视频", "视频混合"]);
+    expect(addableLabels()).toEqual(["网格地图", "战争雾", "播放声音", "传送阵", "放大镜", "视频", "视频混合"]);
     expect(hasGroup("map")).toBe(false);
     expect(hasGroup("video")).toBe(false);
     expect(hasGroup("videoBlend")).toBe(false);

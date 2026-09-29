@@ -182,8 +182,12 @@ import {
  * `magnifierStateSchema` 多 `showTitle` / `showMedia` / `showText`（可选布尔）。**显示与否由开关说**，
  * 不再看那一项有没有值；老前端（v24）不认这三项 → 只窝在「有值才显示」的老口径（不是崩，
  * 是显示不一致），按同一条纪律 +1。**命令那一组一个字节都没动。**
+ *
+ * v26（2026-09-29）：图片渲染组件可以是尚未选图的空壳（仅 `sortingOrder`），且渲染、网格、视频组件
+ * 可与原 kind 不同的对象组合。老前端按“动作 kind 不建视图”及“图片组件必有 id”处理，可能忽略该对象的
+ * 渲染 / 视频，故握手必须阻止旧读者。
  */
-export const PROTOCOL_VERSION = 25;
+export const PROTOCOL_VERSION = 26;
 
 // 抬版判据（什么时候该 +1、什么时候不该）见 `server/docs/SPEC-版本与迁移判据.md`：
 // **唯一理由是「旧前端会把新数据读错」**；纯新增（可选字段 + 默认值、新组件、老前端会忽略的消息）不抬。
@@ -270,12 +274,14 @@ export const imageRefSchema = wireImageRefObject.refine(spriteFitsSheet, { messa
  * `GridMap.image` 也在用，多一项会污染地图贴图）。`default(0)` 让老编辑器少发这一项时
  * 前端照常读到 0，与文档侧同一个口径。
  */
-export const imageLayerDataSchema = imageLayerDataSchemaWith(wireImageRefObject).refine(spriteFitsSheet, {
-  message: "子图超出切分范围",
-});
+export const imageLayerDataSchema = imageLayerDataSchemaWith(wireImageRefObject).refine(
+  (image) => !("id" in image) || spriteFitsSheet(image),
+  { message: "子图超出切分范围" },
+);
 
 /** 子图必须落在切分范围内（缺任一项都不判错，见 `imageRefSchema`）。 */
 function spriteFitsSheet(image: {
+  readonly sortingOrder?: number;
   readonly sprite?: { readonly column: number; readonly row: number };
   readonly spriteGrid?: { readonly columns: number; readonly rows: number };
 }): boolean {
@@ -334,7 +340,7 @@ export { soundDataSchema };
 export { videoDataSchema };
 
 /**
- * 视频混合组件（v17 起，可选，只有贴图能带）：**两路素材**（A 盖住 / B 擦开露出）
+ * 视频混合组件（v17 起可选，当前行为由已挂载组件决定）：**两路素材**（A 盖住 / B 擦开露出）
  * + 循环 + 自动播放（v18）+ 声音来源。
  *
  * 与文档 schema 同一口径：每路是**一个素材**（`{ kind: "image" | "video", id? }`，v19 起）——

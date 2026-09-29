@@ -1,4 +1,4 @@
-import { componentKindMismatchOf, findComponentType, type ComponentType } from "./components";
+import { findComponentType, type ComponentType } from "./components";
 import {
   DEFAULT_MAGNIFIER_VIDEO_AUDIO,
   DEFAULT_MAGNIFIER_VIDEO_LOOP,
@@ -18,9 +18,7 @@ import type { GameObjectDoc } from "./types";
  *
  * **组件是唯一功能载体**：组件定义自报 `slot`（「我承担对象哪种能力」，住在
  * `components.ts` 的 `ComponentTypeDef.slot`），对象访问器（`access.ts`）按 slot 在
- * 对象的组件列表上查找。组件定义分别声明创建模板 kind、缺失必需组件修复 kind
- * 与可选组件准入 kind；这些职责由 `templateKinds` / `repairKinds` / `optionalKinds`
- * 分别承载。
+ * 对象的组件列表上查找。kind 只用于创建模板与历史迁移；创建后不限制组件组合。
  *
  * `kind` 因此只是**预设 id**：它不再携带行为、也没有 parent 层级（v22 及更早的层级
  * 已移除，迁移见 `schema.ts` 的 `LEGACY_KINDS`）。查「这个对象显示了哪张图」一律走
@@ -39,10 +37,7 @@ export type ComponentSlot = "map" | "fog" | "image" | "sound" | "teleport" | "ma
 /**
  * 全部对象类型（= 预设 id 的取值）。**顺序就是规范顺序**（文档枚举、编辑器类型表都按它排）。
  *
- * 基类排在所有具体类型前面（`GameObject` → 所有可落盘对象），其余保持既有顺序：
- * 前四个是前端 `BackendObjectKind` 就有的实体（`GameObject` / `Player` / `Item` / `Event`），
- * 后面的是编辑器侧新增的（`Map` 是「带网格的图」、`Image` 是「只显示整张图的贴图」，
- * `PlaySound` / `Teleport` 是动作对象）。
+ * 基类排在所有具体类型前面（`GameObject` → 所有可落盘对象），其余保持既有顺序。
  */
 export const OBJECT_KINDS = [
   "GameObject",
@@ -81,24 +76,22 @@ export const OBJECT_KINDS = [
  *
  * 贴图与精灵的数据形状相同（都是一份 `ImageRef`），只是**分开用两个组件**——
  * 编辑器里贴图入口的选择图片弹框也不给右侧切分面板（见 `ResourcePickerDialog` 的 `allowSprite`）；
- * 反过来，**视频这一组只有地图与贴图有**（`OBJECT_PRESETS` 里 `video` 槽位的声明）：
- * 视频是「盖在这个对象自己的矩形上的一条片」，给贴图正是它的用法。
+ * 视频初始模板只给贴图配置；对象创建后的能力只由实际挂载的组件决定。
  */
 export type ObjectKind = (typeof OBJECT_KINDS)[number];
 
 /**
- * 对象预设：一个 kind 允许的能力槽位 → 承载组件。
+ * 对象预设：创建对象时，一个 kind 的初始槽位 → 承载组件。
  *
- * **kind 只是预设 id，不携带行为**：对象身上真正有什么能力，看它实际挂了哪些组件；
- * 这张表管的是「这个预设**允许**什么」——写路径的准入判据（`ensureXxxData`）、
- * 「取组件名走哪个缺省承载」（`componentForSlot`）与校验都从这里查。
+ * **kind 只是预设 id，不携带对象行为**：对象身上真正有什么能力，看它实际挂了哪些组件；
+ * 这张表只用于创建和迁移，不用于对象实例的写入准入。
  */
 export interface GameObjectPreset {
   readonly kind: ObjectKind;
   /** 抽象基类：不落进文档；手写文件写了会被迁移规范化成 Sprite。 */
   readonly abstract?: boolean;
   /**
-   * 这个预设允许的能力槽位 → 承载组件。
+   * 这个预设创建时的初始组件槽位 → 承载组件。
    *
    * `image` 在精灵上是 `SpriteLayer`、在其余可贴图预设上是 `ImageLayer`
    * （原 `componentsByKind` 按 kind 路由，现在直接写在每个预设自己的槽位表里）。
@@ -109,8 +102,7 @@ export interface GameObjectPreset {
 /**
  * 缺省承载组件：预设表里没写某个槽位时的兜底（原 `FEATURE_COMPONENT`）。
  *
- * 取组件名只有 `componentForSlot` 这一个入口（迁移、写盘、访问器都走它），
- * 调用处不该自己判 kind。
+ * 只用于历史迁移与模板；对象实例的组件能力按实际组件读取。
  */
 export const DEFAULT_SLOT_COMPONENT: Readonly<Record<ComponentSlot, ComponentType>> = {
   map: "GridMap",
@@ -127,15 +119,13 @@ export const DEFAULT_SLOT_COMPONENT: Readonly<Record<ComponentSlot, ComponentTyp
 export const SPRITE_COMPONENT: ComponentType = "SpriteLayer";
 
 /**
- * 全部对象预设（顺序同 `OBJECT_KINDS`）。
+ * 全部对象创建模板（顺序同 `OBJECT_KINDS`）。
  *
- * `image` 那条槽位只登记在支持贴图的具体预设上（`Sprite` / `Image` / `Player` / `Item` /
- * `Event`）；`video` 那个槽位**刻意只给贴图**（`Image`）——视频画面盖在对象自己的矩形上，
- * 精灵显示的是图集里的一格，它的渲染选项归「渲染」那一组。`fog` 槽位**只给战争雾对象**（`Fog`）：
+ * 这些槽位描述创建时的初始组件；对象创建后可显式挂载其他组件，不再受 kind 限制。
+ * `fog` 槽位在历史模板里给战争雾对象（`Fog`）：
  * 雾引用一张带网格的贴图的格子区域位（v27 起雾是独立对象）。
  *
- * **网格（`GridMap`）是贴图上的可选能力**（v28 起）：`Image` 预设声明了 `map` 槽位，
- * 但组件本身是可选的（`optionalKinds`）——「网格地图」= 贴图 + 网格组件，不是独立类型。
+ * **网格（`GridMap`）是可选能力**（v28 起）：「网格地图」= 贴图 + 网格组件，不是独立类型。
  */
 export const OBJECT_PRESETS: Readonly<Record<ObjectKind, GameObjectPreset>> = {
   GameObject: { kind: "GameObject", abstract: true, slots: {} },
@@ -175,115 +165,67 @@ export const CONCRETE_KINDS: readonly ObjectKind[] = OBJECT_KINDS.filter(
 );
 
 /**
- * 这个 kind 上，某个槽位由**哪个组件**承载。
+ * 创建模板或历史迁移中，某 kind 的槽位映射到哪个组件。
  *
- * 先查预设自己的槽位表；预设没有写这个槽位（或 kind 认不出来）时返回
- * `DEFAULT_SLOT_COMPONENT` 的缺省承载——旧 `componentForKind` 对未知 kind 也落到
- * 缺省承载组件，行为一致。
+ * 此映射只用于创建与迁移；对象实例行为必须通过已挂载组件判定。
  */
 export function componentForSlot(slot: ComponentSlot, kind: ObjectKind): ComponentType {
   return presetOf(kind)?.slots[slot] ?? DEFAULT_SLOT_COMPONENT[slot];
 }
 
 /**
- * 这个对象类型能不能由**这个组件**承载（即它是该 kind 某个槽位的承载组件）。
+ * 创建模板或历史格式中的 kind 是否映射到该组件。
  *
- * 旧 `carriesKind` 对未知 kind（不在层级里）返回 false——这里未知 kind 没有预设、
- * 按空槽位表算，同样 false，不替它猜。
+ * 仅供模板与迁移查询，不用于创建后的能力判定。
  */
 export function carriesComponent(component: ComponentType, kind: ObjectKind): boolean {
   return Object.values(presetOf(kind)?.slots ?? {}).includes(component);
 }
 
 /**
- * 哪些对象能带视频列表：已挂 `VideoOverlay` 的对象；缺组件时按组件定义的可选准入 kind 添加。
+ * 哪些对象能带视频列表：只看实际挂载的 `VideoOverlay` 组件。
  *
- * 面板、命令和校验的组件实例判据保持一致；kind 只为缺失的旧组件提供兼容准入。
+ * 面板、命令和校验的组件实例判据保持一致；创建后不以 kind 作为能力准入。
  */
-export function supportsVideo(target: ObjectKind | GameObjectDoc): boolean {
-  if (typeof target !== "string") {
-    if (target.components.some((component) => component.type === DEFAULT_SLOT_COMPONENT.video)) return true;
-    if (target.components.some((component) => findComponentType(component.type)?.slot === "video")) return false;
-    if (componentKindMismatchOf(target.components, target.kind)) return false;
-    return findComponentType(DEFAULT_SLOT_COMPONENT.video)?.optionalKinds?.includes(target.kind) === true;
-  }
-
-  return presetOf(target)?.slots.video !== undefined;
+export function supportsVideo(object: GameObjectDoc): boolean {
+  return object.components.some((component) => component.type === DEFAULT_SLOT_COMPONENT.video);
 }
 
 /**
- * 哪些对象能带视频混合（`VideoBlend`）：已挂组件的对象；缺组件时按组件定义的可选准入 kind 添加。
+ * 哪些对象能带视频混合（`VideoBlend`）：只看实际挂载的组件。
  *
- * 与 `supportsVideo` 同一套：`videoBlend` 槽位**只给贴图**（`OBJECT_PRESETS.Image`）——
- * 混合结果盖在对象自己的矩形上，与「视频」是同一种用法。
+ * 与 `supportsVideo` 同一套：混合结果盖在对象自己的矩形上。
  *
  * 与 `VideoOverlay` 的关系：二者**互斥**（两条视频流同时想盖同一个矩形没有意义）——
  * 准入层（`access.ts` 的 `EXCLUSIVE_SLOTS`）**直接拒绝同时挂**：挂了一个，另一个就加不上
  * / 补不出来。手写文件里两个都写的由 `validateScene` 报一条 error。
  */
-export function supportsVideoBlend(target: ObjectKind | GameObjectDoc): boolean {
-  if (typeof target !== "string") {
-    if (target.components.some((component) => component.type === DEFAULT_SLOT_COMPONENT.videoBlend)) return true;
-    if (target.components.some((component) => findComponentType(component.type)?.slot === "videoBlend")) return false;
-    if (componentKindMismatchOf(target.components, target.kind)) return false;
-    return findComponentType(DEFAULT_SLOT_COMPONENT.videoBlend)?.optionalKinds?.includes(target.kind) === true;
-  }
-
-  return presetOf(target)?.slots.videoBlend !== undefined;
+export function supportsVideoBlend(object: GameObjectDoc): boolean {
+  return object.components.some((component) => component.type === DEFAULT_SLOT_COMPONENT.videoBlend);
 }
 
 /**
- * 哪些对象能带战争雾：**只有 `Fog` 对象**（v27 起雾是独立的场景对象，自己就是它的数据本体）。
- *
- * 已挂 `FogOfWar` 组件的对象照旧算数（损坏的手写文件）；组件定义里的 `templateKinds`
- * 决定正常的创建模板。地图对象上**不再**有雾。
+ * 哪些对象能带战争雾：只看实际挂载的 `FogOfWar` 组件。
  */
-export function supportsFog(target: ObjectKind | GameObjectDoc): boolean {
-  if (typeof target !== "string") {
-    if (target.components.some((component) => component.type === DEFAULT_SLOT_COMPONENT.fog)) return true;
-    if (target.components.some((component) => findComponentType(component.type)?.slot === "fog")) return true;
-    if (componentKindMismatchOf(target.components, target.kind)) return false;
-    return findComponentType(DEFAULT_SLOT_COMPONENT.fog)?.templateKinds?.includes(target.kind) === true;
-  }
-
-  return presetOf(target)?.slots.fog !== undefined;
+export function supportsFog(object: GameObjectDoc): boolean {
+  return object.components.some((component) => component.type === DEFAULT_SLOT_COMPONENT.fog);
 }
 
 /**
- * 哪些对象能带放大镜：**只有 `Magnifier` 对象**（v30 起它是独立的动作对象，自己就是它的数据本体）。
- *
- * 已挂 `Magnifier` 组件的对象照旧算数（损坏的手写文件）；组件定义里的 `templateKinds`
- * 决定正常的创建模板。与 `supportsFog` 同一套写法——两处各写一份判据迟早会漂移出
- * 「面板给了入口、命令却拒了」那种半套状态。
+ * 哪些对象能带放大镜：只看实际挂载的 `Magnifier` 组件。
  */
-export function supportsMagnifier(target: ObjectKind | GameObjectDoc): boolean {
-  if (typeof target !== "string") {
-    if (target.components.some((component) => component.type === DEFAULT_SLOT_COMPONENT.magnifier)) return true;
-    if (target.components.some((component) => findComponentType(component.type)?.slot === "magnifier")) return true;
-    if (componentKindMismatchOf(target.components, target.kind)) return false;
-    return findComponentType(DEFAULT_SLOT_COMPONENT.magnifier)?.templateKinds?.includes(target.kind) === true;
-  }
-
-  return presetOf(target)?.slots.magnifier !== undefined;
+export function supportsMagnifier(object: GameObjectDoc): boolean {
+  return object.components.some((component) => component.type === DEFAULT_SLOT_COMPONENT.magnifier);
 }
 
 /**
  * 这种对象的图**能不能取图集里的一格**（子图）——即精灵 `Sprite` 与其余场景对象的分界。
  *
- * 判据是**图片槽位用哪个组件**（精灵 `SpriteLayer`、其余 `ImageLayer`），不是另写一份
- * kind 名单：于是「选择图片弹框给不给右侧切分面板」「渲染那一组给不给选格子」两处永远一致。
- * 基类 `GameObject` 与地图返回 `false`（地图的贴图住在 `GridMap` 里，格子按整张贴图算）。
+ * 判据只看已挂载的图片渲染组件；地图组件存在时禁止切子图，以免网格标注错位。
  */
-export function supportsSpriteSheet(target: ObjectKind | GameObjectDoc): boolean {
-  if (typeof target !== "string") {
-    if (target.components.some((component) => component.type === DEFAULT_SLOT_COMPONENT.map)) return false;
-    const image = target.components.find((component) => findComponentType(component.type)?.slot === "image");
-    if (image !== undefined) return image.type === SPRITE_COMPONENT;
-    if (componentKindMismatchOf(target.components, target.kind)) return false;
-    return findComponentType(SPRITE_COMPONENT)?.templateKinds?.includes(target.kind) === true;
-  }
-
-  return presetOf(target)?.slots.image === SPRITE_COMPONENT;
+export function supportsSpriteSheet(object: GameObjectDoc): boolean {
+  if (object.components.some((component) => findComponentType(component.type)?.slot === "map")) return false;
+  return object.components.some((component) => component.type === SPRITE_COMPONENT);
 }
 
 // ---------------------------------------------------------------- 特性缺省值

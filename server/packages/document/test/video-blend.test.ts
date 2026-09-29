@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { produce, type Draft } from "immer";
 import {
   addObjectComponent,
+  addObjectVideo,
   addObjectVideoBlend,
   createGameObject,
   removeObjectComponent,
@@ -61,12 +62,12 @@ function mutate(scene: SceneDoc, recipe: (draft: Draft<SceneDoc>) => void): Scen
   return produce(scene, recipe);
 }
 
-/** 一张贴图（视频混合唯一的合法宿主）。 */
+/** 创建用的贴图模板。 */
 function textureObject(id = "tex-1"): GameObjectDoc {
   return createGameObject({ id, name: "贴图", kind: "Image" });
 }
 
-/** 已经挂上视频混合组件的贴图。 */
+/** 已经挂上视频混合组件的对象。 */
 function blendedTexture(): SceneDoc {
   return mutate(sceneWith([textureObject()]), (draft) => {
     addObjectVideoBlend(draft, "tex-1");
@@ -79,22 +80,21 @@ function blendOf(scene: { readonly objects: readonly GameObjectDoc[] }, id = "te
 }
 
 describe("视频混合：哪些对象能带", () => {
-  it("只有贴图能带；精灵 / 动作对象 / 战争雾都不行", () => {
-    expect(supportsVideoBlend("Image")).toBe(true);
-    for (const kind of ["Sprite", "Player", "Item", "Event", "PlaySound", "Teleport", "Fog", "GameObject"] as const) {
-      expect(supportsVideoBlend(kind), kind).toBe(false);
-    }
+  it("能力只由实际挂载的 VideoBlend 决定", () => {
+    const image = textureObject();
+    expect(supportsVideoBlend({ ...image, components: [featureComponent(image.id, "VideoBlend", {})] })).toBe(true);
+    expect(supportsVideoBlend(image)).toBe(false);
   });
 });
 
 describe("视频混合：添加与移除", () => {
-  it("贴图能加：写一份默认组件（两路空素材 + 不循环 + 不自动播 + 静音）", () => {
-    const scene = sceneWith([textureObject()]);
+  it("任意 kind 都能显式添加：写一份默认组件（两路空素材 + 不循环 + 不自动播 + 静音）", () => {
+    const scene = sceneWith([createGameObject({ id: "any", name: "组合对象", kind: "PlaySound" })]);
     const added = mutate(scene, (draft) => {
-      expect(addObjectVideoBlend(draft, "tex-1")).toBe(true);
+      expect(addObjectVideoBlend(draft, "any")).toBe(true);
     });
 
-    expect(blendOf(added)).toEqual({
+    expect(blendOf(added, "any")).toEqual({
       a: { kind: DEFAULT_VIDEO_BLEND_KIND },
       b: { kind: DEFAULT_VIDEO_BLEND_KIND },
       loop: DEFAULT_VIDEO_LOOP,
@@ -105,13 +105,17 @@ describe("视频混合：添加与移除", () => {
     // 已经挂过 = 没变更
     expect(
       mutate(added, (draft) => {
-        expect(addObjectVideoBlend(draft, "tex-1")).toBe(false);
+        expect(addObjectVideoBlend(draft, "any")).toBe(false);
       }),
     ).toBe(added);
   });
 
-  it("精灵加不了（无变更）", () => {
-    const scene = sceneWith([createGameObject({ id: "sprite-1", name: "精灵" })]);
+  it("有 VideoOverlay 时仍拒绝互斥的 VideoBlend", () => {
+    const sprite = createGameObject({ id: "sprite-1", name: "精灵" });
+    const scene = sceneWith([{
+      ...sprite,
+      components: [featureComponent("sprite-1", "VideoOverlay", {})],
+    }]);
     expect(
       mutate(scene, (draft) => {
         expect(addObjectVideoBlend(draft, "sprite-1")).toBe(false);
@@ -213,7 +217,7 @@ describe("视频混合：两路素材（种类 + 素材）", () => {
     expect(blendOf(pickedB)?.b).toEqual({ kind: "video", id: IMG_A });
   });
 
-  it("非贴图对象上的命令一律不生效（返回 false，也不补组件）", () => {
+  it("未挂 VideoBlend 的对象上的写入不隐式补组件", () => {
     const scene = sceneWith([createSoundObject({ name: "脚步", id: "s1" })]);
     expect(
       mutate(scene, (draft) => {
@@ -367,7 +371,7 @@ describe("视频混合：schema 与校验", () => {
 describe("视频混合：与「视频」互斥", () => {
   it("挂了视频就加不上视频混合（准入层直接拒绝，无变更）", () => {
     const withVideo = mutate(sceneWith([textureObject()]), (draft) => {
-      setVideoEnabled(draft, "tex-1", true);
+      addObjectVideo(draft, "tex-1");
     });
     expect(videoDataOf(withVideo.objects[0]!)).toBeDefined();
 
@@ -394,7 +398,7 @@ describe("视频混合：与「视频」互斥", () => {
 
   it("摘掉一个之后另一个就加得上（互斥不是单向锁）", () => {
     const withVideo = mutate(sceneWith([textureObject()]), (draft) => {
-      setVideoEnabled(draft, "tex-1", true);
+      expect(addObjectVideo(draft, "tex-1")).toBe(true);
     });
     const removed = mutate(withVideo, (draft) => {
       removeObjectComponent(draft, "tex-1", "VideoOverlay");

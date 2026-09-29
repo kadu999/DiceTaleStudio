@@ -541,7 +541,7 @@ describe("推送载荷：形状与 v22 及更早只差 v14 的 sortingOrder", ()
       ...createEmptyScene("Map001"),
       objects: [createGameObject({ id: "sprite-1", name: "精灵" })],
     };
-    repairImageObjectComponent(scene, "sprite-1", {
+    repairImageObjectComponent(scene, "sprite-1", "SpriteLayer", {
       id: IMAGE_ID,
       guid: GUID,
       width: 64,

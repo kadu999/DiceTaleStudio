@@ -4,11 +4,9 @@ import { gridSizeFromImage } from "@dts/grid";
 // 特性的读写一律走访问器（「数据存在哪个组件里」只有 access.ts 知道）
 import { canAddOptionalObjectComponent, canRepairObjectComponent, componentTypeForObjectSlot, imageLayerDataOf, mapDataOf, objectImage, objectSupportsSpriteSheet, removeFeature, sortingOrderOf, writeFeature } from "../access";
 import {
-  componentForSlot,
   DEFAULT_SLOT_COMPONENT,
   DEFAULT_SOUND_LAYER,
   FOG_DEFAULT_SORTING_ORDER,
-  SPRITE_COMPONENT,
 } from "../presets";
 import { DEFAULT_OBJECT_SCALE, clampObjectScale, collapseScale } from "../scale";
 import {
@@ -66,35 +64,39 @@ export function addObject(scene: Draft<SceneDoc>, object: GameObjectDoc): void {
   scene.objects.push(object as Draft<GameObjectDoc>);
 }
 
-/** Explicitly restore an empty required component on a damaged template object. */
+/** Explicitly add a registered non-optional component to an object. */
 export function repairObjectComponent(
   scene: Draft<SceneDoc>,
   objectId: string,
-  type: "PlaySound" | "Teleport" | "Magnifier" | "FogOfWar",
+  type: "ImageLayer" | "SpriteLayer" | "PlaySound" | "Teleport" | "Magnifier" | "FogOfWar",
 ): boolean {
   const object = findObject(scene, objectId);
   if (object === undefined || !canRepairObjectComponent(object, type)) return false;
 
-  const data =
-    type === "PlaySound"
-      ? { clips: [], layer: DEFAULT_SOUND_LAYER }
-      : type === "Teleport"
-        ? { targets: [] }
-        : // 放大镜（v30；v31 起是状态列表）：补出来是一扇还没有状态的窗（窗口里再加状态）
-          type === "Magnifier"
-          ? { states: [] }
-          : // 战争雾（v27：独立的 Fog 对象）：默认还没选地图，由用户在面板上选
-            { mapId: "", enabled: true, regions: [], sortingOrder: FOG_DEFAULT_SORTING_ORDER };
+  const data = (() => {
+    switch (type) {
+      case "ImageLayer":
+      case "SpriteLayer":
+        return { sortingOrder: DEFAULT_SORTING_ORDER };
+      case "PlaySound":
+        return { clips: [], layer: DEFAULT_SOUND_LAYER };
+      case "Teleport":
+        return { targets: [] };
+      case "Magnifier":
+        return { states: [] };
+      case "FogOfWar":
+        return { mapId: "", enabled: true, regions: [], sortingOrder: FOG_DEFAULT_SORTING_ORDER };
+    }
+  })();
   writeFeature(object, type, data);
   return true;
 }
 
 /**
- * 给贴图**加上网格**（v28：网格是可选能力）——加完它就是「网格地图」。
+ * 显式**加上网格组件**（v28 起可选能力）——加完后对象同时具有 GridMap 能力。
  *
  * 网格规格按对象当前那张图的尺寸推（`gridSizeFromImage`，与新建网格地图同一套）；
- * 还没挑图时用 `FALLBACK_GRID`（与文档里手写空网格同一口径）。已经带网格 / 这个 kind
- * 不允许加（只有贴图允许）时返回 `false`。
+ * 还没挑图时用 `FALLBACK_GRID`（与文档里手写空网格同一口径）。
  */
 export function addObjectGridMap(scene: Draft<SceneDoc>, objectId: string): boolean {
   const object = findObject(scene, objectId);
@@ -122,17 +124,19 @@ export function removeObjectGridMap(scene: Draft<SceneDoc>, objectId: string): b
   return removeFeature(object, DEFAULT_SLOT_COMPONENT.map);
 }
 
-/** Explicitly attach a missing image renderer to an empty object from its selected image. */
+/** Explicitly attach/update the image renderer selected by the user, independent of object kind. */
 export function repairImageObjectComponent(
   scene: Draft<SceneDoc>,
   objectId: string,
+  component: "ImageLayer" | "SpriteLayer",
   image: ImageRef,
 ): boolean {
   const object = findObject(scene, objectId);
   if (object === undefined) return false;
 
-  const component = componentForSlot("image", object.kind);
-  if (!canRepairObjectComponent(object, component)) return false;
+  const current = componentTypeForObjectSlot(object, "image");
+  if (current !== undefined && current !== component) return false;
+  if (current === undefined && !canRepairObjectComponent(object, component)) return false;
 
   const next = withSpriteRef(
     {
@@ -141,7 +145,7 @@ export function repairImageObjectComponent(
       width: image.width,
       height: image.height,
     },
-    component === SPRITE_COMPONENT ? image.sprite : undefined,
+    component === "SpriteLayer" ? image.sprite : undefined,
   );
   // 修复出来的图片层补上显示顺序（v26 起它住在渲染组件里）：带网格的贴图垫底、其余缺省 0
   const fallback =

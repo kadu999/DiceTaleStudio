@@ -1,17 +1,10 @@
 import type { Draft } from "immer";
 import {
   componentId,
-  componentKindMismatchOf,
   findComponentType,
-  SLOT_COMPONENT_TYPES,
 } from "./components";
 import { defaultDataOf } from "./component-specs";
-import {
-  DEFAULT_SLOT_COMPONENT,
-  DEFAULT_SOUND_LAYER,
-  FOG_DEFAULT_SORTING_ORDER,
-  supportsSpriteSheet,
-} from "./presets";
+import { supportsSpriteSheet } from "./presets";
 import type { ComponentSlot } from "./presets";
 import type {
   ComponentDoc,
@@ -41,7 +34,7 @@ import type {
  *
  * v22 层级移除后，查找一律按**能力槽位**（`ComponentSlot`）走：组件定义自报 `slot`，
  * 这里按 slot 在对象的组件列表上找第一个自报该槽位的组件，**不看 kind**；组件缺失时，
- * 必需能力由显式修复恢复，可选能力才读取组件定义里的准入元数据。
+ * 缺失能力可由显式修复恢复；只有标记为 optional 的组件可在普通编辑中补建。
  *
  * 两类函数分工明确：
  * - `xxxOf(object)` —— **纯读**，不改数据，没有这个组件就是 `undefined`；
@@ -90,62 +83,43 @@ function hasExclusiveComponent(object: GameObjectDoc, slot: ComponentSlot): bool
   return other !== undefined && componentOfSlot(object, other) !== undefined;
 }
 
-/** Get the attached component type, or an explicitly addable optional component. */
+/** Return only an attached component type; additions use their explicit commands. */
 export function componentTypeForObjectSlot(
   object: GameObjectDoc,
   slot: ComponentSlot,
 ): string | undefined {
-  const attached = componentOfSlot(object, slot);
-  if (attached !== undefined) return attached.type;
-  // 互斥的那个已经挂上：这个槽位**不许补建**（视频 / 视频混合二选一）
-  if (hasExclusiveComponent(object, slot)) return undefined;
-  if (object.components.some((component) => findComponentType(component.type)?.slot === slot)) return undefined;
-  if (hasComponentKindMismatch(object)) return undefined;
-  return SLOT_COMPONENT_TYPES.find(
-    (definition) => definition.slot === slot && definition.optionalKinds?.includes(object.kind) === true,
-  )?.type;
+  return componentOfSlot(object, slot)?.type;
 }
 
-/** Whether the editor can offer an explicit repair for a missing required component. */
+/** Whether the editor can explicitly restore a missing component in an unused capability slot. */
 export function canRepairObjectComponent(object: GameObjectDoc, type: string): boolean {
   const definition = findComponentType(type);
   return (
     definition?.slot !== undefined &&
-    definition.repairKinds?.includes(object.kind) === true &&
-    !hasComponentKindMismatch(object) &&
+    definition.optional !== true &&
+    !hasExclusiveComponent(object, definition.slot) &&
     !object.components.some((component) => findComponentType(component.type)?.slot === definition.slot)
   );
 }
 
-/** Whether this kind may add an optional component that is not attached yet. */
+/** Whether this object may add an optional component that is not attached yet. */
 export function canAddOptionalObjectComponent(object: GameObjectDoc, type: string): boolean {
   const definition = findComponentType(type);
   return (
     definition?.slot !== undefined &&
-    definition.optionalKinds?.includes(object.kind) === true &&
-    !hasComponentKindMismatch(object) &&
+    definition.optional === true &&
     !object.components.some((component) => findComponentType(component.type)?.slot === definition.slot) &&
     // 互斥的那个已经挂上：这个可选组件**不能加**（视频 / 视频混合二选一）
     !hasExclusiveComponent(object, definition.slot)
   );
 }
 
-/** Whether attached known components agree with their legacy kind templates. */
-export function hasComponentKindMismatch(object: GameObjectDoc): boolean {
-  return componentKindMismatchOf(object.components, object.kind);
-}
-
+/** Components are the sole source of an object's current capabilities. */
 export function supportsObjectComponent(object: GameObjectDoc, type: string): boolean {
-  return (
-    object.components.some((component) => component.type === type) ||
-    canRepairObjectComponent(object, type) ||
-    canAddOptionalObjectComponent(object, type)
-  );
+  return object.components.some((component) => component.type === type);
 }
 
 export function objectSupportsSpriteSheet(object: GameObjectDoc): boolean {
-  // 判据只有 `presets.supportsSpriteSheet` 一处（同一份 kind / 组件槽位逻辑）：
-  // 这里只是给「手上已经是对象」的调用方一个不用先取 kind 的入口。
   return supportsSpriteSheet(object);
 }
 
@@ -205,7 +179,15 @@ export function isFogEnabled(object: GameObjectDoc): boolean {
  */
 export function imageOf(object: GameObjectDoc): ImageRef | undefined {
   const data = componentDataOfSlot<ImageLayerDataDoc>(object, "image");
-  if (data === undefined) {
+  if (
+    data === undefined ||
+    typeof data.id !== "string" ||
+    data.id.length === 0 ||
+    typeof data.width !== "number" ||
+    data.width <= 0 ||
+    typeof data.height !== "number" ||
+    data.height <= 0
+  ) {
     return undefined;
   }
 
@@ -228,12 +210,6 @@ export function imageLayerDataOf(object: GameObjectDoc): ImageLayerDataDoc | und
   return componentDataOfSlot<ImageLayerDataDoc>(object, "image");
 }
 
-/**
- * 这个对象的**显示顺序**（渲染层属性，v26 起）。
- *
- * 全仓唯一读口：地图 → `GridMap.data.sortingOrder`；有图片层 → 它的 `sortingOrder`；
- * 都没有（动作对象 / 还没挑图的实体）→ `0`。画布排序、mock 客户端与测试读回都走它。
- */
 /**
  * 这个对象的**显示顺序**（渲染层属性，v26 起；v28 起带网格的贴图也不再例外）。
  *
@@ -423,37 +399,24 @@ export function withFeature<T>(object: GameObjectDoc, component: string, data: T
 }
 
 /**
- * 取能力槽位的组件数据 draft；缺少实例时仅为明确可选的组件创建默认数据。
+ * 取能力槽位的组件数据 draft；缺少实例时不隐式补建。
  *
- * 必需组件通过显式修复入口恢复，普通字段编辑不得补建。
+ * 所有组件都通过显式添加或修复入口恢复，普通字段编辑不得补建。
  *
- * 导出是为了让**泛型写入**（`commands/component.ts`）复用同一份准入判据——
- * 那条路必须遵守相同的组件准入规则，避免出现「面板给了入口、命令却拒了」的半套状态。
  */
 export function ensureSlotData<T>(
   object: Draft<GameObjectDoc>,
   slot: ComponentSlot,
-  defaultData: () => T,
 ): Draft<T> | undefined {
-  const component = componentTypeForObjectSlot(object, slot);
-  if (component === undefined) {
-    return undefined;
-  }
-
-  const existing = object.components.find((item) => item.type === component);
-  if (existing === undefined) {
-    return writeFeature(object, component, defaultData()).data as Draft<T>;
-  }
-
-  return existing.data as Draft<T>;
+  return componentDataOfSlot<T>(object, slot) as Draft<T> | undefined;
 }
 
 /**
- * 按**组件类型**（而不是槽位）取数据 draft；只有已挂载或可选准入时才创建实例。
+ * 按**组件类型**（而不是槽位）取数据 draft；只返回已挂载实例。
  *
  * 与 `ensureSlotData` 同一套判据，多一道「这个槽位确实由**这个**组件承载」的核对：
  * `image` 槽位在精灵上是 `SpriteLayer`、在贴图上是 `ImageLayer`，只按槽位找会拿错那一份。
- * 核对不过（未知组件 / 这个 kind 不允许 / 该槽位由别的组件承载）返回 `undefined`，
+ * 核对不过（未知组件 / 该槽位由别的组件承载）返回 `undefined`，
  * 调用方据此返回「无变更」——**不补、不抛**。
  */
 export function ensureComponentData(
@@ -470,81 +433,59 @@ export function ensureComponentData(
     return attached.data as Draft<Record<string, unknown>>;
   }
 
-  if (!canAddOptionalObjectComponent(object, type)) {
-    return undefined;
-  }
+  return undefined;
+}
 
+/** Explicitly add an optional component with its registered default data. */
+export function addOptionalComponent(
+  object: Draft<GameObjectDoc>,
+  type: string,
+): Draft<Record<string, unknown>> | undefined {
+  if (!canAddOptionalObjectComponent(object, type)) return undefined;
   return writeFeature(object, type, defaultDataOf(type)).data as Draft<Record<string, unknown>>;
 }
 
 /**
  * 声音数据的 draft；缺少组件时由显式修复命令恢复。
  *
- * 缺失的 `PlaySound` 组件现在必须先通过显式修复操作恢复；普通字段命令不会按 kind 补建。
+ * 缺失的 `PlaySound` 组件现在必须先通过显式修复操作恢复；普通字段命令不会隐式补建。
  */
 export function ensureSoundData(object: Draft<GameObjectDoc>): Draft<SoundDataDoc> | undefined {
-  return ensureSlotData<SoundDataDoc>(object, "sound", () => ({
-    clips: [],
-    layer: DEFAULT_SOUND_LAYER,
-  }));
+  return ensureSlotData<SoundDataDoc>(object, "sound");
 }
 
 /** 传送数据的 draft；缺失组件须先通过显式修复操作恢复。 */
 export function ensureTeleportData(object: Draft<GameObjectDoc>): Draft<TeleportDataDoc> | undefined {
-  return ensureSlotData<TeleportDataDoc>(object, "teleport", () => ({
-    targets: [],
-  }));
+  return ensureSlotData<TeleportDataDoc>(object, "teleport");
 }
 
 /**
- * 放大镜数据的 draft；缺失组件须先通过显式修复操作恢复（与传送阵同一套必需组件口径）。
+ * 放大镜数据的 draft；缺失组件须先通过显式添加操作创建。
  *
  * 默认数据就是「一扇还没有状态的窗」：`states: []`、`picked` 不写（那扇窗中间写「还没加状态」）。
  */
 export function ensureMagnifierData(object: Draft<GameObjectDoc>): Draft<MagnifierDataDoc> | undefined {
-  return ensureSlotData<MagnifierDataDoc>(object, "magnifier", () => ({
-    states: [],
-  }));
+  return ensureSlotData<MagnifierDataDoc>(object, "magnifier");
 }
 
-/**
- * 视频数据的 draft；缺实例时，只有具备可选视频能力的对象才创建默认组件。
- *
- * 不是地图 / 贴图的对象返回 `undefined`（预设表 `OBJECT_PRESETS`：只有这两种预设声明了 video 槽位）。
- * 默认数据住在 `component-specs/video.ts`（与属性面板、泛型写入同一份规格）。
- */
+/** 视频数据的 draft；没有已挂组件时返回 undefined，普通编辑绝不隐式添加。 */
 export function ensureVideoData(object: Draft<GameObjectDoc>): Draft<VideoDataDoc> | undefined {
-  return ensureSlotData<VideoDataDoc>(object, "video", () =>
-    defaultDataOf(DEFAULT_SLOT_COMPONENT.video) as unknown as VideoDataDoc,
-  );
+  return ensureSlotData<VideoDataDoc>(object, "video");
 }
 
 /**
- * 视频混合数据的 draft；缺实例时，只有具备该可选能力的对象才创建默认组件。
- *
- * 只有贴图能带（预设表 `OBJECT_PRESETS.Image` 声明了 `videoBlend` 槽位）。
- * 默认数据住在 `component-specs/video-blend.ts`（与属性面板、泛型写入同一份规格）。
+ * 视频混合数据的 draft；没有已挂组件时返回 undefined。
  */
 export function ensureVideoBlendData(
   object: Draft<GameObjectDoc>,
 ): Draft<VideoBlendDataDoc> | undefined {
-  return ensureSlotData<VideoBlendDataDoc>(object, "videoBlend", () =>
-    defaultDataOf(DEFAULT_SLOT_COMPONENT.videoBlend) as unknown as VideoBlendDataDoc,
-  );
+  return ensureSlotData<VideoBlendDataDoc>(object, "videoBlend");
 }
 
 /**
- * 战争雾数据的 draft；缺实例时，只有具备战争雾能力的对象才创建默认组件。
- *
- * 不是 `Fog` 对象返回 `undefined`（预设表 `OBJECT_PRESETS`：只有战争雾对象声明了 fog 槽位）。
- * 默认数据 `{ mapId: "", enabled: true, regions: [], sortingOrder: 最前面 }`：`mapId` 空着
- * 等用户在面板上选地图（校验会报 error 直到选上）。
+ * 战争雾数据的 draft；没有已挂组件时返回 undefined。
  */
 export function ensureFogData(object: Draft<GameObjectDoc>): Draft<FogOfWarDataDoc> | undefined {
-  return ensureSlotData<FogOfWarDataDoc>(object, "fog", () => ({
-    mapId: "",
-    enabled: true,
-    regions: [],
-    sortingOrder: FOG_DEFAULT_SORTING_ORDER,
-  }));
+  const attached = componentDataOfSlot<FogOfWarDataDoc>(object, "fog");
+  return attached === undefined ? undefined : (attached as Draft<FogOfWarDataDoc>);
 }

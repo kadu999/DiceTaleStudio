@@ -5,7 +5,7 @@
  */
 import {
   DOCUMENT_FORMAT_VERSION,
-  componentForSlot,
+  componentTypeForObjectSlot,
   imageLayerDataOf,
   mapDataOf,
   withFeature,
@@ -242,14 +242,16 @@ export function withRenamedSceneImage(
   const objects = file.objects.map((object) => {
     const map = mapDataOf(object);
     const image = imageLayerDataOf(object);
-    if (map === undefined || image === undefined || fileNameOfResourceId(image.id) !== oldFile) {
+    if (map === undefined || image?.id === undefined || fileNameOfResourceId(image.id) !== oldFile) {
       return object;
     }
 
     changed += 1;
     // 贴图在图片层组件里——**必须经访问器替换**，不能再往对象上写扁平字段
     // （那样 schema 会在下次解析时把它当未知键丢掉，场景一改名贴图就找不到了）
-    return withFeature(object, componentForSlot("image", object.kind), {
+    const component = componentTypeForObjectSlot(object, "image");
+    if (component === undefined) return object;
+    return withFeature(object, component, {
       ...image,
       id: projectSceneImageId(project, newName),
     });

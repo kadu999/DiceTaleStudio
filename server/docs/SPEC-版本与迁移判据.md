@@ -54,13 +54,13 @@
 ## 4. 与 C# 的关系
 
 - 组件名 / 命令名常量已由 `pnpm gen:contract` 生成（阶段 0/1），**加名字不用手改 C#**；
-- `Protocol.cs` 的 `Version = 25` 仍需**与 `PROTOCOL_VERSION` 同值**——抬版时必须一起改（并跑 Unity 编译）。
+- `Protocol.cs` 的 `Version = 26` 仍需**与 `PROTOCOL_VERSION` 同值**——抬版时必须一起改（并跑 Unity 编译）。
 
 ## 5. 现状
 
 | | 值 | 说明 |
 |---|---|---|
-| `DOCUMENT_FORMAT_VERSION` | 34 | 上一次为了「放大镜显示开关」（v34） |
-| `PROTOCOL_VERSION` | 25 | 同上（v25） |
+| `DOCUMENT_FORMAT_VERSION` | 35 | v35 将历史 kind 模板的初始必需组件显式落盘 |
+| `PROTOCOL_VERSION` | 26 | v26 支持空图片渲染组件及 kind 无关的视图判定 |
 
 > 本判据不追溯历史；从下一次改动起按它执行即可。

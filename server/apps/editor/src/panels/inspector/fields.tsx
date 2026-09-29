@@ -33,15 +33,14 @@ export function FieldGroup({
   readonly group?: string;
   /**
    * 组的**类别角标**（对象属性面板用）：
-   * - `entity`：实体属性组（「基础」）——名称 / 变换这些不进组件的固有字段；
-   * - `capability`：能力入口——组件还没添加时的开关 / 选图 / 修复入口，加上组件后它就是正式组件组。
+    * - `capability`：能力入口——组件还没添加时的开关 / 选图 / 修复入口，加上组件后它就是正式组件组。
    * 组件组（一一对应一个组件实例）**不挂角标**。
    */
-  readonly badge?: "entity" | "capability";
+  readonly badge?: "capability";
   readonly defaultOpen?: boolean;
   /**
    * 组头的**「移除组件」**（可选能力组件才有，见 `registry.tsx` 的 `removable`）。
-   * 只有可选组件会传它；必需组件摘掉会把对象弄坏，所以不给。
+    * 只有可移除组件会传它；图片层等基础组件可通过显式菜单添加。
    */
   readonly onRemove?: () => void;
   /** 「移除组件」按钮的无障碍名与 `title`。不给就按标题拼一句。 */
@@ -77,15 +76,11 @@ export function FieldGroup({
           {badge === undefined ? null : (
             <span
               data-testid="field-group-badge"
-              data-kind={badge}
-              title={
-                badge === "entity"
-                  ? "对象固有属性：不进组件的字段（名称 / 变换 / 可见性）"
-                  : "能力入口：这个组件还没添加；用它建起来后就是正式的组件组"
-              }
+              data-badge={badge}
+              title="能力入口：这个组件还没添加；添加后就是正式的组件组"
               className="flex-none rounded border border-[var(--color-editor-border)] px-1 text-[9px] font-normal text-[var(--color-editor-text-dim)]"
             >
-              {badge === "entity" ? "实体" : "未添加"}
+              未添加
             </span>
           )}
         </button>

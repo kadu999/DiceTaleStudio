@@ -1,24 +1,23 @@
-// 本文件从 `commands.ts` 拆出（纯搬运，行为不变）：视频（地图 / 精灵）命令。
+// 本文件从 `commands.ts` 拆出：VideoOverlay 组件的列表、开关及显式添加/移除命令。
 import type { Draft } from "immer";
 import { DEFAULT_SLOT_COMPONENT } from "../presets";
 // 特性的读写一律走访问器（「数据存在哪个组件里」只有 access.ts 知道）
-import { ensureVideoData, removeFeature, videoDataOf, writeFeature } from "../access";
+import { addOptionalComponent, ensureVideoData, removeFeature, videoDataOf, writeFeature } from "../access";
 import { setMediaList, setMediaPicked, withObject } from "./shared";
 import type { SceneDoc } from "../types";
 
-// ---------------------------------------------------------------- 视频（地图 / 精灵）
+// ---------------------------------------------------------------- VideoOverlay
 
 /**
  * 打开 / 关掉这个对象的**视频总开关**。
  *
  * 与战争雾的总开关（`setMapFogEnabled`）完全同一套规矩：
  * - **关掉不清列表**——「先关掉看看效果、再打开」不该逼人重新加一遍（`{ enabled: false, clips }`）；
- * - **打开**：`video` 先在（只是关着）就把 `enabled` 翻回来；不在就写一份
- *   `{ enabled: true, clips: [] }`（开关状态本身也是要存的数据）；
+ * - **打开**：只把已挂载组件的 `enabled` 翻回来；首次添加必须走 `addObjectVideo`；
  * - 一个视频都没加的时候关掉：`video` 整个删掉（与「从没开过」同义，文件里不留空壳）；
  * - 关着时前端不建视频层，`play_video` 这类命令会被明确拒掉（前端读 `video.enabled`）。
  *
- * 返回 `false` 表示没有变更（对象不提供视频组件、或开关本来就是这个状态）。
+ * 返回 `false` 表示没有变更（对象已挂 `VideoOverlay` / 正在互斥状态、或开关本来就是这个状态）。
  */
 export function setVideoEnabled(
   scene: Draft<SceneDoc>,
@@ -28,19 +27,13 @@ export function setVideoEnabled(
   return withObject(scene, objectId, (object) => {
     const video = videoDataOf(object);
     if (enabled) {
-      if (video !== undefined && video.enabled !== false) {
+      if (video === undefined || video.enabled !== false) {
         return false;
       }
 
       // **整份留着、只把开关翻回来**：`clips` / `picked` / `loop` / `audio` 一个都不能丢
       // （`map.fog.enabled` 那边能重建是因为它只有 regions；视频字段多，重建会悄悄丢掉选中）
-      if (video === undefined) {
-        const created = ensureVideoData(object);
-        if (created === undefined) return false;
-        created.enabled = true;
-      } else {
-        writeFeature(object, DEFAULT_SLOT_COMPONENT.video, { ...video, enabled: true });
-      }
+      writeFeature(object, DEFAULT_SLOT_COMPONENT.video, { ...video, enabled: true });
       return true;
     }
 
@@ -56,6 +49,13 @@ export function setVideoEnabled(
     writeFeature(object, DEFAULT_SLOT_COMPONENT.video, { ...video, enabled: false });
     return true;
   });
+}
+
+/** Explicit Add Component path for VideoOverlay. */
+export function addObjectVideo(scene: Draft<SceneDoc>, objectId: string): boolean {
+  return withObject(scene, objectId, (object) =>
+    addOptionalComponent(object, DEFAULT_SLOT_COMPONENT.video) !== undefined,
+  );
 }
 
 /**

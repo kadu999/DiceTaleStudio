@@ -27,7 +27,7 @@ import type { ResourceTreeNode } from "../src/services/project-api";
  * 3. 「编辑视频」窗口与「选择视频」弹框（`e2e/video-object.spec.ts`）。
  *
  * 与声音的两处关键区别也在这里钉住：
- * - 视频挂在**对象自己身上**（v21 起只有地图与贴图能带，精灵不行），声音是单独一种动作对象；
+ * - 视频挂在对象自己身上；能力由已挂载的 `VideoOverlay` 决定，与 kind 无关；
  * - **每个对象各自一条、互不影响**，不像声音那样按层级互相顶掉。
  */
 
@@ -178,7 +178,7 @@ afterEach(() => {
 });
 
 describe("属性面板：视频组", () => {
-  it("地图与贴图都能加「视频」（在底部「添加组件」里）；精灵、声音对象与传送阵不能", () => {
+  it("各类对象都能从底部「添加组件」显式添加视频能力", () => {
     seedScene(
       [
         mapWith(),
@@ -197,29 +197,29 @@ describe("属性面板：视频组", () => {
     expect(screen.queryByTestId("video-clips")).toBeNull();
     expect(addableLabels()).toContain("视频");
 
-    // 贴图也能加（v21 起取代精灵）
+    // 贴图同样按组件菜单显式添加。
     unmount();
     seedScene([textureWith()], ["tex-1"]);
-    render(<InspectorPanel />);
+    const textureView = render(<InspectorPanel />);
     expect(hasGroup("video")).toBe(false);
     expect(addableLabels()).toContain("视频");
 
-    // 精灵**不能**：视频宿主从精灵换成了贴图
-    unmount();
+    // 精灵也可以显式添加：能力不由 kind 限制
+    textureView.unmount();
     seedScene([spriteWith()], ["sprite-1"]);
-    render(<InspectorPanel />);
+    const spriteView = render(<InspectorPanel />);
     expect(hasGroup("video")).toBe(false);
-    expect(addableLabels()).not.toContain("视频");
+    expect(addableLabels()).toContain("视频");
 
-    // 动作对象也不能：视频挂在对象自己的矩形上，声音对象 / 传送阵画的是固定徽标
-    unmount();
+    // 动作模板对象也可以显式添加组件
+    spriteView.unmount();
     seedScene(
       [createSoundObject({ id: "sound-1", name: "脚步" }), createTeleportObject({ id: "tp-1", name: "传送阵" })],
       ["sound-1"],
     );
     render(<InspectorPanel />);
     expect(hasGroup("video")).toBe(false);
-    expect(addableLabels()).not.toContain("视频");
+    expect(addableLabels()).toContain("视频");
   });
 
   it("底部「添加组件」加上视频：露出列表 / 播放 / 循环 / 声音；组头「移除组件」整个摘掉", () => {
@@ -511,17 +511,18 @@ describe("播放 / 暂停 / 停止：面板上看得见的状态", () => {
 });
 
 describe("失败原因：都在运行日志里写明", () => {
-  it("没加视频 / 没启用 / 没选 / 不是地图或贴图 / 对象不存在", () => {
+  it("没加视频 / 没启用 / 没选 / 缺组件 / 对象不存在", () => {
     seedScene(
       [
-        // 连 video 组件都没有 = 这个对象还没加视频能力（可选能力，入口在面板底部「添加组件」）
-        mapWith(),
-        // 开着但一条都没加
+        // 组件存在但被禁用。
+        mapWith({ ...video([]), enabled: false }),
+        // 已挂视频组件，但还没有加入视频素材
         mapWith(video([]), "map-2"),
         // 加了但没选（手写文件里可能有）
         mapWith(unpicked([CLIP]), "map-3"),
-        // 声音对象（动作对象）与**精灵**都不是视频宿主：
-        // 精灵这一条是 v21 的行为变化——视频那一组从精灵挪到了贴图
+        // 缺少组件 = 未显式添加视频能力。
+        mapWith(undefined, "map-4"),
+        // kind 不会自动赋予视频能力
         createSoundObject({ id: "sound-1", name: "脚步" }),
         createGameObject({ id: "sprite-1", name: "精灵" }),
       ],
@@ -541,6 +542,9 @@ describe("失败原因：都在运行日志里写明", () => {
     expect(logs().at(-1)).toMatch(/没有视频组件/);
 
     act(() => useEditorStore.getState().playVideo("sprite-1"));
+    expect(logs().at(-1)).toMatch(/没有视频组件/);
+
+    act(() => useEditorStore.getState().playVideo("map-4"));
     expect(logs().at(-1)).toMatch(/没有视频组件/);
 
     act(() => useEditorStore.getState().playVideo("不存在"));
@@ -581,6 +585,7 @@ describe("store：加 / 删（「编辑视频」窗口走的那几个入口）",
   it("addVideoClip：去重；原来没选过就把它选上，已经在列表里就不再加", () => {
     seedScene([mapWith()], ["map-1"]);
 
+    act(() => useEditorStore.getState().addObjectComponent("map-1", "VideoOverlay"));
     act(() => useEditorStore.getState().addVideoClip("map-1", CLIP));
     expect(videoOf("map-1")).toEqual({
       enabled: true,
@@ -619,6 +624,7 @@ describe("store：加 / 删（「编辑视频」窗口走的那几个入口）",
   it("贴图与地图走同一套命令（两个宿主不分家）", () => {
     seedScene([textureWith()], ["tex-1"]);
 
+    act(() => useEditorStore.getState().addObjectComponent("tex-1", "VideoOverlay"));
     act(() => useEditorStore.getState().addVideoClip("tex-1", CLIP));
     act(() => useEditorStore.getState().setVideoLoop("tex-1", true));
     expect(videoOf("tex-1")).toEqual({

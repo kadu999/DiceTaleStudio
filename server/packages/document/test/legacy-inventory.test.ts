@@ -17,8 +17,7 @@ import {
  * 没有外部样本时，把「真实存在过」换成**代码自己记录的历史**——schema.ts 的迁移链
  * （v1 → v24）就是历史上全部文档形状的完整档案。这里把每个记载过的形状合成出来、
  * 走真实加载管线（`parseSceneFile`），断言它们全部落到现行组件结构、校验无 error：
- * 历史上的形状全部由 **schema 迁移**承载，运行时 kind 兼容元数据
- * （`templateKinds` / `repairKinds` / `optionalKinds`）只服务「现行格式但不完整」的文档。
+ * 历史上的形状全部由 **schema 迁移**承载；v35 起 kind 不再为现行文档补组件。
  *
  * 残余风险（如实记录）：手写文件里**迁移链没有记载**的形状（例如表外 kind、自造组件名）
  * 不在覆盖范围内——它们按设计要么被 schema 明确拒绝（读不开、不静默毁数），
@@ -231,7 +230,7 @@ describe("合成盘点 C：更早的结构时代", () => {
   });
 });
 
-describe("合成盘点 D：现行版本（v28）无组件对象 = 不完整文档，走显式修复", () => {
+describe("合成盘点 D：现行版本无组件对象 = 合法未配置态，组件走显式添加", () => {
   function currentObject(id: string, kind: string) {
     return {
       id,
@@ -247,10 +246,9 @@ describe("合成盘点 D：现行版本（v28）无组件对象 = 不完整文�
   }
 
   const cases: Array<{ kind: string; repairType: string; expectError: boolean }> = [
-    // 动作对象：特性组件就是它的全部意义，缺失 = error + 显式修复
-    { kind: "PlaySound", repairType: "PlaySound", expectError: true },
-    { kind: "Teleport", repairType: "Teleport", expectError: true },
-    // 图片组件 / 网格：缺失是合法态（还没选图 / 还没加网格），不报错；显式添加入口可用
+    // 无组件对象不根据 kind 推测缺失能力；用户可显式选择并添加组件。
+    { kind: "PlaySound", repairType: "PlaySound", expectError: false },
+    { kind: "Teleport", repairType: "Teleport", expectError: false },
     { kind: "Sprite", repairType: "SpriteLayer", expectError: false },
     { kind: "Image", repairType: "ImageLayer", expectError: false },
   ];
@@ -272,4 +270,77 @@ describe("合成盘点 D：现行版本（v28）无组件对象 = 不完整文�
       expect(canRepairObjectComponent(file.objects[0]!, c.repairType)).toBe(true);
     });
   }
+});
+
+describe("v34 → v35：kind 只在一次性历史模板迁移中补初始必需组件", () => {
+  it("旧模板补组件但保留已有/未知组件，确定性 ID 且重复加载稳定", () => {
+    const raw = [
+      {
+        ...legacyObject("old-sprite", "Sprite", {
+          active: true, locked: false, scale: 1,
+          components: [{ id: "future", type: "FutureComponent", data: { keep: true } }],
+        }),
+      },
+      {
+        ...legacyObject("old-image", "Image", {
+          active: true, locked: false, scale: 1,
+          components: [{ id: "old-image__GridMap", type: "GridMap", data: {
+            grid: { width: 1, height: 1 }, rowOrder: "bottom-up", cells: { encoding: "rle", runs: [[0, 1]] },
+          } }],
+        }),
+      },
+      {
+        ...legacyObject("misaligned", "PlaySound", {
+          active: true, locked: false, scale: 1,
+          components: [{ id: "misaligned__Teleport", type: "Teleport", data: { targets: [] } }],
+        }),
+      },
+    ];
+
+    const first = load(34, raw);
+    expect(first.needsRewrite).toBe(true);
+    const migrated = named(first.file);
+    expect(migrated.objects[0]?.components.map((item) => item.type)).toEqual(["FutureComponent", "SpriteLayer"]);
+    expect(migrated.objects[0]?.components[1]).toMatchObject({ id: "old-sprite__SpriteLayer", data: { sortingOrder: 0 } });
+    expect(migrated.objects[1]?.components.map((item) => item.type)).toEqual(["GridMap", "ImageLayer"]);
+    expect(migrated.objects[1]?.components[1]).toMatchObject({ id: "old-image__ImageLayer", data: { sortingOrder: -10 } });
+    expect(migrated.objects[2]?.components.map((item) => item.type)).toEqual(["Teleport", "PlaySound"]);
+    expectClean(migrated);
+
+    const second = load(DOCUMENT_FORMAT_VERSION, migrated.objects);
+    expect(second.needsRewrite).toBe(false);
+    expect(named(second.file).objects).toEqual(migrated.objects);
+  });
+
+  it("v35 对象即使 kind 有模板也不自动补组件", () => {
+    const current = load(DOCUMENT_FORMAT_VERSION, [
+      legacyObject("empty", "Sprite", {
+        active: true, locked: false, scale: 1, components: [],
+      }),
+    ]);
+    expect(current.needsRewrite).toBe(false);
+    expect(named(current.file).objects[0]?.components).toEqual([]);
+  });
+
+  it("历史模板遇到同槽位的错位组件时保留它，不按 kind 覆盖或重复添加", () => {
+    const loaded = load(34, [
+      legacyObject("misaligned-image", "Sprite", {
+        active: true,
+        locked: false,
+        scale: 1,
+        components: [{
+          id: "existing-image-layer",
+          type: "ImageLayer",
+          data: { id: "old.png", width: 32, height: 32, sortingOrder: 7 },
+        }],
+      }),
+    ]);
+
+    expect(loaded.needsRewrite).toBe(true);
+    expect(named(loaded.file).objects[0]?.components).toEqual([{
+      id: "existing-image-layer",
+      type: "ImageLayer",
+      data: { id: "old.png", width: 32, height: 32, sortingOrder: 7 },
+    }]);
+  });
 });

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { nextObjectName, type GameObjectDoc } from "@dts/document";
-import { kindMarkerColor } from "@dts/renderer";
+import { templateMarkerColor } from "@dts/renderer";
 import { useEditorStore } from "../state/editor-store";
 import {
   DEFAULT_CATEGORY,
@@ -143,7 +143,7 @@ export function ObjectDialog({ open, onClose }: ObjectDialogProps): React.JSX.El
                   >
                     <span
                       className="h-7 w-7 flex-none rounded-full"
-                      style={{ background: kindMarkerColor(type.kind) }}
+                       style={{ background: templateMarkerColor(type.kind) }}
                     />
                     <span className="text-center leading-tight">{type.label}</span>
                   </button>

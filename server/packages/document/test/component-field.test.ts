@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { produce, type Draft } from "immer";
-import { setComponentField, createGameObject } from "../src/commands";
+import { addObjectVideo, setComponentField, createGameObject } from "../src/commands";
 import { REJECT, coerceFieldValue } from "../src/component-spec";
 import { componentSpecOf, defaultDataOf } from "../src/component-specs";
 import { OBJECT_SPEC, objectFieldOf } from "../src/object-spec";
@@ -15,7 +15,7 @@ import type { GameObjectDoc, SceneDoc } from "../src/types";
  * 这一份钉住「加一个简单字段只需要在规格里加一行」那条路的两半：
  * 1. **规格决定接管范围**：只有登记在 `fields` 里的字段能被泛型写入改动，
  *    有副作用的开关（`video.enabled`）与列表 / 引用类字段（`clips` / `picked`）**必须**留在外面；
- * 2. **判据从严**：未知组件 / 未知字段 / 这个 kind 不允许的槽位 / 非法值 / 值没变，
+ * 2. **判据从严**：未知组件 / 未知字段 / 缺少组件实例 / 非法值 / 值没变，
  *    一律返回 `false` 并且**不动文档**——宁可没反应，也不写进一个会被 zod 拒掉的值。
  */
 
@@ -107,8 +107,10 @@ describe("组件规格：VideoOverlay", () => {
 });
 
 describe("setComponentField：能改的", () => {
-  it("改布尔字段：落进组件数据、返回 true", () => {
-    const scene = sceneWith([mapObject()]);
+  it("显式挂载后改布尔字段：落进组件数据、返回 true", () => {
+    const scene = mutate(sceneWith([mapObject()]), (draft) => {
+      expect(addObjectVideo(draft, "map-1")).toBe(true);
+    });
     const next = mutate(scene, (draft) => {
       expect(setComponentField(draft, "map-1", VIDEO, "loop", true)).toBe(true);
     });
@@ -116,22 +118,16 @@ describe("setComponentField：能改的", () => {
     expect(videoDataOf(objectOf(next, "map-1")!)?.loop).toBe(true);
   });
 
-  it("可选组件缺实例时按规格创建，并把新值一起写进去", () => {
+  it("可选组件缺实例时普通字段写入不补建", () => {
     const scene = sceneWith([mapObject()]);
     expect(videoDataOf(objectOf(scene, "map-1")!)).toBeUndefined();
 
     const next = mutate(scene, (draft) => {
-      expect(setComponentField(draft, "map-1", VIDEO, "autoPlay", true)).toBe(true);
+      expect(setComponentField(draft, "map-1", VIDEO, "autoPlay", true)).toBe(false);
     });
 
-    // 新组件是完整形状（与工厂 / 校验同一份口径），不是只有被改的那一个键
-    expect(videoDataOf(objectOf(next, "map-1")!)).toEqual({
-      enabled: true,
-      autoPlay: true,
-      clips: [],
-      loop: false,
-      audio: false,
-    });
+    expect(next).toBe(scene);
+    expect(videoDataOf(objectOf(next, "map-1")!)).toBeUndefined();
   });
 });
 
@@ -167,7 +163,7 @@ describe("setComponentField：不改的（都返回 false 且文档不动）", (
     });
   });
 
-  it("没有该组件且 kind 不提供回退时，仍不自动添加能力组件", () => {
+  it("没有该组件时不根据 kind 自动添加能力组件", () => {
     const scene = sceneWith([createGameObject({ id: "sprite-plain", name: "精灵", kind: "Sprite" })]);
     mutate(scene, (draft) => {
       expect(setComponentField(draft, "sprite-plain", VIDEO, "loop", true)).toBe(false);
@@ -175,7 +171,7 @@ describe("setComponentField：不改的（都返回 false 且文档不动）", (
     expect(videoDataOf(objectOf(scene, "sprite-plain")!)).toBeUndefined();
   });
 
-  it("这个 kind 不允许该槽位：拒掉（与 `ensureSlotData` 的准入判据同一口径）", () => {
+  it("缺少该组件实例时，不论 kind 如何都拒绝字段写入", () => {
     const scene = sceneWith([createSoundObject({ id: "sound-1", name: "脚步" })]);
     mutate(scene, (draft) => {
       expect(setComponentField(draft, "sound-1", VIDEO, "loop", true)).toBe(false);

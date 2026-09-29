@@ -11,16 +11,12 @@ import {
 } from "@dts/document";
 import { useEditorStore } from "../../state/editor-store";
 import { EmptyState } from "../EmptyState";
-import { KIND_LABELS, OBJECT_CATEGORIES, categoryOfKind } from "../object-kinds";
-
-/** 种类过滤：默认「全部」。 */
-const ALL_CATEGORIES = "all";
+import { componentLabelsOf } from "../object-kinds";
 
 /**
  * 场景对象：当前场景里的对象，可改名 / 删除 / 复制。
  *
- * **不分组**：顶上是一排**种类按钮**（`全部` + 实体 / 动作 / 事件，与「新建对象」弹框同一套归类），
- * 点一下就只看那个种类；默认「全部」，列表按场景文件里的顺序平铺。名字太多时还有关键字过滤。
+ * **不按 kind 分类**：对象创建后只按名称 / 已挂载组件搜索，列表按场景文件里的顺序平铺。
  *
  * **创建不在这里**：对象由「新建对象」弹框创建（画布标题栏的按钮、`Ctrl/⌘+Shift+N`、
  * 编辑菜单），生成在场景正中，之后在画布上拖动定位。
@@ -40,7 +36,6 @@ export function HierarchyPanel(): React.JSX.Element {
   const saveState = useEditorStore((state) => state.sceneSaveState);
   const saveError = useEditorStore((state) => state.sceneSaveError);
 
-  const [categoryFilter, setCategoryFilter] = useState<string>(ALL_CATEGORIES);
   const [filter, setFilter] = useState("");
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
@@ -48,16 +43,12 @@ export function HierarchyPanel(): React.JSX.Element {
   const activeScene = scenes.find((scene) => scene.name === activeSceneName);
   const objects = activeScene?.objects ?? [];
 
-  const categoryObjects = objects.filter(
-    (object) =>
-      categoryFilter === ALL_CATEGORIES || categoryOfKind(object.kind)?.id === categoryFilter,
-  );
   const keyword = filter.trim().toLowerCase();
-  const visible = categoryObjects.filter(
+  const visible = objects.filter(
     (object) =>
       keyword.length === 0 ||
       object.name.toLowerCase().includes(keyword) ||
-      KIND_LABELS[object.kind].includes(keyword),
+      componentLabelsOf(object).some((label) => label.toLowerCase().includes(keyword)),
   );
 
   const toggleSelection = (id: string, additive: boolean): void => {
@@ -121,28 +112,6 @@ export function HierarchyPanel(): React.JSX.Element {
             />
           </div>
 
-          {/* 种类按钮：三个种类一直都在（哪怕现在还没有对象），跟弹框的归类对齐 */}
-          <div
-            data-testid="category-filter"
-            className="flex flex-none flex-wrap gap-1 border-b border-[var(--color-editor-border)] px-1 py-1"
-          >
-            <CategoryButton
-              testId="category-filter-all"
-              label="全部"
-              selected={categoryFilter === ALL_CATEGORIES}
-              onClick={() => setCategoryFilter(ALL_CATEGORIES)}
-            />
-            {OBJECT_CATEGORIES.map((category) => (
-              <CategoryButton
-                key={category.id}
-                testId={`category-filter-${category.id}`}
-                label={category.label}
-                selected={categoryFilter === category.id}
-                onClick={() => setCategoryFilter(category.id)}
-              />
-            ))}
-          </div>
-
           {saveError.length > 0 ? (
             <div
               data-testid="scene-save-error"
@@ -161,9 +130,7 @@ export function HierarchyPanel(): React.JSX.Element {
           // 一个对象都没有就什么都不写（一眼能看出来）；有对象但被筛掉了才提示
           objects.length === 0 ? null : (
             <div className="px-2 py-3 text-[11px] text-[var(--color-editor-text-dim)]">
-              {categoryObjects.length === 0
-                ? `「${OBJECT_CATEGORIES.find((item) => item.id === categoryFilter)?.label ?? ""}」下还没有对象`
-                : "没有匹配的对象"}
+              {"没有匹配的对象"}
             </div>
           )
         ) : (
@@ -193,36 +160,6 @@ export function HierarchyPanel(): React.JSX.Element {
         )}
       </div>
     </div>
-  );
-}
-
-/** 种类过滤按钮（一排里的小胶囊）。 */
-function CategoryButton({
-  testId,
-  label,
-  selected,
-  onClick,
-}: {
-  readonly testId: string;
-  readonly label: string;
-  readonly selected: boolean;
-  readonly onClick: () => void;
-}): React.JSX.Element {
-  return (
-    <button
-      type="button"
-      data-testid={testId}
-      data-selected={selected}
-      aria-pressed={selected}
-      className={`rounded border px-1.5 py-0.5 text-[11px] ${
-        selected
-          ? "border-[var(--color-editor-accent)] bg-[var(--color-editor-accent-dim)] text-white"
-          : "border-[var(--color-editor-border)] hover:bg-[var(--color-editor-panel-alt)]"
-      }`}
-      onClick={onClick}
-    >
-      {label}
-    </button>
   );
 }
 
@@ -275,7 +212,7 @@ function ObjectRow({
     <div
       data-testid="object-row"
       data-name={object.name}
-      data-kind={object.kind}
+      data-component-types={object.components.map((component) => component.type).join(",")}
       data-selected={selected}
       data-active={object.active}
       className={`group flex items-center gap-1 rounded px-1.5 py-1 ${
@@ -340,7 +277,17 @@ function ObjectRow({
           onClick={(event) => onSelect(event.ctrlKey || event.metaKey || event.shiftKey)}
           onDoubleClick={onStartRename}
         >
-          <span className="truncate">{object.name}</span>
+          <span className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
+            <span className="truncate">{object.name}</span>
+            {componentLabelsOf(object).slice(0, 2).map((label) => (
+              <span
+                key={label}
+                className="flex-none rounded border border-[var(--color-editor-border)] px-1 text-[9px] text-[var(--color-editor-text-dim)]"
+              >
+                {label}
+              </span>
+            ))}
+          </span>
           <span className="flex flex-none items-center gap-1 text-[10px] text-[var(--color-editor-text-dim)]">
             {object.position === null ? <span>未放置</span> : null}
             {hint === null ? null : <span>{hint}</span>}

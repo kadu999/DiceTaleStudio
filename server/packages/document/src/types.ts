@@ -163,7 +163,7 @@ import type { ObjectKind } from "./presets";
  * 由 `migrateMagnifierVisibilityFlags` 按**老文件里有没有值**补一次（有值 = 开），行为不变。
  * 协议侧同步升到 v25。
  */
-export const DOCUMENT_FORMAT_VERSION = 34;
+export const DOCUMENT_FORMAT_VERSION = 35;
 
 // 抬版判据见 `server/docs/SPEC-版本与迁移判据.md`：**旧编辑器会读错**（丢数据 / 误改）才抬；
 // 纯新增可选字段可以不抬（老编辑器丢掉它、照常用）。
@@ -299,7 +299,8 @@ export interface MapDataDoc {
  *
  * v28 起**带网格的贴图也用它承载贴图与显示顺序**（以前这两项在 `MapDataDoc` 里）。
  */
-export type ImageLayerDataDoc = ImageRef & { readonly sortingOrder: number };
+/** Renderer data may be an empty shell until the user picks an image. */
+export type ImageLayerDataDoc = Partial<ImageRef> & { readonly sortingOrder: number };
 
 /**
  * 战争雾组件的数据（v27 起住在独立的 `Fog` 对象上；v25–v26 住在地图对象上；更早是

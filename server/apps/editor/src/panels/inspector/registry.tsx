@@ -31,7 +31,6 @@ import {
   TextureField,
 } from "./object-fields";
 import { descriptorRows, objectFields, sortInspectorRows } from "./DescriptorRows";
-import { useEditorStore } from "../../state/editor-store";
 
 export interface EditorPanelDef {
   readonly group: string;
@@ -43,9 +42,9 @@ export interface ComponentEditorDef {
   readonly type: ComponentType;
   readonly panels: readonly EditorPanelDef[];
   /**
-   * **可选能力组件**（网格 / 视频）：挂在对象上时，组头给一个「移除组件」。
+   * **可选组件**（网格 / 视频 / 视频混合）：挂在对象上时，组头给一个「移除组件」。
    *
-   * 必需组件（图片层 / 精灵层 / 声音 / 传送 / 战争雾）不给——摘掉会把那个对象弄坏。
+   * 非可移除组件（图片层 / 精灵层 / 声音 / 传送 / 战争雾）不给——需通过显式组件菜单添加。
    * 未挂上的可选组件**不出现组**，改由面板底部的「添加组件」列出（见 `addableComponentsFor`）。
    */
   readonly removable?: boolean;
@@ -57,7 +56,6 @@ export const OBJECT_EDITOR: EditorPanelDef = {
   render: (object) => (
     <>
       <NameField object={object} />
-      <Field label="类型" value={object.kind} />
       <ActiveField object={object} />
       <LockedField object={object} />
       {sortInspectorRows(descriptorRows(object, OBJECT_SPEC, objectFields)).map((row) => row.node)}
@@ -75,37 +73,6 @@ function panel(group: string, title: string, render: EditorPanelDef["render"]): 
   return { group, title, render };
 }
 
-function ComponentRepairAction({
-  object,
-  type,
-}: {
-  readonly object: GameObjectDoc;
-  readonly type: "PlaySound" | "Teleport" | "Magnifier" | "FogOfWar";
-}): React.JSX.Element {
-  const repair = useEditorStore((state) => state.repairObjectComponent);
-  const name =
-    type === "PlaySound"
-      ? "声音"
-      : type === "Teleport"
-        ? "传送"
-        : type === "Magnifier"
-          ? "放大镜"
-          : "战争雾";
-  return (
-    <div className="flex items-center gap-2 px-2 py-2">
-      <span className="min-w-0 flex-1 text-[11px] text-[var(--color-editor-warn)]">组件数据缺失</span>
-      <button
-        type="button"
-        data-testid={`repair-component-${type}`}
-        className="flex-none rounded border border-[var(--color-editor-border)] px-2 py-1 text-[11px] hover:bg-[var(--color-editor-panel-alt)]"
-        onClick={() => repair(object.id, type)}
-      >
-        修复{name}组件
-      </button>
-    </div>
-  );
-}
-
 /**
  * 组件编辑器表：**一个组件一个组**（组 slug = 组件槽位语义、标题 = 组件 displayName）。
  *
@@ -114,8 +81,7 @@ function ComponentRepairAction({
  * - 没挂上时**不出组**——入口在面板底部的「添加组件」（`addableComponentsFor`）；
  * - 挂上后是正式组，组头给「移除组件」。
  *
- * 缺**必需**组件的修复入口是另一条路（`componentEditorsFor` 里的 `canRepairObjectComponent`），
- * 那些组由 InspectorPanel 挂「未添加」角标。
+ * 尚未添加的组件统一从 InspectorPanel 底部的显式「添加组件」菜单添加。
  */
 export const COMPONENT_EDITORS: readonly ComponentEditorDef[] = [
   {
@@ -162,37 +128,19 @@ export const COMPONENT_EDITORS: readonly ComponentEditorDef[] = [
     // 缺组件（损坏的手写文件）时给显式修复入口。
     type: COMPONENT_TYPE.fog,
     panels: [
-      panel("fog", "战争雾", (object) =>
-        componentOf(object, COMPONENT_TYPE.fog) === undefined ? (
-          <ComponentRepairAction object={object} type="FogOfWar" />
-        ) : (
-          <FogFields object={object} />
-        ),
-      ),
+      panel("fog", "战争雾", (object) => <FogFields object={object} />),
     ],
   },
   {
     type: COMPONENT_TYPE.sound,
     panels: [
-      panel("sound", "播放声音", (object) =>
-        componentOf(object, COMPONENT_TYPE.sound) === undefined ? (
-          <ComponentRepairAction object={object} type="PlaySound" />
-        ) : (
-          <SoundFields object={object} />
-        ),
-      ),
+      panel("sound", "播放声音", (object) => <SoundFields object={object} />),
     ],
   },
   {
     type: COMPONENT_TYPE.teleport,
     panels: [
-      panel("teleport", "传送阵", (object) =>
-        componentOf(object, COMPONENT_TYPE.teleport) === undefined ? (
-          <ComponentRepairAction object={object} type="Teleport" />
-        ) : (
-          <TeleportFields object={object} />
-        ),
-      ),
+      panel("teleport", "传送阵", (object) => <TeleportFields object={object} />),
     ],
   },
   {
@@ -200,13 +148,7 @@ export const COMPONENT_EDITORS: readonly ComponentEditorDef[] = [
     // 所以组照常出现；缺组件（损坏的手写文件）时给显式修复入口。与「传送阵」同一档。
     type: COMPONENT_TYPE.magnifier,
     panels: [
-      panel("magnifier", "放大镜", (object) =>
-        componentOf(object, COMPONENT_TYPE.magnifier) === undefined ? (
-          <ComponentRepairAction object={object} type="Magnifier" />
-        ) : (
-          <MagnifierFields object={object} />
-        ),
-      ),
+      panel("magnifier", "放大镜", (object) => <MagnifierFields object={object} />),
     ],
   },
   {
@@ -227,21 +169,14 @@ export const COMPONENT_EDITORS: readonly ComponentEditorDef[] = [
 ];
 
 /**
- * 返回该对象**该显示哪些组件组**：已挂上的组件 + 缺失**必需**组件时的**修复入口**。
+ * 返回该对象**该显示哪些组件组**：只展示实际挂载的组件。
  *
  * 「一个组件一个组」，每个编辑器只带一个面板。
  *
- * 两类分工：
- * - **必需组件**（图片层 / 精灵层 / 声音 / 传送 / 战争雾）挂上就是正式组；坏文件里缺了它，
- *   由 `canRepairObjectComponent` 命中，给一个「修复」入口（挂「未添加」角标）；
- * - **可选能力**（网格 / 视频）**没挂上时不出现组**——它们改由面板底部的「添加组件」列出
- *   （与 Unity 的 Add Component 同一套）。挂上之后就是正式组，组头有「移除组件」。
+ * 缺失组件不是由 kind 推测出来的“故障”；用户可以从底部菜单显式添加所需组件。
  */
 export function componentEditorsFor(object: GameObjectDoc): readonly ComponentEditorDef[] {
-  return COMPONENT_EDITORS.filter(
-    (editor) =>
-      hasComponent(object, editor.type) || canRepairObjectComponent(object, editor.type),
-  );
+  return COMPONENT_EDITORS.filter((editor) => hasComponent(object, editor.type));
 }
 
 /** 「添加组件」菜单里的一项：组件类型 + 显示名。 */
@@ -251,15 +186,15 @@ export interface AddableComponentDef {
 }
 
 /**
- * 面板底部「添加组件」能加哪些：**可选能力组件、且这个对象还没挂**（判据走
- * `canAddOptionalObjectComponent`，与文档命令同一套）。顺序 = 注册表顺序（网格 → 视频）。
+ * 面板底部「添加组件」列出所有可显式添加的缺失组件；只有 `removable` 标记的组件提供移除交互。
  *
  * 返回空表示这个对象没有可添加的组件——面板就不显示那个按钮。
  */
 export function addableComponentsFor(object: GameObjectDoc): readonly AddableComponentDef[] {
   return COMPONENT_EDITORS.filter(
     (editor) =>
-      !hasComponent(object, editor.type) && canAddOptionalObjectComponent(object, editor.type),
+      !hasComponent(object, editor.type) &&
+      (canAddOptionalObjectComponent(object, editor.type) || canRepairObjectComponent(object, editor.type)),
   ).map((editor) => ({
     type: editor.type,
     label: editor.panels[0]?.title ?? editor.type,

@@ -134,40 +134,54 @@ namespace DiceTale
         /// <summary>
         /// 这种对象在前端**要不要建视图**（连 GameObject 都不该建的那种返回 `false`）。
         ///
-        /// **判据是组件，不是 `kind`**（协议 v9 起）：
-        /// - 有 `GridMap` 或 `ImageLayer` / `SpriteLayer`（对象自己那张图）→ 当然要画；
-        /// - 都没有时，**只有「动作对象」不建**——它们只带 `PlaySound` / `Teleport` / `Magnifier`
-        ///   的数据（声音靠命令播、传送靠编辑器换场景、放大镜靠那两条开 / 关命令弹窗），
-        ///   一个 GameObject 都不该建；
-        /// - 其余（玩家 / 道具 / 事件 / 还没挑图的精灵 / **战争雾对象**）**仍要建 GameObject**，
-        ///   否则它们在场上就凭空消失了。战争雾对象是个例外：它只为挂 <see cref="FogOfWar"/>
-        ///   而建，**不画占位面片**（见 <see cref="Create"/>）。
+        /// **判据是组件，不是 `kind`**（协议 v9 起）：渲染 / 地图 / 雾 / 视频组件需要视图；
+        /// 纯命令组件（PlaySound / Teleport / Magnifier）单独存在时只保留镜像数据，不建视图；
+        /// 没有组件或带未知组件的普通对象仍建中性占位视图。
         ///
         /// 判据只此一处（<see cref="SceneMirror"/> 建视图前问这里）：编辑器加一种新组件时，
         /// 不会出现「镜像建了、却忘了在别处跳过」的半套状态。
         /// </summary>
         public static bool NeedsView(MirrorObject obj)
         {
-            if (obj.map != null || obj.image != null)
+            if (NeedsImageQuad(obj) || obj.fog != null)
             {
                 return true;
             }
 
-            return !obj.HasComponent(Protocol.ComponentType.Sound) &&
-                   !obj.HasComponent(Protocol.ComponentType.Teleport) &&
-                   !obj.HasComponent(Protocol.ComponentType.Magnifier);
+            var hasCommandComponent = obj.HasComponent(Protocol.ComponentType.Sound) ||
+                                      obj.HasComponent(Protocol.ComponentType.Teleport) ||
+                                      obj.HasComponent(Protocol.ComponentType.Magnifier);
+            var hasNonCommandComponent = false;
+            foreach (var component in obj.components)
+            {
+                if (component.type != Protocol.ComponentType.Sound &&
+                    component.type != Protocol.ComponentType.Teleport &&
+                    component.type != Protocol.ComponentType.Magnifier)
+                {
+                    hasNonCommandComponent = true;
+                    break;
+                }
+            }
+
+            return !hasCommandComponent || hasNonCommandComponent;
+        }
+
+        private static bool NeedsImageQuad(MirrorObject obj)
+        {
+            return obj.HasComponent(Protocol.ComponentType.Image) ||
+                   obj.HasComponent(Protocol.ComponentType.Sprite) ||
+                   // VideoOverlay uses ImageLayer as its source renderer; GridMap and VideoBlend
+                   // own their data / overlay and do not imply an object image component.
+                   obj.HasComponent(Protocol.ComponentType.Video);
         }
 
         /// <summary>
         /// 判断当前视图的图片渲染组件是否与最新镜像一致。
-        ///
-        /// **战争雾对象没有面片**（见 <see cref="Create"/>）：它不该因为「镜像里没有图」被换掉重建，
-        /// 所以已经是「无 quad」状态就返回 true；反过来，一个非雾对象若还停在「无 quad」的旧状态
-        /// （对象从雾变成了图），也要 `false` 逼它重建，免得图取回来了却没有面片可画。
         /// </summary>
         public bool MatchesImageComponent(MirrorObject obj)
         {
-            if (IsFogObject(obj))
+            var needsQuad = NeedsImageQuad(obj);
+            if (!needsQuad)
             {
                 return quad == null;
             }
@@ -177,21 +191,12 @@ namespace DiceTale
                 return false;
             }
 
-            var needsSpriteLayer = obj.hasSpriteLayer || obj.image?.sprite != null;
+            var needsSpriteLayer = obj.HasComponent(Protocol.ComponentType.Sprite);
             return (quad is SpriteLayer) == needsSpriteLayer;
         }
 
-        /// <summary>
-        /// 这个镜像对象是不是**独立的战争雾对象**（v15）：带 `FogOfWar` 组件，但自己既没有
-        /// `GridMap` 也没有图片层。它只挂 <see cref="FogOfWar"/>，不建占位面片。
-        /// </summary>
-        private static bool IsFogObject(MirrorObject obj)
-        {
-            return obj.fog != null && obj.map == null && obj.image == null;
-        }
-
         /// <summary>最近一次对象数据里的染色与显示顺序（<see cref="ApplyVisual"/> 要用，含异步取图回来那次）。</summary>
-        private Color currentKindColor = new Color(0.85f, 0.85f, 0.85f, 0.85f);
+        private static readonly Color PlaceholderColor = new Color(0.85f, 0.85f, 0.85f, 0.85f);
         private int currentSortingOrder;
 
         /// <summary>
@@ -205,18 +210,11 @@ namespace DiceTale
             var view = go.AddComponent<SceneObjectView>();
             view.imageLoader = loader;
 
-            /*
-              显示组件分派（v21）：精灵挂 SpriteLayer（取图集里的一格、UV 内缩半纹素防渗色），
-              贴图 / 地图 / 占位对象挂 ImageLayer（整张铺满）。判据优先认 hasSpriteLayer
-              （解析器见到 SpriteLayer 组件就置位，精灵没挑格子时 sprite 可能还是 null）；
-              旧载荷缺这一位时退回 image.sprite 兜底——数据里带了子图的按精灵对待。
-
-              **战争雾对象（v15）是例外：它没有自己的面片**（雾面是 FogOfWar 自己建的
-              `FogOverlay` 子物体），所以不挂 ImageLayer / SpriteLayer，`view.quad` 留 null。
-            */
-            if (!IsFogObject(obj))
+            // 图片组件类型按其实际身份决定。单独 VideoOverlay 需要一个 ImageLayer source renderer；
+            // GridMap / FogOfWar / VideoBlend 不代表对象图片层。
+            if (NeedsImageQuad(obj))
             {
-                view.quad = obj.hasSpriteLayer || obj.image?.sprite != null
+                view.quad = obj.HasComponent(Protocol.ComponentType.Sprite)
                     ? go.AddComponent<SpriteLayer>()
                     : go.AddComponent<ImageLayer>();
             }
@@ -288,7 +286,6 @@ namespace DiceTale
             // 子图：只取那一块（`null` = 整张，与 v9 同义）。**尺寸不进这里**——
             // 面片大小仍由声明尺寸 × scale 决定，换格子只换「取哪一块像素」
             currentUvRect = SpriteLayer.UvRectOf(image != null ? image.sprite : null);
-            currentKindColor = KindColor(obj.kind);
             currentSortingOrder = obj.sortingOrder;
 
             /*
@@ -407,7 +404,7 @@ namespace DiceTale
                     hasTexture ? currentTexture : null,
                     currentWidth * scale,
                     currentHeight * scale,
-                    hasTexture ? Color.white : currentKindColor,
+                    hasTexture ? Color.white : PlaceholderColor,
                     currentSortingOrder,
                     lift,
                     currentUvRect);
@@ -449,7 +446,7 @@ namespace DiceTale
                     currentWidth * GlobalScale,
                     currentHeight * GlobalScale,
                     currentSortingOrder,
-                    quad.GetComponent<Renderer>(),
+                    quad != null ? quad.GetComponent<Renderer>() : null,
                     logicalId);
             }
 
@@ -545,35 +542,5 @@ namespace DiceTale
             return 0.01f + Mathf.Clamp(sortingOrder, -100, 100) * 0.0005f;
         }
 
-        /// <summary>
-        /// 没有图时的占位色（按对象种类区分，一眼看出「这儿有个对象」）。
-        ///
-        /// 没有 `PlaySound` / `Teleport` 分支：动作对象**根本不建视图**（见 <see cref="NeedsView"/>），
-        /// 永远走不到这里——写了也是死代码。也没有基类 `SceneObject` 分支：它是抽象类型，
-        /// 不会出现在数据里（老前端收到别的新值时，落到下面那个灰色兜底）。
-        /// </summary>
-        private static Color KindColor(string kind)
-        {
-            switch (kind)
-            {
-                // 精灵与贴图分开（v21 起两种图片组件，v22 起两个 kind）：两者都显示一张图，
-                // 差别是精灵取图集里的一格。占位色只在这一张图还没取回来的那几百毫秒里看得见，
-                // 但它是「这个对象是什么」的唯一提示。
-                // v16 起没有 `Map` 分支：带网格的贴图 kind 就是 `Image`。
-                case "Sprite":
-                    return new Color(0.31f, 0.61f, 0.98f, 0.85f);
-                case "Image":
-                    return new Color(0.75f, 0.52f, 0.99f, 0.85f);
-                case "Player":
-                    // 橙：与精灵的蓝（0.31,0.61,0.98）、贴图的紫、道具的黄都拉开
-                    return new Color(0.95f, 0.55f, 0.10f, 0.85f);
-                case "Item":
-                    return new Color(0.95f, 0.80f, 0.20f, 0.85f);
-                case "Event":
-                    return new Color(0.80f, 0.45f, 0.85f, 0.85f);
-                default:
-                    return new Color(0.85f, 0.85f, 0.85f, 0.85f);
-            }
-        }
     }
 }

@@ -150,12 +150,10 @@ namespace DiceTale
                     case Protocol.ComponentType.Map:
                         obj.map = ParseMap(data);
                         break;
-                    // 「对象自己显示的图」有两种组件（v11）：精灵 `SpriteLayer`（会取图集里的一格）
-                    // 与贴图 `ImageLayer`（整张铺满）。数据形状一样，都填进 `obj.image`，
-                    // 只多记一位「这是精灵那一份」——前端据此认得这两种对象。
+                    // 「对象自己显示的图」有两种组件（v11）：数据都填入方便读取的 image 字段；
+                    // 组件实例本身仍保留在 components，渲染器类型按组件身份决定。
                     case Protocol.ComponentType.Sprite:
                         obj.image = ParseImage(data);
-                        obj.hasSpriteLayer = true;
                         break;
                     case Protocol.ComponentType.Image:
                         obj.image = ParseImage(data);

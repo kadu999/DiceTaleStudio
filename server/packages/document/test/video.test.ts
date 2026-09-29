@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { produce, type Draft } from "immer";
 import {
   createGameObject,
+  addObjectVideo,
   removeObjectVideo,
   setComponentField,
   setVideoClips,
@@ -24,11 +25,11 @@ import { formatIssues, hasErrors, validateScene } from "../src/validation";
 import { DOCUMENT_FORMAT_VERSION, type SceneDoc, type GameObjectDoc } from "../src/types";
 
 /**
- * 地图 / 精灵上的**视频列表**（v14 起）：一组视频 + 选中哪条 + 循环 / 声音两个开关。
+ * 对象上的**视频列表**（v14 起）：一组视频 + 选中哪条 + 循环 / 声音两个开关。
  *
  * 它与「声音对象」是**两个不同的东西**，别混：
  * - 声音是单独一种动作对象（`kind: "PlaySound"`），带层级、能同时响好几条；
- * - 视频挂在**对象自己身上**（v21 起只有地图与**贴图**能带，精灵不行），画面盖在那个对象的
+ * - 视频挂在**对象自己身上**（由 `VideoOverlay` 组件提供能力），画面盖在那个对象的
  *   矩形上，每个对象各自一条、互不影响。
  *
  * 一条贯穿全篇的规矩（照抄声音那套）：**选中的那条（`picked`）挂在「加进来的视频」上**，
@@ -69,6 +70,16 @@ function mapObject(id = "map-1"): GameObjectDoc {
   return createGridMapObject({ id, name: "网格地图", image: IMAGE, grid: GRID });
 }
 
+function videoMapObject(id = "map-1"): GameObjectDoc {
+  const object = mapObject(id);
+  return {
+    ...object,
+    components: [...object.components, featureComponent(id, DEFAULT_SLOT_COMPONENT.video, {
+      enabled: true, autoPlay: false, clips: [], loop: false, audio: false,
+    })],
+  };
+}
+
 /** 一张贴图（另一个合法宿主，v21 起取代精灵）。 */
 function textureObject(id = "tex-1"): GameObjectDoc {
   return createGameObject({ id, name: "贴图", kind: "Image" });
@@ -80,12 +91,11 @@ function spriteObject(id = "sprite-1"): GameObjectDoc {
 }
 
 describe("视频：哪些对象能带", () => {
-  it("只有贴图（含网格地图）能放视频；精灵与动作对象不行", () => {
-    expect(supportsVideo("Image")).toBe(true);
-    expect(supportsVideo("Sprite")).toBe(false);
-    expect(supportsVideo("PlaySound")).toBe(false);
-    expect(supportsVideo("Teleport")).toBe(false);
-    expect(supportsVideo("Player")).toBe(false);
+  it("只有实际挂有 VideoOverlay 的对象能放视频", () => {
+    const image = textureObject();
+    const attached = { ...image, components: [featureComponent(image.id, "VideoOverlay", {})] };
+    expect(supportsVideo(attached)).toBe(true);
+    expect(supportsVideo(image)).toBe(false);
   });
 
   it("两个开关的默认值：开着、不循环、静音", () => {
@@ -96,7 +106,7 @@ describe("视频：哪些对象能带", () => {
   });
 
   it("autoplay setting defaults off and can be enabled", () => {
-    const scene = sceneWith([mapObject()]);
+    const scene = sceneWith([videoMapObject()]);
     const withClip = mutate(scene, (draft) => {
       setVideoClips(draft, "map-1", [CLIP_A]);
     });
@@ -117,7 +127,7 @@ describe("视频：哪些对象能带", () => {
     expect(videoDataOf(parsed.file.objects[0]!)?.autoPlay).toBe(false);
   });
 
-  it("非地图 / 贴图对象上的视频命令一律不生效（返回 false，也不补字段）", () => {
+  it("未挂 VideoOverlay 的对象不能通过视频命令隐式补组件", () => {
     const scene = sceneWith([createSoundObject({ name: "脚步", id: "s1" })]);
 
     expect(
@@ -134,7 +144,7 @@ describe("视频：哪些对象能带", () => {
 
 describe("视频命令：列表", () => {
   it("setVideoClips：去空、去重，其余按传入顺序；没选过就默认选第一条", () => {
-    const scene = mutate(sceneWith([mapObject()]), (draft) => {
+    const scene = mutate(sceneWith([videoMapObject()]), (draft) => {
       expect(setVideoClips(draft, "map-1", [CLIP_A, "  ", CLIP_B, CLIP_A])).toBe(true);
     });
 
@@ -149,7 +159,7 @@ describe("视频命令：列表", () => {
   });
 
   it("列表清空**不删字段**：循环 / 声音是对象自己的设置，还得留着", () => {
-    const start = mutate(sceneWith([mapObject()]), (draft) => {
+    const start = mutate(sceneWith([videoMapObject()]), (draft) => {
       setVideoClips(draft, "map-1", [CLIP_A]);
       setComponentField(draft, "map-1", DEFAULT_SLOT_COMPONENT.video, "loop", true);
       setComponentField(draft, "map-1", DEFAULT_SLOT_COMPONENT.video, "audio", true);
@@ -171,7 +181,7 @@ describe("视频命令：列表", () => {
   });
 
   it("setVideoClips 移出选中的那条：选中的顺到下一条", () => {
-    const start = mutate(sceneWith([mapObject()]), (draft) => {
+    const start = mutate(sceneWith([videoMapObject()]), (draft) => {
       setVideoClips(draft, "map-1", [CLIP_A, CLIP_B]);
     });
 
@@ -202,7 +212,7 @@ describe("视频命令：列表", () => {
   });
 
   it("同一个列表再写一次 = 没变更（不进撤销栈）", () => {
-    const scene = mutate(sceneWith([mapObject()]), (draft) => {
+    const scene = mutate(sceneWith([videoMapObject()]), (draft) => {
       setVideoClips(draft, "map-1", [CLIP_A, CLIP_B]);
     });
 
@@ -216,7 +226,7 @@ describe("视频命令：列表", () => {
 
 describe("视频命令：选中", () => {
   it("只能选加进来的那条；`null` 取消选中", () => {
-    const scene = mutate(sceneWith([mapObject()]), (draft) => {
+    const scene = mutate(sceneWith([videoMapObject()]), (draft) => {
       setVideoClips(draft, "map-1", [CLIP_A, CLIP_B]);
       expect(setVideoPicked(draft, "map-1", CLIP_B)).toBe(true);
     });
@@ -252,7 +262,7 @@ describe("视频命令：选中", () => {
 
 describe("视频命令：循环与声音开关", () => {
   it("两个开关都写进文档；值没变返回 false", () => {
-    const scene = mutate(sceneWith([mapObject()]), (draft) => {
+    const scene = mutate(sceneWith([videoMapObject()]), (draft) => {
       setVideoClips(draft, "map-1", [CLIP_A]);
       expect(setComponentField(draft, "map-1", DEFAULT_SLOT_COMPONENT.video, "loop", true)).toBe(true);
       expect(setComponentField(draft, "map-1", DEFAULT_SLOT_COMPONENT.video, "audio", true)).toBe(true);
@@ -269,8 +279,29 @@ describe("视频命令：循环与声音开关", () => {
     ).toBe(scene);
   });
 
+  it("任意 kind 显式挂 VideoOverlay 后都能设置视频数据", () => {
+    const custom = {
+      ...createGameObject({ id: "custom", name: "组合对象", kind: "PlaySound" }),
+      components: [featureComponent("custom", DEFAULT_SLOT_COMPONENT.video, {
+        enabled: true, autoPlay: false, clips: [], loop: false, audio: false,
+      })],
+    };
+    const scene = mutate(sceneWith([custom]), (draft) => {
+      expect(setVideoClips(draft, "custom", [CLIP_A])).toBe(true);
+      // setVideoClips selects the first clip automatically.
+      expect(setVideoPicked(draft, "custom", CLIP_A)).toBe(false);
+    });
+
+    expect(videoDataOf(objectOf(scene, "custom")!)).toMatchObject({ clips: [CLIP_A], picked: CLIP_A });
+  });
+
   it("贴图与地图一样能带视频（两个宿主同一套）", () => {
-    const scene = mutate(sceneWith([textureObject()]), (draft) => {
+    const scene = mutate(sceneWith([{
+      ...textureObject(),
+      components: [featureComponent("tex-1", DEFAULT_SLOT_COMPONENT.video, {
+        enabled: true, autoPlay: false, clips: [], loop: false, audio: false,
+      })],
+    }]), (draft) => {
       setVideoClips(draft, "tex-1", [CLIP_A]);
       setVideoPicked(draft, "tex-1", CLIP_A);
     });
@@ -287,13 +318,13 @@ describe("视频命令：循环与声音开关", () => {
 });
 
 describe("视频命令：总开关（启用）", () => {
-  it("打开先写一份空列表；关掉时列表留着——一条都没有才把字段摘掉", () => {
+  it("显式添加组件后开关可用；关掉时列表留着——一条都没有才把组件摘掉", () => {
     let scene = sceneWith([mapObject()]);
     expect(videoEnabled(scene, "map-1")).toBe(false);
 
-    // 打开：开关状态本身也是要存的数据（否则下次打开项目又变回关着）
+    // 显式添加组件：开关状态本身也是要存的数据。
     scene = mutate(scene, (draft) => {
-      expect(setVideoEnabled(draft, "map-1", true)).toBe(true);
+      expect(addObjectVideo(draft, "map-1")).toBe(true);
     });
     expect(videoDataOf(objectOf(scene, "map-1")!)).toEqual({
       enabled: true,
@@ -346,8 +377,7 @@ describe("视频命令：总开关（启用）", () => {
     expect(videoDataOf(objectOf(scene, "map-1")!)?.clips).toEqual([CLIP_A, CLIP_B]);
 
     // 关着且一条都没有：字段整个摘掉（与「从没开过」同义，不留空壳）
-    const off = mutate(sceneWith([mapObject()]), (draft) => {
-      setVideoEnabled(draft, "map-1", true);
+    const off = mutate(sceneWith([videoMapObject()]), (draft) => {
       setVideoEnabled(draft, "map-1", false);
     });
     expect(videoDataOf(objectOf(off, "map-1")!)).toBeUndefined();
@@ -362,7 +392,12 @@ describe("视频命令：总开关（启用）", () => {
   });
 
   it("重新打开：列表 / 循环 / 声音都原样回来", () => {
-    const scene = mutate(sceneWith([textureObject()]), (draft) => {
+    const scene = mutate(sceneWith([{
+      ...textureObject(),
+      components: [featureComponent("tex-1", DEFAULT_SLOT_COMPONENT.video, {
+        enabled: true, autoPlay: false, clips: [], loop: false, audio: false,
+      })],
+    }]), (draft) => {
       setVideoClips(draft, "tex-1", [CLIP_B]);
       setComponentField(draft, "tex-1", DEFAULT_SLOT_COMPONENT.video, "audio", true);
       setVideoEnabled(draft, "tex-1", false);
@@ -384,11 +419,11 @@ describe("视频命令：总开关（启用）", () => {
 });
 
 describe("视频命令：移除组件（属性面板的「移除视频」）", () => {
-  it("摘掉整个组件（列表一起删）；没有组件 / 对象不在 / 不是视频宿主 = 没变更", () => {
+  it("摘掉整个组件（列表一起删）；没有组件 / 对象不在 / 对象没挂视频组件 = 没变更", () => {
     const scene = mutate(
       sceneWith([mapObject(), createSoundObject({ id: "sound-1", name: "脚步" })]),
       (draft) => {
-        setVideoEnabled(draft, "map-1", true);
+        addObjectVideo(draft, "map-1");
         setVideoClips(draft, "map-1", [CLIP_A]);
       },
     );
@@ -399,7 +434,7 @@ describe("视频命令：移除组件（属性面板的「移除视频」）", (
     });
     expect(videoDataOf(objectOf(removed, "map-1")!)).toBeUndefined();
 
-    // 已经没有了 / 对象不在 / 声音对象不是视频宿主：都没变更（同一个引用）
+    // 已经没有了 / 对象不在 / 声音对象没挂视频组件：都没变更（同一个引用）
     expect(
       mutate(removed, (draft) => {
         expect(removeObjectVideo(draft, "map-1")).toBe(false);
@@ -411,9 +446,9 @@ describe("视频命令：移除组件（属性面板的「移除视频」）", (
 });
 
 describe("视频：文档校验", () => {
-  it("非默认 kind 显式挂载 VideoOverlay：只提示迁移，不拒绝组件", () => {
+  it("非默认 kind 显式挂载 VideoOverlay：按组件生效且不提示 mismatch", () => {
     const scene = mutate(sceneWith([createSoundObject({ name: "脚步", id: "s1" })]), (draft) => {
-      // VideoOverlay 能力由组件实例提供；kind mismatch 只提示，不影响数据读取。
+      // VideoOverlay 能力由组件实例提供，kind 不参与行为判断。
       draft.objects[0]?.components.push(
         featureComponent("s1", DEFAULT_SLOT_COMPONENT.video, {
           enabled: true,
@@ -426,10 +461,10 @@ describe("视频：文档校验", () => {
     });
 
     expect(hasErrors(validateScene(scene))).toBe(false);
-    expect(formatIssues(validateScene(scene))).toMatch(/VideoOverlay.*旧模板不一致.*仍保留并按组件生效/);
+    expect(formatIssues(validateScene(scene))).not.toMatch(/旧模板不一致/);
   });
 
-  it("精灵 kind 上的 VideoOverlay：提示模板错位但不删组件数据", () => {
+  it("精灵 kind 上的 VideoOverlay：组件数据照常生效且不产生 mismatch 提示", () => {
     const scene = mutate(sceneWith([spriteObject()]), (draft) => {
       draft.objects[0]?.components.push(
         featureComponent("sprite-1", DEFAULT_SLOT_COMPONENT.video, {
@@ -443,7 +478,7 @@ describe("视频：文档校验", () => {
     });
 
     expect(hasErrors(validateScene(scene))).toBe(false);
-    expect(formatIssues(validateScene(scene))).toMatch(/VideoOverlay.*旧模板不一致.*仍保留并按组件生效/);
+    expect(formatIssues(validateScene(scene))).not.toMatch(/旧模板不一致/);
     expect(scene.objects[0]?.components.some((item) => item.type === DEFAULT_SLOT_COMPONENT.video)).toBe(
       true,
     );

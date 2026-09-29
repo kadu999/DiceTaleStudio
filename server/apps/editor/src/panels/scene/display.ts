@@ -1,4 +1,4 @@
-import { effectiveScaleX, effectiveScaleY, objectImage, type SceneDoc, type GameObjectDoc } from "@dts/document";
+import { componentOfSlot, effectiveScaleX, effectiveScaleY, objectImage, type SceneDoc, type GameObjectDoc } from "@dts/document";
 import { rectCorners } from "@dts/renderer";
 import { worldRectOf, type ImageSize, type WorldRect } from "@dts/grid";
 import { badgeIconOf } from "../object-kinds";
@@ -51,11 +51,9 @@ export function displayRectOf(object: GameObjectDoc): WorldRect | undefined {
 
 /** 显示矩形的尺寸（**未旋转**）；`displayRectOf` 与手柄几何（缩放锚点）共用它。 */
 export function displaySizeOf(object: GameObjectDoc): ImageSize {
-  // 动作对象画的是**固定的内置徽标**（不允许改贴图），所以它那块矩形就是徽标的大小：
-  // 手写文件里万一挂了 `image` 也不认（`validateScene` 会警告），
-  // 免得出现「选中框按贴图算、画出来的却是徽标」这种对不上的情况
-  const base =
-    badgeIconOf(object) === undefined ? (objectImage(object) ?? COLLIDER_SIZE) : COLLIDER_SIZE;
+  // 实际图片组件优先决定矩形；没有图片组件时，带可视动作组件的对象才用徽标尺寸。
+  const hasImageRenderer = componentOfSlot(object, "image") !== undefined;
+  const base = hasImageRenderer ? (objectImage(object) ?? COLLIDER_SIZE) : COLLIDER_SIZE;
   return {
     width: base.width * effectiveScaleX(object),
     height: base.height * effectiveScaleY(object),
@@ -63,12 +61,15 @@ export function displaySizeOf(object: GameObjectDoc): ImageSize {
 }
 
 /**
- * 这个对象要画的贴图：**动作对象的徽标是内置的**，所以它们不看 `image`（那个字段没有意义）。
- *
- * 与 `displayRectOf` 收在一起：「不认贴图」这条规矩只在一处。
+ * 返回当前实际图片组件的数据。其他组件不会按 kind 隐藏图片；渲染组件没挂时不推断图片能力。
  */
 export function displayImageOf(object: GameObjectDoc): ReturnType<typeof objectImage> {
-  return badgeIconOf(object) === undefined ? objectImage(object) : undefined;
+  return componentOfSlot(object, "image") === undefined ? undefined : objectImage(object);
+}
+
+/** 图片组件与动作组件可共存；有图片渲染器时以图片为主体，不用动作徽标覆盖它。 */
+export function displayIconOf(object: GameObjectDoc): ReturnType<typeof badgeIconOf> {
+  return componentOfSlot(object, "image") === undefined ? badgeIconOf(object) : undefined;
 }
 
 /**

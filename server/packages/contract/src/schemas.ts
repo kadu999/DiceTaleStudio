@@ -159,9 +159,12 @@ export const videoBlendDataSchema = z.object({
  * **参数化**：磁盘 / wire 各自传入自己的图片引用变体（带 `guid` / 带 `spriteGrid`）。
  */
 export function imageLayerDataSchemaWith(imageRef: z.ZodObject<z.ZodRawShape>) {
-  return imageRef.extend({
-    sortingOrder: z.number().int().default(0),
-  });
+  // A renderer can exist before an image is picked. Keep its component identity and sorting
+  // order in the document while allowing the image reference to remain absent.
+  return z.union([
+    imageRef.extend({ sortingOrder: z.number().int().default(0) }),
+    z.object({ sortingOrder: z.number().int().default(0) }).strict(),
+  ]);
 }
 
 /** 放大镜里一个状态：标题 + 媒体（图或视频）+ 文字 + 三个显示开关。`imageRef` 由两侧各自传入。 */

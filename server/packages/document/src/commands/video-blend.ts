@@ -1,6 +1,6 @@
 // 本文件从属于 `commands/`：视频混合（`VideoBlend`）命令——两路素材的「种类 + 素材」。
 import type { Draft } from "immer";
-import { ensureVideoBlendData, removeFeature, videoBlendDataOf } from "../access";
+import { addOptionalComponent, ensureVideoBlendData, removeFeature, videoBlendDataOf } from "../access";
 import { DEFAULT_SLOT_COMPONENT } from "../presets";
 import { withObject } from "./shared";
 import type { SceneDoc, VideoBlendChannelDoc, VideoBlendKind } from "../types";
@@ -12,7 +12,7 @@ export type VideoBlendChannel = "a" | "b";
  * 添加视频混合（属性面板底部 Add Component）。
  *
  * 写一份默认组件（两条空通道 + 不循环 + 静音，见 `component-specs/video-blend.ts`）；
- * 不满足准入（不是贴图 / kind 不一致 / 已经挂过）时返回 `false`（无变更，不入撤销栈）。
+ * 只校验组件槽位与 VideoOverlay 互斥；kind 不参与准入。
  */
 export function addObjectVideoBlend(scene: Draft<SceneDoc>, objectId: string): boolean {
   return withObject(scene, objectId, (object) => {
@@ -20,7 +20,7 @@ export function addObjectVideoBlend(scene: Draft<SceneDoc>, objectId: string): b
       return false;
     }
 
-    return ensureVideoBlendData(object) !== undefined;
+    return addOptionalComponent(object, DEFAULT_SLOT_COMPONENT.videoBlend) !== undefined;
   });
 }
 

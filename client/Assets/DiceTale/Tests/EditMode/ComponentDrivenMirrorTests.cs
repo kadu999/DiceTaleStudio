@@ -89,7 +89,7 @@ namespace DiceTale.Tests
                 "{\"id\":\"sprite\",\"kind\":\"Image\",\"components\":[" +
                 "{\"type\":\"SpriteLayer\",\"data\":{\"id\":\"atlas.png\",\"width\":64,\"height\":64}}]}");
 
-            Assert.That(spriteLayer.hasSpriteLayer, Is.True);
+            Assert.That(spriteLayer.HasComponent(Protocol.ComponentType.Sprite), Is.True);
             Assert.That(spriteLayer.image, Is.Not.Null);
             Assert.That(SceneObjectView.NeedsView(spriteLayer), Is.True);
         }

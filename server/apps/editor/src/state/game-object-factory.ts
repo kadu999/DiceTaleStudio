@@ -5,6 +5,9 @@ import {
   createMagnifierObject,
   createSoundObject,
   createTeleportObject,
+  withFeature,
+  SPRITE_COMPONENT,
+  type ComponentType,
   type ObjectKind,
   type GameObjectDoc,
   type WorldPosition,
@@ -27,17 +30,22 @@ type GameObjectFactory = (input: GameObjectFactoryInput) => GameObjectDoc;
 /** 每种文档对象在编辑器中新建时的组装规则；添加 ObjectKind 时必须明确登记工厂。 */
 const GAME_OBJECT_FACTORIES: Record<ObjectKind, GameObjectFactory> = {
   GameObject: ({ name, position }) => createGameObject({ name, kind: "GameObject", position }),
-  Sprite: ({ name, position }) => createGameObject({ name, kind: "Sprite", position }),
-  Image: ({ name, position }) => createGameObject({ name, kind: "Image", position }),
-  Player: ({ name, position }) => createGameObject({ name, kind: "Player", position }),
-  Item: ({ name, position }) => createGameObject({ name, kind: "Item", position }),
-  Event: ({ name, position }) => createGameObject({ name, kind: "Event", position }),
+  Sprite: ({ name, position }) => createRendererObject(createGameObject({ name, kind: "Sprite", position }), SPRITE_COMPONENT),
+  Image: ({ name, position }) => createRendererObject(createGameObject({ name, kind: "Image", position }), "ImageLayer"),
+  Player: ({ name, position }) => createRendererObject(createGameObject({ name, kind: "Player", position }), "ImageLayer"),
+  Item: ({ name, position }) => createRendererObject(createGameObject({ name, kind: "Item", position }), "ImageLayer"),
+  Event: ({ name, position }) => createRendererObject(createGameObject({ name, kind: "Event", position }), "ImageLayer"),
   // 战争雾：引用一个带网格的贴图（`mapId` 由 createObject 现算；没有网格时创建会被挡在 store 那一层）
   Fog: ({ name, position, mapId }) => createFogObject({ name, mapId: mapId ?? "", position }),
   PlaySound: ({ name, position }) => createSoundObject({ name, position }),
   Teleport: ({ name, position }) => createTeleportObject({ name, position }),
   Magnifier: ({ name, position }) => createMagnifierObject({ name, position }),
 };
+
+/** Creation-time template choice only; component identity drives all subsequent behavior. */
+function createRendererObject(object: GameObjectDoc, type: ComponentType): GameObjectDoc {
+  return withFeature(object, type, { sortingOrder: 0 });
+}
 
 export function createGameObjectForKind(
   kind: ObjectKind,

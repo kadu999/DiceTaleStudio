@@ -590,7 +590,7 @@ describe("放大镜的解析、迁移与版本", () => {
   });
 
   it("当前文档格式（v34 起放大镜一屏的三块各带显示开关）", () => {
-    expect(DOCUMENT_FORMAT_VERSION).toBe(34);
+    expect(DOCUMENT_FORMAT_VERSION).toBe(35);
   });
 
   it("`picked` 只收非负整数（小数 / 负数直接被 schema 拒掉）", () => {
@@ -606,15 +606,14 @@ describe("放大镜的解析、迁移与版本", () => {
 });
 
 describe("放大镜的校验", () => {
-  it("缺状态数据（整个组件没有）= error", () => {
+  it("当前格式的放大镜 kind 缺少 Magnifier 组件 = 未配置态", () => {
     const broken: GameObjectDoc = {
       ...createMagnifierObject({ name: "放大镜", id: "m1" }),
       components: [],
     };
 
     const issues = validateScene(sceneWith([broken]));
-    expect(hasErrors(issues)).toBe(true);
-    expect(formatIssues(issues)).toMatch(/缺少状态数据/);
+    expect(hasErrors(issues)).toBe(false);
   });
 
   it("还没加状态 = warning（新建出来就是这个状态，是合法的）", () => {

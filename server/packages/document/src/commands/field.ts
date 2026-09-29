@@ -27,8 +27,7 @@ import { withObject } from "./shared";
 /**
  * 改**组件数据**上的一个字段（按组件规格）。
  *
- * `type` 是组件类型 ID；对象上没有这个组件时按规格补一份完整的默认数据再写
- * （判据与 `ensureSlotData` 逐字一致，见 `ensureComponentData`）。
+ * `type` 是组件类型 ID；对象上没有这个组件时返回 false，不从 kind 或字段写入推断添加。
  */
 export function setComponentField(
   scene: Draft<SceneDoc>,

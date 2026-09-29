@@ -325,7 +325,7 @@ async function connectFakeClient(page: Page, port: number): Promise<void> {
           type: "client_hello",
           // 与 `@dts/protocol` 的 `PROTOCOL_VERSION` 一致（照抄字面量：e2e 不 import workspace 包，
           // 那个常量不会被类型检查兜住，见 CODE-STRUCTURE 的「复述常量」一节）
-          protocolVersion: 25,
+          protocolVersion: 26,
           name: "e2e 假前端",
           version: "0.0.0",
         }),

@@ -21,12 +21,7 @@ namespace DiceTale
         public string id = "";
         public string name = "";
         /// <summary>
-        /// 对象种类。**只是「创建原型」标签**（占位色 / 排查用）：v9 起「这个对象有什么」
-        /// 一律看 <see cref="components"/>，行为不再由 kind 决定（见 <see cref="SceneObjectView.NeedsView"/>）。
-        ///
-        /// 后台那边 `SceneObject` 是**抽象基类**（v22 起），精灵 `Sprite` 与贴图 `Image` 都继承它，
-        /// 而它自己不落进数据——所以这里的缺省值取具体类型 `Sprite`，
-        /// <see cref="SceneObjectView.KindColor"/> 也只为具体类型配色。
+        /// 创建模板标识。客户端仅保留协议字段；视图与行为只由 <see cref="components"/> 决定。
         /// </summary>
         public string kind = "Sprite";
 
@@ -53,16 +48,6 @@ namespace DiceTale
 
         /// <summary>对象自己要显示的图（精灵与贴图都用它；v16 起带网格的贴图的图也在这里）。</summary>
         public MirrorImage image;
-
-        /// <summary>
-        /// 这张图是**精灵**那一份（`SpriteLayer` 组件）还是**贴图**那一份（`ImageLayer`）。
-        ///
-        /// 两者显示的是同一件事（对象自己那张图），数据形状也一样，所以都填进 <see cref="image"/>；
-        /// 差别只在**精灵会取图集里的一格**。真正的读取点在 <see cref="SceneObjectView.Create"/>：
-        /// 据此决定挂 `SpriteLayer` 还是 `ImageLayer`（后者省略时以 <see cref="MirrorImage.sprite"/>
-        /// 兜底）；其余（占位色、诊断日志）也跟着这一个事实走，不用再翻组件表。
-        /// </summary>
-        public bool hasSpriteLayer;
 
         /// <summary>由 `GridMap` 组件填（v9 起；老版本是对象上的 `map` 字段）。</summary>
         public MirrorMap map;

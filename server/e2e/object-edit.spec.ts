@@ -197,8 +197,8 @@ test.describe("创建与编辑场景对象", () => {
 
       await expect(page.getByTestId("object-row")).toHaveCount(1);
       await expect(page.getByTestId("object-row").first()).toHaveAttribute(
-        "data-kind",
-        "Sprite",
+        "data-component-types",
+        "SpriteLayer",
       );
     } finally {
       await dropProject(request, project);
@@ -363,43 +363,27 @@ test.describe("创建与编辑场景对象", () => {
     }
   });
 
-  test("面板按种类过滤：默认全部，实体 / 动作 / 事件都在", async ({ page, request }) => {
+  test("层级不按 kind 分类，组件标签可搜索", async ({ page, request }) => {
     const project = await newProject(request);
     try {
       await openSceneForEdit(page, request, project, [
         sceneDoc(SCENE_A, [
           gameObjectDoc("木门"),
-          gameObjectDoc("机关", "Event"),
+          withComponent(gameObjectDoc("机关", "Event"), COMPONENT.teleport, { targets: [] }),
           mapObjectDoc(project, SCENE_A),
         ]),
       ]);
 
-      // 种类按钮与弹框同一套归类：全部 + 实体 / 动作 / 事件（哪怕动作现在还没有对象）
-      await expect(page.getByTestId("category-filter-all")).toHaveAttribute("data-selected", "true");
-      await expect(page.getByTestId("category-filter-entity")).toBeVisible();
-      await expect(page.getByTestId("category-filter-action")).toBeVisible();
-      await expect(page.getByTestId("category-filter-event")).toBeVisible();
-
-      // 默认「全部」：三个对象都在，而且**不分组**
+      // 不提供按 kind 分类的按钮；即使 kind 是 Event 且挂着 Teleport 组件也一直可见。
+      await expect(page.getByTestId("category-filter")).toHaveCount(0);
       await expect(page.getByTestId("object-row")).toHaveCount(3);
+      const mismatchedRow = page.getByTestId("object-row").filter({ has: page.getByText("机关") });
+      await expect(mismatchedRow).toHaveAttribute("data-component-types", "Teleport");
 
-      // 实体 = 精灵（kind=Sprite）+ 网格地图（v28 起 kind=Image，靠网格组件区分）
-      await page.getByTestId("category-filter-entity").click();
-      await expect(page.getByTestId("object-row")).toHaveCount(2);
-      await expect(page.getByTestId("object-row").filter({ hasText: "机关" })).toHaveCount(0);
-
-      // 事件 = kind 为 Event 的对象
-      await page.getByTestId("category-filter-event").click();
+      // 关键字可命中实际组件标签，不读取 kind 分类名。
+      await page.getByTestId("object-filter").fill("传送阵");
       await expect(page.getByTestId("object-row")).toHaveCount(1);
-      await expect(page.getByTestId("object-row").first()).toHaveAttribute("data-kind", "Event");
-
-      // 动作：现在还没有这类对象
-      await page.getByTestId("category-filter-action").click();
-      await expect(page.getByTestId("object-row")).toHaveCount(0);
-      await expect(page.getByTestId("object-tree")).toContainText("「动作」下还没有对象");
-
-      // 种类过滤与关键字过滤是叠加的
-      await page.getByTestId("category-filter-entity").click();
+      await expect(page.getByTestId("object-row").first()).toHaveAttribute("data-name", "机关");
       await page.getByTestId("object-filter").fill("木门");
       await expect(page.getByTestId("object-row")).toHaveCount(1);
       await expect(page.getByTestId("object-row").first()).toHaveAttribute("data-name", "木门");

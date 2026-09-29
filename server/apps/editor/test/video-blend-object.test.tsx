@@ -142,7 +142,7 @@ afterEach(() => {
 });
 
 describe("视频混合：哪些对象能加", () => {
-  it("只有贴图能在底部「添加组件」里看到「视频混合」；精灵 / 声音 / 传送不能", () => {
+  it("各类对象都可显式添加「视频混合」组件", () => {
     seedScene([texture()], ["tex-1"]);
     const first = render(<InspectorPanel />);
     expect(addableLabels()).toContain("视频混合");
@@ -154,7 +154,7 @@ describe("视频混合：哪些对象能加", () => {
       ["sprite-1"],
     );
     render(<InspectorPanel />);
-    expect(addableLabels()).not.toContain("视频混合");
+    expect(addableLabels()).toContain("视频混合");
   });
 
   it("与「视频」互斥：挂了一个，另一个就不在「添加组件」里", () => {

@@ -10,7 +10,7 @@
  */
 
 /** 场景文件的当前格式版本（源：@dts/document 的 DOCUMENT_FORMAT_VERSION）。 */
-export const CURRENT_SCENE_FORMAT_VERSION = 34;
+export const CURRENT_SCENE_FORMAT_VERSION = 35;
 
 /** 战争雾雾层显示顺序的缺省值（源：@dts/document 的 FOG_DEFAULT_SORTING_ORDER）。 */
 export const FOG_DEFAULT_SORTING_ORDER = 32767;

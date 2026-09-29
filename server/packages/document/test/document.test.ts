@@ -781,7 +781,7 @@ describe("对象命令（都在场景上操作）", () => {
     expect(imageOf(withMap.objects[0]!)).toEqual(next);
 
     const withSprite = mutate(withObject(makeScene(), "sprite"), (draft) => {
-      expect(repairImageObjectComponent(draft, "sprite", next)).toBe(true);
+      expect(repairImageObjectComponent(draft, "sprite", "SpriteLayer", next)).toBe(true);
     });
     expect(imageOf(withSprite.objects[0]!)).toEqual(next);
     expect(mapDataOf(withSprite.objects[0]!)).toBeUndefined();
@@ -804,15 +804,15 @@ describe("对象命令（都在场景上操作）", () => {
     expect(imageOf(unchanged.objects[0]!)).toBeUndefined();
   });
 
-  it("图片组件显式修复按 kind 选择承载类型并保留子图引用", () => {
+  it("图片组件显式添加按用户选择的承载类型并保留子图引用", () => {
     const scene = mutate(makeScene(), (draft) => {
       addObject(draft, plainObject("sprite", { kind: "Sprite" }));
       addObject(draft, plainObject("image", { kind: "Image" }));
-      expect(repairImageObjectComponent(draft, "sprite", {
+      expect(repairImageObjectComponent(draft, "sprite", "SpriteLayer", {
         ...IMAGE,
         sprite: { column: 2, row: 1 },
       })).toBe(true);
-      expect(repairImageObjectComponent(draft, "image", IMAGE)).toBe(true);
+      expect(repairImageObjectComponent(draft, "image", "ImageLayer", IMAGE)).toBe(true);
     });
 
     expect(findObject(scene, "sprite")?.components).toEqual([{
@@ -827,7 +827,7 @@ describe("对象命令（都在场景上操作）", () => {
     }]);
   });
 
-  it("图片组件显式修复拒绝 kind mismatch 且不影响未知组件", () => {
+  it("图片组件显式修复以选择的 renderer 为准且不影响未知组件", () => {
     const scene = mutate(makeScene(), (draft) => {
       addObject(draft, plainObject("sprite", {
         kind: "Sprite",
@@ -836,17 +836,18 @@ describe("对象命令（都在场景上操作）", () => {
           { id: "unknown", type: "FutureComponent", data: { keep: true } },
         ],
       }));
-      expect(repairImageObjectComponent(draft, "sprite", IMAGE)).toBe(false);
+      expect(repairImageObjectComponent(draft, "sprite", "SpriteLayer", IMAGE)).toBe(true);
     });
     expect(findObject(scene, "sprite")?.components.map((component) => component.type)).toEqual([
       "Teleport",
       "FutureComponent",
+      "SpriteLayer",
     ]);
   });
 
-  it("网格地图的贴图在图片层：已经有图片层时不会重复添加", () => {
+  it("给已有图片层换图仍只保留一个图片组件", () => {
     const scene = mutate(withMapObject(makeScene()), (draft) => {
-      expect(repairImageObjectComponent(draft, "map-1", IMAGE)).toBe(false);
+      expect(repairImageObjectComponent(draft, "map-1", "ImageLayer", IMAGE)).toBe(true);
     });
     expect(scene.objects[0]?.components.map((component) => component.type)).toEqual([
       "ImageLayer",
@@ -880,7 +881,7 @@ describe("对象命令（都在场景上操作）", () => {
     const scene = { ...makeScene(), objects: [object] };
 
     expect(videoDataOf(scene.objects[0]!)).toBeDefined();
-    expect(formatIssues(validateScene(scene))).toMatch(/VideoOverlay.*旧模板不一致.*仍保留并按组件生效/);
+    expect(formatIssues(validateScene(scene))).not.toMatch(/旧模板不一致/);
   });
 
   it("新建地图对象带着世界坐标（默认原点）——它就是贴图中心", () => {
@@ -1342,7 +1343,7 @@ describe("文档校验", () => {
     });
   });
 
-  it("setObjectImage 不会隐式添加图片层；组件冲突时 addObjectGridMap 也拒绝", () => {
+  it("setObjectImage 不会隐式添加图片层；GridMap 可在无图片渲染器对象上显式添加", () => {
     const scene = mutate(makeScene(), (draft) => {
       addObject(draft, plainObject("broken-image", { name: "没图片层", kind: "Image" }));
       addObject(draft, plainObject("mismatched", {
@@ -1351,16 +1352,16 @@ describe("文档校验", () => {
         components: [{ id: "mismatched__Teleport", type: "Teleport", data: { targets: [] } }],
       }));
     });
-    mutate(scene, (draft) => {
+    const changed = mutate(scene, (draft) => {
       expect(setObjectImage(draft, "broken-image", IMAGE)).toBe(false);
-      expect(addObjectGridMap(draft, "mismatched")).toBe(false);
+      expect(addObjectGridMap(draft, "mismatched")).toBe(true);
     });
 
     expect(imageOf(findObject(scene, "broken-image")!)).toBeUndefined();
-    expect(mapDataOf(findObject(scene, "mismatched")!)).toBeUndefined();
+    expect(mapDataOf(findObject(changed, "mismatched")!)).toBeDefined();
   });
 
-  it("网格只允许加在贴图上：挂在精灵上按 kind 不一致提示", () => {
+  it("GridMap 可显式挂在任意对象上，按组件工作且不产生 kind 冲突诊断", () => {
     const onSprite = mutate(makeScene(), (draft) => {
       addObject(draft, plainObject("odd", { name: "精灵", kind: "Sprite" }));
       const object = findObject(draft, "odd");
@@ -1373,9 +1374,9 @@ describe("文档校验", () => {
       }
     });
 
-    // 只是警告（组件仍在、仍按组件生效），不是错误
+    // 组件身份是事实来源；kind 不否决也不再生成诊断
     expect(hasErrors(validateScene(onSprite))).toBe(false);
-    expect(formatIssues(validateScene(onSprite))).toMatch(/旧模板不一致/);
+    expect(formatIssues(validateScene(onSprite))).not.toMatch(/旧模板不一致/);
 
     // 贴在贴图上就完全合法
     const onImage = mutate(makeScene(), (draft) => {
@@ -1396,7 +1397,7 @@ describe("文档校验", () => {
     expect(formatIssues(validateScene(onImage))).not.toMatch(/旧模板不一致/);
   });
 
-  it("kind 与显式组件不一致时只提示迁移，不拒绝组件数据", () => {
+  it("kind 与显式组件不一致时不影响组件数据，也不产生 mismatch 提示", () => {
     const scene = mutate(withObject(makeScene(), "odd"), (draft) => {
       const object = findObject(draft, "odd");
       if (object !== undefined) {
@@ -1406,7 +1407,7 @@ describe("文档校验", () => {
 
     const issues = validateScene(scene);
     expect(hasErrors(issues)).toBe(false);
-    expect(formatIssues(issues)).toMatch(/Teleport.*旧模板不一致.*仍保留并按组件生效/);
+    expect(formatIssues(issues)).not.toMatch(/旧模板不一致/);
     expect(componentOf(scene.objects[0]!, DEFAULT_SLOT_COMPONENT.teleport)?.data).toEqual({
       targets: [],
       picked: undefined,

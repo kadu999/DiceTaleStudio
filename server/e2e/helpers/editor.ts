@@ -32,7 +32,7 @@ export function componentId(objectId: string, component: string): string {
   return `${objectId}__${component}`;
 }
 
-/** 按 `id` / `kind` 在场景文件里找一个对象（两个条件都给时都要满足）。 */
+/** 按 `id` / `kind` 在场景文件里找一个对象（`kind` 仅用于兼容数据夹具）。 */
 export function findGameObject(
   file: SceneFileLike | undefined,
   selector: { readonly objectId?: string; readonly kind?: string },

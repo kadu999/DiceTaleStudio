@@ -79,11 +79,9 @@ test.describe("动作对象：播放声音", () => {
       await page.getByTestId("confirm-object").click();
       await expect(page.getByTestId("object-dialog")).toHaveCount(0);
 
-      // 列表：动作种类筛得出来；行尾显示层级
-      await expect(page.getByTestId("category-filter-action")).toBeVisible();
-      await page.getByTestId("category-filter-action").click();
+      // 列表：组件标签来自实际挂载组件；行尾显示层级
       const row = page.getByTestId("object-row").first();
-      await expect(row).toHaveAttribute("data-kind", "PlaySound");
+      await expect(row).toHaveAttribute("data-component-types", "PlaySound");
       await expect(row).toContainText("音效");
 
       // 属性面板：基础和实体一样（位置 / 缩放 / 锁定 / 显示顺序都在），另有「播放声音」；
@@ -251,7 +249,7 @@ test.describe("动作对象：播放声音", () => {
       // 2) 点得到：拾取用的还是那块显示矩形（与实体同一套）
       await page.mouse.click(origin.x, origin.y);
       const soundRow = page.getByTestId("object-row").first();
-      await expect(soundRow).toHaveAttribute("data-kind", "PlaySound");
+      await expect(soundRow).toHaveAttribute("data-component-types", "PlaySound");
       await expect(soundRow).toHaveAttribute("data-selected", "true");
 
       // 3) 用手柄移动它：位置跟着走，并自动落盘。
@@ -530,7 +528,7 @@ async function connectFakeSoundClient(page: Page, port: number): Promise<void> {
           type: "client_hello",
           // 与 `@dts/protocol` 的 `PROTOCOL_VERSION` 一致（这里写死：e2e 不是 workspace 包，
           // 拿不到那个常量；版本一升这里会连不上、用例会当场失败，提醒同步改）
-          protocolVersion: 25,
+          protocolVersion: 26,
           name: "e2e 假前端",
           version: "0.0.0",
         }),

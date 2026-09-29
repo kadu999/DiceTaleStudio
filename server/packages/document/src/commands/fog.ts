@@ -2,14 +2,12 @@
 // 总开关与雾区都写在它自己身上的 `FogOfWar` 组件里。
 import type { Draft } from "immer";
 import { normalizeRegions, regionsToMask } from "@dts/grid";
-import { DEFAULT_SLOT_COMPONENT, FOG_DEFAULT_SORTING_ORDER, FOG_SORTING_ORDER_LIMIT } from "../presets";
+import { FOG_DEFAULT_SORTING_ORDER, FOG_SORTING_ORDER_LIMIT } from "../presets";
 // 特性的读写一律走访问器（「数据存在哪个组件里」只有 access.ts 知道）
 import {
-  canRepairObjectComponent,
   componentDataOfSlot,
   fogOf,
   mapDataOf,
-  writeFeature,
 } from "../access";
 import { withObject } from "./shared";
 import type { FogOfWarDataDoc, GameObjectDoc, SceneDoc } from "../types";
@@ -56,9 +54,7 @@ export function fogObjectOfMap(scene: SceneDoc, mapObjectId: string): GameObject
 }
 
 /**
- * 雾对象上 `FogOfWar` 组件的 draft；缺组件时（损坏的手写文件）补一份默认的。
- *
- * 只有 `Fog` 对象能补（`repairKinds`）——在普通对象上凭空造一个雾组件没有意义。
+ * 雾对象上 `FogOfWar` 组件的 draft；缺组件时必须由显式添加/修复操作创建。
  */
 function ensureFogDraft(object: Draft<GameObjectDoc>): Draft<FogOfWarDataDoc> | undefined {
   const existing = componentDataOfSlot<FogOfWarDataDoc>(object, "fog");
@@ -66,16 +62,7 @@ function ensureFogDraft(object: Draft<GameObjectDoc>): Draft<FogOfWarDataDoc> | 
     return existing as Draft<FogOfWarDataDoc>;
   }
 
-  if (!canRepairObjectComponent(object, DEFAULT_SLOT_COMPONENT.fog)) {
-    return undefined;
-  }
-
-  return writeFeature(object, DEFAULT_SLOT_COMPONENT.fog, {
-    mapId: "",
-    enabled: true,
-    regions: [],
-    sortingOrder: FOG_DEFAULT_SORTING_ORDER,
-  }).data as Draft<FogOfWarDataDoc>;
+  return undefined;
 }
 
 /**
@@ -112,7 +99,7 @@ export function setFogMap(
  * **不摘组件、也不清雾区绑定**——「先关掉看看效果、再打开」不该逼人重新指定一遍。
  * 前端（`FogOfWar`）按这个开关决定建不建那一层雾。
  *
- * 返回 `false` 表示没有变更（不是 `Fog` 对象 / 开关本来就是这个状态）。
+ * 返回 `false` 表示没有变更（没有 FogOfWar 组件 / 开关本来就是这个状态）。
  */
 export function setFogEnabled(
   scene: Draft<SceneDoc>,
@@ -137,7 +124,7 @@ export function setFogEnabled(
  * **只改绑定，不动格子数据**：解除绑定不会连带清掉已经画好的雾格子，改回来还在。
  * **也不动总开关**：关着的时候指定雾区照样写得进去（绑定与开关是两件事）。
  *
- * 返回 `false` 表示没有变更（不是 `Fog` 对象 / 绑定没变）。
+ * 返回 `false` 表示没有变更（没有 FogOfWar 组件 / 绑定没变）。
  */
 export function setFogRegions(
   scene: Draft<SceneDoc>,
